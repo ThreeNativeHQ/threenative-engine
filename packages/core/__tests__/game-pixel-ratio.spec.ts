@@ -63,6 +63,54 @@ async function bootGame(
 }
 
 describe("the game boots at the device's real density by default", () => {
+  it("does not re-scale its own drawing buffer when an unsized canvas reports it back", async () => {
+    // A canvas with no CSS size lays out at its drawing buffer: every buffer the engine sets comes
+    // back through the resize observer as the new layout size. Scaling that again compounded on
+    // each echo; Midway's canvas fell to 3x3 under a 0.8 resolution scale.
+    const devicePixelRatio = globalThis.devicePixelRatio;
+    const observer = globalThis.ResizeObserver;
+    const callbacks: (() => void)[] = [];
+    Object.defineProperty(globalThis, "devicePixelRatio", { configurable: true, value: 2 });
+    Object.defineProperty(globalThis, "ResizeObserver", {
+      configurable: true,
+      value: class {
+        constructor(callback: () => void) {
+          callbacks.push(callback);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    });
+    try {
+      let layout: [number, number] = [1920, 1080];
+      const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
+      Object.defineProperties(canvas, {
+        clientWidth: { configurable: true, get: () => layout[0] },
+        clientHeight: { configurable: true, get: () => layout[1] },
+        parentElement: { configurable: true, value: null },
+      });
+      const booted = await bootGame({}, canvas as HTMLCanvasElement);
+      expect(booted.setSizeCalls.at(-1)?.slice(0, 2)).toEqual([3840, 2160]);
+      for (let echo = 0; echo < 3; echo++) {
+        const last = booted.setSizeCalls.at(-1) as [number, number, unknown];
+        layout = [last[0], last[1]];
+        for (const callback of callbacks) callback();
+      }
+      expect(booted.setSizeCalls.at(-1)?.slice(0, 2)).toEqual([3840, 2160]);
+      // A real layout change still resizes.
+      layout = [1280, 720];
+      for (const callback of callbacks) callback();
+      expect(booted.setSizeCalls.at(-1)?.slice(0, 2)).toEqual([2560, 1440]);
+      await booted.stop();
+    } finally {
+      Object.defineProperty(globalThis, "devicePixelRatio", {
+        configurable: true,
+        value: devicePixelRatio,
+      });
+      Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: observer });
+    }
+  });
+
   it("multiplies the logical canvas by devicePixelRatio without being told", async () => {
     const devicePixelRatio = globalThis.devicePixelRatio;
     Object.defineProperty(globalThis, "devicePixelRatio", { configurable: true, value: 2 });

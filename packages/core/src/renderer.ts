@@ -1241,17 +1241,30 @@ function addResizeHandling(
   state: ISurfaceState,
   pixelRatio: number,
 ): { resize: () => void; stop: () => void } {
+  // The last layout size read and the drawing buffer set from it. A canvas with no CSS size lays
+  // out at its drawing buffer, so the buffer set here comes back as the next layout size: that echo
+  // is not a new layout, and scaling it again compounds (Midway's canvas fell to 3x3).
+  let layout: readonly [number, number] | undefined;
+  let applied: readonly [number, number] | undefined;
   const resize = () => {
-    const [width, height] =
+    let [width, height] =
       source?.readSize(renderer.domElement) ?? readCanvasSize(renderer.domElement);
+    if (
+      layout !== undefined &&
+      applied !== undefined &&
+      width === applied[0] &&
+      height === applied[1]
+    )
+      [width, height] = layout;
+    layout = [width, height];
     // Recorded as it is applied rather than read back off the canvas: the canvas dimensions are
     // the host's to define and on native they have been the physical surface, which is exactly
     // the number this scale exists to stop a game from paying by hand.
-    renderer.setSize(
+    applied = [
       Math.max(1, Math.round(width * pixelRatio * state.resolutionScale)),
       Math.max(1, Math.round(height * pixelRatio * state.resolutionScale)),
-      false,
-    );
+    ];
+    renderer.setSize(applied[0], applied[1], false);
   };
   resize();
   const stop =
