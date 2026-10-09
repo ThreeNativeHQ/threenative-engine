@@ -20,7 +20,7 @@ import {
   rendererBackendIdentity,
 } from "./geometry-capture.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
-import { watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
+import { reportLaunchFailure, watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
 import {
   FixedStepLoop,
   type IAfterPhysicsPhase,
@@ -878,8 +878,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       if (this.#pendingSceneEnter === transition) this.#pendingSceneEnter = undefined;
     };
     // Handled here as well as by the caller: a start scene that navigates inside `enter()` throws
-    // its transition away, and the gate below still has to learn that no world arrived.
-    void transition.then(settled, settled);
+    // its transition away, and the gate below still has to learn that no world arrived. The failure
+    // is reported by name: a swallowed rejection left the loading screen up as a "stall" with
+    // nothing outstanding (midway-open-pacific on the Wasm engine).
+    void transition.then(settled, (error: unknown) => {
+      settled();
+      reportLaunchFailure({
+        kind: "scene-load-failed",
+        message: `Scene '${name}' failed to load: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    });
     this.#pendingSceneEnter = transition;
     return transition;
   }

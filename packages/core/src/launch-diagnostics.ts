@@ -14,8 +14,17 @@
  * asked for when they report a launch that hung); this owns the noticing and the wording.
  */
 
-/** What failed. `stalled` is "no progress for a while"; `device-lost` is the GPU going away. */
-export type LaunchFailureKind = "stalled" | "device-lost";
+/**
+ * What failed. `stalled` is "no progress for a while"; `device-lost` is the GPU going away;
+ * `scene-load-failed` is a scene's `load()` rejecting, which otherwise reads as a stall.
+ */
+export type LaunchFailureKind = "stalled" | "device-lost" | "scene-load-failed";
+
+const MARKERS: Readonly<Record<LaunchFailureKind, string>> = {
+  stalled: "TN_STARTUP_STALLED",
+  "device-lost": "TN_DEVICE_LOST",
+  "scene-load-failed": "TN_SCENE_LOAD_FAILED",
+};
 
 export interface ILaunchFailure {
   readonly kind: LaunchFailureKind;
@@ -46,9 +55,10 @@ export function resetLaunchFailures(): void {
 
 export function reportLaunchFailure(failure: ILaunchFailure): void {
   if (reported.has(failure.kind)) return;
+  // A launch whose scene failed to load stops making progress too; that stall is not news.
+  if (failure.kind === "stalled" && reported.has("scene-load-failed")) return;
   reported.add(failure.kind);
-  const marker = failure.kind === "stalled" ? "TN_STARTUP_STALLED" : "TN_DEVICE_LOST";
-  console.error(`${marker}: ${failure.message}`);
+  console.error(`${MARKERS[failure.kind]}: ${failure.message}`);
   for (const listener of listeners) listener(failure);
 }
 

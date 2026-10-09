@@ -10,6 +10,11 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { type IGamePlatformSource, defineGame } from "../src/game.js";
 import { InputMap } from "../src/input.js";
+import {
+  type ILaunchFailure,
+  onLaunchFailure,
+  resetLaunchFailures,
+} from "../src/launch-diagnostics.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
 import { type ICtx, Scene } from "../src/scene.js";
 import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
@@ -1924,6 +1929,44 @@ describe("IGame", () => {
       start: "test",
     });
     await expect(invalid.start()).rejects.toThrow("frame function");
+  });
+
+  it("reports a scene whose load() rejects by name instead of stalling the launch", async () => {
+    resetLaunchFailures();
+    const failures: ILaunchFailure[] = [];
+    const off = onLaunchFailure((failure) => failures.push(failure));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    class Boot extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        void ctx.goto("play");
+      }
+    }
+
+    class Play extends Scene {
+      override load(): Promise<void> {
+        return Promise.reject(new Error("TN_TEST_LOAD: the model refused"));
+      }
+    }
+
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { boot: Boot, play: Play },
+      start: "boot",
+    });
+    await game.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    off();
+    errors.mockRestore();
+    game.stop();
+    expect(failures).toEqual([
+      {
+        kind: "scene-load-failed",
+        message: "Scene 'play' failed to load: TN_TEST_LOAD: the model refused",
+      },
+    ]);
   });
 
   it("preserves the destination frame when enter navigates synchronously", async () => {
