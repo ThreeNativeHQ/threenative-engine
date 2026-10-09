@@ -88,6 +88,7 @@ describe("the game boots at the device's real density by default", () => {
         clientWidth: { configurable: true, get: () => layout[0] },
         clientHeight: { configurable: true, get: () => layout[1] },
         parentElement: { configurable: true, value: null },
+        style: { configurable: true, value: { width: "", height: "" } },
       });
       const booted = await bootGame({}, canvas as HTMLCanvasElement);
       expect(booted.setSizeCalls.at(-1)?.slice(0, 2)).toEqual([3840, 2160]);
@@ -97,6 +98,10 @@ describe("the game boots at the device's real density by default", () => {
         for (const callback of callbacks) callback();
       }
       expect(booted.setSizeCalls.at(-1)?.slice(0, 2)).toEqual([3840, 2160]);
+      // The echo proves the canvas lays out at its buffer, so it is pinned at its layout size;
+      // otherwise any ratio or scale other than 1 resizes it on the page (Midway's canvas shrank to
+      // 1088x612 when the adaptive scale dropped to 0.85).
+      expect(canvas.style).toMatchObject({ width: "1920px", height: "1080px" });
       // A real layout change still resizes.
       layout = [1280, 720];
       for (const callback of callbacks) callback();

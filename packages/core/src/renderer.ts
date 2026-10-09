@@ -1254,8 +1254,16 @@ function addResizeHandling(
       applied !== undefined &&
       width === applied[0] &&
       height === applied[1]
-    )
+    ) {
       [width, height] = layout;
+      // The echo proves the canvas has no size of its own, so the page would show it at its buffer:
+      // shrunk under a scale below 1 (Midway fell to 1088x612), doubled at ratio 2. Pin it.
+      const style = (renderer.domElement as { style?: CSSStyleDeclaration }).style;
+      if (style !== undefined) {
+        style.width = `${width}px`;
+        style.height = `${height}px`;
+      }
+    }
     layout = [width, height];
     // Recorded as it is applied rather than read back off the canvas: the canvas dimensions are
     // the host's to define and on native they have been the physical surface, which is exactly
