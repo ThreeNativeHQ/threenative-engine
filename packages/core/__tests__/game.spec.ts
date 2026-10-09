@@ -1969,6 +1969,36 @@ describe("IGame", () => {
     ]);
   });
 
+  it("reports a start scene whose enter() throws, even when start() is not awaited", async () => {
+    resetLaunchFailures();
+    const failures: ILaunchFailure[] = [];
+    const off = onLaunchFailure((failure) => failures.push(failure));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    class Broken extends Scene {
+      static override readonly initialState = {};
+
+      override enter(): void {
+        throw new Error("TN_TEST_ENTER: the renderer has no shadowMap");
+      }
+    }
+
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { broken: Broken },
+      start: "broken",
+    });
+    await expect(game.start()).rejects.toThrow("TN_TEST_ENTER");
+    off();
+    errors.mockRestore();
+    expect(failures).toEqual([
+      {
+        kind: "start-failed",
+        message: "The game failed to start: TN_TEST_ENTER: the renderer has no shadowMap",
+      },
+    ]);
+  });
+
   it("preserves the destination frame when enter navigates synchronously", async () => {
     let advance: ((ticks: number) => number) | undefined;
     let updates = 0;

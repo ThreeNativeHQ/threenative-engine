@@ -956,8 +956,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       () => {
         if (this.#pendingStart === pendingStart) this.#pendingStart = undefined;
       },
-      () => {
+      (error: unknown) => {
         if (this.#pendingStart === pendingStart) this.#pendingStart = undefined;
+        // Reported by name: a game that writes `void game.start()` otherwise keeps its loading
+        // screen up until the stall watcher says "no asset is outstanding".
+        reportLaunchFailure({
+          kind: "start-failed",
+          message: `The game failed to start: ${error instanceof Error ? error.message : String(error)}`,
+        });
       },
     );
     return pendingStart;
