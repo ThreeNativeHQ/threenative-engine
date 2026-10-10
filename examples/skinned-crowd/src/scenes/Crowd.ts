@@ -52,16 +52,16 @@ export const crowdRate: Record<string, unknown> = { count, arm, measuring, ready
 
 export function crowdBudget(window: IFrameBudgetWindow): void {
   if (!measuring) return;
-  crowdRate.gpuMainMs = window.gpuMain;
-  crowdRate.gpuShadowMs = window.gpuShadow;
-  crowdRate.gpuShadowSamples = window.gpuShadowRendered?.samples;
-  crowdRate.gpuSamples = window.gpu?.samples;
+  crowdRate.gpuMainMs = window.gpuMain ?? null;
+  crowdRate.gpuShadowMs = window.gpuShadow ?? null;
+  crowdRate.gpuShadowSamples = window.gpuShadowRendered?.samples ?? null;
+  crowdRate.gpuSamples = window.gpu?.samples ?? null;
   crowdRate.window = window.window;
-  crowdRate.mainDraws = window.passes?.main?.draws.mean;
-  crowdRate.shadowDraws = window.passes?.shadow?.draws.mean;
-  crowdRate.mainTriangles = window.passes?.main?.triangles.mean;
-  crowdRate.shadowTriangles = window.passes?.shadow?.triangles.mean;
-  crowdRate.surface = window.surface;
+  crowdRate.mainDraws = window.passes?.main?.draws.mean ?? null;
+  crowdRate.shadowDraws = window.passes?.shadow?.draws.mean ?? null;
+  crowdRate.mainTriangles = window.passes?.main?.triangles.mean ?? null;
+  crowdRate.shadowTriangles = window.passes?.shadow?.triangles.mean ?? null;
+  crowdRate.surface = window.surface ?? null;
 }
 
 export function crowdSpans(line: string): void {
@@ -70,8 +70,8 @@ export function crowdSpans(line: string): void {
   const window = JSON.parse(line.slice(SPANS_MARKER.length + 1)) as ISpanWindow;
   const animation = window.spans.animationUpdate;
   const palette = window.spans.skinnedWrite;
-  crowdRate.animationUpdateMs = animation?.mean;
-  crowdRate.skinnedWriteMs = palette?.mean;
+  crowdRate.animationUpdateMs = animation?.mean ?? null;
+  crowdRate.skinnedWriteMs = palette?.mean ?? null;
   crowdRate.animationCalls = animation?.perFrame ?? 0;
   crowdRate.paletteWrites = palette?.perFrame ?? 0;
   crowdRate.ready =

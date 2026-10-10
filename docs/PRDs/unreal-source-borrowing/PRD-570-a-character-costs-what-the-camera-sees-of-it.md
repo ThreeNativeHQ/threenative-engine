@@ -169,6 +169,13 @@ which is compatibility mode, not the core WebGPU that this engine requests.
   visual-judge run has been performed. Runtime CPU/GPU measurements and all PRD outcomes remain
   unverified pending the coordinator's exclusive GPU window.
 
+- Coordinator review found a bridge serialization defect in the frozen controls: absent span or
+  GPU metrics were published as `undefined`. They now publish `null`, retaining missing-work
+  semantics and `ready: false` for missing mandatory measurements. A focused Node/tsx falsifier
+  using the bridge's actual `assertJsonSafe` rejected held/static snapshots before the fix;
+  after it, all four held/static × present/missing-GPU cases pass, including explicit null-value
+  and readiness assertions. Crowd TypeScript and Vite build pass; no GPU run was needed or claimed.
+
 The next runtime command, after that window is granted, is:
 
 ```sh
