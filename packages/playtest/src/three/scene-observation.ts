@@ -45,10 +45,11 @@ function finite(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function typeNameOf(value: object): string {
+export function typeNameOf(value: object): string {
   const declared = (value as { type?: unknown }).type;
   if (typeof declared === "string" && declared.length > 0) return declared;
-  return value.constructor.name;
+  const named = (value as { constructor?: { name?: unknown } }).constructor?.name;
+  return typeof named === "string" && named.length > 0 ? named : "unobserved";
 }
 
 function backgroundOf(scene: Scene): string {

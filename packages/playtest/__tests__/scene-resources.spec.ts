@@ -39,6 +39,17 @@ function camera(): PerspectiveCamera {
 }
 
 describe("the scene reports the room it is played in", () => {
+  test("a background with no type and no constructor name reads unobserved, not a crash", () => {
+    // A Perry-compiled native texture adopted onto another prototype read `constructor` as
+    // undefined, and the walk returned it as the name: the bridge then failed the whole sample
+    // with "$.scene.background must be JSON-safe". A null-prototype object throws the same way.
+    for (const background of [Object.create(null), { constructor: undefined }]) {
+      const scene = new Scene();
+      scene.background = background;
+      expect(observeSceneResources(scene, camera()).background).toBe("unobserved");
+    }
+  });
+
   test("counts lights, materials and objects, and reads the camera's framing", () => {
     const scene = new Scene();
     scene.background = new Color(0x112233);

@@ -1,4 +1,5 @@
 import { Box3, Frustum, Matrix4, Vector3, type Camera, type Object3D, type Scene } from "three";
+import { typeNameOf } from "./scene-observation.js";
 
 import type {
   IPlaytestSceneNodeMaterial,
@@ -84,11 +85,6 @@ function finite(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function typeNameOf(value: object): string {
-  const declared = (value as { type?: unknown }).type;
-  if (typeof declared === "string" && declared.length > 0) return declared;
-  return value.constructor.name;
-}
 
 export function sceneNodePath(object: Object3D): string {
   const parts: string[] = [];
