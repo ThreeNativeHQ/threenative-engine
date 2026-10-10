@@ -89,4 +89,15 @@ describe("browser back end parameters objects", () => {
       "TN_BROWSER_PARAMETER_UNSUPPORTED: MeshStandardMaterial has no 'clearcoat'",
     );
   });
+
+  it("names a refused value's class and keys", () => {
+    const { classes } = defineBrowserClasses(registry, recordingRuntime([]));
+    const Material = classes.MeshStandardMaterial as new (...args: unknown[]) => object;
+    class Odd {
+      depth = 1;
+    }
+    expect(() => {
+      (new Material() as { roughness: unknown }).roughness = new Odd();
+    }).toThrow("TN_BROWSER_ARGUMENT_UNSUPPORTED: Odd {depth} cannot cross to the engine");
+  });
 });

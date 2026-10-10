@@ -189,6 +189,14 @@ function isPlainObject(value: unknown): boolean {
   );
 }
 
+// Names a refused argument by its class and first keys, so a compiled game's red points at its value.
+function describe(value: unknown): string {
+  if (typeof value !== "object" || value === null) return typeof value;
+  const name = (Object.getPrototypeOf(value) as { constructor?: { name?: string } } | null)
+    ?.constructor?.name;
+  return `${name ?? "null-prototype"} {${Object.keys(value).slice(0, 6).join(", ")}}`;
+}
+
 function isWrapperOf(
   value: unknown,
   className: string,
@@ -666,7 +674,7 @@ export function defineBrowserClasses(
       return fields;
     }
     throw new TypeError(
-      `TN_BROWSER_ARGUMENT_UNSUPPORTED: ${typeof value} cannot cross to the engine`,
+      `TN_BROWSER_ARGUMENT_UNSUPPORTED: ${describe(value)} cannot cross to the engine`,
     );
   };
   const fromEngine = (value: EngineValue): unknown => {
