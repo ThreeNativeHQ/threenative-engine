@@ -270,3 +270,17 @@ If startup sampling already observes readiness or the latched window, the scenar
 has not been adjusted to evade that guard. One receipt does not implement or earn the proposed
 three-window-per-arm cost series. No new browser/GPU/build run, optimization claim or PRD checkbox
 completion accompanies this local change.
+
+2026-10-10, bounded functional recheck at local commit `16f2173f9`: normal commit and
+`timeout 240s pnpm --filter ./examples/skinned-crowd build` passed (Vite 2.04 s). One headed
+32-animated NVIDIA/Turing run passed all 14 resource assertions with exactly three documented
+held-invariant waivers, original warmup 120, 1280×720 and unchanged limits. Startup
+`ready:false, measured:null` became immutable ready window 2: 120 render/animation/palette frames,
+32 calls/writes per frame and 120 actual main/120 rendered-shadow GPU samples. Main/shadow
+counts were 3/1 draws and 17,667/17,664 triangles, scale 1/MSAA 4. Doctor before/after passed;
+no console errors or runtime diagnostics. Source/bundle hashes remained unchanged during capture.
+Commands, exact nine manual browser arguments, hashes, adapter, state and host/process metadata
+remain in `artifacts/prd570-functional-16f2173f9/` (`receipt.json`, `before.json`, `after.json`,
+`state.json` and logs). Unowned GPU load was 14%/22%; this is functional proof only. The owned
+preview stopped and port 57170 closed. No push, retry, cost series, savings, visual comparison or
+native claim; late-baseline rejection still applies and every PRD gate remains open.
