@@ -59,6 +59,16 @@ describe("TerrainTiles construction admission", () => {
     tiles.dispose();
   });
 
+  it("omits an absent pending construction from telemetry", () => {
+    const tiles = construction();
+    try {
+      tiles.follow({ x: 0, z: 0 });
+      expect(tiles.debug()).not.toHaveProperty("pendingConstruction");
+    } finally {
+      tiles.dispose();
+    }
+  });
+
   it("bounds grid and LOD error reads while converging to identical geometry", () => {
     const synchronous = construction();
     synchronous.follow({ x: 0, z: 0 });
@@ -277,6 +287,76 @@ function expectContainsEveryVertex(mesh: Mesh): void {
   expect(overflow).toBeLessThanOrEqual(1e-6);
   expect(mesh.geometry.boundingBox?.containsBox(box)).toBe(true);
 }
+
+describe("TerrainTiles blend-frame cost", () => {
+  function blendingTile(): TerrainTiles {
+    const tiles = new TerrainTiles({
+      mergeTiles: false,
+      residentByteBudget: 2_000_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 65,
+      tileSize: 64,
+      lodFactors: [1, 2],
+      lodDistances: [8],
+    });
+    tiles.follow({ x: 0, z: 0 });
+    return tiles;
+  }
+
+  it("counts field reads for one blending 65×65 tile", () => {
+    const tiles = blendingTile();
+    try {
+      tiles.follow({ x: 9, z: 0 });
+      expect(tiles.residentKeys).toEqual(["0:0"]);
+      expect(tiles.blendingTiles).toBe(1);
+      const heights = vi.spyOn(Heightfield.prototype, "heightAt");
+      const normals = vi.spyOn(Heightfield.prototype, "normalAt");
+      try {
+        tiles.process();
+        expect(normals).toHaveBeenCalledTimes(65 * 65);
+        expect(heights).toHaveBeenCalledTimes(6 * 65 * 65);
+      } finally {
+        heights.mockRestore();
+        normals.mockRestore();
+      }
+      expect(tiles.blendingTiles).toBe(1);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it.skipIf(!bench)("times one blending 65×65 tile without spies", () => {
+    const tiles = blendingTile();
+    const timings: number[] = [];
+    try {
+      for (let frame = 0; frame < 120; frame += 1) {
+        tiles.follow({ x: frame % 2 === 0 ? 9 : 0, z: 0 });
+        expect(tiles.blendingTiles).toBe(1);
+        const started = performance.now();
+        tiles.process();
+        const elapsed = performance.now() - started;
+        if (frame >= 20) timings.push(elapsed);
+        tiles.process();
+        tiles.process();
+        expect(tiles.blendingTiles).toBe(0);
+      }
+      const mean = timings.reduce((total, ms) => total + ms, 0) / timings.length;
+      timings.sort((a, b) => a - b);
+      console.log(
+        `TerrainTiles blend 65×65: ${mean.toFixed(3)} ms mean, ` +
+          `${timings[49]?.toFixed(3)} ms median, ${timings[98]?.toFixed(3)} ms p99, ` +
+          `${timings.length} frames, 4225 normalAt + 25350 heightAt per tile; ` +
+          `gate >=0.5 ms: ${mean >= 0.5}`,
+      );
+      expect(mean).toBeGreaterThan(0);
+    } finally {
+      tiles.dispose();
+    }
+  });
+});
 
 describe("TerrainTiles settled-frame cost", () => {
   it("skips the neighbor LOD scan when follow changed no tile or target", () => {

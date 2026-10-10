@@ -2415,7 +2415,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       residentKeys: this.residentKeys,
       residentTiles: this.residentTileCount,
       residentTileBudget: this.residentTileBudget,
-      pendingConstruction: this.#construction?.key,
+      ...(this.#construction === undefined ? {} : { pendingConstruction: this.#construction.key }),
       topologyBytes: this.#topologyBytes,
       lodTransitions: this.#lodTransitions,
       terrainTiles: this.terrainTiles,
