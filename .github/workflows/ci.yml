@@ -1169,6 +1169,11 @@ jobs:
       - run: pnpm budgets
       - run: pnpm quality
       - run: pnpm sync:agents --check
+      # Fails when a Three.js patch file is edited by hand instead of regenerated. The generator
+      # downloads the pinned upstream archive itself, so this proves the one command a maintainer
+      # runs locally (PRD-593 AC-2).
+      - name: Verify the generated Three.js patch has not drifted
+        run: pnpm --filter @threenative/core patch:generate --check
 
   # The native lane blocks the merge in exactly three cases: a full selection that touches a native
   # path, a pull request into main, and any full selection that is not a clean pull-request diff

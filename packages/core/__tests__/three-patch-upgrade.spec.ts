@@ -1,13 +1,40 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { brotliDecompressSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 // @ts-expect-error -- the postinstall helper is plain ESM with no type declarations.
 import { applyThreePatch } from "../scripts/apply-three-patch.mjs";
+
+const testDir = dirname(fileURLToPath(import.meta.url));
+
+// A frozen, test-only copy of the legacy unified migration and the exact files the previous
+// release shipped. Production no longer carries this format, so the fixture is the only stable
+// reference for the migration the reader must still recognise.
+const FIXTURE = JSON.parse(
+  brotliDecompressSync(
+    readFileSync(join(testDir, "fixtures", "legacy-three-patch.json.br")),
+  ).toString("utf8"),
+) as {
+  originalBasePatch: string;
+  originalUpgradePatch: string;
+  targetTexts: Record<string, string>;
+};
+
+const GENERATED_FINAL_HASHES = (
+  JSON.parse(
+    readFileSync(
+      join(resolve("packages/core"), "patches", "three@0.185.1-prd269-upgrade.patch"),
+      "utf8",
+    ),
+  ) as { generatedFinalHashes: Record<string, string> }
+).generatedFinalHashes;
 
 const roots: string[] = [];
 
@@ -189,14 +216,19 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
   const root = await tempRoot();
   const threeRoot = join(root, "three");
   const packageRoot = resolve("packages/core");
-  await cp(join(packageRoot, "node_modules/three"), threeRoot, {
-    dereference: true,
-    recursive: true,
-  });
-  const migration = await readFile(
-    join(packageRoot, "patches/three@0.185.1-prd269-upgrade.patch"),
+  await mkdir(threeRoot, { recursive: true });
+  await writeFile(
+    join(threeRoot, "package.json"),
+    `${JSON.stringify({ name: "three", version: THREE_VERSION })}\n`,
     "utf8",
   );
+  // Start every registered target at the exact bytes the previous release shipped.
+  for (const [file, contents] of Object.entries(FIXTURE.targetTexts)) {
+    await mkdir(dirname(join(threeRoot, file)), { recursive: true });
+    await writeFile(join(threeRoot, file), contents, "utf8");
+  }
+  // Invert the frozen legacy hunks to reach the older state this group represents.
+  const migration = FIXTURE.originalUpgradePatch;
   const selected = migration
     .split(/(?=^diff --git )/mu)
     .filter((block) => {
@@ -234,8 +266,8 @@ describe.each([
       const { packageRoot, threeRoot } = await previousInstalledPackage(priorBlobs, crlf);
       await expect(applyThreePatch({ packageRoot, threeRoot })).resolves.toBe("patched");
       for (const file of Object.keys(priorBlobs)) {
-        expect(await readFile(join(threeRoot, file), "utf8")).toBe(
-          await readFile(join(packageRoot, "node_modules/three", file), "utf8"),
+        expect(blobHash(await readFile(join(threeRoot, file), "utf8"))).toBe(
+          GENERATED_FINAL_HASHES[file],
         );
       }
       await expect(applyThreePatch({ packageRoot, threeRoot })).resolves.toBe("unchanged");
