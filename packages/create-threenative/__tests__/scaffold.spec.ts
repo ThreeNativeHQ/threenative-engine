@@ -16,6 +16,7 @@ import {
 import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
+import { read as readKTX2 } from "ktx-parse";
 import { describe, expect, it } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -816,16 +817,8 @@ describe("create-threenative", () => {
   );
 
   it("keeps the starter's shipped assets mobile-shippable", async () => {
-    // Mobile has no WebAssembly, so neither Basis-decoded textures nor Meshopt-decoded geometry
-    // can ship there — the red hit on 2026-08-27: `build:android` on a machine with the Basis
-    // encoder refused TN_NATIVE_KTX2_UNSUPPORTED on a starter scaffold that had built clean the
-    // week before, purely because the encoder got installed in between.
-    //
-    // The template used to pin `models`/`textures` to `"none"` to prevent it, which held for
-    // android and followed the same game onto web: one shipped 2,003 MB of manifest output with
-    // no compressed texture in it. The build names its `--target` and the compile step now drops
-    // the passes that target cannot decode, so this asserts what a mobile bake *produces* rather
-    // than what the config file says — and the web bake of the same config stays compressed.
+    // Decoder-free mobile cooking may emit raw ASTC, while Basis and Meshopt still need decoders.
+    // Check the produced KTX2 headers rather than treating every KTX2 as Basis.
     const root = await makeTempDir("threenative-scaffold-mobile-");
     try {
       await mkdir(path.join(root, "assets"), { recursive: true });
@@ -849,14 +842,38 @@ describe("create-threenative", () => {
         }),
       );
 
-      await compileAssets({ cwd: root, platform: "android" });
+      await compileAssets({
+        cwd: root,
+        platform: "android",
+        runtimeDecoders: { ktx2: false, meshopt: false },
+      });
       const android = JSON.parse(
         await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
-      ) as { entries: Record<string, { extensions?: string[]; output: string }> };
+      ) as { entries: Record<string, { extensions?: string[]; output: string; format?: string }> };
       const mobileOutputs = Object.values(android.entries);
       expect(mobileOutputs.length).toBeGreaterThan(0);
+      expect(
+        mobileOutputs.some((entry) => /\.ktx2$/u.test(entry.output) && entry.format === "astc4x4"),
+      ).toBe(true);
       for (const entry of mobileOutputs) {
-        expect(entry.output).not.toMatch(/\.ktx2$/u);
+        if (/\.ktx2$/u.test(entry.output)) {
+          const raw = readKTX2(await readFile(path.join(root, "public", entry.output)));
+          expect([157, 158]).toContain(raw.vkFormat);
+          expect(raw.supercompressionScheme).toBe(0);
+          expect(raw.globalData).toBeNull();
+          const levels = Math.floor(Math.log2(Math.max(raw.pixelWidth, raw.pixelHeight))) + 1;
+          expect(raw.levelCount).toBe(levels);
+          expect(raw.levels).toHaveLength(levels);
+          for (const [mip, level] of raw.levels.entries()) {
+            const bytes =
+              Math.ceil(Math.max(1, raw.pixelWidth >> mip) / 4) *
+              Math.ceil(Math.max(1, raw.pixelHeight >> mip) / 4) *
+              16;
+            expect(level.levelData.byteLength).toBe(bytes);
+            expect(level.uncompressedByteLength).toBe(bytes);
+          }
+          expect(entry.format).toBe("astc4x4");
+        }
         expect(entry.extensions ?? []).not.toContain("EXT_meshopt_compression");
       }
 
