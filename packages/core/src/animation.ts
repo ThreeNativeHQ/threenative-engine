@@ -145,6 +145,8 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   action.play();
   const paths = objects.map(() => [] as { x: number; y: number; z: number }[]);
   const step = clip.duration / PLANT_SAMPLES;
+  // The mixer animates only the rig, so its ancestors need one refresh, not one per sample.
+  root.parent?.updateWorldMatrix(true, false);
   try {
     for (let frame = 0; frame <= PLANT_SAMPLES; frame += 1) {
       mixer.setTime(frame * step);

@@ -894,6 +894,24 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     expect(walked).toEqual([]);
   });
 
+  it("measures through an ancestor above the rig that moved since its last world update", () => {
+    // `stride` is readable the moment a clip plays, before any update has refreshed the ancestors.
+    const speedUnder = (stale: boolean) => {
+      const { body, player } = character({ clips: [plantedWalk()] });
+      const carrier = new Group();
+      carrier.add(body);
+      if (stale) carrier.updateMatrixWorld(true);
+      carrier.scale.setScalar(2);
+      carrier.position.set(5, 1, -3);
+      if (!stale) carrier.updateMatrixWorld(true);
+      player.play("walk");
+      return player.stride.clipGroundSpeed;
+    };
+    const fresh = speedUnder(false);
+    expect(fresh).toBeGreaterThan(1.9);
+    expect(speedUnder(true)).toBeCloseTo(fresh, 6);
+  });
+
   it("matches an in-place walk cycle from the ground its planted foot sweeps", () => {
     const { body, player } = character({ clips: [plantedWalk()] });
     player.play("walk");
