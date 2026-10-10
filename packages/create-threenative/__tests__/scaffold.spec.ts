@@ -188,6 +188,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Three patch. Restoring the previous patch recovers every prior fingerprint.
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
+// PRD-591/593: measured all thirteen actual trees after readiness manifest and generated patch changes.
+// Restoring only the previous shared patch/manifest/reference bytes recovers every prior hash.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
   // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
@@ -231,20 +233,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // strata branch: measured through createProject on the merged tree.
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
-  "action-rpg": "72539cd4803384cbf8d1d13dcc80116740fd241e2122a19e7b9efd5b6023a145",
-  minimal: "286787918a1d8aa9e6a7d1ea7cddfeb6016b8582edf4947099771d7a4d5d77c2",
-  platformer: "fb3acdd77377eb38039aaa6fa634b0e301bb0b42b579260d90948256513d2fce",
-  puzzle: "d2aa9144346b81cad693db90c38e223c269baaaca00ac2015eb3a22d0c6b0373",
-  racing: "c0692610b232e12a659eeb591afc7dc03cff265cc278c773f1731b331bcd3382",
-  rain: "a5485e777dbf56e578641f078cb426821e1f64952dd8ec7ffb1674b1ee8586d0",
-  rts: "9e8f064a139ee84c0a30079e97f3ff910724b6a9a7bfe5e61d2a915091318dbe",
-  runner: "3c425e56f0ae0193fd4af6587ebf97e9b94102c3d70d644fc1692d8ce375051a",
+  "action-rpg": "f564218c84e1bdaa92cc80199191a8e9393653067a3bf80d3611d8b00b41e8ab",
+  minimal: "0ebcac7e199458b5387b1114f6ef4563430b0d1bbd1070b6bba24798fca59cb2",
+  platformer: "2d7df1fe72acccbc8dd7b3eed26cf1d293dbd58fdbb0fd1ee1ea4c8829c93d8e",
+  puzzle: "f3175c1791fa5780849523ee9e4ee898242da1e9a50a43e23ccdc6002de81459",
+  racing: "2095ecaede919f5a51790c5c762e6cb7259a0683ab7ddca66fac28faeedb8fe1",
+  rain: "f4b44083ccc11fbff18356d09473abaa1e0c86d681cb1b1d24d37a3ded4082dd",
+  rts: "884aa0c01a4350ad1cf8524337100e0f6d298ae1b0a67893d6cc1335607b8f2e",
+  runner: "143f9798fd42af8a5b0710ad028e8c805624e1275e71ab26a6ecfda9e6888405",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "8255df7db8cd434c3b832ae7f9dc71f11145839ebbd0012f876fea766362d824",
-  shooter: "f29ccbc565b468c0c476078f39103469bc59cd074c4511e90a62cac4b52680cb",
-  snow: "7a49725bf82aaa6373851f4d326d71f0a0981562a0a011312e462696acea5bf9",
-  starter: "b2a367f2f73cd700bd5e1d447fa810ba823ce4a71f3b54e07d8bdf5e1c45726e",
-  "tower-defense": "fbb8c4f10c0ee48f244a53bc82920c6089440bc1d73a6ad33a1a65e383e7ccc6",
+  sailing: "42139f7a5f0e1314651942d8ff4c08648958735654626fbd1dd2bae744004783",
+  shooter: "6333597c38d5dede454bb9668e4348d01dded6a4db6e69dc1f06d739cfd91053",
+  snow: "f37a026eb96cae8a987a678230c3a0a652aa778af0921460eaddb18d8ae0b710",
+  starter: "c8a3ef3bc29fa4b20e746961f85c6140fad2f978d89b455452bdf08134bc1d8e",
+  "tower-defense": "a5959f1223ca0ee3fe9ed3c446438e2d13167a8398a1304994914ae8c190b916",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
