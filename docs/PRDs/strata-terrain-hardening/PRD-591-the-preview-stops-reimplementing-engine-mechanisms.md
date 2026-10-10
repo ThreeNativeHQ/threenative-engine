@@ -68,15 +68,44 @@ both material paths.
     Disposal clears the timer; unsettled test polling fails closed. Earlier core typecheck/build
     (publint) passed; the parent core typecheck after the bound correction also passed (exit 0).
   - Open, not ticked: caller migration (`examples/strata-terrain-preview/src/render/loading.ts`,
-    `game.ts`, five kit fixtures), `pnpm --filter strata-terrain-preview test:terrain:web`, and
-    native proof. This migration must keep the current pre-props failure capture, cancellation and
-    all five fixtures plus the `propStreaming` warmed/prewarmed aggregation; remove none now.
-  - Native proof open: the linked checkout has no host build, but the primary checkout already
-    has `packages/runtime-native/build/tn-linux-wgpu/mystral`. The bounded native assertion task
-    stopped before editing on a provider quota diagnostic. No native proof or new C++ build is claimed.
+    `game.ts`, five kit fixtures), `pnpm --filter strata-terrain-preview test:terrain:web`, and the
+    caller's full native-matrix proof. This migration must keep the current pre-props failure
+    capture, cancellation and all five fixtures plus the `propStreaming` warmed/prewarmed
+    aggregation; remove none now.
+  - Native availability corrected: the linked checkout has no `third_party/` or `build/` of its own,
+    and the primary owning checkout already ships
+    `packages/runtime-native/build/tn-linux-wgpu/mystral` (also `tn-linux-jsprofile` and
+    `tn-linux-contracts-physics`). That existing binary proves the gate on the desktop lane. It is
+    not a new C++ build and not a whole-source or full native-matrix qualification.
+  - Gate component landed in the existing `world-terrain-inline-hash` scene as
+    `assertSpawnReadiness()`. It drives the real `WorldCells` over one decoded empty-run cell (no
+    fetch, no GLTF, no browser global), and asserts a region outside the ring that pends, the
+    admitting `update` that settles it for its snapshot, one-shot success, disposal rejection and a
+    finite `25 ms` deadline, before the frame renders. proof: selected row
+    `--target <web|desktop> --only-tests world-terrain-inline-hash`.
+    - Parent review found the caller surface leaked: `readinessWorld` made a `MeshBasicMaterial`
+      per load and `WorldCells.dispose` never released a caller surface. Fixed by returning
+      `{ world, surface }`, disposing the surface in all three callers' `finally` and on a rejected
+      `load`; same geometry hash and render tree.
+    - Node: `packages/runtime-native`, `pnpm exec vitest run --config vitest.config.ts
+      tests/terrain-inline-jobs.test.mjs` — 3/3 passed, pinned hash unchanged.
+    - Web: pass, 3.0 s, hardware adapter `nvidia/turing`, no page errors, capture non-uniform;
+      fresh report `packages/runtime-native/artifacts/strata591-cleanup-web/report.json`.
+    - Desktop: pass with the primary binary through `THREENATIVE_RUNTIME_BINARY`, 15.5 s,
+      `pixelMismatchRatio` 0, `perceptualDeltaE` 0, native exit 0, runtime SHA-256
+      `b756382651baf8347434bdde63cae1b789d126f24f65d2c58ee11e16811ce23e` (unchanged); fresh report
+      `packages/runtime-native/artifacts/strata591-cleanup-desktop/report.json`. The report keeps
+      only the last 4000 bytes of native stdout, so a direct run of the same bundle printed
+      `TN_WORLD_SPAWN_READINESS pending=resolve dispose=reject timeout=25ms` beside
+      `TN_TERRAIN_INLINE_HASH hash=d138e335 ... expected=d138e335`
+      (`artifacts/strata591-cleanup-desktop/direct-native.log`).
+    - Still open under this box: the caller migration, its web playtest and the full native-matrix
+      claim. No caller migration is attempted here.
 - [ ] Scatter off the `enter` path. proof: web playtest long-task assertion
 
 #### Phase 3: ground and look check
 **Status:** NOT STARTED
 - [ ] Engine splat plumbing, measured bands. proof: web playtest
 - [ ] Visual judge passes. proof: judge verdict on the PR
+
+Parent review of the native gate found and corrected caller-material ownership: all three fixtures dispose their surfaces, including rejected loads. After the correction, parent inspected the fresh selected web/desktop reports and direct native log: both selected rows pass, no GPU validation errors, desktop image metrics are zero, and both readiness/hash markers appear. Parent reran the focused Node fingerprint spec (3/3 passed, 7.18 s), scoped Biome passed, and documentation links passed. Caller migration and full runtime/visual acceptance remain open.

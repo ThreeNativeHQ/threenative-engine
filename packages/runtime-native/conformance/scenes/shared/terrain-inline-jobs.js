@@ -1,4 +1,5 @@
 import { MeshStandardMaterial } from "three";
+import { WorldCells } from "../../../../core/src/world-cells.ts";
 import { TerrainTiles } from "../../../../core/src/world-tiles.ts";
 import { assertCondition, startVisualScene, THREE } from "./scene-support.js";
 
@@ -154,6 +155,168 @@ export function settleInlineTerrainHash() {
   }
 }
 
+/**
+ * One empty-run cell: no asset and no chunk, so residency alone answers the spawn region.
+ *
+ * The decoded manifest and placements mean the real `WorldCells` needs no fetch, no GLTF and no
+ * browser global, which is the only reason this row can assert the gate on the native host too.
+ */
+const READINESS_MANIFEST = {
+  version: 1,
+  extent: { minX: 0, minZ: 0, sizeX: 64, sizeZ: 64 },
+  cellSize: 64,
+  terrain: { heightmap: "unused.u16", columns: 5, rows: 5, spacing: 16, heightMin: 0, heightMax: 1 },
+  placements: "unused.bin",
+  assets: {},
+  cells: [{ x: 0, z: 0, runs: [] }],
+};
+
+/** A follow point far outside the one-cell ring, so the cell stays unadmitted until the walk. */
+const AWAY = 9_000_000;
+
+/**
+ * Each `WorldCells.load` this row makes: caller surface, no terrain, no network.
+ *
+ * The surface is the caller's, not the world's: `WorldCells.dispose` releases only what it built,
+ * so this returns the surface beside the world and every caller disposes it. A rejected load hands
+ * back no world to own the surface, so it disposes the surface here.
+ */
+async function readinessWorld(follow) {
+  const surface = new THREE.MeshBasicMaterial();
+  try {
+    const world = await WorldCells.load({
+      url: "world.json",
+      surface,
+      follow,
+      ring: 0,
+      terrain: false,
+      data: { manifest: READINESS_MANIFEST, placements: new ArrayBuffer(0) },
+      budgets: { bytes: 64, instances: 1, residentCells: 1 },
+    });
+    return { world, surface };
+  } catch (error) {
+    surface.dispose();
+    throw error;
+  }
+}
+
+/** Await a rejection whose message names the expected fragment, and fail closed on a resolve. */
+async function expectRejection(promise, fragment) {
+  try {
+    await promise;
+  } catch (error) {
+    const message = String(error instanceof Error ? error.message : error);
+    assertCondition(
+      message.includes(fragment),
+      `terrain-inline-jobs: unexpected spawn rejection '${message}'`,
+    );
+    return;
+  }
+  throw new Error(`terrain-inline-jobs: expected a spawn rejection naming '${fragment}'`);
+}
+
+/**
+ * Lifecycle assertions for `WorldCells.whenSpawnReady` on this host.
+ *
+ * The core spec pins the gate in Node with a mocked loader. This drives the real class: a region
+ * outside the ring pends, the update that admits it settles the waiter for its snapshot, a settled
+ * region answers the next call once, disposal rejects a waiting world, and an unadmitted region
+ * meets its finite deadline. The marker prints only after every assertion above it holds.
+ */
+export async function assertSpawnReadiness() {
+  // A pending region: not ready at arm time, resolved by the update that admits it.
+  const follow = { position: { x: AWAY, y: 0, z: AWAY } };
+  const { world, surface } = await readinessWorld(follow);
+  try {
+    const spawn = { x: 32, z: 32 };
+    const before = world.readinessAt(spawn);
+    assertCondition(
+      before.ready === false && before.requiredCells === 1 && before.loadedCells === 0,
+      "terrain-inline-jobs: an unadmitted spawn region must not be ready",
+    );
+    const pending = world.whenSpawnReady(spawn, 0, 5000);
+    let settled;
+    let failure;
+    pending.then(
+      (readiness) => {
+        settled = readiness;
+      },
+      (error) => {
+        failure = error;
+      },
+    );
+    // Mutated after the call: the waiter must keep the coordinates it armed with.
+    spawn.x = AWAY;
+    world.update();
+    await Promise.resolve();
+    assertCondition(
+      settled === undefined && failure === undefined,
+      "terrain-inline-jobs: an unadmitted region must keep its waiter pending",
+    );
+    // Move the follow point into the ring, then drive updates and microtasks until it settles.
+    follow.position.x = 32;
+    follow.position.z = 32;
+    for (let frame = 0; frame < 64 && settled === undefined && failure === undefined; frame += 1) {
+      world.update();
+      await Promise.resolve();
+    }
+    assertCondition(
+      failure === undefined,
+      `terrain-inline-jobs: whenSpawnReady rejected: ${String(failure)}`,
+    );
+    assertCondition(
+      settled !== undefined &&
+        settled.ready === true &&
+        settled.loadedCells === 1 &&
+        settled.requiredCells === 1 &&
+        settled.failures === 0,
+      "terrain-inline-jobs: the admitted spawn region did not settle ready",
+    );
+    // One-shot: the settled region answers the next call immediately, with no further update.
+    const again = await world.whenSpawnReady({ x: 32, z: 32 }, 0, 5000);
+    assertCondition(
+      again.ready === true && again.loadedCells === 1,
+      "terrain-inline-jobs: a ready region must answer immediately",
+    );
+  } finally {
+    world.dispose();
+    surface.dispose();
+  }
+
+  // Disposal rejects a waiting world instead of leaving a game awaiting its gate.
+  const doomedFollow = { position: { x: AWAY, y: 0, z: AWAY } };
+  const { world: doomed, surface: doomedSurface } = await readinessWorld(doomedFollow);
+  try {
+    const pending = doomed.whenSpawnReady({ x: 32, z: 32 }, 0, 5000);
+    doomed.update();
+    await Promise.resolve();
+    doomed.dispose();
+    await expectRejection(pending, "WorldCells spawn cancelled");
+  } finally {
+    doomed.dispose();
+    doomedSurface.dispose();
+  }
+
+  // An unadmitted region meets its finite deadline, and the region stays unready.
+  const timedFollow = { position: { x: AWAY, y: 0, z: AWAY } };
+  const { world: timed, surface: timedSurface } = await readinessWorld(timedFollow);
+  try {
+    await expectRejection(
+      timed.whenSpawnReady({ x: 32, z: 32 }, 0, 25),
+      "WorldCells spawn exceeded 25 ms",
+    );
+    assertCondition(
+      timed.readinessAt({ x: 32, z: 32 }).ready === false,
+      "terrain-inline-jobs: a timed-out region must stay unready",
+    );
+  } finally {
+    timed.dispose();
+    timedSurface.dispose();
+  }
+
+  console.info("TN_WORLD_SPAWN_READINESS pending=resolve dispose=reject timeout=25ms");
+}
+
 export async function startScene(canvas, dimensions) {
   const settled = settleInlineTerrainHash();
   assertCondition(
@@ -165,6 +328,8 @@ export async function startScene(canvas, dimensions) {
     `TN_TERRAIN_INLINE_HASH hash=${settled.hash} blocks=${settled.blocks} ` +
       `bridges=${settled.bridges} expected=${EXPECTED_HASH}`,
   );
+  // The spawn gate the streamed terrain games repeat, proven on the real class before the frame.
+  await assertSpawnReadiness();
   return startVisualScene(
     canvas,
     dimensions,
