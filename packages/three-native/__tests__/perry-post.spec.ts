@@ -86,6 +86,8 @@ it("answers instanceof by the prototype chain, which Perry's class-id check gets
     "Group",
     "Material",
     "MeshBasicMaterial",
+    // A refused export throws on any read, so binding must not probe it.
+    "AONode",
   ]) as Record<string, { prototype: object; [Symbol.hasInstance]: (value: unknown) => boolean }>;
   for (const name of ["Object3D", "Mesh", "Group", "Material"])
     expect(Object.hasOwn(b[name] as object, Symbol.hasInstance), name).toBe(true);

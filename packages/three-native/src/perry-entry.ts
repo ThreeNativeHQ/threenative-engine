@@ -73,9 +73,10 @@ export function bindPerryEngine(names: readonly string[]): Record<string, unknow
     },
     render: runtime.render,
   });
-  const exports = bindUpstreamExports(names, catalog as unknown as ICatalog, bound);
-  for (const value of Object.values(exports))
+  // Only the bound classes: a refused export throws on any read.
+  for (const value of Object.values(bound))
     if (typeof value === "function" && typeof value.prototype === "object") exactInstanceof(value);
+  const exports = bindUpstreamExports(names, catalog as unknown as ICatalog, bound);
   return {
     ...exports,
     __tnTsl: tsl.exports,
@@ -89,6 +90,7 @@ export function bindPerryEngine(names: readonly string[]): Record<string, unknow
 // answer. A function owns the capture: Perry gives a static member no closure.
 function exactInstanceof(cls: { prototype: object }): void {
   Object.defineProperty(cls, Symbol.hasInstance, {
+    configurable: true,
     value: (value: unknown) => {
       if (typeof value !== "object" || value === null) return false;
       for (
