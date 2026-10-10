@@ -71,6 +71,8 @@ public:
 
     /** The handle dies now; the GPU object lives until every submission so far has completed. */
     GpuStatus destroy(Handle resource);
+    /** One serial with `other`, a table on the same queue: a destroy here waits for its submissions too. */
+    void shareSubmissions(const GpuResources& other) { shared_ = other.shared_; }
 
     WGPUBuffer buffer(Handle handle) const;
     WGPUTexture texture(Handle handle) const;

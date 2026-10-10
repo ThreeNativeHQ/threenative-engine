@@ -67,6 +67,7 @@ GpuResources::GpuResources(WGPUInstance instance, WGPUDevice device, WGPUQueue q
 
 GpuResources::~GpuResources() {
     for (Record& record : records_) release(record);
+    if (shared_.use_count() > 1) return;  // a table sharing the serial still submits: it frees them
     for (PendingDestroy& entry : shared_->pending) release(entry.record);
     shared_->pending.clear();
 }

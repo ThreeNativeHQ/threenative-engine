@@ -274,6 +274,8 @@ public:
     std::unique_ptr<Renderer> sibling() {
         auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_);
         child->textures_ = textures_;
+        child->gpu_.shareSubmissions(gpu_);
+        child->geometry_ = geometry_;
         return child;
     }
     /** The last render's linear HDR scene target (RGBA16Float), before post and the output transform. */
@@ -415,7 +417,7 @@ public:
         return out;
     }
     GpuResources& gpu() { return gpu_; }
-    const GeometryCache& geometry() const { return geometry_; }
+    const GeometryCache& geometry() const { return geometry_->cache; }
     const PipelineCache& pipelines() const { return pipelines_; }
     /** Material programs built or refused so far; a steady frame adds none. */
     size_t programCount() const { return programs_.size(); }
@@ -549,7 +551,16 @@ private:
     std::vector<WGPUBindGroup> mipGroups_;
     EventQueue& events_;
     GpuResources gpu_;
-    GeometryCache geometry_;
+    // Attribute copies, shared with every sibling() as three's one renderer keeps one copy for every
+    // pass that draws it; their handles live in this table, never in gpu_ (PRD-553).
+    static constexpr uint16_t kGeometryHandles = 2;
+    struct GeometryCopies {
+        GeometryCopies(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
+            : gpu(instance, device, queue, events, kGeometryHandles), cache(gpu) {}
+        GpuResources gpu;
+        GeometryCache cache;
+    };
+    std::shared_ptr<GeometryCopies> geometry_;
     PipelineCache pipelines_;
     // By MaterialKind, vertex variant (0 plain, 1 instanced, 2 instanced with instanceColor) and light
     // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.

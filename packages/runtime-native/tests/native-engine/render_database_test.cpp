@@ -1003,6 +1003,26 @@ void renderTarget() {
                  (unsigned long long)(bindGroupsCreated() - groups), renderer.programCount() - programs);
     CHECK(renderer.pipelines().compiles() == compiles && renderer.pipelines().textLookups() == texts);
     CHECK(bindGroupsCreated() == groups && renderer.programCount() == programs);
+    // A geometry the target and the frame both draw has one GPU copy, as three's one renderer
+    // keeps: the target's pass uploads it into the renderer's cache, and the frame reuses it. A
+    // copy per pass doubled Midway's hull and water-reflected geometry (PRD-553: 104 MB).
+    auto green = std::make_shared<Material>(MaterialType::Basic);
+    green->color.setRGB(0, 1, 0);
+    const auto both = makePlaneGeometry(0.25, 0.25);
+    Mesh inTarget(both, green), inFrame(both, green);
+    inner.add(inTarget);
+    scene.add(inFrame);
+    inner.updateMatrixWorld(true);
+    scene.updateMatrixWorld(true);
+    const uint64_t before = renderer.geometry().stats().fullUploads;
+    CHECK(renderToTarget(renderer, *target, inner, innerCamera, {0.25, 0.5, 0.75, 1}, false).empty());
+    const uint64_t afterTarget = renderer.geometry().stats().fullUploads;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    std::fprintf(stderr, "render target geometry: full uploads %llu -> %llu (target) -> %llu (frame)\n",
+                 (unsigned long long)before, (unsigned long long)afterTarget,
+                 (unsigned long long)renderer.geometry().stats().fullUploads);
+    CHECK(afterTarget > before);
+    CHECK(renderer.geometry().stats().fullUploads == afterTarget);
 }
 
 // A steady frame does no setup work: after warm-up, sixty more frames of a lit node-material scene with

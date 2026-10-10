@@ -375,7 +375,8 @@ fn importanceSampleGGX_VNDF(Xi: vec2<f32>, V: vec3<f32>, roughness: f32) -> vec3
 }  // namespace
 
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
-    : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(gpu_), pipelines_(device) {
+    : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(device) {
+    geometry_->gpu.shareSubmissions(gpu_);
     // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
     WGPUTextureDescriptor lutDesc = {};
     lutDesc.dimension = WGPUTextureDimension_2D;
@@ -841,7 +842,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             e.size = stage.uniformBlockSize;
         } else if (b.kind == shader::BindingKind::Storage && externalStorage_.count(b.name.substr(2))) {
             const auto& [buffer, bytes] = externalStorage_.at(b.name.substr(2)); // a positionNode's buffer
-            e.buffer = gpu_.buffer(buffer);
+            e.buffer = (buffer.context == kGeometryHandles ? geometry_->gpu : gpu_).buffer(buffer);
             e.size = bytes;
         } else if (b.kind == shader::BindingKind::Storage && storages_.count(b.name.substr(2))) {
             const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
@@ -1666,7 +1667,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     CameraState camera = unjitteredCamera;
     if (traa_ && !compilation) camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse);
     const Matrix& view = camera.matrixWorldInverse;
-    geometry_.sweep();  // GPU copies of attributes released since the last frame
+    geometry_->cache.sweep();  // GPU copies of attributes released since the last frame
     sweepTextures();    // ...and of textures that no longer exist
     // A sibling replaced or released a shared map texture: this renderer's groups may bind its old view.
     if (texturesSeen_ != textures_->generation) texturesChanged();
@@ -1678,7 +1679,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (const DrawItem& item : items) {
         if (!item.nodeStorages) continue;
         for (const auto& [name, attribute] : *item.nodeStorages) {
-            const Handle buffer = geometry_.sync(*attribute->store, WGPUBufferUsage_Storage);
+            const Handle buffer = geometry_->cache.sync(*attribute->store, WGPUBufferUsage_Storage);
             const std::pair<Handle, uint64_t> bound{buffer, attribute->store->byteLength()};
             if (const auto found = externalStorage_.find(name); found != externalStorage_.end()) {
                 const Handle& was = found->second.first;
@@ -2591,9 +2592,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (!source) throw std::runtime_error("TN_NATIVE_ATTRIBUTE_MISSING: " + a.name);
             BufferStore& store = *source;
             const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
-            const Handle buffer = geometry_.sync(store, WGPUBufferUsage_Vertex);
+            const Handle buffer = geometry_->cache.sync(store, WGPUBufferUsage_Vertex);
             if (a.location < std::size(boundVertex) && boundVertex[a.location] == &store) continue;
-            TN_ENCODE(SetVertexBuffer, a.location, gpu_.buffer(buffer), offset, store.byteLength() - offset);
+            TN_ENCODE(SetVertexBuffer, a.location, geometry_->gpu.buffer(buffer), offset, store.byteLength() - offset);
             if (a.location < std::size(boundVertex)) boundVertex[a.location] = &store;
         }
         TN_ENCODE(SetBindGroup, 0, p.vertexGroup ? p.vertexGroup : p.program->groups[0], 1, &p.vertexOffset);
@@ -2602,10 +2603,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         TN_ENCODE(SetBindGroup, 1, p.mapGroup ? p.mapGroup : p.program->groups[1],
                   fragmentBlock ? 1 : 0, &p.fragmentOffset);
         if (item.indices) {
-            const Handle indices = geometry_.sync(*item.indices, WGPUBufferUsage_Index);
+            const Handle indices = geometry_->cache.sync(*item.indices, WGPUBufferUsage_Index);
             const bool wide = item.indices->scalar() == Scalar::U32;
             if (boundIndex != item.indices) {
-                TN_ENCODE(SetIndexBuffer, gpu_.buffer(indices),
+                TN_ENCODE(SetIndexBuffer, geometry_->gpu.buffer(indices),
                           wide ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16, 0,
                           (item.indices->byteLength() + 3) & ~uint64_t{3});
                 boundIndex = item.indices;
@@ -2693,7 +2694,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             reinterpret_cast<uintptr_t>(p.mapGroup ? p.mapGroup : p.program->groups[1]),
             p.vertexOffset, p.fragmentOffset, item.instanceCount});
         for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights}) {
-            const Handle handle = store ? geometry_.sync(*store,
+            const Handle handle = store ? geometry_->cache.sync(*store,
                 store == item.indices ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex) : Handle{};
             bundleKey.insert(bundleKey.end(), {handle.type, handle.context, handle.index, handle.generation,
                 store ? store->byteLength() : 0, store ? static_cast<uintptr_t>(store->scalar()) : 0});
