@@ -26,7 +26,7 @@ import {
  */
 export const HEIGHT_FOG = {
   /** Optical depth per metre at `fogHeight` (base 2). Up: thicker ground mist. */
-  density: 0.0012,
+  density: 0.0018,
   /** Per metre above `fogHeight`. Up: a thinner, lower layer. Down: mist climbs the hills. */
   heightFalloff: 0.08,
   /** World y where density equals `density`. Move it to the ground of your world. */

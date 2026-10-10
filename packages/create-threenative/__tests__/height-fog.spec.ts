@@ -105,36 +105,68 @@ const FOG_KITS = [
   "starter",
 ] as const;
 
-describe.each(FOG_KITS)("%s height fog", (kit) => {
-  const root = path.join(import.meta.dirname, "..", "templates", kit, "src", "render");
+/** The kits whose old fog was 0.003 at 150 m from 2 m up: height fog carries most of that haze. */
+const CONTRAST_KITS = [
+  "action-rpg",
+  "minimal",
+  "platformer",
+  "runner",
+  "sailing",
+  "shooter",
+  "starter",
+] as const;
 
+async function loadKit(kit: string) {
+  const root = path.join(import.meta.dirname, "..", "templates", kit, "src", "render");
+  const sky = await readFile(path.join(root, "sky.ts"), "utf8");
+  const eye = /EYE_LEVEL = \{ density: ([\w.]+), distance: (\d+), cameraHeight: (\d+) \}/u.exec(
+    sky,
+  );
+  expect(eye, `${kit} must name its eye-level fog`).not.toBeNull();
+  const named = new RegExp(`${eye?.[1]} = (\\d+(?:\\.\\d+)?);`, "u").exec(sky);
+  const { HEIGHT_FOG: kitParams, heightFogDepth: depth } = (await import(
+    /* @vite-ignore */ path.join(root, "heightFog.ts")
+  )) as typeof import("../templates/starter/src/render/heightFog.js");
+  const mod = (await import(/* @vite-ignore */ path.join(root, "sky.ts"))) as {
+    loadSky?: (assets: { texture(path: string): Promise<Texture> }) => Promise<void>;
+    setupSky: (scene: Scene, arg?: unknown) => unknown;
+  };
+  await mod.loadSky?.({ texture: async () => new Texture() });
+  const scene = new Scene();
+  mod.setupSky(scene, new Texture());
+  const distanceFog = scene.fog as FogExp2 | null;
+  expect(distanceFog, `${kit} keeps FogExp2 as the distance term`).toBeTruthy();
+  expect(scene.fogNode).toBeTruthy();
+  return {
+    cameraHeight: Number(eye?.[3]),
+    depth,
+    distance: Number(eye?.[2]),
+    distanceDensity: distanceFog?.density ?? 0,
+    old: Number(named?.[1] ?? eye?.[1]),
+    params: { ...kitParams } as HeightFogParams,
+  };
+}
+
+describe.each(FOG_KITS)("%s height fog", (kit) => {
   it("should keep its old eye-level haze within 2%", async () => {
-    const sky = await readFile(path.join(root, "sky.ts"), "utf8");
-    const eye = /EYE_LEVEL = \{ density: ([\w.]+), distance: (\d+), cameraHeight: (\d+) \}/u.exec(
-      sky,
-    );
-    expect(eye, `${kit} must name its eye-level fog`).not.toBeNull();
-    const named = new RegExp(`${eye?.[1]} = (\\d+(?:\\.\\d+)?);`, "u").exec(sky);
-    const old = Number(named?.[1] ?? eye?.[1]);
-    const [distance, cameraHeight] = [Number(eye?.[2]), Number(eye?.[3])];
-    const { HEIGHT_FOG: kitParams, heightFogDepth: depth } = (await import(
-      /* @vite-ignore */ path.join(root, "heightFog.ts")
-    )) as typeof import("../templates/starter/src/render/heightFog.js");
-    const mod = (await import(/* @vite-ignore */ path.join(root, "sky.ts"))) as {
-      loadSky?: (assets: { texture(path: string): Promise<Texture> }) => Promise<void>;
-      setupSky: (scene: Scene, arg?: unknown) => unknown;
-    };
-    await mod.loadSky?.({ texture: async () => new Texture() });
-    const scene = new Scene();
-    mod.setupSky(scene, new Texture());
-    const distanceFog = scene.fog as FogExp2 | null;
-    expect(distanceFog, `${kit} keeps FogExp2 as the distance term`).toBeTruthy();
-    expect(scene.fogNode).toBeTruthy();
-    const params: HeightFogParams = { ...kitParams };
+    const k = await loadKit(kit);
     const total =
-      Math.exp(-(((distanceFog?.density ?? 0) * distance) ** 2)) *
-      2 ** -depth(params, cameraHeight, cameraHeight, distance);
-    const before = Math.exp(-((old * distance) ** 2));
+      Math.exp(-((k.distanceDensity * k.distance) ** 2)) *
+      2 ** -k.depth(k.params, k.cameraHeight, k.cameraHeight, k.distance);
+    const before = Math.exp(-((k.old * k.distance) ** 2));
     expect(Math.abs(total - before)).toBeLessThan(0.02 * before);
+  });
+});
+
+describe.each(CONTRAST_KITS)("%s ridge contrast", (kit) => {
+  it("should fog low ground at least 10 points more than a ridge 330 m away", async () => {
+    const k = await loadKit(kit);
+    const fog = (fragmentY: number) => {
+      const length = Math.hypot(330, fragmentY - 3);
+      const distanceFog = (k.distanceDensity * length) ** 2;
+      return 1 - Math.exp(-distanceFog) * 2 ** -k.depth(k.params, 3, fragmentY, length);
+    };
+    // A 30 m block on the ground (centre 15 m) against the same block 70 m higher (centre 85 m).
+    expect(fog(15) - fog(85)).toBeGreaterThanOrEqual(0.1);
   });
 });
