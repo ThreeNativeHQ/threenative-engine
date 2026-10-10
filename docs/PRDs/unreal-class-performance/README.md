@@ -109,9 +109,9 @@ ratio. PRD-573 waits for no other PRD.
 - **Animation rate policy in core TypeScript:** PRD-570 in the Unreal-source borrowing batch
   (commit `9d4b2a67f`). PRD-578 ports only its not-rendered rate into the engine.
 - **Occlusion culling (HZB):** declined twice on measurement, in [PRD-284](../done/nanite-like/PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md)
-  and [PRD-489](../done/PRD-489-gpu-scene-occlusion-culling.md) (median would-cull share 0.013).
+  and [PRD-489](../open-world/PRD-489-gpu-scene-occlusion-culling.md) (median would-cull share 0.013).
 - **Pipelines on the legacy host:** [PRD-327](../performance/critical/PRD-327-first-use-pipeline-compilation-leaves-the-main-loop.md),
   [PRD-387](../performance/critical/PRD-387-shader-variants-are-prepared-off-frame-and-bounded.md) and
-  [PRD-540](../performance/critical/PRD-540-the-compile-walk-leaves-the-main-thread.md). PRD-577 covers the engine's own `PipelineCache`.
+  [PRD-339](../performance/critical/PRD-339-the-compile-walk-leaves-the-main-thread.md). PRD-577 covers the engine's own `PipelineCache`.
 - **Texture residency and compression:** [PRD-VQ-10](../performance/PRD-VQ-10-texture-mip-residency.md) and PRD-568 (borrowing batch).
 - **Frame-rate floors per platform:** [PRD-222](../performance/critical/PRD-222-performance-targets-per-platform.md).

@@ -25,7 +25,7 @@ Facts read 2026-10-09 at `76989167f`:
 - The legacy host solved the same problem for its JS-owned path
   ([PRD-327](../performance/critical/PRD-327-first-use-pipeline-compilation-leaves-the-main-loop.md),
   [PRD-387](../performance/critical/PRD-387-shader-variants-are-prepared-off-frame-and-bounded.md),
-  [PRD-540](../performance/critical/PRD-540-the-compile-walk-leaves-the-main-thread.md)):
+  [PRD-339](../performance/critical/PRD-339-the-compile-walk-leaves-the-main-thread.md)):
   `src/webgpu/bindings_pipelines.cpp:50-64` compiles on a 2-thread host pool, because
   `wgpuDeviceCreateRenderPipelineAsync` is `unimplemented!()` on wgpu-native (the Android backend)
   and both backends' devices are internally synchronized (`src/webgpu/bindings_state.h:462-468`).

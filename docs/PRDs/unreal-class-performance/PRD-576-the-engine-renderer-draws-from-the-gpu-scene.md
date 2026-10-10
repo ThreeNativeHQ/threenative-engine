@@ -35,7 +35,7 @@ indirectly". The code at `76989167f` does half of that (read 2026-10-09):
   call crosses from Wasm to JS. The split by call type is unverified.
 
 Occlusion culling stays declined ([PRD-284](../done/nanite-like/PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md),
-[PRD-489](../done/PRD-489-gpu-scene-occlusion-culling.md): median would-cull share 0.013). This PRD
+[PRD-489](../open-world/PRD-489-gpu-scene-occlusion-culling.md): median would-cull share 0.013). This PRD
 does not reopen it. Cluster LOD bands belong to PRD-519. The JS-to-Wasm call count of the game API
 belongs to PRD-553.
 
