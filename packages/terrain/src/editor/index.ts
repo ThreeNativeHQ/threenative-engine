@@ -301,8 +301,6 @@ export async function mountTerrainEditor(options: {
     commit: (transaction: Parameters<typeof controller.commit>[0]) =>
       controller.commit(transaction),
     getSnapshot: () => controller.snapshot(),
-    reload: () => controller.reload(),
-    restoreLastValid: () => controller.restoreLastValid(),
     cameraOperation: (operation: unknown, baseRevision: string) =>
       controller.camera(operation as ICameraOperation, baseRevision),
     assetOperation: (operation: unknown, baseRevision: string) =>
