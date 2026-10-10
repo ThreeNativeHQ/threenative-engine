@@ -174,8 +174,9 @@ export class Material {
 
   onBeforeCompile(): void {}
 
+  // No program reads this key, and a strict Perry build keeps no function source to stringify.
   customProgramCacheKey(): string {
-    return this.onBeforeCompile.toString();
+    return "";
   }
 }
 // quality-allow: Material.prototype does not declare dynamic isMaterial property from Three.js class contract.

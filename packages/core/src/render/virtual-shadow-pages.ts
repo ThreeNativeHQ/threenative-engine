@@ -336,12 +336,13 @@ export class DirectionalClipmap {
     const perLevel = (
       value: number | readonly number[],
       name: string,
+      range: string,
       valid: (v: number) => boolean,
     ) => {
       const values = Array.isArray(value) ? [...(value as readonly number[])] : [value as number];
       for (const entry of values) {
         if (!valid(entry)) {
-          throw new RangeError(`every ${name} must satisfy ${String(valid)}, got ${String(entry)}`);
+          throw new RangeError(`every ${name} be in ${range}, got ${String(entry)}`);
         }
       }
       return values;
@@ -349,11 +350,13 @@ export class DirectionalClipmap {
     const guards = perLevel(
       selectionGuard,
       "selectionGuard",
+      "(0, 1]",
       (v) => Number.isFinite(v) && v > 0 && v <= 1,
     );
     const steps = perLevel(
       refreshStep,
       "refreshStep",
+      "[0, 1)",
       (v) => Number.isFinite(v) && v >= 0 && v < 1,
     );
     for (let level = 0; level < guards.length; level += 1) {

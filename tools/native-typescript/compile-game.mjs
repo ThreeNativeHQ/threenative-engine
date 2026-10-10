@@ -312,6 +312,7 @@ let failed = false;
 game.start().then(() => console.log("TN_NATIVE_START_READY"), (error: unknown) => {
   failed = true;
   console.error(\`TN_NATIVE_START_FAILED:\${error instanceof Error ? error.message : String(error)}\`);
+  if (error instanceof Error && error.stack) console.error(error.stack);
 });
 async function runPlayer() {
   try {
