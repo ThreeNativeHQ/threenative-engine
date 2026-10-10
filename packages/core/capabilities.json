@@ -4020,6 +4020,7 @@
       "constraints": [
         "surface is the game's; this class creates no material, colour or geometry",
         "budgets are hard caps that report pressure instead of over-committing",
+        "`whenSpawnReady(position, radius, timeoutMs)` snapshots a fixed region and settles from existing updates or disposal; it does not drive streaming, and `prewarmed` remains the separate draw gate",
         "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
         "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
         "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has",

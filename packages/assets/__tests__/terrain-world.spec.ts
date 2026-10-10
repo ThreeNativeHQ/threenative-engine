@@ -14,12 +14,31 @@ import {
 import { PNG } from "pngjs";
 import { type Group, InstancedMesh, Mesh } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type IWorldPackage, validateWorldPackage } from "../../core/src/world-package.js";
 import { cookTerrainWorld } from "../src/world/terrain-world.js";
 
 // GLTFLoader reads the global `self` while it parses. Node has none.
 Object.assign(globalThis, { self: globalThis });
+
+// A deterministic IO failure injected for one sibling path, so a real stat error can be told
+// apart from an absent sibling without touching permissions or the platform.
+const fsProbe = vi.hoisted(() => ({
+  statFailure: undefined as { path: string; error: Error } | undefined,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...original,
+    stat: async (...args: Parameters<typeof original.stat>) => {
+      if (fsProbe.statFailure && String(args[0]) === fsProbe.statFailure.path) {
+        throw fsProbe.statFailure.error;
+      }
+      return original.stat(...args);
+    },
+  };
+});
 
 /** A real evaluated terrain. The fixed seed fixes every scatter position. */
 function evaluatedTerrain(assets: readonly string[] = ["fir"]): ITerrainState {
@@ -455,6 +474,29 @@ describe("cookTerrainWorld", () => {
     expect(new Uint8Array(await readFile(path.join(dir, "models", "fir_lod1.glb")))).toEqual(
       new Uint8Array(mid.glb),
     );
+  });
+
+  it("propagates a real IO error from a sibling probe instead of treating it as absent", async () => {
+    const nearPath = path.join(dir, "oak.glb");
+    await writeFile(nearPath, await simpleSpecies());
+    const sibling = path.join(dir, "oak-mid.glb");
+    const ioError = Object.assign(new Error("injected EIO reading sibling"), { code: "EIO" });
+    fsProbe.statFailure = { path: sibling, error: ioError };
+    try {
+      const caught = await cookTerrainWorld({
+        state: evaluatedTerrain(),
+        species: { fir: { glb: nearPath } },
+        out: dir,
+      }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      // The exact error reaches the caller; it is not swallowed as a missing sibling.
+      expect(caught).toBe(ioError);
+      await expect(stat(path.join(dir, "world.glb"))).rejects.toThrow();
+    } finally {
+      fsProbe.statFailure = undefined;
+    }
   });
 
   it("names a placement that is mirrored in Z as a contact failure", async () => {

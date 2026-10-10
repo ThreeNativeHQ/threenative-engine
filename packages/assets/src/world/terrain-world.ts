@@ -191,8 +191,9 @@ async function authoredSiblingLods(glbPath: string): Promise<{ distance: number;
     try {
       await stat(file);
       return [{ distance: 40, glb: file }];
-    } catch {
-      // Absent sibling: try the next name.
+    } catch (error) {
+      // Only a missing sibling means "try the next name"; any other IO error is real.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
   return [];
