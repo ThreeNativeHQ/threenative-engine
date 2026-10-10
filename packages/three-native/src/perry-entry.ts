@@ -109,5 +109,10 @@ export function bindPerryEngine(names: readonly string[]): Record<string, unknow
       this.disposed = true;
     }
   };
-  return bindUpstreamExports(names, catalog as unknown as ICatalog, bound);
+  return {
+    ...bindUpstreamExports(names, catalog as unknown as ICatalog, bound),
+    __tnTsl: tsl.exports,
+    __tnLoadAsset: (kind: number, source: string | Uint8Array, type?: number) =>
+      runtime.loadAsset(kind, source, type).map(engine.wrap),
+  };
 }

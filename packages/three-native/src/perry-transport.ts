@@ -16,6 +16,7 @@ import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 
 /** All sizes/offsets come from sizeof/offsetof in tn_abi.h, compiled for this target. */
 export interface IPerryRuntime extends IBrowserRuntime {
+  loadAsset(kind: number, source: string | Uint8Array, type?: number): IEngineRef[];
   render(
     scene: IEngineRef,
     camera: IEngineRef,
@@ -320,6 +321,37 @@ export function createPerryRuntime(): IPerryRuntime {
     });
   return {
     tsl,
+    loadAsset: (kind, source, type = 1016) =>
+      scoped(() => {
+        const output = alloc(pointerBytes + 4);
+        let input: number;
+        if (typeof source === "string") {
+          if (!source || source.includes("\0")) throw new TypeError("TN_PERRY_ASSET_PATH");
+          input = string(source).at;
+        } else {
+          input = alloc(source.byteLength);
+          source.forEach((byte, i) => write(input + i, byte, 0));
+        }
+        const error = readString(
+          call(
+            typeof source === "string" ? 19 : 20,
+            context,
+            kind,
+            input,
+            typeof source === "string" ? 0 : source.byteLength,
+            output,
+            type,
+          ),
+        );
+        if (error) throw new Error(error);
+        const handles = pointer(output);
+        const count = read(output + pointerBytes);
+        try {
+          return Array.from({ length: count }, (_, i) => keyOf(handles + i * handleSize));
+        } finally {
+          free(handles);
+        }
+      }),
     render: (scene, camera, width, height, tone, exposure, srgb, clear) =>
       scoped(() => {
         const color = alloc(32);

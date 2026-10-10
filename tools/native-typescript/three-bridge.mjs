@@ -87,7 +87,10 @@ export function buildEngineBridge({
   };
   // The render build adds the one-shot frame dump and the benchmark session (PRD-533).
   const renderSources = shared
-    ? [path.join(NATIVE, "src/engine/abi/perry_renderer.cpp")]
+    ? [
+        path.join(NATIVE, "src/engine/abi/perry_renderer.cpp"),
+        path.join(NATIVE, "src/engine/abi/perry_assets.cpp"),
+      ]
     : ["tn_three_render.cpp", "tn_three_bench.cpp"].map((name) => path.join(THREE, name));
   if (render) sources.push(...renderSources);
   const stamp = Math.max(

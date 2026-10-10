@@ -461,6 +461,8 @@ void textureVector2(ClassBinding& b, const char* field, Vector2 Owner::*member) 
 }
 
 void registerTextureFields(ClassBinding& b) {
+    b.getters["image.width"] = [](void* self) { return Value::of(double(as<Texture>(self)->width)); };
+    b.getters["image.height"] = [](void* self) { return Value::of(double(as<Texture>(self)->height)); };
     b.getters["name"] = [](void* self) { return string(as<Texture>(self)->name); };
     b.setters["name"] = [](void* self, const Value& v) {
         if (v.kind != Value::Kind::String) throw Unsupported{"name must be a string"};

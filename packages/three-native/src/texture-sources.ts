@@ -98,12 +98,20 @@ export function defineTextureSources(
   /** `image` is the JS source; `needsUpdate` re-sends its pixels, as three re-reads `texture.image`. */
   const followSource = (target: object, name: string): void => {
     const needsUpdate = Object.getOwnPropertyDescriptor(target, "needsUpdate")?.set;
+    const nativeImage = Object.getOwnPropertyDescriptor(target, "image")?.get;
     if (needsUpdate === undefined) throw new TypeError(`TN_BROWSER_UNBOUND: ${name}.needsUpdate`);
     Object.defineProperties(target, {
       image: {
         configurable: true,
         get(this: object) {
-          return sources.get(this);
+          if (sources.has(this)) return sources.get(this);
+          if (nativeImage) return nativeImage.call(this);
+          const ref = engineRef(this);
+          if (ref === undefined) return undefined;
+          return {
+            width: runtime.get(ref, "image.width"),
+            height: runtime.get(ref, "image.height"),
+          };
         },
         set(this: object, image: unknown) {
           sources.set(this, image);

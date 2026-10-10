@@ -195,6 +195,9 @@ export function defineObjectSurface(classes: ISurfaceClasses): void {
 
 // three's scene classes and the `is<Class>` flag each one defines; every light is also `isLight`.
 const FLAGGED_CLASSES = [
+  "Texture",
+  "DataTexture",
+  "CanvasTexture",
   "Object3D",
   "Scene",
   "Group",

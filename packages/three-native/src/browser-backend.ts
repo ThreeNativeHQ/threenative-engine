@@ -1142,7 +1142,7 @@ export function defineBrowserClasses(
     // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
     // a holder made per read, as the V8 adapter makes it: each tail reads and writes the full path.
     const holders = new Map<string, string[]>();
-    for (const path of binding.setters) {
+    for (const path of new Set([...binding.getters, ...binding.members, ...binding.setters])) {
       const dot = path.indexOf(".");
       if (dot < 0) continue;
       const head = path.slice(0, dot);

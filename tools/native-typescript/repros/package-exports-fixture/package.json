@@ -1,0 +1,6 @@
+{
+  "name": "tn-perry-exports-repro",
+  "type": "module",
+  "main": "./src/native/index.ts",
+  "exports": { ".": { "import": "./src/native/index.ts" } }
+}

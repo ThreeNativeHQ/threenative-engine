@@ -154,7 +154,7 @@ export function unsupportedThreeImports(source, catalog, nativeExports = {}) {
 }
 
 function importsThree(file) {
-  return /\bfrom\s*["']three(?:\/[\w-]+)?["']/.test(fs.readFileSync(file, "utf8"));
+  return /\bfrom\s*["']three(?:\/[^"']+)?["']/.test(fs.readFileSync(file, "utf8"));
 }
 
 /** The workspace's pinned three, resolved the way the fixture reference runner resolves it. */
@@ -273,7 +273,7 @@ async function runReference(name, plan = {}) {
   const expected = parseExpected(fs.readFileSync(expectedPath(name)));
   if (expected.compileError !== undefined || expected.nativeOnly)
     return { ok: true, notApplicable: true };
-  if (name === "three-native-minimal") {
+  if (name === "three-native-minimal" || name === "three-native-midway-assets") {
     const { runWasmReference } = await import("./shared-reference.mjs");
     const result = await runWasmReference(file, expected);
     if (!result.ok || !plan.render) return result;
@@ -465,7 +465,7 @@ async function runNative(name, info, target, plan = {}) {
 }
 
 async function runNativeIn(tmp, name, info, target, plan) {
-  const shared = name === "three-native-minimal";
+  const shared = name === "three-native-minimal" || name === "three-native-midway-assets";
   const entry = path.join(CORPUS, `${name}.ts`);
   const modules = collectModules(entry);
   const three = importsThree(entry);

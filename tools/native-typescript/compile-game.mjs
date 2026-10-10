@@ -224,6 +224,12 @@ export async function compileGame({
     manifest: false,
     stageOnly: true,
   });
+  if (build.errors.length > 0)
+    return {
+      exit: 1,
+      ...classifyPerryOutput(`Error: ${build.errors.join("\nError: ")}`),
+      errors: build.errors,
+    };
   if (stageOnly) return { staged: outDir, errors: build.errors };
   const run = spawnSync(
     compiler.binaryPath,

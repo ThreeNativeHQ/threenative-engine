@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <memory>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 #define STBI_NO_STDIO
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
+#define STBI_ONLY_HDR
 #include "stb_image.h"
 
 #if TN_ENGINE_WEBP
@@ -58,6 +60,23 @@ bool decodeImage(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32
     height = uint32_t(h);
     rgba.assign(pixels, pixels + std::size_t(w) * h * 4);
     stbi_image_free(pixels);
+    return true;
+}
+
+bool decodeHdr(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32_t& height,
+               std::vector<float>& rgba) {
+    int w = 0, h = 0, channels = 0;
+    if (!bytes || size > 0x7fffffff || !stbi_is_hdr_from_memory(bytes, int(size)) ||
+        !stbi_info_from_memory(bytes, int(size), &w, &h, &channels)) return false;
+    if (w < 1 || h < 1 || w > 8192 || h > 8192 || int64_t(w) * h > (1 << 26)) return false;
+    std::unique_ptr<float, decltype(&stbi_image_free)> pixels(
+        stbi_loadf_from_memory(bytes, int(size), &w, &h, &channels, 4), stbi_image_free);
+    if (!pixels) return false;
+    width = uint32_t(w);
+    height = uint32_t(h);
+    rgba.assign(pixels.get(), pixels.get() + std::size_t(w) * h * 4);
+    for (std::size_t i = 0; i < rgba.size(); ++i)
+        if (i % 4 != 3) rgba[i] *= 256.0f / 255.0f;
     return true;
 }
 

@@ -8,7 +8,7 @@ import { upstreamExportNames } from "./perry-facade.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 export function sharedReferenceCode() {
-  const names = upstreamExportNames();
+  const names = [...upstreamExportNames(), "__tnLoadGltf"];
   return {
     names,
     exports: names.map((name) => `export const ${name} = bound.${name};`).join("\n"),
@@ -40,15 +40,39 @@ ${exports}\n`,
       .replace(
         /\bfrom\s*["']three(?:\/[\w-]+)?["']/g,
         `from ${JSON.stringify(pathToFileURL(facade).href)}`,
+      )
+      .replace(
+        /\bfrom\s*["']three\/addons\/loaders\/(GLTFLoader|HDRLoader)\.js["']/g,
+        (_, name) => `from ${JSON.stringify(pathToFileURL(path.join(tmp, `${name}.mts`)).href)}`,
       ),
   );
+  for (const [name, addon] of [
+    ["GLTFLoader", "gltf-loader-web"],
+    ["HDRLoader", "hdr-loader"],
+  ])
+    fs.writeFileSync(
+      path.join(tmp, `${name}.mts`),
+      fs
+        .readFileSync(path.join(repo, `packages/three-native/src/addons/${addon}.ts`), "utf8")
+        .replace('from "three"', `from ${JSON.stringify(pathToFileURL(facade).href)}`)
+        .replace(
+          'from "./hdr.js"',
+          `from ${JSON.stringify(pathToFileURL(path.join(repo, "packages/three-native/src/addons/hdr.ts")).href)}`,
+        ),
+    );
   const savedDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
   const savedWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   const frame = process.env.TN_TSL_FRAME;
   const log = console.log;
+  const fetch = globalThis.fetch;
   let output = "";
   let error;
   try {
+    globalThis.fetch = async (url, options) =>
+      // A case reads local assets by absolute path, as the native loader does; Node's fetch cannot.
+      typeof url === "string" && path.isAbsolute(url)
+        ? new Response(fs.readFileSync(url))
+        : fetch(url, options);
     if (!savedDocument) globalThis.document = { currentScript: null };
     if (!savedWindow) globalThis.window = globalThis;
     Reflect.deleteProperty(process.env, "TN_TSL_FRAME");
@@ -59,6 +83,7 @@ ${exports}\n`,
   } catch (thrown) {
     error = thrown;
   } finally {
+    globalThis.fetch = fetch;
     console.log = log;
     if (savedDocument) Object.defineProperty(globalThis, "document", savedDocument);
     else Reflect.deleteProperty(globalThis, "document");

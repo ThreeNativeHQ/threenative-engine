@@ -14,8 +14,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 // @ts-expect-error -- plain ESM with no type declarations.
 import { provision } from "../../../tools/native-typescript/provision.mjs";
-// @ts-expect-error -- plain ESM with no type declarations.
-import { ENGINE_LIBS, buildStrict, summarizeCompilerOutput } from "../scripts/package-strict.mjs";
+import {
+  ENGINE_LIBS,
+  buildStrict,
+  stageWorkspaceSources,
+  summarizeCompilerOutput,
+  workspaceSources,
+  // @ts-expect-error -- plain ESM with no type declarations.
+} from "../scripts/package-strict.mjs";
 
 interface IBuild {
   exe: string;
@@ -85,6 +91,48 @@ function setup() {
 }
 
 const toolsOf = (calls: string[][]) => calls.map(([tool]) => tool);
+
+describe("strict workspace sources", () => {
+  it("stages core subpaths and their workspace dependencies using declared native exports", () => {
+    const root = tempRoot("tn-strict-workspace-");
+    const entry = join(root, "game.ts");
+    writeFileSync(
+      entry,
+      'import { defineGame } from "@threenative/core";\nimport { playtest } from "@threenative/core/playtest";\nimport { hot } from "@threenative/core/hot";\nimport { rapier } from "@threenative/physics";\n',
+    );
+    const packages = workspaceSources(entry);
+    const byName = new Map<string, { manifest: { name: string }; exports: Map<string, string> }>(
+      packages.map(
+        (pkg: { manifest: { name: string }; exports: Map<string, string> }) =>
+          [pkg.manifest.name, pkg] as const,
+      ),
+    );
+    expect(byName.has("@threenative/playtest")).toBe(true);
+    expect(byName.get("@threenative/physics")?.exports.get(".")).toBe("src/native/index.ts");
+    stageWorkspaceSources(root, packages);
+    const core = join(root, "node_modules/@threenative/core");
+    const manifest = JSON.parse(readFileSync(join(core, "package.json"), "utf8"));
+    expect(manifest.main).toBe("./src/index.ts");
+    expect(manifest.exports["./playtest"]).toBe("./src/playtest.ts");
+    expect(manifest.exports["./hot"]).toBe("./src/hot.ts");
+    expect(readFileSync(join(core, "playtest.ts"), "utf8")).toContain('"./src/playtest.js"');
+    expect(existsSync(join(core, "src/game.ts"))).toBe(true);
+    expect(existsSync(join(core, "dist"))).toBe(false);
+    expect(
+      readFileSync(join(root, "node_modules/@threenative/physics/index.ts"), "utf8"),
+    ).toContain('"./src/native/index.js"');
+    expect(
+      readFileSync(join(root, "node_modules/@threenative/physics/src/index.ts"), "utf8"),
+    ).toContain('"./native/index.js"');
+  });
+
+  it("refuses an undeclared workspace subpath instead of silently resolving source internals", () => {
+    const root = tempRoot("tn-strict-workspace-");
+    const entry = join(root, "game.ts");
+    writeFileSync(entry, 'import { hidden } from "@threenative/core/hidden";\n');
+    expect(() => workspaceSources(entry)).toThrow(/TN_STRICT_WORKSPACE_EXPORT/u);
+  });
+});
 
 describe("strict builds are incremental", () => {
   it("builds every step once, then nothing while nothing changed", () => {

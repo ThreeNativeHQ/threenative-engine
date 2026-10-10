@@ -17,6 +17,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { bridgeFor } from "../../../tools/native-typescript/three-bridge.mjs";
 import { stageSharedFacade, PERRY_TRANSPORT } from "../../../tools/native-typescript/perry-facade.mjs";
 
@@ -83,6 +84,78 @@ export function listGameSources(root) {
   };
   walk(root, true);
   return found;
+}
+
+/** Reachable workspace exports use source and the native condition, never stale dist bundles. */
+export function workspaceSources(entry) {
+  const packages = new Map();
+  for (const dir of fs.readdirSync(path.join(REPO, "packages"))) {
+    const root = path.join(REPO, "packages", dir);
+    const file = path.join(root, "package.json");
+    if (fs.existsSync(file)) {
+      const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+      packages.set(manifest.name, { root, manifest, file });
+    }
+  }
+  const selected = new Map();
+  const visited = new Set();
+  const sourceFile = (file) => [file.replace(/\.js$/u, ".ts"), file, path.join(file, "index.ts")]
+    .find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile());
+  const visit = (file) => {
+    if (!file || visited.has(file) || !/\.[cm]?[jt]sx?$/u.test(file)) return;
+    visited.add(file);
+    const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest);
+    const resolve = (specifier) => {
+      if (specifier.startsWith(".")) return visit(sourceFile(path.resolve(path.dirname(file), specifier)));
+      const name = specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0];
+      const pkg = packages.get(name);
+      if (!pkg) return;
+      const subpath = specifier === name ? "." : `.${specifier.slice(name.length)}`;
+      const target = pkg.manifest.exports?.[subpath];
+      const output = typeof target === "string" ? target : target?.["threenative-native"] ?? target?.import ?? target?.default;
+      if (!output?.startsWith("./dist/"))
+        throw new Error(`TN_STRICT_WORKSPACE_EXPORT: ${specifier} has no source export`);
+      const input = sourceFile(path.join(pkg.root, output.replace("./dist/", "src/")));
+      if (!input) throw new Error(`TN_STRICT_WORKSPACE_SOURCE: ${specifier}: ${output}`);
+      if (!selected.has(name)) selected.set(name, { ...pkg, exports: new Map() });
+      selected.get(name).exports.set(subpath, path.relative(pkg.root, input));
+      visit(input);
+    };
+    const walk = (node) => {
+      if ((ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly) ||
+          (ts.isExportDeclaration(node) && !node.isTypeOnly)) {
+        if (node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) resolve(node.moduleSpecifier.text);
+      } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+                 node.arguments.length === 1 && ts.isStringLiteral(node.arguments[0])) resolve(node.arguments[0].text);
+      ts.forEachChild(node, walk);
+    };
+    walk(source);
+  };
+  visit(entry);
+  return [...selected.values()];
+}
+
+export function stageWorkspaceSources(outDir, packages) {
+  for (const pkg of packages) {
+    const dir = path.join(outDir, "node_modules", pkg.manifest.name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.cpSync(path.join(pkg.root, "src"), path.join(dir, "src"), { recursive: true });
+    const exports = Object.fromEntries([...pkg.exports].map(([key, file]) => [key, `./${file}`]));
+    const main = pkg.exports.get(".");
+    // Perry prioritizes src/index.ts over package exports; repro: package-exports.ts.
+    if (main && main !== "src/index.ts")
+      fs.writeFileSync(path.join(dir, "src/index.ts"), `export * from ${JSON.stringify(`./${main.slice(4).replace(/\.ts$/u, ".js")}`)};\n`);
+    for (const [key, file] of pkg.exports) {
+        // Perry probes index.ts ahead of exports/main; repro: package-exports.ts.
+        const proxy = path.join(dir, key === "." ? "index.ts" : `${key.slice(2)}.ts`);
+        fs.mkdirSync(path.dirname(proxy), { recursive: true });
+        fs.writeFileSync(proxy, `export * from ${JSON.stringify(`./${path.relative(path.dirname(proxy), path.join(dir, file)).replace(/\.ts$/u, ".js")}`)};\n`);
+      }
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({
+      name: pkg.manifest.name, version: pkg.manifest.version, type: "module",
+      main: exports["."] ?? "./src/index.ts", exports,
+    }, null, 2));
+  }
 }
 
 function digest(parts) {
@@ -179,12 +252,15 @@ export function buildStrict({
   const adapterDir = path.join(outDir, "node_modules", sharedFacade ? PERRY_TRANSPORT : ADAPTER_PACKAGE);
   const bridgeDir = path.join(outDir, "three-bridge");
   const treeFiles = tree.map((file) => path.join(sourceRoot, file));
+  const workspace = sharedFacade && sourceRoot ? workspaceSources(entry) : [];
   const sources = [path.join(THREE_DIR, "three.ts"), path.join(THREE_DIR, "three-aot.ts"), ...modules, entry, ...treeFiles.filter((file) => file !== entry)];
   if (sharedFacade) {
     const root = path.join(REPO, "packages/three-native");
     sources.push(...listGameSources(root).map(file => path.join(root,file)),
       path.join(root,"perry/Cargo.toml"),path.join(root,"perry/src/lib.rs"),
       path.join(REPO,"tools/native-typescript/perry-facade.mjs"), sharedBridge.archive);
+    for (const pkg of workspace)
+      sources.push(pkg.file, ...listGameSources(path.join(pkg.root, "src")).map(file => path.join(pkg.root, "src", file)));
   }
   step(
     "typescript",
@@ -242,6 +318,7 @@ export function buildStrict({
   );
 
   if (sharedFacade) {
+    stageWorkspaceSources(outDir, workspace);
     stageSharedFacade(outDir, sharedBridge);
     if (errors.length > 0 || stageOnly) return {exe,ran,errors};
     run(compiler.binaryPath, ["compile",stagedEntry,"-o",exe,...STRICT_FLAGS,"--debug-symbols",...triple],{cwd:outDir});

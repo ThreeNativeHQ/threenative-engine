@@ -21,4 +21,8 @@ bool decodesWebP();
 bool decodeImage(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32_t& height,
                  std::vector<uint8_t>& rgba);
 
+/** Radiance HDR to RGBA32F, with three's RGBE /255 scale (stb's decoder uses /256). */
+bool decodeHdr(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32_t& height,
+               std::vector<float>& rgba);
+
 } // namespace tn::engine::gltf

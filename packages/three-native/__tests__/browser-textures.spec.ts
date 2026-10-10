@@ -17,13 +17,14 @@ import {
 } from "../src/browser-backend.js";
 import { withTextureSources } from "../src/browser-entry.js";
 import { loadCatalog } from "../src/catalog.js";
+import { defineTypeFlags } from "../src/object-surface.js";
 
 const REPO = process.cwd();
 const registry = JSON.parse(
   readFileSync(path.join(REPO, "packages/three-native/api/native-registry.json"), "utf8"),
 ) as IRegistryDump;
 
-function recording(hosting = false) {
+function recording(hosting = false, image = false) {
   const types = new Map<string, number>();
   const typeId = (name: string) =>
     types.get(name) ?? types.set(name, types.size + 1).get(name) ?? 0;
@@ -39,17 +40,32 @@ function recording(hosting = false) {
     invoke: () => {
       throw new Error("not under test");
     },
-    get: () => undefined,
+    get: (_self, path) =>
+      image
+        ? path === "image.width"
+          ? 2048
+          : path === "image.height"
+            ? 1024
+            : undefined
+        : undefined,
     set: (self, property, value) => {
       writes.push([self.key, property, value]);
     },
     release: () => undefined,
     setCallback: () => undefined,
   };
-  const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+  const { classes, wrap } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+  defineTypeFlags(classes);
   const hostedImages: [string, unknown][] = [];
   if (hosting) runtime.hostImage = (texture, image) => void hostedImages.push([texture.key, image]);
-  return { bound: withTextureSources(classes, runtime), constructed, writes, hostedImages };
+  return {
+    bound: withTextureSources(classes, runtime),
+    constructed,
+    writes,
+    hostedImages,
+    wrap,
+    typeId,
+  };
 }
 
 type Ctor = new (...args: unknown[]) => Record<string, unknown>;
@@ -57,6 +73,15 @@ type Ctor = new (...args: unknown[]) => Record<string, unknown>;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser texture sources", () => {
+  it("exposes native-loaded texture identity and dimensions without a browser pixel source", () => {
+    const { wrap, typeId } = recording(false, true);
+    const texture = wrap({ key: "DataTexture#loaded", type: typeId("DataTexture") }) as {
+      isTexture: boolean;
+      image: object;
+    };
+    expect(texture.isTexture).toBe(true);
+    expect(texture.image).toMatchObject({ width: 2048, height: 1024 });
+  });
   it("hands the web host a drawable as it is, and re-hosts only a new image on needsUpdate", () => {
     const { bound, constructed, writes, hostedImages } = recording(true);
     let reads = 0;
