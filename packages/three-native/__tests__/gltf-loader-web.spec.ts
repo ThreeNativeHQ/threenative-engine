@@ -68,7 +68,11 @@ describe("web GLTFLoader over the engine", () => {
       });
       return { width: decoded.length, height: 1 };
     });
+    // The Blob copies the image bytes itself; copying them out of the GLB first doubles the work.
+    const slice = vi.spyOn(Uint8Array.prototype, "slice");
     await new GLTFLoader().parseAsync(glb.buffer, "ship.glb");
+    expect(slice).not.toHaveBeenCalled();
+    slice.mockRestore();
     vi.unstubAllGlobals();
     const call = calls.at(-1);
     expect(call?.clips).toBe(2);

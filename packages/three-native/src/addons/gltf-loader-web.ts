@@ -86,7 +86,7 @@ async function decodeImages(
         image.bufferView === undefined ? undefined : json.bufferViews?.[image.bufferView];
       if (view !== undefined && bin !== undefined) {
         const offset = view.byteOffset ?? 0;
-        blob = new Blob([bin.slice(offset, offset + view.byteLength)], {
+        blob = new Blob([bin.subarray(offset, offset + view.byteLength)], {
           type: image.mimeType ?? "",
         });
       } else if (image.uri?.startsWith("data:")) {
