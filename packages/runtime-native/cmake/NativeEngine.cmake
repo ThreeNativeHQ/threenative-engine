@@ -33,6 +33,30 @@ elseif(SDL3_LIBRARY)
     target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
 endif()
 
+# The strict Perry player links the same WebAudio objects and decoder as the VM hosts.
+add_library(tn_native_audio STATIC src/audio/audio_context.cpp src/audio/async_audio_decode.cpp
+    src/audio/vorbis_impl.c src/engine/abi/perry_audio.cpp)
+tn_native_engine_target(tn_native_audio)
+target_include_directories(tn_native_audio PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${THIRD_PARTY_DIR}/stb)
+if(SDL3_STATIC_TARGET)
+    target_link_libraries(tn_native_audio PUBLIC ${SDL3_STATIC_TARGET})
+elseif(SDL3_LIBRARY)
+    target_link_libraries(tn_native_audio PUBLIC ${SDL3_LIBRARY})
+    target_include_directories(tn_native_audio PRIVATE ${SDL3_INCLUDE_DIR})
+endif()
+
+if(NOT MYSTRAL_PLATFORM STREQUAL "android" AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
+    tn_native_engine_test(tn-native-engine-audio-abi-test tests/native-engine/audio_abi_test.cpp
+        native_engine_audio_abi_decode_graph=decode_graph
+        native_engine_audio_abi_rejects=rejects)
+    target_link_libraries(tn-native-engine-audio-abi-test PRIVATE tn_native_audio)
+    target_compile_definitions(tn-native-engine-audio-abi-test PRIVATE
+        TN_AUDIO_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/pickup.ogg")
+    set_tests_properties(native_engine_audio_abi_decode_graph native_engine_audio_abi_rejects
+        PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 15)
+endif()
+
 # The same pacing checks must link with the JS-free host, not only the legacy bindings.
 if(NOT MYSTRAL_PLATFORM STREQUAL "android" AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     add_executable(tn-native-engine-pacing-test EXCLUDE_FROM_ALL tests/presentation_pacing_test.cpp)
@@ -454,7 +478,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         target_include_directories(tn_engine_player PUBLIC ${SDL3_INCLUDE_DIR})
     endif()
     add_executable(tn-native-engine-player src/engine/player/main.cpp)
-    target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player)
+    target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player tn_native_audio)
     target_compile_definitions(tn-native-engine-player PRIVATE
         TN_WORLD_WALK_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/walk")
     tn_native_engine_test(tn-native-engine-world-walk-test tests/native-engine/world/world_walk_test.cpp
@@ -492,7 +516,7 @@ if(ANDROID)
     target_include_directories(tn_engine_player PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${SDL3_INCLUDE_DIR})
     add_library(tn-native-engine-player SHARED src/engine/player/main.cpp)
     tn_native_engine_target(tn-native-engine-player)
-    target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player android log)
+    target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player tn_native_audio android log)
     target_link_options(tn-native-engine-player PRIVATE "-Wl,-z,max-page-size=16384")
 endif()
 

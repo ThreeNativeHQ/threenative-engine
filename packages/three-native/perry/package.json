@@ -113,6 +113,11 @@
           "name": "js_tnp_physics_copy",
           "params": ["jsvalue", "i64", "i64", "i32", "i32"],
           "returns": "i32"
+        },
+        {
+          "name": "js_tnp_audio_call",
+          "params": ["i32", "i64", "i64", "i64", "i64", "i64"],
+          "returns": "i64"
         }
       ],
       "targets": {

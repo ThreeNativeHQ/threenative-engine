@@ -157,3 +157,23 @@ export function physicsCopy(
 ): number {
   return js_tnp_physics_copy(value, pointer, count, kind, toNative ? 1 : 0);
 }
+
+// WebAudio uses the same numeric packets and bulk-copy primitive as the other host seams.
+declare function js_tnp_audio_call(
+  op: number,
+  context: number,
+  object: number,
+  packet: number,
+  data: number,
+  bytes: number,
+): number;
+export function audioCall(
+  op: number,
+  context: number,
+  object: number,
+  packet: number,
+  data = 0,
+  bytes = 0,
+): number {
+  return js_tnp_audio_call(op, context, object, packet, data, bytes);
+}

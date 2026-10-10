@@ -1,6 +1,7 @@
 /** The browser facade over native C calls; no separate set of three classes. */
 import catalog from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
+import { type IAudioEngine, defineAudioClasses } from "./audio.js";
 import { type IRegistryDump, defineBrowserClasses } from "./browser-backend.js";
 import { bindUpstreamExports, withTextureSources } from "./browser-entry.js";
 import { defineTsl } from "./browser-tsl.js";
@@ -36,6 +37,16 @@ export function bindPerryEngine(names: readonly string[]): Record<string, unknow
   if (runtime.tsl === undefined) throw new Error("TN_PERRY_TSL_MISSING");
   const tsl = defineTsl(runtime.tsl, classes as never);
   const bound = { ...withTextureSources(classes, runtime), ...tsl.exports };
+  const audio = defineAudioClasses({
+    ...(classes as unknown as Omit<IAudioEngine, "read">),
+    read: async (url) => {
+      const response = await globalThis.fetch(url);
+      if (!response.ok) throw new Error(`TN_AUDIO_FETCH: ${String(response.status)} ${url}`);
+      return response.arrayBuffer();
+    },
+  });
+  const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
+  Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
   bound.Material = Material;
   Object.assign(bound, definePropertyBinding(classes.PropertyBinding as never));
   bound.QuadMesh = defineQuadMesh(classes as never);
@@ -48,6 +59,7 @@ export function bindPerryEngine(names: readonly string[]): Record<string, unknow
     sync: () => {
       engine.collect();
       tsl.sync();
+      audio.updateAudio();
     },
     render: runtime.render,
   });

@@ -167,6 +167,8 @@ describe("assertOutsideGameAndRepo", () => {
 describe("bindHostGlobals", () => {
   it("routes free host globals through globalThis, where Perry honours the host's override", () => {
     const source = [
+      "const context = new AudioContext();",
+      "const legacy = new webkitAudioContext();",
       "const t0 = performance.now();",
       "const id: ReturnType<typeof setTimeout> = setTimeout(() => clearTimeout(id), 1);",
       "const r = await fetch(url);",
@@ -176,6 +178,8 @@ describe("bindHostGlobals", () => {
     ].join("\n");
     expect(bindHostGlobals(source, "a.ts")).toBe(
       [
+        "const context = new globalThis.AudioContext();",
+        "const legacy = new globalThis.webkitAudioContext();",
         "const t0 = globalThis.performance.now();",
         "const id: ReturnType<typeof globalThis.setTimeout> = globalThis.setTimeout(() => globalThis.clearTimeout(id), 1);",
         "const r = await globalThis.fetch(url);",

@@ -1,5 +1,6 @@
 # Perry's native-library bridge compiles these sources with its rooted Rust callback trampolines.
 list(APPEND MYSTRAL_EXCLUDED_CPP_SOURCES
+    src/engine/abi/perry_audio.cpp
     src/engine/abi/perry_assets.cpp
     src/engine/abi/perry_renderer.cpp
     src/engine/abi/perry_player.cpp)

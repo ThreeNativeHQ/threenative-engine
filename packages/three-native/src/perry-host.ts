@@ -16,6 +16,7 @@ import {
   stringBytes,
   writeString,
 } from "tn-native-transport";
+import { createPerryAudioHost } from "./perry-audio.js";
 import { createPerryPhysicsHost } from "./perry-physics.js";
 import { nativeImageBitmaps } from "./texture-sources.js";
 
@@ -28,6 +29,9 @@ interface IBridge {
   [method: string]: ((argument?: unknown) => unknown) | undefined;
 }
 const globals = globalThis as unknown as Record<string, unknown>;
+const audioHost = createPerryAudioHost();
+globals.AudioContext = audioHost.AudioContext;
+globals.webkitAudioContext = audioHost.AudioContext;
 // Perry's own timer, kept before the game clock replaces it: a step loop that awaits only
 // microtasks never lets Perry's event loop settle fetch or any other host I/O.
 const hostTimeout = globalThis.setTimeout;
@@ -212,6 +216,7 @@ function observe(methodPointer: number, argumentPointer: number): number {
 }
 const status = playerBind(
   (dt: number) => {
+    audioHost.update();
     time += dt * 1000;
     const codes = playerCodes();
     const now = new Set(codes ? codes.split("\n") : []);
@@ -277,5 +282,6 @@ export function nextHostTurn(): Promise<void> {
   return new Promise((resolve) => hostTimeout(() => resolve(), 0));
 }
 export function closePlayer(): void {
+  audioHost.close();
   playerClose();
 }

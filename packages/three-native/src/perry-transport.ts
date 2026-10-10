@@ -1,5 +1,6 @@
 /** Native memory transport for the existing facade. The Wasm transport keeps its original code. */
 import {
+  audioCall,
   bind,
   call,
   free,
@@ -450,5 +451,38 @@ export function createPerryRuntime(): IPerryRuntime {
         if (status !== 0) handlers.delete(id);
         check(status, diag, `set ${name}`);
       }),
+  };
+}
+
+/** Eight scalar lanes plus a single bulk copy for encoded audio or explicitly requested PCM. */
+export function createPerryAudioTransport() {
+  return (
+    op: number,
+    context = 0,
+    object = 0,
+    values: readonly number[] = [],
+    encoded?: Uint8Array,
+  ) => {
+    if (
+      values.length > 8 ||
+      (encoded !== undefined && (encoded.byteLength === 0 || encoded.byteLength > 64 * 1024 * 1024))
+    )
+      throw new RangeError("TN_AUDIO_ARGUMENT: packet or decodeAudioData bytes");
+    const packet = malloc(64);
+    const data = encoded === undefined ? 0 : malloc(Math.max(1, encoded.byteLength));
+    try {
+      if (!packet || (encoded !== undefined && !data)) throw new Error("TN_PERRY_OUT_OF_MEMORY");
+      for (let i = 0; i < values.length; i++) memory(20, packet + i * 8, values[i]);
+      if (encoded !== undefined && physicsCopy(encoded, data, encoded.byteLength, 1, true))
+        throw new TypeError("TN_AUDIO_COPY: AudioContext.decodeAudioData");
+      const error = readString(
+        audioCall(op, context, object, packet, data, encoded?.byteLength ?? 0),
+      );
+      if (error) throw new Error(error);
+      return Array.from({ length: 8 }, (_, i) => memory(4, packet + i * 8));
+    } finally {
+      if (data) free(data);
+      if (packet) free(packet);
+    }
   };
 }
