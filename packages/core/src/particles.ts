@@ -113,6 +113,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
   #lands = 0;
   #dispatches = 0;
   #outsideSince: number | undefined;
+  #authoredVisible = true;
   #hiddenByCull = false;
   #yielded = false;
   #state: "running" | "paused" | "cleared" = "running";
@@ -122,7 +123,14 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
   /** Cooperate with measured frame-budget shedding without changing particle storage. */
   readonly budget: IBudgetCandidate = {
     significance: (camera) => {
-      if (this.#released || !this.emitting || this.#reason === "outside-view") return undefined;
+      if (
+        this.#released ||
+        !this.emitting ||
+        !this.#authoredVisible ||
+        this.castShadow ||
+        this.#reason === "outside-view"
+      )
+        return undefined;
       this.updateWorldMatrix(true, false);
       if (camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
       if (this.measuredBounds === undefined) {
@@ -165,6 +173,15 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
     )
       throw new Error("GPUParticles3D.bounds must be a finite, non-empty Box3.");
     super(options.material);
+    // Separate authored visibility from culling so a game hide while culled survives recovery.
+    Object.defineProperty(this, "visible", {
+      configurable: true,
+      enumerable: true,
+      get: () => this.#authoredVisible && !this.#hiddenByCull,
+      set: (visible: boolean) => {
+        this.#authoredVisible = visible;
+      },
+    });
     this.#boundsOverride = options.bounds;
     this.#padding = options.padding;
     this.#onCull = options.onCull ?? "pause";
@@ -260,7 +277,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
       this.#measuredBounds = readback.data === undefined ? undefined : foldBounds(readback.data);
     }
     let reason: "outside-view" | "over-budget" | undefined;
-    if (camera !== undefined && !this.castShadow && (this.visible || this.#hiddenByCull)) {
+    if (camera !== undefined && !this.castShadow && this.#authoredVisible) {
       const bounds = this.measuredBounds;
       if (bounds !== undefined && this.#graceSeconds !== Number.POSITIVE_INFINITY) {
         if (camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
@@ -291,14 +308,10 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
     }
     this.#reason = reason;
     if (reason !== undefined) {
-      this.visible = false;
       this.#hiddenByCull = true;
       return;
     }
-    if (this.#hiddenByCull) {
-      this.visible = true;
-      this.#hiddenByCull = false;
-    }
+    this.#hiddenByCull = false;
     renderer.compute(this.#process);
     this.#dispatches += 1;
     this.#frame += 1;

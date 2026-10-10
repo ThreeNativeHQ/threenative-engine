@@ -181,9 +181,9 @@ const RATIO_WINDOW_RENDERS = 60;
  */
 export const budgetKnob: {
   maxFps: number | undefined;
-  gpuMs: number | undefined;
+  gpuEstimateMs: number | undefined;
   overBudgetWindows: number;
-} = { maxFps: undefined, gpuMs: undefined, overBudgetWindows: 0 };
+} = { maxFps: undefined, gpuEstimateMs: undefined, overBudgetWindows: 0 };
 
 export type GalleryState = {
   readonly appliedIds: readonly string[];
@@ -600,8 +600,8 @@ export class Gallery extends Scene<GalleryState> {
       if (frameCtx.input.justPressed("toggleBudget")) {
         const tightBudget = budgetKnob.maxFps === undefined;
         if (tightBudget) {
-          const gpuMs = budgetKnob.gpuMs;
-          if (gpuMs === undefined || gpuMs <= 0)
+          const gpuMs = budgetKnob.gpuEstimateMs;
+          if (gpuMs === undefined || !Number.isFinite(gpuMs) || gpuMs <= 0)
             throw new Error("Budget probe requires a measured positive GPU frame cost.");
           budgetKnob.maxFps = 1000 / (gpuMs / 4);
         } else budgetKnob.maxFps = undefined;

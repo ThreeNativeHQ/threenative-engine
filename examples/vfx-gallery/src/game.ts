@@ -19,14 +19,18 @@ const game = defineGame<GalleryState>({
   frameBudget: {
     reportEvery: 60,
     onWindow(window) {
-      budgetKnob.gpuMs = window.gpuMs;
+      // The render mean and separate compute p50 estimate total GPU work in this window.
+      budgetKnob.gpuEstimateMs =
+        window.gpuMs === undefined || window.gpuCompute === undefined
+          ? undefined
+          : window.gpuMs + window.gpuCompute;
       if (
         budgetKnob.maxFps !== undefined &&
-        window.gpuMs !== undefined &&
+        budgetKnob.gpuEstimateMs !== undefined &&
         window.gpuCompute !== undefined &&
         window.gpuCompute > 0 &&
         window.targetFps !== undefined &&
-        window.gpuMs > 1000 / window.targetFps
+        budgetKnob.gpuEstimateMs > 1000 / window.targetFps
       )
         budgetKnob.overBudgetWindows += 1;
     },

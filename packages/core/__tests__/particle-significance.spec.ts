@@ -11,7 +11,7 @@ function window(overrides: Partial<BudgetWindow> = {}): BudgetWindow {
   return {
     frames: 60,
     presented: { samples: 60, mean: 1000 / 60, p50: 0, p95: 0, p99: 0, max: 0 },
-    gpuMs: 20,
+    gpuMs: 10,
     gpuCompute: 10,
     targetFps: 100,
     ...overrides,
@@ -23,12 +23,18 @@ function candidate(score: number | undefined) {
 const camera = new PerspectiveCamera();
 
 describe("ParticleSignificance", () => {
+  it("includes the separate compute bucket when render alone is below target", () => {
+    const budget = new ParticleSignificance();
+    budget.observe(window({ gpuMs: 6, gpuCompute: 15, targetFps: 60 }));
+    expect(budget.shed).toBeCloseTo((21 - 1000 / 60) / 15);
+  });
+
   it("sheds the smallest significance first and excludes view-culled candidates", () => {
     const budget = new ParticleSignificance();
     const large = candidate(1);
     const small = candidate(0.1);
     const hidden = candidate(undefined);
-    budget.observe(window({ gpuMs: 15 }));
+    budget.observe(window({ gpuMs: 5 }));
     budget.apply([large, hidden, small], camera, 0);
     expect(small.yield).toHaveBeenLastCalledWith(true);
     expect(large.yield).not.toHaveBeenCalled();
@@ -38,13 +44,13 @@ describe("ParticleSignificance", () => {
 
   it("rises instantly and decays at 0.1 per second using presented mean", () => {
     const budget = new ParticleSignificance();
-    budget.observe(window({ gpuMs: 15 }));
+    budget.observe(window({ gpuMs: 5 }));
     expect(budget.shed).toBe(0.5);
-    budget.observe(window({ gpuMs: 10 }));
+    budget.observe(window({ gpuMs: 0 }));
     expect(budget.shed).toBeCloseTo(0.4);
-    budget.observe(window({ gpuMs: 18 }));
+    budget.observe(window({ gpuMs: 8 }));
     expect(budget.shed).toBe(0.8);
-    budget.observe(window({ gpuMs: 10, frames: 600 }));
+    budget.observe(window({ gpuMs: 0, frames: 600 }));
     expect(budget.shed).toBe(0);
     budget.observe(window({ gpuMs: 100 }));
     expect(budget.shed).toBe(1);
@@ -56,7 +62,7 @@ describe("ParticleSignificance", () => {
     budget.observe(window());
     budget.apply([entry], camera, 0);
     expect(entry.yield).toHaveBeenCalledExactlyOnceWith(true);
-    budget.observe(window({ gpuMs: 10 }));
+    budget.observe(window({ gpuMs: 0 }));
     budget.apply([entry], camera, 0.99);
     expect(entry.yield).toHaveBeenCalledTimes(1);
     budget.apply([entry], camera, 1);
@@ -98,7 +104,7 @@ describe("ParticleSignificance", () => {
     budget.observe(window());
     budget.apply([entry], camera, 0);
     entry.significance.mockReturnValue(undefined);
-    budget.observe(window({ gpuMs: 10, frames: 600 }));
+    budget.observe(window({ gpuMs: 0, frames: 600 }));
     budget.apply([entry], camera, 10);
     expect(entry.yield).toHaveBeenCalledExactlyOnceWith(true);
     entry.significance.mockReturnValue(1);

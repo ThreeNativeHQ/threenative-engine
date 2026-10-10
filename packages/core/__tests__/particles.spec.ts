@@ -2,6 +2,7 @@ import { Box3, Group, type Object3D, PerspectiveCamera, Vector3 } from "three";
 import { Fn } from "three/tsl";
 import { SpriteNodeMaterial } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ParticleSignificance } from "../src/particle-significance.js";
 import { GPUParticles3D, foldBounds } from "../src/particles.js";
 import type { IRendererLike } from "../src/renderer.js";
 
@@ -307,6 +308,53 @@ describe("particle bounds and culling", () => {
     emitter.process(gpu, camera());
     expect(emitter.visible).toBe(true);
     expect(emitter.cull.state).toBe("running");
+  });
+
+  it("preserves a game hide made while view culling already hides the emitter", () => {
+    const gpu = renderer([]);
+    const emitter = particles({ bounds: localBounds, graceSeconds: 0 });
+    const view = camera();
+    emitter.attachRenderer(gpu);
+    emitter.position.set(100, 0, -5);
+    emitter.process(gpu, view);
+    expect(emitter.cull.reason).toBe("outside-view");
+    emitter.visible = false;
+    emitter.position.x = 0;
+    emitter.process(gpu, view);
+    expect(emitter.visible).toBe(false);
+    emitter.visible = true;
+    emitter.process(gpu, view);
+    expect(emitter.visible).toBe(true);
+  });
+
+  it("keeps hidden and shadow-casting emitters out of the shedding quota", () => {
+    const gpu = renderer([]);
+    const view = camera();
+    const hidden = particles({ bounds: localBounds });
+    const shadow = particles({ bounds: localBounds });
+    const eligible = particles({ bounds: localBounds });
+    hidden.position.z = -100;
+    shadow.position.z = -50;
+    eligible.position.z = -5;
+    hidden.visible = false;
+    const caster: Object3D = shadow;
+    caster.castShadow = true;
+    for (const emitter of [hidden, shadow, eligible]) emitter.attachRenderer(gpu);
+    const budget = new ParticleSignificance();
+    budget.observe({
+      frames: 60,
+      presented: { samples: 60, mean: 1000 / 60, p50: 0, p95: 0, p99: 0, max: 0 },
+      gpuMs: 16,
+      gpuCompute: 1,
+      targetFps: 60,
+    });
+    budget.apply([hidden.budget, shadow.budget, eligible.budget], view, 0);
+    for (const emitter of [hidden, shadow, eligible]) emitter.process(gpu, view);
+    expect(eligible.cull.reason).toBe("over-budget");
+    expect(hidden.budget.significance(view)).toBeUndefined();
+    expect(shadow.budget.significance(view)).toBeUndefined();
+    expect(hidden.cull.state).toBe("running");
+    expect(shadow.cull.state).toBe("running");
   });
 
   it("yields for budget with buffers intact and ranks unmeasured emitters by distance", () => {

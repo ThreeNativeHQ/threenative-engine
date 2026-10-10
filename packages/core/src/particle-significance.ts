@@ -62,7 +62,8 @@ export class ParticleSignificance {
       targetFps !== undefined &&
       Number.isFinite(targetFps) &&
       targetFps > 0
-        ? Math.max(0, Math.min(1, (gpuMs - 1000 / targetFps) / gpuCompute))
+        ? // Render mean plus compute p50 estimates the frame; the pools are reported separately.
+          Math.max(0, Math.min(1, (gpuMs + gpuCompute - 1000 / targetFps) / gpuCompute))
         : 0;
     const elapsed = (window.frames * window.presented.mean) / 1000;
     const seconds = Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0;
