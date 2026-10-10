@@ -227,6 +227,132 @@ describe("TerrainTiles", () => {
     tiles.dispose();
   });
 
+  it.each([
+    [9, 51_080],
+    [65, 1_869_960],
+  ])(
+    "charges every morph delta plus Three's packed CPU and GPU textures before admitting a %i grid",
+    (tileResolution, bytes) => {
+      const options = {
+        surface: new MeshBasicMaterial(),
+        sampleHeight,
+        residentTileBudget: 1,
+        streamRadius: 0,
+        tileResolution,
+        tileSize: 16,
+        validate: false,
+      };
+      const tiles = new TerrainTiles({ ...options, residentByteBudget: bytes });
+      tiles.follow({ x: 0, z: 0 });
+      const tile = tiles.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the admitted morph tile.");
+      expect(tile.bytes).toBe(bytes);
+      expect(tiles.residentBytes).toBe(bytes);
+      expect(
+        tile.lod.levels.map(({ object }) => {
+          if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+          return object.geometry.morphAttributes.position?.length ?? 0;
+        }),
+      ).toEqual([2, 1, 0]);
+      const disposed = tile.lod.levels.map(({ object }) => {
+        if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+        return vi.spyOn(object.geometry, "dispose");
+      });
+      tiles.dispose();
+      for (const dispose of disposed) expect(dispose).toHaveBeenCalledOnce();
+      const tooSmall = new TerrainTiles({ ...options, residentByteBudget: bytes - 1 });
+      try {
+        expect(() => tooSmall.follow({ x: 0, z: 0 })).toThrow(/residentByteBudget/u);
+        expect(tooSmall.residentTileCount).toBe(0);
+      } finally {
+        tooSmall.dispose();
+        options.surface.dispose();
+      }
+    },
+  );
+
+  it("reserves enough morph storage for stock WebGL packing at an 8192 texture limit", () => {
+    const options = {
+      surface: new MeshBasicMaterial(),
+      sampleHeight,
+      residentTileBudget: 1,
+      residentByteBudget: 2_000_000,
+      streamRadius: 0,
+      tileResolution: 65,
+      tileSize: 64,
+      lodFactors: [1, 2],
+      lodDistances: [8],
+    };
+    const gpu = new TerrainTiles({ ...options, validate: false });
+    const cpu = new TerrainTiles({ ...options, validate: true });
+    try {
+      gpu.follow({ x: 0, z: 0 });
+      cpu.follow({ x: 0, z: 0 });
+      const mesh = gpu.getTile("0:0")?.lod.levels[0]?.object;
+      if (!(mesh instanceof Mesh)) throw new Error("Expected the finest LOD mesh.");
+      const positions = mesh.geometry.morphAttributes.position?.[0];
+      const normals = mesh.geometry.morphAttributes.normal?.[0];
+      if (positions === undefined || normals === undefined)
+        throw new Error("Expected both morph deltas.");
+      // Stock WebGLMorphtargets packs 8,970 texels into two 8,192-texel RGBA32F rows.
+      const textureBytes = 8192 * 2 * 4 * Float32Array.BYTES_PER_ELEMENT;
+      expect(gpu.residentBytes - cpu.residentBytes).toBeGreaterThanOrEqual(
+        positions.array.byteLength + normals.array.byteLength + textureBytes * 2,
+      );
+    } finally {
+      gpu.dispose();
+      cpu.dispose();
+      options.surface.dispose();
+    }
+  });
+
+  it.each([[[1]], [[1, 1]], [[1, 2, 2]], [[2, 1, 2]]])(
+    "admits exactly the charged bytes for effective LOD factors %j",
+    (lodFactors) => {
+      const options = {
+        surface: new MeshBasicMaterial(),
+        sampleHeight: vi.fn(sampleHeight),
+        residentTileBudget: 1,
+        streamRadius: 0,
+        tileResolution: 9,
+        tileSize: 16,
+        lodFactors,
+        lodDistances: lodFactors.slice(1).map((_, index) => 8 * (index + 1)),
+        validate: false,
+      };
+      const probe = new TerrainTiles({ ...options, residentByteBudget: 1_000_000 });
+      probe.follow({ x: 0, z: 0 });
+      const bytes = probe.residentBytes;
+      if (lodFactors.length === 1) expect(bytes).toBe(5_904);
+      const tile = probe.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the probe tile.");
+      expect(
+        tile.lod.levels.map(({ object }) => {
+          if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+          return object.geometry.morphAttributes.position?.length ?? 0;
+        }),
+      ).toEqual(
+        lodFactors.map(
+          (factor) => lodFactors.filter((candidate) => candidate >= factor).length - 1,
+        ),
+      );
+      probe.dispose();
+      const fitted = new TerrainTiles({ ...options, residentByteBudget: bytes });
+      const tooSmall = new TerrainTiles({ ...options, residentByteBudget: bytes - 1 });
+      try {
+        fitted.follow({ x: 0, z: 0 });
+        expect(fitted.residentBytes).toBe(bytes);
+        options.sampleHeight.mockClear();
+        expect(() => tooSmall.follow({ x: 0, z: 0 })).toThrow(/residentByteBudget/u);
+        expect(options.sampleHeight).not.toHaveBeenCalled();
+      } finally {
+        fitted.dispose();
+        tooSmall.dispose();
+        options.surface.dispose();
+      }
+    },
+  );
+
   it("rejects a tile when retained edge samples make it exceed the byte cap", () => {
     const tiles = new TerrainTiles({
       validate: true,
@@ -393,6 +519,119 @@ describe("TerrainTiles", () => {
       tiles.dispose();
     }
   });
+
+  it.each([1, 2, 9])(
+    "renders GPU morphs with %i resident tiles without CPU attribute writes and matches the validating CPU blend",
+    (residentTileBudget) => {
+      const surface = new MeshBasicMaterial();
+      const options = {
+        surface,
+        mergeTiles: false,
+        residentByteBudget: 2_000_000,
+        residentTileBudget,
+        sampleHeight,
+        streamRadius: residentTileBudget === 1 ? 0 : 1,
+        tileResolution: 17,
+        tileSize: 64,
+        lodDistances: [8, 16],
+      };
+      const gpu = new TerrainTiles({ ...options, validate: false });
+      const cpu = new TerrainTiles({ ...options, validate: true });
+      try {
+        gpu.follow({ x: 0, z: 0 });
+        cpu.follow({ x: 0, z: 0 });
+        const tile = gpu.getTile("0:0");
+        if (tile === undefined) throw new Error("Expected the resident GPU tile.");
+        const versions = tile.lod.levels.map(({ object }) => {
+          if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+          return [
+            object.geometry.getAttribute("position").version,
+            object.geometry.getAttribute("normal").version,
+          ];
+        });
+        const finest = tile.lod.levels[0]?.object;
+        if (!(finest instanceof Mesh)) throw new Error("Expected the finest LOD mesh.");
+        const originalGeometry = finest.geometry;
+        const originalPosition = originalGeometry.getAttribute("position");
+        const originalNormal = originalGeometry.getAttribute("normal");
+        const disposed = vi.spyOn(originalGeometry, "dispose");
+        // Include skipped levels, refinement and an interrupted transition.
+        for (const [x, frames] of [
+          [9, 3],
+          [0, 3],
+          [20, 1],
+          [0, 3],
+        ] as const) {
+          gpu.follow({ x, z: 0 });
+          cpu.follow({ x, z: 0 });
+          for (let frame = 0; frame <= frames; frame += 1) {
+            if (frame > 0) {
+              gpu.process();
+              cpu.process();
+            }
+            const rendered = tile.lod.levels.find(({ object }) => object.visible)?.object;
+            const reference = cpu
+              .getTile("0:0")
+              ?.lod.levels.find(({ object }) => object.visible)?.object;
+            if (!(rendered instanceof Mesh) || !(reference instanceof Mesh))
+              throw new Error("Expected matching visible meshes.");
+            expect(rendered.material).toBe(surface);
+            expect(rendered.geometry.morphTargetsRelative).toBe(true);
+            for (
+              let vertex = 0;
+              vertex < rendered.geometry.getAttribute("position").count;
+              vertex += 1
+            ) {
+              const actual = new Vector3();
+              rendered.getVertexPosition(vertex, actual);
+              const expected = new Vector3().fromBufferAttribute(
+                reference.geometry.getAttribute("position"),
+                vertex,
+              );
+              expect(actual.distanceTo(expected)).toBeLessThan(0.001);
+              const normal = new Vector3().fromBufferAttribute(
+                rendered.geometry.getAttribute("normal"),
+                vertex,
+              );
+              for (const [target, weight] of (rendered.morphTargetInfluences ?? []).entries()) {
+                const delta = rendered.geometry.morphAttributes.normal?.[target];
+                if (delta !== undefined)
+                  normal.addScaledVector(new Vector3().fromBufferAttribute(delta, vertex), weight);
+              }
+              normal.normalize();
+              expect(
+                normal.distanceTo(
+                  new Vector3().fromBufferAttribute(
+                    reference.geometry.getAttribute("normal"),
+                    vertex,
+                  ),
+                ),
+              ).toBeLessThan(0.001);
+            }
+            expect(
+              tile.lod.levels.map(({ object }) => {
+                if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+                return [
+                  object.geometry.getAttribute("position").version,
+                  object.geometry.getAttribute("normal").version,
+                ];
+              }),
+            ).toEqual(versions);
+          }
+        }
+        expect(finest.geometry.getAttribute("position")).toBe(originalPosition);
+        expect(finest.geometry.getAttribute("normal")).toBe(originalNormal);
+        if (residentTileBudget === 2) expect(disposed).toHaveBeenCalledOnce();
+        else expect(disposed).not.toHaveBeenCalled();
+        expect(gpu.maxLodTransitionFrames).toBe(3);
+        expect(gpu.blendingTiles).toBe(0);
+      } finally {
+        gpu.dispose();
+        cpu.dispose();
+        surface.dispose();
+      }
+    },
+  );
 
   it("morphs one LOD surface within the measured pop bound for three frames", () => {
     const tiles = new TerrainTiles({
