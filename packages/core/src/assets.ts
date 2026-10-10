@@ -943,9 +943,13 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // decoders load: a game never pays for a codec its assets do not use, and no WASM is
         // instantiated on platforms that never load a compressed model. Both the compiled and
         // the uncompiled path take this one code path.
-        const data = await fetchModelBytes(url);
+        // The loader module is requested beside the bytes: requested after them, it queues behind
+        // every other model download on the page's few connections, and no model parses until it lands.
+        const [data, { GLTFLoader }] = await Promise.all([
+          fetchModelBytes(url),
+          import("three/addons/loaders/GLTFLoader.js"),
+        ]);
         const extensions = declaredExtensions(data);
-        const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
         const loader = new GLTFLoader();
         // Models carrying KHR_texture_basisu textures transcode through the same shared,
         // support-detected instance `texture()` uses — never a second detection pass.
