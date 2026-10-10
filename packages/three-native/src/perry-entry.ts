@@ -73,10 +73,31 @@ export function bindPerryEngine(names: readonly string[]): Record<string, unknow
     },
     render: runtime.render,
   });
+  const exports = bindUpstreamExports(names, catalog as unknown as ICatalog, bound);
+  for (const value of Object.values(exports))
+    if (typeof value === "function" && typeof value.prototype === "object") exactInstanceof(value);
   return {
-    ...bindUpstreamExports(names, catalog as unknown as ICatalog, bound),
+    ...exports,
     __tnTsl: tsl.exports,
     __tnLoadAsset: (kind: number, source: string | Uint8Array, type?: number) =>
       runtime.loadAsset(kind, source, type).map(engine.wrap),
   };
+}
+
+// Perry answers `instanceof` by the class a value was compiled from, so every engine class (one
+// factory `class`) matches every other and none matches `Material`; the prototype chain is three's
+// answer. A function owns the capture: Perry gives a static member no closure.
+function exactInstanceof(cls: { prototype: object }): void {
+  Object.defineProperty(cls, Symbol.hasInstance, {
+    value: (value: unknown) => {
+      if (typeof value !== "object" || value === null) return false;
+      for (
+        let link = Object.getPrototypeOf(value);
+        link !== null;
+        link = Object.getPrototypeOf(link)
+      )
+        if (link === cls.prototype) return true;
+      return false;
+    },
+  });
 }

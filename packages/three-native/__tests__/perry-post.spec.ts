@@ -79,6 +79,26 @@ it("transports a post id and null through the Perry C entry and preserves named 
 vi.mock("../src/perry-transport.js", () => ({ createPerryRuntime: () => native }));
 const { bindPerryEngine } = await import("../src/perry-entry.js");
 
+it("answers instanceof by the prototype chain, which Perry's class-id check gets wrong", () => {
+  const b = bindPerryEngine([
+    "Object3D",
+    "Mesh",
+    "Group",
+    "Material",
+    "MeshBasicMaterial",
+  ]) as Record<string, { prototype: object; [Symbol.hasInstance]: (value: unknown) => boolean }>;
+  for (const name of ["Object3D", "Mesh", "Group", "Material"])
+    expect(Object.hasOwn(b[name] as object, Symbol.hasInstance), name).toBe(true);
+  const hasInstance = (cls: string, value: unknown) =>
+    (b[cls] as (typeof b)[string])[Symbol.hasInstance](value);
+  const group = Object.create((b.Group as (typeof b)[string]).prototype) as object;
+  expect(hasInstance("Object3D", group)).toBe(true);
+  expect(hasInstance("Mesh", group)).toBe(false);
+  const material = Object.create((b.MeshBasicMaterial as (typeof b)[string]).prototype) as object;
+  expect(hasInstance("Material", material)).toBe(true);
+  expect(hasInstance("Object3D", null)).toBe(false);
+});
+
 describe("Perry pass and RenderPipeline", () => {
   function fixture() {
     return bindPerryEngine([
