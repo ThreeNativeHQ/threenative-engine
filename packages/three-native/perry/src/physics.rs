@@ -4,6 +4,8 @@ use threenative_native_physics::*;
 extern "C" {
     fn js_typed_array_masked_window_data_ptr(value: f64) -> i64;
     fn js_typed_array_length(header: *const u8) -> i32;
+    fn js_native_buffer_data_ptr(value: f64) -> *const u8;
+    fn js_native_buffer_byte_len(value: f64) -> usize;
 }
 
 // The pinned Perry runtime resolves owning arrays and ArrayBuffer/native-arena views.
@@ -15,19 +17,26 @@ pub unsafe extern "C" fn js_tnp_physics_copy(
     kind: i32,
     to_native: i32,
 ) -> i32 {
-    let data = js_typed_array_masked_window_data_ptr(value);
-    if data == 0 || count < 0 || (count > 0 && pointer == 0) {
+    if count < 0 || (count > 0 && pointer == 0) {
         return 1;
     }
-    let header = (value.to_bits() & 0x0000_FFFF_FFFF_FFFF) as *const u8;
-    // TypedArrayHeader's kind byte belongs to Perry's pinned 0.5 ABI.
-    if !matches!(kind, 5 | 6 | 7)
-        || *header.add(8) != kind as u8
-        || count > js_typed_array_length(header) as i64
-    {
-        return 1;
-    }
-    let bytes = count as usize * if kind == 7 { 8 } else { 4 };
+    // Perry represents Uint8Array as a BufferHeader, including offset ArrayBuffer views.
+    let buffer = if kind == 1 { js_native_buffer_data_ptr(value) } else { std::ptr::null() };
+    let data = if !buffer.is_null() {
+        if count as usize > js_native_buffer_byte_len(value) { return 1; }
+        buffer as i64
+    } else {
+        let data = js_typed_array_masked_window_data_ptr(value);
+        if data == 0 { return 1; }
+        let header = (value.to_bits() & 0x0000_FFFF_FFFF_FFFF) as *const u8;
+        // TypedArrayHeader's kind byte belongs to Perry's pinned 0.5 ABI.
+        if !matches!(kind, 1 | 5 | 6 | 7)
+            || *header.add(8) != kind as u8
+            || count > js_typed_array_length(header) as i64
+        { return 1; }
+        data
+    };
+    let bytes = count as usize * match kind { 1 => 1, 7 => 8, _ => 4 };
     if bytes == 0 {
         return 0;
     }

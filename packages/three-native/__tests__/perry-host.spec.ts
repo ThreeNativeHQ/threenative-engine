@@ -43,6 +43,11 @@ it("drives core frames, input, timers and async mailbox observations through pla
     .replace(
       'import { createPerryPhysicsHost } from "./perry-physics.js";',
       'const createPerryPhysicsHost = () => ({ version: "0.30.0", createSimulation() {} });',
+    )
+    .replace('import { __tnLoadAsset } from "three";', "const __tnLoadAsset = () => [];")
+    .replace(
+      'import { nativeImageBitmaps } from "./texture-sources.js";',
+      "const nativeImageBitmaps = new WeakMap();",
     );
   const assets = mkdtempSync(join(tmpdir(), "perry-host-"));
   mkdirSync(join(assets, "models"));

@@ -147,8 +147,9 @@ declare function js_tnp_physics_copy(
   kind: number,
   toNative: number,
 ): number;
+/** One bulk transfer; kind 1 is encoded bytes, 5/6/7 are physics scalar buffers. */
 export function physicsCopy(
-  value: Float32Array | Uint32Array | Float64Array,
+  value: Uint8Array | Float32Array | Uint32Array | Float64Array,
   pointer: number,
   count: number,
   kind: number,

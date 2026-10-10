@@ -32,6 +32,9 @@ interface ICanvasLike {
 /** three's Texture defaults: an image is flipped and linear-filtered, unlike DataTexture's. */
 const IMAGE_DEFAULTS = { flipY: true, magFilter: 1006, minFilter: 1008 };
 
+/** Perry bitmaps retain decoded engine textures until closed or adopted once. */
+export const nativeImageBitmaps = new WeakMap<object, { texture?: object; flipped: boolean }>();
+
 function isCanvas(image: unknown): image is ICanvasLike {
   return typeof (image as Partial<ICanvasLike>)?.getContext === "function";
 }
@@ -218,6 +221,25 @@ export function defineTextureSources(
   /** `new Texture(image)` uploads the image's pixels; with no image it is the engine's Texture. */
   function Texture(this: unknown, image?: unknown, ...rest: unknown[]) {
     if (image === undefined || image === null) return make(BaseTexture, rest, new.target, Texture);
+    const bitmap = nativeImageBitmaps.get(image as object);
+    if (bitmap !== undefined) {
+      const texture = bitmap.texture as { flipY: boolean } | undefined;
+      if (texture === undefined)
+        throw new Error("TN_NATIVE_IMAGE_BITMAP_CLOSED: bitmap was closed or already adopted");
+      bitmap.texture = undefined;
+      let flipY = texture.flipY;
+      Object.defineProperty(texture, "flipY", {
+        configurable: true,
+        get: () => flipY,
+        set(value: unknown) {
+          flipY = Boolean(value);
+          // Bitmap orientation and texture.flipY compose, as in the V8 host's upload.
+          runtime.set(engineRef(texture) as IEngineRef, "flipY", flipY !== bitmap.flipped);
+        },
+      });
+      texture.flipY = flipY;
+      return texture;
+    }
     return fromImage(image, prototype);
   }
   Texture.prototype = BaseTexture.prototype;

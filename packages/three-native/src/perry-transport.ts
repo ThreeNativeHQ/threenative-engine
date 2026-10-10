@@ -6,6 +6,7 @@ import {
   layout,
   alloc as malloc,
   memory,
+  physicsCopy,
   readString,
   render,
   stringBytes,
@@ -330,7 +331,8 @@ export function createPerryRuntime(): IPerryRuntime {
           input = string(source).at;
         } else {
           input = alloc(source.byteLength);
-          source.forEach((byte, i) => write(input + i, byte, 0));
+          if (physicsCopy(source, input, source.byteLength, 1, true))
+            throw new TypeError("TN_PERRY_ASSET_COPY: invalid encoded bytes");
         }
         const error = readString(
           call(

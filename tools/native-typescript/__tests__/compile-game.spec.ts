@@ -170,6 +170,7 @@ describe("bindHostGlobals", () => {
       "const t0 = performance.now();",
       "const id: ReturnType<typeof setTimeout> = setTimeout(() => clearTimeout(id), 1);",
       "const r = await fetch(url);",
+      "const b = await createImageBitmap(await r.blob());",
       "const o = { fetch, x: window.setTimeout, setInterval: 1 };",
       "class C { fetch() {} }",
     ].join("\n");
@@ -178,6 +179,7 @@ describe("bindHostGlobals", () => {
         "const t0 = globalThis.performance.now();",
         "const id: ReturnType<typeof globalThis.setTimeout> = globalThis.setTimeout(() => globalThis.clearTimeout(id), 1);",
         "const r = await globalThis.fetch(url);",
+        "const b = await globalThis.createImageBitmap(await r.blob());",
         "const o = { fetch: globalThis.fetch, x: window.setTimeout, setInterval: 1 };",
         "class C { fetch() {} }",
       ].join("\n"),

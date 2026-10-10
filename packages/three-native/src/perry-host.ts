@@ -1,5 +1,7 @@
 /** Core's browser-service seams over the shared native player, with no DOM renderer. */
 import { existsSync, readFileSync } from "node:fs";
+// @ts-expect-error -- only the strict native facade exports this transport hook.
+import { __tnLoadAsset } from "three";
 import {
   alloc,
   free,
@@ -15,6 +17,7 @@ import {
   writeString,
 } from "tn-native-transport";
 import { createPerryPhysicsHost } from "./perry-physics.js";
+import { nativeImageBitmaps } from "./texture-sources.js";
 
 interface ITimer {
   callback: () => void;
@@ -107,6 +110,46 @@ globals.fetch = async (input: string | URL | Request, init?: RequestInit) => {
   if (file === undefined) return hostFetch(input, init);
   if (!existsSync(file)) return new Response(null, { status: 404, statusText: "Not Found" });
   return new Response(readFileSync(file), { status: 200 });
+};
+
+globals.createImageBitmap = async (source: unknown, ...rest: unknown[]) => {
+  if (rest.length > 1)
+    throw new Error("TN_NATIVE_IMAGE_BITMAP_CROP: a source rectangle is unsupported");
+  const options = (rest[0] ?? {}) as ImageBitmapOptions;
+  if (options.premultiplyAlpha === "premultiply")
+    throw new Error("TN_NATIVE_IMAGE_BITMAP_OPTION: premultiplyAlpha premultiply is unsupported");
+  for (const option of ["resizeWidth", "resizeHeight", "resizeQuality"] as const)
+    if (options[option] !== undefined)
+      throw new Error(`TN_NATIVE_IMAGE_BITMAP_OPTION: ${option} is unsupported`);
+  const input = source as { arrayBuffer?: () => Promise<ArrayBuffer> } | null;
+  const bytes = typeof input?.arrayBuffer === "function" ? await input.arrayBuffer() : source;
+  // Perry's Blob/Response.arrayBuffer() answer a Buffer: a Uint8Array that isView rejects.
+  const encoded =
+    bytes instanceof Uint8Array
+      ? bytes
+      : bytes instanceof ArrayBuffer
+        ? new Uint8Array(bytes)
+        : ArrayBuffer.isView(bytes)
+          ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+          : undefined;
+  if (encoded === undefined)
+    throw new TypeError("TN_NATIVE_IMAGE_BITMAP_SOURCE: expected encoded image bytes or a Blob");
+  const texture = (__tnLoadAsset as (kind: number, bytes: Uint8Array) => object[])(2, encoded)[0];
+  if (!texture) throw new Error("TN_NATIVE_IMAGE_DECODE: no texture");
+  const image = (texture as { image: { width: number; height: number } }).image;
+  const state = {
+    texture: texture as object | undefined,
+    flipped: options.imageOrientation === "flipY",
+  };
+  const bitmap = {
+    width: image.width,
+    height: image.height,
+    close() {
+      state.texture = undefined;
+    },
+  };
+  nativeImageBitmaps.set(bitmap, state);
+  return bitmap;
 };
 
 // The mailbox retries a pending observation after Perry drains its promises between player steps.

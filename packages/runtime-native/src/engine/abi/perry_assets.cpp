@@ -33,7 +33,7 @@ extern "C" int64_t tnp_load_asset(int64_t context, int64_t kind, int64_t input,
         failure = std::move(message);
         return int64_t(reinterpret_cast<uintptr_t>(failure.c_str()));
     };
-    if (!context || !input || !output || (kind != 0 && kind != 1)) return fail("TN_PERRY_ASSET_ARGUMENT");
+    if (!context || !input || !output || (kind != 0 && kind != 1 && kind != 2)) return fail("TN_PERRY_ASSET_ARGUMENT");
     try {
         std::vector<uint8_t> fileBytes;
         const auto* bytes = reinterpret_cast<const uint8_t*>(input);
@@ -49,7 +49,8 @@ extern "C" int64_t tnp_load_asset(int64_t context, int64_t kind, int64_t input,
             bytes = fileBytes.data();
             size = fileBytes.size();
         }
-        if (size <= 0 || size > 0x7fffffff) return fail("TN_PERRY_ASSET_SIZE");
+        if (size <= 0 || size > 0x7fffffff)
+            return fail(kind == 2 ? "TN_NATIVE_IMAGE_DECODE: invalid image size" : "TN_PERRY_ASSET_SIZE");
         auto* ctx = reinterpret_cast<tn_context_t*>(context);
         Handles owned;
         auto& handles = owned.values;
@@ -70,6 +71,13 @@ extern "C" int64_t tnp_load_asset(int64_t context, int64_t kind, int64_t input,
             handles.push_back(tn::abi::shareObject(ctx, "Group", loaded.scene));
             for (auto& clip : loaded.animations)
                 handles.push_back(tn::abi::shareObject(ctx, "AnimationClip", clip));
+        } else if (kind == 2) {
+            auto texture = std::make_shared<Texture>();
+            if (gltf::imageFormat(bytes, size) == gltf::ImageFormat::Unknown ||
+                !gltf::decodeImage(bytes, size, texture->width, texture->height, texture->data))
+                return fail("TN_NATIVE_IMAGE_DECODE: unsupported, damaged or oversized image");
+            texture->needsUpdate();
+            handles.push_back(tn::abi::shareObject(ctx, "Texture", texture));
         } else {
             if (type != kTextureFloatType && type != kTextureHalfFloatType) return fail("TN_HDR_INVALID: unsupported type");
             std::vector<float> rgba;

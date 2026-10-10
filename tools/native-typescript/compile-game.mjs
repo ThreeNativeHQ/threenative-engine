@@ -208,6 +208,7 @@ async function perry() {
 // Pinned Perry compiles these free names to its own natives and ignores a reassignment on
 // globalThis, so perry-host's game clock and asset fetch would never reach core or the game.
 export const HOST_GLOBALS = [
+  "createImageBitmap",
   "fetch",
   "performance",
   "setTimeout",
