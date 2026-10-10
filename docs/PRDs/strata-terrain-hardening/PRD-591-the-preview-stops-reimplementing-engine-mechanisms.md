@@ -1,6 +1,6 @@
 # PRD-591 — The preview stops re-implementing engine mechanisms
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P2 — A second prop LOD pipeline, a spawn-readiness gate and the scatter loop stay in example code where every terrain game must copy them (AC-1 to AC-4).
 **Complexity:** 6 (MEDIUM); risk override: visual output changes, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -54,8 +54,26 @@ both material paths.
 - [ ] Ladder deleted; editor on streamed props. proof: editor script + count-loc
 
 #### Phase 2: readiness and scatter
-**Status:** NOT STARTED
+**Status:** PARTIAL
 - [ ] Spawn readiness in `WorldCells`. proof: spec + web playtest
+  - Engine helper implemented; caller and native closure remain open: `WorldCells.whenSpawnReady(position, radius = 0, timeoutMs = 120_000)` in
+    `packages/core/src/world-cells.ts`, built on `readinessAt` as the only authority. It snapshots
+    the position, observes held waiters at the end of the existing `update` after admissions, and
+    settles on readiness, asset failure, disposal and its finite deadline, clearing the timer and
+    the waiter on every settlement. proof: `pnpm exec vitest run
+    packages/core/__tests__/world-cells-data.spec.ts packages/core/__tests__/world-cells-admission.spec.ts
+    packages/core/__tests__/world-cells-terrain.spec.ts packages/core/__tests__/world-cells.spec.ts`
+    — parent run: 97/97 passed in 52.94 s. The oversized `2**31` deadline first reproduced
+    Node timer overflow, then passed with the supported `(0, 2147483647]` ms bound.
+    Disposal clears the timer; unsettled test polling fails closed. Earlier core typecheck/build
+    (publint) passed; the parent core typecheck after the bound correction also passed (exit 0).
+  - Open, not ticked: caller migration (`examples/strata-terrain-preview/src/render/loading.ts`,
+    `game.ts`, five kit fixtures), `pnpm --filter strata-terrain-preview test:terrain:web`, and
+    native proof. This migration must keep the current pre-props failure capture, cancellation and
+    all five fixtures plus the `propStreaming` warmed/prewarmed aggregation; remove none now.
+  - Native proof open: the linked checkout has no host build, but the primary checkout already
+    has `packages/runtime-native/build/tn-linux-wgpu/mystral`. The bounded native assertion task
+    stopped before editing on a provider quota diagnostic. No native proof or new C++ build is claimed.
 - [ ] Scatter off the `enter` path. proof: web playtest long-task assertion
 
 #### Phase 3: ground and look check

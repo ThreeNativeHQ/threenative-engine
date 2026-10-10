@@ -921,6 +921,15 @@ export interface IWorldRegionReadiness {
   readonly ready: boolean;
 }
 
+/** One `whenSpawnReady` caller: a fixed region snapshot, its deadline and its promise sinks. */
+interface ISpawnWaiter {
+  readonly position: { readonly x: number; readonly z: number };
+  readonly radius: number;
+  readonly resolve: (readiness: IWorldRegionReadiness) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
 interface ICellBatch {
   readonly asset: string;
   /**
@@ -4080,6 +4089,7 @@ class AdmissionBudget implements IAdmissionBudget {
  * @situation honour per-asset draw distances and hard streaming budgets without a mid-frame throw
  * @constraint surface is the game's; this class creates no material, colour or geometry
  * @constraint budgets are hard caps that report pressure instead of over-committing
+ * @constraint `whenSpawnReady(position, radius, timeoutMs)` snapshots a fixed region and settles from existing updates or disposal; it does not drive streaming, and `prewarmed` remains the separate draw gate
  * @constraint model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell
  * @constraint refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first
  * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has
@@ -4250,6 +4260,12 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #prewarmed: Promise<void> = new Promise<void>((resolve) => {
     this.#prewarmResolve = resolve;
   });
+  /**
+   * Games waiting on `whenSpawnReady`, settled by the update that follows admissions or by dispose.
+   * One set, no listener registry and no polling: the update that already walks residency observes
+   * these, so a world nobody is waiting on scans nothing. See {@link whenSpawnReady}.
+   */
+  readonly #spawnWaiters = new Set<ISpawnWaiter>();
   readonly #extentBounds: Box3;
   /** The largest run of each asset in any cell: the segment size every cell of it fits. */
   readonly #runMax = new Map<string, number>();
@@ -5032,6 +5048,8 @@ export class WorldCells extends Group implements IComputeDriven {
       deferred: this.#jobs.length,
       spentMs: budget.spentMs + props.spentMs,
     };
+    // After this frame's admissions, so a region admitted by this update answers its waiters in it.
+    this.#settleSpawnWaiters();
   }
 
   /**
@@ -5898,9 +5916,89 @@ export class WorldCells extends Group implements IComputeDriven {
     };
   }
 
+  /**
+   * Resolves when the content a fixed spawn needs has finished loading.
+   *
+   * The one-shot gate a streamed game waits on before it releases its loading screen. Readiness is
+   * `readinessAt` and nothing else, so there is one authority for "the spawn's data is loaded": every
+   * required cell and terrain tile in `radius` loaded with no failure. The position is snapshotted
+   * here, so a caller may keep mutating the object it passed; `update` observes the held waiters
+   * right after the frame's admissions, so a region an update admits settles its waiter in it.
+   *
+   * Fail closed: malformed coordinates, a negative radius or an unsupported timer deadline reject
+   * before a waiter is armed. A failed asset and a torn-down world reject with their own named
+   * error, and the deadline rejects with the budget it named. Every settlement removes the waiter
+   * and clears its timer, so a settled waiter holds neither the deadline nor the world, and a
+   * region evicted after its waiter resolved changes nothing.
+   */
+  whenSpawnReady(
+    position: { readonly x: number; readonly z: number },
+    radius = 0,
+    timeoutMs = 120_000,
+  ): Promise<IWorldRegionReadiness> {
+    if (
+      !Number.isFinite(position.x) ||
+      !Number.isFinite(position.z) ||
+      !Number.isFinite(radius) ||
+      radius < 0
+    )
+      return Promise.reject(
+        new Error(
+          "WorldCells spawn readiness requires finite coordinates and a nonnegative radius.",
+        ),
+      );
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2 ** 31 - 1)
+      return Promise.reject(
+        new Error("WorldCells spawn readiness requires a timeout in (0, 2147483647] ms."),
+      );
+    if (this.#released) return Promise.reject(new Error("WorldCells disposed"));
+    const snapshot = { x: position.x, z: position.z };
+    const immediate = this.readinessAt(snapshot, radius);
+    if (immediate.failures > 0)
+      return Promise.reject(new Error("WorldCells spawn assets failed to load"));
+    if (immediate.ready) return Promise.resolve(immediate);
+    return new Promise<IWorldRegionReadiness>((resolve, reject) => {
+      const waiter: ISpawnWaiter = {
+        position: snapshot,
+        radius,
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          this.#spawnWaiters.delete(waiter);
+          reject(new Error(`WorldCells spawn exceeded ${String(timeoutMs)} ms`));
+        }, timeoutMs),
+      };
+      this.#spawnWaiters.add(waiter);
+    });
+  }
+
+  /** Settle the waiters this frame's admissions can answer; a non-Disposed, non-Failed region waits. */
+  #settleSpawnWaiters(): void {
+    if (this.#spawnWaiters.size === 0) return;
+    for (const waiter of this.#spawnWaiters) {
+      const readiness = this.readinessAt(waiter.position, waiter.radius);
+      if (readiness.failures > 0) {
+        this.#spawnWaiters.delete(waiter);
+        clearTimeout(waiter.timer);
+        waiter.reject(new Error("WorldCells spawn assets failed to load"));
+      } else if (readiness.ready) {
+        this.#spawnWaiters.delete(waiter);
+        clearTimeout(waiter.timer);
+        waiter.resolve(readiness);
+      }
+    }
+  }
+
   dispose(): void {
     if (this.#released) return;
     this.#released = true;
+    // A world torn down mid-wait must not leave a game awaiting its spawn gate, nor a deadline
+    // outliving the world that armed it.
+    for (const waiter of this.#spawnWaiters) {
+      clearTimeout(waiter.timer);
+      waiter.reject(new Error("WorldCells spawn cancelled"));
+    }
+    this.#spawnWaiters.clear();
     for (const [mesh, entry] of [...this.#awaited]) {
       if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
     }
