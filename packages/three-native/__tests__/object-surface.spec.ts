@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Material, defineObjectSurface } from "../src/object-surface.js";
+import { Material, defineObjectSurface, defineTypeFlags } from "../src/object-surface.js";
 
 class BufferGeometry {
   readonly stored = new Map<string, unknown>();
@@ -98,5 +98,16 @@ describe("defineObjectSurface", () => {
     expect(() => {
       geometry.morphAttributes = { color: [] };
     }).toThrow("morphAttributes.color");
+  });
+});
+
+describe("defineTypeFlags", () => {
+  it("leaves the flag writable, as three's own `this.isTexture = true` is", () => {
+    class Texture {}
+    defineTypeFlags({ Texture });
+    const texture = new Texture() as { isTexture?: boolean };
+    expect(texture.isTexture).toBe(true);
+    texture.isTexture = true;
+    expect(Object.hasOwn(texture, "isTexture")).toBe(true);
   });
 });

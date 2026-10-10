@@ -232,6 +232,10 @@ export function defineTypeFlags(classes: Readonly<Record<string, unknown>>): voi
     if (typeof cls !== "function") continue;
     const flags = name.endsWith("Light") ? [`is${name}`, "isLight"] : [`is${name}`];
     for (const flag of flags)
-      Object.defineProperty(cls.prototype, flag, { configurable: true, value: true });
+      Object.defineProperty(cls.prototype, flag, {
+        configurable: true,
+        writable: true,
+        value: true,
+      });
   }
 }
