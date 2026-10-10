@@ -2,6 +2,7 @@
 // quality-allow: __tnLoadAsset is injected into the strict Perry three module.
 // @ts-expect-error -- only the strict native facade exports this transport hook.
 import { __tnLoadAsset } from "three";
+import { assetPath } from "../perry-asset-path.js";
 import type { IGltfResult } from "./gltf-loader-web.js";
 
 const load = __tnLoadAsset as (
@@ -9,6 +10,15 @@ const load = __tnLoadAsset as (
   source: string | Uint8Array,
   type?: number,
 ) => object[];
+
+// A page-relative URL is a file the native decoder opens in place; a network URL arrives as bytes.
+async function source(url: string): Promise<string | Uint8Array> {
+  const file = assetPath(url);
+  if (file !== undefined) return file;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`TN_PERRY_ASSET_FETCH: ${url} answered ${response.status}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
 
 export class GLTFLoader {
   path = "";
@@ -30,7 +40,7 @@ export class GLTFLoader {
     };
   }
   async loadAsync(url: string): Promise<IGltfResult> {
-    return this.result(this.path + url);
+    return this.result(await source(this.path + url));
   }
   load(
     url: string,
@@ -85,7 +95,7 @@ export class HDRLoader {
     return this;
   }
   async loadAsync(url: string): Promise<object> {
-    const texture = load(1, this.path + url, this.type)[0];
+    const texture = load(1, await source(this.path + url), this.type)[0];
     if (!texture) throw new Error("TN_HDR_INVALID: no texture");
     return texture;
   }
