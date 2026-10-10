@@ -1157,11 +1157,12 @@ void attribute_defer() {
     const float positions[3] = {1, 2, 3};
     const tn_value_t f32[2] = {bytes("Float32Array", positions, 3), num(3)};
     CHECK(tn_construct(ctx, "BufferAttribute", f32, 2, &attribute, &d.value) == TN_OK);
-    void (*pull)(uintptr_t, uintptr_t, uint32_t, uint32_t) = [](uintptr_t key, uintptr_t data, uint32_t count,
-                                                                  uint32_t scalar) {
+    uint32_t (*pull)(uintptr_t, uintptr_t, uint32_t, uint32_t) = [](uintptr_t key, uintptr_t data, uint32_t count,
+                                                                      uint32_t scalar) -> uint32_t {
         CHECK(count == 3 && scalar == 0);
         reinterpret_cast<float*>(data)[2] = 9;
         pulled.push_back(key);
+        return count;
     };
     void (*forget)(uintptr_t) = [](uintptr_t key) { forgotten.push_back(key); };
     const uintptr_t key =
