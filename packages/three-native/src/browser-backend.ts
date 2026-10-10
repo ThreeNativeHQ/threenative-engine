@@ -327,6 +327,9 @@ export function defineBrowserClasses(
   registry: IRegistryDump,
   runtime: IBrowserRuntime,
   catalog?: ICatalogShape,
+  // Perry: a write to an object whose chain holds a class with that field stores a field and skips
+  // an inherited setter, so an engine vector carries its lane accessors as own ones there.
+  ownLanes = false,
 ): IBrowserEngine {
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object }>();
@@ -427,6 +430,8 @@ export function defineBrowserClasses(
   // ponytail: a Ref to it the engine hands out before then gets a second wrapper; none does today.
   const deferred = (owner: object, property: string, prototype: object): object => {
     const member = Object.create(prototype) as object;
+    const own = ownSlots.get(prototype);
+    if (own !== undefined) Object.defineProperties(member, own);
     Object.defineProperty(member, REF, {
       configurable: true,
       get() {
@@ -508,6 +513,8 @@ export function defineBrowserClasses(
     for (const lane of info.lanes) delete value[lane];
     Object.setPrototypeOf(value, info.engine);
     adopt(value, runtime.construct(info.name, lanes));
+    const own = ownSlots.get(info.engine);
+    if (own !== undefined) Object.defineProperties(value, own);
   };
   const wrappers = new Map<string, WeakRef<object>>();
   // Callbacks: the function lives on its wrapper (a WeakMap entry), so wrapper -> closure is an edge
@@ -1360,6 +1367,16 @@ export function defineBrowserClasses(
       }
       ownSlots.set(prototype, own);
     }
+    if (ownLanes && valueClass !== undefined)
+      ownSlots.set(
+        accessors,
+        Object.fromEntries(
+          Object.keys(binding.fields ?? {}).flatMap((lane) => {
+            const descriptor = Object.getOwnPropertyDescriptor(accessors, lane);
+            return descriptor === undefined ? [] : [[lane, { ...descriptor, enumerable: true }]];
+          }),
+        ),
+      );
     classes[name] = cls;
     byType.set(runtime.typeId(name), { prototype: accessors });
     typeNames.set(runtime.typeId(name), name);

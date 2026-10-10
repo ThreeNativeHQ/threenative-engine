@@ -173,6 +173,36 @@ describe("three's math values on the browser back end", () => {
     expect(second.position).toBe(position);
   });
 
+  it("gives Perry's engine vectors own lane accessors that still write the engine's memory", () => {
+    const { runtime, heap } = memoryRuntime();
+    const { classes } = defineBrowserClasses(
+      registry,
+      {
+        ...runtime,
+        get(self, property) {
+          if (property !== "__addresses") return runtime.get(self, property);
+          const at = 4096 + Number(self.key.split(":")[1]) * 64;
+          return { __address: at, position: at + 16, layers: at + 48 };
+        },
+      },
+      undefined,
+      true,
+    );
+    type Owner = { position: IVec };
+    const Object3D = classes.Object3D as new () => Owner;
+    const Vector3 = classes.Vector3 as new (x?: number, y?: number, z?: number) => IVec;
+    const ownSetter = (value: object): boolean =>
+      typeof Object.getOwnPropertyDescriptor(value, "x")?.set === "function";
+    const wrapped = new Object3D().position; // the first member comes from the engine
+    const deferred = new Object3D().position; // a later one is built from its owner's record
+    expect([ownSetter(wrapped), ownSetter(deferred)]).toEqual([true, true]);
+    deferred.set(4, 5, 6);
+    expect(heap.join(",")).toContain("4,5,6");
+    expect(Object.keys(deferred)).toEqual(["x", "y", "z"]); // accessors, not stored fields
+    // A JS vector stays plain until the engine keeps it.
+    expect(ownSetter(new Vector3())).toBe(false);
+  });
+
   it("lends an engine call a vector and copies its lanes back, answering the JS value", () => {
     const { runtime, calls } = memoryRuntime();
     const { classes } = defineBrowserClasses(registry, runtime);

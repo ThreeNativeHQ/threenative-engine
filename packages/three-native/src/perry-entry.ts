@@ -20,6 +20,7 @@ export function bindPerryEngine(names: readonly string[]): Record<string, unknow
     registry as IRegistryDump,
     runtime,
     catalog as unknown as ICatalog,
+    true,
   );
   const { classes } = engine;
   const Color = classes.Color as new (color: unknown) => { r: number; g: number; b: number };
