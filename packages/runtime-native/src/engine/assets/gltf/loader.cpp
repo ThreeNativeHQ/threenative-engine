@@ -425,16 +425,30 @@ class Builder {
     }
 
     // loadAccessor: the accessor's own typed array (interleaved views de-interleaved, sparse values
-    // applied), its item size and normalized flag.
+    // applied), its item size and normalized flag. The bytes copy as stored, as three's typed-array
+    // view reads them: no widening to double, which also quiets a signalling NaN.
     std::shared_ptr<BufferAttribute> accessor(const cgltf_accessor& a) {
         Scalar scalar = Scalar::F32;
-        std::vector<double> values;
-        if (!rawValues(a, values, scalar)) return nullptr;
-        return BufferAttribute::fromDoubles(scalar, values, static_cast<int>(cgltf_num_components(a.type)), a.normalized != 0);
+        if (!scalarOf(a, scalar)) return nullptr;
+        const int itemSize = static_cast<int>(cgltf_num_components(a.type));
+        auto attribute = std::make_shared<BufferAttribute>(scalar, a.count * itemSize, itemSize, a.normalized != 0);
+        if (!rawBytes(a, attribute->store->data())) return nullptr;
+        return attribute;
     }
 
     // The accessor's stored values, in order, as the typed array holds them (not normalized).
     bool rawValues(const cgltf_accessor& a, std::vector<double>& values, Scalar& scalar) {
+        if (!scalarOf(a, scalar)) return false;
+        const std::size_t elementBytes = cgltf_component_size(a.component_type);
+        std::vector<std::byte> bytes(a.count * cgltf_num_components(a.type) * elementBytes);
+        if (!rawBytes(a, bytes.data())) return false;
+        values.resize(bytes.size() / elementBytes);
+        for (std::size_t i = 0; i < values.size(); ++i)
+            values[i] = read(reinterpret_cast<const uint8_t*>(bytes.data()) + i * elementBytes, a.component_type);
+        return true;
+    }
+
+    bool scalarOf(const cgltf_accessor& a, Scalar& scalar) {
         switch (a.component_type) {
             case cgltf_component_type_r_8: scalar = Scalar::I8; break;
             case cgltf_component_type_r_8u: scalar = Scalar::U8; break;
@@ -446,19 +460,23 @@ class Builder {
                 refuse("TN_NATIVE_GLTF_ACCESSOR_INVALID component type " + std::to_string(int(a.component_type)));
                 return false;
         }
-        const int itemSize = static_cast<int>(cgltf_num_components(a.type));
-        const std::size_t elementBytes = cgltf_component_size(a.component_type);
-        values.assign(a.count * itemSize, 0.0);
-        if (a.buffer_view) {
+        return true;
+    }
+
+    // The accessor's bytes into `out` (zeroed, count * item bytes long): interleaved views
+    // de-interleaved, sparse values applied.
+    bool rawBytes(const cgltf_accessor& a, std::byte* out) {
+        const std::size_t itemBytes = cgltf_component_size(a.component_type) * cgltf_num_components(a.type);
+        if (a.buffer_view && a.count) {
             const uint8_t* base = cgltf_buffer_view_data(a.buffer_view);
             if (!base) {
                 refuse("TN_NATIVE_GLTF_BUFFER_MISSING accessor data");
                 return false;
             }
-            const std::size_t stride = a.buffer_view->stride ? a.buffer_view->stride : elementBytes * itemSize;
-            for (std::size_t i = 0; i < a.count; ++i)
-                for (int c = 0; c < itemSize; ++c)
-                    values[i * itemSize + c] = read(base + a.offset + i * stride + c * elementBytes, a.component_type);
+            const std::size_t stride = a.buffer_view->stride ? a.buffer_view->stride : itemBytes;
+            if (stride == itemBytes) std::memcpy(out, base + a.offset, a.count * itemBytes);
+            else
+                for (std::size_t i = 0; i < a.count; ++i) std::memcpy(out + i * itemBytes, base + a.offset + i * stride, itemBytes);
         }
         if (a.is_sparse) {
             const cgltf_accessor_sparse& s = a.sparse;
@@ -475,9 +493,7 @@ class Builder {
                     refuse("TN_NATIVE_GLTF_ACCESSOR_INVALID sparse index out of range");
                     return false;
                 }
-                for (int c = 0; c < itemSize; ++c)
-                    values[at * itemSize + c] =
-                        read(sparseValues + s.values_byte_offset + (i * itemSize + c) * elementBytes, a.component_type);
+                std::memcpy(out + at * itemBytes, sparseValues + s.values_byte_offset + i * itemBytes, itemBytes);
             }
         }
         return true;

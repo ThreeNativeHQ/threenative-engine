@@ -2,6 +2,7 @@
 // names, types, parents, transforms, geometry layout, materials, skeletons and the clip list —
 // compared against gltf_reference.json (written by gltf-reference.ts from the real loader).
 #include <algorithm>
+#include <cstring>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
@@ -236,6 +237,40 @@ int main() {
             point && point->distance == 7 && point->decay == 2 && spot && spot->angle == 0.6 &&
             spot->penumbra == 1 - 0.2 / 0.6 && spot->target->parent == spot && spot->target->position.z == -1;
         if (!ok) { std::printf("lights/cameras: wrong native objects or defaults\n"); ++differ; }
+    }
+    // Accessor bytes reach the attribute as three's typed-array view reads them: a signalling NaN, a
+    // NaN payload and -0 keep their bits through an interleaved view and a sparse override.
+    {
+        const uint32_t sNaN = 0x7fa00001u, payload = 0x7fc12345u, negZero = 0x80000000u;
+        const auto bitsOf = [](float f) { uint32_t u; std::memcpy(&u, &f, 4); return u; };
+        std::vector<uint32_t> bin = {sNaN, negZero, bitsOf(1.5f), 0, bitsOf(2), bitsOf(3), bitsOf(4), 0,
+                                     1, bitsOf(5), payload, bitsOf(6)};
+        const std::string json = R"({"asset":{"version":"2.0"},"buffers":[{"byteLength":48}],
+          "bufferViews":[{"buffer":0,"byteLength":32,"byteStride":16},{"buffer":0,"byteOffset":32,"byteLength":4},
+            {"buffer":0,"byteOffset":36,"byteLength":12}],
+          "accessors":[{"bufferView":0,"componentType":5126,"type":"VEC3","count":2,
+            "sparse":{"count":1,"indices":{"bufferView":1,"componentType":5121},"values":{"bufferView":2}}}],
+          "meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"nodes":[{"mesh":0,"name":"bits"}],
+          "scenes":[{"nodes":[0]}],"scene":0})";
+        const std::string text = json + std::string((4 - json.size() % 4) % 4, ' ');
+        const auto u32 = [](std::string& out, uint32_t v) { out.append(reinterpret_cast<const char*>(&v), 4); };
+        std::string glb;
+        u32(glb, 0x46546c67u); u32(glb, 2); u32(glb, static_cast<uint32_t>(12 + 8 + text.size() + 8 + 48));
+        u32(glb, static_cast<uint32_t>(text.size())); u32(glb, 0x4e4f534au); glb += text;
+        u32(glb, 48); u32(glb, 0x004e4942u); glb.append(reinterpret_cast<const char*>(bin.data()), 48);
+        auto loaded = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(glb.data()), glb.size()));
+        auto* mesh = loaded.scene ? dynamic_cast<Mesh*>(loaded.scene->getObjectByName("bits")) : nullptr;
+        std::vector<uint32_t> got(6, 0);
+        if (mesh && mesh->geometry && mesh->geometry->attributes.count("position") &&
+            mesh->geometry->attributes["position"]->store->byteLength() == 24)
+            std::memcpy(got.data(), mesh->geometry->attributes["position"]->store->data(), 24);
+        const std::vector<uint32_t> want = {sNaN, negZero, bitsOf(1.5f), bitsOf(5), payload, bitsOf(6)};
+        if (!loaded.error.empty() || got != want) {
+            std::printf("accessor bits: %s", loaded.error.c_str());
+            for (uint32_t u : got) std::printf(" %08x", u);
+            std::printf("\n");
+            ++differ;
+        }
     }
     const std::string unlitBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/three-native/tests/compatibility/fixtures/gltf-unlit.glb");
     auto unlit = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(unlitBytes.data()), unlitBytes.size()));
