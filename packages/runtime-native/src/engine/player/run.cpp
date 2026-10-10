@@ -68,14 +68,15 @@ bool openWindow(Window& window) {
 #if defined(__ANDROID__)
     SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "1");
 #endif
+#if defined(__linux__) && !defined(__ANDROID__)
+    // Dawn's Xlib surface needs the X11 backend, as src/platform/window.cpp forces on Linux.
+    // SDL reads the hint in SDL_Init: set after it, a Wayland session keeps Wayland and no surface.
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::printf("[Playtest] SDL_Init failed: %s\n", SDL_GetError());
         return false;
     }
-#if defined(__linux__) && !defined(__ANDROID__)
-    // Dawn's Xlib surface needs the X11 backend, as src/platform/window.cpp forces on Linux.
-    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
-#endif
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
 #if defined(__APPLE__)
     flags |= SDL_WINDOW_METAL;
