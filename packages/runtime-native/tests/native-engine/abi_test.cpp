@@ -17,6 +17,9 @@
 #include <string>
 #include <stdexcept>
 
+extern "C" uintptr_t tnw_attribute_view(const tn_handle_t* attribute, uint64_t* out);
+extern "C" void tnw_attribute_view_release(uintptr_t lease);
+
 namespace {
 
 struct Diag {
@@ -1102,8 +1105,38 @@ void typed_bytes() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// The Wasm view reports the store's write count (out[3]): a write through the view, which the JS
+// mirror made itself, leaves it; an engine write moves it.
+void attribute_view_writes() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t attribute{};
+    const float positions[3] = {1, 2, 3};
+    const tn_value_t f32[2] = {bytes("Float32Array", positions, 3), num(3)};
+    CHECK(tn_construct(ctx, "BufferAttribute", f32, 2, &attribute, &d.value) == TN_OK);
+    uint64_t out[4] = {};
+    uintptr_t lease = tnw_attribute_view(&attribute, out);
+    CHECK(lease != 0 && out[1] == 3);
+    const uint64_t seen = out[3];
+    reinterpret_cast<float*>(static_cast<uintptr_t>(out[0]))[1] = 9;
+    tnw_attribute_view_release(lease);
+    lease = tnw_attribute_view(&attribute, out);
+    CHECK(out[3] == seen);
+    tnw_attribute_view_release(lease);
+    CHECK(numbersOf(attribute, "array", d) == (std::vector<double>{1, 9, 3}));
+    tn_value_t result{};
+    const tn_value_t set[2] = {num(0), num(5)};
+    CHECK(tn_invoke(attribute, "setX", set, 2, &result, &d.value) == TN_OK);
+    lease = tnw_attribute_view(&attribute, out);
+    CHECK(out[3] != seen);
+    tnw_attribute_view_release(lease);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"attribute_view_writes", attribute_view_writes})

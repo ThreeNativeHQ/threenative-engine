@@ -59,13 +59,19 @@ public:
     uint64_t byteLength() const { return bytes_.size(); }
     /** Changes whenever the storage reallocates; a view compares it to know it must re-resolve. */
     uint64_t epoch() const { return epoch_; }
-    std::byte* data() { return bytes_.data(); }
+    /** Moves on every `write`, resize and mutable `data()`: a JS copy of the bytes is current while it holds. */
+    uint64_t writes() const { return writes_; }
+    std::byte* data() {
+        ++writes_;
+        return bytes_.data();
+    }
     const std::byte* data() const { return bytes_.data(); }
 
 private:
     Scalar scalar_;
     std::vector<std::byte> bytes_;
     uint64_t epoch_ = 0;
+    uint64_t writes_ = 0;
     uint64_t pendingCount_ = 0;
     bool resizePending_ = false;
     uint32_t leases_ = 0;

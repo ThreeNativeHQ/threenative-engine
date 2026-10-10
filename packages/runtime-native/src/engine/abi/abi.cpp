@@ -18,6 +18,7 @@
 #include <new>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "engine/abi/abi_internal.h"
@@ -897,8 +898,9 @@ extern "C" tn_status_t tn_tsl_compile(tn_handle_t material, const char* wgsl_pat
 // A JS back end that shares the engine's memory (the Wasm one) answers three's `attribute.array`
 // with a typed array over the attribute's own storage, so an element write is a write to the
 // attribute. The view leases the store, so it cannot reallocate under the view, until
-// tnw_attribute_view_release. out[0] is the data address, out[1] the element count and out[2] the
-// Scalar; the result is the lease (0: not an attribute).
+// tnw_attribute_view_release. out[0] is the data address, out[1] the element count, out[2] the
+// Scalar and out[3] the store's write count, which the view itself leaves: the JS side writes through
+// it only the copy it keeps. The result is the lease (0: not an attribute).
 extern "C" uintptr_t tnw_attribute_view(const tn_handle_t* attribute, uint64_t* out) {
     tn::binding::Object* object = attribute ? tn::abi::objectOf(*attribute) : nullptr;
     if (object == nullptr || out == nullptr) return 0;
@@ -908,9 +910,10 @@ extern "C" uintptr_t tnw_attribute_view(const tn_handle_t* attribute, uint64_t* 
         return 0;
     auto store = static_cast<tn::engine::BufferAttribute*>(object->ptr.get())->store;
     store->acquireLease();
-    out[0] = reinterpret_cast<uintptr_t>(store->data());
+    out[0] = reinterpret_cast<uintptr_t>(std::as_const(*store).data());
     out[1] = store->count();
     out[2] = static_cast<uint64_t>(store->scalar());
+    out[3] = store->writes();
     return reinterpret_cast<uintptr_t>(new std::shared_ptr<tn::engine::BufferStore>(std::move(store)));
 }
 

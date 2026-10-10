@@ -374,6 +374,47 @@ describe("three's math values on the browser back end", () => {
     expect([...bytes]).toEqual([0, 255, 255, 153]);
   });
 
+  it("copies an attribute's data again after an engine method only when the engine wrote it", () => {
+    const { runtime } = memoryRuntime();
+    const data = new Float32Array([1, 2, 3]);
+    let writes = 0;
+    let engineWrites = false;
+    const copies: string[] = [];
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      construct: (name) => ({ key: name, type: runtime.typeId(name) }),
+      get: () => [1, 3, 0, 1015],
+      invoke: () => {
+        if (engineWrites) {
+          data[0] = 7;
+          writes++;
+        }
+        return null;
+      },
+      attributeArray: (self) => {
+        copies.push(self.key);
+        return data.slice();
+      },
+      // The JS copy going back is not an engine write: it leaves the count.
+      attributeWrite: (_self, array) => data.set(array),
+      attributeWrites: () => writes,
+    });
+    const attribute = new (
+      classes.BufferAttribute as new (
+        array: number[],
+        itemSize: number,
+      ) => { array: Float32Array }
+    )([1, 2, 3], 3);
+    const geometry = new (classes.BufferGeometry as new () => { translate(x: number): void })();
+    const array = attribute.array;
+    geometry.translate(1);
+    expect([attribute.array, copies]).toEqual([array, ["BufferAttribute"]]);
+    engineWrites = true;
+    geometry.translate(1);
+    expect(attribute.array).toBe(array);
+    expect([[...array], copies.length]).toEqual([[7, 2, 3], 2]);
+  });
+
   it("answers a geometry's attributes, names and shapes with one engine call", () => {
     const { runtime } = memoryRuntime();
     const reads: string[] = [];

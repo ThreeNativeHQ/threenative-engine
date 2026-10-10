@@ -227,7 +227,8 @@ tn_native_engine_test(tn-native-engine-buffers-test tests/native-engine/buffers_
     native_engine_buffers_range=range
     native_engine_buffers_lease=lease
     native_engine_buffers_views=views
-    native_engine_buffer_view_regrowth=view_regrowth)
+    native_engine_buffer_view_regrowth=view_regrowth
+    native_engine_buffers_writes=writes)
 
 tn_native_engine_test(tn-native-engine-lifetime-test tests/native-engine/lifetime_test.cpp
     native_engine_lifetime_detach=detach
@@ -309,7 +310,8 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_euler_order_field=euler_order_field
     native_engine_abi_object_addresses=object_addresses
     native_engine_abi_geometry_shapes=geometry_shapes
-    native_engine_abi_typed_bytes=typed_bytes)
+    native_engine_abi_typed_bytes=typed_bytes
+    native_engine_abi_attribute_view_writes=attribute_view_writes)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 # PRD-508 phase 3: the geometry edges a JS caller reaches that no fixture states.

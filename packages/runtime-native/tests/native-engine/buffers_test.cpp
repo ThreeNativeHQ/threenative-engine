@@ -92,6 +92,24 @@ void viewRegrowth() {
     (void)before;
 }
 
+// A JS mirror of an attribute copies the bytes again only when this count moved: a write, a
+// mutable data() or a resize moves it, a read does not.
+void writes() {
+    BufferStore store(Scalar::F32, 4);
+    const BufferStore& readOnly = store;
+    const uint64_t start = store.writes();
+    float value = 2;
+    CHECK(store.read(0, &value, 4) == BufferError::None);
+    CHECK(readOnly.data() != nullptr);
+    CHECK(store.writes() == start);
+    CHECK(store.write(0, &value, 4) == BufferError::None);
+    CHECK(store.writes() == start + 1);
+    CHECK(store.data() != nullptr);
+    CHECK(store.writes() == start + 2);
+    CHECK(store.resize(8));
+    CHECK(store.writes() > start + 2);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"range", range}, {"lease", lease}, {"views", views}, {"view_regrowth", viewRegrowth})
+TN_TEST_MAIN({"range", range}, {"lease", lease}, {"views", views}, {"view_regrowth", viewRegrowth}, {"writes", writes})

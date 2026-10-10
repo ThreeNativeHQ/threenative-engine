@@ -39,6 +39,7 @@ BufferError BufferStore::validate(uint64_t byteOffset, uint64_t byteLength, uint
 BufferError BufferStore::write(uint64_t byteOffset, const void* source, uint64_t byteLength) {
     const BufferError error = validate(byteOffset, byteLength);
     if (error != BufferError::None) return error;
+    ++writes_;
     if (byteLength > 0) std::memcpy(bytes_.data() + byteOffset, source, byteLength);
     return BufferError::None;
 }
@@ -65,6 +66,7 @@ bool BufferStore::resize(uint64_t count) {
     if (const uint64_t kept = std::min<uint64_t>(bytes, bytes_.size()); kept > 0) std::memcpy(next.data(), bytes_.data(), kept);
     bytes_.swap(next);
     ++epoch_;
+    ++writes_;
     return true;
 }
 
