@@ -165,9 +165,9 @@ which is compatibility mode, not the core WebGPU that this engine requests.
   8 writes), then passed. Focused projection/span specs: **25 tests passed**. Crowd TypeScript
   check, checkout-local core ESM/declaration build, playtest package build and scenario schema
   loading passed. Vite build passed with existing chunk/dynamic-import warnings; Biome passed
-  with one non-fatal complexity warning in `Crowd.enter`. No browser, GPU, native, shooter or
-  visual-judge run has been performed. Runtime CPU/GPU measurements and all PRD outcomes remain
-  unverified pending the coordinator's exclusive GPU window.
+  with one non-fatal complexity warning in `Crowd.enter`. At first draft delivery, no browser, GPU,
+  native, shooter or visual-judge run had been performed. Baseline cost comparisons and all PRD
+  outcomes remain unverified pending the coordinator's exclusive cost window.
 
 - Coordinator review found a bridge serialization defect in the frozen controls: absent span or
   GPU metrics were published as `undefined`. They now publish `null`, retaining missing-work
@@ -184,7 +184,7 @@ which is compatibility mode, not the core WebGPU that this engine requests.
   shadow sample counts remain explicit; they are not claimed to cover all 120 render frames.
   Schema loading, Crowd TypeScript/Vite and six focused bridge/readiness cases pass: complete
   animated/held/static windows are ready; an incomplete CPU window or missing GPU data is not.
-  These local changes have not been pushed or exercised on the GPU.
+  These local changes remain unpushed; the bounded functional run below exercises them.
 
 - The local GPU coverage extension exposes `gpuMainSamples` from the same existing ring
   summary that supplies `gpuMain`; absent measurements stay absent in FrameBudget and publish
@@ -195,13 +195,14 @@ which is compatibility mode, not the core WebGPU that this engine requests.
   pass. Six bridge/readiness cases pass: a global GPU sample count cannot substitute for missing
   main samples. Main sample counts are observed independently of the 120 render frames.
 
-The bounded functional preflight is pending coordinator review of these local commits. Its doctor
-command uses the four approved extras; doctor supplies the shipped five browser arguments itself:
+The coordinator reviewed `5e0cba5f8..cd48d5ae7` and granted one bounded 32-animated functional
+preflight. The exact built fixture was served by an owned `vite preview` at port 57170. Doctor
+passed before and after the run with the four approved extras; it supplies the shipped five args:
 
 ```sh
-node packages/playtest/dist/runner/cli.js doctor --url 'http://127.0.0.1:5173/?tnFrameSpans=1&crowdCount=32&crowdArm=animated' --text \
-  --browser-arg=--use-angle=vulkan --browser-arg=--use-vulkan \
-  --browser-arg=--disable-vulkan-surface --browser-arg=--no-sandbox
+node packages/playtest/dist/runner/cli.js doctor --url 'http://127.0.0.1:57170/?tnFrameSpans=1&crowdCount=32&crowdArm=animated' --text \
+  --browser-arg --use-angle=vulkan --browser-arg --use-vulkan \
+  --browser-arg --disable-vulkan-surface --browser-arg --no-sandbox
 ```
 
 The following single 32-animated run uses an explicit manual override equivalent to the shipped
@@ -209,15 +210,35 @@ WebGPU recipe plus those four extras (the scenario CLI rejects combining recipe 
 
 ```sh
 node packages/playtest/dist/runner/cli.js examples/skinned-crowd/playtests/crowd-rate.playtest.json \
-  --url 'http://127.0.0.1:5173/?tnFrameSpans=1&crowdCount=32&crowdArm=animated' \
-  --server-command 'pnpm --filter skinned-crowd dev --host 127.0.0.1' --headed \
-  --browser-arg=--ozone-platform=x11 --browser-arg=--enable-unsafe-webgpu \
-  --browser-arg=--disable-gpu-sandbox --browser-arg=--ignore-gpu-blocklist \
-  --browser-arg=--enable-features=Vulkan --browser-arg=--use-angle=vulkan \
-  --browser-arg=--use-vulkan --browser-arg=--disable-vulkan-surface --browser-arg=--no-sandbox
+  --url 'http://127.0.0.1:57170/?tnFrameSpans=1&crowdCount=32&crowdArm=animated' \
+  --headed --artifacts artifacts/prd570-functional-cd48d5ae7/run \
+  --browser-arg --ozone-platform=x11 --browser-arg --enable-unsafe-webgpu \
+  --browser-arg --disable-gpu-sandbox --browser-arg --ignore-gpu-blocklist \
+  --browser-arg --enable-features=Vulkan --browser-arg --use-angle=vulkan \
+  --browser-arg --use-vulkan --browser-arg --disable-vulkan-surface --browser-arg --no-sandbox
 ```
 
-Actual `adapter.info` must identify NVIDIA/Turing; SwiftShader invalidates the preflight. No runtime
-or adapter result has been obtained yet. A separate exclusive cost window is required before the
-nine count/control arms; their observed main and rendered-shadow sample coverage must be recorded.
-AC-1's 40% reduction is a later Phase 2 gate.
+- Actual capture adapter: `vendor=nvidia`, `architecture=turing` (physical GPU RTX 2080).
+  At completed window 2, `ready=true`; render, animation-span and palette-span frame counts were
+  each 120. Main and rendered-shadow GPU sample counts were each **120 observed samples**.
+  Animation calls and palette writes were each 32 per frame. Main/shadow draws were 3/1 and
+  triangles 17,667/17,664, at 1280×720, scale 1, DPR 1, sample count 4.
+- The single scenario exited **1**: 11 `TN_PLAYTEST_ASSERTION_TRIVIAL` diagnostics rejected held
+  invariants already satisfied in the startup observation. The observed window/readiness checks
+  passed. No assertion was weakened and no runtime retry was made; scenario success remains
+  unverified. Doctor before/after both exited 0, identified NVIDIA/Turing and reported no console
+  errors. The next scenario change must distinguish held invariants from transitions, using the
+  existing harness contract, before another runtime grant.
+- Raw artifacts are retained in `artifacts/prd570-functional-cd48d5ae7/`: `before.json` and
+  `after.json` contain capacity/source and built-artifact hashes, `doctor.log`/`doctor-after.log`,
+  `run.log`, `receipt.json`, `state.json`, and `run/capture.json`/`run/console.json`. Source and
+  bundle hashes were unchanged during the run. Owned preview PID 1795686 was terminated after
+  doctor, and port 57170 was verified closed. Other GPU processes were present (26% utilization
+  before, 22% after); these observations establish functional coverage only, with no cost,
+  savings, visual-quality or native claim.
+
+A separate exclusive cost window is required before the nine count/control arms. Proposed minimum:
+three complete post-startup 120-render windows per arm, each with at least 30 actual main and 30
+rendered-shadow samples; report both observed coverage counts and draws/triangles. Reserve 20 minutes
+and record fresh CPU/RAM/GPU utilization/process metadata before and after. The coordinator has not
+granted this series. AC-1's 40% reduction is a later Phase 2 gate.
