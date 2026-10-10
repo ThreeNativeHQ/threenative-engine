@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, request } from "node:http";
 import { join } from "node:path";
 import { Terrain } from "@threenative/terrain";
+import { TerrainEditorController } from "@threenative/terrain/editor";
 import { TerrainEditorDocument, terrainEditor } from "@threenative/terrain/editor/server";
 import { type ViteDevServer, createServer } from "vite";
 import { afterEach, describe, expect, it } from "vitest";
@@ -218,6 +219,65 @@ describe("project terrain editor document", () => {
     cancellation.abort();
     await reader?.cancel().catch(() => {});
   });
+
+  it("starts the dev server on a malformed world.json, reports diagnostic and recovers via reload after file is fixed", async () => {
+    const { root, path } = fixture();
+    writeFileSync(path, "{broken json");
+    const editor = terrainEditor({ documentPath: path });
+    const server = await createServer({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      server: { host: "127.0.0.1", port: 0 },
+      plugins: [editor],
+    });
+    servers.push(server);
+    await server.listen();
+    const address = server.httpServer?.address();
+    const controller = new TerrainEditorController(
+      `http://127.0.0.1:${(address as { port: number }).port}/terrain-editor/`,
+    );
+
+    // Dev server started on malformed file in read-only diagnostic state
+    const initialSnapshot = await controller.snapshot();
+    expect(initialSnapshot.diagnostic).toBeTruthy();
+
+    // Commit is rejected with 409 while document on disk is invalid
+    await expect(
+      controller.commit({
+        baseRevision: initialSnapshot.revision,
+        commands: [{ op: "remove", id: "hills" }],
+      }),
+    ).rejects.toThrow("Disk document is invalid");
+
+    // Fix file on disk
+    const valid = {
+      version: 1,
+      recipe: new Terrain({ size: 512, resolution: 257, seed: 42 }).toJSON(),
+    };
+    writeFileSync(path, JSON.stringify(valid, null, 2));
+
+    // Reload from disk recovers
+    const reloaded = await controller.reload();
+    expect(reloaded.diagnostic).toBeNull();
+    expect(reloaded.document.recipe.config.seed).toBe(42);
+
+    // Overwrite with last valid state restores disk if corrupted again
+    writeFileSync(path, "corrupted again");
+    const restored = await controller.restoreLastValid();
+    expect(restored.diagnostic).toBeNull();
+    expect(JSON.parse(readFileSync(path, "utf8")).recipe.config.seed).toBe(42);
+  });
+
+  it("rejects restore when the document never held a valid state and keeps the original", () => {
+    const { path } = fixture();
+    writeFileSync(path, "{broken since the very first read");
+    const store = new TerrainEditorDocument(path);
+    expect(store.snapshot().diagnostic).toBeTruthy();
+    expect(() => store.restoreLastValid()).toThrow("No valid save to restore");
+    expect(readFileSync(path, "utf8")).toBe("{broken since the very first read");
+  });
+
   it("uses an explicitly configured private forward and rejects a failed forward", async () => {
     let target: string | undefined;
     const proxy = createHttpServer((incoming, response) => {

@@ -150,12 +150,26 @@ class EditorError extends Error {
 export class TerrainEditorDocument {
   readonly path: string;
   #snapshot: IEditorSnapshot;
+  #lastValidDocument: IAuthoringDocument | null = null;
   #listeners = new Set<(snapshot: IEditorSnapshot) => void>();
   constructor(path: string) {
     if (!isAbsolute(path)) throw new Error("Document path must be absolute");
     this.path = resolve(path);
-    const document = this.#read();
-    this.#snapshot = { document, revision: revision(document), diagnostic: null };
+    try {
+      const document = this.#read();
+      this.#lastValidDocument = document;
+      this.#snapshot = { document, revision: revision(document), diagnostic: null };
+    } catch (error) {
+      const fallback: IAuthoringDocument = {
+        version: 1,
+        recipe: new Terrain().toJSON(),
+      };
+      this.#snapshot = {
+        document: fallback,
+        revision: revision(fallback),
+        diagnostic: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
   #read(): IAuthoringDocument {
     const info = lstatSync(this.path);
@@ -177,12 +191,40 @@ export class TerrainEditorDocument {
     try {
       const document = this.#read();
       const nextRevision = revision(document);
+      this.#lastValidDocument = document;
       if (nextRevision === this.#snapshot.revision && this.#snapshot.diagnostic === null) return;
       this.#snapshot = { document, revision: nextRevision, diagnostic: null };
     } catch (error) {
       this.#snapshot.diagnostic = error instanceof Error ? error.message : String(error);
     }
     this.#emit();
+  }
+  restoreLastValid(): IEditorSnapshot {
+    // Never overwrite a malformed original with a synthetic fallback: without a real valid save
+    // there is nothing to restore, so the caller must fix the file and reload instead.
+    if (!this.#lastValidDocument)
+      throw new EditorError(409, "No valid save to restore; the document has never been valid");
+    const target = this.#lastValidDocument;
+    const temporary = `${this.path}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(temporary, `${JSON.stringify(target, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+      renameSync(temporary, this.path);
+    } catch (error) {
+      try {
+        unlinkSync(temporary);
+      } catch (cleanupError) {
+        if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT")
+          throw new AggregateError(
+            [error, cleanupError],
+            "Document save and temporary-file cleanup failed",
+          );
+      }
+      throw error;
+    }
+    this.#lastValidDocument = target;
+    this.#snapshot = { document: target, revision: revision(target), diagnostic: null };
+    this.#emit();
+    return this.snapshot();
   }
   commit(input: unknown): IEditorSnapshot {
     this.refresh();
@@ -230,6 +272,7 @@ export class TerrainEditorDocument {
       throw error;
     }
     this.#snapshot = { document: next, revision: nextRevision, diagnostic: null };
+    this.#lastValidDocument = next;
     this.#emit();
     return this.snapshot();
   }
@@ -384,6 +427,15 @@ export function terrainEditor(options: {
             }
             if (request.method === "GET" && path === `${PREFIX}api/document`) {
               json(response, 200, document.snapshot());
+              return;
+            }
+            if (request.method === "POST" && path === `${PREFIX}api/reload`) {
+              document.refresh();
+              json(response, 200, document.snapshot());
+              return;
+            }
+            if (request.method === "POST" && path === `${PREFIX}api/restore`) {
+              json(response, 200, document.restoreLastValid());
               return;
             }
             if (request.method === "GET" && path === `${PREFIX}api/events`) {

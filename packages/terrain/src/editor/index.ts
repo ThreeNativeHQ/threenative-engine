@@ -250,6 +250,12 @@ export class TerrainEditorController {
   ): Promise<IEditorSnapshot> {
     return this.#request("document", transaction);
   }
+  reload(): Promise<IEditorSnapshot> {
+    return this.#request("reload", {});
+  }
+  restoreLastValid(): Promise<IEditorSnapshot> {
+    return this.#request("restore", {});
+  }
   subscribe(listener: (snapshot: IEditorSnapshot) => void, onError: () => void): () => void {
     const events = new EventSource(new URL("events", this.baseUrl));
     events.onmessage = ({ data }) => {
@@ -295,6 +301,8 @@ export async function mountTerrainEditor(options: {
     commit: (transaction: Parameters<typeof controller.commit>[0]) =>
       controller.commit(transaction),
     getSnapshot: () => controller.snapshot(),
+    reload: () => controller.reload(),
+    restoreLastValid: () => controller.restoreLastValid(),
     cameraOperation: (operation: unknown, baseRevision: string) =>
       controller.camera(operation as ICameraOperation, baseRevision),
     assetOperation: (operation: unknown, baseRevision: string) =>
