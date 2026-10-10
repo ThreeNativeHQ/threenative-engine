@@ -1,4 +1,4 @@
-// shortcut: one headless device per frame; share a renderer session when Phase 2 adds the game loop.
+// The corpus renders offscreen; a running Perry game publishes into the shared player.
 #include "engine/abi/abi_internal.h"
 #include "engine/renderer/render_database.h"
 #include "mystral/webgpu/context.h"
@@ -6,8 +6,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
-#include <thread>
 #include <unistd.h>
+extern "C" int32_t js_tnp_player_running();
+extern "C" int64_t js_tnp_player_publish(int64_t, int64_t, double, double, int32_t, int64_t);
 extern "C" int stbi_write_png(const char*, int, int, int, const void*, int);
 
 extern "C" int64_t js_tnp_render(int64_t sceneHandle, int64_t cameraHandle, int32_t width,
@@ -29,6 +30,8 @@ extern "C" int64_t js_tnp_render(int64_t sceneHandle, int64_t cameraHandle, int3
         std::string refusal;
         auto output = outputStateOf(tone, exposure, srgb ? "srgb" : "srgb-linear", refusal);
         if (!output) return fail("TN_PERRY_RENDER_OUTPUT");
+        if (js_tnp_player_running())
+            return js_tnp_player_publish(sceneHandle, cameraHandle, tone, exposure, srgb, clearPointer);
         std::fflush(stdout);
         const int saved = dup(STDOUT_FILENO);
         if (saved < 0) return fail("TN_PERRY_RENDER_STDOUT");
@@ -61,9 +64,9 @@ extern "C" int64_t js_tnp_render(int64_t sceneHandle, int64_t cameraHandle, int3
             if (status == GpuStatus::Ok) pixels = std::move(data);
             done = true;
         });
-        for (int i = 0; i < 5000 && !done; ++i) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!done && std::chrono::steady_clock::now() < deadline) {
             renderer.poll(); events.drain();
-            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         if (pixels.size() != size_t(width) * size_t(height) * 4) return fail("TN_PERRY_RENDER_READBACK");
         if (!stbi_write_png(file, width, height, 4, pixels.data(), width * 4)) return fail("TN_PERRY_RENDER_PNG");

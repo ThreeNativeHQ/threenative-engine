@@ -1,3 +1,9 @@
+# Perry's native-library bridge compiles these sources with its rooted Rust callback trampolines.
+list(APPEND MYSTRAL_EXCLUDED_CPP_SOURCES
+    src/engine/abi/perry_assets.cpp
+    src/engine/abi/perry_renderer.cpp
+    src/engine/abi/perry_player.cpp)
+
 # Portable native engine core (PRD-499): targets with no platform API, GPU or VM, and their CPU
 # tests. The host build includes it through NativeEngine.cmake; an Emscripten build includes it
 # alone, which is the guard that the core stays Wasm-safe (owner decision 4).

@@ -44,6 +44,12 @@ export function bindPerryEngine(names: readonly string[]): Record<string, unknow
   );
   bound.WebGPURenderer = class WebGPURenderer {
     readonly isWebGPURenderer = true;
+    readonly domElement: HTMLCanvasElement;
+    readonly shadowMap = { enabled: false, type: 1 };
+    constructor(options: { canvas?: HTMLCanvasElement } = {}) {
+      this.domElement =
+        options.canvas ?? ({ width: 300, height: 150, style: {} } as HTMLCanvasElement);
+    }
     toneMapping = 0;
     toneMappingExposure = 1;
     outputColorSpace = "srgb";

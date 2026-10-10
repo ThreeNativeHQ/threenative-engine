@@ -236,22 +236,32 @@ export async function compileGame({
   const gameImport = `./${entry.replace(/\.ts$/u, ".js").split(path.sep).join("/")}`;
   fs.writeFileSync(
     driver,
-    `import game from ${JSON.stringify(gameImport)};
-game.start().catch((error: unknown) => {
+    `import { openPlayer, stepPlayer, closePlayer } from "./node_modules/three/engine/src/perry-host.js";
+import game from ${JSON.stringify(gameImport)};
+openPlayer();
+let failed = false;
+game.start().then(() => console.log("TN_NATIVE_START_READY"), (error: unknown) => {
+  failed = true;
   console.error(\`TN_NATIVE_START_FAILED:\${error instanceof Error ? error.message : String(error)}\`);
+});
+async function runPlayer() {
+  try {
+    while (!failed && stepPlayer()) await Promise.resolve();
+  } finally {
+    game.stop();
+    closePlayer();
+  }
+  if (failed) process.exit(1);
+}
+void runPlayer().catch((error: unknown) => {
+  console.error(\`TN_NATIVE_PLAYER_FAILED:\${String(error)}\`);
+  process.exit(1);
 });
 `,
   );
   const run = spawnSync(
     compiler.binaryPath,
-    [
-      "compile",
-      driver,
-      "-o",
-      path.join(outDir, "game"),
-      ...STRICT_FLAGS,
-      "--debug-symbols",
-    ],
+    ["compile", driver, "-o", path.join(outDir, "game"), ...STRICT_FLAGS, "--debug-symbols"],
     {
       cwd: outDir,
       encoding: "utf8",

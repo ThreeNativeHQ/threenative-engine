@@ -89,6 +89,7 @@ export function buildEngineBridge({
   const renderSources = shared
     ? [
         path.join(NATIVE, "src/engine/abi/perry_renderer.cpp"),
+        path.join(NATIVE, "src/engine/abi/perry_player.cpp"),
         path.join(NATIVE, "src/engine/abi/perry_assets.cpp"),
       ]
     : ["tn_three_render.cpp", "tn_three_bench.cpp"].map((name) => path.join(THREE, name));
@@ -193,17 +194,22 @@ export function bridgeFor({
     shared,
     tools: android ? ndkTools(ndk, android) : HOST_TOOLS,
   });
-  const renderArchives = render
-    ? fs
-        .readFileSync(path.join(engineBuild, "build.ninja"), "utf8")
-        .match(/^build tn-native-engine-render-driver:[\s\S]*?^ {2}LINK_LIBRARIES = (.+)$/m)?.[1]
-        .trim()
-        .split(/\s+/)
-        .filter((file) => file.endsWith(".a"))
-        .map((file) => path.resolve(engineBuild, file))
+  const ninja = render ? fs.readFileSync(path.join(engineBuild, "build.ninja"), "utf8") : "";
+  const targets = render
+    ? ["tn-native-engine-render-driver", ...(shared ? ["tn-native-engine-player"] : [])]
     : [];
-  if (!renderArchives)
-    throw named("TN_STRICT_RENDER_BUILD", "render driver's native link dependencies are missing");
+  const renderArchives = targets.flatMap((target) => {
+    const libraries = ninja.match(
+      new RegExp(`^build ${target}:[\\s\\S]*?^ {2}LINK_LIBRARIES = (.+)$`, "m"),
+    )?.[1];
+    if (!libraries)
+      throw named("TN_STRICT_RENDER_BUILD", `${target}'s native link dependencies are missing`);
+    return libraries
+      .trim()
+      .split(/\s+/)
+      .filter((file) => file.endsWith(".a"))
+      .map((file) => path.resolve(engineBuild, file));
+  });
   for (const file of renderArchives)
     if (!fs.existsSync(file)) throw named("TN_STRICT_RENDER_BUILD", `${file} missing`);
   return {

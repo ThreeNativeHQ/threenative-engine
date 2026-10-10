@@ -83,6 +83,12 @@ struct Game {
     std::function<std::array<double, 4>()> clear;
 };
 
+/** One owned player session; step returns 1 while running, 0 on close, a negative error on failure. */
+struct Session;
+Session* open(const Game& game, int& status);
+int step(Session& session);
+void close(Session* session);
+
 /** Runs one game until the window closes or the runner stops the process. */
 int run(const Game& game);
 

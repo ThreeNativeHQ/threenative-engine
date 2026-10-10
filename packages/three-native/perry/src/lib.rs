@@ -58,3 +58,37 @@ pub unsafe extern "C" fn js_tnp_write_string(text: JsString, pointer: i64, capac
     *((pointer as *mut u8).add(count)) = 0;
     0
 }
+
+static PLAYER_CALLBACKS: Mutex<Option<Box<[f64; 3]>>> = Mutex::new(None);
+fn scan_player(visitor: &mut GcRootVisitor<'_>) {
+    let mut guard = PLAYER_CALLBACKS.lock().unwrap();
+    if let Some(values) = guard.as_mut() {
+        for value in values.iter_mut() { visitor.visit_nanbox_f64_slot(value); }
+    }
+}
+#[no_mangle]
+pub extern "C" fn js_tnp_player_bind(update: f64, frame: f64, observe: f64) -> i32 {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| gc_register_mutable_root_scanner_named("tn-perry-player", scan_player));
+    let mut guard = PLAYER_CALLBACKS.lock().unwrap();
+    if guard.is_some() { return 8; }
+    *guard = Some(Box::new([update, frame, observe]));
+    0
+}
+fn player_closure(index: usize) -> Option<JsClosure> {
+    let guard = PLAYER_CALLBACKS.lock().unwrap();
+    let value = guard.as_ref()?[index];
+    Some(unsafe { JsClosure::from_raw((value.to_bits() & 0x0000_FFFF_FFFF_FFFF) as *const RawClosureHeader) })
+}
+#[no_mangle]
+pub unsafe extern "C" fn tnp_player_update(dt: f64) {
+    if let Some(call) = player_closure(0) { call.call1(dt); }
+}
+#[no_mangle]
+pub unsafe extern "C" fn tnp_player_frame(ms: f64) {
+    if let Some(call) = player_closure(1) { call.call1(ms); }
+}
+#[no_mangle]
+pub unsafe extern "C" fn tnp_player_observe(method: f64, argument: f64) -> f64 {
+    player_closure(2).map_or(0.0, |call| call.call2(method, argument))
+}

@@ -67,3 +67,36 @@ export function render(
 ): number {
   return js_tnp_render(scene, camera, width, height, tone, exposure, srgb, clear);
 }
+
+declare function js_tnp_player_bind(update: unknown, frame: unknown, observe: unknown): number;
+declare function js_tnp_player_open(): number;
+declare function js_tnp_player_step(): number;
+declare function js_tnp_player_close(): void;
+declare function js_tnp_player_running(): number;
+declare function js_tnp_player_runner(): number;
+declare function js_tnp_player_codes(): number;
+declare function js_tnp_player_capture(on: number): number;
+export function playerBind(update: unknown, frame: unknown, observe: unknown): number {
+  return js_tnp_player_bind(update, frame, observe);
+}
+export function playerOpen(): number {
+  return js_tnp_player_open();
+}
+export function playerStep(): number {
+  return js_tnp_player_step();
+}
+export function playerClose(): void {
+  js_tnp_player_close();
+}
+export function playerRunning(): number {
+  return js_tnp_player_running();
+}
+export function playerRunner(): number {
+  return js_tnp_player_runner();
+}
+export function playerCodes(): string {
+  return readString(js_tnp_player_codes());
+}
+export function playerCapture(on: boolean): number {
+  return js_tnp_player_capture(on ? 1 : 0);
+}

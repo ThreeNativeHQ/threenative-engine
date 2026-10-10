@@ -325,7 +325,7 @@ async function runReference(name, plan = {}) {
           : String(error),
     };
   }
-  const run = spawnSync("pnpm", ["exec", "tsx", path.relative(REPO, file)], {
+  const run = spawnSync(process.execPath, ["--import", "tsx", path.relative(REPO, file)], {
     cwd: REPO,
     env: mergeEnv(process.env, [
       ["NO_COLOR", "1"],
@@ -334,6 +334,7 @@ async function runReference(name, plan = {}) {
     encoding: "buffer",
     maxBuffer: 64 * 1024 * 1024,
   });
+  if (run.error) return { ok: false, note: String(run.error), exit: -1 };
   const actual = run.stdout ?? Buffer.alloc(0);
   const status = run.status ?? -1;
   if (!actual.equals(expected.stdout)) {

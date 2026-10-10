@@ -172,13 +172,40 @@ bool pumpEvents(Window& window, const Game& game) {
 
 }  // namespace
 
-int run(const Game& game) {
+struct Session {
+    Game game;
+    Window window;
+    std::unique_ptr<mystral::webgpu::Context> context;
+    std::unique_ptr<Presenter> presenter;
+    EventQueue events;
+    std::unique_ptr<Renderer> renderer;
+    world::FixedStepClock clock{kTickStep, 5};
+    double nowMs = 0;
+    std::unique_ptr<inspect::Endpoint> endpoint;
+    std::unique_ptr<Mailbox> mailbox;
+    Object3D* scene;
+    Camera* camera;
+    std::function<void()> renderFrame;
+    std::function<bool()> refreshView;
+    std::chrono::steady_clock::time_point freeRunStart;
+    RenderDatabase database;
+    bool runner = false, initialized = false, readbackInFlight = false, firstFrame = true;
+    bool viewFailed = false;
+#if defined(__ANDROID__)
+    bool watching = false;
+#endif
+    explicit Session(const Game& source) : game(source), scene(game.scene), camera(game.camera) {}
+    int initialize();
+    int step();
+    ~Session();
+};
+
+int Session::initialize() {
     if (!game.view && (game.scene == nullptr || game.camera == nullptr)) {
         std::printf("TN_PLAYER_NO_SCENE: %s carries no scene or camera.\n", game.name.c_str());
         return 1;
     }
 
-    Window window;
     startupStage("sdl-window-begin");
     const bool windowed = openWindow(window);
     startupStage(windowed ? "sdl-window-ready" : "sdl-window-failed");
@@ -186,8 +213,6 @@ int run(const Game& game) {
     // rather than playing behind an empty rectangle.
     if (game.uiAttach && !game.uiAttach(windowed ? window.handle : nullptr))
         return 1;
-    std::unique_ptr<mystral::webgpu::Context> context;
-    std::unique_ptr<Presenter> presenter;
     auto candidate = std::make_unique<mystral::webgpu::Context>();
     startupStage("webgpu-surface-begin");
     if (windowed && candidate->initialize() && surfaceForWindow(*candidate, window) &&
@@ -217,38 +242,28 @@ int run(const Game& game) {
         std::fprintf(stderr, "TN_PLAYER_ANDROID_EVENT_WATCH_FAILED: %s\n", SDL_GetError());
         return 2;
     }
-    struct WatchGuard {
-        Window& window;
-        ~WatchGuard() { SDL_RemoveEventWatch(lifecycleWatch, &window); }
-    } watchGuard{window};
+    watching = true;
 #endif
-    EventQueue events;
     startupStage("renderer-begin");
-    Renderer renderer(context->getInstance(), context->getDevice(), context->getQueue(), events);
+    renderer = std::make_unique<Renderer>(context->getInstance(), context->getDevice(), context->getQueue(), events);
     const uint32_t width = presenter ? presenter->width() : kWidth;
     const uint32_t height = presenter ? presenter->height() : kHeight;
-    renderer.setSize(width, height);
-    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    renderer->setSize(width, height);
+    renderer->setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
     startupStage("renderer-ready");
-    struct Shutdown {
-        const Game& game;
-        ~Shutdown() { if (game.shutdown) game.shutdown(); }
-    } shutdown{game}; // also releases game resources if an update or admission throws
+    initialized = true;
     startupStage("game-initialize-begin");
     if (game.initialize)
-        game.initialize(renderer);
+        game.initialize(*renderer);
     startupStage("game-initialize-ready");
 
-    world::FixedStepClock clock(kTickStep, 5);
     clock.start(0);
-    double nowMs = 0;
     inspect::Host host;
-    std::function<void()> renderFrame;
     host.scene = game.scene;
     host.gameRuntime = game.gameRuntime;
     host.observe = game.observe;
-    host.tick = [&clock] { return clock.tick(); };
-    host.step = [&clock, &game, &nowMs, &renderFrame] {
+    host.tick = [this] { return clock.tick(); };
+    host.step = [this] {
         // One fixed update per driven tick, so the reported clock is the engine's own.
         nowMs += 1000.0 * kTickStep;
         clock.advance(nowMs);
@@ -259,7 +274,7 @@ int run(const Game& game) {
     };
     // What the scenario schema can read: the profile describe reports, a state snapshot a scenario
     // compares across labelled steps, and whatever else the game registers.
-    host.resource = [&game, &clock, &renderer, &context](const std::string& id) -> json::Value {
+    host.resource = [this](const std::string& id) -> json::Value {
         if (id == "surface")
             return json::Value::makeObject({
                 {"deviceCreations", json::Value::makeNumber(context->deviceCreations())},
@@ -274,152 +289,184 @@ int run(const Game& game) {
                                                 {"skinnedExactDraws", json::Value::makeNumber(stats.exactDraws)},
                                                 {"skinnedInstances", json::Value::makeNumber(stats.instances)}});
             };
-            const auto& stats = renderer.lastFrame();
+            const auto& stats = renderer->lastFrame();
             return json::Value::makeObject({{"main", pass(stats.mainSkinned)}, {"shadow", pass(stats.shadowSkinned)}});
         }
         return game.resource ? game.resource(id, clock.tick()) : json::Value::makeNull();
     };
-    inspect::Endpoint endpoint(host);
+    endpoint = std::make_unique<inspect::Endpoint>(std::move(host));
     if (game.attach)
-        game.attach(endpoint);
-    Object3D* scene = game.scene;
-    Camera* camera = game.camera;
-    const auto refreshView = [&] {
+        game.attach(*endpoint);
+    refreshView = [this] {
         if (!game.view) return true;
         std::string error;
-        if (game.view(scene, camera, error) < 0)
+        if (game.view(scene, camera, error) < 0) {
+            viewFailed = true;
             return std::printf("TN_PLAYER_VIEW: %s\n", error.c_str()), false;
-        endpoint.setScene(scene);
+        }
+        endpoint->setScene(scene);
         return true;
     };
 
-    player::Mailbox mailbox(player::Mailbox::rootFromEnvironment());
-    const bool runner = mailbox.announceReady();
+    mailbox = std::make_unique<Mailbox>(Mailbox::rootFromEnvironment());
+    runner = mailbox->announceReady();
     startupStage(runner ? "mailbox-ready" : "mailbox-off");
     std::printf("[Playtest] threenative-native-engine ready: game %s, runtime %s, %ux%u, mailbox %s\n",
-                game.name.c_str(), game.gameRuntime.c_str(), renderer.width(), renderer.height(),
+                game.name.c_str(), game.gameRuntime.c_str(), renderer->width(), renderer->height(),
                 runner ? "on" : "off");
 
-    const auto freeRunStart = std::chrono::steady_clock::now();
-    RenderDatabase database;
+    freeRunStart = std::chrono::steady_clock::now();
     database.shadowMapEnabled = game.shadowMapEnabled;
-    bool readbackInFlight = false;
-    bool firstFrame = true;
-    renderFrame = [&] {
+    renderFrame = [this] {
         if (firstFrame) startupStage("first-render-begin");
         if (game.afterRender)  // after the previous frame; between frames, never inside one
             game.afterRender();
+        if (!refreshView()) return;
 
         if (presenter && (presenter->width() != window.width || presenter->height() != window.height)) {
             presenter->resize(window.width, window.height);
-            renderer.setSize(presenter->width(), presenter->height());
+            renderer->setSize(presenter->width(), presenter->height());
             if (game.uiResize) game.uiResize(int(window.width), int(window.height));
         }
         // Nothing is drawn until the game publishes its view, as a page's canvas stays blank while it loads.
         if (scene == nullptr || camera == nullptr) {
             if (game.frameWithoutView) game.frameWithoutView();
-            renderer.poll();
+            renderer->poll();
             events.drain();
             return;
         }
-        if (game.beforeRender) game.beforeRender(renderer, database);
-        database.render(renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1});
+        if (game.beforeRender) game.beforeRender(*renderer, database);
+        // Frame callbacks can replace the published view and release its previous owners.
+        if (!refreshView() || scene == nullptr || camera == nullptr) return;
+        database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1});
         for (const std::string& diagnostic : database.diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());
-        for (const std::string& diagnostic : renderer.diagnostics())
+        for (const std::string& diagnostic : renderer->diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());
         if (presenter) {
             Presenter::Frame target;
             if (firstFrame) startupStage("first-acquire-begin");
             // The page's newest frame goes over the world in the same blit (PRD-554).
-            if (game.uiDraw) game.uiDraw(renderer);
+            if (game.uiDraw) game.uiDraw(*renderer);
             if (presenter->begin(target)) {
                 // The window carries the very frame the render database just built.
-                renderer.blitTo(context->getQueue(), target.color,
+                renderer->blitTo(context->getQueue(), target.color,
                                 static_cast<WGPUTextureFormat>(context->getPreferredFormat()));
                 presenter->present();
 #if defined(__ANDROID__)
                 mystral::webgpu::paceToPresentationCap();
 #endif
-                if (firstFrame) startupStage("first-present-ready");
+                if (firstFrame) {
+                    startupStage("first-present-ready");
+                    std::printf("TN_PLAYER_FIRST_PRESENT: runtime %s\n", game.gameRuntime.c_str());
+                    std::fflush(stdout);
+                }
                 firstFrame = false;
             }
         }
 
         // A screenshot answer is a real frame of this loop, so it is read back from the renderer the
         // moment the mailbox asks for one. The readback lands a few frames later.
-        if (mailbox.screenshotRequested() && !readbackInFlight) {
+        if (mailbox->screenshotRequested() && !readbackInFlight) {
             // With a UI the answer is the presented frame, the page drawn over it, as a player sees it.
-            const auto read = [&](ReadbackCallback done) {
-                return game.uiDraw ? renderer.readPresented(std::move(done)) : renderer.readPixels(std::move(done));
+            const auto read = [this](ReadbackCallback done) {
+                return game.uiDraw ? renderer->readPresented(std::move(done)) : renderer->readPixels(std::move(done));
             };
-            readbackInFlight = read([&](GpuStatus status, std::vector<uint8_t> pixels) {
+            readbackInFlight = read([this](GpuStatus status, std::vector<uint8_t> pixels) {
                 readbackInFlight = false;
                 if (status == GpuStatus::Ok) {
-                    mailbox.answerScreenshot(pixels, renderer.width(), renderer.height());
+                    mailbox->answerScreenshot(pixels, renderer->width(), renderer->height());
                 }
             }) == GpuStatus::Ok;
         }
         // Bounded by iteration count, never by a wait: a readback completes on a later drain of
         // the event queue (GpuResources::readTexture), and the swapchain's present paces the loop.
         for (int i = 0; i < 100000 && (readbackInFlight || events.pending()); ++i) {
-            renderer.poll();
+            renderer->poll();
             events.drain();
             if (!readbackInFlight && events.pending() == 0)
                 break;
         }
         // Retirement callbacks also need a poll when no readback/event was queued at frame start.
-        renderer.poll();
+        renderer->poll();
         events.drain();
         if (game.frameComplete)
-            game.frameComplete(renderer, database.diagnostics());
+            game.frameComplete(*renderer, database.diagnostics());
     };
-    while (pumpEvents(window, game)) {
+    return 0;
+}
+
+int Session::step() {
+    if (!pumpEvents(window, game)) return 0;
+
 #if defined(__ANDROID__)
-        if (window.resumeSurface) {
-            auto* native = static_cast<ANativeWindow*>(SDL_GetPointerProperty(
-                SDL_GetWindowProperties(window.handle), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr));
-            if (!native || ANativeWindow_getWidth(native) <= 0 || ANativeWindow_getHeight(native) <= 0 ||
-                !context->rebuildSurface(native, mystral::webgpu::Context::PLATFORM_ANDROID) ||
-                !context->configureSurface(ANativeWindow_getWidth(native), ANativeWindow_getHeight(native), kSurfaceVsync)) {
-                std::printf("TN_PLAYER_ANDROID_SURFACE_RECREATE_FAILED\n");
-                return 2;
-            }
-            window.width = context->getSurfaceWidth();
-            window.height = context->getSurfaceHeight();
-            presenter = std::make_unique<Presenter>(*context);
-            renderer.setSize(window.width, window.height);
-            window.resumeSurface = false;
+    if (window.resumeSurface) {
+        auto* native = static_cast<ANativeWindow*>(SDL_GetPointerProperty(
+            SDL_GetWindowProperties(window.handle), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr));
+        if (!native || ANativeWindow_getWidth(native) <= 0 || ANativeWindow_getHeight(native) <= 0 ||
+            !context->rebuildSurface(native, mystral::webgpu::Context::PLATFORM_ANDROID) ||
+            !context->configureSurface(ANativeWindow_getWidth(native), ANativeWindow_getHeight(native), kSurfaceVsync)) {
+            std::printf("TN_PLAYER_ANDROID_SURFACE_RECREATE_FAILED\n");
+            return -2;
         }
-#endif
-        if (game.uiFrame) game.uiFrame();
-        // An advance may render several streaming frames; each tick gets its own admission cap.
-        mailbox.poll(endpoint);
-        // Without a runner nothing drives host.step, and the game would re-render one frozen tick:
-        // the clock follows real time instead, as the web loop follows requestAnimationFrame.
-        if (!runner) {
-            nowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - freeRunStart).count();
-            for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps)
-                game.update(kTickStep);
-        }
-        if (!refreshView())
-            return 1;
-        renderFrame();
+        window.width = context->getSurfaceWidth();
+        window.height = context->getSurfaceHeight();
+        presenter = std::make_unique<Presenter>(*context);
+        renderer->setSize(window.width, window.height);
+        window.resumeSurface = false;
     }
+#endif
+    if (game.uiFrame) game.uiFrame();
+    // An advance may render several streaming frames; each tick gets its own admission cap.
+    mailbox->poll(*endpoint);
+    // Without a runner nothing drives host.step, and the game would re-render one frozen tick:
+    // the clock follows real time instead, as the web loop follows requestAnimationFrame.
+    if (!runner) {
+        nowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - freeRunStart).count();
+        for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps)
+            game.update(kTickStep);
+    }
+    if (!refreshView())
+        return -1;
+    renderFrame();
+    return viewFailed ? -1 : 1;
+}
+
+Session::~Session() {
 #if defined(__APPLE__)
     if (window.metalView)
         SDL_Metal_DestroyView(window.metalView);
 #endif
 #if defined(__ANDROID__)
-    SDL_RemoveEventWatch(lifecycleWatch, &window);
+    if (watching) SDL_RemoveEventWatch(lifecycleWatch, &window);
     presenter.reset();
-    context->releaseSurface();
+    if (context) context->releaseSurface();
 #endif
+    if (initialized && game.shutdown) game.shutdown();
+    renderer.reset();
+    presenter.reset();
+    context.reset();
     if (game.uiDetach) game.uiDetach();
     if (window.handle)
         SDL_DestroyWindow(window.handle);
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
-    return 0;
+}
+
+Session* open(const Game& game, int& status) {
+    auto session = std::make_unique<Session>(game);
+    status = session->initialize();
+    return status == 0 ? session.release() : nullptr;
+}
+
+int step(Session& session) { return session.step(); }
+void close(Session* session) { delete session; }
+
+int run(const Game& game) {
+    int status = 0;
+    std::unique_ptr<Session, decltype(&close)> session(open(game, status), close);
+    if (!session) return status;
+    while ((status = step(*session)) > 0) {}
+    return -status;
 }
 
 }  // namespace tn::engine::player

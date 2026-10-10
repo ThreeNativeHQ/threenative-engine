@@ -91,6 +91,23 @@ export function stageSharedFacade(project, bridge) {
     }),
   );
   stageAddons(project, three);
+  const core = path.join(project, "node_modules/@threenative/core");
+  if (fs.existsSync(core)) {
+    const game = path.join(core, "src/game.ts");
+    const source = fs.readFileSync(game, "utf8");
+    if (!source.includes("return new GameImpl<TState, TPhysics>(config);"))
+      throw new Error("TN_PERRY_CORE_PLATFORM: staged defineGame injection seam is missing");
+    fs.writeFileSync(
+      game,
+      source
+        .replace(
+          "return new GameImpl<TState, TPhysics>(config);",
+          "return new GameImpl<TState, TPhysics>({ ...config, platform: config.platform ?? perryPlatform });",
+        )
+        .concat('\nimport { platform as perryPlatform } from "three/engine/src/perry-host.js";\n'),
+    );
+  }
+
   const adapter = path.join(project, "node_modules", PERRY_TRANSPORT);
   fs.cpSync(path.join(facade, "perry"), adapter, {
     recursive: true,
