@@ -1454,6 +1454,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 scaler.retarget(heldTargetFps);
               }
               renderer.observeRenderChainBudget?.(reported);
+              this.#computeDriven.observeBudget(reported);
               const projection = this.#projection;
               // Printed every window, projecting or declined. `TN_RENDER_PROJECTION` says once
               // whether the optimizer engaged; this says, repeatedly, what it is still leaving on

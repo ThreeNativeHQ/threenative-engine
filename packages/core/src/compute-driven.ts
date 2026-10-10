@@ -1,4 +1,6 @@
 import type { Camera, Object3D } from "three";
+import type { IFrameBudgetWindow } from "./frame-budget.js";
+import { type IBudgetCandidate, ParticleSignificance } from "./particle-significance.js";
 import type { IRendererLike } from "./renderer.js";
 
 /**
@@ -17,6 +19,12 @@ export interface IComputeDriven {
    * existing behavior of consumers whose simulation is intentionally tied to presentation.
    */
   readonly processCadence?: "fixed" | "render";
+  /**
+   * Yield simulation work in order of projected size when measured GPU compute exceeds budget.
+   * @situation Let the render loop pause low-significance particle emitters under GPU pressure.
+   * @constraint Only live render-cadence objects participate; missing measurements never shed.
+   */
+  readonly budget?: IBudgetCandidate;
   /**
    * Dispatched once per fixed step, in scene-add order unless render cadence is declared.
    *
@@ -39,6 +47,7 @@ interface IComputeDrivenEntry {
 /** The ordered registry used by the game loop for all compute-driven scene objects. */
 export class ComputeDrivenRegistry {
   #entries = new Map<IComputeDriven, IComputeDrivenEntry>();
+  readonly #significance = new ParticleSignificance();
 
   get size(): number {
     return this.#entries.size;
@@ -71,11 +80,31 @@ export class ComputeDrivenRegistry {
     this.#process(renderer, "fixed");
   }
 
+  /** Forward a measured frame window to the particle budget coordinator. */
+  observeBudget(
+    window: Pick<IFrameBudgetWindow, "frames" | "presented" | "gpuMs" | "gpuCompute" | "targetFps">,
+  ): void {
+    this.#significance.observe(window);
+  }
+
   /**
    * Dispatch render-cadence objects once with the frame's render camera; detached scene children are
    * released before dispatch.
    */
   processRender(renderer: IRendererLike, camera?: Camera): void {
+    if (camera !== undefined) {
+      const candidates: IBudgetCandidate[] = [];
+      for (const { object, driven } of this.#entries.values()) {
+        if (
+          !driven.released &&
+          object.parent !== null &&
+          driven.processCadence === "render" &&
+          driven.budget !== undefined
+        )
+          candidates.push(driven.budget);
+      }
+      this.#significance.apply(candidates, camera, performance.now() / 1000);
+    }
     this.#process(renderer, "render", camera);
   }
 

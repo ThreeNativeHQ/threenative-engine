@@ -1,8 +1,8 @@
-import { Group } from "three";
+import { Box3, Group, PerspectiveCamera, Vector3 } from "three";
 import { Fn } from "three/tsl";
 import { SpriteNodeMaterial } from "three/webgpu";
-import { describe, expect, it, vi } from "vitest";
-import { GPUParticles3D } from "../src/particles.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { GPUParticles3D, foldBounds } from "../src/particles.js";
 import type { IRendererLike } from "../src/renderer.js";
 
 function computeNode() {
@@ -19,7 +19,7 @@ function particles(options: Partial<ConstructorParameters<typeof GPUParticles3D>
   });
 }
 
-function renderer(dispatched: unknown[]): IRendererLike {
+function renderer(dispatched: unknown[], partials = new Float32Array()): IRendererLike {
   const canvas = new EventTarget() as HTMLCanvasElement;
   return {
     compileAsync: async () => undefined,
@@ -30,7 +30,7 @@ function renderer(dispatched: unknown[]): IRendererLike {
     kind: "webgpu",
     raw: {},
     render: () => undefined,
-    readback: async () => new ArrayBuffer(0),
+    readback: vi.fn(async () => partials.slice().buffer),
     renderOverlay: () => undefined,
     setOutputNode: () => undefined,
     setSize: () => undefined,
@@ -90,5 +90,249 @@ describe("GPUParticles3D", () => {
     expect(velocitiesDispose).toHaveBeenCalledOnce();
     particle.process();
     expect(dispatched).toHaveLength(3);
+  });
+});
+
+function partialsOf(cloud: readonly Vector3[]): Float32Array {
+  const data = new Float32Array(256 * 8);
+  for (let lane = 0; lane < 256; lane += 1) {
+    const lo = new Vector3(1e30, 1e30, 1e30);
+    const hi = new Vector3(-1e30, -1e30, -1e30);
+    for (let index = lane; index < cloud.length; index += 256) {
+      lo.min(cloud[index]);
+      hi.max(cloud[index]);
+    }
+    lo.toArray(data, lane * 4);
+    hi.toArray(data, (lane + 256) * 4);
+  }
+  return data;
+}
+
+const localBounds = new Box3(new Vector3(-1, -1, -1), new Vector3(1, 1, 1));
+function camera() {
+  return new PerspectiveCamera(60, 1, 0.1, 100);
+}
+
+afterEach(() => vi.useRealTimers());
+
+describe("particle bounds and culling", () => {
+  it("folds strided lanes into the cloud bounds and ignores empty lanes", () => {
+    const cloud = Array.from(
+      { length: 600 },
+      (_, index) => new Vector3(index - 300, index % 7, -index),
+    );
+    expect(foldBounds(partialsOf(cloud))).toEqual(new Box3().setFromPoints(cloud));
+    expect(foldBounds(partialsOf([]))).toBeUndefined();
+    const data = partialsOf([new Vector3(1, 2, 3)]);
+    data[1] = Number.NaN;
+    expect(foldBounds(data)).toBeUndefined();
+    data[1] = 2;
+    data[256 * 4 + 2] = Number.POSITIVE_INFINITY;
+    expect(foldBounds(data)).toBeUndefined();
+    data[256 * 4 + 2] = 3;
+    data[3] = Number.NaN;
+    expect(foldBounds(data)).toBeUndefined();
+    expect(foldBounds(new Float32Array(7))).toBeUndefined();
+  });
+
+  it("never culls before a sample lands and gates copies behind the reduction", async () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const dispatched: unknown[] = [];
+    const gpu = renderer(dispatched);
+    let land: ((bytes: ArrayBuffer) => void) | undefined;
+    gpu.readback = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          land = resolve;
+        }),
+    );
+    const emitter = particles({ boundsEveryFrames: 1 });
+    emitter.position.x = 100;
+    emitter.attachRenderer(gpu);
+    emitter.process(gpu, camera());
+    vi.advanceTimersByTime(2000);
+    emitter.process(gpu, camera());
+    expect(emitter.measuredBounds).toBeUndefined();
+    expect(emitter.dispatches).toBe(2);
+    expect(emitter.visible).toBe(true);
+    expect(gpu.readback).toHaveBeenCalledOnce();
+    expect(dispatched).toEqual([
+      emitter.warmupNodes[0],
+      emitter.warmupNodes[1],
+      emitter.warmupNodes[2],
+      emitter.warmupNodes[1],
+    ]);
+    land?.(partialsOf([new Vector3(-1, -1, -1), new Vector3(1, 1, 1)]).buffer);
+    await Promise.resolve();
+    emitter.process(gpu, camera());
+    expect(emitter.measuredBounds).toEqual(localBounds);
+    expect(emitter.cull.state).toBe("running");
+  });
+
+  it.each(["pause", "clear"] as const)(
+    "culls a landed sample after grace and resumes with %s",
+    async (onCull) => {
+      vi.useFakeTimers({ toFake: ["performance"] });
+      const dispatched: unknown[] = [];
+      const gpu = renderer(dispatched, partialsOf([localBounds.min, localBounds.max]));
+      const emitter = particles({ onCull, boundsEveryFrames: 1 });
+      const view = camera();
+      const buffers = emitter.buffers;
+      emitter.position.set(100, 0, -5);
+      emitter.attachRenderer(gpu);
+      emitter.process(gpu, view);
+      await Promise.resolve();
+      emitter.process(gpu, view);
+      vi.advanceTimersByTime(999);
+      emitter.process(gpu, view);
+      expect(emitter.dispatches).toBe(3);
+      expect(emitter.visible).toBe(true);
+      vi.advanceTimersByTime(1);
+      const before = dispatched.length;
+      emitter.process(gpu, view);
+      expect(dispatched).toHaveLength(before);
+      expect(emitter.visible).toBe(false);
+      expect(emitter.cull).toEqual({
+        state: onCull === "pause" ? "paused" : "cleared",
+        reason: "outside-view",
+        transitions: 1,
+      });
+      emitter.position.x = 0;
+      emitter.process(gpu, view);
+      expect(emitter.visible).toBe(true);
+      expect(emitter.dispatches).toBe(4);
+      expect(emitter.buffers).toBe(buffers);
+      expect(dispatched.filter((node) => node === emitter.warmupNodes[0])).toHaveLength(
+        onCull === "clear" ? 2 : 1,
+      );
+      expect(emitter.cull).toEqual({ state: "running", reason: undefined, transitions: 2 });
+    },
+  );
+
+  it("uses an override from frame zero without measurement, and Infinity disables view culling", () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const gpu = renderer([]);
+    const emitter = particles({ bounds: localBounds, graceSeconds: 0 });
+    emitter.position.set(100, 0, -5);
+    emitter.attachRenderer(gpu);
+    emitter.process(gpu, camera());
+    expect(emitter.measuredBounds).toBe(localBounds);
+    expect(emitter.dispatches).toBe(0);
+    expect(emitter.cull.reason).toBe("outside-view");
+    expect(gpu.readback).not.toHaveBeenCalled();
+    const infinite = particles({ bounds: localBounds, graceSeconds: Number.POSITIVE_INFINITY });
+    infinite.position.copy(emitter.position);
+    infinite.attachRenderer(gpu);
+    infinite.process(gpu, camera());
+    vi.advanceTimersByTime(1e6);
+    infinite.process(gpu, camera());
+    expect(infinite.dispatches).toBe(2);
+    expect(infinite.visible).toBe(true);
+  });
+
+  it("respects emitting, game visibility, and shadow casters", () => {
+    const gpu = renderer([]);
+    const emitter = particles({ bounds: localBounds, graceSeconds: 0 });
+    emitter.position.set(100, 0, -5);
+    emitter.attachRenderer(gpu);
+    emitter.emitting = false;
+    emitter.process(gpu, camera());
+    expect(emitter.dispatches).toBe(0);
+    expect(emitter.budget.significance(camera())).toBeUndefined();
+    emitter.emitting = true;
+    emitter.visible = false;
+    emitter.process(gpu, camera());
+    emitter.position.x = 0;
+    emitter.process(gpu, camera());
+    expect(emitter.visible).toBe(false);
+    expect(emitter.cull.state).toBe("running");
+    emitter.visible = true;
+    emitter.castShadow = true;
+    emitter.position.x = 100;
+    emitter.process(gpu, camera());
+    expect(emitter.visible).toBe(true);
+    expect(emitter.cull.state).toBe("running");
+  });
+
+  it("transforms the measured box and world padding before testing the view", () => {
+    const gpu = renderer([]);
+    const emitter = particles({ bounds: localBounds, graceSeconds: 0, padding: 2 });
+    const parent = new Group();
+    parent.position.set(100, 0, -5);
+    parent.add(emitter);
+    emitter.attachRenderer(gpu);
+    emitter.process(gpu, camera());
+    expect(emitter.cull.reason).toBe("outside-view");
+    parent.position.x = 5;
+    emitter.process(gpu, camera());
+    expect(emitter.visible).toBe(true);
+    expect(emitter.cull.state).toBe("running");
+  });
+
+  it("yields for budget with buffers intact and ranks unmeasured emitters by distance", () => {
+    const gpu = renderer([]);
+    const emitter = particles();
+    const view = camera();
+    emitter.position.z = -5;
+    emitter.attachRenderer(gpu);
+    const near = emitter.budget.significance(view);
+    emitter.position.z = -10;
+    expect(emitter.budget.significance(view)).toBeLessThan(near ?? 0);
+    emitter.budget.yield(true);
+    emitter.process(gpu, view);
+    expect(emitter.dispatches).toBe(0);
+    expect(emitter.cull.reason).toBe("over-budget");
+    emitter.budget.yield(false);
+    emitter.process(gpu, view);
+    expect(emitter.dispatches).toBe(1);
+    expect(emitter.visible).toBe(true);
+  });
+
+  it("excludes view-culled emitters from the budget candidates", () => {
+    const gpu = renderer([]);
+    const emitter = particles({ bounds: localBounds, graceSeconds: 0 });
+    emitter.position.x = 100;
+    emitter.attachRenderer(gpu);
+    emitter.process(gpu, camera());
+    expect(emitter.budget.significance(camera())).toBeUndefined();
+  });
+
+  it("stops measuring after unsupported readback and releases the reduction", async () => {
+    const gpu = renderer([]);
+    gpu.readback = vi.fn(async () => {
+      throw new Error("unsupported");
+    });
+    const emitter = particles({ boundsEveryFrames: 1 });
+    emitter.attachRenderer(gpu);
+    const dispose = vi.spyOn(emitter.warmupNodes[2], "dispose");
+    emitter.process(gpu, camera());
+    await Promise.resolve();
+    await Promise.resolve();
+    emitter.process(gpu, camera());
+    expect(gpu.readback).toHaveBeenCalledOnce();
+    expect(emitter.dispatches).toBe(2);
+    emitter.detach();
+    emitter.detach();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("paces measurement and tolerates stubs without readback", async () => {
+    const gpu = renderer([]);
+    const emitter = particles({ boundsEveryFrames: 3 });
+    emitter.attachRenderer(gpu);
+    emitter.process(gpu);
+    emitter.process(gpu);
+    expect(gpu.readback).not.toHaveBeenCalled();
+    emitter.process(gpu);
+    expect(gpu.readback).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    emitter.process(gpu);
+    emitter.process(gpu);
+    expect(gpu.readback).toHaveBeenCalledOnce();
+    emitter.process(gpu);
+    expect(gpu.readback).toHaveBeenCalledTimes(2);
+    const stub = { ...gpu, readback: undefined } as unknown as IRendererLike;
+    emitter.process(stub);
+    expect(emitter.dispatches).toBe(7);
   });
 });

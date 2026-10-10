@@ -1,0 +1,55 @@
+{
+  "name": "vfx-gallery-emitter-cull",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 8,
+  "subject": "fire",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "wait", "label": "settle", "waitTicks": 240, "release": true, "screenshot": "centered" },
+    { "kind": "input", "label": "cull-off", "press": "KeyC", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "pan-right-cull-off", "press": "KeyD", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "baseline-window", "waitTicks": 240, "release": true },
+    { "kind": "input", "label": "cull-on", "press": "KeyC", "holdTicks": 1, "release": true },
+    {
+      "kind": "wait",
+      "label": "panned-culled",
+      "waitTicks": 240,
+      "release": true,
+      "screenshot": "panned-culled"
+    },
+    { "kind": "input", "label": "pan-left", "press": "KeyA", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "back-in-view", "waitTicks": 240, "release": true },
+    { "kind": "input", "label": "budget-tight", "press": "KeyB", "holdTicks": 1, "release": true },
+    {
+      "kind": "wait",
+      "label": "over-budget",
+      "waitTicks": 360,
+      "release": true,
+      "screenshot": "over-budget"
+    },
+    { "kind": "input", "label": "budget-relaxed", "press": "KeyB", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "recovered", "waitTicks": 900, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "state", "path": "baselineRatio", "gte": 0.99, "changed": true },
+      { "id": "state", "path": "culledRatio", "lte": 0.6, "changed": true },
+      { "id": "state", "path": "culledPausedFraction", "gte": 0.5, "changed": true },
+      { "id": "state", "path": "runningDispatchRatio", "gte": 0.99, "changed": true },
+      { "id": "state", "path": "yieldedPeak", "gte": 1, "changed": true },
+      { "id": "state", "path": "yieldedLeastFirst", "equals": true, "changed": true },
+      { "id": "state", "path": "overBudgetPaused", "equals": 0 },
+      {
+        "id": "state",
+        "path": "pausedWithoutReason",
+        "equals": 0,
+        "allowTrivial": "held invariant: every pause names its reason, so the count is zero at every sample"
+      },
+      { "id": "state", "path": "shortestDwellSeconds", "gte": 0.9, "changed": true }
+    ],
+    "visual": [{ "frameDiff": { "minChangedPixelRatio": 0.0001 } }]
+  }
+}

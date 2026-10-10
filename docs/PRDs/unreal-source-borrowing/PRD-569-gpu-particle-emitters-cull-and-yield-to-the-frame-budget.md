@@ -124,6 +124,43 @@ camera)` → `GPUParticles3D.process(renderer, camera)` → skip or dispatch. Th
   declares GPU bounds because it cannot measure them. This engine can, so the declared box is the
   named override, not the default.
 
+- 2026-10-10 (lane agent, AFK, from reading the code): **the emitter owns its draw cull and
+  `render-camera-cull.ts` stays unchanged.** Three tests a `Sprite` as a unit quad at its origin
+  and ignores `boundingSphere`, so `frustumCulled = true` would cull a cloud whose origin is off
+  screen. The emitter keeps `frustumCulled = false` and applies its own measured-bounds cull
+  through `visible`, from `process(renderer, camera)`, which runs before the frame's draw. It
+  restores `visible` only when it was the one that hid the emitter, so a game that hides one is
+  never overruled. `exemptWithoutBounds` therefore gains nothing: an emitter with no sample is
+  simply not culled.
+- 2026-10-10 (lane agent): **the reduction uses 256 per-lane min/max partials, folded on the
+  CPU, not atomics.** A lane scans a strided share of `positions`; the CPU folds 512 partials from
+  the existing `GPUReadback`. No bit-pattern ordering of floats, no TSL atomic path to get silently
+  wrong. The measured box includes every pool slot, dead ones too, so it is conservative.
+- 2026-10-10 (lane agent): **`maxInstances` per effect kind is not built.** No caller names an
+  effect kind, and the significance ranking already decides which emitters yield. Reopen it when a
+  game asks for a hard cap.
+- 2026-10-10 (lane agent): **the budget signal is `shed = clamp((gpuMs - targetFrameMs) /
+  gpuCompute, 0, 1)`:** the share of the measured compute bucket that must go to reach the frame
+  target. It rises at once and decays at 0.1 per second (the Unreal rate), and an emitter keeps a
+  state for `graceSeconds` before it may change it. A window without `gpuMs`, `gpuCompute` or
+  `targetFps` sheds nothing: an unmeasured budget is never over budget. The budget cull is
+  therefore as inert as `TN_FRAME_BUDGET` needs it to be; the playtest forces an over-budget frame
+  with `display.maxFps`, not with the marker, which only reports.
+- 2026-10-10 (lane agent): **the proof counts dispatches, not `computeTiming` receipts.**
+  `GPUParticles3D.dispatches` counts its own simulation `compute` calls, which is the quantity AC-1
+  names, on every target, with no timestamp-query dependency.
+
+- 2026-10-10 (parent-authorized checkpoint save): **save the existing lane independently while
+  PRD-478's PR remains open; no fixes, push or PR creation in this save.** The prior readonly arm
+  reported 35/35 focused specs passing. Its `pnpm typecheck` failed strict typing in
+  `packages/core/__tests__/particles.spec.ts` and procedural-animals declarations; gallery
+  typecheck failed at `Gallery.ts:446,578` because the public `graceSeconds` assignments do not
+  match the private readonly field. These runtime/type checks were not rerun by the checkpoint
+  save, and neither failure is waived. No box is ticked: red-green verification, typing fixes,
+  the web AC-1/AC-2 playtest, the native desktop pan, and action-rpg's combat playtest remain
+  open. The PRD remains here with doable work; this is a checkpoint, not completion or a
+  whole-PRD blocked declaration. Parent review precedes the next push.
+
 ## Execution Phases
 
 #### Phase 1: An emitter out of view stops simulating and drawing

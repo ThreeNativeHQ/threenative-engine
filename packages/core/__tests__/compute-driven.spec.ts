@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { Group } from "three";
+import { Group, PerspectiveCamera } from "three";
 import { Fn } from "three/tsl";
 import { SpriteNodeMaterial } from "three/webgpu";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ComputeDrivenRegistry, type IComputeDriven } from "../src/compute-driven.js";
 import { defineGame } from "../src/game.js";
 import { GPUParticles3D } from "../src/particles.js";
@@ -440,4 +440,48 @@ describe("ComputeDrivenRegistry", () => {
     expect(remaining.released).toBe(true);
     expect(registry.size).toBe(0);
   });
+});
+
+it("forwards measured budgets only to live render-cadence candidates before dispatch", () => {
+  const registry = new ComputeDrivenRegistry();
+  const parent = new Group();
+  const order: string[] = [];
+  const render = Object.assign(new ComputeProbe("render", order), {
+    processCadence: "render" as const,
+    budget: { significance: () => 1, yield: vi.fn(() => order.push("yield")) },
+  });
+  const fixed = Object.assign(new ComputeProbe("fixed", order), {
+    budget: { significance: () => 0, yield: vi.fn() },
+  });
+  const released = Object.assign(new ComputeProbe("released", order), {
+    processCadence: "render" as const,
+    budget: { significance: () => 0, yield: vi.fn() },
+  });
+  const detached = Object.assign(new ComputeProbe("detached", order), {
+    processCadence: "render" as const,
+    budget: { significance: () => 0, yield: vi.fn() },
+  });
+  const plain = Object.assign(new ComputeProbe("plain", order), {
+    processCadence: "render" as const,
+  });
+  parent.add(render, fixed, released, detached, plain);
+  for (const entry of [render, fixed, released, detached, plain]) registry.add(entry, renderer);
+  released.detach();
+  parent.remove(detached);
+  registry.observeBudget({
+    frames: 60,
+    presented: { samples: 60, mean: 1000 / 60, p50: 0, p95: 0, p99: 0, max: 0 },
+    gpuMs: 20,
+    gpuCompute: 10,
+    targetFps: 100,
+  });
+  registry.processRender(renderer);
+  expect(render.budget.yield).not.toHaveBeenCalled();
+  order.length = 0;
+  registry.processRender(renderer, new PerspectiveCamera());
+  expect(order).toEqual(["yield", "render", "plain"]);
+  expect(render.budget.yield).toHaveBeenCalledExactlyOnceWith(true);
+  expect(fixed.budget.yield).not.toHaveBeenCalled();
+  expect(released.budget.yield).not.toHaveBeenCalled();
+  expect(detached.budget.yield).not.toHaveBeenCalled();
 });
