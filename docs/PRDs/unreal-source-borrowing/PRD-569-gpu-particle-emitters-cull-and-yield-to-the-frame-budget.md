@@ -161,6 +161,13 @@ camera)` → `GPUParticles3D.process(renderer, camera)` → skip or dispatch. Th
   open. The PRD remains here with doable work; this is a checkpoint, not completion or a
   whole-PRD blocked declaration. Parent review precedes the next push.
 
+### Paired captures and current-source checks — 2026-10-10
+
+- Sonnet 5.5 high changed the gallery pan from 20 m to 18 m to retain a visible particle cloud. Two independent same-pose BEFORE/AFTER runs on NVIDIA/Turing have the same camera position `[18, 8.35, 11.8]`, forward vector and 60° FOV, with the budget relaxed. BEFORE dispatch ratio is 1.0 with no paused emitters; AFTER is 0.4444 with five of nine emitters outside-view paused and running-emitter ratio 1.0. All four raw frames pass the unchanged 0.05 bright-pixel floor (0.05471–0.05588); large labels were added separately. Comparisons and metadata are on the orphan `prd-569-screenshots` branch, commit `fbc59858e8770f3cc63d875f86e8b961ee65d3eb`. These are **UNJUDGED**: the requested ClaudeCode visual-judge skill is missing; no visual or FPS improvement is claimed.
+- Exact 18 m source: gallery typecheck and Biome passed; `emitter-cull.playtest.json` with the documented Vulkan flags and `--live-clock` **passed**, including the capture guard (`artifacts/prd569-pan18-final/`). The existing `vfx-gallery.playtest.json` **passed** on its fixed-step clock (`artifacts/prd569-gallery-motion-counted/`), retaining its positive `frameDiff` and nonblank-region assertions. Forcing that short-step scenario onto `--live-clock` first failed with no presented frame; doctor passed before the fixed-step rerun. No assertion was weakened.
+- Located the existing primary-checkout host `packages/runtime-native/build/tn-linux-wgpu/mystral` and launched the common scenario with `--target desktop`, that executable and the gallery native bundle. It **exited 2**, aborting with `Buffer with '' label is still mapped` / SIGABRT (`artifacts/prd569-native-existing-host/`). This existing August host does not establish current native support; current-host/readback diagnosis remains required. The previous missing-executable result is superseded by this actual launch attempt. No native claim is ticked.
+- The Sonnet capture pass was stopped after its explicit 20-minute task bound (observed 21:09); its source and complete capture pairs were preserved and checked above. Action-rpg combat, native verification and the requested independent judge remain open. No phase or acceptance box is ticked, and the PR stays draft for user inspection.
+
 ## Execution Phases
 
 ### Checkpoint corrections — 2026-10-10

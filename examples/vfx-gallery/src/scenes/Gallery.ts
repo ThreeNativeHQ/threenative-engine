@@ -168,8 +168,11 @@ const PAGE_COUNT = Math.ceil(EFFECT_IDS.length / PAGE_SIZE);
 const COLUMN_COUNT = 3;
 const COLUMN_WIDTH = 4;
 const ROW_DEPTH = 3.2;
-/** Metres the camera slides sideways per pan; two of the three columns leave the view. */
-const PAN_STEP = 20;
+/**
+ * Metres the camera slides sideways per pan: 5 of the page's 9 emitters leave the view and the
+ * frame still clears the capture gate's bright-pixel floor (20 m measured 0.042 against 0.05).
+ */
+const PAN_STEP = 18;
 const RATIO_WINDOW_RENDERS = 60;
 
 /**
