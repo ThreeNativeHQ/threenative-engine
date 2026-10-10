@@ -354,7 +354,8 @@ function morphBytes(resolution: number, targets: number): number {
   const vertices = resolution * resolution + resolution * 4;
   // Stock Three packs both vec3 deltas into RGBA32F: retain its CPU texture and GPU copy too.
   const texels = vertices * 2;
-  const packedTexels = texels <= 4096 ? texels : Math.ceil(texels / 4096) * 4096;
+  // Any row width pads to < 2 * texels; admission precedes renderer-limit discovery.
+  const packedTexels = texels * 2;
   return targets * (vertices * 3 * 4 * 2 + packedTexels * 4 * 4 * 2);
 }
 

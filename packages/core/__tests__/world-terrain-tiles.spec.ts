@@ -228,8 +228,8 @@ describe("TerrainTiles", () => {
   });
 
   it.each([
-    [9, 33_224],
-    [65, 1_430_088],
+    [9, 51_080],
+    [65, 1_869_960],
   ])(
     "charges every morph delta plus Three's packed CPU and GPU textures before admitting a %i grid",
     (tileResolution, bytes) => {
@@ -265,6 +265,88 @@ describe("TerrainTiles", () => {
         expect(() => tooSmall.follow({ x: 0, z: 0 })).toThrow(/residentByteBudget/u);
         expect(tooSmall.residentTileCount).toBe(0);
       } finally {
+        tooSmall.dispose();
+        options.surface.dispose();
+      }
+    },
+  );
+
+  it("reserves enough morph storage for stock WebGL packing at an 8192 texture limit", () => {
+    const options = {
+      surface: new MeshBasicMaterial(),
+      sampleHeight,
+      residentTileBudget: 1,
+      residentByteBudget: 2_000_000,
+      streamRadius: 0,
+      tileResolution: 65,
+      tileSize: 64,
+      lodFactors: [1, 2],
+      lodDistances: [8],
+    };
+    const gpu = new TerrainTiles({ ...options, validate: false });
+    const cpu = new TerrainTiles({ ...options, validate: true });
+    try {
+      gpu.follow({ x: 0, z: 0 });
+      cpu.follow({ x: 0, z: 0 });
+      const mesh = gpu.getTile("0:0")?.lod.levels[0]?.object;
+      if (!(mesh instanceof Mesh)) throw new Error("Expected the finest LOD mesh.");
+      const positions = mesh.geometry.morphAttributes.position?.[0];
+      const normals = mesh.geometry.morphAttributes.normal?.[0];
+      if (positions === undefined || normals === undefined)
+        throw new Error("Expected both morph deltas.");
+      // Stock WebGLMorphtargets packs 8,970 texels into two 8,192-texel RGBA32F rows.
+      const textureBytes = 8192 * 2 * 4 * Float32Array.BYTES_PER_ELEMENT;
+      expect(gpu.residentBytes - cpu.residentBytes).toBeGreaterThanOrEqual(
+        positions.array.byteLength + normals.array.byteLength + textureBytes * 2,
+      );
+    } finally {
+      gpu.dispose();
+      cpu.dispose();
+      options.surface.dispose();
+    }
+  });
+
+  it.each([[[1]], [[1, 1]], [[1, 2, 2]], [[2, 1, 2]]])(
+    "admits exactly the charged bytes for effective LOD factors %j",
+    (lodFactors) => {
+      const options = {
+        surface: new MeshBasicMaterial(),
+        sampleHeight: vi.fn(sampleHeight),
+        residentTileBudget: 1,
+        streamRadius: 0,
+        tileResolution: 9,
+        tileSize: 16,
+        lodFactors,
+        lodDistances: lodFactors.slice(1).map((_, index) => 8 * (index + 1)),
+        validate: false,
+      };
+      const probe = new TerrainTiles({ ...options, residentByteBudget: 1_000_000 });
+      probe.follow({ x: 0, z: 0 });
+      const bytes = probe.residentBytes;
+      if (lodFactors.length === 1) expect(bytes).toBe(5_904);
+      const tile = probe.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the probe tile.");
+      expect(
+        tile.lod.levels.map(({ object }) => {
+          if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+          return object.geometry.morphAttributes.position?.length ?? 0;
+        }),
+      ).toEqual(
+        lodFactors.map(
+          (factor) => lodFactors.filter((candidate) => candidate >= factor).length - 1,
+        ),
+      );
+      probe.dispose();
+      const fitted = new TerrainTiles({ ...options, residentByteBudget: bytes });
+      const tooSmall = new TerrainTiles({ ...options, residentByteBudget: bytes - 1 });
+      try {
+        fitted.follow({ x: 0, z: 0 });
+        expect(fitted.residentBytes).toBe(bytes);
+        options.sampleHeight.mockClear();
+        expect(() => tooSmall.follow({ x: 0, z: 0 })).toThrow(/residentByteBudget/u);
+        expect(options.sampleHeight).not.toHaveBeenCalled();
+      } finally {
+        fitted.dispose();
         tooSmall.dispose();
         options.surface.dispose();
       }
