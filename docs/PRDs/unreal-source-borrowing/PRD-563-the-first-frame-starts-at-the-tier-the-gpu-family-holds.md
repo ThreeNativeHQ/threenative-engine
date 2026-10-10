@@ -87,7 +87,7 @@ with a test, the same failure mode that PRD-294 names.
 ## Blocked on
 
 - AC-2 steady state on `emulator-5554`: needs an Android runtime built from this checkout (`THREENATIVE_RUNTIME_SOURCE`, JDK 17, `third_party`) that can decode the starter's meshopt `native-proof.glb`; the installed runtime APK cannot. The class and fields are already proven (AC-2 evidence). — unblocked by a source-built Android runtime on a lane, or by the starter's native proof asset shipping decoder-free.
-- The phone win (fewer tier and scale changes before the first steady window on a Mali or Adreno phone) needs a physical device on the device lane. Only `emulator-5554` was attached on 2026-10-09. — unblocked by João attaching the Pixel 8.
+- The phone win (fewer tier and scale changes before the first steady window on a Mali or Adreno phone) needs a physical device on the device lane. Only `emulator-5554` was attached on 2026-10-09. The exact capture: on the Pixel 8 (Mali or Adreno phone), the starter's first frames after startup-ready and a settled frame, BEFORE (the `gpuClass` line removed, old start `high`, drops to `low`) against AFTER (class start), two runs per arm, same pose, `adapter.info` checked, BEFORE/AFTER burned in, then a fresh read-only visual judge per frame. Nothing in this PRD earns a merge claim until that verdict is IMPROVEMENT: the two judges on the Intel and desktop lanes returned NEUTRAL and no frame-time win is measured. — unblocked by João attaching the Pixel 8.
 
 ## Integration Ledger
 
