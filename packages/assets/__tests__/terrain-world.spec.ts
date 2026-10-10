@@ -9,6 +9,7 @@ import { PNG } from "pngjs";
 import { type Group, InstancedMesh, Mesh } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type IWorldPackage, validateWorldPackage } from "../../core/src/world-package.js";
 import { cookTerrainWorld } from "../src/world/terrain-world.js";
 
 // GLTFLoader reads the global `self` while it parses. Node has none.
@@ -392,6 +393,37 @@ describe("cookTerrainWorld", () => {
       `Placement '${item.id}' of species 'fir' contact check failed`,
     );
     expect(error?.message).toContain("mirrored-Z");
+  });
+
+  it("writes a world package core's validator accepts, with a GLB and a LOD per species", async () => {
+    const result = await cookTerrainWorld({
+      state: evaluatedTerrain(),
+      species: { fir: { glb: await simpleSpecies() } },
+      out: dir,
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(dir, "world.json"), "utf8"),
+    ) as IWorldPackage;
+    const placements = new Uint8Array(await readFile(path.join(dir, "placements.bin")));
+    const heightmap = new Uint8Array(await readFile(path.join(dir, "heightmap.u16")));
+    const validation = validateWorldPackage(manifest, {
+      placementsByteLength: placements.byteLength,
+      heightmapByteLength: heightmap.byteLength,
+    });
+    expect(validation.errors).toEqual([]);
+    expect(validation.ok).toBe(true);
+
+    // Every species lists a model, at least one LOD, and the bytes the manifest names exist.
+    for (const [id, asset] of Object.entries(manifest.assets)) {
+      expect(asset.glb).toBe(`models/${id}.glb`);
+      expect(asset.lods?.length ?? 0).toBeGreaterThanOrEqual(1);
+    }
+    for (const asset of Object.values(result.manifest.assets)) {
+      expect((await stat(path.join(dir, asset.glb))).size).toBeGreaterThan(0);
+      for (const lod of asset.lods ?? [])
+        expect((await stat(path.join(dir, lod.glb))).size).toBeGreaterThan(0);
+    }
   });
 
   it("keeps the node count constant from 1 000 to 10 000 placements", async () => {

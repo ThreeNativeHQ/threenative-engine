@@ -2,10 +2,12 @@
 // project, then serve the folder it writes:
 //   node src/terrain/forest/bake.mjs [--assets <dir>] [--out <dir>]
 // The engine's `WorldCells` streams `world/world.json` and `loadTerrainSplat` textures its ground;
-// the game never evaluates terrain at runtime.
+// the game never evaluates terrain at runtime. The cook in `@threenative/assets` writes the
+// instanced `world.glb` and the species models the manifest names.
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cookTerrainWorld } from "@threenative/assets";
 import { Terrain, applyPlacementOverrides, bakeWorldPackage } from "@threenative/terrain";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -31,40 +33,51 @@ const state = applyPlacementOverrides(
   recipe.placementOverrides ?? {},
 );
 
-const assets = Object.fromEntries(
+const species = Object.fromEntries(
   Object.entries(assetTable).map(([id, spec]) => [
     id,
     {
+      glb: join(assetsDir, spec.near),
       bounds: spec.bounds,
-      glb: `models/${spec.near.split("/").at(-1)}`,
-      ...(spec.mid
-        ? { lods: [{ distance: spec.midDistance, glb: `models/${spec.mid.split("/").at(-1)}` }] }
-        : {}),
+      lods: spec.mid ? [{ distance: spec.midDistance ?? 40, glb: join(assetsDir, spec.mid) }] : [],
       maxDistance: spec.maxDistance,
     },
   ]),
 );
 
-const started = performance.now();
-const { manifest, splat, files } = bakeWorldPackage(state, {
-  assets,
-  layers: { table: "terrain-table.json" },
-});
-const written = new Map();
-
 async function write(relative, bytes) {
   await mkdir(join(outDir, dirname(relative)), { recursive: true });
   await writeFile(join(outDir, relative), bytes);
-  written.set(relative, bytes.length ?? bytes.byteLength);
 }
 
 async function copy(from, to) {
   await mkdir(join(outDir, dirname(to)), { recursive: true });
   await copyFile(join(assetsDir, from), join(outDir, to));
-  written.set(to, (await readFile(join(outDir, to))).byteLength);
 }
 
-await write("world.json", `${JSON.stringify(manifest, null, 2)}\n`);
+const started = performance.now();
+// The cook writes `world.json`, `world.glb`, the heightmap, placements and splat, and every
+// species model under `models/<species-id>.glb`, all from the real evaluated state.
+const cooked = await cookTerrainWorld({
+  state,
+  species,
+  // The cook embeds the ground's base albedo and normal in `world.glb`; the full multilayer
+  // surface appearance is still to come, so only the base layer is handed over here.
+  materials: {
+    layers: [
+      {
+        id: surface.base.id,
+        diff: join(assetsDir, surface.sources[surface.base.id].diff),
+        nrm: join(assetsDir, surface.sources[surface.base.id].nrm),
+        diffMimeType: "image/jpeg",
+        nrmMimeType: "image/jpeg",
+      },
+    ],
+  },
+  out: outDir,
+  extraLayers: { table: "terrain-table.json" },
+});
+
 // The lake and river the generator evaluated, so the game draws the water the bake shaped.
 const round = (value) => Math.round(value * 1_000) / 1_000;
 await write(
@@ -87,32 +100,28 @@ await write(
     2,
   )}\n`,
 );
-for (const [name, bytes] of Object.entries(files)) await write(name, bytes);
-for (const spec of Object.values(assetTable)) {
-  await copy(spec.near, `models/${spec.near.split("/").at(-1)}`);
-  if (spec.mid) await copy(spec.mid, `models/${spec.mid.split("/").at(-1)}`);
-}
-// The sky the props are lit by (CC0 Poly Haven Kloofendal); world.ts gives it to their materials.
-await copy("hdri/kloofendal_48d_partly_cloudy_1k.hdr", "sky.hdr");
-for (const layer of [surface.base, ...surface.layers]) {
-  const source = surface.sources[layer.id];
-  await copy(source.diff, `${surface.textures}/${layer.id}_diff.jpg`);
-  await copy(source.nrm, `${surface.textures}/${layer.id}_nrm.jpg`);
-}
+
+// The cook owns the manifest and the models; only the surface table and its images are left.
+// `bakeWorldPackage` is the one public source of the splat mask layout the table needs, and its
+// asset map is the cooked manifest's, so no stale basename reaches the table.
+const { splat } = bakeWorldPackage(state, { assets: cooked.manifest.assets });
 // `sources` is the bake's own lookup: the runtime reads only base/layers/splat/textures.
 await write(
   "terrain-table.json",
   `${JSON.stringify({ ...surface, splat, textures: "textures" }, null, 2)}\n`,
 );
+for (const layer of [surface.base, ...surface.layers]) {
+  const source = surface.sources[layer.id];
+  await copy(source.diff, `${surface.textures}/${layer.id}_diff.jpg`);
+  await copy(source.nrm, `${surface.textures}/${layer.id}_nrm.jpg`);
+}
+// The sky the props are lit by (CC0 Poly Haven Kloofendal); world.ts gives it to their materials.
+await copy("hdri/kloofendal_48d_partly_cloudy_1k.hdr", "sky.hdr");
 
-const perAsset = {};
-for (const cell of manifest.cells)
-  for (const run of cell.runs) perAsset[run.asset] = (perAsset[run.asset] ?? 0) + run.count;
-const total = [...written.values()].reduce((sum, bytes) => sum + bytes, 0);
 console.log(
-  `${Object.entries(perAsset)
+  `${Object.entries(cooked.placementCounts)
     .map(([asset, count]) => `${asset} ${String(count)}`)
-    .join(", ")} placements; ${[...written]
-    .map(([name, bytes]) => `${name} ${String(bytes)} B`)
-    .join(", ")}; ${String(total)} B total; ${Math.round(performance.now() - started)} ms`,
+    .join(
+      ", ",
+    )} placements; world.glb ${String(cooked.worldGlb.length)} B; ${Math.round(performance.now() - started)} ms`,
 );
