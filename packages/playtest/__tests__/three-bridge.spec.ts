@@ -168,6 +168,26 @@ test("fixed-step fails closed when actual updates differ from requested ticks", 
   installation.dispose();
 });
 
+test("a synchronous fixed step is counted before the next host tick can run", async () => {
+  // The Perry native host calls `advance(1)` once per native tick and drains promises only between
+  // player steps, so a step of 60 ticks resumed every continuation after all 60 had run and each
+  // one failed "fixedStep advanced 60 actual ticks; expected 1" on a loop that ran correctly.
+  let tick = 0;
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    fixedStep: (ticks) => { tick += ticks; },
+    renderer,
+    scene: new Scene(),
+    tick: () => tick,
+  });
+
+  const first = installation.bridge.advance?.(1);
+  const second = installation.bridge.advance?.(1);
+  expect(await first).toEqual({ clock: { mode: "fixed-step", tick: 1 }, ticks: 1 });
+  expect(await second).toEqual({ clock: { mode: "fixed-step", tick: 2 }, ticks: 1 });
+  installation.dispose();
+});
+
 test("a wall-clock request makes the host's own pump the clock, whatever the installer passed", async () => {
   // The browser half of the production profile: a runner asks for the wall clock before the page
   // loads, the game's own frame pump moves the simulation, and `advance` names the span those

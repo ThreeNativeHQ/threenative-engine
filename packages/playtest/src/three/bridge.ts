@@ -127,7 +127,10 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
           advance: async (ticks) => {
             if (!Number.isInteger(ticks) || ticks <= 0) throw new Error("advance ticks must be a positive integer.");
             const startTick = options.tick!();
-            await options.fixedStep!(ticks);
+            const stepped = options.fixedStep!(ticks);
+            // A synchronous producer is counted now: a host that drains promises only between its
+            // own steps (Perry) runs further ticks before an awaited continuation resumes.
+            if (typeof stepped === "object" && stepped !== null) await stepped;
             const tick = options.tick!();
             const advanced = tick - startTick;
             // A fixed-step producer is asked for a count and must deliver exactly that count. A
