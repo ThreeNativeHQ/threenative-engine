@@ -89,6 +89,51 @@ describe("web GLTFLoader over the engine", () => {
       expect(options).toEqual({ premultiplyAlpha: "none", colorSpaceConversion: "none" });
   });
 
+  it("builds the image bitmaps in workers, not on the page, when the page can start one", async () => {
+    // The page builds a createImageBitmap result on the thread that asked: 1.3 s of Midway's load.
+    const json = {
+      images: [{ bufferView: 0, mimeType: "image/png" }],
+      bufferViews: [{ byteOffset: 2, byteLength: 2 }],
+      textures: [{ source: 0 }],
+    };
+    const text = new TextEncoder().encode(
+      JSON.stringify(json).padEnd(Math.ceil(JSON.stringify(json).length / 4) * 4),
+    );
+    const glb = new Uint8Array(20 + text.length + 8 + 4);
+    const view = new DataView(glb.buffer);
+    view.setUint32(0, 0x46546c67, true);
+    view.setUint32(12, text.length, true);
+    glb.set(text, 20);
+    view.setUint32(20 + text.length, 4, true);
+    glb.set([1, 2, 3, 4], 28 + text.length);
+    const posted: { bytes: number[]; type: string; transferred: boolean }[] = [];
+    vi.stubGlobal(
+      "Worker",
+      class {
+        onmessage?: (event: { data: unknown }) => void;
+        postMessage(data: { id: number; bytes: Uint8Array; type: string }, transfer: unknown[]) {
+          posted.push({
+            bytes: [...data.bytes],
+            type: data.type,
+            transferred: transfer.includes(data.bytes.buffer),
+          });
+          queueMicrotask(() =>
+            this.onmessage?.({ data: { id: data.id, b: { width: 7, height: 1 } } }),
+          );
+        }
+      },
+    );
+    const onPage = vi.fn();
+    vi.stubGlobal("createImageBitmap", onPage);
+    vi.resetModules();
+    const fresh = await import("../src/addons/gltf-loader-web.js");
+    await new fresh.GLTFLoader().parseAsync(glb.buffer, "ship.glb");
+    vi.unstubAllGlobals();
+    expect(onPage).not.toHaveBeenCalled();
+    expect(posted).toEqual([{ bytes: [3, 4], type: "image/png", transferred: true }]);
+    expect(calls.at(-1)?.images).toEqual([{ width: 7, height: 1 }]);
+  });
+
   it("refuses the decoders and plugins the engine loader does not take", () => {
     const loader = new GLTFLoader();
     expect(() => loader.setKTX2Loader()).toThrow("TN_NATIVE_GLTF_KTX2_UNSUPPORTED");
