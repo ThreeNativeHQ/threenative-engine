@@ -57,6 +57,7 @@ export function crowdBudget(window: IFrameBudgetWindow): void {
   crowdRate.gpuShadowSamples = window.gpuShadowRendered?.samples ?? null;
   crowdRate.gpuSamples = window.gpu?.samples ?? null;
   crowdRate.window = window.window;
+  crowdRate.renderFrames = window.frames;
   crowdRate.mainDraws = window.passes?.main?.draws.mean ?? null;
   crowdRate.shadowDraws = window.passes?.shadow?.draws.mean ?? null;
   crowdRate.mainTriangles = window.passes?.main?.triangles.mean ?? null;
@@ -72,13 +73,21 @@ export function crowdSpans(line: string): void {
   const palette = window.spans.skinnedWrite;
   crowdRate.animationUpdateMs = animation?.mean ?? null;
   crowdRate.skinnedWriteMs = palette?.mean ?? null;
+  crowdRate.animationFrames = animation?.frames ?? null;
+  crowdRate.paletteFrames = palette?.frames ?? null;
   crowdRate.animationCalls = animation?.perFrame ?? 0;
   crowdRate.paletteWrites = palette?.perFrame ?? 0;
   crowdRate.ready =
     window.overflowed === 0 &&
     window.window === crowdRate.window &&
-    (arm === "animated" ? animation?.perFrame === count : animation === undefined) &&
-    (arm === "static" ? palette === undefined : palette?.perFrame === count) &&
+    window.frames === 120 &&
+    crowdRate.renderFrames === 120 &&
+    (arm === "animated"
+      ? animation?.perFrame === count && animation.frames === 120
+      : animation === undefined) &&
+    (arm === "static"
+      ? palette === undefined
+      : palette?.perFrame === count && palette.frames === 120) &&
     Number.isFinite(crowdRate.gpuMainMs) &&
     Number.isFinite(crowdRate.gpuShadowMs) &&
     Number(crowdRate.mainDraws) > 0 &&

@@ -6,7 +6,18 @@
   "viewport": { "width": 1280, "height": 720 },
   "warmupFrames": 120,
   "artifacts": { "screenshots": false },
-  "steps": [{ "kind": "wait", "label": "measure-steady-crowd", "waitTicks": 600, "release": true }],
+  "steps": [
+    {
+      "label": "completed-post-warmup-window",
+      "timeoutMs": 30000,
+      "waitForResource": { "id": "state", "path": "crowdRate.window", "gte": 2 }
+    },
+    {
+      "label": "complete-cpu-window-and-resolved-gpu-samples",
+      "timeoutMs": 30000,
+      "waitForResource": { "id": "state", "path": "crowdRate.ready", "equals": true }
+    }
+  ],
   "assert": {
     "diagnostics": {
       "noConsoleErrors": true,
@@ -23,7 +34,9 @@
       { "id": "state", "path": "crowdRate.gpuMainMs", "gte": 0 },
       { "id": "state", "path": "crowdRate.gpuShadowMs", "gte": 0 },
       { "id": "state", "path": "crowdRate.mainDraws", "gte": 1 },
-      { "id": "state", "path": "crowdRate.shadowDraws", "gte": 1 }
+      { "id": "state", "path": "crowdRate.shadowDraws", "gte": 1 },
+      { "id": "state", "path": "crowdRate.window", "gte": 2 },
+      { "id": "state", "path": "crowdRate.renderFrames", "equals": 120 }
     ]
   }
 }

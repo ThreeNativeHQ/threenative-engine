@@ -176,6 +176,16 @@ which is compatibility mode, not the core WebGPU that this engine requests.
   after it, all four held/static × present/missing-GPU cases pass, including explicit null-value
   and readiness assertions. Crowd TypeScript and Vite build pass; no GPU run was needed or claimed.
 
+- Draft PR #487 targets develop at `prd:0%`. The initial normal pre-push hook passed agents,
+  documentation, lint and drift checks; the exact seven-package build closure passed with source
+  hashes unchanged. A subsequent local scenario change waits on an observed window of at least
+  2, then readiness, rather than treating 600 fixed ticks as 600 renders. Readiness requires 120
+  actual render frames and 120 sampled frames for each active CPU span. Fresh GPU and rendered-
+  shadow sample counts remain explicit; they are not claimed to cover all 120 render frames.
+  Schema loading, Crowd TypeScript/Vite and six focused bridge/readiness cases pass: complete
+  animated/held/static windows are ready; an incomplete CPU window or missing GPU data is not.
+  These local changes have not been pushed or exercised on the GPU.
+
 The next runtime command, after that window is granted, is:
 
 ```sh
