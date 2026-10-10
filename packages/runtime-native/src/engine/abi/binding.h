@@ -37,6 +37,9 @@ struct Value {
     std::string text;
     bool flag = false;
     std::vector<double> numbers;  // a numeric array (`elements`, `toArray()`)
+    // A typed array's own bytes, in place of `numbers`, for a constructor that keeps them
+    // (ClassBinding::ctorTakesBytes); `text` names the array. Valid for the call only.
+    std::string_view bytes;
 
     engine::shader::graph::Node node;
     static Value shaderNode(engine::shader::graph::Node node) { Value v; v.kind = node ? Kind::ShaderNode : Kind::Null; v.node = std::move(node); return v; }
@@ -54,6 +57,11 @@ struct Value {
 
 struct ClassBinding;
 class Store;
+
+/** A typed array's element size, by its name (`Float32Array`); 0 for a name that is not one. */
+size_t typedArrayElementBytes(std::string_view type);
+/** The numbers a typed array's bytes hold, by its name; the name must have an element size. */
+std::vector<double> typedArrayNumbers(std::string_view type, std::string_view bytes);
 
 /** A language listener for one event type: called with the event as one Record value. */
 using EventCallback = std::shared_ptr<const std::function<bool(const Value& event, std::string& error)>>;
@@ -143,6 +151,8 @@ private:
 
 struct ClassBinding {
     Ctor ctor;
+    // The constructor reads a typed array argument as Value::bytes, so it is not widened to doubles.
+    bool ctorTakesBytes = false;
     std::map<std::string, Method> methods;
     std::map<std::string, Getter> getters;  // keyed by full path: "x", "position.x", "matrixWorld.elements"
     std::map<std::string, Setter> setters;

@@ -367,7 +367,9 @@ const tn::binding::ClassBinding& bindingOf(const tn::binding::Object& object) {
     return *object.binding;
 }
 
-bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::binding::Args& out, unsigned depth = 0) {
+// keepBytes: a typed array stays its bytes (Value::bytes) for a constructor that keeps them, top level only.
+bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::binding::Args& out, unsigned depth = 0,
+               bool keepBytes = false) {
     if (depth > 64 || (count && !in)) return false;
     out.reserve(out.size() + count);  // one allocation, not a growth step per argument
     using Kind = tn::binding::Value::Kind;
@@ -392,6 +394,16 @@ bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::bi
                 // A typed array names its type in `text` (null-terminated), as `a:Uint16Array:` does.
                 if (v.text) out.back().text = v.text;
                 break;
+            case TN_VALUE_BYTES: {
+                const std::string_view type = v.text ? v.text : "";
+                const size_t size = tn::binding::typedArrayElementBytes(type);
+                if (!size || v.count > SIZE_MAX / size || (!v.bytes && v.count)) return false;
+                const std::string_view bytes(static_cast<const char*>(v.bytes), size_t(v.count) * size);
+                out.push_back(tn::binding::Value{Kind::Numbers, 0, std::string(type)});
+                if (keepBytes) out.back().bytes = bytes;
+                else out.back().numbers = tn::binding::typedArrayNumbers(type, bytes);
+                break;
+            }
             case TN_VALUE_ARRAY: {
                 if (v.count > UINT32_MAX) return false;
                 tn::binding::Args items;
@@ -586,7 +598,7 @@ tn_status_t tn_construct(tn_context_t* context, const char* class_name, const tn
     }
     return guarded(diagnostic, [&]() -> tn_status_t {
         tn::binding::Args in;
-        if (!toBinding(context, args, arg_count, in)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
+        if (!toBinding(context, args, arg_count, in, 0, cls->second.ctorTakesBytes)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
         if (!context->hold(class_name, cls->second.ctor(in, *context), *out_object)) {
             return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, (std::string("TN_NATIVE_UNSUPPORTED catalog class ") + class_name).c_str());
         }

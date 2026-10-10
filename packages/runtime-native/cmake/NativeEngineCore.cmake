@@ -308,7 +308,8 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_property_bind=property_bind
     native_engine_abi_euler_order_field=euler_order_field
     native_engine_abi_object_addresses=object_addresses
-    native_engine_abi_geometry_shapes=geometry_shapes)
+    native_engine_abi_geometry_shapes=geometry_shapes
+    native_engine_abi_typed_bytes=typed_bytes)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 # PRD-508 phase 3: the geometry edges a JS caller reaches that no fixture states.

@@ -1546,7 +1546,20 @@ const KIND = {
   array: 6,
   record: 7,
   undefined: 8,
+  bytes: 9,
 } as const;
+// The typed arrays the engine reads as their own bytes (TN_VALUE_BYTES); any other view crosses as numbers.
+const BYTE_ARRAYS = new Set([
+  "Float32Array",
+  "Float64Array",
+  "Int8Array",
+  "Uint8Array",
+  "Uint8ClampedArray",
+  "Int16Array",
+  "Uint16Array",
+  "Int32Array",
+  "Uint32Array",
+]);
 
 // wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, lanes 4, node 8 (u64), number 16, text 24,
 // numbers 32 (four f64); 64 bytes. A handle argument's 12 bytes start at lanes (4) and run through node.
@@ -1945,6 +1958,17 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     w.setUint32(pointer + 48, numbers, true);
     w.setBigUint64(pointer + 40, BigInt(list.length), true);
   };
+  // A typed array the engine knows by name: its own bytes, one copy; an attribute keeps them as its
+  // storage with no f64 round trip.
+  const writeBytes = (pointer: number, list: TypedArray, name: number) => {
+    const bytes = alloc(Math.max(8, list.byteLength), false);
+    abi.HEAPU8.set(new Uint8Array(list.buffer, list.byteOffset, list.byteLength), bytes);
+    const w = view();
+    w.setUint32(pointer, KIND.bytes, true);
+    w.setUint32(pointer + 32, name, true);
+    w.setUint32(pointer + 48, bytes, true);
+    w.setBigUint64(pointer + 40, BigInt(list.length), true);
+  };
   const writeValue = (pointer: number, value: EngineValue) => {
     const v = view();
     if (value === null) return v.setUint32(pointer, KIND.null, true);
@@ -1968,8 +1992,12 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       v.setUint32(pointer, KIND.handle, true);
       return writeHandle(pointer + 16, value);
     }
-    if (ArrayBuffer.isView(value))
-      return writeNumbers(pointer, value, string(value.constructor.name).pointer);
+    if (ArrayBuffer.isView(value)) {
+      const name = value.constructor.name;
+      return BYTE_ARRAYS.has(name)
+        ? writeBytes(pointer, value, string(name).pointer)
+        : writeNumbers(pointer, value, string(name).pointer);
+    }
     if (!Array.isArray(value)) {
       // A record: count key/value pairs, each key a string value, as the engine returns one.
       const entries = Object.entries(value as Record<string, EngineValue>);

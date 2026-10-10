@@ -1046,8 +1046,64 @@ void geometry_shapes() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+tn_value_t bytes(const char* type, const void* data, uint64_t count) {
+    tn_value_t v{};
+    v.kind = TN_VALUE_BYTES;
+    v.text = type;
+    v.count = count;
+    v.bytes = data;
+    return v;
+}
+std::vector<double> numbersOf(tn_handle_t object, const char* name, Diag& d) {
+    tn_value_t result{};
+    CHECK(tn_get(object, name, &result, &d.value) == TN_OK && result.kind == TN_VALUE_NUMBERS);
+    return result.kind == TN_VALUE_NUMBERS ? std::vector<double>(result.numbers, result.numbers + result.count) : std::vector<double>{};
+}
+
+// A typed array crosses as its own bytes: an attribute keeps them as its storage, every other
+// consumer reads the numbers they hold, and a name that is no typed array is refused.
+void typed_bytes() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t attribute{};
+    const float positions[6] = {0.1f, -2.5f, 3, 4, 5, 6};
+    const tn_value_t f32[2] = {bytes("Float32Array", positions, 6), num(3)};
+    CHECK(tn_construct(ctx, "BufferAttribute", f32, 2, &attribute, &d.value) == TN_OK);
+    CHECK(numbersOf(attribute, "array", d) == std::vector<double>(positions, positions + 6));
+    CHECK(numbersOf(attribute, "__shape", d) == (std::vector<double>{2, 3, 0, 1015}));
+
+    const uint16_t index[3] = {0, 65535, 7};
+    const tn_value_t u16[2] = {bytes("Uint16Array", index, 3), num(1)};
+    CHECK(tn_construct(ctx, "BufferAttribute", u16, 2, &attribute, &d.value) == TN_OK);
+    CHECK(numbersOf(attribute, "array", d) == (std::vector<double>{0, 65535, 7}));
+    tn_value_t result{};
+    const tn_value_t wraps[2] = {num(0), num(70000)};  // u16 storage, as the typed array chose: 70000 wraps
+    CHECK(tn_invoke(attribute, "setX", wraps, 2, &result, &d.value) == TN_OK);
+    CHECK(numbersOf(attribute, "array", d) == (std::vector<double>{70000 - 65536, 65535, 7}));
+
+    const int16_t packed[2] = {-3, 300};  // no exact storage: read as numbers into float storage
+    const tn_value_t i16[2] = {bytes("Int16Array", packed, 2), num(2)};
+    CHECK(tn_construct(ctx, "BufferAttribute", i16, 2, &attribute, &d.value) == TN_OK);
+    CHECK(numbersOf(attribute, "array", d) == (std::vector<double>{-3, 300}));
+
+    tn_handle_t m{};
+    CHECK(tn_construct(ctx, "Matrix4", nullptr, 0, &m, &d.value) == TN_OK);
+    double elements[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 20, 30, 1};
+    const tn_value_t f64 = bytes("Float64Array", elements, 16);
+    CHECK(tn_invoke(m, "fromArray", &f64, 1, &result, &d.value) == TN_OK);
+    CHECK(numbersOf(m, "elements", d) == std::vector<double>(elements, elements + 16));
+
+    const tn_value_t unknown = bytes("BigInt64Array", elements, 2);
+    CHECK(tn_invoke(m, "fromArray", &unknown, 1, &result, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    const tn_value_t missing = bytes("Float32Array", nullptr, 2);
+    CHECK(tn_construct(ctx, "BufferAttribute", &missing, 1, &attribute, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes})

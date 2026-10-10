@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <string>
@@ -92,6 +93,37 @@ std::shared_ptr<BufferAttribute> sharedAttributeArg(Store& store, const Value& a
     throw Unsupported{"argument is not a BufferAttribute, it is a " + found->cls};
 }
 
+size_t typedArrayElementBytes(std::string_view type) {
+    if (type == "Float32Array" || type == "Int32Array" || type == "Uint32Array") return 4;
+    if (type == "Uint16Array" || type == "Int16Array") return 2;
+    if (type == "Uint8Array" || type == "Int8Array" || type == "Uint8ClampedArray") return 1;
+    return type == "Float64Array" ? 8 : 0;
+}
+
+namespace {
+template <class T>
+std::vector<double> widen(std::string_view bytes) {
+    std::vector<double> out(bytes.size() / sizeof(T));
+    for (size_t i = 0; i < out.size(); ++i) {
+        T value;
+        std::memcpy(&value, bytes.data() + i * sizeof(T), sizeof(T));  // the bytes need not be aligned
+        out[i] = static_cast<double>(value);
+    }
+    return out;
+}
+}  // namespace
+
+std::vector<double> typedArrayNumbers(std::string_view type, std::string_view bytes) {
+    if (type == "Float32Array") return widen<float>(bytes);
+    if (type == "Float64Array") return widen<double>(bytes);
+    if (type == "Int32Array") return widen<int32_t>(bytes);
+    if (type == "Uint32Array") return widen<uint32_t>(bytes);
+    if (type == "Int16Array") return widen<int16_t>(bytes);
+    if (type == "Uint16Array") return widen<uint16_t>(bytes);
+    if (type == "Int8Array") return widen<int8_t>(bytes);
+    return widen<uint8_t>(bytes);  // Uint8Array, Uint8ClampedArray
+}
+
 namespace {
 
 BufferAttribute& attributeArg(Store& store, const Value& arg) {
@@ -137,10 +169,12 @@ Value attributeArray(const BufferGeometry& geometry, const char* name) {
 // ---------------------------------------------------------------- BufferAttribute
 
 void registerBufferAttribute(ClassBinding& b, const char* cls) {
+    b.ctorTakesBytes = true;
     b.ctor = [cls](const Args& a, Store&) {
         // fromDoubles reads the list in place; copying a vertex buffer here cost a malloc and a memcpy.
         static const std::vector<double> none;
-        const std::vector<double>& values = !a.empty() && a.at(0).kind == Value::Kind::Numbers ? a.at(0).numbers : none;
+        const bool list = !a.empty() && a.at(0).kind == Value::Kind::Numbers;
+        const std::string_view bytes = list ? a.at(0).bytes : std::string_view();
         // BufferAttribute( array, itemSize, normalized = false ); itemSize is a positive integer.
         const double itemSize = optional(a, 1, 1);
         if (!(itemSize >= 1 && itemSize <= 65536) || itemSize != std::floor(itemSize)) throw Unsupported{"itemSize must be a positive integer"};
@@ -151,7 +185,21 @@ void registerBufferAttribute(ClassBinding& b, const char* cls) {
                               : array == "Uint16Array" ? Scalar::U16
                               : array == "Uint32Array" ? Scalar::U32
                                                        : Scalar::F32;
-        auto attribute = BufferAttribute::fromDoubles(scalar, values, static_cast<int>(itemSize), normalized);
+        // A typed array whose storage is its own type is copied as it is; any other is read as numbers.
+        const bool same = array == (scalar == Scalar::U8    ? "Uint8Array"
+                                    : scalar == Scalar::U16 ? "Uint16Array"
+                                    : scalar == Scalar::U32 ? "Uint32Array"
+                                                            : "Float32Array");
+        std::shared_ptr<BufferAttribute> attribute;
+        if (same && !bytes.empty()) {
+            attribute = std::make_shared<BufferAttribute>(scalar, bytes.size() / typedArrayElementBytes(array),
+                                                          static_cast<int>(itemSize), normalized);
+            attribute->store->write(0, bytes.data(), bytes.size());
+        } else if (!bytes.empty()) {
+            attribute = BufferAttribute::fromDoubles(scalar, typedArrayNumbers(array, bytes), static_cast<int>(itemSize), normalized);
+        } else {
+            attribute = BufferAttribute::fromDoubles(scalar, list ? a.at(0).numbers : none, static_cast<int>(itemSize), normalized);
+        }
         attribute->perInstance = std::string_view(cls) == "InstancedBufferAttribute";
         return std::static_pointer_cast<void>(attribute);
     };
@@ -883,6 +931,7 @@ void registerGeometryBindings(Registry& classes) {
     // given in a Float32Array, so the storage is F32 and each value rounds once to binary32.
     ClassBinding& float32 = classes["Float32BufferAttribute"];
     registerBufferAttribute(float32, "Float32BufferAttribute");
+    float32.ctorTakesBytes = false;  // its constructor reads numbers
     float32.ctor = [](const Args& a, Store&) {
         // fromDoubles reads the list in place; copying a vertex buffer here cost a malloc and a memcpy.
         static const std::vector<double> none;

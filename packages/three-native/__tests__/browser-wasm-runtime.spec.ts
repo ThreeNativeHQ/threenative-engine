@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { type IEngineRef, type TnAbiModule, createWasmRuntime } from "../src/browser-backend.js";
 
 const VALUE = 56;
-const KIND = { number: 1, handle: 4, numbers: 5, array: 6 };
+const KIND = { number: 1, handle: 4, numbers: 5, array: 6, bytes: 9 };
 
 function fakeModule() {
   let memory = new ArrayBuffer(1 << 20);
@@ -113,7 +113,7 @@ describe("createWasmRuntime", () => {
       [7, 1, 42, 3],
       [7, 1, 42, 3],
     ]);
-    expect(fake.calls[1]?.args).toEqual([KIND.handle, KIND.numbers, KIND.numbers]);
+    expect(fake.calls[1]?.args).toEqual([KIND.handle, KIND.bytes, KIND.numbers]);
   });
 
   it("sends a list as numbers only when every element is a number", () => {
@@ -151,7 +151,7 @@ describe("createWasmRuntime", () => {
   it("copies a list larger than the scratch through malloc and frees it after the call", () => {
     const fake = fakeModule();
     const runtime = createWasmRuntime(fake.module as unknown as TnAbiModule);
-    const big = Float32Array.from({ length: 20_000 }, (_, i) => i / 4);
+    const big = Array.from({ length: 20_000 }, (_, i) => i / 4);
     let seen: number[] = [];
     fake.returns(() => {});
     const invoke = fake.module._tn_invoke;
@@ -164,8 +164,40 @@ describe("createWasmRuntime", () => {
       return invoke(handle, name, args, count, out, diag);
     };
     runtime.invoke(ref, "set", [big]);
-    expect(seen).toEqual(Array.from(big));
+    expect(seen).toEqual(big);
     expect(fake.freed).toHaveLength(1);
+  });
+
+  it("sends a typed array as its own bytes and name, a subarray from its offset, others as numbers", () => {
+    const fake = fakeModule();
+    const runtime = createWasmRuntime(fake.module as unknown as TnAbiModule);
+    const sent: { kind: number; name: string; count: number; bytes: number[] }[] = [];
+    const invoke = fake.module._tn_invoke;
+    fake.module._tn_invoke = (handle, name, args, count, out, diag) => {
+      const v = fake.view();
+      for (let i = 0; i < count; i++) {
+        const at = args + i * 56;
+        const n = Number(v.getBigUint64(at + 40, true));
+        const data = v.getUint32(at + 48, true);
+        sent.push({
+          kind: v.getUint32(at, true),
+          name: fake.module.UTF8ToString(v.getUint32(at + 32, true)),
+          count: n,
+          bytes: Array.from(fake.module.HEAPU8.subarray(data, data + n * 2)),
+        });
+      }
+      return invoke(handle, name, args, count, out, diag);
+    };
+    const shorts = new Uint16Array([1, 0x0203, 0xffff, 9]).subarray(1, 3);
+    class Scaled extends Float32Array {} // a name the engine does not know crosses as numbers
+    runtime.invoke(ref, "set", [shorts, new Scaled([1])]);
+    expect(sent[0]).toEqual({
+      kind: KIND.bytes,
+      name: "Uint16Array",
+      count: 2,
+      bytes: [3, 2, 255, 255],
+    });
+    expect(sent[1]?.kind).toBe(KIND.numbers);
   });
 
   it("reads a numbers result as a plain array, and reads it after the heap grew during the call", () => {

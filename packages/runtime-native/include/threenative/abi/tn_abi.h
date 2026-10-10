@@ -199,6 +199,9 @@ TN_EXPORT void tn_object_engine_references(const tn_handle_t *objects, uint32_t 
 #define TN_VALUE_ARRAY 6u
 #define TN_VALUE_RECORD 7u
 #define TN_VALUE_UNDEFINED 8u
+/* A typed array as its own bytes: count elements of the type text names ("Float32Array", "Uint16Array"),
+ * at bytes. A class whose constructor keeps them (BufferAttribute) copies them as they are. */
+#define TN_VALUE_BYTES 9u
 typedef struct tn_value {
   uint32_t kind;
   uint32_t boolean;
@@ -206,9 +209,9 @@ typedef struct tn_value {
   tn_handle_t handle;
   uint32_t reserved;
   const char *text;
-  uint64_t count; /* bytes of text, or elements of numbers */
+  uint64_t count; /* bytes of text, or elements of numbers or bytes */
   /* ARRAY: count values; RECORD: count alternating string-key/value pairs. */
-  union { const double *numbers; const struct tn_value *values; };
+  union { const double *numbers; const struct tn_value *values; const void *bytes; };
 } tn_value_t;
 
 /* The generic binding calls over the engine's one registry: the same classes, methods and
