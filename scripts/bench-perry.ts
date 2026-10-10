@@ -207,7 +207,7 @@ export function parsePerfSelf(text: string): Array<{ symbol: string; percent: nu
   const totals = new Map<string, number>();
   for (const line of text.split("\n")) {
     // perf report --no-children -s symbol: Self%, symbol (the leaf, not inclusive call stacks).
-    const match = /^\s*([\d.]+)%\s+(?:\[[^\]]+\]\s+)?(.+?)\s*$/.exec(line);
+    const match = /^\s*([\d.]+)%\s+(?:\[[^\]]+\]\s+)?(.+?)(?:\s+-)*\s*$/.exec(line);
     if (!match) continue;
     const percent = positive(Number(match[1]), "perf self percent", true);
     const symbol = match[2] ?? "";
@@ -462,6 +462,20 @@ export function reportHtml(result: {
   ].join("\n");
 }
 
+/** Waits up to 60 s for the session-detached `perf record` to finish writing after the game exits. */
+async function waitForProfiler(pidFile: string): Promise<void> {
+  const pid = Number((await readFile(pidFile, "utf8")).trim());
+  for (let i = 0; i < 600; i++) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("perf record did not finish within 60 s");
+}
+
 /** Best-effort detached open of the written report; failures are ignored. */
 export function openReport(target: string): void {
   try {
@@ -516,6 +530,14 @@ export async function runBench(
       launcher,
       '#!/bin/sh\nexport TN_PLAYER_METRICS=1\nexport TN_BENCH_LAUNCH_MS=$(date +%s%3N)\nexec "$@"\n',
     );
+    // The playtest stops the host's process group with SIGTERM, then SIGKILL after 2 s; perf in
+    // that group dies mid-write while a slow-exiting game holds it. Attached from its own session,
+    // perf survives the kill and finishes the file when the game exits.
+    const profiler = path.join(directory, "profile.sh");
+    await writeFile(
+      profiler,
+      '#!/bin/sh\nexport TN_PLAYER_METRICS=1\nexport TN_BENCH_LAUNCH_MS=$(date +%s%3N)\ndata=$1; shift\n"$@" &\npid=$!\nsetsid perf record --no-buildid -F 499 -g -o "$data" -p "$pid" </dev/null >/dev/null 2>&1 &\necho $! > "$data.pid"\nwait "$pid"\n',
+    );
     const bundle = path.join(args.v8Bundle, "game.js");
     try {
       await readFile(bundle);
@@ -556,11 +578,7 @@ export async function runBench(
               bundle,
             ];
       const perfData = path.join(directory, `${arm}.data`);
-      const hostArgs = [
-        launcher,
-        ...(profiling ? ["perf", "record", "-g", "-o", perfData, "--"] : []),
-        ...host,
-      ];
+      const hostArgs = profiling ? [profiler, perfData, ...host] : [launcher, ...host];
       const output = await execute(
         "sh",
         [
@@ -596,6 +614,7 @@ export async function runBench(
       const measurement = parsePlayerMetrics(text);
       if (!profiling) arms[arm].push(measurement);
       else {
+        await waitForProfiler(`${perfData}.pid`);
         const profile = await execute(
           "perf",
           [

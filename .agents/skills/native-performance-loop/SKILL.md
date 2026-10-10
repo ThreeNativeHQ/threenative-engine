@@ -129,6 +129,9 @@ runs one authored scenario twice on the shared native player (Perry then V8) and
 
 Never report fps on Xvfb. Measurements run in the parent session; Codex sandboxes cannot start
 Xvfb. A Perry relink takes about 17 minutes; append `--perf` for profiling, excluded from the verdict.
+The V8 player needs `TN_ENABLE_NATIVE_PHYSICS=ON`, and its `--v8-bundle` must pack the game's assets:
+build it with `bundle-native-engine.mjs --assets <dir>` whose `public/` holds the assets that
+`TN_ASSET_ROOT` serves to Perry, or V8 fails `TN_NATIVE_ASSET_MISSING`.
 
 ## Guardrails and stopping
 

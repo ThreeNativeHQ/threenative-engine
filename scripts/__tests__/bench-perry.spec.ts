@@ -148,7 +148,7 @@ describe("Perry native benchmark", () => {
   });
   it("folds self-time leaf symbols and keeps the report below 40 lines", () => {
     const stacks = parsePerfSelf(
-      "# Overhead Symbol\n  20.00% [.] game\n  5.00% [.] game\n  30.00% [k] present\n",
+      "# Overhead Symbol\n  20.00% [.] game                 -          -  \n  5.00% [.] game\n  30.00% [k] present\n",
     );
     expect(stacks).toEqual([
       { symbol: "present", percent: 30 },
@@ -222,6 +222,8 @@ describe("Perry native benchmark", () => {
       );
       expect(scenario.assert.performance).toEqual({ maxDrawCalls: 128 });
       await mkdir(artifacts, { recursive: true });
+      if (artifacts.endsWith("-perf"))
+        await writeFile(path.join(path.dirname(artifacts), `${arm}.data.pid`), "999999999\n");
       const text = missing
         ? "TN_PLAYER_FIRST_PRESENT: runtime perry"
         : markers(arm === "perry" ? 0.3 : 1);
