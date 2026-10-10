@@ -153,6 +153,8 @@ struct ClassBinding {
     Ctor ctor;
     // The constructor reads a typed array argument as Value::bytes, so it is not widened to doubles.
     bool ctorTakesBytes = false;
+    // The setters that read a typed array value as Value::bytes in the same way.
+    std::set<std::string> settersTakeBytes;
     std::map<std::string, Method> methods;
     std::map<std::string, Getter> getters;  // keyed by full path: "x", "position.x", "matrixWorld.elements"
     std::map<std::string, Setter> setters;

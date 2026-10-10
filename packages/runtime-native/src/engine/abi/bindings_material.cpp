@@ -530,8 +530,15 @@ void registerTextureClass(ClassBinding& b, bool data) {
             if (format != kTextureRGBAFormat) throw Unsupported{"DataTexture format must be RGBAFormat"};
             if (type != kTextureUnsignedByteType && type != kTextureFloatType && type != kTextureHalfFloatType)
                 throw Unsupported{"DataTexture type must be UnsignedByteType, FloatType or HalfFloatType"};
-            if (type == kTextureHalfFloatType) checkHalfFloatBits(a[0].numbers);
-            texture->setImage(a[0].numbers, a[0].text, width, height, format, type);
+            // The C ABI hands DataTexture its typed array's bytes (ctorTakesBytes); V8 hands numbers.
+            if (a[0].bytes.empty() && a[0].number != 0)
+                throw Unsupported{"DataTexture data must arrive with its contents, not deferred"};
+            if (!a[0].bytes.empty() && texture->setImageBytes(a[0].bytes, a[0].text, width, height, format, type))
+                return std::static_pointer_cast<void>(texture);
+            const std::vector<double> values =
+                a[0].bytes.empty() ? a[0].numbers : typedArrayNumbers(a[0].text, a[0].bytes);
+            if (type == kTextureHalfFloatType) checkHalfFloatBits(values);
+            texture->setImage(values, a[0].text, width, height, format, type);
         }
         return std::static_pointer_cast<void>(texture);
     };
@@ -543,11 +550,17 @@ void registerTextureClass(ClassBinding& b, bool data) {
     b.setters["image.data"] = [](void* self, const Value& v) {
         auto* texture = as<DataTexture>(self);
         const std::size_t texels = std::size_t(texture->width) * texture->height;
-        if (v.kind != Value::Kind::Numbers || texels == 0 || v.numbers.size() != texels * 4)
+        // The C ABI hands DataTexture its typed array's bytes (settersTakeBytes); V8 hands numbers.
+        const std::size_t count = v.bytes.empty() ? v.numbers.size() : v.bytes.size() / typedArrayElementBytes(v.text);
+        if (v.kind != Value::Kind::Numbers || texels == 0 || count != texels * 4)
             throw Unsupported{"image.data must be a typed array of width * height * 4 values"};
-        if (texture->isHalfFloat()) checkHalfFloatBits(v.numbers);
         // three moves `version` on needsUpdate only, so the new texels wait for it.
-        texture->setImage(v.numbers, v.text, texture->width, texture->height, texture->format, texture->type, false);
+        if (!v.bytes.empty() && texture->setImageBytes(v.bytes, v.text, texture->width, texture->height,
+                                                       texture->format, texture->type, false))
+            return;
+        const std::vector<double> values = v.bytes.empty() ? v.numbers : typedArrayNumbers(v.text, v.bytes);
+        if (texture->isHalfFloat()) checkHalfFloatBits(values);
+        texture->setImage(values, v.text, texture->width, texture->height, texture->format, texture->type, false);
     };
 }
 
@@ -607,6 +620,8 @@ void registerTextureBindings(Registry& classes) {
     };
     registerTextureClass(classes["Texture"], false);
     registerTextureClass(classes["DataTexture"], true);
+    classes["DataTexture"].ctorTakesBytes = true;
+    classes["DataTexture"].settersTakeBytes = {"image.data"};
     // three's RenderTarget (PRD-551): its size, type and colour texture. The renderer facades draw into it
     // (setRenderTarget) and read it back; a material samples `target.texture`.
     // ponytail: the colour is RGBA16Float whatever the type, so a FloatType target reads back at half

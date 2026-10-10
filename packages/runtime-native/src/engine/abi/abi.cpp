@@ -661,7 +661,8 @@ tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, 
     tn::binding::Object* object = nullptr;
     if (!path || !value) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or value");
     if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
-    const auto& setters = bindingOf(*object).setters;
+    const auto& binding = bindingOf(*object);
+    const auto& setters = binding.setters;
     const auto st = setters.find(path);
     if (st == setters.end()) return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + path + " is not settable").c_str());
     return guarded(diagnostic, [&]() -> tn_status_t {
@@ -671,7 +672,8 @@ tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, 
             return ok(diagnostic);
         }
         tn::binding::Args in;
-        if (!toBinding(context, value, 1, in)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
+        if (!toBinding(context, value, 1, in, 0, binding.settersTakeBytes.count(path) != 0))
+            return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
         st->second(object->ptr.get(), in[0], *context);
         return ok(diagnostic);
     });

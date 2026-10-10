@@ -7,6 +7,7 @@
 #include "engine/abi/bindings.h"
 #include "engine/animation/mixer.h"
 #include "engine/scene/object3d.h"
+#include "engine/scene/texture.h"
 #include "engine/scene/nodes.h"
 
 #include <cstring>
@@ -1112,6 +1113,53 @@ void typed_bytes() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// A DataTexture keeps a typed array's bytes when they are already its stored layout, as three
+// uploads them: a Float32Array's bits (a signalling NaN included), a Uint16Array's binary16 bits, a
+// Uint8Array's bytes. Any other array still converts value by value, and half floats still check.
+void data_texture_bytes() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto texels = [&](const tn_value_t& data, double type) {
+        const tn_value_t args[5] = {data, num(1), num(1), num(1023), num(type)};
+        tn_handle_t texture{};
+        if (tn_construct(ctx, "DataTexture", args, 5, &texture, &d.value) != TN_OK) return std::vector<uint8_t>{};
+        return engineObject<tn::engine::DataTexture>(texture)->data;
+    };
+    const auto same = [](const std::vector<uint8_t>& data, const void* expected, size_t size) {
+        return data.size() == size && std::memcmp(data.data(), expected, size) == 0;
+    };
+    const uint32_t floats[4] = {0x7f800001u, 0x80000000u, 0x3f000000u, 0x3f800000u};  // sNaN, -0, 0.5, 1
+    CHECK(same(texels(bytes("Float32Array", floats, 4), 1015), floats, sizeof(floats)));
+    const uint16_t halves[4] = {0x3c00, 0x8000, 0x7e01, 0xffff};
+    CHECK(same(texels(bytes("Uint16Array", halves, 4), 1016), halves, sizeof(halves)));
+    const uint8_t rgba[4] = {0, 1, 128, 255};
+    CHECK(same(texels(bytes("Uint8Array", rgba, 4), 1009), rgba, sizeof(rgba)));
+    const int16_t wide[4] = {-5, 300, 7, 255};  // no byte layout: clamped value by value
+    const uint8_t clamped[4] = {0, 255, 7, 255};
+    CHECK(same(texels(bytes("Int16Array", wide, 4), 1009), clamped, sizeof(clamped)));
+    const float notHalf[4] = {0.5f, 0, 0, 1};
+    CHECK(texels(bytes("Float32Array", notHalf, 4), 1016).empty());
+
+    // `image.data = array` keeps the bytes the same way, and the new texels wait for needsUpdate.
+    const float zeros[4] = {};
+    const tn_value_t args[5] = {bytes("Float32Array", zeros, 4), num(1), num(1), num(1023), num(1015)};
+    tn_handle_t texture{};
+    CHECK(tn_construct(ctx, "DataTexture", args, 5, &texture, &d.value) == TN_OK);
+    auto* data = engineObject<tn::engine::DataTexture>(texture);
+    const uint32_t version = data->version();
+    const tn_value_t image = bytes("Float32Array", floats, 4);
+    CHECK(tn_set(texture, "image.data", &image, &d.value) == TN_OK);
+    CHECK(same(data->data, floats, sizeof(floats)));
+    CHECK(data->version() == version);
+    const tn_value_t short_ = bytes("Float32Array", floats, 3);
+    CHECK(tn_set(texture, "image.data", &short_, &d.value) != TN_OK);
+    const tn_value_t deferred = bytes("Float32Array", nullptr, 4);
+    CHECK(tn_set(texture, "image.data", &deferred, &d.value) != TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // The Wasm view reports the store's write count (out[3]): a write through the view, which the JS
 // mirror made itself, leaves it; an engine write moves it.
 void attribute_view_writes() {
@@ -1186,5 +1234,5 @@ void attribute_defer() {
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer})

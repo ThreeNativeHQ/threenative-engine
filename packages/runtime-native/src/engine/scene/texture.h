@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -183,6 +184,24 @@ public:
                 data[i] = static_cast<uint8_t>(values[i] < 0 ? 0 : (values[i] > 255 ? 255 : values[i]));
         }
         if (bump) needsUpdate();
+    }
+
+    /** The typed array's own bytes, when they already are the stored layout (Uint16Array binary16,
+     *  Float32Array float, Uint8Array bytes): one copy, no per-value round trip. False otherwise. */
+    bool setImageBytes(std::string_view bytes, const std::string& arrayType, uint32_t w, uint32_t h,
+                       uint16_t fmt, uint16_t dataType, bool bump = true) {
+        const bool exact = dataType == kTextureHalfFloatType ? arrayType == "Uint16Array"
+                           : dataType == kTextureFloatType || arrayType == "Float32Array"
+                               ? arrayType == "Float32Array"
+                               : arrayType == "Uint8Array" || arrayType == "Uint8ClampedArray";
+        if (!exact) return false;
+        width = w;
+        height = h;
+        format = fmt;
+        type = dataType;
+        data.assign(bytes.begin(), bytes.end());
+        if (bump) needsUpdate();
+        return true;
     }
 };
 
