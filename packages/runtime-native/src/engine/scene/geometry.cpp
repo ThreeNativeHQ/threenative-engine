@@ -602,6 +602,57 @@ std::shared_ptr<BufferGeometry> BufferGeometry::toNonIndexed() const {
     return geometry;
 }
 
+std::string BufferGeometry::mergeFrom(const std::vector<const BufferGeometry*>& parts, bool indexed,
+                                      const std::vector<std::string>& names) {
+    std::vector<std::vector<const BufferAttribute*>> lists;
+    for (const std::string& name : names) {
+        auto& list = lists.emplace_back();
+        for (const BufferGeometry* part : parts) {
+            const auto it = part->attributes.find(name);
+            if (it == part->attributes.end()) return "?";
+            const BufferAttribute& attribute = *it->second;
+            if (attribute.store->count() != attribute.count() * static_cast<uint64_t>(attribute.itemSize)) return "?";
+            list.push_back(&attribute);
+        }
+    }
+    if (indexed) {
+        std::vector<double> values;
+        double offset = 0;
+        for (const BufferGeometry* part : parts) {
+            const auto position = part->attributes.find("position");
+            if (part->index == nullptr || position == part->attributes.end()) return "?";
+            const BufferAttribute& source = *part->index;
+            for (uint64_t j = 0, count = source.count(); j < count; ++j) values.push_back(source.getX(j) + offset);
+            offset += static_cast<double>(position->second->count());
+        }
+        const bool wide = std::any_of(values.begin(), values.end(), [](double v) { return v >= 65535; });
+        setIndex(BufferAttribute::fromDoubles(wide ? Scalar::U32 : Scalar::U16, values, 1));
+    }
+    for (size_t n = 0; n < names.size(); ++n) {
+        const BufferAttribute& first = *lists[n].front();
+        uint64_t total = 0;
+        for (const BufferAttribute* attribute : lists[n]) {
+            const char* field = attribute->store->scalar() != first.store->scalar() ? "array"
+                                : attribute->itemSize != first.itemSize             ? "itemSize"
+                                : attribute->normalized != first.normalized         ? "normalized"
+                                : attribute->gpuType != first.gpuType               ? "gpuType"
+                                                                                    : nullptr;
+            if (field != nullptr) return std::string(field) + '\n' + names[n];
+            total += attribute->store->count();
+        }
+        auto merged = std::make_shared<BufferAttribute>(first.store->scalar(), total, first.itemSize, first.normalized);
+        merged->gpuType = first.gpuType;
+        std::byte* to = merged->store->data();
+        for (const BufferAttribute* attribute : lists[n]) {
+            const uint64_t bytes = attribute->store->byteLength();
+            if (bytes != 0) std::memcpy(to, std::as_const(*attribute->store).data(), bytes);
+            to += bytes;
+        }
+        setAttribute(names[n], std::move(merged));
+    }
+    return "";
+}
+
 BufferGeometry& BufferGeometry::applyMatrix4(const Matrix4& matrix) {
     const std::shared_ptr<BufferAttribute> position = getAttribute("position");
     if (position != nullptr) {

@@ -170,6 +170,15 @@ public:
     void computeVertexNormals();
     void normalizeNormals();
     [[nodiscard]] std::shared_ptr<BufferGeometry> toNonIndexed() const;
+    /**
+     * three's BufferGeometryUtils.mergeGeometries for the index (when `indexed`) and the attributes
+     * `names` of `parts`, set on this geometry; groups and morph targets stay the caller's. Answers ""
+     * when merged, mergeAttributes' first mismatched field and '\n' and the attribute name when three
+     * refuses, and "?" when a part lacks the index or an attribute, or holds an array that is not
+     * whole items: the caller merges those itself.
+     */
+    std::string mergeFrom(const std::vector<const BufferGeometry*>& parts, bool indexed,
+                          const std::vector<std::string>& names);
     /** three's `clone()`: `copy` into a new geometry of the same type and parameters. */
     [[nodiscard]] std::shared_ptr<BufferGeometry> clone() const;
     /** three's `copy(source)`: every attribute, index and morph target copied, groups, bounds and draw range. */

@@ -733,6 +733,7 @@
     "BoxGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -856,6 +857,7 @@
     "BufferGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -1136,6 +1138,7 @@
     "CapsuleGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -1234,6 +1237,7 @@
     "CircleGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -1354,6 +1358,7 @@
     "ConeGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -1430,6 +1435,7 @@
     "CylinderGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -1809,6 +1815,7 @@
     "DodecahedronGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -1907,6 +1914,7 @@
     "ExtrudeGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -2413,6 +2421,7 @@
     "IcosahedronGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -2537,6 +2546,7 @@
     "InstancedBufferGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -3060,6 +3070,7 @@
     "LatheGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -4912,6 +4923,7 @@
     "OctahedronGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -5391,6 +5403,7 @@
     "PlaneGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -5774,6 +5787,7 @@
     "RingGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -5850,6 +5864,7 @@
     "RoundedBoxGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -6122,6 +6137,7 @@
     "ShapeGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -6554,6 +6570,7 @@
     "SphereGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -7301,6 +7318,7 @@
     "TorusGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -7377,6 +7395,7 @@
     "TorusKnotGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -7453,6 +7472,7 @@
     "TubeGeometry": {
       "constructor": true,
       "methods": [
+        "__mergeFrom",
         "addGroup",
         "applyMatrix4",
         "center",

@@ -174,7 +174,66 @@ void readsLeaveWrites() {
     CHECK(position->store->writes() != start);
 }
 
+// three's BufferGeometryUtils.mergeGeometries, as node prints it for the same parts: each index
+// offset by the vertices before it (Uint32 from 65535 up), each attribute concatenated, and
+// mergeAttributes' first mismatch (array type, itemSize, normalized, gpuType) named with the attribute.
+void mergeFrom() {
+    const auto part = [](uint64_t vertices, std::vector<uint32_t> index, Scalar uv = Scalar::F32) {
+        auto g = std::make_shared<BufferGeometry>();
+        std::vector<double> xyz(vertices * 3);
+        for (uint64_t i = 0; i < xyz.size(); ++i) xyz[i] = double(i) + 0.5;
+        g->setAttribute("position", BufferAttribute::fromDoubles(Scalar::F32, xyz, 3));
+        g->setAttribute("uv", BufferAttribute::fromDoubles(uv, std::vector<double>(vertices * 2, 1), 2));
+        if (!index.empty()) g->setIndex(BufferAttribute::fromIndices(index));
+        return g;
+    };
+    const auto a = part(3, {0, 1, 2}), b = part(4, {3, 2, 1});
+    a->getAttribute("uv")->gpuType = b->getAttribute("uv")->gpuType = 1009;
+    const uint64_t writes = a->getAttribute("position")->store->writes();
+    BufferGeometry merged;
+    CHECK(merged.mergeFrom({a.get(), b.get()}, true, {"position", "uv"}).empty());
+    CHECK(a->getAttribute("position")->store->writes() == writes);
+    CHECK(merged.index->store->scalar() == Scalar::U16 && merged.index->toNumbers() == std::vector<double>({0, 1, 2, 6, 5, 4}));
+    const auto position = merged.getAttribute("position");
+    CHECK(position->store->scalar() == Scalar::F32 && position->itemSize == 3 && position->count() == 7);
+    CHECK(position->raw(8) == 8.5 && position->raw(9) == 0.5 && position->raw(20) == 11.5);
+    CHECK(merged.getAttribute("uv")->gpuType == 1009 && merged.getAttribute("uv")->count() == 7);
+
+    BufferGeometry wide;
+    CHECK(wide.mergeFrom({part(3, {0, 1, 2}).get(), part(70000, {0, 69999, 1}).get()}, true, {"position"}).empty());
+    CHECK(wide.index->store->scalar() == Scalar::U32 && wide.index->raw(4) == 70002 && wide.attributes.size() == 1);
+
+    BufferGeometry flat;
+    CHECK(flat.mergeFrom({part(1, {}).get(), part(2, {}).get()}, false, {"position"}).empty());
+    CHECK(flat.index == nullptr && flat.getAttribute("position")->count() == 3);
+
+    const auto refusal = [&](const std::shared_ptr<BufferGeometry>& other) {
+        BufferGeometry out;
+        return out.mergeFrom({part(3, {}).get(), other.get()}, false, {"position", "uv"});
+    };
+    CHECK(refusal(part(3, {}, Scalar::U16)) == "array\nuv");
+    auto odd = part(3, {});
+    odd->getAttribute("uv")->itemSize = 1;
+    CHECK(refusal(odd) == "itemSize\nuv");
+    odd = part(3, {});
+    odd->getAttribute("position")->normalized = true;
+    CHECK(refusal(odd) == "normalized\nposition");
+    odd = part(3, {});
+    odd->getAttribute("uv")->gpuType = 1009;
+    CHECK(refusal(odd) == "gpuType\nuv");
+    // What the engine cannot see the caller merges itself: a missing attribute, an array that is not
+    // whole items, a missing index.
+    odd = part(3, {});
+    odd->deleteAttribute("uv");
+    CHECK(refusal(odd) == "?");
+    odd = part(3, {});
+    odd->setAttribute("uv", BufferAttribute::fromDoubles(Scalar::F32, {1, 1, 1}, 2));
+    CHECK(refusal(odd) == "?");
+    BufferGeometry noIndex;
+    CHECK(noIndex.mergeFrom({part(3, {0, 1, 2}).get(), part(3, {}).get()}, true, {"position"}) == "?");
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"reads_leave_writes", readsLeaveWrites}, {"float_items_match_elements", floatItemsMatchElements}, {"from_doubles_matches_set_raw", fromDoublesMatchesSetRaw}, {"js_numbers", jsNumbers}, {"typed_writes", typedWrites}, {"normalized", normalized},
+TN_TEST_MAIN({"merge_from", mergeFrom}, {"reads_leave_writes", readsLeaveWrites}, {"float_items_match_elements", floatItemsMatchElements}, {"from_doubles_matches_set_raw", fromDoublesMatchesSetRaw}, {"js_numbers", jsNumbers}, {"typed_writes", typedWrites}, {"normalized", normalized},
              {"out_of_range", outOfRange}, {"nan_bounds", nanBounds})

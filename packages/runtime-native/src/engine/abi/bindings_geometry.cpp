@@ -485,6 +485,19 @@ void registerBufferGeometry(ClassBinding& b) {
         as<BufferGeometry>(self)->setAttribute(a.at(0).text, sharedAttributeArg(store, a.at(1)));
         return chain();
     };
+    // mergeGeometries' index and attributes in one call: (parts, indexed, attribute names), and
+    // BufferGeometry::mergeFrom's answer. A merge in JS reads each part's arrays across the boundary.
+    b.methods["__mergeFrom"] = [](void* self, const Args& a, Store& store) {
+        std::vector<const BufferGeometry*> parts;
+        for (const Value& ref : refsOf(a.at(0))) parts.push_back(&geometryArg(store, ref));
+        std::vector<std::string> names;
+        for (const Value& name : a.at(2).items) {
+            if (name.kind != Value::Kind::String) throw Unsupported{"__mergeFrom needs attribute names"};
+            names.push_back(name.text);
+        }
+        if (parts.empty() || names.empty()) return string("?");
+        return string(as<BufferGeometry>(self)->mergeFrom(parts, a.at(1).flag, names));
+    };
     b.methods["getAttribute"] = [](void* self, const Args& a, Store& store) {
         const std::shared_ptr<BufferAttribute> attribute = as<BufferGeometry>(self)->getAttribute(a.at(0).text);
         if (attribute == nullptr) return Value{};

@@ -321,6 +321,7 @@ target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 # PRD-508 phase 3: the geometry edges a JS caller reaches that no fixture states.
 tn_native_engine_test(tn-native-engine-geometry-edges-test tests/native-engine/geometry_edges_test.cpp
     native_engine_geometry_reads_leave_writes=reads_leave_writes
+    native_engine_geometry_merge_from=merge_from
     native_engine_geometry_from_doubles=from_doubles_matches_set_raw
     native_engine_geometry_float_items=float_items_match_elements
     native_engine_geometry_js_numbers=js_numbers

@@ -78,6 +78,7 @@ interface IMergedGeometry {
   setIndex(index: IAttributeLike | number[]): void;
   setAttribute(name: string, attribute: IAttributeLike): void;
   morphAttributes: Record<string, IAttributeLike[]>;
+  __mergeFrom?(parts: readonly IGeometryLike[], indexed: boolean, names: string[]): string;
 }
 
 /**
@@ -225,6 +226,38 @@ export function defineBufferGeometryUtils(engine: IGeometryUtilsEngine) {
     return { attributes, morphAttributes, isIndexed };
   }
 
+  type Found = Exclude<ReturnType<typeof collect>, string>;
+
+  /**
+   * An engine geometry merges the index and attributes in one call, reading each array where it
+   * lives. Answers "" when merged, the refused attribute's name after mergeAttributes' message, and
+   * undefined when the engine leaves the merge to the port ("?").
+   */
+  function mergeInEngine(merged: IMergedGeometry, parts: readonly IGeometryLike[], found: Found) {
+    if (typeof merged.__mergeFrom !== "function") return undefined;
+    const answer = merged.__mergeFrom(parts, found.isIndexed, Object.keys(found.attributes));
+    if (answer === "?") return undefined;
+    if (answer === "") return "";
+    const [field, name] = answer.split("\n");
+    const rule = field === "array" ? "of consistent array types" : "consistent";
+    console.error(
+      `${PREFIX} .mergeAttributes() failed. BufferAttribute.${field} must be ${rule} across matching attributes.`,
+    );
+    return name as string;
+  }
+
+  /** The port's merge of the index and attributes: "" when merged, else the refused attribute's name. */
+  function mergeInPort(merged: IMergedGeometry, parts: readonly IGeometryLike[], found: Found) {
+    if (found.isIndexed)
+      merged.setIndex(new engine.BufferAttribute(mergedIndex(parts), 1) as IAttributeLike);
+    for (const [name, list] of Object.entries(found.attributes)) {
+      const attribute = mergeAttributes(list);
+      if (!attribute) return name;
+      merged.setAttribute(name, attribute);
+    }
+    return "";
+  }
+
   function mergeGeometries(geometries: readonly IGeometryLike[], useGroups = false): object | null {
     const merged = new engine.BufferGeometry() as IMergedGeometry;
     const found = collect(geometries, merged, useGroups);
@@ -232,17 +265,13 @@ export function defineBufferGeometryUtils(engine: IGeometryUtilsEngine) {
       console.error(found);
       return null;
     }
-    if (found.isIndexed)
-      merged.setIndex(new engine.BufferAttribute(mergedIndex(geometries), 1) as IAttributeLike);
-    for (const [name, list] of Object.entries(found.attributes)) {
-      const attribute = mergeAttributes(list);
-      if (!attribute) {
-        console.error(
-          `${PREFIX} .mergeGeometries() failed while trying to merge the ${name} attribute.`,
-        );
-        return null;
-      }
-      merged.setAttribute(name, attribute);
+    const refused =
+      mergeInEngine(merged, geometries, found) ?? mergeInPort(merged, geometries, found);
+    if (refused !== "") {
+      console.error(
+        `${PREFIX} .mergeGeometries() failed while trying to merge the ${refused} attribute.`,
+      );
+      return null;
     }
     for (const [name, perGeometry] of Object.entries(found.morphAttributes)) {
       const numMorphTargets = (perGeometry[0] as readonly IAttributeLike[]).length;

@@ -89,6 +89,58 @@ describe("mergeGeometries", () => {
     error.mockRestore();
   });
 
+  // An engine geometry merges the index and attributes in one call (BufferGeometry::mergeFrom, proved
+  // by runtime-native's geometry edges test); its refusal is logged with three's messages, and "?"
+  // leaves the merge to the port.
+  it("hands an engine geometry its parts in one __mergeFrom call and logs its refusal as three does", () => {
+    const calls: unknown[][] = [];
+    let answer = "";
+    let writes = 0;
+    class EngineGeometry extends T.BufferGeometry {
+      __mergeFrom(...args: unknown[]) {
+        calls.push(args);
+        return answer;
+      }
+      setIndex(...args: unknown[]) {
+        writes++;
+        return super.setIndex(...args);
+      }
+      setAttribute(...args: unknown[]) {
+        writes++;
+        return super.setAttribute(...args);
+      }
+    }
+    const engine = defineBufferGeometryUtils({
+      BufferGeometry: EngineGeometry,
+      BufferAttribute: T.BufferAttribute,
+    });
+    const parts = [new T.BoxGeometry(), new T.PlaneGeometry()];
+    const merged = engine.mergeGeometries(parts as never, true) as Loose;
+    expect(calls).toEqual([[parts, true, ["position", "normal", "uv"]]]);
+    expect(writes).toBe(0);
+    expect(merged.groups.map((g: Loose) => g.materialIndex)).toEqual([0, 1]);
+
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const typed = () => {
+      const a = new T.PlaneGeometry();
+      a.setAttribute("uv", new T.BufferAttribute(new Uint16Array(8), 2));
+      return [new T.PlaneGeometry(), a];
+    };
+    answer = "array\nuv";
+    expect(engine.mergeGeometries(typed() as never)).toBeNull();
+    upstream.mergeGeometries(typed());
+    expect(error.mock.calls.length).toBe(4);
+    expect(error.mock.calls.slice(0, 2)).toEqual(error.mock.calls.slice(2, 4));
+    error.mockRestore();
+
+    answer = "?";
+    const fallback = () => [new T.BoxGeometry(), new T.SphereGeometry(1, 5, 4)];
+    expect(dump(engine.mergeGeometries(fallback() as never))).toEqual(
+      dump(upstream.mergeGeometries(fallback())),
+    );
+    expect(writes).toBe(4);
+  });
+
   // An engine attribute's getX is one crossing per call, so the merged index reads each source
   // index's array once; the index type is still three's choice, Uint32 from 65535 up.
   it("builds a wide or narrow merged index from each index's array, not per element", () => {
