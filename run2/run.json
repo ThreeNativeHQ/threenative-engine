@@ -1,0 +1,76 @@
+{
+  "run": "2",
+  "adapter": {
+    "architecture": "turing",
+    "vendor": "nvidia",
+    "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+    "limit.maxBindGroups": "4",
+    "limit.maxTextureDimension2D": "16384",
+    "limit.maxStorageBufferBindingSize": "2147483644"
+  },
+  "rendererKind": "webgpu",
+  "clockGlobal": "wall-clock",
+  "budgetKeyPressed": false,
+  "before": {
+    "labeled": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-569/artifacts/prd569-stimulus-browser/cull-before-after/run2/before.png",
+    "raw": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-569/artifacts/prd569-stimulus-browser/cull-before-after/run2/before-raw.png",
+    "rawBrightPixelRatio": 0.055047743055555556,
+    "rawMaxLuminance": 0.9926384313725489,
+    "state": {
+      "cullOn": false,
+      "panned": true,
+      "tightBudget": false,
+      "emitterCount": 9,
+      "pausedEmitters": 0,
+      "outsideViewPaused": 0,
+      "overBudgetPaused": 0,
+      "pausedWithoutReason": 0,
+      "dispatchRatio": 1,
+      "runningDispatchRatio": 1
+    },
+    "camera": {
+      "position": [
+        18,
+        8.35,
+        11.8
+      ],
+      "forward": [
+        0,
+        -0.5464842550812696,
+        -0.8374693779167511
+      ],
+      "fov": 60
+    }
+  },
+  "after": {
+    "labeled": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-569/artifacts/prd569-stimulus-browser/cull-before-after/run2/after.png",
+    "raw": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-569/artifacts/prd569-stimulus-browser/cull-before-after/run2/after-raw.png",
+    "rawBrightPixelRatio": 0.054711371527777775,
+    "rawMaxLuminance": 0.985276862745098,
+    "state": {
+      "cullOn": true,
+      "panned": true,
+      "tightBudget": false,
+      "emitterCount": 9,
+      "pausedEmitters": 5,
+      "outsideViewPaused": 5,
+      "overBudgetPaused": 0,
+      "pausedWithoutReason": 0,
+      "dispatchRatio": 0.4444444444444444,
+      "runningDispatchRatio": 1
+    },
+    "camera": {
+      "position": [
+        18,
+        8.35,
+        11.8
+      ],
+      "forward": [
+        0,
+        -0.5464842550812696,
+        -0.8374693779167511
+      ],
+      "fov": 60
+    }
+  }
+}
