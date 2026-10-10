@@ -6,8 +6,10 @@ import {
   compareArms,
   ledgerLine,
   parseBenchArgs,
+  parseLedger,
   parsePerfSelf,
   parsePlayerMetrics,
+  reportHtml,
   reportMarkdown,
   runBench,
 } from "../bench-perry.js";
@@ -96,8 +98,10 @@ describe("Perry native benchmark", () => {
     expect(parseBenchArgs(["--perry", "/tmp/game"])).toMatchObject({
       runs: 3,
       perf: false,
+      open: false,
       perry: "/tmp/game",
     });
+    expect(parseBenchArgs(["--perry", "/tmp/game", "--open"]).open).toBe(true);
     expect(
       parseBenchArgs([
         "--",
@@ -112,6 +116,7 @@ describe("Perry native benchmark", () => {
         "--runs",
         "5",
         "--perf",
+        "--open",
       ]),
     ).toEqual({
       project: "/tmp/project",
@@ -120,6 +125,7 @@ describe("Perry native benchmark", () => {
       v8Bundle: "/tmp/v8",
       runs: 5,
       perf: true,
+      open: true,
     });
     for (const argv of [
       [],
@@ -157,6 +163,27 @@ describe("Perry native benchmark", () => {
     });
     expect(report.trim().split("\n").length).toBeLessThanOrEqual(40);
     expect(report).not.toMatch(/fps/i);
+  });
+  it("renders one self-contained dashboard with every metric, a MISS marker and no external URL", () => {
+    const stacks = parsePerfSelf("  30.00% [.] present\n");
+    const html = reportHtml({
+      time: "2026-01-01T00:00:00.000Z",
+      load: [1, 2, 3],
+      head: "abcdef1234567890",
+      perrySha256: "deadbeefcafe",
+      comparison: compareArms({ perry: [measurement(1.01)], v8: [measurement()] }),
+      stacks: { perry: stacks, v8: stacks },
+      ledger: parseLedger(
+        "t1\thead\t123456789abc\t0.5\t0.5\t0.5\t0.5\t0.5\tPASS\n" +
+          "t2\thead\t123456789abc\tNA\tNA\tNA\tNA\tNA\tMEASUREMENT_FAILURE\n",
+      ),
+    });
+    for (const metric of ["firstFrameMs", "gameJsMs", "renderMs", "cpuFrameMs", "readyMs"])
+      expect(html).toContain(`<th scope="row">${metric}</th>`);
+    expect(html).toContain('<td class="verdict miss">MISS</td>');
+    expect(html).toContain("<svg");
+    expect(html).toContain("present");
+    expect(html).not.toContain("http");
   });
   it("runs the consumer P,V,P,V and returns 2 on a missing metric or crashed journey", async () => {
     const temp = await mkdtemp(path.join(tmpdir(), "bench-perry-spec-"));

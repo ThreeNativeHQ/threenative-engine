@@ -1,5 +1,5 @@
 // PRD-581: compare one authored scenario on the shared native player; present is never a gate.
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { loadavg } from "node:os";
@@ -24,6 +24,7 @@ export interface IBenchArgs {
   v8Bundle: string;
   runs: number;
   perf: boolean;
+  open: boolean;
 }
 export interface IMeasurement {
   firstFrameMs: number;
@@ -66,11 +67,16 @@ const command: Command = async (file, args, cwd) => {
 export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
   const values = new Map<string, string>();
   let perf = false;
+  let open = false;
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     if (flag === "--") continue;
     if (flag === "--perf") {
       perf = true;
+      continue;
+    }
+    if (flag === "--open") {
+      open = true;
       continue;
     }
     if (!flag || !["--project", "--scenario", "--perry", "--v8-bundle", "--runs"].includes(flag))
@@ -91,6 +97,7 @@ export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
     perry: path.resolve(perry),
     runs,
     perf,
+    open,
     scenario: path.resolve(project, values.get("--scenario") ?? "playtests/play.playtest.json"),
     v8Bundle: path.resolve(
       values.get("--v8-bundle") ??
@@ -264,6 +271,208 @@ export function reportMarkdown(result: {
   return `${lines.join("\n")}\n`;
 }
 
+export interface ILedgerRow {
+  time: string;
+  ratios: Array<number | null>;
+  verdict: string;
+}
+
+/** Parse the append-only ledger; a short row is a corruption, not a missing value. */
+export function parseLedger(text: string): ILedgerRow[] {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const columns = line.split("\t");
+      if (columns.length !== 9) throw new Error("Malformed ledger row");
+      return {
+        time: columns[0] ?? "",
+        ratios: columns.slice(3, 8).map((value) => (value === "NA" ? null : Number(value))),
+        verdict: columns[8] ?? "",
+      };
+    });
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+type ComparisonRow = ReturnType<typeof compareArms>["rows"][number];
+
+/** Two horizontal bars, Perry over V8, scaled to the larger median. */
+function barSvg(row: ComparisonRow): string {
+  const max = Math.max(row.perry.median, row.v8.median);
+  const width = (value: number) => (max > 0 ? Math.max(2, Math.round((value / max) * 220)) : 2);
+  const label = `${row.metric}: Perry ${row.perry.median.toFixed(3)} ms, V8 ${row.v8.median.toFixed(3)} ms`;
+  return [
+    `<svg class="bar" viewBox="0 0 240 28" role="img" aria-label="${escapeHtml(label)}">`,
+    `<title>${escapeHtml(label)}</title>`,
+    `<rect class="perry" x="0" y="1" width="${width(row.perry.median)}" height="11"></rect>`,
+    `<rect class="v8" x="0" y="16" width="${width(row.v8.median)}" height="11"></rect>`,
+    "</svg>",
+  ].join("");
+}
+
+/** One metric's Perry/V8 ratio across the ledger, with a dashed target line. */
+function historySvg(
+  ledger: readonly ILedgerRow[],
+  metricIndex: number,
+  target: number | null,
+  metric: string,
+): string {
+  const points = ledger
+    .map((row, index) => ({ index, ratio: row.ratios[metricIndex] ?? null }))
+    .filter((point): point is { index: number; ratio: number } => point.ratio !== null);
+  if (points.length === 0)
+    return `<p class="empty">No ledger history for ${escapeHtml(metric)}.</p>`;
+  const bounds = points.map((point) => point.ratio);
+  if (target !== null) bounds.push(target);
+  let min = Math.min(...bounds);
+  let max = Math.max(...bounds);
+  if (min === max) {
+    min -= 0.1;
+    max += 0.1;
+  }
+  const span = Math.max(1, ledger.length - 1);
+  const x = (index: number) => Math.round(10 + (index / span) * 280);
+  const y = (value: number) => Math.round(70 - ((value - min) / (max - min)) * 60);
+  const line = points.map((point) => `${x(point.index)},${y(point.ratio)}`).join(" ");
+  const targetLine =
+    target === null
+      ? ""
+      : `<line class="target" x1="10" y1="${y(target)}" x2="290" y2="${y(target)}"></line>`;
+  return [
+    `<svg class="history" viewBox="0 0 300 80" role="img" aria-label="${escapeHtml(`${metric} ratio over time`)}">`,
+    `<title>${escapeHtml(`${metric} ratio over time`)}</title>`,
+    targetLine,
+    `<polyline class="series" fill="none" points="${line}"></polyline>`,
+    ...points.map(
+      (point) =>
+        `<circle class="point" cx="${x(point.index)}" cy="${y(point.ratio)}" r="2"></circle>`,
+    ),
+    "</svg>",
+  ].join("");
+}
+
+/**
+ * The one self-contained dashboard file (inline CSS and SVG, no CDN, no framework) that the
+ * native-performance-loop skill's `references/dashboard.md` contract describes. Writing it as
+ * `report.html` beside `report.md` and refreshing the campaign `index.html` from the same renderer
+ * keeps a single format.
+ */
+export function reportHtml(result: {
+  time: string;
+  load: number[];
+  head?: string;
+  perrySha256?: string;
+  comparison?: ReturnType<typeof compareArms>;
+  error?: string;
+  stacks?: Partial<Record<Arm, ReturnType<typeof parsePerfSelf>>>;
+  ledger?: readonly ILedgerRow[];
+}): string {
+  const ledger = result.ledger ?? [];
+  const verdict = result.error
+    ? "MEASUREMENT_FAILURE"
+    : (result.comparison?.verdict ?? "MEASUREMENT_FAILURE");
+  const rows = result.comparison?.rows ?? [];
+  const metricNames = Object.keys(metrics) as Metric[];
+  const metricRows = rows
+    .map((row) =>
+      [
+        "<tr>",
+        `<th scope="row">${escapeHtml(row.metric)}</th>`,
+        `<td>${row.perry.median.toFixed(3)} [${row.perry.min.toFixed(3)}&ndash;${row.perry.max.toFixed(3)}]</td>`,
+        `<td>${row.v8.median.toFixed(3)} [${row.v8.min.toFixed(3)}&ndash;${row.v8.max.toFixed(3)}]</td>`,
+        `<td>${row.ratio.toFixed(3)}</td>`,
+        `<td>${row.target === null ? "report only" : `${row.target}x`}</td>`,
+        `<td class="verdict ${row.verdict.toLowerCase()}">${row.verdict}</td>`,
+        "</tr>",
+      ].join(""),
+    )
+    .join("");
+  const bars = rows
+    .map(
+      (row) =>
+        `<figure><figcaption>${escapeHtml(row.metric)} &mdash; Perry vs V8 (ms, lower is better)</figcaption>${barSvg(row)}</figure>`,
+    )
+    .join("");
+  const history = metricNames
+    .map(
+      (metric, index) =>
+        `<figure><figcaption>${escapeHtml(metric)} ratio over time (dashed = target)</figcaption>${historySvg(ledger, index, metrics[metric], metric)}</figure>`,
+    )
+    .join("");
+  const stacks = result.stacks
+    ? [
+        "<h2>Top self-time</h2>",
+        '<div class="table-wrap"><table><thead><tr><th>#</th><th>Perry</th><th>V8</th></tr></thead><tbody>',
+        ...Array.from({ length: 15 }, (_, index) => {
+          const cell = (arm: Arm) => {
+            const entry = result.stacks?.[arm]?.[index];
+            return entry ? `${entry.percent.toFixed(2)}% ${escapeHtml(entry.symbol)}` : "&mdash;";
+          };
+          return `<tr><td>${index + 1}</td><td>${cell("perry")}</td><td>${cell("v8")}</td></tr>`;
+        }),
+        "</tbody></table></div>",
+      ].join("")
+    : "";
+  const style = [
+    ":root{--fg:#1a1a1a;--bg:#fff;--muted:#555;--line:#ccc;--pass:#0a7d32;--miss:#c0261b;--report:#5a5a5a;--perry:#2563eb;--v8:#9333ea;--target:#888;color-scheme:light dark}",
+    "@media (prefers-color-scheme:dark){:root{--fg:#e8e8e8;--bg:#161616;--muted:#aaa;--line:#444;--pass:#4ade80;--miss:#f87171;--report:#bdbdbd;--perry:#60a5fa;--v8:#c084fc;--target:#999}}",
+    "body{margin:1rem auto;max-width:1100px;padding:0 1rem;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif;line-height:1.4}",
+    "h1{font-size:1.3rem}h2{font-size:1.1rem;margin-top:1.5rem}dt{font-weight:600}dl{display:grid;grid-template-columns:auto 1fr;gap:.1rem .8rem;font-size:.9rem}dd{margin:0;color:var(--muted)}",
+    ".table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%}th,td{border:1px solid var(--line);padding:.35rem .5rem;text-align:right}th:first-child{text-align:left}",
+    ".verdict.pass{color:var(--pass);font-weight:700}.verdict.miss{color:var(--miss);font-weight:700}.verdict.report{color:var(--report);font-weight:700}.verdict.measurement_failure{color:var(--miss);font-weight:700}",
+    ".figures{display:flex;flex-wrap:wrap;gap:1rem}figure{margin:0}figcaption{font-size:.85rem;color:var(--muted)}",
+    "svg.bar{width:100%;max-width:320px;height:auto}svg.bar rect.perry{fill:var(--perry)}svg.bar rect.v8{fill:var(--v8)}",
+    "svg.history{width:100%;max-width:340px;height:auto}svg.history polyline.series{stroke:var(--perry);stroke-width:2}svg.history circle.point{fill:var(--perry)}svg.history line.target{stroke:var(--target);stroke-width:1;stroke-dasharray:4 3}",
+    ".error{color:var(--miss)}.empty{color:var(--muted);font-size:.85rem}@media (max-width:600px){body{font-size:.9rem}th,td{padding:.25rem}}",
+  ].join("");
+  return [
+    "<!doctype html>",
+    '<html lang="en"><head><meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>Perry vs V8 &mdash; ${escapeHtml(result.time)}</title>`,
+    `<style>${style}</style></head><body>`,
+    "<header>",
+    `<h1>Perry vs V8 &mdash; ${escapeHtml(result.time)}</h1>`,
+    `<p class="verdict ${verdict.toLowerCase()}">Verdict: ${escapeHtml(verdict)}</p>`,
+    "<dl>",
+    `<dt>Git HEAD</dt><dd>${escapeHtml(result.head?.slice(0, 12) ?? "unknown")}</dd>`,
+    `<dt>Perry SHA-256</dt><dd>${escapeHtml(result.perrySha256?.slice(0, 12) ?? "unknown")}</dd>`,
+    `<dt>Host load (1/5/15 min)</dt><dd>${result.load.map((value) => value.toFixed(2)).join(" / ")}</dd>`,
+    "</dl>",
+    "</header>",
+    result.error ? `<p class="error">Error: ${escapeHtml(result.error)}</p>` : "",
+    "<h2>Metrics</h2>",
+    rows.length
+      ? `<div class="table-wrap"><table><thead><tr><th>metric (ms)</th><th>Perry median [min&ndash;max]</th><th>V8 median [min&ndash;max]</th><th>ratio</th><th>target</th><th>verdict</th></tr></thead><tbody>${metricRows}</tbody></table></div>`
+      : '<p class="empty">No metric comparison for this run.</p>',
+    `<div class="figures">${bars}</div>`,
+    "<h2>Ledger history</h2>",
+    '<p class="empty">Ratio of Perry median to V8 median per metric; lower is better. A missing point is a gap for a failed measurement, never zero.</p>',
+    `<div class="figures">${history}</div>`,
+    stacks,
+    "</body></html>",
+    "",
+  ].join("\n");
+}
+
+/** Best-effort detached open of the written report; failures are ignored. */
+export function openReport(target: string): void {
+  try {
+    const child = spawn("xdg-open", [target], { detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+  } catch {
+    // Opening the report is a convenience, never part of the measurement.
+  }
+}
+
 export async function runBench(
   argv: readonly string[],
   execute: Command = command,
@@ -422,12 +631,19 @@ export async function runBench(
   } catch (error) {
     result.error = error instanceof Error ? error.message : String(error);
   }
-  await writeFile(path.join(directory, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
-  await writeFile(path.join(directory, "report.md"), reportMarkdown(result));
+  const ledgerPath = path.join(outputRoot, "ledger.tsv");
   await appendFile(
-    path.join(outputRoot, "ledger.tsv"),
+    ledgerPath,
     ledgerLine(time, result.head, result.perrySha256, result.error ? undefined : result.comparison),
   );
+  const ledger = parseLedger(await readFile(ledgerPath, "utf8").catch(() => ""));
+  const html = reportHtml({ ...result, ledger });
+  await writeFile(path.join(directory, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
+  await writeFile(path.join(directory, "report.md"), reportMarkdown(result));
+  const reportPath = path.join(directory, "report.html");
+  await writeFile(reportPath, html);
+  await writeFile(path.join(outputRoot, "index.html"), html);
+  if (result.args?.open && !process.env.CI) openReport(reportPath);
   process.stdout.write(`${path.join(directory, "report.md")}\n`);
   return result.error ? 2 : (result.comparison?.exitCode ?? 2);
 }

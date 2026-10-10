@@ -114,6 +114,22 @@ Confirm apparent wins with a fresh replay/seed or held-out scene before final de
 the original baseline after three experiments to detect drift. Avoid retesting known losers unless
 new evidence changes the hypothesis.
 
+## Perry vs V8 workload
+
+`pnpm bench:perry --project <template> --scenario <playtest.json> --perry <linked-binary> --v8-bundle <dir> --open`
+runs one authored scenario twice on the shared native player (Perry then V8) and writes
+`artifacts/perf-loop/<iso>/report.html` plus `index.html`. Any metric slower than V8 is a MISS:
+
+| Metric | Target (Perry / V8) |
+| --- | ---: |
+| First frame | <= 1.0x |
+| Game JS p50 | <= 0.5x |
+| Total CPU frame p50 | <= 0.68x |
+| Launch to ready | <= 0.33x |
+
+Never report fps on Xvfb. Measurements run in the parent session; Codex sandboxes cannot start
+Xvfb. A Perry relink takes about 17 minutes; append `--perf` for profiling, excluded from the verdict.
+
 ## Guardrails and stopping
 
 Do not buy speed by altering gameplay, appearance, time scale, measurement boundaries, validation,
