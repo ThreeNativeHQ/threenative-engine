@@ -1101,8 +1101,14 @@ void typed_bytes() {
 
     const tn_value_t unknown = bytes("BigInt64Array", elements, 2);
     CHECK(tn_invoke(m, "fromArray", &unknown, 1, &result, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    // No bytes with a count: an attribute that keeps that storage type takes the count, zeroed, and the
+    // caller defers its contents (tnw_attribute_defer); anything else is refused.
     const tn_value_t missing = bytes("Float32Array", nullptr, 2);
-    CHECK(tn_construct(ctx, "BufferAttribute", &missing, 1, &attribute, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    CHECK(tn_construct(ctx, "BufferAttribute", &missing, 1, &attribute, &d.value) == TN_OK);
+    CHECK(numbersOf(attribute, "array", d) == (std::vector<double>{0, 0}));
+    CHECK(tn_invoke(m, "fromArray", &missing, 1, &result, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    const tn_value_t converted = bytes("Int16Array", nullptr, 2);
+    CHECK(tn_construct(ctx, "BufferAttribute", &converted, 1, &attribute, &d.value) != TN_OK);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 

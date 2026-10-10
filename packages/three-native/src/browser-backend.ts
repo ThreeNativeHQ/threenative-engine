@@ -61,7 +61,8 @@ export type EngineValue =
 /** What the classes call; the Wasm ABI implements it, and a surface-only runtime refuses every call. */
 export interface IBrowserRuntime {
   typeId(className: string): number;
-  construct(className: string, args: readonly EngineValue[]): IEngineRef;
+  /** `deferred`, one of `args`, crosses as its count: the caller defers its contents (attributeDefer). */
+  construct(className: string, args: readonly EngineValue[], deferred?: TypedArray): IEngineRef;
   invoke(self: IEngineRef, method: string, args: readonly EngineValue[]): EngineValue;
   get(self: IEngineRef, path: string): EngineValue;
   set(self: IEngineRef, path: string, value: EngineValue): void;
@@ -150,6 +151,8 @@ const SCALARS = [
   Int32Array,
   Uint32Array,
 ];
+// The typed arrays an engine attribute keeps as its own storage type; any other converts from bytes.
+const KEPT_STORAGE = new Set<unknown>([Float32Array, Uint8Array, Uint16Array, Uint32Array]);
 const ATTRIBUTE_CLASSES = new Set([
   "BufferAttribute",
   "Float32BufferAttribute",
@@ -690,15 +693,25 @@ export function defineBrowserClasses(
             ? (args.at(-1) as object)
             : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
-        adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
+        // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy. An
+        // array the engine keeps as its own storage type crosses as its count, and the engine pulls
+        // its contents when it first reads them.
+        const handed = args[0];
+        const adopted =
+          adopts && ArrayBuffer.isView(handed) && !(handed instanceof DataView)
+            ? (handed as TypedArray)
+            : undefined;
+        const counted = adopted !== undefined && KEPT_STORAGE.has(adopted.constructor);
+        adopt(
+          this,
+          runtime.construct(name, engineArgs.map(toEngine), counted ? adopted : undefined),
+        );
         const own = ownSlots.get(engineClass.prototype);
         if (own !== undefined) Object.defineProperties(this, own);
         if (parameters !== undefined) setValues(this, name, parameters);
-        // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy.
-        const handed = args[0];
-        if (adopts && ArrayBuffer.isView(handed) && !(handed instanceof DataView)) {
+        if (adopted !== undefined) {
           const writes = attributeWrites?.call(runtime, refOf(this));
-          const entry = { array: handed as TypedArray, epoch, writes, pending: false };
+          const entry = { array: adopted, epoch, writes, pending: false };
           arrays.set(this, entry);
           defer(this, entry);
         }
@@ -1979,10 +1992,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     w.setBigUint64(pointer + 40, BigInt(list.length), true);
   };
   // A typed array the engine knows by name: its own bytes, one copy; an attribute keeps them as its
-  // storage with no f64 round trip.
+  // storage with no f64 round trip. A construct's deferred array writes no bytes, only its count.
+  let deferredArray: TypedArray | undefined;
   const writeBytes = (pointer: number, list: TypedArray, name: number) => {
-    const bytes = alloc(Math.max(8, list.byteLength), false);
-    abi.HEAPU8.set(new Uint8Array(list.buffer, list.byteOffset, list.byteLength), bytes);
+    let bytes = 0;
+    if (list !== deferredArray) {
+      bytes = alloc(Math.max(8, list.byteLength), false);
+      abi.HEAPU8.set(new Uint8Array(list.buffer, list.byteOffset, list.byteLength), bytes);
+    }
     const w = view();
     w.setUint32(pointer, KIND.bytes, true);
     w.setUint32(pointer + 32, name, true);
@@ -2202,19 +2219,19 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     ...gltfOf(abi, context, { scoped, alloc, keyOf }),
     ...hostImageOf(abi, { scoped, alloc, writeHandle }),
     typeId: (className) => abi._tn_type_id(name(className)),
-    construct: (className, args) =>
+    construct: (className, args, deferred) =>
       scoped(() => {
         const out = alloc(HANDLE);
         const diag = diagnostic();
+        deferredArray = deferred;
+        let pointer: number;
+        try {
+          pointer = values(args);
+        } finally {
+          deferredArray = undefined;
+        }
         check(
-          abi._tn_construct(
-            context,
-            string(className).pointer,
-            values(args),
-            args.length,
-            out,
-            diag,
-          ),
+          abi._tn_construct(context, string(className).pointer, pointer, args.length, out, diag),
           diag,
           `new ${className}`,
         );

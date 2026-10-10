@@ -398,7 +398,13 @@ bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::bi
             case TN_VALUE_BYTES: {
                 const std::string_view type = v.text ? v.text : "";
                 const size_t size = tn::binding::typedArrayElementBytes(type);
-                if (!size || v.count > SIZE_MAX / size || (!v.bytes && v.count)) return false;
+                if (!size || v.count > SIZE_MAX / size || (!v.bytes && v.count && !keepBytes)) return false;
+                // No bytes with a count, to a constructor that keeps them: the caller defers the
+                // contents, and the count rides in `number`.
+                if (!v.bytes) {
+                    out.push_back(tn::binding::Value{Kind::Numbers, double(v.count), std::string(type)});
+                    break;
+                }
                 const std::string_view bytes(static_cast<const char*>(v.bytes), size_t(v.count) * size);
                 out.push_back(tn::binding::Value{Kind::Numbers, 0, std::string(type)});
                 if (keepBytes) out.back().bytes = bytes;

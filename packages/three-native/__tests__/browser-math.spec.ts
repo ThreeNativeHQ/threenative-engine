@@ -423,9 +423,13 @@ describe("three's math values on the browser back end", () => {
   it("writes the game's array into the attribute only when the engine pulls it", () => {
     const { runtime } = memoryRuntime();
     const takes: (() => Float32Array)[] = [];
+    const counted: unknown[] = [];
     const { classes } = defineBrowserClasses(registry, {
       ...runtime,
-      construct: (name) => ({ key: name, type: runtime.typeId(name) }),
+      construct: (name, _args, deferred) => {
+        counted.push(deferred);
+        return { key: name, type: runtime.typeId(name) };
+      },
       get: () => [2, 2, 0, 1015],
       invoke: () => null,
       attributeArray: () => {
@@ -448,6 +452,14 @@ describe("three's math values on the browser back end", () => {
         itemSize: number,
       ) => Attribute
     )(handed, 2);
+    // The array crosses as its count; storage the engine converts (Int16) needs the bytes.
+    const converted = new Int16Array(2);
+    new (classes.BufferAttribute as new (array: Int16Array, itemSize: number) => object)(
+      converted,
+      1,
+    );
+    expect(counted).toEqual([handed, undefined]);
+    takes.pop();
     const geometry = new (classes.BufferGeometry as new () => { translate(x: number): void })();
     // Reads, element writes and engine calls before the pull defer once: nothing crosses.
     attribute.array[0] = 5;

@@ -190,8 +190,13 @@ void registerBufferAttribute(ClassBinding& b, const char* cls) {
                                     : scalar == Scalar::U16 ? "Uint16Array"
                                     : scalar == Scalar::U32 ? "Uint32Array"
                                                             : "Float32Array");
+        // A count with no bytes or numbers: the caller writes the contents later (tnw_attribute_defer).
+        const double deferred = list && bytes.empty() && a.at(0).numbers.empty() ? a.at(0).number : 0;
+        if (deferred > 0 && !same) throw Unsupported{"deferred contents need storage of the array's own type"};
         std::shared_ptr<BufferAttribute> attribute;
-        if (same && !bytes.empty()) {
+        if (deferred > 0) {
+            attribute = std::make_shared<BufferAttribute>(scalar, static_cast<uint64_t>(deferred), static_cast<int>(itemSize), normalized);
+        } else if (same && !bytes.empty()) {
             attribute = std::make_shared<BufferAttribute>(scalar, bytes.size() / typedArrayElementBytes(array),
                                                           static_cast<int>(itemSize), normalized);
             attribute->store->write(0, bytes.data(), bytes.size());
