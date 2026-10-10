@@ -59,14 +59,14 @@ export function assertResolutionScalePreflight(
 }
 
 export async function qualifyResolutionScaleBudget(
-  budgetPrototype: any,
+  budgetPrototype: { beginFrame?(now: number, clock: number): void } | undefined,
   pump: () => Promise<void>,
 ): Promise<void> {
   const begin = budgetPrototype?.beginFrame;
-  if (typeof begin !== "function")
+  if (budgetPrototype === undefined || typeof begin !== "function")
     throw new Error("TN_RESOLUTION_FRAME_BUDGET_IDENTITY: imported prototype is missing");
   let receiver: object | undefined;
-  budgetPrototype.beginFrame = function (...args: any[]) {
+  budgetPrototype.beginFrame = function (...args: Parameters<typeof begin>) {
     receiver = this;
     return begin.apply(this, args);
   };
@@ -89,7 +89,17 @@ export function resolutionScaleTextureBytes(
   return textureUtils._getBytesPerTexel.bind(textureUtils);
 }
 
-export function textureDescriptorBytes(descriptor: any, bytesPerTexel: number): number {
+interface IResolutionTextureDescriptor {
+  size: number[] | { width: number; height?: number; depthOrArrayLayers?: number };
+  format?: string;
+  mipLevelCount?: number;
+  sampleCount?: number;
+  dimension?: string;
+}
+export function textureDescriptorBytes(
+  descriptor: IResolutionTextureDescriptor,
+  bytesPerTexel: number,
+): number {
   if (!Number.isFinite(bytesPerTexel) || bytesPerTexel <= 0)
     throw new Error(`Unmeasured texture format: ${descriptor.format}`);
   const size = descriptor.size;
@@ -98,12 +108,12 @@ export function textureDescriptorBytes(descriptor: any, bytesPerTexel: number): 
     : [size.width, size.height ?? 1, size.depthOrArrayLayers ?? 1];
   const levels = descriptor.mipLevelCount ?? 1;
   const samples = descriptor.sampleCount ?? 1;
-  if (![width, height, layers, levels, samples].every((n) => Number.isInteger(n) && n > 0))
+  if (![width, height, layers, levels, samples].every((n) => Number.isInteger(n) && n! > 0))
     throw new Error("Invalid texture allocation dimensions");
   let bytes = 0;
   for (let mip = 0; mip < levels; mip++) {
     bytes +=
-      Math.max(1, Math.floor(width / 2 ** mip)) *
+      Math.max(1, Math.floor(width! / 2 ** mip)) *
       Math.max(1, Math.floor(height / 2 ** mip)) *
       (descriptor.dimension === "3d" ? Math.max(1, Math.floor(layers / 2 ** mip)) : layers) *
       samples *
@@ -113,6 +123,7 @@ export function textureDescriptorBytes(descriptor: any, bytesPerTexel: number): 
 }
 
 interface IResolutionScaleCensus {
+  incompleteReasons?: readonly string[];
   complete: boolean;
   counts: { deviceCreations?: number; failures: number; pending: number; droppedEvents: number };
 }
@@ -232,9 +243,18 @@ export function resolutionScaleGate(runs: IResolutionScaleRun[], timingQualified
 }
 
 export function installResolutionScaleProbe(
-  budgetPrototype: any,
-  renderer: any,
-  devicePrototype: any,
+  budgetPrototype: {
+    beginFrame(now: number, clock: number): void;
+    endFrame(now: number, wantSample: boolean): unknown;
+  },
+  renderer: {
+    surface(): { resolutionScale: number; compiling?: boolean };
+    pipelineCensus?(): IResolutionScaleCensus | undefined;
+    setResolutionScale(scale: number, source: string): void;
+  },
+  devicePrototype: {
+    createTexture(descriptor: IResolutionTextureDescriptor & { format: string }): unknown;
+  },
   bytesPerTexel: (format: string) => number,
 ): Promise<IResolutionScaleRow[]> {
   const begin = budgetPrototype.beginFrame;
@@ -245,10 +265,10 @@ export function installResolutionScaleProbe(
   let start = 0;
   let timestamp = 0;
   let previousTimestamp: number | undefined;
-  let initialCensus: any;
-  let stepCensusAfter: any;
-  let allocations: any[] = [];
-  let frames: any[] = [];
+  let initialCensus: IResolutionScaleCensus;
+  let stepCensusAfter: IResolutionScaleCensus;
+  let allocations: IResolutionScaleRow["allocations"] = [];
+  let frames: IResolutionScaleRow["frames"] = [];
   let step = -1;
   const scales = [0.85, 0.61, 1];
   const restore = () => {
@@ -272,7 +292,9 @@ export function installResolutionScaleProbe(
       restore();
       reject(error);
     };
-    devicePrototype.createTexture = function (descriptor: any) {
+    devicePrototype.createTexture = function (
+      descriptor: IResolutionTextureDescriptor & { format: string },
+    ) {
       // Descriptor payload bytes, using Three's format census; excludes driver padding/metadata.
       const bytes = textureDescriptorBytes(descriptor, bytesPerTexel(descriptor.format));
       const texture = createTexture.call(this, descriptor);
@@ -293,7 +315,7 @@ export function installResolutionScaleProbe(
           const expected = step === 0 ? 1 : scales[step - 1];
           if (renderer.surface().resolutionScale !== expected || renderer.surface().compiling)
             throw new Error("Scale changed outside the forced step, or compile still active");
-          renderer.setResolutionScale(scales[step], "auto-pinned");
+          renderer.setResolutionScale(scales[step]!, "auto-pinned");
         }
       } catch (error) {
         fail(error);
@@ -312,7 +334,7 @@ export function installResolutionScaleProbe(
               previousTimestamp === undefined ? undefined : timestamp - previousTimestamp,
             surface: renderer.surface(),
           });
-          if (frame % 31 === 0) stepCensusAfter = renderer.pipelineCensus?.();
+          if (frame % 31 === 0) stepCensusAfter = renderer.pipelineCensus?.()!;
           if (frame % 31 === 30) {
             const after = census();
             const next30 = frames
@@ -325,12 +347,12 @@ export function installResolutionScaleProbe(
               frames: [...frames],
               allocations: [...allocations],
               textureBytes: allocations.reduce((sum, value) => sum + value.bytes, 0),
-              pipelineBuilds: after.counts.deviceCreations - initialCensus.counts.deviceCreations,
+              pipelineBuilds: after.counts.deviceCreations! - initialCensus.counts.deviceCreations!,
               censusBefore: initialCensus,
               stepCensusAfter,
               censusAfter: after,
-              windowP50Ms: p50,
-              stepRatio: frames[0].frameMs / p50,
+              windowP50Ms: p50!,
+              stepRatio: frames[0]!.frameMs / p50!,
             };
             rows.push(row);
             console.info(`TN_RESOLUTION_STEP:${JSON.stringify(row)}`);

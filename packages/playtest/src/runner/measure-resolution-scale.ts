@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
+import { chromium, type Browser } from "playwright";
 import { WEBGPU_BROWSER_ARGS } from "./browser.js";
 import { provideDisplay } from "./captureEnvironment.js";
 import { PlaywrightTransport, bridgeWaitTimeoutMs } from "./bridgeClient.js";
@@ -14,7 +14,7 @@ import {
 } from "./resolution-scale-probe.js";
 import type { IPlaytestBridgeDescription, IPlaytestBridgeReady } from "../protocol.js";
 
-import type { IResolutionScaleRun } from "./resolution-scale-probe.js";
+import type { IResolutionScaleRun, IResolutionScaleRow } from "./resolution-scale-probe.js";
 
 // Use a served starter with resolutionScale pinned to 1; all other render settings stay authored.
 const output = resolve(process.argv[2] ?? "artifacts/prd564");
@@ -23,9 +23,9 @@ if (process.argv[3] !== undefined && !preflightOnly)
   throw new Error("Expected --preflight or no mode");
 await mkdir(output, { recursive: true });
 const server = await serveStarter(output);
-const url = server.resolvedUrls.local[0];
+const url = server.resolvedUrls!.local[0]!;
 const display = await provideDisplay();
-let browser;
+let browser: Browser | undefined;
 const measurements: IResolutionScaleRun[] = [];
 try {
   browser = await chromium.launch({
@@ -48,7 +48,14 @@ try {
     const logs: string[] = [];
     page.on("console", (message) => logs.push(message.text()));
     page.on("pageerror", (error) => logs.push(`PAGE_ERROR:${error.message}`));
-    const evidence: any = { startup: { collected: false }, partial: { collected: false } };
+    const evidence: {
+      startup: {
+        collected: boolean;
+        value?: IPlaytestBridgeReady | Awaited<ReturnType<typeof waitForStartupReady>>;
+      };
+      partial: { collected: boolean; value?: Record<string, unknown> };
+      rows?: IResolutionScaleRow[];
+    } = { startup: { collected: false }, partial: { collected: false } };
     try {
       await page.goto(url);
       const transport = new PlaywrightTransport(page);
@@ -91,9 +98,15 @@ try {
       });
       const observed = await page
         .evaluate<{
-          preflight?: any;
-          rows?: any[];
-          partial: any;
+          preflight?: {
+            adapter: string;
+            surface: Record<string, unknown>;
+            census: unknown;
+            frameBudget: { prototypeObserved: boolean };
+            textureBytes: { rgba8unorm: number };
+          };
+          rows?: IResolutionScaleRow[];
+          partial: Record<string, unknown>;
           failure?: { name: string; message: string; stack?: string };
         }>(`(async () => {
         const partial = {};
@@ -150,7 +163,7 @@ try {
         throw new Error(`TN_RESOLUTION_NAVIGATION: ${navigations.join(", ")}`);
       const { preflight, rows = [] } = observed;
       evidence.rows = rows;
-      const adapter = preflight.adapter;
+      const adapter = preflight!.adapter;
       if (logs.some((line) => line.startsWith("PAGE_ERROR:")))
         throw new Error("Browser page errors; inspect raw log");
       if (!preflightOnly) measurements.push({ run, rows });
@@ -183,9 +196,9 @@ try {
           run,
           adapter,
           ...(gate === undefined ? {} : { gate }),
-          steps: rows.map((row: any) => ({
+          steps: rows.map((row) => ({
             scale: row.scale,
-            stepMs: row.frames[0].frameMs,
+            stepMs: row.frames[0]!.frameMs,
             p50Ms: row.windowP50Ms,
             ratio: row.stepRatio,
             pipelines: row.pipelineBuilds,
@@ -226,7 +239,9 @@ try {
   await server.close();
 }
 
-async function serveStarter(output: string): Promise<any> {
+async function serveStarter(
+  output: string,
+): Promise<{ resolvedUrls: { local: string[] } | null; close(): Promise<void> }> {
   const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
   const load = (path: string) => import(path);
   const tooling = createRequire(resolve(repo, "examples/abyss-framework/package.json"));

@@ -155,22 +155,25 @@ it("captures exactly step +30 frames for each scale, counts allocations/builds, 
     },
   };
   const device = {
-    createTexture(_descriptor: any) {
+    createTexture(_descriptor: unknown) {
       return {};
     },
   };
-  const begin = budget.beginFrame,
-    end = budget.endFrame,
-    create = device.createTexture;
-  let scale = 1,
-    builds = 3;
+  const begin = budget.beginFrame;
+  const end = budget.endFrame;
+  const create = device.createTexture;
+  let scale = 1;
+  let builds = 3;
   const renderer = {
     surface: () => ({ resolutionScale: scale }),
-    pipelineCensus: () => ({ complete: true, counts: { deviceCreations: builds } }),
+    pipelineCensus: () => ({
+      complete: true,
+      counts: { deviceCreations: builds, failures: 0, pending: 0, droppedEvents: 0 },
+    }),
     setResolutionScale(next: number) {
       scale = next;
       builds++;
-      device.createTexture({ size: [4, 4] });
+      device.createTexture({ size: [4, 4], format: "rgba8unorm" });
     },
   };
   const result = installResolutionScaleProbe(budget, renderer, device, () => 4);
@@ -217,11 +220,11 @@ it("startup frame survives actual tsx serialization without browser helpers", as
 
 it.each([null, "no", 0])("rejects malformed compile observation %j", (compiling) => {
   expect(() =>
-    assertResolutionScalePreflight(
+    Reflect.apply(assertResolutionScalePreflight, undefined, [
       "webgpu",
-      { resolutionScale: 1, compiling } as any,
+      { resolutionScale: 1, compiling },
       hardwareCensus,
-    ),
+    ]),
   ).toThrow("TN_RESOLUTION_SURFACE_MALFORMED");
 });
 it("accepts an explicit idle compile observation", () => {
@@ -312,7 +315,7 @@ it.each([
   if (fault === "malformed CPU") runs[0]!.rows[0]!.frames[0]!.frameMs = Number.NaN;
   if (fault === "incomplete window") runs[0]!.rows[0]!.censusAfter.complete = false;
   if (fault === "pending window") runs[0]!.rows[0]!.censusAfter.counts.pending = 1;
-  if (fault === "missing census") runs[0]!.rows[0]!.censusBefore = undefined as any;
+  if (fault === "missing census") Reflect.set(runs[0]!.rows[0]!, "censusBefore", undefined);
   if (fault === "inconsistent count") runs[0]!.rows[0]!.pipelineBuilds = 1;
   expect(() => resolutionScaleGate(runs, true)).toThrow("TN_RESOLUTION_GATE_INVALID");
 });
