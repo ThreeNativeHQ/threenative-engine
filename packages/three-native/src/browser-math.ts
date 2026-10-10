@@ -126,7 +126,7 @@ export function defineMath(quaternion: () => IQuaternionScratch) {
       throw new Error(`THREE.Vector3: index is out of range: ${index}`);
     }
     clone(): Vector3 {
-      return new Vector3(this.x, this.y, this.z);
+      return new Vec3(this.x, this.y, this.z);
     }
     copy(v: IVec3): this {
       this.x = v.x;
@@ -362,10 +362,10 @@ export function defineMath(quaternion: () => IQuaternionScratch) {
       return this.copy(v).multiplyScalar(scalar);
     }
     projectOnPlane(planeNormal: Vector3): this {
-      return this.sub(new Vector3().copy(this).projectOnVector(planeNormal));
+      return this.sub(new Vec3().copy(this).projectOnVector(planeNormal));
     }
     reflect(normal: IVec3): this {
-      return this.sub(new Vector3().copy(normal).multiplyScalar(2 * this.dot(normal)));
+      return this.sub(new Vec3().copy(normal).multiplyScalar(2 * this.dot(normal)));
     }
     angleTo(v: Vector3): number {
       const denominator = Math.sqrt(this.lengthSq() * v.lengthSq());
@@ -453,6 +453,9 @@ export function defineMath(quaternion: () => IQuaternionScratch) {
       yield this.z;
     }
   }
+  // Pinned Perry builds a function-scoped class's `new Self()` (and `this.constructor`) on another
+  // prototype, which the engine then refuses; an outer alias keeps the real one.
+  const Vec3 = Vector3;
 
   /**
    * three r185's Color arithmetic and its sRGB conversions. The working space is linear-sRGB, as in
