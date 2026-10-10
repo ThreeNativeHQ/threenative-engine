@@ -242,3 +242,31 @@ three complete post-startup 120-render windows per arm, each with at least 30 ac
 rendered-shadow samples; report both observed coverage counts and draws/triangles. Reserve 20 minutes
 and record fresh CPU/RAM/GPU utilization/process metadata before and after. The coordinator has not
 granted this series. AC-1's 40% reduction is a later Phase 2 gate.
+
+2026-10-10, game-fixture correction after the functional preflight: `crowdRate.measured` starts
+at null and latches exactly one completed ready window numbered at least 2. Its explicit JSON-safe
+snapshot contains CPU/GPU costs and counts, draws/triangles, surface and control metadata. Flat
+startup metrics continue updating, including later windows; they are not hidden or overwritten.
+The scenario retains both raw readiness/window wait steps and assertion rows, checks window metrics
+through this receipt with the original limits, and adds the receipt's window-at-least-2 proof.
+Its 14 resource rows contain 11 unwaived checks and exactly three
+held invariants use the installed `allowTrivial`: measurement mode and count are fixed by the URL,
+and projected-rig count is computed in `Crowd.enter` before startup sampling. Each written reason
+points to the unwaived post-baseline window checks. No window metric has a waiver.
+
+Proof: `node --import tsx artifacts/prd570-measurement-check.mjs` first failed on the absent initial
+null receipt, then passed six cases using actual Crowd initialization/callbacks, the bridge's
+`assertJsonSafe`, and its installed resource evaluator. Cases cover window 1 remaining visible,
+valid 120-frame window 2 receipts for animated/held/static, missing GPU/CPU and 119 CPU frames
+preventing a receipt, later raw updates leaving the receipt immutable, and held/static optional
+CPU costs remaining null. All 14 rows pass with the initial pre-window baseline; all 11 unwaived
+rows reject an already-held late baseline with `TN_PLAYTEST_ASSERTION_TRIVIAL`. An already-ready
+window-1 baseline also remains rejected by the raw readiness row. Crowd TypeScript, scenario
+loading, Biome and diff checks pass;
+Biome reports non-fatal complexity warnings in `crowdSpans` and `Crowd.enter`. The check script is
+an ignored executable consumed by this focused check, not a verification report.
+
+If startup sampling already observes readiness or the latched window, the scenario must fail honestly; warmup
+has not been adjusted to evade that guard. One receipt does not implement or earn the proposed
+three-window-per-arm cost series. No new browser/GPU/build run, optimization claim or PRD checkbox
+completion accompanies this local change.

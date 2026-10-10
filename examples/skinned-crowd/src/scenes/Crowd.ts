@@ -48,7 +48,16 @@ if (!["animated", "held", "static"].includes(arm))
   throw new Error("crowdArm must be animated, held or static.");
 const measuring = requestedCount !== null;
 
-export const crowdRate: Record<string, unknown> = { count, arm, measuring, ready: false };
+export const crowdRate: Record<string, unknown> = {
+  count,
+  arm,
+  measuring,
+  ready: false,
+  measured: null,
+};
+
+const finiteOrNull = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
 
 export function crowdBudget(window: IFrameBudgetWindow): void {
   if (!measuring) return;
@@ -95,6 +104,54 @@ export function crowdSpans(line: string): void {
     Number(crowdRate.shadowDraws) > 0 &&
     Number(crowdRate.gpuShadowSamples) > 0 &&
     Number(crowdRate.gpuMainSamples) > 0;
+  if (crowdRate.measured === null && crowdRate.ready === true && window.window >= 2) {
+    const surface = crowdRate.surface as IFrameBudgetWindow["surface"] | null;
+    crowdRate.measured = Object.freeze({
+      window: finiteOrNull(window.window),
+      ready: true,
+      renderFrames: finiteOrNull(crowdRate.renderFrames),
+      animationFrames: finiteOrNull(crowdRate.animationFrames),
+      paletteFrames: finiteOrNull(crowdRate.paletteFrames),
+      animationUpdateMs: finiteOrNull(crowdRate.animationUpdateMs),
+      skinnedWriteMs: finiteOrNull(crowdRate.skinnedWriteMs),
+      animationCalls: finiteOrNull(crowdRate.animationCalls),
+      paletteWrites: finiteOrNull(crowdRate.paletteWrites),
+      gpuSamples: finiteOrNull(crowdRate.gpuSamples),
+      gpuMainSamples: finiteOrNull(crowdRate.gpuMainSamples),
+      gpuShadowSamples: finiteOrNull(crowdRate.gpuShadowSamples),
+      gpuMainMs: finiteOrNull(crowdRate.gpuMainMs),
+      gpuShadowMs: finiteOrNull(crowdRate.gpuShadowMs),
+      mainDraws: finiteOrNull(crowdRate.mainDraws),
+      shadowDraws: finiteOrNull(crowdRate.shadowDraws),
+      mainTriangles: finiteOrNull(crowdRate.mainTriangles),
+      shadowTriangles: finiteOrNull(crowdRate.shadowTriangles),
+      surface:
+        surface == null
+          ? null
+          : Object.freeze({
+              resolutionScale: finiteOrNull(surface.resolutionScale),
+              sampleCount: finiteOrNull(surface.sampleCount),
+              drawingBufferWidth: finiteOrNull(surface.drawingBufferWidth),
+              drawingBufferHeight: finiteOrNull(surface.drawingBufferHeight),
+              scaleSource: surface.scaleSource ?? null,
+              atFloor: surface.atFloor ?? null,
+              compiling: surface.compiling ?? null,
+            }),
+      count,
+      arm,
+      measuring,
+      projectedRigs: finiteOrNull(crowdRate.projectedRigs),
+      bonesPerRig: finiteOrNull(crowdRate.bonesPerRig),
+      verticesPerRig: finiteOrNull(crowdRate.verticesPerRig),
+      heldPoseSeconds: finiteOrNull(crowdRate.heldPoseSeconds),
+      nearDepth: finiteOrNull(crowdRate.nearDepth),
+      midDepth: finiteOrNull(crowdRate.midDepth),
+      farDepth: finiteOrNull(crowdRate.farDepth),
+      projectedHeldHeights: Array.isArray(crowdRate.projectedHeldHeights)
+        ? Object.freeze(crowdRate.projectedHeldHeights.map(finiteOrNull))
+        : null,
+    });
+  }
   console.info(`TN_CROWD_RATE:${JSON.stringify(crowdRate)}`);
 }
 
