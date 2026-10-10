@@ -1006,49 +1006,6 @@ json::Value V8Game::resource(const std::string& id, uint64_t tick) const {
 
 }  // namespace
 
-/** The high-performance adapter's `info` fields, empty ones left out; empty when there is none. */
-std::vector<std::pair<std::string, std::string>> adapterIdentity() {
-    struct Request {
-        WGPUAdapter adapter = nullptr;
-        bool done = false;
-    } request;
-    WGPUInstance instance = wgpuCreateInstance(nullptr);
-    if (!instance) return {};
-    WGPURequestAdapterOptions options = {};
-    options.powerPreference = WGPUPowerPreference_HighPerformance;
-#if WGPU_USES_CALLBACK_INFO_PATTERN
-    WGPURequestAdapterCallbackInfo callback = {};
-    callback.mode = WGPUCallbackMode_AllowProcessEvents;
-    callback.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView, void* data, void*) {
-        auto& r = *static_cast<Request*>(data);
-        if (status == WGPURequestAdapterStatus_Success) r.adapter = adapter;
-        r.done = true;
-    };
-    callback.userdata1 = &request;
-    wgpuInstanceRequestAdapter(instance, &options, callback);
-#else
-    wgpuInstanceRequestAdapter(instance, &options, [](WGPURequestAdapterStatus status, WGPUAdapter adapter, char const*, void* data) {
-        auto& r = *static_cast<Request*>(data);
-        if (status == WGPURequestAdapterStatus_Success) r.adapter = adapter;
-        r.done = true;
-    }, &request);
-#endif
-    for (int i = 0; i < 1000000 && !request.done; ++i) wgpuInstanceProcessEvents(instance);
-    std::vector<std::pair<std::string, std::string>> fields;
-    if (request.adapter) {
-        WGPUAdapterInfo info = {};
-        wgpuAdapterGetInfo(request.adapter, &info);
-        for (const auto& [name, value] : {std::pair{"architecture", WGPU_PRINT_STRING_VIEW(info.architecture)},
-                                          std::pair{"description", WGPU_PRINT_STRING_VIEW(info.description)},
-                                          std::pair{"device", WGPU_PRINT_STRING_VIEW(info.device)},
-                                          std::pair{"vendor", WGPU_PRINT_STRING_VIEW(info.vendor)}})
-            if (!value.empty() && value != "unknown") fields.emplace_back(name, value);  // the macro's empty
-        wgpuAdapterInfoFreeMembers(info);
-        wgpuAdapterRelease(request.adapter);
-    }
-    wgpuInstanceRelease(instance);
-    return fields;
-}
 
 int main(int argc, char** argv) {
     // The game's log is a stream tools read live; a pipe would otherwise hold it until exit, and a
@@ -1078,7 +1035,7 @@ int main(int argc, char** argv) {
     V8Game game(!checkGame);
     // The adapter's identity, read the way core reads it (a request of its own beside the renderer's):
     // what the game's `adapter.info` and the playtest's adapter class come from. A check has no GPU.
-    if (!checkGame) game.setAdapter(adapterIdentity());
+    if (!checkGame) game.setAdapter(player::adapterIdentity());
     std::string error;
     if (!game.start(gamePath, error))
         return std::fprintf(stderr, "TN_PLAYER_V8_GAME: %s\n", error.c_str()), 1;

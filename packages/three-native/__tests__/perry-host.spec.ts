@@ -6,6 +6,33 @@ import { runInNewContext } from "node:vm";
 import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import { expect, it, vi } from "vitest";
 
+it("reads native frame counters and adapter JSON through the numeric Perry ABI", () => {
+  const renderInfo = vi.fn((field: number) => (field === 0 ? 9 : 123456789));
+  const adapterInfo = vi.fn(() => 42);
+  const readString = vi.fn(() => '{"architecture":"swiftshader","vendor":"google"}');
+  const sandbox = {
+    exports: {} as { playerRenderInfo(field: number): number; playerAdapterInfo(): string },
+    js_tnp_player_render_info: renderInfo,
+    js_tnp_player_adapter_info: adapterInfo,
+    js_tnp_read_string: readString,
+  };
+  runInNewContext(
+    transpileModule(readFileSync(new URL("../perry/src/index.ts", import.meta.url), "utf8"), {
+      compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
+    }).outputText,
+    sandbox,
+  );
+  expect(sandbox.exports.playerRenderInfo(0)).toBe(9);
+  expect(sandbox.exports.playerRenderInfo(1)).toBe(123456789);
+  expect(renderInfo.mock.calls).toEqual([[0], [1]]);
+  expect(JSON.parse(sandbox.exports.playerAdapterInfo())).toEqual({
+    architecture: "swiftshader",
+    vendor: "google",
+  });
+  expect(adapterInfo).toHaveBeenCalledOnce();
+  expect(readString).toHaveBeenCalledExactlyOnceWith(42, -1);
+});
+
 it("drives core frames, input, timers and async mailbox observations through player callbacks", async () => {
   let update!: (dt: number) => void;
   let frame!: (ms: number) => void;

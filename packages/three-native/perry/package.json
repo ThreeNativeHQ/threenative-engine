@@ -100,6 +100,16 @@
           "returns": "i64"
         },
         {
+          "name": "js_tnp_player_render_info",
+          "params": ["i32"],
+          "returns": "f64"
+        },
+        {
+          "name": "js_tnp_player_adapter_info",
+          "params": [],
+          "returns": "i64"
+        },
+        {
           "name": "js_tnp_player_capture",
           "params": ["i32"],
           "returns": "i32"

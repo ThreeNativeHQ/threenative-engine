@@ -24,10 +24,56 @@
 #include "engine/world/loop/fixed_step.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/presentation.h"
+#include "mystral/webgpu_compat.h"
 
 using namespace tn::engine;
 
 namespace tn::engine::player {
+
+/** The high-performance adapter's `info` fields, empty ones left out; empty when there is none. */
+std::vector<std::pair<std::string, std::string>> adapterIdentity() {
+    struct Request {
+        WGPUAdapter adapter = nullptr;
+        bool done = false;
+    } request;
+    WGPUInstance instance = wgpuCreateInstance(nullptr);
+    if (!instance) return {};
+    WGPURequestAdapterOptions options = {};
+    options.powerPreference = WGPUPowerPreference_HighPerformance;
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+    WGPURequestAdapterCallbackInfo callback = {};
+    callback.mode = WGPUCallbackMode_AllowProcessEvents;
+    callback.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView, void* data, void*) {
+        auto& r = *static_cast<Request*>(data);
+        if (status == WGPURequestAdapterStatus_Success) r.adapter = adapter;
+        r.done = true;
+    };
+    callback.userdata1 = &request;
+    wgpuInstanceRequestAdapter(instance, &options, callback);
+#else
+    wgpuInstanceRequestAdapter(instance, &options, [](WGPURequestAdapterStatus status, WGPUAdapter adapter, char const*, void* data) {
+        auto& r = *static_cast<Request*>(data);
+        if (status == WGPURequestAdapterStatus_Success) r.adapter = adapter;
+        r.done = true;
+    }, &request);
+#endif
+    for (int i = 0; i < 1000000 && !request.done; ++i) wgpuInstanceProcessEvents(instance);
+    std::vector<std::pair<std::string, std::string>> fields;
+    if (request.adapter) {
+        WGPUAdapterInfo info = {};
+        wgpuAdapterGetInfo(request.adapter, &info);
+        for (const auto& [name, value] : {std::pair{"architecture", WGPU_PRINT_STRING_VIEW(info.architecture)},
+                                          std::pair{"description", WGPU_PRINT_STRING_VIEW(info.description)},
+                                          std::pair{"device", WGPU_PRINT_STRING_VIEW(info.device)},
+                                          std::pair{"vendor", WGPU_PRINT_STRING_VIEW(info.vendor)}})
+            if (!value.empty() && value != "unknown") fields.emplace_back(name, value);  // the macro's empty
+        wgpuAdapterInfoFreeMembers(info);
+        wgpuAdapterRelease(request.adapter);
+    }
+    wgpuInstanceRelease(instance);
+    return fields;
+}
+
 
 namespace {
 

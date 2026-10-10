@@ -8,6 +8,8 @@ export interface IPerryRenderHost {
   readonly color: new (color: unknown) => { r: number; g: number; b: number };
   /** Flush the facade's pending engine work (collect, TSL) before a render. */
   sync(): void;
+  renderInfo(): { drawCalls: number; triangles: number };
+  adapterInfo(): string;
   render(
     scene: NonNullable<ReturnType<typeof engineRef>>,
     camera: NonNullable<ReturnType<typeof engineRef>>,
@@ -25,6 +27,30 @@ export function definePerryRenderer(host: IPerryRenderHost) {
     readonly isWebGPURenderer = true;
     readonly domElement: HTMLCanvasElement;
     readonly shadowMap = { enabled: false, type: 1 };
+    readonly backend = {
+      gpu: {
+        requestAdapter: async () => {
+          const info = JSON.parse(host.adapterInfo());
+          return info === null ? null : { info, limits: {} };
+        },
+      },
+    };
+    readonly info = {
+      render: {
+        get drawCalls() {
+          return host.renderInfo().drawCalls;
+        },
+        get calls() {
+          return host.renderInfo().drawCalls;
+        },
+        get triangles() {
+          return host.renderInfo().triangles;
+        },
+      },
+      compute: {},
+      frame: 0,
+      reset() {},
+    };
     constructor(options: { canvas?: HTMLCanvasElement } = {}) {
       this.domElement =
         options.canvas ?? ({ width: 300, height: 150, style: {} } as HTMLCanvasElement);

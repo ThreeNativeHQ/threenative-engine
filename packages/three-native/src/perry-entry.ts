@@ -1,3 +1,4 @@
+import { playerAdapterInfo, playerRenderInfo } from "tn-native-transport";
 /** The browser facade over native C calls; no separate set of three classes. */
 import catalog from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
@@ -67,6 +68,8 @@ export function bindPerryEngine(names: readonly string[]): Record<string, unknow
   );
   bound.WebGPURenderer = definePerryRenderer({
     color: Color,
+    renderInfo: () => ({ drawCalls: playerRenderInfo(0), triangles: playerRenderInfo(1) }),
+    adapterInfo: playerAdapterInfo,
     sync: () => {
       engine.collect();
       tsl.sync();

@@ -77,7 +77,24 @@ it("transports a post id and null through the Perry C entry and preserves named 
   expect(() => tsl.setPost(999)).toThrow("TN_PERRY_POST: not a TSL node of this context");
 });
 vi.mock("../src/perry-transport.js", () => ({ createPerryRuntime: () => native }));
+vi.mock("tn-native-transport", () => ({
+  playerRenderInfo: (field: number) => (field === 0 ? 3 : 36),
+  playerAdapterInfo: () => '{"architecture":"swiftshader","vendor":"google"}',
+}));
 const { bindPerryEngine } = await import("../src/perry-entry.js");
+
+it("wires the bound renderer to the player's observation transport", async () => {
+  const bound = bindPerryEngine(["WebGPURenderer"]);
+  const Renderer = bound.WebGPURenderer as ReturnType<
+    typeof import("../src/perry-renderer.js").definePerryRenderer
+  >;
+  const renderer = new Renderer();
+  expect(renderer.info.render).toMatchObject({ drawCalls: 3, calls: 3, triangles: 36 });
+  expect(await renderer.backend.gpu.requestAdapter()).toEqual({
+    info: { architecture: "swiftshader", vendor: "google" },
+    limits: {},
+  });
+});
 
 it("answers instanceof by the prototype chain, which Perry's class-id check gets wrong", () => {
   const b = bindPerryEngine([

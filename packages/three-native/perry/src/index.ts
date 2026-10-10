@@ -80,6 +80,8 @@ declare function js_tnp_player_close(): void;
 declare function js_tnp_player_running(): number;
 declare function js_tnp_player_runner(): number;
 declare function js_tnp_player_codes(): number;
+declare function js_tnp_player_render_info(field: number): number;
+declare function js_tnp_player_adapter_info(): number;
 declare function js_tnp_player_capture(on: number): number;
 export function playerBind(update: unknown, frame: unknown, observe: unknown): number {
   return js_tnp_player_bind(update, frame, observe);
@@ -101,6 +103,12 @@ export function playerRunner(): number {
 }
 export function playerCodes(): string {
   return readString(js_tnp_player_codes());
+}
+export function playerRenderInfo(field: number): number {
+  return js_tnp_player_render_info(field);
+}
+export function playerAdapterInfo(): string {
+  return readString(js_tnp_player_adapter_info());
 }
 export function playerCapture(on: boolean): number {
   return js_tnp_player_capture(on ? 1 : 0);

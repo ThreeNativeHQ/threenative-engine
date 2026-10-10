@@ -25,12 +25,47 @@ function renderer() {
       b = 0;
     },
     sync,
+    renderInfo: () => ({ drawCalls: 0, triangles: 0 }),
+    adapterInfo: () => "null",
     render: (...args) => calls.push(args),
   });
   return { renderer: new Renderer(), calls, sync };
 }
 
 describe("Perry WebGPURenderer", () => {
+  it("reports the last native frame and the adapter fields core reads", async () => {
+    let frame = { drawCalls: 0, triangles: 0 };
+    let adapter = "null";
+    const Renderer = definePerryRenderer({
+      color: class {
+        r = 0;
+        g = 0;
+        b = 0;
+      },
+      sync() {},
+      render() {},
+      renderInfo: () => frame,
+      adapterInfo: () => adapter,
+    });
+    const r = new Renderer();
+    expect(r.info.render).toMatchObject({ drawCalls: 0, calls: 0, triangles: 0 });
+    expect(await r.backend.gpu.requestAdapter()).toBeNull();
+    frame = { drawCalls: 7, triangles: 123456 };
+    expect(r.info.render).toMatchObject({ drawCalls: 7, calls: 7, triangles: 123456 });
+    r.info.reset();
+    expect(r.info.render.triangles).toBe(123456);
+    const info = {
+      architecture: "swiftshader",
+      description: "SwiftShader Device (Subzero)",
+      device: 'SwiftShader "GPU"',
+      vendor: "google",
+    };
+    adapter = JSON.stringify(info);
+    expect(await r.backend.gpu.requestAdapter()).toEqual({ info, limits: {} });
+    frame = { drawCalls: 1, triangles: 12 };
+    expect(r.info.render).toMatchObject({ drawCalls: 1, calls: 1, triangles: 12 });
+  });
+
   it("answers the renderer queries core and games make", () => {
     const { renderer: r } = renderer();
     r.setSize(640, 360);

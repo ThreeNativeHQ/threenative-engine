@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <memory>
+#include <limits>
 #include <set>
 
 extern "C" void tnp_player_update(double);
@@ -20,6 +21,9 @@ std::unique_ptr<player::Session, decltype(&player::close)> session(nullptr, play
 inspect::Endpoint* endpoint = nullptr;
 std::set<std::string> held;
 std::string codes, failure;
+std::string adapterInfo;
+uint32_t drawCalls = 0;
+uint64_t triangles = 0;
 std::shared_ptr<Object3D> scene, camera;
 std::array<double, 4> clear{0, 0, 0, 1};
 OutputState output;
@@ -62,7 +66,9 @@ extern "C" int32_t js_tnp_player_open() try {
         tnp_player_frame(frameClockMs);
     };
     game.frameWithoutView = frame;
-    game.frameComplete = [](Renderer&, const std::vector<std::string>&) {
+    game.frameComplete = [](Renderer& renderer, const std::vector<std::string>&) {
+        drawCalls = renderer.lastFrame().draws;
+        triangles = renderer.lastFrame().triangles;
         frameClockMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStarted).count();
     };
 
@@ -98,6 +104,7 @@ extern "C" int32_t js_tnp_player_open() try {
     };
     int status = 0;
     frameClockMs = 0;
+    drawCalls = 0; triangles = 0;
     session.reset(player::open(game, status));
     return session ? 0 : status;
 } catch (const std::exception& error) {
@@ -113,11 +120,26 @@ extern "C" int32_t js_tnp_player_step() {
 }
 extern "C" void js_tnp_player_close() {
     session.reset(); endpoint = nullptr; scene.reset(); camera.reset(); held.clear(); codes.clear();
+    drawCalls = 0; triangles = 0; adapterInfo.clear();
     js_tnp_set_post(0, 0);
 }
 extern "C" int32_t js_tnp_player_running() { return session ? 1 : 0; }
 extern "C" int32_t js_tnp_player_runner() { return !player::Mailbox::rootFromEnvironment().empty(); }
 extern "C" int64_t js_tnp_player_codes() { return reinterpret_cast<int64_t>(codes.c_str()); }
+extern "C" double js_tnp_player_render_info(int32_t field) {
+    if (field == 0) return drawCalls;
+    if (field == 1) return static_cast<double>(triangles);
+    return std::numeric_limits<double>::quiet_NaN();
+}
+extern "C" int64_t js_tnp_player_adapter_info() {
+    if (adapterInfo.empty()) {
+        std::vector<std::pair<std::string, json::Value>> fields;
+        for (const auto& [name, value] : player::adapterIdentity())
+            fields.emplace_back(name, json::Value::makeString(value));
+        adapterInfo = json::stringify(fields.empty() ? json::Value::makeNull() : json::Value::makeObject(std::move(fields)));
+    }
+    return reinterpret_cast<int64_t>(adapterInfo.c_str());
+}
 extern "C" int32_t js_tnp_player_capture(int32_t on) {
     int count = 0;
     SDL_Window** windows = SDL_GetWindows(&count);

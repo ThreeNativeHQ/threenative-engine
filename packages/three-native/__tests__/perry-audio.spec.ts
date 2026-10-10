@@ -194,6 +194,7 @@ it("loads packaged audio through the Perry host, retains native PCM and drains s
     const collect = vi.fn();
     const syncTsl = vi.fn();
     const modules: Record<string, unknown> = {
+      "tn-native-transport": native,
       "../api/catalog.json": { entries: [] },
       "../api/native-registry.json": {},
       "./audio.js": {

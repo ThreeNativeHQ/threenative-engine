@@ -89,6 +89,9 @@ Session* open(const Game& game, int& status);
 int step(Session& session);
 void close(Session* session);
 
+/** The high-performance adapter's nonempty info fields, shared by the V8 and Perry hosts. */
+std::vector<std::pair<std::string, std::string>> adapterIdentity();
+
 /** Runs one game until the window closes or the runner stops the process. */
 int run(const Game& game);
 
