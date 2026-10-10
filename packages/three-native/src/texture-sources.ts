@@ -158,6 +158,18 @@ export function defineTextureSources(
     return texture;
   };
 
+  // Perry cannot Reflect.construct a captured class: `new` it, then take a subclass's prototype.
+  const make = (
+    Base: EngineClass,
+    args: unknown[],
+    target: { prototype: object } | undefined,
+    own: { prototype: object },
+  ): object => {
+    const made = new Base(...args);
+    if (target !== undefined && target !== own) Object.setPrototypeOf(made, target.prototype);
+    return made;
+  };
+
   function DataTexture(
     this: unknown,
     data?: ArrayLike<number> | null,
@@ -165,10 +177,11 @@ export function defineTextureSources(
     height = 1,
     ...rest: unknown[]
   ) {
-    const texture = Reflect.construct(
+    const texture = make(
       BaseData,
       [data ?? undefined, width, height, ...rest],
-      new.target ?? DataTexture,
+      new.target,
+      DataTexture,
     );
     if (data) sources.set(texture, { data, width, height });
     return texture;
@@ -178,21 +191,23 @@ export function defineTextureSources(
   /** three's CanvasTexture: the engine's own class over the canvas's pixels, with a full mip chain. */
   function CanvasTexture(this: unknown, canvas: unknown, ...rest: unknown[]) {
     if (hostable(canvas)) {
-      const texture = Reflect.construct(
+      const texture = make(
         BaseCanvas as EngineClass,
         [null, canvas.width, canvas.height, ...rest],
-        new.target ?? CanvasTexture,
-      ) as object;
+        new.target,
+        CanvasTexture,
+      );
       host(texture, canvas);
       sources.set(texture, canvas);
       return texture;
     }
     const pixels = pixelsOf(canvas);
-    const texture = Reflect.construct(
+    const texture = make(
       BaseCanvas as EngineClass,
       [pixels.data, pixels.width, pixels.height, ...rest],
-      new.target ?? CanvasTexture,
-    ) as object;
+      new.target,
+      CanvasTexture,
+    );
     sources.set(texture, canvas);
     return texture;
   }
@@ -202,8 +217,7 @@ export function defineTextureSources(
 
   /** `new Texture(image)` uploads the image's pixels; with no image it is the engine's Texture. */
   function Texture(this: unknown, image?: unknown, ...rest: unknown[]) {
-    if (image === undefined || image === null)
-      return Reflect.construct(BaseTexture, rest, new.target ?? Texture);
+    if (image === undefined || image === null) return make(BaseTexture, rest, new.target, Texture);
     return fromImage(image, prototype);
   }
   Texture.prototype = BaseTexture.prototype;
@@ -272,7 +286,7 @@ export function defineTextureSources(
     }
     async loadAsync(url: string): Promise<object> {
       const bitmap = await new ImageBitmapLoader().setPath(this.path).loadAsync(url);
-      return Reflect.construct(Texture, [bitmap]) as object;
+      return Texture(bitmap);
     }
   }
 

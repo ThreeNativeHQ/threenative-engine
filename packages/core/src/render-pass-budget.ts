@@ -340,7 +340,7 @@ export class RenderPassBudget {
    * The oldest resolved frame that has not been handed out yet, and where its GPU time went.
    *
    * Three answers a resolve with **one** number: the summed duration of the last frame in the
-   * batch (`three.webgpu.js:83746`). Every other frame that batch measured is written to the pool's
+   * batch (the WebGPU timestamp pool's `resolveQueriesAsync`). Every other frame that batch measured is written to the pool's
    * own `timestamps` map, one entry per pass, keyed by the frame its uid names, and read by nobody.
    * A resolve that caught up on k sampled frames therefore reported one of them, and the k-1 others
    * were gone for good, because the pool is emptied before the resolve is submitted and the next one

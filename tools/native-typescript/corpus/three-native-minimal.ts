@@ -1,6 +1,7 @@
-import { vec3 } from "three/tsl";
+import { struct, vec3 } from "three/tsl";
 import {
   BoxGeometry,
+  DataTexture,
   DirectionalLight,
   Float32BufferAttribute,
   Mesh,
@@ -12,7 +13,8 @@ import {
 
 const scene = new Scene();
 const material = new MeshBasicNodeMaterial();
-const colorNode = vec3(0.25, 0.5, 0.75);
+const Sample = struct({ colour: "vec3", weight: "float" }, "Sample");
+const colorNode = Sample({ colour: vec3(0.25, 0.5, 0.75), weight: 1 }).get("colour");
 material.colorNode = colorNode;
 const mesh = new Mesh(new BoxGeometry(2, 2, 0.1), material);
 scene.add(mesh, new DirectionalLight(0xffffff, 1));
@@ -23,6 +25,9 @@ if (attribute.array.join(",") !== "1,2,3") throw new Error("TN_CORPUS_ATTRIBUTE"
 console.log("scene", scene.children.length);
 console.log("position", mesh.position.x, mesh.position.y, mesh.position.z);
 console.log("shader", material.colorNode === colorNode ? "node" : "missing");
+// The facade's DataTexture is a function constructor over a captured engine class.
+const texture = new DataTexture(new Uint8Array([255, 0, 0, 255]), 1, 1);
+console.log("texture", texture.image.width, texture.image.height);
 
 export async function render(): Promise<void> {
   let calls = 0;

@@ -1664,9 +1664,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const target = level.light.target.position;
     // Every compute leaves the one node frame every node shares with its fields at their bare
     // defaults — `scene` among them, which `Nodes.getNodeFrame()` sets with no arguments
-    // (three.webgpu.js:56215, reached from `Renderer.compute` at 62235) and nothing puts back; the
-    // restore at 62249 is `renderId` and nothing else. Three re-establishes that frame per draw
-    // (56224), which is why a compute *outside* a render is harmless — but this one is inside the
+    // (reached from `Renderer.compute`) and nothing puts back; the restore at the end of
+    // `Renderer.compute` is `renderId` and nothing else. Three re-establishes that frame per draw
+    // (`Nodes.getForRender`), which is why a compute *outside* a render is harmless — but this one is inside the
     // draw `updateShadow` is about to run in, and it reads the scene off the frame it is handed
     // (45602) to save the scene state before rendering it. So the render's own frame is put back
     // around the dispatch, which is all the kernel needed it for.

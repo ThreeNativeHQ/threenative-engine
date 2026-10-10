@@ -494,7 +494,7 @@ async function runNativeIn(tmp, name, info, target, plan) {
       fs.readFileSync(path.join(REPO, "packages", "three-native", "api", "catalog.json"), "utf8"),
     ),
     // AOT TSL/renderer bindings are qualified here; the VM catalog still refuses these names.
-    { "three/tsl": ["float", "uv", "sin", "vec3"], "three/webgpu": ["WebGPURenderer"] },
+    { "three/tsl": ["float", "uv", "sin", "vec3", "struct"], "three/webgpu": ["WebGPURenderer"] },
   );
   const exe = path.join(tmp, name);
   const project = await stageProject({ entry, modules, tmp, three, bridge, shared });

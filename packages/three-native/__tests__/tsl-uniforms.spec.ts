@@ -1,5 +1,76 @@
 import { describe, expect, it } from "vitest";
+import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { liveUniforms } from "../src/tsl-uniforms.js";
+
+describe("native TSL struct", () => {
+  function fixture() {
+    const calls: unknown[][] = [];
+    const runtime: ITslRuntime = {
+      call: (...args) => {
+        calls.push(args);
+        return calls.length;
+      },
+      release() {},
+      set() {},
+      setUniform() {},
+      effectParameter: () => 0,
+      setPost() {},
+    };
+    const exports = defineTsl(runtime).exports;
+    return {
+      calls,
+      exports,
+      struct: exports.struct as (
+        layout: object,
+        name?: string,
+      ) => (...values: unknown[]) => { get(name: string): unknown },
+    };
+  }
+
+  it("declares the layout through the native table and constructs named and positional members", () => {
+    const f = fixture();
+    const Sample = f.struct({ colour: "vec3", weight: "float" }, "Sample");
+    expect(f.calls[0]).toEqual([
+      "struct",
+      null,
+      [
+        { kind: "string", text: "Sample" },
+        { kind: "string", text: "colour" },
+        { kind: "string", text: "vec3" },
+        { kind: "string", text: "weight" },
+        { kind: "string", text: "float" },
+      ],
+    ]);
+    const colour = (f.exports.vec3 as (...values: number[]) => unknown)(1, 0, 0);
+    Sample({ colour, weight: 0.5 }).get("colour");
+    Sample(colour, 0.5).get("weight");
+    expect(f.calls.map(([name]) => name)).toEqual([
+      "struct",
+      "vec3",
+      "struct:new",
+      "struct:get",
+      "struct:new",
+      "struct:get",
+    ]);
+    expect(f.calls[2]).toEqual([
+      "struct:new",
+      1,
+      [
+        { kind: "node", node: 2 },
+        { kind: "number", number: 0.5 },
+      ],
+    ]);
+  });
+
+  it("rejects empty layouts and missing or extra values before crossing the ABI", () => {
+    const f = fixture();
+    expect(() => f.struct({})).toThrow("TN_TSL struct");
+    const Sample = f.struct({ weight: "float" });
+    expect(() => Sample({ typo: 1 })).toThrow("TN_TSL struct");
+    expect(() => Sample(1, 2)).toThrow("TN_TSL struct");
+    expect(() => Sample({ weight: 1, extra: 2 })).toThrow("TN_TSL struct");
+  });
+});
 
 describe("liveUniforms", () => {
   it("runs onRenderUpdate on each sync and takes a returned value as the uniform's", () => {

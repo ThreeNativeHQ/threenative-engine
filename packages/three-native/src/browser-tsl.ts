@@ -331,6 +331,9 @@ export function defineTsl(
   prototype.toVar = function (this: ITslNode) {
     return wrap(runtime.call("toVar", this[TSL_NODE], []));
   };
+  prototype.get = function (this: ITslNode, name: unknown) {
+    return wrap(call("struct:get", this[TSL_NODE], [name]));
+  };
   prototype.assign = function (this: ITslNode, value: unknown) {
     runtime.release(call("assign", this[TSL_NODE], [value]));
     return this;
@@ -364,6 +367,34 @@ export function defineTsl(
   const exports: Record<string, unknown> = {};
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
+  exports.struct = (layout: unknown, name: unknown = "") => {
+    if (typeof layout !== "object" || layout === null || Array.isArray(layout))
+      throw new TypeError("TN_TSL struct: expected a member layout");
+    const members = Object.entries(layout);
+    if (members.length === 0) throw new TypeError("TN_TSL struct: empty member layout");
+    const schema = wrap(call("struct", null, [name ?? "", ...members.flat()]));
+    const construct = (...values: unknown[]) => {
+      let ordered = values;
+      if (
+        values.length === 1 &&
+        typeof values[0] === "object" &&
+        values[0] !== null &&
+        !isTslNode(values[0])
+      ) {
+        const named = values[0] as Record<string, unknown>;
+        if (
+          Object.keys(named).length !== members.length ||
+          members.some(([key]) => !Object.hasOwn(named, key))
+        )
+          throw new TypeError("TN_TSL struct: values must name every member exactly once");
+        ordered = members.map(([key]) => named[key]);
+      }
+      if (ordered.length !== 0 && ordered.length !== members.length)
+        throw new TypeError("TN_TSL struct: expected one value per member");
+      return wrap(call("struct:new", schema[TSL_NODE], ordered));
+    };
+    return construct;
+  };
   // Fn builds once at definition; calling the returned function returns that graph, as on V8.
   exports.Fn = (callback: unknown) => {
     const graph = wrap(capture("Fn", callback));

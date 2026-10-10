@@ -70,6 +70,50 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     const auto lhs = [&] { return method ? input(*receiver) : arg(0); };
     const auto rhs = [&] { return arg(method ? 0 : 1); };
 
+    if (!method && name == "struct") {
+        if (args.size() < 3 || args.size() % 2 != 1)
+            throw std::runtime_error("struct needs a name and member/type pairs");
+        auto schema = std::make_shared<g::NodeData>();
+        schema->kind = g::Kind::StructType;
+        schema->name = text(args[0]);
+        for (size_t i = 1; i < args.size(); i += 2) {
+            const auto& member = text(args[i]);
+            if (member.empty() || member.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != std::string::npos ||
+                (member[0] >= '0' && member[0] <= '9'))
+                throw std::runtime_error("struct: invalid member name");
+            for (const auto& existing : schema->members)
+                if (existing.first == member) throw std::runtime_error("struct: duplicate member " + member);
+            schema->members.emplace_back(member, type(text(args[i + 1])));
+        }
+        return schema;
+    }
+    if (method && name == "struct:new") {
+        const auto& schema = receiver->node;
+        if (!schema || schema->kind != g::Kind::StructType)
+            throw std::runtime_error("struct:new needs a struct type");
+        if (!args.empty() && args.size() != schema->members.size())
+            throw std::runtime_error("struct:new needs one value per member");
+        auto value = std::make_shared<g::NodeData>(*schema);
+        value->kind = g::Kind::Struct;
+        for (size_t i = 0; i < schema->members.size(); ++i) {
+            auto converted = std::make_shared<g::NodeData>();
+            converted->kind = g::Kind::Convert;
+            converted->type = schema->members[i].second;
+            converted->args = {args.empty() ? g::float_(0) : arg(i)};
+            value->args.push_back(converted);
+        }
+        return value;
+    }
+    if (method && name == "struct:get") {
+        arity(1);
+        const auto& value = receiver->node;
+        if (!value || value->kind != g::Kind::Struct)
+            throw std::runtime_error("struct:get needs a struct value");
+        for (size_t i = 0; i < value->members.size(); ++i)
+            if (value->members[i].first == text(args[0])) return value->args.at(i);
+        throw std::runtime_error("struct:get: unknown member " + text(args[0]));
+    }
+
     // PRD-540 (Wasm wrappers): the calls a back end without native wrappers makes by name.
     if (!method && name.rfind("constant:", 0) == 0) {
         arity(0);

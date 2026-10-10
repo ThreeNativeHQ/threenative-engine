@@ -6,6 +6,9 @@ export interface IUnsupportedCatalogSymbol<Name extends string> {
   new (...arguments_: never[]): never;
 }
 
+/** Catalog partial (aggregate-lowering, storage-members, member-assignment): three/tsl/struct. */
+export declare function struct(membersLayout: Record<string, string>, name?: string): Function;
+
 /** Catalog supported: three/ACESFilmicToneMapping. */
 export declare const ACESFilmicToneMapping: 4;
 

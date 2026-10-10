@@ -31,7 +31,7 @@ enum class Kind : uint8_t {
     Unary, Binary, Math, Swizzle, Join, Convert, Select, Texture,
     StorageElement, VarRead, LoopIndex,
     Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
-    Pmrem, ScreenUv, Reflector, ViewportDepth,
+    Pmrem, ScreenUv, Reflector, ViewportDepth, StructType, Struct,
 };
 
 enum class UnOp : uint8_t { Negate };
@@ -51,6 +51,7 @@ struct NodeData {
     UnOp unary = UnOp::Negate;
     BinOp binary = BinOp::Add;
     std::vector<Node> args;
+    std::vector<std::pair<std::string, Type>> members; // StructType/Struct: declaration order
     std::vector<Node> body;
     std::vector<Node> otherwise;
     double scale = 1;

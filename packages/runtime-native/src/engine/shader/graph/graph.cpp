@@ -278,6 +278,8 @@ ExprId Lowerer::emit(Node node) {
             const auto found = loopIndex_.find(&d);
             return found == loopIndex_.end() ? kInvalid : found->second;
         }
+        case Kind::StructType: case Kind::Struct:
+            throw std::runtime_error("TN_TSL_STRUCT_AGGREGATE_UNSUPPORTED: select a struct member before lowering");
         default: return kInvalid;
     }
 }

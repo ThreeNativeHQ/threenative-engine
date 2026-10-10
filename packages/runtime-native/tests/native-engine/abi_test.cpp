@@ -3,6 +3,7 @@
 #include "threenative/abi/tn_tsl.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/shader/graph/graph.h"
+#include "engine/shader/tsl/tsl.h"
 #include "engine/abi/pooled_shared.h"
 #include "engine/abi/bindings.h"
 #include "engine/animation/mixer.h"
@@ -754,6 +755,36 @@ void tsl_call() {
     CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
     CHECK(tn_tsl_set(ctx, material, "colorNode", color, &d.value) == TN_OK);
     CHECK(tn_tsl_compile(material, nullptr, &d.value) == TN_OK);
+    tn::engine::shader::Program direct(tn::engine::shader::Stage::Fragment);
+    {
+        tn::engine::shader::tsl::Build build(direct);
+        direct.output("color", tn::engine::shader::graph::lower(tn::abi::shaderNode(material, "colorNode"), direct));
+    }
+
+    // A native struct selects typed members into the material graph; no JS shader builder.
+    const auto stringArg = [](const char* s) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_STRING; a.text = s; return a; };
+    const tn_tsl_arg_t layout[] = {stringArg("Sample"), stringArg("colour"), stringArg("vec4"), stringArg("weight"), stringArg("float")};
+    uint64_t schema = 0, sample = 0, member = 0;
+    CHECK(tn_tsl_call(ctx, "struct", nullptr, layout, 5, &schema, &d.value) == TN_OK);
+    const tn_tsl_arg_t values[] = {nodeArg(color), number(0.5)};
+    CHECK(tn_tsl_call(ctx, "struct:new", &schema, values, 2, &sample, &d.value) == TN_OK);
+    const auto colourName = stringArg("colour");
+    CHECK(tn_tsl_call(ctx, "struct:get", &sample, &colourName, 1, &member, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", member, &d.value) == TN_OK);
+    CHECK(tn_tsl_compile(material, nullptr, &d.value) == TN_OK);
+    tn::engine::shader::Program selected(tn::engine::shader::Stage::Fragment);
+    {
+        tn::engine::shader::tsl::Build build(selected);
+        selected.output("color", tn::engine::shader::graph::lower(tn::abi::shaderNode(material, "colorNode"), selected));
+    }
+    CHECK(selected.dump(true) == direct.dump(true));
+    const auto missingName = stringArg("missing");
+    CHECK(tn_tsl_call(ctx, "struct:get", &sample, &missingName, 1, &unknown, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    const tn_tsl_arg_t invalidLayout[] = {stringArg("Bad"), stringArg("value"), stringArg("not-a-type")};
+    CHECK(tn_tsl_call(ctx, "struct", nullptr, invalidLayout, 3, &unknown, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    for (const auto id : {schema, sample, member}) CHECK(tn_tsl_release(ctx, id, &d.value) == TN_OK);
 
     // pmremTexture takes the texture object itself as a handle argument.
     const auto handleArg = [](tn_handle_t h) {
