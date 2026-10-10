@@ -456,7 +456,9 @@ export class FixedStepLoop {
     // racing it. `freezeClock()` exists for the frames *before* that statement, which is where a
     // boot's wall clock used to reach the simulation. The prime is not armed from here: this line
     // has just delivered a real update, so the game has had its pass, and arming it would spend
-    // one more zero-dt update after every step a run counts.
+    // one more zero-dt update after every step a run counts. For the same reason a settle still
+    // pending is spent: it would otherwise land inside a later counted step as extra ticks.
+    this.#primePending = false;
     this.#clockFrozen = true;
     this.#lastTime = Number.POSITIVE_INFINITY;
     // A counted batch is metered, because a tick-counted run — which is what a playtest run is — is

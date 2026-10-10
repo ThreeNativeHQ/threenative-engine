@@ -269,6 +269,19 @@ describe("FixedStepLoop", () => {
     expect(dts).toHaveLength(3);
   });
 
+  it("spends no settle after a counted step reached the loop first", () => {
+    // A host whose first live frame lands after the runner's first `advance(1)` (the Perry desktop
+    // host, after a 6.4 s first present) fired the settle inside that step: 61 ticks for 1.
+    const dts: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (dt) => dts.push(dt) });
+    loop.freezeClock(60);
+    loop.start(0);
+    expect(loop.advance(1)).toBe(1);
+    loop.stepFrame(16.6667);
+    expect(dts).toHaveLength(1);
+    expect(loop.tick()).toBe(1);
+  });
+
   it("settles nothing when the freeze is asked for no steps", () => {
     // The count is the knob, and zero is a real answer: a caller that wants the world exactly as
     // the game built it says so rather than having it settle anyway.
