@@ -10,6 +10,7 @@ import {
   histogramCases,
   referenceClippedMean,
 } from "./fixtures/auto-exposure/histogramReference.js";
+import { exposurePixels } from "./fixtures/auto-exposure/native-contract.js";
 
 describe("authored exposure controls", () => {
   it("is opt-in and supplies validated asymmetric game-authored rates", () => {
@@ -72,6 +73,30 @@ describe("clipped histogram reference", () => {
   it("stays inside the authored default clip", () => {
     expect(exposureSettings.lowPercent).toBe(10);
     expect(exposureSettings.highPercent).toBe(90);
+  });
+  it("meters the odd native fixture against the clipped reference", () => {
+    const { pixels, expectedLuminance } = exposurePixels(65, 33);
+    const bins = Array.from({ length: 3 }, () => ({ weight: 0, logSum: 0 }));
+    for (let y = 0; y < 33; y++) {
+      for (let x = 0; x < 65; x++) {
+        const log = Math.log2(pixels[(y * 65 + x) * 4] ?? Number.NaN);
+        const bin = bins[log];
+        if (bin === undefined) throw new Error("Unexpected native fixture luminance");
+        const weight = 1 + (y + 0.5) / 33;
+        bin.weight += weight;
+        bin.logSum += weight * log;
+      }
+    }
+    // The tails begin at x=64/y=32, on 16x16 reduction boundaries; no block mixes values.
+    const { logMean, kept } = referenceClippedMean(
+      bins,
+      exposureSettings.lowPercent,
+      exposureSettings.highPercent,
+    );
+    expect(kept).toBeCloseTo(65 * 33 * 1.5 * 0.8, 10);
+    expect(logMean).toBeCloseTo(1, 12);
+    expect(expectedLuminance).toBeCloseTo(2 ** logMean, 12);
+    expect(Math.log2(exposureSettings.key / expectedLuminance)).toBeCloseTo(-3.473931188, 8);
   });
 });
 

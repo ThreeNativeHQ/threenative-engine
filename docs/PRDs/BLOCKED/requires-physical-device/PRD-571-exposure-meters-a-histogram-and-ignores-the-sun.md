@@ -159,3 +159,19 @@ that a sun disc of 1% of the frame does not move the exposure.
 - [x] All 13 templates ship byte-identical exposure source with the histogram metric, and the scaffold test passes. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure-scaffold.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts` — 2 files, 79 tests passed; `md5sum` of `exposureGraph.ts` in `template-assets/` and the 13 templates gives one hash. `PRD_201_PARENT_SCAFFOLD_HASHES` is re-pinned for the 13 templates.
 - [x] The desktop native host settles the static fixture with the histogram metric. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/__tests__/fixtures/auto-exposure/native-static.playtest.json --target desktop`; run through its qualifier `TN_NATIVE_EXECUTABLE=<tn-linux/mystral built 2026-10-05> sh scripts/xvfb.sh pnpm exec tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verifyNative.ts`, exit 0 at a0b7c91bc: 180 paired GPU readbacks, `native:vulkan/nvidia/NVIDIA GeForce RTX 2080`, terminal luminance 3.05789 (browser 3.05789), settled, scopes clean, validation negative arm fails as required. The host binary was prebuilt (no native rebuild in this lane); the change is template JS, so the host source is not part of this diff.
 - [x] The reference doc names `lowPercent`, `highPercent` and the meter weight, and the doc checks pass. proof: `pnpm check:docs` — checked 2988 relative links across 1331 files, exit 0; `packages/create-threenative/agent-docs/references/auto-exposure.md` names all three.
+
+Native contract correction (2026-10-10, PR478): the 65×33 contract fixture still expected the
+unclipped weighted mean 2.065428175 (target −3.520372080 stops). Its dark column and bright row
+carry 1.4768% and 4.0098% of the metered weight and align with the 16×16 reduction blocks, so
+10/90 clipping leaves luminance 2 (target −3.473931188 stops). Updated only the fixture
+expectation and added a regression using the existing independent `referenceClippedMean`;
+product rendering, pixels and all native assertion tolerances remain unchanged. Reproduction:
+`pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts -t 'odd native fixture'`
+failed before the correction (expected 2, received 2.065428175). Focused proof:
+`pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts packages/create-threenative/__tests__/auto-exposure-proof.spec.ts`
+passed, 77 tests; `pnpm --filter create-threenative typecheck` and focused Biome checks passed.
+`pnpm check:docs` passed (3025 links); doc-link, evidence-budget and evidence-citation specs
+passed (31 tests). PRD board/progress remain blocked-only, 6/6 phase and 2/2 acceptance boxes.
+Native GPU contract and its validation-negative invocation remain unverified here: this checkout
+has no `packages/runtime-native/build/tn-linux/threenative-exposure-graph-test` (ENOENT), and no
+native build was run. Windows/macOS reruns and the Pixel 8 cost proof remain pending.
