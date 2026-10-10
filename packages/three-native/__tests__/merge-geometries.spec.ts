@@ -88,4 +88,26 @@ describe("mergeGeometries", () => {
     expect(error.mock.calls.slice(2, 4)).toEqual(error.mock.calls.slice(4, 6));
     error.mockRestore();
   });
+
+  // An engine attribute's getX is one crossing per call, so the merged index reads each source
+  // index's array once; the index type is still three's choice, Uint32 from 65535 up.
+  it("builds a wide or narrow merged index from each index's array, not per element", () => {
+    const part = (vertices: number, index: number[]) => {
+      const g = new T.BufferGeometry();
+      g.setAttribute("position", new T.BufferAttribute(new Float32Array(vertices * 3), 3));
+      g.setIndex(index);
+      return g;
+    };
+    const wide = () => [part(3, [0, 1, 2]), part(70000, [0, 69999, 1]), part(4, [3, 2, 1])];
+    const narrow = () => [new T.PlaneGeometry(), new T.BoxGeometry()];
+    const three = [wide, narrow].map((make) => dump(upstream.mergeGeometries(make())));
+    const inputs = [wide(), narrow()];
+    const getX = vi.spyOn(T.BufferAttribute.prototype, "getX");
+    const ported = inputs.map((input) => dump(port.mergeGeometries(input as never)));
+    const calls = getX.mock.calls.length;
+    getX.mockRestore();
+    expect(ported).toEqual(three);
+    expect(ported.map((merged) => merged?.index?.[0])).toEqual(["Uint32Array", "Uint16Array"]);
+    expect(calls).toBe(0);
+  });
 });

@@ -75,9 +75,36 @@ function store(array: TypedArray, source: IAttributeLike, at: number, value: num
 
 interface IMergedGeometry {
   addGroup(start: number, count: number, materialIndex: number): void;
-  setIndex(index: number[]): void;
+  setIndex(index: IAttributeLike | number[]): void;
   setAttribute(name: string, attribute: IAttributeLike): void;
   morphAttributes: Record<string, IAttributeLike[]>;
+}
+
+/**
+ * The merged index three builds with `getX` per element, from each index's array read once: an
+ * engine attribute's getX is a crossing per call. Typed as three's setIndex(number[]) types it:
+ * Uint32 when any value reaches 65535, each value converted as that array converts it.
+ */
+function mergedIndex(geometries: readonly IGeometryLike[]): Uint16Array | Uint32Array {
+  let length = 0;
+  for (const geometry of geometries) length += (geometry.index as IAttributeLike).count;
+  const values = new Float64Array(length);
+  let at = 0;
+  let offset = 0;
+  let wide = false;
+  for (const geometry of geometries) {
+    const index = geometry.index as IAttributeLike;
+    const count = index.count;
+    const array = index.isInterleavedBufferAttribute || index.normalized ? undefined : index.array;
+    const step = index.itemSize;
+    for (let j = 0; j < count; ++j) {
+      const value = (array ? (array[j * step] as number) : component(index, j, 0)) + offset;
+      wide ||= value >= 65535;
+      values[at++] = value;
+    }
+    offset += (geometry.attributes.position as IAttributeLike).count;
+  }
+  return wide ? new Uint32Array(values) : new Uint16Array(values);
 }
 
 /** What one engine supplies: the two classes a merge builds. */
@@ -205,16 +232,8 @@ export function defineBufferGeometryUtils(engine: IGeometryUtilsEngine) {
       console.error(found);
       return null;
     }
-    if (found.isIndexed) {
-      let indexOffset = 0;
-      const mergedIndex: number[] = [];
-      for (const geometry of geometries) {
-        const index = geometry.index as NonNullable<IGeometryLike["index"]>;
-        for (let j = 0; j < index.count; ++j) mergedIndex.push(index.getX(j) + indexOffset);
-        indexOffset += (geometry.attributes.position as IAttributeLike).count;
-      }
-      merged.setIndex(mergedIndex);
-    }
+    if (found.isIndexed)
+      merged.setIndex(new engine.BufferAttribute(mergedIndex(geometries), 1) as IAttributeLike);
     for (const [name, list] of Object.entries(found.attributes)) {
       const attribute = mergeAttributes(list);
       if (!attribute) {
