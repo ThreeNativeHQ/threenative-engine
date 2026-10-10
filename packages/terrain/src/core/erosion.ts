@@ -29,6 +29,10 @@ export function thermal(
   { iterations = 20, talus = 32, rate = 0.22 }: IThermalOptions = {},
   observations?: IErosionMaps,
 ): Float32Array {
+  if (!Number.isInteger(n) || n < 2)
+    throw RangeError("Thermal erosion requires grid resolution n >= 2");
+  if (!Number.isInteger(iterations) || iterations < 0 || iterations > 200)
+    throw RangeError("Thermal erosion iterations must be between 0 and 200");
   const h = height.slice();
   const delta = new Float64Array(h.length);
   const limit = Math.tan((talus * Math.PI) / 180) * (size / (n - 1));
@@ -126,6 +130,12 @@ export function hydraulic(
   }: IHydraulicOptions = {},
   observations?: IErosionMaps,
 ): Float32Array {
+  if (!Number.isInteger(n) || n < 2)
+    throw RangeError("Hydraulic erosion requires grid resolution n >= 2");
+  if (!Number.isInteger(droplets) || droplets < 0)
+    throw RangeError("Hydraulic erosion droplets must be a non-negative integer");
+  if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 128)
+    throw RangeError("Hydraulic erosion maxSteps must be between 1 and 128");
   const h = Float64Array.from(height);
   const rnd = random(seed);
   const cell = size / (n - 1);

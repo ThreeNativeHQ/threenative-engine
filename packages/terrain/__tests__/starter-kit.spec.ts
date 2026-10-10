@@ -8,8 +8,40 @@ import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const kit = join(packageRoot, "starter", "forest");
 const starterAssets = join(packageRoot, "starter-assets");
+
+const GOLDEN_HASHES: Record<string, Record<string, string>> = {
+  forest: {
+    "heightmap.u16": "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
+    "placements.bin": "36ab2fd57e76b4b0bd998c5398f983e5f030968b83d5326c0cb98df1b67e4019",
+    "splat.rgba": "f5e45e3740eea9e751e94570abe785854670d060fda6fe4b5518ccd4a562c7ec",
+    "world.json": "1bcd3d2c9f056d78b30fbc68b68d5e1a7c31176f0f79471ae473f3bc526b11e9",
+  },
+  alpine: {
+    "heightmap.u16": "bd84cb6c52a1142303dfb0f304190a981f29d77d118d3880e3eb246549838ae1",
+    "placements.bin": "5c47dd59619843bc056fbc8391ca7bccdef86c9950cd192c53a6928676865c26",
+    "splat.rgba": "fde8bf22c6841847f58ab523682f29e77a774a364cdd0e34c0025b6ad06c6f42",
+    "world.json": "5af1fc81a424792ac440b9907b2b7e3d36a239936e7921f93a94f7fccdda021c",
+  },
+  coastal: {
+    "heightmap.u16": "313539bae3010b949b65e55307736f6140a55255d81fbb8ab5dbae782bdc8482",
+    "placements.bin": "e10721cc99dfe96345a6b090eeb834ec87890927d8272ec8a8307b31a989b098",
+    "splat.rgba": "b3dcb6967095049a05fa113968b3cd8d74914c7b906f2c522ff109f6dbfe2b40",
+    "world.json": "dfd2dc68bab5fd95f5a0284f9df8656580f4544c92989e5f31363faefbe730fd",
+  },
+  desert: {
+    "heightmap.u16": "a17965c4dd706f2732cc64af64dba086e006b405086d41a36f2ca37c45ee3add",
+    "placements.bin": "8dace58d5c91d50f8492149a826575edbff53d3ee78e5d892bbb12d8f809f3fe",
+    "splat.rgba": "a77791af98c157f371dfa1fdc053c712ea3bdb8a9f3f71de33a69b8f06c88d04",
+    "world.json": "755ae7887abfce8837256190cab8930639d8802343c10603202cfa7fe413e481",
+  },
+  tundra: {
+    "heightmap.u16": "2fcf74db51407bcd4e65b7ae92e31da6ff1b0c7152301952fecedeea36c80710",
+    "placements.bin": "05aa8931ff15b96d21999947ca2c5fdb89fe2b0e17228d8f072021767b55a9ff",
+    "splat.rgba": "981bd12869273d4f959fcaed53b27b325b5748b7ec558ac25c4258b4fd5c9f07",
+    "world.json": "6986a3d5cc54f2f0690fc40ec4482c6f2a88cb7c5b773976d19dc513643adc47",
+  },
+};
 
 interface ITable {
   readonly base: { id: string };
@@ -24,9 +56,10 @@ interface IKitWater {
   readonly rivers: readonly { id: string; width: number; points: number[][] }[];
 }
 
-/** Copies the kit into a temp directory whose node_modules resolves the workspace package. */
-function kitInTempDir(): string {
-  const dir = makeTempDirSync("terrain-starter-kit-");
+/** Copies the named kit into a temp directory whose node_modules resolves the workspace package. */
+function kitInTempDir(kitName = "forest"): string {
+  const dir = makeTempDirSync(`terrain-starter-kit-${kitName}-`);
+  const kit = join(packageRoot, "starter", kitName);
   for (const name of ["bake.mjs", "recipe.json", "assets.json", "surface.json"])
     copyFileSync(join(kit, name), join(dir, name));
   mkdirSync(join(dir, "node_modules", "@threenative"), { recursive: true });
@@ -34,8 +67,8 @@ function kitInTempDir(): string {
   return dir;
 }
 
-function bake(out: string): { files: Map<string, string>; total: number } {
-  const dir = kitInTempDir();
+function bake(out: string, kitName = "forest"): { files: Map<string, string>; total: number } {
+  const dir = kitInTempDir(kitName);
   execFileSync(process.execPath, ["bake.mjs", "--assets", starterAssets, "--out", out], {
     cwd: dir,
     stdio: "pipe",
@@ -74,10 +107,37 @@ describe("forest starter kit", () => {
     expect(Object.keys(perAsset).sort()).toEqual(["boulder", "fir", "fir-c"]);
     expect(total).toBeLessThanOrEqual(25 * 1024 * 1024);
 
+    // Pinned golden hashes for starter-kit forest bake (PRD-592 AC-1)
+    expect(files.get("heightmap.u16")).toBe(
+      "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
+    );
+    expect(files.get("placements.bin")).toBe(
+      "36ab2fd57e76b4b0bd998c5398f983e5f030968b83d5326c0cb98df1b67e4019",
+    );
+    expect(files.get("splat.rgba")).toBe(
+      "f5e45e3740eea9e751e94570abe785854670d060fda6fe4b5518ccd4a562c7ec",
+    );
+    expect(files.get("world.json")).toBe(
+      "1bcd3d2c9f056d78b30fbc68b68d5e1a7c31176f0f79471ae473f3bc526b11e9",
+    );
+
     // One recipe and seed, one package: a second bake is byte-identical.
     const second = bake(join(makeTempDirSync("terrain-starter-world-"), "world"));
     expect([...second.files].sort()).toEqual([...files].sort());
   });
+
+  it.each(["forest", "alpine", "coastal", "desert", "tundra"] as const)(
+    "produces pinned golden baseline hashes for %s kit bake (PRD-592 AC-1)",
+    (kitName) => {
+      expect.assertions(4);
+      const out = join(makeTempDirSync(`terrain-starter-world-${kitName}-`), "world");
+      const { files } = bake(out, kitName);
+      const expected = GOLDEN_HASHES[kitName] ?? {};
+      for (const [file, hash] of Object.entries(expected)) {
+        expect(files.get(file), `${kitName} ${file} hash mismatch`).toBe(hash);
+      }
+    },
+  );
 
   it("writes every model and texture its manifest and table name", () => {
     const out = join(makeTempDirSync("terrain-starter-world-"), "world");

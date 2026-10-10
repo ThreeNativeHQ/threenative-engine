@@ -1,6 +1,6 @@
 # PRD-592 — Terrain core fails closed and erodes without allocating
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P2 — Bad bake options produce NaN cells silently, and hydraulic erosion allocates about 8 million objects per layer, which slows every bake, including PRD-584's (AC-1 to AC-5).
 **Complexity:** 3 (LOW); risk override: none
 **Owner:** ThreeNative maintainers
@@ -37,21 +37,23 @@ after on the same host.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: Golden hashes of each kit's bake are pinned and unchanged by this PRD. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` — Evidence: pending.
-- [ ] AC-2 [local]: `bakeWorldPackage` throws by name for `cellSize` 0, -1 and NaN, a NaN position and an out-of-extent placement. proof: `world-package.spec.ts` cases — Evidence: pending.
-- [ ] AC-3 [local]: `decodeHeightPNG` rejects `null`/number metadata, a truncated chunk and a bad CRC with the documented error. proof: new `io.spec.ts` — Evidence: pending.
-- [ ] AC-4 [local]: A scatter layer without `asset` fails validation. proof: `validation` spec case — Evidence: pending.
+- [x] AC-1 [local]: Golden hashes of each kit's bake are pinned and unchanged by this PRD. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` — Evidence: rebuilt candidate passes 9 starter-kit tests, including 20 pinned hashes across forest, alpine, coastal, desert and tundra; parent ran terrain build before the golden tests.
+- [x] AC-2 [local]: `bakeWorldPackage` throws by name for `cellSize` 0, -1 and NaN, a NaN position and an out-of-extent placement. proof: `world-package.spec.ts` cases — Evidence: verified 6/6 tests passing in `packages/terrain/__tests__/world-package.spec.ts`.
+- [x] AC-3 [local]: `decodeHeightPNG` rejects `null`/number metadata, a truncated chunk and a bad CRC with the documented error. proof: new `io.spec.ts` — Evidence: verified 4/4 tests passing in `packages/terrain/__tests__/io.spec.ts`.
+- [x] AC-4 [local]: A scatter layer without `asset` fails validation. proof: `validation` spec case — Evidence: verified in `packages/terrain/__tests__/terrain-consumer.spec.ts` rejecting scatter without asset.
 - [ ] AC-5 [local]: Forest kit bake time drops by at least 30 % on the same host, with identical bytes. proof: `/usr/bin/time -v node packages/terrain/starter/forest/bake.mjs`, three runs per arm — Evidence: pending.
 
 ## Execution Phases
 
 #### Phase 1: golden bytes and validation
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/terrain/src/core/{world-package,io,validation,operations,erosion}.ts`, specs
-- [ ] Golden hashes pinned. proof: `starter-kit.spec.ts`
-- [ ] Bad options throw by name. proof: `world-package.spec.ts`, `io.spec.ts`, validation spec
+- [x] Golden hashes pinned. proof: `starter-kit.spec.ts` (pass, verified 5/5 starter kits with 4 pinned sha256 hashes each against HEAD baseline byte-for-byte)
+- [ ] Bad options throw by name. proof: `world-package.spec.ts`, `io.spec.ts`, validation spec, `erosion-bounds.spec.ts` — 252 terrain tests and package/workspace typecheck pass; finite/noninteger checks and zero/large-grid defaults pass. Remaining: establish a compatible practical upper bound on hydraulic droplets; a finite-integer guard alone does not bound bake work.
 
 #### Phase 2: allocation-free loops
 **Status:** NOT STARTED
 **Files:** `packages/terrain/src/core/erosion.ts`, `world-package.ts`, `operations.ts`
 - [ ] Same bytes, faster bake. proof: golden spec + timed bake
+
+Parent verification (2026-10-10): `pnpm exec vitest run packages/terrain/__tests__` passed 34 files / 252 tests; `pnpm --filter @threenative/terrain typecheck`, `pnpm typecheck`, terrain build and Biome checks passed (14 warnings, no errors). The original 513-grid droplet-cap regression failed with `RangeError` before repair and the new bounds spec covers 513/1025 defaults after repair. Phase 1 remains partial until the hydraulic work bound is proven; phase 2 and the three-runs-per-arm 30% speed proof remain unrun.

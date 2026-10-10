@@ -132,10 +132,27 @@ function uniformScale(asset: string, id: string, scale: readonly [number, number
   return mean;
 }
 
-function placementRecord(item: IPlacement): number[] {
+function placementRecord(item: IPlacement, extent: IWorldPackageManifest["extent"]): number[] {
   if (item.transform === undefined && !Number.isFinite(item.rotation))
     throw Error(`World package: placement '${item.id}' has a non-finite rotation.`);
   const { position, quaternion, scale } = poseOf(item);
+  if (
+    !Number.isFinite(position[0]) ||
+    !Number.isFinite(position[1]) ||
+    !Number.isFinite(position[2])
+  )
+    throw Error(
+      `World package: placement '${item.id}' has a non-finite position [${position.join(", ")}].`,
+    );
+  if (
+    position[0] < extent.minX ||
+    position[0] > extent.minX + extent.sizeX ||
+    position[2] < extent.minZ ||
+    position[2] > extent.minZ + extent.sizeZ
+  )
+    throw Error(
+      `World package: placement '${item.id}' position [${position[0]}, ${position[2]}] is outside extent bounds [${extent.minX}..${extent.minX + extent.sizeX}, ${extent.minZ}..${extent.minZ + extent.sizeZ}].`,
+    );
   const length = Math.hypot(...quaternion);
   if (!(length > 0)) throw Error(`World package: placement '${item.id}' has a zero quaternion.`);
   return [
@@ -197,7 +214,7 @@ function placementCells(
     for (const [asset, items] of [...cell.items.entries()].sort(byId)) {
       runs.push({ asset, count: items.length, offset: written });
       for (const item of items) {
-        records.set(placementRecord(item), written * RECORD_VALUES);
+        records.set(placementRecord(item, extent), written * RECORD_VALUES);
         written += 1;
       }
     }
@@ -223,7 +240,12 @@ export function bakeWorldPackage(
   options: IBakeWorldPackageOptions,
 ): IBakedWorldPackage {
   const { size, resolution } = state;
-  const { assets, cellSize = 64, layers, names } = options;
+  const cellSize = options.cellSize ?? 64;
+  if (!Number.isFinite(cellSize) || cellSize <= 0)
+    throw Error(
+      `World package: cellSize must be a positive finite number, got ${String(cellSize)}.`,
+    );
+  const { assets, layers, names } = options;
   const heightmapName = names?.heightmap ?? "heightmap.u16";
   const placementsName = names?.placements ?? "placements.bin";
   const splatName = names?.splat ?? "splat.rgba";

@@ -218,7 +218,7 @@ export interface IBiomeParams extends IBrushParams {
 }
 
 export interface IScatterParams extends IOperationBase {
-  readonly asset?: string;
+  readonly asset: string;
   readonly count?: number;
   /** Guaranteed within one rule, never across rules. */
   readonly minDistance?: number;

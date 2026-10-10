@@ -258,3 +258,12 @@ describe("public terrain consumer", () => {
     expect(() => toGeometry(mesh)).toThrow();
   });
 });
+it("rejects a scatter layer without asset", () => {
+  expect(() =>
+    new Terrain({ resolution: 17 }).scatter({
+      id: "trees",
+      // @ts-expect-error testing missing asset validation
+      asset: undefined,
+    }),
+  ).toThrow(/asset/);
+});

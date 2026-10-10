@@ -513,6 +513,8 @@ export function validateLayer(layer: Layer): void {
   }
   if (params.name !== undefined) identifier(params.name, "name");
   if (params.asset !== undefined) identifier(params.asset, "asset");
+  if (layer.type === "scatter" && typeof params.asset !== "string")
+    fail("scatter requires an asset identifier");
   if (["heightmap", "paste"].includes(layer.type) && !params.data)
     fail(`${layer.type} requires heightmap data`);
   const data = params.data as

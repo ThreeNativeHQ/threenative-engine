@@ -123,6 +123,33 @@ describe("world package writer", () => {
     );
   });
 
+  it("fails closed on invalid cellSize (0, -1, NaN), non-finite position, and out-of-extent position", () => {
+    const world = state();
+    // cellSize validation
+    expect(() => bakeWorldPackage(world, { assets: ASSETS, cellSize: 0 })).toThrow(/cellSize/);
+    expect(() => bakeWorldPackage(world, { assets: ASSETS, cellSize: -1 })).toThrow(/cellSize/);
+    expect(() => bakeWorldPackage(world, { assets: ASSETS, cellSize: Number.NaN })).toThrow(
+      /cellSize/,
+    );
+
+    // non-finite position
+    const base = world.instances[0];
+    if (base === undefined) throw new Error("Scatter fixture placed nothing");
+    const nanPos: ITerrainState = {
+      ...world,
+      instances: [{ ...base, position: [Number.NaN, 0, 0] }],
+    };
+    expect(() => bakeWorldPackage(nanPos, { assets: ASSETS })).toThrow(/position/);
+
+    // out-of-extent position
+    // world size is 256, extent is [-128, 128]
+    const outPos: ITerrainState = {
+      ...world,
+      instances: [{ ...base, position: [200, 0, 0] }],
+    };
+    expect(() => bakeWorldPackage(outPos, { assets: ASSETS })).toThrow(/extent/);
+  });
+
   it("fails closed on an asset the options do not name and on a non-uniform scale", () => {
     const world = state();
     const base = world.instances[0];

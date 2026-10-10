@@ -9,6 +9,7 @@
 - Owner: Codex active terrain-hardening goal.
 - Worktree: `/home/joao/projects/threenative/threenative-engine/.worktrees/strata-terrain-hardening`.
 - Branch: `epic/strata-terrain-hardening`; target: `develop`.
+- Draft EPIC: [PR #483](https://github.com/ThreeNativeHQ/threenative-engine/pull/483).
 - Base: `origin/develop` at `2d212479255cf725f64343dc72aa2eafe9b7b92d`.
 - Cleanup: retained while implementation and review are active; inspect data and merge evidence before ordinary worktree removal.
 
@@ -26,3 +27,13 @@
 - [PRD-593 — The three.js patch is generated, and the upload lane leaves it](PRD-593-the-three-patch-is-generated-and-the-upload-lane-leaves-it.md)
 - [PRD-594 — The engine changes that rode in with #381 get native and visual proof](PRD-594-engine-changes-from-381-get-native-and-visual-proof.md)
 - [PRD-595 — `world-cells.ts` splits by seam and survives a load/evict race fuzz](PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md)
+
+## Execution order
+
+Start with PRD-592 golden bytes and validation, then execute 585, 583, 587, 593, 591, 594, 589, 590, 595, 584 and 588. This order serializes shared-file edits; all phases and acceptance criteria in each PRD remain required. PRD-584 requires 583; 588 export consolidation also requires 583. Coordinate world-cell edits with PRD-473 before changing its shared implementation.
+
+Current baseline: `pnpm build` and `pnpm check:docs` passed; six documentation contract spec files passed (244 tests). No runtime or performance acceptance is established by those checks.
+
+## Active worker checkout
+
+PRD-585 phase 1 has an isolated execution checkout at `/home/joao/projects/threenative/threenative-engine/.worktrees/strata-terrain-proof`, branch `epic/strata-terrain-proof`, based on EPIC commit `227cb944b`. Codex owns integration into PR #483. Its first arm was interrupted before edits to serialize Gemini provider use with the PRD-592 repair. Dependencies and focused package builds passed; its phase-1 arm resumed after that repair terminated. Cleanup must inspect ignored data and confirm its owner has stopped after integration.

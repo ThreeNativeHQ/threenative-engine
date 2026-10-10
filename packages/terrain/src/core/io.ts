@@ -270,7 +270,9 @@ export async function decodeHeightPNG(
       const text = decoder.decode(data);
       if (text.startsWith("StrataHeightRange\0")) {
         try {
-          metadata = JSON.parse(text.slice(18));
+          const parsed = JSON.parse(text.slice(18));
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw Error();
+          metadata = parsed;
         } catch {
           throw Error("Invalid PNG height range metadata");
         }
