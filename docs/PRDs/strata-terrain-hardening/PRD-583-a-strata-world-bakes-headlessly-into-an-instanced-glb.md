@@ -1,6 +1,6 @@
 # PRD-583 — A Strata world bakes headlessly into an instanced GLB
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — No headless path turns a Strata recipe into a GLB with its trees and rocks; PRD-584's agent handoff cannot start without AC-1 to AC-4.
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
@@ -58,38 +58,48 @@ flowchart LR
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `cookTerrainWorld` runs under plain Node 22 with no DOM globals and writes `world.glb` for the forest kit. proof: `pnpm exec vitest run packages/assets/__tests__/terrain-world.spec.ts` — Evidence: pending.
-- [ ] AC-2 [local]: Each species-and-LOD pair is one `EXT_mesh_gpu_instancing` node; node count does not grow with tree count. proof: same spec, glTF node census at 1 000 and 10 000 trees — Evidence: pending.
-- [ ] AC-3 [local]: A vanilla three `GLTFLoader` loads `world.glb` into `InstancedMesh` objects whose instance count equals the bake's placement count. proof: `pnpm --filter strata-terrain-preview test:consumer` — Evidence: pending.
-- [ ] AC-4 [local]: A placement mirrored in Z fails the cook with a named contact error. proof: spec case in `terrain-world.spec.ts` — Evidence: pending.
-- [ ] AC-5 [local]: The world package written next to it passes `validateWorldPackage` and lists a GLB and at least one LOD per species. proof: `terrain-world.spec.ts` — Evidence: pending.
+- [ ] AC-1 [local]: `cookTerrainWorld` runs under plain Node 22 with no DOM globals and writes `world.glb` for the forest kit. proof: `pnpm exec vitest run packages/assets/__tests__/terrain-world.spec.ts` — Evidence: 2026-10-10 focused spec 7/10 passed; the cook writes `world.glb` for the evaluated-terrain fixture under Node. The forest-kit bake is not run, so this stays open.
+- [ ] AC-2 [local]: Each species-and-LOD pair is one `EXT_mesh_gpu_instancing` node; node count does not grow with tree count. proof: same spec, glTF node census at 1 000 and 10 000 trees — Evidence: 2026-10-10 node count constant at 1k/10k and one node for a single-mesh species; a two-mesh species still yields one node per source mesh, which the source-GLB flatten step (next arm) must fix.
+- [ ] AC-3 [local]: A vanilla three `GLTFLoader` loads `world.glb` into `InstancedMesh` objects whose instance count equals the bake's placement count. proof: `pnpm --filter strata-terrain-preview test:consumer` — Evidence: 2026-10-10 the spec's stock `GLTFLoader` reads instance count equal to placement count for the fixture; `test:consumer` is not run.
+- [ ] AC-4 [local]: A placement mirrored in Z fails the cook with a named contact error. proof: spec case in `terrain-world.spec.ts` — Evidence: 2026-10-10 spec case green: `Placement '<id>' of species 'fir' contact check failed ... mirrored-Z`.
+- [ ] AC-5 [local]: The world package written next to it passes `validateWorldPackage` and lists a GLB and at least one LOD per species. proof: `terrain-world.spec.ts` — Evidence: 2026-10-10 `splat.rgba` and `placements.bin` byte-equal `bakeWorldPackage` output and explicit LOD files match source bytes; `validateWorldPackage` is not called by the spec.
 
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
-| Headless world GLB | `cookTerrainWorld` from `@threenative/assets`; kit `bake.mjs`; PRD-584 MCP tool | Browser `exportWorldGLB` stays for the editor until PRD-588 | AC-1, AC-3 |
-| Instanced scatter in GLB | Any `GLTFLoader` consumer | Per-tree mesh nodes | AC-2 |
+| Headless world GLB | `cookTerrainWorld` from `@threenative/assets`; kit `bake.mjs`; PRD-584 MCP tool | Browser `exportWorldGLB` stays for the editor until PRD-588 | AC-1, AC-3 (unverified) |
+| Instanced scatter in GLB | Any `GLTFLoader` consumer | Per-tree mesh nodes | AC-2 (unverified) |
 
 ## Execution Phases
 
 #### Phase 1: terrain and scatter into one instanced GLB
-**Status:** NOT STARTED
+**Status:** done
 **Files:** `packages/assets/src/world/terrain-world.ts` (new), `packages/assets/src/index.ts`, `packages/assets/__tests__/terrain-world.spec.ts`
 **Implementation:** read `bakeTerrain` chunks and placements; group by species and LOD; write `EXT_mesh_gpu_instancing` nodes with gltf-transform; pass existing image bytes through; contact check per placement.
-- [ ] Node-only cook writes `world.glb`. proof: `pnpm exec vitest run packages/assets/__tests__/terrain-world.spec.ts`
-- [ ] Node count is constant from 1 000 to 10 000 trees. proof: same spec
-- [ ] Mirrored placements fail by name. proof: same spec
+- [x] Node-only cook writes `world.glb`. proof: `pnpm exec vitest run packages/assets/__tests__/terrain-world.spec.ts` — 2026-10-10: 7/10 passed; cook writes `world.glb` for the evaluated-terrain fixture under Node.
+- [x] Node count is constant from 1 000 to 10 000 trees. proof: same spec — 2026-10-10: node count equal at 1k and 10k, one instancing node for a single-mesh species.
+- [x] Mirrored placements fail by name. proof: same spec — 2026-10-10: mirrored-Z case throws `Placement '<id>' of species 'fir' contact check failed`.
 
 #### Phase 2: LODs and the world package
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/assets/src/world/terrain-world.ts`, `packages/terrain/starter/forest/bake.mjs`
 **Implementation:** prefer authored `*-mid` / `*-lod1` GLBs; fall back to `modelPass({ simplify })`; fill `assets[].glb` and `lods` in `world.json`.
 - [ ] World package validates and carries LODs per species. proof: `terrain-world.spec.ts`
 - [ ] The forest kit bake emits both outputs. proof: `node packages/terrain/starter/forest/bake.mjs` then the spec's file check
 
 #### Phase 3: consumer load
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `examples/strata-terrain-preview/scripts/verify-consumer.mjs`
 **Implementation:** load the cooked `world.glb` with stock `GLTFLoader`; assert instance counts and that no mesh is a per-tree copy.
 - [ ] Vanilla loader gets `InstancedMesh` with the bake's counts. proof: `pnpm --filter strata-terrain-preview test:consumer`
+
+## Current plan
+
+1. Reuse `bakeTerrain` and `bakeWorldPackage`; preserve source glTF textures/transforms and verify real terrain, splat and species batching.
+2. Repair the consumer script and run its actual forest bake/load proof after the focused assets gate passes.
+3. Run required runtime and visual proof; keep every unsupported claim open.
+
+Initial review: six weak unit tests passed; `node --check examples/strata-terrain-preview/scripts/verify-consumer.mjs` failed at line 584, and assets typecheck failed with three errors. Cook also dropped model textures/transforms, omitted terrain without custom LOD data and zeroed splat bytes. That initial completion claim was rejected; corrected focused results follow.
+
+2026-10-10 focused correction: the cook uses `bakeTerrain` and `bakeWorldPackage`, preserves source image bytes and every source-node world transform through glTF-transform copying/flattening, rejects skinned or animated species, and produces one near-detail instance node per species. The 11-test spec passes (including reused source-mesh nodes, 1 000/10 000 placement census and exact splat/placement bytes); assets typecheck and scoped Biome pass, with one nonfatal cognitive-complexity warning. Node is v20.19.6, so Node 22 and the forest-kit claim remain unverified. Authored sibling LOD discovery, multi-layer terrain PBR appearance, actual forest bake/consumer and runtime/visual proof remain pending. No full-PRD completion is claimed.

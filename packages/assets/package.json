@@ -49,6 +49,7 @@
     "@gltf-transform/core": "catalog:",
     "@gltf-transform/extensions": "catalog:",
     "@gltf-transform/functions": "catalog:",
+    "@threenative/terrain": "workspace:*",
     "@wasm-audio-decoders/ogg-vorbis": "0.1.20",
     "draco3dgltf": "^1.5.7",
     "jpeg-js": "0.4.4",

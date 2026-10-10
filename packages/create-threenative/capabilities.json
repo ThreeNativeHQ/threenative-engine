@@ -86,6 +86,20 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export async function cookTerrainWorld( options: ICookTerrainWorldOptions, ): Promise<ICookTerrainWorldResult> { … }",
+      "situations": ["bake a terrain world headlessly into a GLB with instanced trees and rocks"],
+      "summary": "Bake evaluated terrain and static species into an instanced GLB and streaming world package.",
+      "supersedes": [],
+      "symbol": "cookTerrainWorld"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the signature ignores the material name, which is what made every imported part a singleton, and keeps materials apart on any field it does not understand",
         "the census reads geometry and materials only: no GPU, no runtime, no game"
