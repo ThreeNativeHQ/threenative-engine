@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-570 — A character costs what the camera sees of it
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — baseline instrumentation is implemented; runtime measurements remain unverified.
 **Priority:** P2 — AC-1 is open: every rig evaluates its full pose every frame, near or far, on screen or off. Phase 1 has not yet measured how much that costs.
 **Complexity:** 5 (MEDIUM) — 1–5 engine files (`animation.ts`, `projection-skinned.ts`, `render-camera-cull.ts`) (+1), skipped-frame accumulation and interpolation state carries across frames (+2), a skin-once compute pass is a new mechanism, gated by Phase 1 (+2); risk override: none
 **Owner:** João
@@ -114,8 +114,8 @@ which is compatibility mode, not the core WebGPU that this engine requests.
 ## Execution Phases
 
 #### Phase 1: The cost is measured
-**Status:** NOT STARTED
-**Files:** `examples/skinned-crowd/src/scenes/Crowd.ts` (a `SkeletalMesh3D` crowd arm), `examples/skinned-crowd/playtests/crowd-rate.playtest.json` (new)
+**Status:** PARTIAL — fixture and exact CPU spans implemented; all measurement boxes remain open.
+**Files:** `examples/skinned-crowd/src/scenes/Crowd.ts`, `examples/skinned-crowd/src/game.ts`, `examples/skinned-crowd/playtests/crowd-rate.playtest.json` (new), `packages/core/src/profiling/Spans.ts`, `packages/core/src/projection-skinned.ts`, `packages/core/__tests__/projection-skinned.spec.ts` (exact write probe).
 - [ ] [local] The crowd scenario reports CPU milliseconds for `AnimationPlayer.update` and `SkinnedBatch.write` at 32, 128 and 256 rigs, with the result recorded under `## Decisions`. proof: `crowd-rate.playtest.json` with `playtest perf` and span probes.
 - [ ] [local] The same scenario reports GPU milliseconds for skinned draws in the main and shadow passes, against an arm where the crowd is static. The result decides Phase 3 under `## Decisions`. proof: the same playtest, both arms, `TN_FRAME_BUDGET` `main`/`shadow` buckets.
 
@@ -131,3 +131,51 @@ which is compatibility mode, not the core WebGPU that this engine requests.
 **Status:** NOT STARTED
 **Files:** `packages/core/src/projection-skinned.ts`, `packages/core/src/render/velocity.ts`, `packages/core/__tests__/projection-skinned.spec.ts`
 - [ ] [local] With the skin-once pass, the crowd's main-plus-shadow GPU time falls against Phase 1's arm, and the existing velocity-history assertions stay green. If Phase 1 shows less than 0.5 ms, the decline is recorded under `## Decisions` instead. proof: `crowd-rate.playtest.json` perf arms and `pnpm exec vitest run packages/core/__tests__/projection-skinned.spec.ts`.
+
+
+## Decisions
+
+- 2026-10-10, execution lane `perf/prd570-skin-animation-gate` at
+  `.worktrees/prd570`, owned by the PRD-570 worker; retained for coordinator inspection.
+  Scope is the baseline gate only. No update-rate policy or skin-once optimization is implemented.
+  No phase or acceptance box is ticked, and Phase 3 is neither earned nor declined.
+- The original no-query 64-rig fixture keeps its raw-mixer path. Measurement runs require
+  `?tnFrameSpans=1&crowdCount=32&crowdArm=animated` (repeat with counts 128 and 256).
+  `animated` uses actual `SkeletalMesh3D` instances and spans each inherited
+  `AnimationPlayer.update(1/60)` call; `skinnedWrite` spans the actual shared
+  `SkinnedBatch.write` body, including `skeleton.update`, excluding reconcile and palette upload.
+  `TN_CROWD_RATE` publishes their window means and calls per frame alongside GPU main/shadow
+  buckets, rendered-shadow sample count, main/shadow draws and triangles, and drawing surface.
+  Missing timestamps, spans, rendered shadows or expected call counts leave `ready` false.
+- Two frozen controls isolate the GPU comparison: `crowdArm=held` keeps the skeletal rigs at
+  sway time 0; `crowdArm=static` bakes that same pose's positions and skin-transformed normals
+  once into shared unskinned geometry, drawn with stock `InstancedMesh`. Both retain the same
+  actor transforms, material, topology, cast/receive-shadow settings and 10/40/120 m depth bands.
+  The fixture forces a shadow redraw in every arm. Check actual main/shadow draws and triangles
+  for **every** count before comparing timings; a differing 256-rig batch count invalidates a
+  skinning-only attribution. Frozen-pose equality is unverified visually, and neither frozen
+  control is claimed pixel-identical to a later animated pose. `projectedHeldHeights` reports each
+  root's measured held-pose height projected at its camera-space depth in viewport pixels; it is
+  an initialization observation, not continuously updated animated bounds.
+- The baseline includes instrumentation overhead: two clock/recorder crossings per player update
+  and palette write, plus existing span probes. No invented overhead has been subtracted.
+  GPU values are existing resolved whole-pass windows, not direct vertex-stage timestamps.
+  Only a matched held-minus-static main-plus-shadow comparison can inform the 0.5 ms gate.
+- Local proof: the new exact-write assertion failed before instrumentation (`undefined` versus
+  8 writes), then passed. Focused projection/span specs: **25 tests passed**. Crowd TypeScript
+  check, checkout-local core ESM/declaration build, playtest package build and scenario schema
+  loading passed. Vite build passed with existing chunk/dynamic-import warnings; Biome passed
+  with one non-fatal complexity warning in `Crowd.enter`. No browser, GPU, native, shooter or
+  visual-judge run has been performed. Runtime CPU/GPU measurements and all PRD outcomes remain
+  unverified pending the coordinator's exclusive GPU window.
+
+The next runtime command, after that window is granted, is:
+
+```sh
+node packages/playtest/dist/runner/cli.js examples/skinned-crowd/playtests/crowd-rate.playtest.json \
+  --url 'http://127.0.0.1:5173/?tnFrameSpans=1&crowdCount=32&crowdArm=animated' \
+  --server-command 'pnpm --filter skinned-crowd dev --host 127.0.0.1' --browser-recipe webgpu
+```
+
+Repeat from the same build for all three counts and the held/static controls, name the actual
+adapter, and record the measurements here. AC-1's 40% reduction is a later Phase 2 gate.
