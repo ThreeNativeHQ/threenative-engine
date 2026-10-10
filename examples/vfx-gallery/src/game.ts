@@ -16,7 +16,21 @@ const game = defineGame<GalleryState>({
     toggleBudget: { keys: ["KeyB"] },
   },
   // One-second windows, so a budget change reaches the effects within the scenario's wait.
-  frameBudget: { reportEvery: 60 },
+  frameBudget: {
+    reportEvery: 60,
+    onWindow(window) {
+      budgetKnob.gpuMs = window.gpuMs;
+      if (
+        budgetKnob.maxFps !== undefined &&
+        window.gpuMs !== undefined &&
+        window.gpuCompute !== undefined &&
+        window.gpuCompute > 0 &&
+        window.targetFps !== undefined &&
+        window.gpuMs > 1000 / window.targetFps
+      )
+        budgetKnob.overBudgetWindows += 1;
+    },
+  },
   plugins: [playtest({ events: drainGalleryEvents })],
   // `maxFps` is read at every budget window, so the scene can move the frame target at run time.
   display: {

@@ -169,16 +169,18 @@ const COLUMN_COUNT = 3;
 const COLUMN_WIDTH = 4;
 const ROW_DEPTH = 3.2;
 /** Metres the camera slides sideways per pan; two of the three columns leave the view. */
-const PAN_STEP = 16;
-/** A frame target no GPU meets, so the measured compute reads as over its share. */
-const TIGHT_BUDGET_FPS = 2000;
+const PAN_STEP = 20;
 const RATIO_WINDOW_RENDERS = 60;
 
 /**
- * The frame target the gallery reports to the engine. `?` switches it at run time so one scenario
+ * The frame target the gallery reports to the engine. `B` switches it at run time so one scenario
  * can take the frame over budget and back without reloading.
  */
-export const budgetKnob: { maxFps: number | undefined } = { maxFps: undefined };
+export const budgetKnob: {
+  maxFps: number | undefined;
+  gpuMs: number | undefined;
+  overBudgetWindows: number;
+} = { maxFps: undefined, gpuMs: undefined, overBudgetWindows: 0 };
 
 export type GalleryState = {
   readonly appliedIds: readonly string[];
@@ -205,10 +207,12 @@ export type GalleryState = {
   /** `dispatchRatio` captured when the cull was switched on: the panned view with the cull off. */
   readonly baselineRatio: number;
   /** `dispatchRatio` and the paused share captured when the camera pans back: the cull-on pan. */
-  readonly culledRatio: number;
+  readonly culledRatio: number | null;
+  readonly culledRunningRatio: number | null;
   readonly culledPausedFraction: number;
   /** Emitters yielded to the budget at the moment it was relaxed, and whether the least significant went first. */
   readonly yieldedPeak: number;
+  readonly measuredOverBudgetWindows: number;
   readonly yieldedLeastFirst: boolean;
   /** Shortest time any emitter held a cull state before changing it; 0 until one changed twice. */
   readonly shortestDwellSeconds: number;
@@ -237,9 +241,11 @@ const initialState: GalleryState = {
   dispatchRatio: 0,
   runningDispatchRatio: 0,
   baselineRatio: 0,
-  culledRatio: 0,
+  culledRatio: null,
+  culledRunningRatio: null,
   culledPausedFraction: 0,
   yieldedPeak: 0,
+  measuredOverBudgetWindows: 0,
   yieldedLeastFirst: false,
   shortestDwellSeconds: 0,
 };
@@ -500,7 +506,13 @@ export class Gallery extends Scene<GalleryState> {
     const lastDispatches = new Map<GPUParticles3D, number>();
     const lastTransitions = new Map<GPUParticles3D, { count: number; at: number }>();
     let shortestDwell = Number.POSITIVE_INFINITY;
-    const latest = { ratio: 0, pausedFraction: 0, overBudget: 0, leastFirst: false };
+    const latest = {
+      ratio: 0,
+      runningRatio: 0,
+      pausedFraction: 0,
+      overBudget: 0,
+      leastFirst: false,
+    };
     let renders = 0;
     ctx.beforeRender(() => {
       const now = performance.now() / 1000;
@@ -544,6 +556,7 @@ export class Gallery extends Scene<GalleryState> {
         if (significance !== undefined) pausedMax = Math.max(pausedMax, significance);
       }
       latest.ratio = delta / (RATIO_WINDOW_RENDERS * emitters.length);
+      latest.runningRatio = running === 0 ? 0 : runningDelta / (RATIO_WINDOW_RENDERS * running);
       latest.pausedFraction = (emitters.length - running) / emitters.length;
       latest.overBudget = overBudget;
       latest.leastFirst = pausedMax <= runningMin;
@@ -554,7 +567,8 @@ export class Gallery extends Scene<GalleryState> {
         overBudgetPaused: overBudget,
         pausedWithoutReason: unnamed,
         dispatchRatio: latest.ratio,
-        runningDispatchRatio: running === 0 ? 0 : runningDelta / (RATIO_WINDOW_RENDERS * running),
+        runningDispatchRatio: latest.runningRatio,
+        measuredOverBudgetWindows: budgetKnob.overBudgetWindows,
         shortestDwellSeconds: Number.isFinite(shortestDwell) ? shortestDwell : 0,
       });
     });
@@ -565,6 +579,7 @@ export class Gallery extends Scene<GalleryState> {
         // The cull-on pan, read before the camera returns and the emitters resume.
         frameCtx.state.set({
           culledRatio: latest.ratio,
+          culledRunningRatio: latest.runningRatio,
           culledPausedFraction: latest.pausedFraction,
         });
       }
@@ -581,7 +596,12 @@ export class Gallery extends Scene<GalleryState> {
       }
       if (frameCtx.input.justPressed("toggleBudget")) {
         const tightBudget = budgetKnob.maxFps === undefined;
-        budgetKnob.maxFps = tightBudget ? TIGHT_BUDGET_FPS : undefined;
+        if (tightBudget) {
+          const gpuMs = budgetKnob.gpuMs;
+          if (gpuMs === undefined || gpuMs <= 0)
+            throw new Error("Budget probe requires a measured positive GPU frame cost.");
+          budgetKnob.maxFps = 1000 / (gpuMs / 4);
+        } else budgetKnob.maxFps = undefined;
         // Relaxing the budget reads what the tight one had yielded, before anything resumes.
         frameCtx.state.set(
           tightBudget

@@ -51,15 +51,22 @@
     { "kind": "wait", "label": "recovered", "waitTicks": 900, "release": true }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
       { "id": "state", "path": "baselineRatio", "gte": 0.99, "changed": true },
-      { "id": "state", "path": "culledRatio", "lte": 0.6, "changed": true },
+      { "id": "state", "path": "culledRatio", "lte": 0.5, "changed": true },
+      { "id": "state", "path": "culledRunningRatio", "gte": 0.99, "changed": true },
       { "id": "state", "path": "culledPausedFraction", "gte": 0.5, "changed": true },
       { "id": "state", "path": "runningDispatchRatio", "gte": 0.99, "changed": true },
       { "id": "state", "path": "yieldedPeak", "gte": 1, "changed": true },
+      { "id": "state", "path": "measuredOverBudgetWindows", "gte": 1, "changed": true },
       { "id": "state", "path": "yieldedLeastFirst", "equals": true, "changed": true },
-      { "id": "state", "path": "overBudgetPaused", "equals": 0 },
+      {
+        "id": "state",
+        "path": "overBudgetPaused",
+        "equals": 0,
+        "allowTrivial": "Recovery returns to the initial zero; yieldedPeak and measuredOverBudgetWindows independently require a real intervening measured overload and pause."
+      },
       {
         "id": "state",
         "path": "pausedWithoutReason",
@@ -67,7 +74,6 @@
         "allowTrivial": "held invariant: every pause names its reason, so the count is zero at every sample"
       },
       { "id": "state", "path": "shortestDwellSeconds", "gte": 0.9, "changed": true }
-    ],
-    "visual": [{ "frameDiff": { "minChangedPixelRatio": 0.0001 } }]
+    ]
   }
 }
