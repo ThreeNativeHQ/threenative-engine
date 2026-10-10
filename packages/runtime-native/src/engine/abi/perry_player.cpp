@@ -37,6 +37,7 @@ extern "C" int32_t js_tnp_player_open() try {
     player::Game game;
     game.name = "perry-game";
     game.gameRuntime = "perry";
+    game.bridgeCalls = [] { return tn::abi::crossings(); };
     game.attach = [](inspect::Endpoint& attached) { endpoint = &attached; };
     game.update = [](double dt) {
         for (const auto& event : endpoint->takeInput()) {

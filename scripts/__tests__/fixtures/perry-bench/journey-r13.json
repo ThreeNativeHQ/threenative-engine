@@ -1,0 +1,137 @@
+{
+  "source": "/home/joao/.cache/agent-dumps/prd553-lane-g/raw/journey-r13-play.log",
+  "capture": {
+    "adapter": {
+      "architecture": "turing",
+      "description": "NVIDIA: 615.71.09 615.71.9.0",
+      "device": "NVIDIA GeForce RTX 2080",
+      "vendor": "nvidia"
+    },
+    "browserArgs": [],
+    "captureMethod": "device.screenshot",
+    "rendererKind": "webgpu",
+    "target": "desktop",
+    "viewport": {
+      "height": 1080,
+      "width": 1920
+    }
+  },
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 0,
+      "enteredMs": 0,
+      "compileSettledMs": 16.666666666666668,
+      "frameworkReadyMs": 16.666666666666668,
+      "readyMs": 16.666666666666668
+    },
+    "rule": "sustained-frames"
+  },
+  "assertionResults": [
+    {
+      "details": {
+        "sampleCount": 20,
+        "valid": true
+      },
+      "id": "performance.samples",
+      "pass": true
+    },
+    {
+      "details": {
+        "actual": 56.72855100000015,
+        "expected": 33,
+        "sampleCount": 20,
+        "unit": "ms"
+      },
+      "id": "performance.maxFrameMsP95",
+      "pass": false
+    },
+    {
+      "details": {
+        "actual": 16,
+        "expected": 128,
+        "sampleCount": 20,
+        "unit": "draw calls"
+      },
+      "id": "performance.maxDrawCalls",
+      "pass": true
+    },
+    {
+      "details": {
+        "actual": 26.61,
+        "expected": 30,
+        "sampleCount": 20,
+        "unit": "fps"
+      },
+      "id": "performance.minFps",
+      "pass": false
+    },
+    {
+      "details": {
+        "actual": 18923,
+        "expected": 80000,
+        "sampleCount": 20,
+        "unit": "triangles"
+      },
+      "id": "performance.maxTriangles",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": [0.9996496438980103, 0.9101001024246216, 4.874241494690068e-5],
+        "before": [-1.9999558925628662, 0.9090350270271301, 1.5524849004577845e-5],
+        "component": "position",
+        "entity": "player",
+        "expected": {
+          "changed": true,
+          "component": "position",
+          "entity": "player"
+        },
+        "trivial": false
+      },
+      "id": "component.player.position.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "adapterClass": "hardware",
+        "expected": "high",
+        "observed": "high"
+      },
+      "id": "renderChain.tier",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "networkErrorsOptOutReason": "The run target has no network observer; its network observation is hardwired empty, so the default network policy is waived rather than evaluated against nothing.",
+          "noConsoleErrors": true,
+          "noNetworkErrors": false,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "console": [
+    {
+      "text": "TN_NATIVE_START_READY",
+      "type": "log"
+    },
+    {
+      "text": "[Playtest] threenative-native-engine ready: game perry-game, runtime perry, 1280x720, mailbox on",
+      "type": "log"
+    },
+    {
+      "text": "TN_PLAYER_FIRST_PRESENT: runtime perry",
+      "type": "log"
+    }
+  ]
+}

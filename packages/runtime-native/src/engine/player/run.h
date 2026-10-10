@@ -36,6 +36,8 @@ struct Game {
     /** The game runtime named in `describe` and `sample.profile`: "cpp" for a built-in game, "v8"
      *  for a game bundle on the V8 adapter. */
     std::string gameRuntime = "cpp";
+    /** Shared C ABI call counter; absent on a C++ game with no runtime bridge. */
+    std::function<uint64_t()> bridgeCalls;
     bool shadowMapEnabled = false;
     /** Streaming proofs render every driven tick, including ticks in a batched advance request. */
     bool renderEachTick = false;
@@ -82,6 +84,10 @@ struct Game {
      *  the built-in games' dark blue. */
     std::function<std::array<double, 4>()> clear;
 };
+
+/** The same CPU split for every host: game callbacks, database render, CPU excluding present.
+ * bridgeCalls counts the shared C ABI entries since the previous rendered frame. */
+json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double frameMs, uint64_t bridgeCalls);
 
 /** One owned player session; step returns 1 while running, 0 on close, a negative error on failure. */
 struct Session;

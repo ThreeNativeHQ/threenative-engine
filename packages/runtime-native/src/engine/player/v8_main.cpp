@@ -1088,6 +1088,7 @@ int main(int argc, char** argv) {
     configured.initialize = [&game](Renderer& renderer) { game.initialize(renderer); };
     configured.beforeRender = [&game](Renderer& renderer, RenderDatabase& database) { game.beforeRender(renderer, database); };
     configured.clear = [&game] { return game.clearColor(); };
+    configured.bridgeCalls = [] { return tn::abi::crossings(); };
     configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.frameWithoutView = [&game] { game.frameWithoutView(); };
     // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside

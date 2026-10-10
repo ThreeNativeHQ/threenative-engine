@@ -19,6 +19,18 @@ extern "C" double tnp_player_observe(double, double) { return 0; }
 
 namespace {
 using namespace tn::engine;
+void frameMetrics() {
+    const auto sample = tn::engine::player::frameTiming(0.5, 0.6, 1.1, 28.5, 42);
+    CHECK(sample.find("gameJsMs")->number() == 0.5);
+    CHECK(sample.find("renderMs")->number() == 0.6);
+    CHECK(sample.find("cpuFrameMs")->number() == 1.1);
+    CHECK(sample.find("frameMs")->number() == 28.5);
+    CHECK(sample.find("bridgeCalls")->number() == 42);
+    json::Value parsed;
+    json::Error error;
+    CHECK(json::parse(json::stringify(sample), parsed, error));
+    CHECK(parsed.find("cpuFrameMs")->number() < parsed.find("frameMs")->number());
+}
 void renderInfo() {
     CHECK(js_tnp_player_render_info(0) == 0);
     CHECK(js_tnp_player_render_info(1) == 0);
@@ -67,4 +79,4 @@ void renderInfo() {
     CHECK(tn_context_destroy(context, nullptr) == TN_OK);
 }
 }
-TN_TEST_MAIN({"render_info", renderInfo})
+TN_TEST_MAIN({"render_info", renderInfo}, {"frame_metrics", frameMetrics})

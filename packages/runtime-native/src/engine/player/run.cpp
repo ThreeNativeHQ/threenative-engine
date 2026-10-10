@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
@@ -219,6 +220,13 @@ bool pumpEvents(Window& window, const Game& game) {
 
 }  // namespace
 
+json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double frameMs, uint64_t bridgeCalls) {
+    using V = json::Value;
+    return V::makeObject({{"gameJsMs", V::makeNumber(gameMs)}, {"renderMs", V::makeNumber(renderMs)},
+        {"cpuFrameMs", V::makeNumber(cpuMs)}, {"frameMs", V::makeNumber(frameMs)},
+        {"bridgeCalls", V::makeNumber(double(bridgeCalls))}});
+}
+
 struct Session {
     Game game;
     Window window;
@@ -238,10 +246,21 @@ struct Session {
     RenderDatabase database;
     bool runner = false, initialized = false, readbackInFlight = false, firstFrame = true;
     bool viewFailed = false;
+    bool metrics = std::getenv("TN_PLAYER_METRICS") != nullptr;
+    uint64_t measuredFrames = 0, previousCrossings = 0;
+    double updateMs = 0, readyMs = 0;
+    void update(double dt) {
+        const auto begin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        if (game.update) game.update(dt);
+        if (metrics) updateMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+    }
 #if defined(__ANDROID__)
     bool watching = false;
 #endif
-    explicit Session(const Game& source) : game(source), scene(game.scene), camera(game.camera) {}
+    explicit Session(const Game& source) : game(source), scene(game.scene), camera(game.camera) {
+        // Benchmarks need one rendered sample per driven simulation tick, not a batch of 600 updates.
+        if (metrics) game.renderEachTick = true;
+    }
     int initialize();
     int step();
     ~Session();
@@ -314,8 +333,7 @@ int Session::initialize() {
         // One fixed update per driven tick, so the reported clock is the engine's own.
         nowMs += 1000.0 * kTickStep;
         clock.advance(nowMs);
-        if (game.update)
-            game.update(kTickStep);
+        update(kTickStep);
         if (game.renderEachTick && renderFrame)
             renderFrame();
     };
@@ -364,7 +382,13 @@ int Session::initialize() {
 
     freeRunStart = std::chrono::steady_clock::now();
     database.shadowMapEnabled = game.shadowMapEnabled;
+    previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
     renderFrame = [this] {
+        const auto frameBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        double presentMs = 0;
+        const auto elapsed = [](auto begin) {
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+        };
         if (firstFrame) startupStage("first-render-begin");
         if (game.afterRender)  // after the previous frame; between frames, never inside one
             game.afterRender();
@@ -385,7 +409,14 @@ int Session::initialize() {
         if (game.beforeRender) game.beforeRender(*renderer, database);
         // Frame callbacks can replace the published view and release its previous owners.
         if (!refreshView() || scene == nullptr || camera == nullptr) return;
+        if (metrics && measuredFrames == 0) {
+            const char* launch = std::getenv("TN_BENCH_LAUNCH_MS");
+            if (launch) readyMs = std::chrono::duration<double, std::milli>(std::chrono::system_clock::now().time_since_epoch()).count() - std::strtod(launch, nullptr);
+        }
+        const double gameMs = metrics ? updateMs + elapsed(frameBegin) : 0;
+        const auto renderBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1});
+        const double renderMs = metrics ? elapsed(renderBegin) : 0;
         for (const std::string& diagnostic : database.diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());
         for (const std::string& diagnostic : renderer->diagnostics())
@@ -395,6 +426,7 @@ int Session::initialize() {
             if (firstFrame) startupStage("first-acquire-begin");
             // The page's newest frame goes over the world in the same blit (PRD-554).
             if (game.uiDraw) game.uiDraw(*renderer);
+            const auto presentBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
             if (presenter->begin(target)) {
                 // The window carries the very frame the render database just built.
                 renderer->blitTo(context->getQueue(), target.color,
@@ -408,8 +440,14 @@ int Session::initialize() {
                     std::printf("TN_PLAYER_FIRST_PRESENT: runtime %s\n", game.gameRuntime.c_str());
                     std::fflush(stdout);
                 }
+                if (metrics && measuredFrames == 0) {
+                    std::printf("TN_PLAYER_TIMING:%s\n", json::stringify(json::Value::makeObject({
+                        {"readyMs", json::Value::makeNumber(readyMs)},
+                        {"firstFrameMs", json::Value::makeNumber(elapsed(frameBegin))}})).c_str());
+                }
                 firstFrame = false;
             }
+            if (metrics) presentMs = elapsed(presentBegin);
         }
 
         // A screenshot answer is a real frame of this loop, so it is read back from the renderer the
@@ -439,6 +477,16 @@ int Session::initialize() {
         events.drain();
         if (game.frameComplete)
             game.frameComplete(*renderer, database.diagnostics());
+        if (metrics) {
+            const double duration = updateMs + elapsed(frameBegin);
+            auto sample = frameTiming(gameMs, renderMs, duration - presentMs, duration,
+                                      (game.bridgeCalls ? game.bridgeCalls() : 0) - previousCrossings);
+            ++measuredFrames;
+            std::printf("TN_PLAYER_FRAME:%s\n", json::stringify(sample).c_str());
+            std::fflush(stdout);
+            previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
+            updateMs = 0;
+        }
     };
     return 0;
 }
@@ -471,7 +519,7 @@ int Session::step() {
     if (!runner) {
         nowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - freeRunStart).count();
         for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps)
-            game.update(kTickStep);
+            update(kTickStep);
     }
     if (!refreshView())
         return -1;

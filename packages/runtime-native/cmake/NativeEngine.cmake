@@ -479,7 +479,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
     add_executable(tn-native-engine-player src/engine/player/main.cpp)
     tn_native_engine_test(tn-native-engine-perry-player-abi-test tests/native-engine/perry_player_abi_test.cpp
-        native_engine_perry_player_render_info=render_info)
+        native_engine_perry_player_render_info=render_info
+        native_engine_player_frame_metrics=frame_metrics)
     target_sources(tn-native-engine-perry-player-abi-test PRIVATE src/engine/abi/perry_player.cpp)
     target_link_libraries(tn-native-engine-perry-player-abi-test PRIVATE tn_engine_player tn_engine_abi)
     target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player tn_native_audio)
