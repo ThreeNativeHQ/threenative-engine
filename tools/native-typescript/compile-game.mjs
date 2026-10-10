@@ -231,11 +231,22 @@ export async function compileGame({
       errors: build.errors,
     };
   if (stageOnly) return { staged: outDir, errors: build.errors };
+  // The same driver scripts/bundle.mjs wraps around nativeEntry: the entry only exports the game.
+  const driver = path.join(outDir, "tn-native-start.ts");
+  const gameImport = `./${entry.replace(/\.ts$/u, ".js").split(path.sep).join("/")}`;
+  fs.writeFileSync(
+    driver,
+    `import game from ${JSON.stringify(gameImport)};
+game.start().catch((error: unknown) => {
+  console.error(\`TN_NATIVE_START_FAILED:\${error instanceof Error ? error.message : String(error)}\`);
+});
+`,
+  );
   const run = spawnSync(
     compiler.binaryPath,
     [
       "compile",
-      path.join(outDir, entry),
+      driver,
       "-o",
       path.join(outDir, "game"),
       ...STRICT_FLAGS,
