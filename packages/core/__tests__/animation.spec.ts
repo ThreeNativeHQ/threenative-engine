@@ -869,6 +869,31 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
       ),
     ]);
 
+  it("reads the sampled rig's world positions without re-walking each bone's ancestors", () => {
+    // One world update per sampled frame covers the rig; a per-bone walk costs a native back end
+    // one engine call per ancestor per bone per frame.
+    const { body, player } = character({ clips: [plantedWalk()] });
+    const rig = new Set<Object3D>();
+    (body.children[0] as Object3D).traverse((object) => rig.add(object));
+    const walked: Object3D[] = [];
+    const update = Object3D.prototype.updateWorldMatrix;
+    const spy = vi.spyOn(Object3D.prototype, "updateWorldMatrix").mockImplementation(function (
+      this: Object3D,
+      ...args
+    ) {
+      if (rig.has(this)) walked.push(this);
+      return update.apply(this, args);
+    });
+    try {
+      player.play("walk");
+      player.update(1 / 60);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 1);
+    expect(walked).toEqual([]);
+  });
+
   it("matches an in-place walk cycle from the ground its planted foot sweeps", () => {
     const { body, player } = character({ clips: [plantedWalk()] });
     player.play("walk");

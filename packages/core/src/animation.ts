@@ -150,7 +150,8 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
       mixer.setTime(frame * step);
       root.updateMatrixWorld(true);
       for (let index = 0; index < objects.length; index += 1) {
-        (objects[index] as Object3D).getWorldPosition(scratchWorld);
+        // The frame's updateMatrixWorld already holds every bone; getWorldPosition re-walks ancestors.
+        scratchWorld.setFromMatrixPosition((objects[index] as Object3D).matrixWorld);
         (paths[index] as { x: number; y: number; z: number }[]).push({
           x: scratchWorld.x,
           y: scratchWorld.y,
