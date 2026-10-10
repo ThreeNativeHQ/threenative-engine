@@ -74,6 +74,9 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
   #player: TerrainPlayer | undefined;
   #tiles: TerrainTiles | undefined;
   #capabilities: IWorldCapabilities | undefined;
+  #maxBlendingTiles = 0;
+  #frameBlendingTiles = 0;
+  #blendFrames: number[] = [];
 
   override enter(ctx: TerrainCtx): void {
     this.#player = new TerrainPlayer(ctx);
@@ -140,9 +143,23 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
     // field's kernels, including fields created during the first follow operation.
     tiles.follow({ x: 0, z: 0 });
     this.#tiles = ctx.add(tiles);
+    const process = tiles.process.bind(tiles);
+    tiles.process = (renderer) => {
+      // Observe before process removes completed transitions, including their final blend frame.
+      this.#frameBlendingTiles = tiles.blendingTiles;
+      this.#maxBlendingTiles = Math.max(this.#maxBlendingTiles, this.#frameBlendingTiles);
+      process(renderer);
+    };
+    ctx.beforeRender(() => {
+      // One entry per world draw; join the steady tail to runtime.performance's 1,024-frame tail.
+      this.#blendFrames.push(this.#frameBlendingTiles);
+      if (this.#blendFrames.length > 1_024) this.#blendFrames.shift();
+    });
     ctx.entities.add("terrain", {
       debug: () => ({
         ...(this.#tiles?.debug() ?? {}),
+        maxBlendingTiles: this.#maxBlendingTiles,
+        blendFrames: [...this.#blendFrames],
         cpuFallbackIterations: this.#capabilities?.cpuFallbackIterations ?? 0,
         generation: this.#capabilities?.generation ?? "unsupported",
         gpu: this.#capabilities?.gpu ?? false,
@@ -175,6 +192,9 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
     this.#tiles = undefined;
     this.#player = undefined;
     this.#capabilities = undefined;
+    this.#maxBlendingTiles = 0;
+    this.#frameBlendingTiles = 0;
+    this.#blendFrames = [];
   }
 
   #publish(ctx: TerrainCtx): void {

@@ -17,6 +17,11 @@
     },
     "components": [
       {
+        "component": "maxBlendingTiles",
+        "entity": "terrain",
+        "gte": 1
+      },
+      {
         "allowTrivial": "TerrainTiles reports its hard tile cap from the first observation.",
         "component": "residentTiles",
         "entity": "terrain",
