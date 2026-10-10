@@ -3,12 +3,19 @@ import {
   BufferGeometry,
   Mesh,
   MeshBasicMaterial,
+  OrthographicCamera,
   PerspectiveCamera,
   Vector3,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { terrainHeight } from "../../../examples/abyss-framework/src/world/terrainSampler.js";
 import { createAssetLoader } from "../src/assets.js";
+import {
+  DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+  DISCRETE_LOD_DEFAULT_HYSTERESIS,
+} from "../src/model-lod.js";
 import { type IWorldTile, type IWorldTileCollider, TerrainTiles } from "../src/world-tiles.js";
+import { summarizeWorldTopology } from "../src/world-topology.js";
 import { Heightfield } from "../src/world.js";
 
 const sampleHeight = (x: number, z: number): number =>
@@ -190,6 +197,33 @@ function measured(value: number | undefined): number {
 }
 
 describe("TerrainTiles", () => {
+  it.each([false, true])(
+    "reports JSON-safe terrain debug with validation %s without inventing diagnostics",
+    (validate) => {
+      const tiles = new TerrainTiles({
+        surface: new MeshBasicMaterial(),
+        residentByteBudget: 1_000_000,
+        residentTileBudget: 1,
+        sampleHeight,
+        streamRadius: 0,
+        tileResolution: 9,
+        tileSize: 64,
+        validate,
+      });
+      try {
+        tiles.follow({ x: 0, z: 0 });
+        const debug = tiles.debug();
+        expect(debug).toEqual(JSON.parse(JSON.stringify(debug)));
+        for (const key of ["maxSeamGap", "maxVisualSeamGap", "maxLodPop"]) {
+          expect(Object.hasOwn(debug, key)).toBe(validate);
+          if (validate) expect(Number.isFinite(debug[key])).toBe(true);
+        }
+      } finally {
+        tiles.dispose();
+      }
+    },
+  );
+
   it("counts retained topology storage against the hard byte cap", () => {
     expect(
       () =>
@@ -1564,6 +1598,207 @@ describe("TerrainTiles", () => {
       expect(object.userData.tnShadowSwap).toBe(true);
     }
     tiles.dispose();
+  });
+
+  it.each([false, true])(
+    "keeps the real 20 MB probe ring resident through a 330 m walk (validate=%s)",
+    (validate) => {
+      const surface = new MeshBasicMaterial();
+      const tiles = new TerrainTiles({
+        validate,
+        surface,
+        sampleHeight: terrainHeight,
+        residentByteBudget: 20_000_000,
+        residentTileBudget: 9,
+        tileResolution: 65,
+        tileSize: 64,
+        streamRadius: 1,
+        lodDistances: [48, 96],
+        topologyObservation: {
+          columns: 1025,
+          rows: 1025,
+          width: 1024,
+          depth: 1024,
+          origin: { x: 0, z: 0 },
+        },
+        worldPasses: {
+          dispatchBudget: 4,
+          gpu: false,
+          erosion: {
+            depositionRate: 0.35,
+            erosionRate: 0.22,
+            evaporation: 0.04,
+            iterations: 4,
+            rainfall: 0.08,
+            sedimentCapacity: 0.7,
+            timeStep: 0.05,
+          },
+        },
+      });
+      const initial = tiles.debug();
+      const camera = new OrthographicCamera(
+        -(150 * 1280) / 720,
+        (150 * 1280) / 720,
+        150,
+        -150,
+        1,
+        1000,
+      );
+      const view = {
+        camera,
+        viewportHeight: 720,
+        maxPixelError: DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+        hysteresis: DISCRETE_LOD_DEFAULT_HYSTERESIS,
+      };
+      const observations: { x: number; bytes: number; keys: readonly string[] }[] = [];
+      try {
+        for (let x = 0; x <= 330; x++) {
+          camera.position.set(x, 180, 180);
+          camera.lookAt(x, 0, 0);
+          camera.updateMatrixWorld(true);
+          expect(
+            () => tiles.follow({ x, z: 0 }, undefined, view),
+            `probe walk x=${x}`,
+          ).not.toThrow();
+          tiles.process(undefined, camera, undefined, view);
+          observations.push({ x, bytes: tiles.residentBytes, keys: tiles.residentKeys });
+        }
+        expect(initial.peakResidentBytes).toBe(16_810_000);
+        expect(initial.topologyBytes).toBe(0);
+        for (const { x, bytes, keys } of observations) {
+          const tileX = Math.floor((x + 32) / 64);
+          const expected = [-1, 0, 1]
+            .flatMap((dx) => [-1, 0, 1].map((z) => `${tileX + dx}:${z}`))
+            .sort();
+          expect(keys, `ring at x=${x}`).toEqual(expected);
+          expect(bytes, `bytes at x=${x}`).toBeLessThanOrEqual(20_000_000);
+        }
+        expect(tiles.debug().peakResidentTiles).toBe(9);
+        console.info("probe walk residency", {
+          validate,
+          initialBytes: observations[0]?.bytes,
+          finalBytes: tiles.residentBytes,
+          peakBytes: tiles.debug().peakResidentBytes,
+        });
+      } finally {
+        tiles.dispose();
+        surface.dispose();
+      }
+    },
+    60_000,
+  );
+
+  it.each([
+    { columns: 17, rows: 9, width: 32, depth: 16, passes: true },
+    { columns: 17, rows: 9, width: 32, depth: 16, passes: false },
+    { columns: 1025, rows: 1025, width: 1024, depth: 1024, passes: true },
+    { columns: 1025, rows: 1025, width: 1024, depth: 1024, passes: false },
+  ])(
+    "caches unchanged topology diagnostics and releases sample buffers ($columns x $rows, passes=$passes)",
+    ({ passes, ...grid }) => {
+      const observation = { ...grid, origin: { x: 0, z: 0 } };
+      const worldPasses = passes
+        ? {
+            dispatchBudget: 4,
+            gpu: false,
+            erosion: {
+              depositionRate: 0.35,
+              erosionRate: 0.22,
+              evaporation: 0.04,
+              iterations: 0,
+              rainfall: 0.08,
+              sedimentCapacity: 0.7,
+              timeStep: 0.05,
+            },
+          }
+        : undefined;
+      const field = Heightfield.fromSampler({
+        ...observation,
+        sampleHeight,
+        ...(worldPasses ? { worldPasses } : {}),
+      });
+      const heights = field.heights;
+      const flow = field.flow;
+      const raw = heights.length <= 10_000;
+      const expected = {
+        ...observation,
+        ...(raw
+          ? { heights: Array.from(heights), ...(flow ? { flow: Array.from(flow) } : {}) }
+          : flow
+            ? { metrics: summarizeWorldTopology({ ...grid, heights, flow }) }
+            : {}),
+      };
+      const constructionBytes = field.memoryBytes;
+      field.detach();
+      const detach = vi.spyOn(Heightfield.prototype, "detach");
+      const surface = new MeshBasicMaterial();
+      const tiles = new TerrainTiles({
+        sampleHeight,
+        surface,
+        residentByteBudget: 20_000_000,
+        residentTileBudget: 9,
+        tileSize: 16,
+        tileResolution: grid.columns === 17 ? 9 : 17,
+        topologyObservation: observation,
+        ...(worldPasses ? { worldPasses } : {}),
+      });
+      try {
+        expect(tiles.debug().topology).toEqual(expected);
+        expect(detach).toHaveBeenCalledTimes(1);
+        expect(tiles.debug().peakResidentBytes).toBe(constructionBytes);
+        expect(tiles.debug().topologyBytes).toBe(raw ? heights.length * (passes ? 2 : 1) * 8 : 0);
+        const mutated = tiles.debug().topology as {
+          origin: { x: number };
+          heights?: number[];
+          flow?: number[];
+          metrics?: { reliefFieldEdge: number };
+        };
+        mutated.origin.x = 999;
+        if (mutated.heights) mutated.heights[0] = 999;
+        if (mutated.flow) mutated.flow[0] = 999;
+        if (mutated.metrics) mutated.metrics.reliefFieldEdge = 999;
+        expect(tiles.debug().topology).toEqual(expected);
+        tiles.dispose();
+        expect(tiles.debug()).not.toHaveProperty("topology");
+        expect(tiles.debug().topologyBytes).toBe(0);
+        expect(tiles.residentBytes).toBe(0);
+        expect(detach).toHaveBeenCalledTimes(1);
+      } finally {
+        tiles.dispose();
+        surface.dispose();
+        detach.mockRestore();
+      }
+    },
+    60_000,
+  );
+
+  it("releases topology construction resources before propagating a byte-cap failure", () => {
+    const detach = vi.spyOn(Heightfield.prototype, "detach");
+    const surface = new MeshBasicMaterial();
+    try {
+      expect(
+        () =>
+          new TerrainTiles({
+            sampleHeight,
+            surface,
+            residentByteBudget: 1_223,
+            residentTileBudget: 1,
+            tileSize: 16,
+            tileResolution: 9,
+            topologyObservation: {
+              columns: 17,
+              rows: 9,
+              width: 32,
+              depth: 16,
+              origin: { x: 0, z: 0 },
+            },
+          }),
+      ).toThrow(/cannot fit the topology observation/u);
+      expect(detach).toHaveBeenCalledTimes(1);
+    } finally {
+      surface.dispose();
+      detach.mockRestore();
+    }
   });
 
   it("publishes the resident field and routed flow for topology evaluation", () => {

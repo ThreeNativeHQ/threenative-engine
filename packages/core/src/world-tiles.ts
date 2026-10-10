@@ -2005,14 +2005,19 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #surface: MeshSurface;
   readonly #sampleHeight: IWorldTilesOptions["sampleHeight"];
   readonly #streamRadius: number;
-  /** Canonical topology samples retained only for the declared diagnostics region. */
-  readonly #topologyField: Heightfield | undefined;
-  readonly #topologyBytes: number;
+  /** Diagnostics outlive construction; their canonical field is never used by resident tiles. */
+  #topology:
+    | (Pick<Heightfield, "columns" | "depth" | "origin" | "rows" | "width"> & {
+        heights?: number[];
+        flow?: number[];
+        metrics?: ReturnType<typeof summarizeWorldTopology>;
+      })
+    | undefined;
+  #topologyBytes = 0;
   readonly #worldPasses: IHeightfieldWorldPassOptions | undefined;
   readonly #resident = new Map<string, IResidentTile>();
   #morphEdgesDirty = false;
   #construction: { key: string; work: Generator<void, IResidentTile> } | undefined;
-  #topologyMetrics: ReturnType<typeof summarizeWorldTopology> | undefined;
   #focus: IWorldTilesFollowPosition | undefined;
   #lodView: IWorldTilesLodView | undefined;
   #peakBytes = 0;
@@ -2134,7 +2139,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#worldPasses = options.worldPasses;
     if (options.topologyObservation !== undefined)
       validateTopologyObservation(options.topologyObservation, this.tileSize, this.tileResolution);
-    this.#topologyField =
+    const topologyField =
       options.topologyObservation === undefined
         ? undefined
         : Heightfield.fromSampler({
@@ -2142,12 +2147,48 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
             sampleHeight: this.#sampleHeight,
             ...(this.#worldPasses === undefined ? {} : { worldPasses: this.#worldPasses }),
           });
-    this.#topologyBytes = this.#topologyField?.memoryBytes ?? 0;
-    if (this.#topologyBytes > this.residentByteBudget)
-      throw new TerrainTileBudgetError(
-        "TerrainTiles residentByteBudget cannot fit the topology observation.",
-      );
-    this.#recordPeaks();
+    if (topologyField !== undefined) {
+      try {
+        // Admission and the peak include the full field before its diagnostic samples are released.
+        this.#topologyBytes = topologyField.memoryBytes;
+        if (this.#topologyBytes > this.residentByteBudget)
+          throw new TerrainTileBudgetError(
+            "TerrainTiles residentByteBudget cannot fit the topology observation.",
+          );
+        this.#recordPeaks();
+        const heights = topologyField.heights;
+        const flow = topologyField.flow;
+        const description = {
+          columns: topologyField.columns,
+          depth: topologyField.depth,
+          origin: topologyField.origin,
+          rows: topologyField.rows,
+          width: topologyField.width,
+        };
+        if (heights.length <= MAX_RAW_TOPOLOGY_SAMPLES) {
+          this.#topology = {
+            ...description,
+            heights: Array.from(heights),
+            ...(flow === undefined ? {} : { flow: Array.from(flow) }),
+          };
+          // Retained JS number-array payloads use eight bytes per element, not Float32's four.
+          this.#topologyBytes = (heights.length + (flow?.length ?? 0)) * 8;
+        } else {
+          this.#topology = {
+            ...description,
+            ...(flow === undefined
+              ? {}
+              : { metrics: summarizeWorldTopology({ ...description, heights, flow }) }),
+          };
+          this.#topologyBytes = 0;
+        }
+      } catch (error) {
+        this.#jobs.dispose();
+        throw error;
+      } finally {
+        topologyField.detach();
+      }
+    }
     if (this.#validate) this.#recordSeamDiagnostics();
     this.frustumCulled = true;
   }
@@ -2298,10 +2339,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   get warmupNodes(): readonly unknown[] {
-    return [
-      ...(this.#topologyField?.warmupNodes ?? []),
-      ...[...this.#resident.values()].flatMap((tile) => tile.field.warmupNodes),
-    ];
+    return [...[...this.#resident.values()].flatMap((tile) => tile.field.warmupNodes)];
   }
 
   getTile(key: string): IWorldTile | undefined {
@@ -2441,7 +2479,6 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   attachRenderer(renderer: IRendererLike): void {
     if (this.#released) throw new Error("TerrainTiles cannot attach after release.");
     this.#renderer = renderer;
-    this.#topologyField?.attachRenderer(renderer);
     for (const tile of this.#resident.values()) tile.field.attachRenderer(renderer);
   }
 
@@ -2468,7 +2505,6 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const lodFrame = this.#validate ? this.#captureLodFrame() : undefined;
     this.#advanceLodTransitions();
     if (renderer !== undefined) {
-      this.#topologyField?.process(renderer);
       for (const tile of this.#resident.values()) {
         tile.field.attachRenderer(renderer);
         tile.field.process(renderer);
@@ -2511,44 +2547,10 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   debug(): Record<string, unknown> {
-    const topologyField = this.#topologyField;
-    const topology =
-      topologyField === undefined
-        ? undefined
-        : (() => {
-            const heights = topologyField.heights;
-            const flow = topologyField.flow;
-            const description = {
-              columns: topologyField.columns,
-              depth: topologyField.depth,
-              origin: topologyField.origin,
-              rows: topologyField.rows,
-              width: topologyField.width,
-            };
-            if (heights.length <= MAX_RAW_TOPOLOGY_SAMPLES)
-              return {
-                ...description,
-                heights: Array.from(heights),
-                ...(flow === undefined ? {} : { flow: Array.from(flow) }),
-              };
-            if (flow === undefined) return description;
-            if (this.#topologyMetrics === undefined)
-              this.#topologyMetrics = summarizeWorldTopology({
-                columns: topologyField.columns,
-                depth: topologyField.depth,
-                flow,
-                heights,
-                rows: topologyField.rows,
-                width: topologyField.width,
-              });
-            return {
-              ...description,
-              metrics: this.#topologyMetrics,
-            };
-          })();
+    const topology = this.#topology;
     return {
-      maxSeamGap: this.maxSeamGap,
-      maxVisualSeamGap: this.maxVisualSeamGap,
+      ...(this.maxSeamGap === undefined ? {} : { maxSeamGap: this.maxSeamGap }),
+      ...(this.maxVisualSeamGap === undefined ? {} : { maxVisualSeamGap: this.maxVisualSeamGap }),
       maxLodTransitionFrames: this.#maxLodTransitionFrames,
       peakResidentBytes: this.#peakBytes,
       peakResidentTiles: this.#peakTiles,
@@ -2565,14 +2567,24 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       topologyBytes: this.#topologyBytes,
       lodTransitions: this.#lodTransitions,
       terrainTiles: this.terrainTiles,
-      maxLodPop: this.maxLodPop,
+      ...(this.maxLodPop === undefined ? {} : { maxLodPop: this.maxLodPop }),
       stitchedEdges: this.#stitchedEdges,
       skirtVertexCount: [...this.#resident.values()].reduce(
         (total, tile) => total + tile.skirtVertexCount,
         0,
       ),
       released: this.#released,
-      ...(topology === undefined ? {} : { topology }),
+      ...(topology === undefined
+        ? {}
+        : {
+            topology: {
+              ...topology,
+              origin: { ...topology.origin },
+              ...(topology.heights === undefined ? {} : { heights: topology.heights.slice() }),
+              ...(topology.flow === undefined ? {} : { flow: topology.flow.slice() }),
+              ...(topology.metrics === undefined ? {} : { metrics: { ...topology.metrics } }),
+            },
+          }),
     };
   }
 
@@ -2586,7 +2598,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#renderer = undefined;
     this.#jobs.dispose();
     this.#cancelConstruction();
-    this.#topologyField?.detach();
+    this.#topology = undefined;
+    this.#topologyBytes = 0;
     for (const key of [...this.#blocks.keys()]) this.#dissolveBlock(key);
     for (const tile of [...this.#resident.values()]) this.#evict(tile);
     this.#resident.clear();

@@ -1,4 +1,9 @@
-import { type ICtx, Scene } from "@threenative/core";
+import {
+  DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+  DISCRETE_LOD_DEFAULT_HYSTERESIS,
+  type ICtx,
+  Scene,
+} from "@threenative/core";
 import {
   type IWorldCapabilities,
   type IWorldTileColliderInput,
@@ -73,6 +78,12 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
 
   #player: TerrainPlayer | undefined;
   #tiles: TerrainTiles | undefined;
+  #reference: TerrainTiles | undefined;
+  #parityFrames = 0;
+  #parityVertices = 0;
+  #activeMorphFrames = 0;
+  #maxPositionError = 0;
+  #maxNormalError = 0;
   #capabilities: IWorldCapabilities | undefined;
   #maxBlendingTiles = 0;
   #frameBlendingTiles = 0;
@@ -80,6 +91,7 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
 
   override enter(ctx: TerrainCtx): void {
     this.#player = new TerrainPlayer(ctx);
+    this.#camera(ctx);
     this.#capabilities = getWorldCapabilities({
       cpuFallbackIterations: 4,
       gpuAvailable: ctx.renderer.kind === "webgpu",
@@ -104,7 +116,26 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
             },
             gpu: this.#capabilities.generation === "gpu",
           };
+    const tileOptions = {
+      surface: terrainMaterial(),
+      residentByteBudget: 20_000_000,
+      residentTileBudget: 9,
+      sampleHeight: terrainHeight,
+      streamRadius: 1,
+      tileResolution: TILE_RESOLUTION,
+      tileSize: TILE_SIZE,
+      lodDistances: [48, 96],
+      topologyObservation: {
+        columns: 1025,
+        depth: 1024,
+        origin: { x: 0, z: 0 },
+        rows: 1025,
+        width: 1024,
+      },
+      ...(worldPasses === undefined ? {} : { worldPasses }),
+    };
     const tiles = new TerrainTiles({
+      ...tileOptions,
       createCollider: ({ field, key, object, tileX, tileZ }: IWorldTileColliderInput) =>
         new RigidBody3D({
           object,
@@ -118,37 +149,28 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
           type: "fixed",
           entity: `terrain.${key}.${String(tileX)}.${String(tileZ)}`,
         }),
-      surface: terrainMaterial(),
-      residentByteBudget: 20_000_000,
-      residentTileBudget: 9,
-      sampleHeight: terrainHeight,
-      streamRadius: 1,
-      tileResolution: TILE_RESOLUTION,
-      tileSize: TILE_SIZE,
-      lodDistances: [48, 96],
-      // This scene exists to measure the streamed field, and seam gap, visual seam and LOD pop are
-      // the measurements: without this they read `undefined` and the scenario's assertions have
-      // nothing to hold.
-      validate: true,
-      topologyObservation: {
-        columns: 1025,
-        depth: 1024,
-        origin: { x: 0, z: 0 },
-        rows: 1025,
-        width: 1024,
-      },
-      ...(worldPasses === undefined ? {} : { worldPasses }),
+      validate: false,
     });
     // Populate the initial resident set before registration so compute warm-up sees every
     // field's kernels, including fields created during the first follow operation.
-    tiles.follow({ x: 0, z: 0 });
+    tiles.follow({ x: 0, z: 0 }, undefined, this.#view(ctx));
+    const reference = new TerrainTiles({
+      ...tileOptions,
+      validate: true,
+      residentTileBudget: tiles.residentTileCount,
+    });
+    reference.follow({ x: 0, z: 0 }, undefined, this.#view(ctx));
+    this.#reference = reference;
     this.#tiles = ctx.add(tiles);
     const process = tiles.process.bind(tiles);
-    tiles.process = (renderer) => {
+    tiles.process = (renderer, camera, covered) => {
       // Observe before process removes completed transitions, including their final blend frame.
       this.#frameBlendingTiles = tiles.blendingTiles;
       this.#maxBlendingTiles = Math.max(this.#maxBlendingTiles, this.#frameBlendingTiles);
-      process(renderer);
+      const view = this.#view(ctx);
+      process(renderer, camera, covered, view);
+      reference.process(renderer, camera, covered, view);
+      this.#checkParity();
     };
     ctx.beforeRender(() => {
       // One entry per world draw; join the steady tail to runtime.performance's 1,024-frame tail.
@@ -164,9 +186,18 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
         generation: this.#capabilities?.generation ?? "unsupported",
         gpu: this.#capabilities?.gpu ?? false,
         seed: TERRAIN_SEED,
+        parityFrames: this.#parityFrames,
+        parityVertices: this.#parityVertices,
+        activeMorphFrames: this.#activeMorphFrames,
+        maxPositionError: this.#maxPositionError,
+        maxNormalError: this.#maxNormalError,
       }),
       dispose: () => this.#tiles?.dispose(),
       object: this.#tiles,
+    });
+    ctx.entities.add("terrainCpuReference", {
+      debug: () => reference.debug(),
+      dispose: () => reference.dispose(),
     });
     ctx.entities.add("player", {
       debug: () => ({ position: this.#player?.mesh.position.toArray() ?? [] }),
@@ -183,18 +214,101 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
     if (player === undefined || tiles === undefined) return;
     const move = ctx.input.vector("move");
     player.move({ x: move.x * PLAYER_SPEED, z: move.y * PLAYER_SPEED }, dt);
-    tiles.follow(player.mesh.position);
-    this.#publish(ctx);
     this.#camera(ctx);
+    const view = this.#view(ctx);
+    tiles.follow(player.mesh.position, undefined, view);
+    this.#reference?.follow(player.mesh.position, undefined, view);
+    this.#publish(ctx);
   }
 
   override exit(): void {
+    this.#reference?.dispose();
+    this.#reference = undefined;
     this.#tiles = undefined;
+    this.#parityFrames = 0;
+    this.#parityVertices = 0;
+    this.#activeMorphFrames = 0;
+    this.#maxPositionError = 0;
+    this.#maxNormalError = 0;
     this.#player = undefined;
     this.#capabilities = undefined;
     this.#maxBlendingTiles = 0;
     this.#frameBlendingTiles = 0;
     this.#blendFrames = [];
+  }
+
+  #view(ctx: TerrainCtx) {
+    return {
+      camera: ctx.camera,
+      viewportHeight: ctx.renderer.domElement.height,
+      maxPixelError: DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+      hysteresis: DISCRETE_LOD_DEFAULT_HYSTERESIS,
+    };
+  }
+
+  #checkParity(): void {
+    const gpu = this.#tiles;
+    const cpu = this.#reference;
+    if (gpu === undefined || cpu === undefined) throw new Error("Terrain parity needs both paths.");
+    const frame = this.#parityFrames;
+    if (
+      gpu.residentKeys.join() !== cpu.residentKeys.join() ||
+      gpu.lodTransitions !== cpu.lodTransitions ||
+      gpu.maxLodTransitionFrames !== cpu.maxLodTransitionFrames
+    )
+      throw new Error(
+        `Terrain parity residency/transitions diverged at frame ${frame}: GPU ${gpu.residentKeys}, CPU ${cpu.residentKeys}.`,
+      );
+    const actual = new THREE.Vector3();
+    const expected = new THREE.Vector3();
+    const normal = new THREE.Vector3();
+    const delta = new THREE.Vector3();
+    let active = false;
+    for (const key of gpu.residentKeys) {
+      const tile: ReturnType<TerrainTiles["getTile"]> = gpu.getTile(key);
+      const reference = cpu.getTile(key);
+      if (tile === undefined || reference === undefined || tile.lodLevel !== reference.lodLevel)
+        throw new Error(`Terrain LOD parity diverged at frame ${frame}, tile ${key}.`);
+      const index = tile.lod.levels.findIndex(({ object }) => object.visible);
+      // Settled merged tiles have no visible source mesh; their blends always draw individually.
+      if (index < 0) continue;
+      const mesh = tile.lod.levels[index]?.object;
+      const oracle = reference.lod.levels[index]?.object;
+      if (!(mesh instanceof THREE.Mesh) || !(oracle instanceof THREE.Mesh))
+        throw new Error(`Terrain parity needs matching meshes at frame ${frame}, tile ${key}.`);
+      const positions = oracle.geometry.getAttribute("position");
+      const normals = oracle.geometry.getAttribute("normal");
+      if (positions.count !== mesh.geometry.getAttribute("position").count)
+        throw new Error(`Terrain parity vertex count diverged at frame ${frame}, tile ${key}.`);
+      const weights = mesh.morphTargetInfluences ?? [];
+      active ||= weights.some((weight) => weight > 0 && weight < 1);
+      for (let vertex = 0; vertex < positions.count; vertex++) {
+        mesh.getVertexPosition(vertex, actual);
+        const positionError = actual.distanceTo(expected.fromBufferAttribute(positions, vertex));
+        normal.fromBufferAttribute(mesh.geometry.getAttribute("normal"), vertex);
+        for (const [target, weight] of weights.entries()) {
+          const attribute = mesh.geometry.morphAttributes.normal?.[target];
+          if (attribute !== undefined)
+            normal.addScaledVector(delta.fromBufferAttribute(attribute, vertex), weight);
+        }
+        const normalError = normal
+          .normalize()
+          .distanceTo(expected.fromBufferAttribute(normals, vertex).normalize());
+        if (
+          !Number.isFinite(positionError + normalError) ||
+          positionError > 0.001 ||
+          normalError > 0.001
+        )
+          throw new Error(
+            `Terrain morph parity failed at frame ${frame}, tile ${key}, vertex ${vertex}: position=${positionError}, normal=${normalError}.`,
+          );
+        this.#maxPositionError = Math.max(this.#maxPositionError, positionError);
+        this.#maxNormalError = Math.max(this.#maxNormalError, normalError);
+        this.#parityVertices++;
+      }
+    }
+    if (active) this.#activeMorphFrames++;
+    this.#parityFrames++;
   }
 
   #publish(ctx: TerrainCtx): void {

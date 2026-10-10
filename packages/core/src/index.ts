@@ -445,7 +445,11 @@ export type { IClusteredMeshOptions, IClusterTable } from "./clustered-mesh.js";
  * const hull = await ctx.assets.model("hull.glb");
  * ctx.scene.add(hull.scene);
  */
-export { updateModelLods } from "./model-lod.js";
+export {
+  DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+  DISCRETE_LOD_DEFAULT_HYSTERESIS,
+  updateModelLods,
+} from "./model-lod.js";
 /**
  * The full-detail geometry of a mesh the loader gave an automatic LOD chain.
  *
