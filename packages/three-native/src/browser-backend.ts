@@ -1905,20 +1905,24 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     const key = `${type}:${v.getUint16(pointer + 2, true)}:${v.getUint32(pointer + 4, true)}:${v.getUint32(pointer + 8, true)}`;
     return { key, type };
   };
-  // A ref's handle fields, parsed from its key once.
-  const handles = new WeakMap<IEngineRef, readonly [number, number, number, number]>();
+  // A ref's handle fields read straight from the digits of its key, "type:context:index:generation".
+  // Most refs reach here once (keyOf makes a new one per result), so a per-ref cache only missed.
   const writeHandle = (pointer: number, ref: IEngineRef) => {
-    let fields = handles.get(ref);
-    if (fields === undefined) {
-      fields = ref.key.split(":").map(Number) as [number, number, number, number];
-      handles.set(ref, fields);
-    }
-    const [type, context, index, generation] = fields;
+    const key = ref.key;
     const v = view();
-    v.setUint16(pointer, type, true);
-    v.setUint16(pointer + 2, context, true);
-    v.setUint32(pointer + 4, index, true);
-    v.setUint32(pointer + 8, generation, true);
+    let field = 0;
+    let value = 0;
+    for (let i = 0; i <= key.length; i++) {
+      const code = i < key.length ? key.charCodeAt(i) : 58; // ":" ends the last field
+      if (code !== 58) {
+        value = value * 10 + code - 48;
+        continue;
+      }
+      if (field < 2) v.setUint16(pointer + field * 2, value, true);
+      else v.setUint32(pointer + (field - 1) * 4, value, true);
+      field++;
+      value = 0;
+    }
   };
   const handleOf = (ref: IEngineRef): number => {
     const pointer = alloc(HANDLE);

@@ -116,6 +116,17 @@ describe("createWasmRuntime", () => {
     expect(fake.calls[1]?.args).toEqual([KIND.handle, KIND.numbers, KIND.numbers]);
   });
 
+  it("writes every handle field of a ref it has not seen before, up to 32-bit values", () => {
+    const fake = fakeModule();
+    const runtime = createWasmRuntime(fake.module as unknown as TnAbiModule);
+    runtime.invoke({ key: "12:3:70000:4294967295", type: 12 }, "update", []);
+    runtime.invoke({ key: "65535:65535:0:0", type: 65535 }, "update", []);
+    expect(fake.calls.map((call) => call.handle)).toEqual([
+      [12, 3, 70000, 4294967295],
+      [65535, 65535, 0, 0],
+    ]);
+  });
+
   it("clears scratch once per call, not once per block", () => {
     const fake = fakeModule();
     const runtime = createWasmRuntime(fake.module as unknown as TnAbiModule);
