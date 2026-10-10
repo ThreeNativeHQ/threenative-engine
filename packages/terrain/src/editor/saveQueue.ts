@@ -6,12 +6,12 @@ export interface ISaveRecipe {
   layers: SaveLayer[];
   [key: string]: unknown;
 }
-export interface SaveLayer {
+export type SaveLayer = {
   id: string;
   enabled?: boolean;
   params?: Record<string, unknown>;
   [key: string]: unknown;
-}
+};
 export interface ISaveDocument {
   version: 1;
   recipe: ISaveRecipe;
@@ -24,7 +24,7 @@ export interface ISaveSnapshot {
 }
 /**
  * One local intent in the ordered journal: the change from the document shown just before it
- * (`baseline`) to the document shown just after (`target`), plus the coalesced commands when a
+ * (`baseline`) to the document shown just after (`target`), plus the layer commands when a
  * plain layer diff expresses it. A refused intent keeps its exact change so it can be retried.
  */
 export interface IUnsentEdit {
@@ -51,8 +51,7 @@ export type ExternalSnapshotAction = "ignore" | "defer" | "adopt" | "apply";
 /**
  * The net layer commands between two recipes. A layer only present in the next recipe is a new
  * `upsert`; one changed in place keeps every field through an `upsert`; a reorder emits one `move`
- * per layer so the server sees the exact stack order. `existingIds` is what tells a later
- * `remove` apart from an undone brand-new layer during coalescing.
+ * per layer so the server sees the exact stack order.
  *
  * The order comparison uses the disk order the upserts and removes will produce — base layers
  * that survive, then brand-new layers appended in next order — so a layer inserted before an
@@ -86,41 +85,6 @@ export function diffLayers(baseLayers: SaveLayer[], nextLayers: SaveLayer[]): Pa
     for (const [index, layer] of (nextLayers ?? []).entries())
       commands.push({ op: "move", id: layer.id, index });
   return commands;
-}
-
-/**
- * Fold a command stream into the smallest equivalent batch. A changed existing layer arrives as
- * `upsert` (a full replace); if a later `remove` follows it, the disk layer must still be deleted —
- * `existingIds` carries which layers the base document owns. Two edits to the same layer merge; an
- * undo of a brand-new layer cancels both commands. `move` and any other command pass through in
- * order, because the layer diff emits full `upsert`/`toggle` commands and never a partial `update`.
- */
-export function coalesceCommands(
-  commands: readonly PatchCommand[],
-  existingIds: ReadonlySet<string> = new Set(),
-): PatchCommand[] {
-  const layerMap = new Map<string, PatchCommand>();
-  const others: PatchCommand[] = [];
-  for (const command of commands) {
-    if (command.op === "upsert") {
-      layerMap.set(command.layer.id, { op: "upsert", layer: command.layer });
-    } else if (command.op === "remove") {
-      const current = layerMap.get(command.id);
-      if (current?.op === "upsert")
-        if (existingIds.has(command.id)) layerMap.set(command.id, { op: "remove", id: command.id });
-        else layerMap.delete(command.id);
-      else layerMap.set(command.id, { op: "remove", id: command.id });
-    } else if (command.op === "toggle") {
-      const current = layerMap.get(command.id);
-      if (current?.op === "upsert")
-        layerMap.set(command.id, {
-          op: "upsert",
-          layer: { ...current.layer, enabled: command.enabled } as never,
-        });
-      else layerMap.set(command.id, { op: "toggle", id: command.id, enabled: command.enabled });
-    } else others.push(command);
-  }
-  return [...layerMap.values(), ...others];
 }
 
 function recipeOf(document: ISaveDocument | undefined): ISaveRecipe {
@@ -277,23 +241,13 @@ export class SaveQueue {
   }
 
   /**
-   * Record one local observation. The intent diffs the new document against the last displayed
-   * local document — the previous intent's target, or the confirmed snapshot when the journal is
-   * empty — never against the disk, so a second edit before the first save answers is queued rather
-   * than reverted. While one queued whole-document intent is pending every later record extends it,
-   * so a config change and the strokes after it still reach disk in one save.
+   * Record one local observation. The intent diffs the new document against the displayed local
+   * document: the confirmed snapshot replayed with the journal. It never diffs against the disk, so
+   * a second edit before the first save answers is queued rather than reverted. A remote change
+   * adopted since the last edit belongs to the baseline, so it never becomes a local intent.
    */
   record(document: ISaveDocument): void {
-    const last = this.#journal[this.#journal.length - 1];
-    if (last && last.state === "queued" && last.wholeDocument) {
-      if (same(last.target, document)) return;
-      last.target = structuredClone(document);
-      last.document = structuredClone(document);
-      this.#onChange?.();
-      void this.flush();
-      return;
-    }
-    const baseline = last ? last.target : this.#confirmed.document;
+    const baseline = this.localDocument;
     if (same(baseline, document)) return;
     const whole =
       !same(withoutLayers(baseline), withoutLayers(document)) ||

@@ -1,12 +1,6 @@
-import type { PatchCommand } from "@threenative/terrain";
 import { Terrain } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
-import {
-  SaveQueue,
-  coalesceCommands,
-  diffLayers,
-  externalSnapshotAction,
-} from "../src/editor/saveQueue.js";
+import { SaveQueue, diffLayers, externalSnapshotAction } from "../src/editor/saveQueue.js";
 import type {
   ISaveDocument,
   ISaveSnapshot,
@@ -68,6 +62,13 @@ function makeServer(initial: ISaveDocument) {
     },
     externalRemove(id: string) {
       const terrain = Terrain.fromJSON(current.recipe as never).remove(id);
+      current = { ...current, recipe: terrain.toJSON() as never };
+      revision = `r${++counter}`;
+    },
+    externalAmplitude(id: string, amplitude: number) {
+      const terrain = Terrain.fromJSON(current.recipe as never).update(id, {
+        params: { amplitude },
+      });
       current = { ...current, recipe: terrain.toJSON() as never };
       revision = `r${++counter}`;
     },
@@ -144,7 +145,8 @@ describe("terrain editor save queue", () => {
     queue.record(doc(layered));
     server.release();
     await queue.flush();
-    expect(server.commits.length).toBe(2);
+    // The stroke after a queued config save is its own save now, so the config save is not extended.
+    expect(server.commits.length).toBe(3);
     expect(ids(server.document).sort()).toEqual(["a", "b", "hills"]);
     expect(server.document.recipe.config.seed).toBe(999);
     expect(queue.unsent.length).toBe(0);
@@ -257,11 +259,53 @@ describe("terrain editor save queue", () => {
     expect(server.commits.length).toBe(1);
     server.externalAdd("b");
     queue.adopt(server.snapshot());
-    local = grow(local, "c", 7);
+    local = grow(queue.localDocument.recipe, "c", 7);
     queue.record(doc(local));
     server.release();
     await queue.flush();
     expect(ids(server.document).sort()).toEqual(["a", "b", "c", "hills"]);
+    expect(queue.unsent.length).toBe(0);
+  });
+
+  it("keeps the latest remote amplitude when a later edit follows an adopted snapshot", async () => {
+    const server = makeServer(doc(recipe()));
+    const queue = makeQueue(server);
+    server.hold(1);
+    queue.record(doc(grow(server.document.recipe, "a", 5)));
+    expect(server.commits.length).toBe(1);
+    server.externalAdd("b");
+    queue.adopt(server.snapshot());
+    queue.record(doc(grow(queue.localDocument.recipe, "c", 7)));
+    // The user never edited "b", so the remote amplitude must survive the held save's rebase.
+    server.externalAmplitude("b", 11);
+    server.release();
+    await queue.flush();
+    expect(ids(server.document).sort()).toEqual(["a", "b", "c", "hills"]);
+    expect(server.document.recipe.layers.find((layer) => layer.id === "b")?.params?.amplitude).toBe(
+      11,
+    );
+    expect(queue.unsent.length).toBe(0);
+  });
+
+  it("does not make a remote layer local-owned through a config intent queued before adopt", async () => {
+    const server = makeServer(doc(recipe()));
+    const queue = makeQueue(server);
+    server.hold(1);
+    queue.record(doc(grow(server.document.recipe, "a", 5)));
+    const config = structuredClone(queue.localDocument.recipe);
+    config.config = { ...config.config, seed: 999 };
+    queue.record(doc(config));
+    server.externalAdd("b");
+    queue.adopt(server.snapshot());
+    queue.record(doc(grow(queue.localDocument.recipe, "c", 7)));
+    server.externalAmplitude("b", 11);
+    server.release();
+    await queue.flush();
+    expect(ids(server.document).sort()).toEqual(["a", "b", "c", "hills"]);
+    expect(server.document.recipe.layers.find((layer) => layer.id === "b")?.params?.amplitude).toBe(
+      11,
+    );
+    expect(server.document.recipe.config.seed).toBe(999);
     expect(queue.unsent.length).toBe(0);
   });
 
@@ -324,28 +368,6 @@ describe("terrain editor save queue", () => {
     expect(ids(server.document)).toEqual(["hills"]);
   });
 
-  it("deletes a changed existing layer removed before its save, and cancels a new one", () => {
-    const changed = { id: "hills", enabled: true, params: { amplitude: 99 } } as SaveLayer;
-    expect(
-      coalesceCommands(
-        [
-          { op: "upsert", layer: changed },
-          { op: "remove", id: "hills" },
-        ] as unknown as PatchCommand[],
-        new Set(["hills"]),
-      ),
-    ).toEqual([{ op: "remove", id: "hills" }]);
-    expect(
-      coalesceCommands(
-        [
-          { op: "upsert", layer: { id: "new" } as SaveLayer },
-          { op: "remove", id: "new" },
-        ] as unknown as PatchCommand[],
-        new Set(["hills"]),
-      ),
-    ).toEqual([]);
-  });
-
   it("diffs layers into order-preserving commands", () => {
     const base = [{ id: "a" }, { id: "b" }] as unknown as SaveLayer[];
     const next = [{ id: "b" }, { id: "a" }, { id: "c" }] as unknown as SaveLayer[];
@@ -393,16 +415,6 @@ describe("terrain editor save queue", () => {
     const applied = Terrain.fromJSON(baseRecipe as never);
     applied.applyPatch(commands as never);
     expect(applied.toJSON().layers.map((layer) => layer.id)).toEqual(["a", "c", "b"]);
-  });
-
-  it("coalesces a toggle after a layer change without dropping the change", () => {
-    const changed = { id: "hills", enabled: true, params: { amplitude: 99 } } as SaveLayer;
-    expect(
-      coalesceCommands([
-        { op: "upsert", layer: changed },
-        { op: "toggle", id: "hills", enabled: false },
-      ] as unknown as PatchCommand[]),
-    ).toEqual([{ op: "upsert", layer: { ...changed, enabled: false } }]);
   });
 
   function editFor(queue: SaveQueue, layerId: string) {
