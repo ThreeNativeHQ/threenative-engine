@@ -231,19 +231,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // strata branch: measured through createProject on the merged tree.
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
-  "action-rpg": "29a2e2f8a8e1dbe84bed6b9752f9b50bc359c0526649b74236cab66e3ce5beec",
-  minimal: "29de540167ba97c5fd3883c0cf8c3a5435686312a97826426871b21a76f18607",
-  platformer: "ca93bd64f1efedd927b9cc428e1a20742a89d82930f8296fe0054ddb1d934ab8",
-  puzzle: "6b6896141c66be49c8a1a519b6c53039cfacb337fa816ad212b80c65daa864d7",
-  racing: "fd9affe9069f72f1c3a93eb1b126caeb156cb56e342c0768c646cbf1a831af34",
+  // PRD-560 (2026-10-10): the eleven FogExp2 kits carry height fog (heightFog.ts, sky.ts, AGENTS.md);
+  // rain and tower-defense do not and keep develop's values. Seven kits at the 150 m scale then
+  // took density 0.0018 so ridges read clearer than low ground (AC-1b).
+  "action-rpg": "3dcf60b05bec3ee9cfefa29b9b1ccc2c275cc946b268942b08bf113077827efe",
+  minimal: "ff5595b7a24cbb50d895975b78a55cfaf4dc5c72fe4ea4a30049685e62725b8a",
+  platformer: "dbccbb2ee0ac390f706ae0357e8f0ecddf4e334f299f865fb2b2e7fc634948e7",
+  puzzle: "1436a6a1c48604d3321aa2a33744fb0fe7661e6bce62aee3e0fe9cbe929d4653",
+  racing: "e7cadf0627adde0a79a9c415aa7651af30a3fac767221ed6dd44c31a5de957ad",
   rain: "38302a90e87c5c1e4f864a75a6d4e8bdf108059df470798741a74cc6d3d990e0",
-  rts: "d7f3f1e9c3664386d32f99a8bdb8b5267632843f5dd2ed1804128fe3ddd0752d",
-  runner: "11a74a807e5e2f80c703098f3059bef04d3b8b42170b9ba68e37f71c247f5b27",
+  rts: "47a6e12714ee49e8b40e2fc34d3646bafe91e8922ca69fcb4d47f7df4bcd13e4",
+  runner: "ffe3b993d91964c04505e970aba2682fad3bc2f19cc7fed5680745020ea620fe",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "3303a84c672a02dbbb5100cc4d647940c83c8a119e55c8cebf498b710cdd3e43",
-  shooter: "b856407fa828dc9ac76991cbffc4da8d327179a7f901229ccb2670cd4a486bd8",
-  snow: "0d3c4003a00e9b0772a877359ee204cffde78d2be21449e97ccc6e93ef941248",
-  starter: "27e4be7581d9ba96af39e2263c7645678aa30de6cb7b8fda4e0abb8195d6ee0b",
+  sailing: "974559cc2906e6963b2e48b08b29dcc194a6aa9ab59370469fb2209c16795887",
+  shooter: "fe34d6ccd05effdab98794a2b97a33b0a52944aa32c3c66c05207d868eddd0e4",
+  snow: "5537fd0564b34d0a79dddf9c4e81f83a0d62d1d7a46cdffc2ac06816ace1095a",
+  starter: "dd58949441050da2ebc9d9e5f775a62316d7ce148905f44468f86f39718a0fe2",
   "tower-defense": "ff1a494154b4d2db224143046d4b2ffb02dd9cf74ad602b38af7eb72071042b3",
 };
 

@@ -15,6 +15,7 @@ import {
   type Texture,
   Vector3,
 } from "three";
+import { HEIGHT_FOG, type HeightFogParams, heightFogDepth, heightFogNode } from "./heightFog.js";
 import { palette } from "./palette.js";
 
 /**
@@ -26,6 +27,22 @@ const SKY_RANGE = 2.5;
 
 /** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
 export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
+
+/** The look this fog replaced: FogExp2 at 0.0024, measured at 150 m from 2 m up. */
+const EYE_LEVEL = { density: 0.0024, distance: 150, cameraHeight: 2 };
+
+/**
+ * The distance term's density that, with the height term, keeps the old eye-level haze: at
+ * `EYE_LEVEL.distance` along the horizon from `EYE_LEVEL.cameraHeight` the two together transmit what
+ * FogExp2 at `EYE_LEVEL.density` did. The distance term is lowered, never removed, so the ground
+ * still ends in fog at a kilometre.
+ */
+function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
+  const { distance, density, cameraHeight } = EYE_LEVEL;
+  const old = (density * distance) ** 2;
+  const height = heightFogDepth(p, cameraHeight, cameraHeight, distance) * Math.LN2;
+  return Math.sqrt(Math.max(0, old - height)) / distance;
+}
 
 /**
  * Puts the sky on the scene, or a plain gradient if the photograph has not decoded yet.
@@ -52,5 +69,8 @@ export function setupSky(scene: Scene, sky?: Texture): void {
   }
   // Nothing inside the circuit (2.4% at 40 m), and the ground gone into the horizon by a kilometre
   // — so the treeline meets the sky instead of ending at a line.
-  scene.fog = new FogExp2(palette.horizon, 0.0024);
+  // `scene.fog` stays the distance term; `scene.fogNode` is what three applies and adds the height term.
+  const distanceFog = new FogExp2(palette.horizon, distanceDensity());
+  scene.fog = distanceFog;
+  scene.fogNode = heightFogNode(distanceFog, HEIGHT_FOG, SUN_DIRECTION);
 }

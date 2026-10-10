@@ -14,6 +14,7 @@ import {
   type Texture,
   Vector3,
 } from "three";
+import { HEIGHT_FOG, type HeightFogParams, heightFogDepth, heightFogNode } from "./heightFog.js";
 import { palette } from "./palette.js";
 
 /**
@@ -25,6 +26,22 @@ const SKY_RANGE = 2.5;
 
 /** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
 export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
+
+/** The look this fog replaced: FogExp2 at 0.003, which read as 18% haze at 150 m from 2 m up. */
+const EYE_LEVEL = { density: 0.003, distance: 150, cameraHeight: 2 };
+
+/**
+ * The distance term's density that, with the height term, keeps the old eye-level haze: at
+ * `EYE_LEVEL.distance` along the horizon from `EYE_LEVEL.cameraHeight` the two together transmit what
+ * FogExp2 at `EYE_LEVEL.density` did. The distance term is lowered, never removed, so the ground
+ * still ends in fog at a kilometre.
+ */
+function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
+  const { distance, density, cameraHeight } = EYE_LEVEL;
+  const old = (density * distance) ** 2;
+  const height = heightFogDepth(p, cameraHeight, cameraHeight, distance) * Math.LN2;
+  return Math.sqrt(Math.max(0, old - height)) / distance;
+}
 
 export function setupSky(scene: Scene, sky: Texture, software = false): void {
   sky.mapping = EquirectangularReflectionMapping;
@@ -46,5 +63,10 @@ export function setupSky(scene: Scene, sky: Texture, software = false): void {
   // Almost nothing inside the arena (1.4% at 30 m), and the ground gone into the horizon by a
   // kilometre — so the floor meets the sky instead of ending at a line. The colour is the
   // photograph's own horizon, sampled from the same HDR, so the fade lands where the sky is.
-  scene.fog = new FogExp2(palette.skyLow, 0.003);
+  // `scene.fog` stays the distance term for anything that reads it; `scene.fogNode` is what three
+  // applies, and it adds the height term. One owner at a time: `STARTER_MIST` clears both.
+  const params: HeightFogParams = { ...HEIGHT_FOG };
+  const distanceFog = new FogExp2(palette.skyLow, distanceDensity(params));
+  scene.fog = distanceFog;
+  scene.fogNode = heightFogNode(distanceFog, params, SUN_DIRECTION);
 }

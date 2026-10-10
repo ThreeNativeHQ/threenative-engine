@@ -665,12 +665,16 @@ describe("template contracts", () => {
     expect(sky).toContain("scene.environment = sky");
     expect(sky).toContain("scene.environmentIntensity");
     expect(sky).toContain('import { palette } from "./palette.js"');
-    const fog = /new FogExp2\(\s*palette\.(\w+),\s*(\d+(?:\.\d+)?)\s*\)/u.exec(sky);
-    expect(fog, "starter sky must construct an exponential fog from a palette role").not.toBeNull();
+    expect(sky, "the distance term is a FogExp2 coloured by a palette role").toMatch(
+      /new FogExp2\(\s*palette\.\w+,/u,
+    );
+    // The eye-level haze the height term must keep: the legacy FogExp2 density.
+    const fog = /EYE_LEVEL = \{ density: (\d+(?:\.\d+)?)/u.exec(sky);
+    expect(fog, "starter sky must name its eye-level fog density").not.toBeNull();
     // Round 9 lost the visual column to fog reaching the playable middle distance: a blind judge
     // chose against the build because "the distance fogs to near-white". Exponential fog at this
     // density is under 2% inside the 20 m route and only reads past a hundred metres.
-    const density = Number(fog?.[2]);
+    const density = Number(fog?.[1]);
     expect(density).toBeGreaterThan(0);
     expect(1 - Math.exp(-((density * 20) ** 2))).toBeLessThan(0.02);
   });
