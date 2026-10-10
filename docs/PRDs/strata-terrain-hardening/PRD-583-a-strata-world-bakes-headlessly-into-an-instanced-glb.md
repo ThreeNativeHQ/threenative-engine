@@ -60,7 +60,7 @@ flowchart LR
 
 - [x] AC-1 [local]: `cookTerrainWorld` runs under plain Node 22 with no DOM globals and writes `world.glb` for the forest kit. proof: `npm exec --yes --package=node@22 -- node src/terrain/forest/bake.mjs --out assets/terrain/forest` in an isolated kit install — Evidence: 2026-10-10 Node v22.23.3, an isolated minimal-template game installed from the packed core/physics/assets/playtest/CLI/terrain tarballs (terrain override resolves the asset pipeline's transitive edge), with `document`/`window`/`FileReader`/`HTMLCanvasElement` all undefined: `bake.mjs` exit 0 and `world.glb` 24 641 592 B. The closure fix is in `examples/strata-terrain-preview/scripts/verify-starter-kit.mjs` (terrain tarball added to the scaffold `packageSources`, which writes the pnpm override) and `verify-game-handoff.mjs` (same tarball as an override-only entry).
 - [x] AC-2 [local]: Each species-and-LOD pair is one `EXT_mesh_gpu_instancing` node; node count does not grow with tree count. proof: `pnpm exec vitest run packages/assets/__tests__/terrain-world.spec.ts` — Evidence: 2026-10-10 17 tests pass; the default `TerrainWorld` scene holds near nodes only and each species-and-LOD pair is one node in its own named scene (`fir_lod1`, `boulder_lod1`), every node carrying all logical placements; the all-scene census is constant 1 000→10 000, one instancing node for a single-mesh species and one flattened node (four primitives) for a two-mesh species. `instancedMeshCount` stays the default-scene count for compatibility; the all-scene test walk is authoritative and `nodeCount` counts every scene.
-- [x] AC-3 [local]: A vanilla three `GLTFLoader` loads `world.glb` into `InstancedMesh` objects whose instance count equals the bake's placement count. proof: `CONSUMER_GAME=skip pnpm --filter strata-terrain-preview test:consumer` — Evidence: 2026-10-10 exit 0 in 23 s; the cooked forest GLB loads in the isolated packed install as `fir_instances` (4 primitives × 3 100), `fir-c_instances` (4 × 1 400) and `boulder_instances` (1 × 320), every child count equal to its manifest run count and 0 per-tree mesh copies. The unskipped run's scaffold `pnpm install` failed here (exit 1), so the PRD-468 game-handoff stage stays unverified.
+- [x] AC-3 [local]: A vanilla three `GLTFLoader` loads `world.glb` into `InstancedMesh` objects whose instance count equals the bake's placement count. proof: `CONSUMER_GAME=skip pnpm --filter strata-terrain-preview test:consumer` — Evidence: 2026-10-10 exit 0 in 23 s; the cooked forest GLB loads in the isolated packed install as `fir_instances` (4 primitives × 3 100), `fir-c_instances` (4 × 1 400) and `boulder_instances` (1 × 320), every child count equal to its manifest run count and 0 per-tree mesh copies. The parent subsequently passed the unskipped packed-game install, build and WebGPU playtest on NVIDIA Turing (2026-10-10); that game stage does not prove the cooked forest's layered material appearance.
 - [x] AC-4 [local]: A placement mirrored in Z fails the cook with a named contact error. proof: `pnpm exec vitest run packages/assets/__tests__/terrain-world.spec.ts` — Evidence: 2026-10-10 12 tests pass, including `Placement '<id>' of species 'fir' contact check failed ... mirrored-Z`.
 - [x] AC-5 [local]: The world package written next to it passes `validateWorldPackage` and lists a GLB and at least one LOD per species. proof: `pnpm exec vitest run packages/assets/__tests__/terrain-world.spec.ts` — Evidence: 2026-10-10 the spec reads the cook's `world.json` and `placements.bin`, calls core `validateWorldPackage` with `placementsByteLength` (and `heightmapByteLength`) and gets `{ ok: true, errors: [] }`, and every species lists `models/<id>.glb` plus a LOD whose bytes exist on disk.
 
@@ -74,12 +74,14 @@ flowchart LR
 ## Execution Phases
 
 #### Phase 1: terrain and scatter into one instanced GLB
-**Status:** done
+**Status:** PARTIAL — layered surface appearance remains pending
 **Files:** `packages/assets/src/world/terrain-world.ts` (new), `packages/assets/src/index.ts`, `packages/assets/__tests__/terrain-world.spec.ts`
 **Implementation:** read `bakeTerrain` chunks and placements; group by species and LOD; write `EXT_mesh_gpu_instancing` nodes with gltf-transform; pass existing image bytes through; contact check per placement.
 - [x] Node-only cook writes `world.glb`. proof: `pnpm exec vitest run packages/assets/__tests__/terrain-world.spec.ts` — 2026-10-10: 7/10 passed; cook writes `world.glb` for the evaluated-terrain fixture under Node.
 - [x] Node count is constant from 1 000 to 10 000 trees. proof: same spec — 2026-10-10: node count equal at 1k and 10k, one instancing node for a single-mesh species.
 - [x] Mirrored placements fail by name. proof: same spec — 2026-10-10: mirrored-Z case throws `Placement '<id>' of species 'fir' contact check failed`.
+
+- [ ] Preserve the authored layered PBR surface and resolve `texturesDir` headlessly. proof: layered cook spec plus headed before/after visual judge — pending; the current GLB uses only the first layer.
 
 #### Phase 2: LODs and the world package
 **Status:** done
@@ -89,10 +91,12 @@ flowchart LR
 - [x] The forest kit bake emits both outputs. proof: `node packages/terrain/starter/forest/bake.mjs` — 2026-10-10 exit 0 in 166 ms; writes `world.glb` (15 874 700 B) and the world package (`world.json`, `heightmap.u16`, `placements.bin`, `splat.rgba`, `terrain-table.json`, `models/{fir,boulder,fir-c}.glb` with LODs); 3 100 fir, 1 400 fir-c and 320 boulder placements.
 
 #### Phase 3: consumer load
-**Status:** done
+**Status:** PARTIAL — headed runtime and visual proof remain pending
 **Files:** `examples/strata-terrain-preview/scripts/verify-consumer.mjs`
 **Implementation:** load the cooked `world.glb` with stock `GLTFLoader`; assert instance counts and that no mesh is a per-tree copy.
 - [x] Vanilla loader gets `InstancedMesh` with the bake's counts. proof: `CONSUMER_GAME=skip pnpm --filter strata-terrain-preview test:consumer` — 2026-10-10 exit 0; the generated consumer script reads the cooked `world.json`, derives each species' logical count from its runs, and checks each child `InstancedMesh` count (fir 4×3 100, fir-c 4×1 400, boulder 1×320) with 0 per-tree copies and no hardcoded values.
+
+- [ ] Render the cooked world in the headed WebGPU consumer and pass the visual judge. proof: two same-pose runs per arm with checked adapter and labelled images — pending; the first baseline capture was black and is rejected.
 
 ## Current plan
 
@@ -113,3 +117,5 @@ Initial review: six weak unit tests passed; `node --check examples/strata-terrai
 2026-10-10 caller/dependency closure repair: the red failures had one cause — `@threenative/assets@0.3.5` depends on `@threenative/terrain`, which was absent from the local tarball closures, so both installs tried the registry and got `ERR_PNPM_FETCH_404 @threenative/terrain`. `verify-starter-kit.mjs` now packs the terrain tarball into the scaffold `packageSources` (writing the pnpm override for assets' transitive edge) before the kit's own `pnpm add -D`; `verify-game-handoff.mjs` packs the same tarball and writes it as an override-only entry, so the game still declares and installs no authoring package. `packages/terrain/starter/forest/README.md` names both `@threenative/terrain` and `@threenative/assets` plus the `three` peer. Node 22.23.3 forest proof in an isolated kit: `bake.mjs` exit 0, `world.glb` 24 641 592 B, no DOM globals — AC-1 ticked. `node --check` and scoped Biome pass on both scripts. The unskipped full consumer (scaffold build + WebGPU playtest) was not run; the root job runs it after commit. Multi-layer surface appearance and runtime/visual proof remain pending.
 
 2026-10-10 direct checkout command: root now declares the existing @threenative/assets workspace package as a dev dependency (terrain does not depend on assets). node packages/terrain/starter/forest/bake.mjs also passes from the checkout and emits the instanced GLB plus package, so the documented direct command has an explicit dependency closure.
+
+2026-10-10 parent integration: offline frozen installation, assets build/publint and 17 terrain-world tests pass (1.05 s test time). The direct forest command emits the 24 641 592 B GLB in 595 ms. The full consumer first stopped before the game stage because the default cooked fixture was absent; after the documented bake, the unskipped rerun passes (exit 0). Its scaffolded game playtest reports WebGPU, NVIDIA Turing and no direct authoring-package dependency; the forest stock-loader census reports 4 820 placements and zero per-tree copies. Layered-surface and headed forest visual acceptance remain open.
