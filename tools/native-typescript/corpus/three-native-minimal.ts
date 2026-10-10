@@ -6,6 +6,7 @@ import {
   Float32BufferAttribute,
   Mesh,
   MeshBasicNodeMaterial,
+  MeshStandardMaterial,
   OrthographicCamera,
   Scene,
   WebGPURenderer,
@@ -28,6 +29,10 @@ console.log("shader", material.colorNode === colorNode ? "node" : "missing");
 // The facade's DataTexture is a function constructor over a captured engine class.
 const texture = new DataTexture(new Uint8Array([255, 0, 0, 255]), 1, 1);
 console.log("texture", texture.image.width, texture.image.height);
+// three's setValues sets a Color member from a hex; the facade finds the member's class without
+// `constructor`, which Perry leaves nameless on a wrapper.
+const standard = new MeshStandardMaterial({ color: 0x2a6cf0 });
+console.log("color", standard.color.getHex());
 
 export async function render(): Promise<void> {
   let calls = 0;

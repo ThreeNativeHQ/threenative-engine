@@ -127,6 +127,9 @@ export interface IBrowserEngine {
 }
 
 const REF = Symbol("tn.engineRef");
+// The engine class a prototype belongs to. Perry gives an `Object.create` wrapper a nameless
+// `constructor` whatever its prototype says, so the class name is read from here instead.
+const CLASS_NAME = Symbol("tn.className");
 /** Held wrappers a safe point re-asks about beyond the new ones (`collect()`). */
 const SWEEP = 32;
 
@@ -194,7 +197,7 @@ function isWrapperOf(
     typeof value === "object" &&
     value !== null &&
     REF in value &&
-    value.constructor.name === className
+    (value as Record<symbol, unknown>)[CLASS_NAME] === className
   );
 }
 
@@ -725,6 +728,7 @@ export function defineBrowserClasses(
     const valueClass = math[name];
     const cls = (valueClass ?? engineClass) as typeof engineClass;
     Object.defineProperty(cls, "name", { value: name });
+    Object.defineProperty(cls.prototype, CLASS_NAME, { value: name });
     const prototype = cls.prototype as Record<string, unknown>;
     // A value class's engine accessors (its lanes, `__address`) live on the engine side only.
     const accessors = (valueClass === undefined ? prototype : Object.create(prototype)) as Record<
