@@ -16,6 +16,7 @@ import {
   stringBytes,
   writeString,
 } from "tn-native-transport";
+import { assetPath } from "./perry-asset-path.js";
 import { createPerryAudioHost } from "./perry-audio.js";
 import { createPerryPhysicsHost } from "./perry-physics.js";
 import { nativeImageBitmaps } from "./texture-sources.js";
@@ -100,14 +101,6 @@ globals.clearInterval = globals.clearTimeout;
 // the page. Those resolve against the game's `public/` directory (TN_ASSET_ROOT overrides it), and
 // a missing file answers 404, as a static server would. A URL with a scheme keeps Perry's fetch.
 const hostFetch = globalThis.fetch;
-const assetRoot = (process.env.TN_ASSET_ROOT ?? "public").replace(/\/+$/, "");
-export function assetPath(url: string): string | undefined {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return undefined;
-  const path = decodeURIComponent(url.replace(/[?#].*$/, "")).replace(/^(\.?\/)+/, "");
-  if (path.split("/").includes(".."))
-    throw new Error(`TN_PERRY_ASSET_PATH: ${url} leaves the root`);
-  return `${assetRoot}/${path}`;
-}
 globals.fetch = async (input: string | URL | Request, init?: RequestInit) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   const file = assetPath(url);

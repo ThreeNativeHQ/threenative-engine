@@ -47,6 +47,13 @@ it("decodes encoded bytes natively and adopts each bitmap once with the V8 flipY
   const source = readFileSync(new URL("../src/perry-host.ts", import.meta.url), "utf8")
     .replace(/import\s*\{([^}]+)\}\s*from "tn-native-transport";/u, "const {$1} = native;")
     .replace(
+      'import { assetPath } from "./perry-asset-path.js";',
+      readFileSync(new URL("../src/perry-asset-path.ts", import.meta.url), "utf8").replace(
+        "export function",
+        "function",
+      ),
+    )
+    .replace(
       'import { createPerryAudioHost } from "./perry-audio.js";',
       "const createPerryAudioHost = () => ({ AudioContext: class {}, update() {}, close() {} });",
     )

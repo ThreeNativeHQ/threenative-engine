@@ -147,6 +147,13 @@ it("loads packaged audio through the Perry host, retains native PCM and drains s
   const source = readFileSync(new URL("../src/perry-host.ts", import.meta.url), "utf8")
     .replace(/import\s*\{([^}]+)\}\s*from "tn-native-transport";/u, "const {$1} = native;")
     .replace(
+      'import { assetPath } from "./perry-asset-path.js";',
+      readFileSync(new URL("../src/perry-asset-path.ts", import.meta.url), "utf8").replace(
+        "export function",
+        "function",
+      ),
+    )
+    .replace(
       'import { createPerryPhysicsHost } from "./perry-physics.js";',
       "const createPerryPhysicsHost = () => ({});",
     )
