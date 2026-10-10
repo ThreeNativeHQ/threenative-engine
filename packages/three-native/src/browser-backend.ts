@@ -677,12 +677,9 @@ export function defineBrowserClasses(
     return value;
   };
 
-  for (const [name, binding] of Object.entries(registry.classes)) {
-    const adopts =
-      attributeDefer !== undefined &&
-      (name === "BufferAttribute" || name === "InstancedBufferAttribute");
-    const writesAttributes = ATTRIBUTE_CLASSES.has(name) || name.endsWith("Geometry");
-    const engineClass = class {
+  // Perry refreshes loop-created class captures across iterations; a factory owns each capture.
+  const makeEngineClass = (name: string, binding: IRegistryClass, adopts: boolean) => {
+    return class EngineClass {
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
         // three's parameters object (`new MeshStandardMaterial({ color })`) is construct, then
@@ -706,7 +703,7 @@ export function defineBrowserClasses(
           this,
           runtime.construct(name, engineArgs.map(toEngine), counted ? adopted : undefined),
         );
-        const own = ownSlots.get(engineClass.prototype);
+        const own = ownSlots.get(EngineClass.prototype);
         if (own !== undefined) Object.defineProperties(this, own);
         if (parameters !== undefined) setValues(this, name, parameters);
         if (adopted !== undefined) {
@@ -717,6 +714,14 @@ export function defineBrowserClasses(
         }
       }
     };
+  };
+
+  for (const [name, binding] of Object.entries(registry.classes)) {
+    const adopts =
+      attributeDefer !== undefined &&
+      (name === "BufferAttribute" || name === "InstancedBufferAttribute");
+    const writesAttributes = ATTRIBUTE_CLASSES.has(name) || name.endsWith("Geometry");
+    const engineClass = makeEngineClass(name, binding, adopts);
     const valueClass = math[name];
     const cls = (valueClass ?? engineClass) as typeof engineClass;
     Object.defineProperty(cls, "name", { value: name });

@@ -68,6 +68,7 @@ import {
 import { checkDevice, isAarch64Elf, pushRunner, runLibrary } from "./device.mjs";
 import { runPackaged } from "./packaged.mjs";
 import { compareRedToDeclared, loadLedger } from "./patches.mjs";
+import { stageSharedFacade } from "./perry-facade.mjs";
 import { provision } from "./provision.mjs";
 import { ENGINE_LIBS, bridgeFor, buildEngineBridge } from "./three-bridge.mjs";
 
@@ -272,6 +273,14 @@ async function runReference(name, plan = {}) {
   const expected = parseExpected(fs.readFileSync(expectedPath(name)));
   if (expected.compileError !== undefined || expected.nativeOnly)
     return { ok: true, notApplicable: true };
+  if (name === "three-native-minimal") {
+    const { runWasmReference } = await import("./shared-reference.mjs");
+    const result = await runWasmReference(file, expected);
+    if (!result.ok || !plan.render) return result;
+    const { renderReference } = await import("./render-reference.mjs");
+    await renderReference(file, path.join(plan.outDir, `${name}-reference.png`), { shared: true });
+    return result;
+  }
   if (importsThree(file)) {
     const staged = path.join(
       fs.mkdtempSync(path.join(os.tmpdir(), "tn-ref-three-")),
@@ -350,7 +359,7 @@ async function runReference(name, plan = {}) {
  * imports "three" gets the facade staged as its `three` module and the Perry adapter as a package
  * it may import, because the corpus resolves both from beside the case itself.
  */
-export async function stageProject({ entry, modules, tmp, three, bridge }) {
+export async function stageProject({ entry, modules, tmp, three, bridge, shared = false }) {
   const src = path.join(tmp, "src");
   await fsp.mkdir(src, { recursive: true });
   for (const file of modules) {
@@ -413,6 +422,7 @@ export async function stageProject({ entry, modules, tmp, three, bridge }) {
       2,
     )}\n`,
   );
+  if (shared) stageSharedFacade(tmp, bridge);
   return { dir: tmp, entry: path.join(src, entryName) };
 }
 
@@ -455,6 +465,7 @@ async function runNative(name, info, target, plan = {}) {
 }
 
 async function runNativeIn(tmp, name, info, target, plan) {
+  const shared = name === "three-native-minimal";
   const entry = path.join(CORPUS, `${name}.ts`);
   const modules = collectModules(entry);
   const three = importsThree(entry);
@@ -468,7 +479,8 @@ async function runNativeIn(tmp, name, info, target, plan) {
       ? await bridgeFor({
           android: plan.target,
           ndk: plan.ndk,
-          render: plan.render,
+          render: shared || plan.render,
+          shared,
           engineBuild: plan.target ? undefined : process.env.TN_NATIVE_ENGINE_BUILD,
         })
       : undefined;
@@ -485,14 +497,14 @@ async function runNativeIn(tmp, name, info, target, plan) {
     { "three/tsl": ["float", "uv", "sin", "vec3"], "three/webgpu": ["WebGPURenderer"] },
   );
   const exe = path.join(tmp, name);
-  const project = await stageProject({ entry, modules, tmp, three, bridge });
+  const project = await stageProject({ entry, modules, tmp, three, bridge, shared });
   const compile = compileWithPerry({
     perry: info.binaryPath,
     project,
     out: exe,
     env,
     extraFlags: [
-      ...(name === "dynamic-tsl" ? ["--debug-symbols"] : []),
+      ...(name === "dynamic-tsl" || shared ? ["--debug-symbols"] : []),
       ...(plan.perryFlags ?? []),
     ],
   });
@@ -519,7 +531,7 @@ async function runNativeIn(tmp, name, info, target, plan) {
   await fsp.copyFile(exe, artifact);
   if (plan.target && !isAarch64Elf(artifact))
     return { ok: false, note: `TN_NATIVE_TS_ARTIFACT ${artifact} is not an arm64 ELF` };
-  if (name === "dynamic-tsl") {
+  if (name === "dynamic-tsl" || shared) {
     const audit = inspect({ binary: artifact });
     if (!audit.jsFree)
       return { ok: false, note: `TN_NATIVE_TS_JS_FREE ${JSON.stringify(audit.findings)}` };
@@ -775,8 +787,11 @@ async function main() {
     );
   }
 
-  if (render && filter !== "dynamic-tsl")
-    throw named("TN_NATIVE_TS_USAGE", "--render requires --case dynamic-tsl");
+  if (render && filter !== "dynamic-tsl" && filter !== "three-native-minimal")
+    throw named(
+      "TN_NATIVE_TS_USAGE",
+      "--render requires --case dynamic-tsl or three-native-minimal",
+    );
   if (render && cross) throw named("TN_NATIVE_TS_USAGE", "--render requires the host target");
   const captureReference = wantReference || (render && wantNative && !buildOnly);
   const names = discoverCases(filter);

@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const require = createRequire(path.join(repo, "packages/runtime-native/package.json"));
-const { transformSync } = require("esbuild");
+const { transformSync, buildSync } = require("esbuild");
 
-export async function renderReference(file, png) {
+export async function renderReference(file, png, { shared = false } = {}) {
   const { tsImport } = await import("tsx/esm/api");
   const { launchReferenceBrowser, SOFTWARE_ADAPTER, CAPTURE_TIMEOUT_MS, threeBuildDir } =
     await tsImport(
@@ -17,10 +17,11 @@ export async function renderReference(file, png) {
       import.meta.url,
     );
   const build = threeBuildDir();
-  const source = readFileSync(file, "utf8").replace(
+  let source = readFileSync(file, "utf8").replace(
     /from "file:[^"]*\/(three\.(?:module|webgpu|tsl)\.js)"/g,
     'from "/build/$1"',
   );
+  if (shared) source = source.replace(/\bfrom\s*["']three(?:\/[\w-]+)?["']/g, `from "/facade.js"`);
   const code = transformSync(source, {
     loader: "ts",
     format: "esm",
@@ -36,6 +37,31 @@ export async function renderReference(file, png) {
   const files = new Map([["/fixture.js", code]]);
   for (const name of ["three.module.js", "three.webgpu.js", "three.tsl.js", "three.core.js"])
     files.set(`/build/${name}`, readFileSync(path.join(build, name), "utf8"));
+  if (shared) {
+    const { sharedReferenceCode } = await import("./shared-reference.mjs");
+    const { names, exports } = sharedReferenceCode();
+    const facadeCode = `import { bindWebEngine } from ${JSON.stringify(path.join(repo, "packages/three-native/src/browser-entry.ts"))};
+import createModule from "/engine.mjs";
+const bound = await bindWebEngine(() => createModule({locateFile: () => "/engine.wasm"}), ${JSON.stringify(names)});
+${exports}`;
+    const bundled = buildSync({
+      stdin: { contents: facadeCode, resolveDir: repo, sourcefile: "facade.ts", loader: "ts" },
+      bundle: true,
+      format: "esm",
+      target: "esnext",
+      write: false,
+      external: ["/engine.mjs"],
+    });
+    files.set("/facade.js", bundled.outputFiles[0].text);
+    files.set(
+      "/engine.mjs",
+      readFileSync(path.join(repo, "packages/runtime-native/build/web/tn-native-engine-web.mjs")),
+    );
+    files.set(
+      "/engine.wasm",
+      readFileSync(path.join(repo, "packages/runtime-native/build/web/tn-native-engine-web.wasm")),
+    );
+  }
   const html = `<!doctype html><style>body{margin:0}canvas{display:block}</style>
   <script type="importmap">{"imports":{"three":"/build/three.module.js","three/webgpu":"/build/three.webgpu.js","three/tsl":"/build/three.tsl.js"}}</script>
   <script type="module">
@@ -63,7 +89,12 @@ export async function renderReference(file, png) {
     }
     const text = request.url === "/" ? html : files.get(request.url);
     response.writeHead(text === undefined ? 404 : 200, {
-      "content-type": request.url === "/" ? "text/html" : "text/javascript",
+      "content-type":
+        request.url === "/"
+          ? "text/html"
+          : request.url === "/engine.wasm"
+            ? "application/wasm"
+            : "text/javascript",
     });
     response.end(text ?? "not found");
   });

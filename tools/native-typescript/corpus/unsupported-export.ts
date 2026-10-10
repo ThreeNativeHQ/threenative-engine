@@ -1,6 +1,4 @@
-// PRD-506: importing a name the catalog does not support fails the native build at compile time,
-// naming it, rather than at run time. Upstream three has CatmullRomCurve3; the native engine does not.
-// (Raycaster was the name here until PRD-531 implemented it.)
-import { CatmullRomCurve3 } from "three";
-
-console.log(new CatmullRomCurve3().closed.toString());
+// PRD-506: the catalog refusal is a compile error, before an unsupported export runs.
+// CatmullRomCurve3 is now shipped; DepthTexture remains explicitly unsupported.
+import { DepthTexture } from "three";
+console.log(new DepthTexture(1, 1).isDepthTexture);

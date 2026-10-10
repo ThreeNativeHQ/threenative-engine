@@ -1,0 +1,71 @@
+{
+  "name": "tn-native-transport",
+  "version": "0.5.1520",
+  "private": true,
+  "license": "MIT",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "perry": {
+    "nativeLibrary": {
+      "abiVersion": "0.5",
+      "functions": [
+        {
+          "name": "js_tnp_layout",
+          "params": ["i32"],
+          "returns": "i64"
+        },
+        {
+          "name": "js_tnp_alloc",
+          "params": ["i64"],
+          "returns": "i64"
+        },
+        {
+          "name": "js_tnp_free",
+          "params": ["i64"],
+          "returns": "void"
+        },
+        {
+          "name": "js_tnp_memory",
+          "params": ["i32", "i64", "f64"],
+          "returns": "f64"
+        },
+        {
+          "name": "js_tnp_call",
+          "params": ["i32", "i64", "i64", "i64", "i64", "i64", "i64", "i64"],
+          "returns": "i64"
+        },
+        {
+          "name": "js_tnp_bind",
+          "params": ["jsvalue", "jsvalue"],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tnp_read_string",
+          "params": ["i64", "i64"],
+          "returns": "string"
+        },
+        {
+          "name": "js_tnp_string_bytes",
+          "params": ["string"],
+          "returns": "i64"
+        },
+        {
+          "name": "js_tnp_write_string",
+          "params": ["string", "i64", "i64"],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tnp_render",
+          "params": ["i64", "i64", "i32", "i32", "f64", "f64", "i32", "i64"],
+          "returns": "i64"
+        }
+      ],
+      "targets": {
+        "linux": {
+          "crate": ".",
+          "lib": "tn_native_transport"
+        }
+      }
+    }
+  }
+}

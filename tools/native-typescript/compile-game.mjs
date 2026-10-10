@@ -217,16 +217,24 @@ export async function compileGame({
     name: "game",
     entry: path.join(gameDir, entry),
     sourceRoot: gameDir,
+    sharedFacade: true,
     outDir,
     engineBuild,
     compiler,
     manifest: false,
-    stageOnly,
+    stageOnly: true,
   });
   if (stageOnly) return { staged: outDir, errors: build.errors };
   const run = spawnSync(
     compiler.binaryPath,
-    ["compile", path.join(outDir, entry), "-o", path.join(outDir, "game"), ...STRICT_FLAGS],
+    [
+      "compile",
+      path.join(outDir, entry),
+      "-o",
+      path.join(outDir, "game"),
+      ...STRICT_FLAGS,
+      "--debug-symbols",
+    ],
     {
       cwd: outDir,
       encoding: "utf8",

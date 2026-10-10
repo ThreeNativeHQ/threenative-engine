@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+import { stageSharedFacade } from "../perry-facade.mjs";
 import { renderReference } from "../render-reference.mjs";
 import * as corpus from "../run-corpus.mjs";
 import {
@@ -47,6 +48,43 @@ vi.mock("tsx/esm/api", () => ({
 const { PNG } = createRequire(
   new URL("../../../packages/runtime-native/package.json", import.meta.url),
 )("pngjs");
+
+describe("shared Perry facade staging", () => {
+  it("publishes registry/TSL exports and binds only the numeric native transport", () => {
+    const dir = tempDir();
+    try {
+      const staged = stageSharedFacade(dir, { libDirs: ["/engine"], libs: ["tn-native-shim"] });
+      const source = fs.readFileSync(path.join(staged.three, "three.ts"), "utf8");
+      expect(source).toContain("bindPerryEngine");
+      for (const name of [
+        "Scene",
+        "PerspectiveCamera",
+        "CanvasTexture",
+        "Fn",
+        "uniform",
+        "vec3",
+        "DataUtils",
+        "pmremTexture",
+        "uniformArray",
+        "mx_noise_float",
+        "cameraViewMatrix",
+      ])
+        expect(source).toContain(`export const ${name} = bound.${name};`);
+      expect(fs.readFileSync(path.join(staged.three, "tsl.ts"), "utf8")).toContain("./three.js");
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(staged.adapter, "package.json"), "utf8"),
+      );
+      expect(manifest.name).toBe("tn-native-transport");
+      expect(manifest.perry.nativeLibrary.targets.linux.libDirs).toEqual(["/engine"]);
+      expect(
+        JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")).perry.allow
+          .nativeLibrary,
+      ).toEqual(["tn-native-transport"]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("render frame comparison", () => {
   it("accepts quantization noise but rejects a changed graph, missing, blank or wrong-size frames", () => {
@@ -256,7 +294,8 @@ describe("discoverCases", () => {
     expect(names).toContain("dynamic-tsl");
     expect(names).toContain("dynamic-tsl-unsupported");
     expect(names).toContain("import-identity");
-    expect(names).toHaveLength(19);
+    expect(names).toContain("three-native-minimal");
+    expect(names).toHaveLength(20);
   });
 
   it("turns a top-level .ts with no .expected into a named failure, not a skip", () => {

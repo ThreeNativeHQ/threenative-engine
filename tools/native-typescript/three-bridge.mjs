@@ -58,13 +58,21 @@ function firstError(output, tool) {
  * and the hooks (the engine's own RenderCallback, which needs the engine's internal headers).
  * Rebuilt only when its sources or the engine include tree change.
  */
-export function buildEngineBridge({ outDir, engineBuild, render = false, tools = HOST_TOOLS }) {
+export function buildEngineBridge({
+  outDir,
+  engineBuild,
+  render = false,
+  shared = false,
+  tools = HOST_TOOLS,
+}) {
   fs.mkdirSync(outDir, { recursive: true });
   const include = path.join(NATIVE, "include");
-  const archive = path.join(outDir, "libtn-three-shim.a");
-  const shim = path.join(outDir, "tn_three_shim.o");
+  const archive = path.join(outDir, shared ? "libtn-native-shim.a" : "libtn-three-shim.a");
+  const shim = path.join(outDir, shared ? "perry_transport.o" : "tn_three_shim.o");
   const hooks = path.join(outDir, "tn_three_hooks.o");
-  const sources = [path.join(THREE, "tn_three_shim.c"), path.join(THREE, "tn_three_hooks.cpp")];
+  const sources = shared
+    ? [path.join(NATIVE, "src/engine/abi/perry_transport.c")]
+    : [path.join(THREE, "tn_three_shim.c"), path.join(THREE, "tn_three_hooks.cpp")];
   const newest = (dir) => {
     let latest = 0;
     const walk = (current) => {
@@ -78,9 +86,9 @@ export function buildEngineBridge({ outDir, engineBuild, render = false, tools =
     return latest;
   };
   // The render build adds the one-shot frame dump and the benchmark session (PRD-533).
-  const renderSources = ["tn_three_render.cpp", "tn_three_bench.cpp"].map((name) =>
-    path.join(THREE, name),
-  );
+  const renderSources = shared
+    ? [path.join(NATIVE, "src/engine/abi/perry_renderer.cpp")]
+    : ["tn_three_render.cpp", "tn_three_bench.cpp"].map((name) => path.join(THREE, name));
   if (render) sources.push(...renderSources);
   const stamp = Math.max(
     ...sources.map((file) => fs.statSync(file).mtimeMs),
@@ -92,7 +100,7 @@ export function buildEngineBridge({ outDir, engineBuild, render = false, tools =
   if (
     fs.existsSync(archive) &&
     fs.existsSync(shim) &&
-    fs.existsSync(hooks) &&
+    (shared || fs.existsSync(hooks)) &&
     fs.statSync(archive).mtimeMs >= stamp
   ) {
     return archive;
@@ -104,18 +112,19 @@ export function buildEngineBridge({ outDir, engineBuild, render = false, tools =
     if (run.status !== 0) throw named("TN_STRICT_SHIM", firstError(output, tool));
   };
   compile(tools.cc, ["-c", "-fPIC", `-I${include}`, sources[0], "-o", shim]);
-  compile(tools.cxx, [
-    "-c",
-    "-fPIC",
-    "-std=c++20",
-    `-I${include}`,
-    `-I${path.join(NATIVE, "src")}`,
-    ...(render ? ["-DTN_TSL_RENDER"] : []),
-    sources[1],
-    "-o",
-    hooks,
-  ]);
-  const objects = [shim, hooks];
+  if (!shared)
+    compile(tools.cxx, [
+      "-c",
+      "-fPIC",
+      "-std=c++20",
+      `-I${include}`,
+      `-I${path.join(NATIVE, "src")}`,
+      ...(render ? ["-DTN_TSL_RENDER"] : []),
+      sources[1],
+      "-o",
+      hooks,
+    ]);
+  const objects = shared ? [shim] : [shim, hooks];
   if (render) {
     const commands = JSON.parse(
       fs.readFileSync(path.join(engineBuild, "compile_commands.json"), "utf8"),
@@ -149,11 +158,22 @@ export function buildEngineBridge({ outDir, engineBuild, render = false, tools =
  * The bridge one run links with: the C archive plus the engine archives beside it. Every archive is
  * refused when absent — the engine is an input to a game build, never rebuilt by one.
  */
-export async function bridgeFor({ android, ndk, engineBuild: override, render = false } = {}) {
+export function bridgeFor({
+  android,
+  ndk,
+  engineBuild: override,
+  render = false,
+  shared = false,
+} = {}) {
   if (android && render) throw named("TN_STRICT_RENDER_BUILD", "--render has no Android build");
   const engineBuild =
     override ?? path.join(NATIVE, "build", android ? `android-core-${android.abi}` : "tn-linux");
-  const outDir = path.join(engineBuild, "three-bridge", ...(render ? ["render"] : []));
+  const outDir = path.join(
+    engineBuild,
+    "three-bridge",
+    ...(shared ? ["shared"] : []),
+    ...(render ? ["render"] : []),
+  );
   for (const lib of ENGINE_LIBS) {
     const archive = path.join(engineBuild, `lib${lib}.a`);
     if (!fs.existsSync(archive)) {
@@ -167,6 +187,7 @@ export async function bridgeFor({ android, ndk, engineBuild: override, render = 
     outDir,
     engineBuild,
     render,
+    shared,
     tools: android ? ndkTools(ndk, android) : HOST_TOOLS,
   });
   const renderArchives = render
@@ -189,7 +210,7 @@ export async function bridgeFor({ android, ndk, engineBuild: override, render = 
       ...new Set([outDir, engineBuild, ...renderArchives.map((file) => path.dirname(file))]),
     ],
     libs: [
-      "tn-three-shim",
+      shared ? "tn-native-shim" : "tn-three-shim",
       ...ENGINE_LIBS,
       ...renderArchives.map((file) => path.basename(file).replace(/^lib|\.a$/g, "")),
       // Android's libc carries pthread; its C++ runtime is the NDK's static libc++.

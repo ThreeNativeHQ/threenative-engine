@@ -4,7 +4,8 @@
     "types": ["node"],
     "noEmit": true,
     "paths": {
-      "three": ["./generated/three.d.ts"]
+      "three": ["./generated/three.d.ts"],
+      "tn-native-transport": ["./perry/src/index.ts"]
     }
   },
   "include": [

@@ -1,0 +1,16 @@
+[package]
+name = "tn-native-transport"
+version = "0.5.1520"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "tn_native_transport"
+crate-type = ["staticlib"]
+
+[dependencies]
+perry-ffi = { git = "https://github.com/PerryTS/perry", tag = "v0.5.1520" }
+
+[profile.release]
+panic = "abort"

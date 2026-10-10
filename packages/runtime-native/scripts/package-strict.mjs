@@ -17,6 +17,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { bridgeFor } from "../../../tools/native-typescript/three-bridge.mjs";
+import { stageSharedFacade, PERRY_TRANSPORT } from "../../../tools/native-typescript/perry-facade.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const THREE_DIR = path.join(REPO, "tools", "native-typescript", "three");
@@ -124,6 +126,7 @@ export function buildStrict({
   modules = [],
   sourceRoot,
   stageOnly = false,
+  sharedFacade = false,
   outDir,
   engineBuild,
   compiler,
@@ -134,7 +137,7 @@ export function buildStrict({
   const ran = [];
   const errors = [];
   const exe = path.join(outDir, name);
-  engineBuild ??= path.join(NATIVE, "build", "tn-linux");
+  engineBuild ??= process.env.TN_NATIVE_ENGINE_BUILD ?? path.join(NATIVE, "build", "tn-linux");
   const archives = ENGINE_LIBS.map((lib) => path.join(engineBuild, `lib${lib}.a`));
   const identityTool = path.join(engineBuild, "tn-native-engine-identity");
   for (const required of manifest ? [...archives, identityTool] : archives) {
@@ -147,6 +150,7 @@ export function buildStrict({
   fs.mkdirSync(cache, { recursive: true });
   const env = { ...process.env, PERRY_CACHE_DIR: path.join(outDir, ".perry") };
   const engineDigest = digest(archives.map((archive) => fs.readFileSync(archive)));
+  const sharedBridge = sharedFacade ? bridgeFor({ engineBuild, render: true, shared: true }) : undefined;
 
   // Runs `work` unless the inputs digest matches the last successful run and every output exists.
   const step = (stepName, inputs, outputs, work) => {
@@ -172,13 +176,19 @@ export function buildStrict({
   const stagedEntry = sourceRoot ? path.join(outDir, path.relative(sourceRoot, entry)) : path.join(staged, path.basename(entry));
   const facadeDir = path.join(outDir, "node_modules", "three");
   const aotDir = path.join(outDir, "node_modules", "three-aot");
-  const adapterDir = path.join(outDir, "node_modules", ADAPTER_PACKAGE);
+  const adapterDir = path.join(outDir, "node_modules", sharedFacade ? PERRY_TRANSPORT : ADAPTER_PACKAGE);
   const bridgeDir = path.join(outDir, "three-bridge");
   const treeFiles = tree.map((file) => path.join(sourceRoot, file));
   const sources = [path.join(THREE_DIR, "three.ts"), path.join(THREE_DIR, "three-aot.ts"), ...modules, entry, ...treeFiles.filter((file) => file !== entry)];
+  if (sharedFacade) {
+    const root = path.join(REPO, "packages/three-native");
+    sources.push(...listGameSources(root).map(file => path.join(root,file)),
+      path.join(root,"perry/Cargo.toml"),path.join(root,"perry/src/lib.rs"),
+      path.join(REPO,"tools/native-typescript/perry-facade.mjs"), sharedBridge.archive);
+  }
   step(
     "typescript",
-    [engineBuild, bridgeDir, ...sources.map((file) => fs.readFileSync(file))],
+    [engineBuild, bridgeDir, String(sharedFacade), ...sources.map((file) => fs.readFileSync(file))],
     [stagedEntry, path.join(outDir, "package.json"), path.join(facadeDir, "three.ts"), path.join(adapterDir, "package.json")],
     () => {
       fs.mkdirSync(path.dirname(stagedEntry), { recursive: true });
@@ -230,6 +240,19 @@ export function buildStrict({
       );
     },
   );
+
+  if (sharedFacade) {
+    stageSharedFacade(outDir, sharedBridge);
+    if (errors.length > 0 || stageOnly) return {exe,ran,errors};
+    run(compiler.binaryPath, ["compile",stagedEntry,"-o",exe,...STRICT_FLAGS,"--debug-symbols",...triple],{cwd:outDir});
+    if (manifest && errors.length === 0) {
+      const identity = `${exe}.identity`;
+      step("identity", [compiler.identity, fs.readFileSync(identityTool)], [identity], () =>
+        run(identityTool, ["--write", identity, "--compiler", compiler.identity, "--backend", "dawn"]),
+      );
+    }
+    return {exe,ran,errors};
+  }
 
   const include = path.join(NATIVE, "include");
   const shim = path.join(outDir, "tn_three_shim.o");
