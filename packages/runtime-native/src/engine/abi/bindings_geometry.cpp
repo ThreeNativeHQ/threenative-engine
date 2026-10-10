@@ -138,8 +138,9 @@ Value attributeArray(const BufferGeometry& geometry, const char* name) {
 
 void registerBufferAttribute(ClassBinding& b, const char* cls) {
     b.ctor = [cls](const Args& a, Store&) {
-        std::vector<double> values;
-        if (!a.empty() && a.at(0).kind == Value::Kind::Numbers) values = a.at(0).numbers;
+        // fromDoubles reads the list in place; copying a vertex buffer here cost a malloc and a memcpy.
+        static const std::vector<double> none;
+        const std::vector<double>& values = !a.empty() && a.at(0).kind == Value::Kind::Numbers ? a.at(0).numbers : none;
         // BufferAttribute( array, itemSize, normalized = false ); itemSize is a positive integer.
         const double itemSize = optional(a, 1, 1);
         if (!(itemSize >= 1 && itemSize <= 65536) || itemSize != std::floor(itemSize)) throw Unsupported{"itemSize must be a positive integer"};
@@ -883,8 +884,9 @@ void registerGeometryBindings(Registry& classes) {
     ClassBinding& float32 = classes["Float32BufferAttribute"];
     registerBufferAttribute(float32, "Float32BufferAttribute");
     float32.ctor = [](const Args& a, Store&) {
-        std::vector<double> values;
-        if (!a.empty() && a.at(0).kind == Value::Kind::Numbers) values = a.at(0).numbers;
+        // fromDoubles reads the list in place; copying a vertex buffer here cost a malloc and a memcpy.
+        static const std::vector<double> none;
+        const std::vector<double>& values = !a.empty() && a.at(0).kind == Value::Kind::Numbers ? a.at(0).numbers : none;
         const double itemSize = optional(a, 1, 1);
         if (!(itemSize >= 1 && itemSize <= 65536) || itemSize != std::floor(itemSize))
             throw Unsupported{"itemSize must be a positive integer"};
