@@ -130,6 +130,8 @@ runs one authored scenario twice on the shared native player (Perry then V8) and
 Pass `--incumbent <last accepted run dir>` to gate the candidate: any metric whose Perry / V8 ratio
 worsens past its margin is REGRESSED and the bench exits 3 = REGRESSION: never commit the candidate, fix the cause and bench again.
 
+Runs above 0.75 x cores load (`--max-load` overrides) are refused after a 5 minute wait: serialise builds and benches.
+
 Never report fps on Xvfb. Measurements run in the parent session; Codex sandboxes cannot start
 Xvfb. A Perry relink takes about 17 minutes; append `--perf` for profiling, excluded from the verdict.
 The V8 player needs `TN_ENABLE_NATIVE_PHYSICS=ON`, and its `--v8-bundle` must pack the game's assets:

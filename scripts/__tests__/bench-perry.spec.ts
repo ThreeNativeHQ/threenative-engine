@@ -16,6 +16,7 @@ import {
   runBench,
 } from "../bench-perry.js";
 
+const idle = { load: () => ({ load1: 1, cores: 12 }), sleep: async () => {} };
 const TAILWIND_CDN = "https://cdn.tailwindcss.com/3.4.17";
 const sample = (scale = 1) => ({
   gameJsMs: 0.5 * scale,
@@ -129,7 +130,9 @@ describe("Perry native benchmark", () => {
       runs: 5,
       perf: true,
       open: true,
+      maxLoad: 0.75,
     });
+    expect(parseBenchArgs(["--perry", "x", "--max-load", "2"]).maxLoad).toBe(2);
     for (const argv of [
       [],
       ["--perry"],
@@ -137,6 +140,8 @@ describe("Perry native benchmark", () => {
       ["--perry", "x", "--runs", "0"],
       ["--perry", "x", "--runs", "1.5"],
       ["--perry", "x", "--perry", "y"],
+      ["--perry", "x", "--max-load", "0"],
+      ["--perry", "x", "--max-load", "abc"],
     ])
       expect(() => parseBenchArgs(argv)).toThrow();
   });
@@ -244,7 +249,7 @@ describe("Perry native benchmark", () => {
     const out = path.join(temp, "artifacts");
     try {
       const better = await incumbentDir("better", 0.1);
-      expect(await runBench(argv(better), execute, out)).toBe(3);
+      expect(await runBench(argv(better), execute, out, idle)).toBe(3);
       const index = await readFile(path.join(out, "index.html"), "utf8");
       expect(index).toContain("REGRESSION vs incumbent");
       expect(index).toContain("do not commit");
@@ -262,7 +267,7 @@ describe("Perry native benchmark", () => {
 
       // 0.305 -> 0.3 is inside the 3% margin: SAME, exit follows the V8 verdict (PASS = 0).
       const same = await incumbentDir("same", 0.305);
-      expect(await runBench(argv(same), execute, out)).toBe(0);
+      expect(await runBench(argv(same), execute, out, idle)).toBe(0);
       const sameDirs = (await readdir(out)).filter((name) => name.startsWith("20")).sort();
       const sameResult = JSON.parse(
         await readFile(path.join(out, sameDirs.at(-1) ?? "", "result.json"), "utf8"),
@@ -285,8 +290,90 @@ describe("Perry native benchmark", () => {
         "Cannot read incumbent",
       );
       const before = launches;
-      expect(await runBench(argv(path.join(temp, "missing")), execute, out)).toBe(2);
+      expect(await runBench(argv(path.join(temp, "missing")), execute, out, idle)).toBe(2);
       expect(launches).toBe(before);
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
+  });
+  it("refuses to measure on an overloaded host: waits, then exits 2 at the start or the end", async () => {
+    const temp = await mkdtemp(path.join(tmpdir(), "bench-perry-load-"));
+    await writeFile(path.join(temp, "game"), "binary");
+    await writeFile(path.join(temp, "game.js"), "bundle");
+    await mkdir(path.join(temp, "native"));
+    await writeFile(path.join(temp, "native/assets.tnpk"), "assets");
+    await writeFile(path.join(temp, "scenario.json"), JSON.stringify({ assert: {} }));
+    let launches = 0;
+    const execute = async (command: string, args: string[]) => {
+      if (command === "git") return { code: 0, stdout: "head", stderr: "" };
+      launches++;
+      const artifacts = args[args.indexOf("--artifacts") + 1] ?? "";
+      await mkdir(artifacts, { recursive: true });
+      const text = markers(path.basename(artifacts).startsWith("perry") ? 0.3 : 1);
+      await writeFile(
+        path.join(artifacts, "console.json"),
+        JSON.stringify(text.split("\n").map((line) => ({ text: line }))),
+      );
+      return { code: 0, stdout: "{}", stderr: "" };
+    };
+    const argv = (...extra: string[]) => [
+      "--project",
+      temp,
+      "--scenario",
+      "scenario.json",
+      "--perry",
+      path.join(temp, "game"),
+      "--v8-bundle",
+      temp,
+      "--runs",
+      "1",
+      ...extra,
+    ];
+    const out = path.join(temp, "artifacts");
+    // Readings come from a script; the last one repeats.
+    const hostOf = (loads: number[]) => {
+      const calls = { sleeps: 0, reads: 0 };
+      return {
+        calls,
+        host: {
+          load: () => ({ load1: loads[Math.min(calls.reads++, loads.length - 1)] ?? 0, cores: 12 }),
+          sleep: async () => {
+            calls.sleeps++;
+          },
+        },
+      };
+    };
+    const latest = async () => {
+      const dirs = (await readdir(out)).filter((name) => name.startsWith("20")).sort();
+      return JSON.parse(await readFile(path.join(out, dirs.at(-1) ?? "", "result.json"), "utf8"));
+    };
+    try {
+      // 9.01 > 0.75 x 12 cores is overloaded; 9 is not.
+      const stuck = hostOf([20]);
+      expect(await runBench(argv(), execute, out, stuck.host)).toBe(2);
+      expect(launches).toBe(0);
+      expect(stuck.calls.sleeps).toBe(20);
+      expect((await latest()).error).toBe("host overloaded: load 20.00 on 12 cores");
+      expect((await readFile(path.join(out, "ledger.tsv"), "utf8")).trim()).toMatch(
+        /\tMEASUREMENT_FAILURE$/,
+      );
+      expect(await readFile(path.join(out, "index.html"), "utf8")).toContain("host overloaded");
+
+      const settles = hostOf([20, 20, 5, 5]);
+      expect(await runBench(argv(), execute, out, settles.host)).toBe(0);
+      expect(settles.calls.sleeps).toBe(2);
+      expect((await latest()).hostLoad).toMatchObject({
+        maxLoadPerCore: 0.75,
+        start: { load1: 5, cores: 12 },
+        end: { load1: 5, cores: 12 },
+      });
+
+      const before = launches;
+      expect(await runBench(argv(), execute, out, hostOf([5, 20]).host)).toBe(2);
+      expect(launches).toBeGreaterThan(before);
+      expect((await latest()).error).toBe("host overloaded: load 20.00 on 12 cores");
+
+      expect(await runBench(argv("--max-load", "2"), execute, out, hostOf([20]).host)).toBe(0);
     } finally {
       await rm(temp, { recursive: true, force: true });
     }
@@ -352,14 +439,16 @@ describe("Perry native benchmark", () => {
       "2",
     ];
     try {
-      expect(await runBench(argv, execute, path.join(temp, "artifacts"))).toBe(0);
+      expect(await runBench(argv, execute, path.join(temp, "artifacts"), idle)).toBe(0);
       expect(launches).toEqual(["perry", "v8", "perry", "v8"]);
       const written = await readFile(path.join(directories.at(-1) ?? "", "report.html"), "utf8");
       expect(written).toContain('<article data-metric="firstFrameMs"');
       expect(written.replace(TAILWIND_CDN, "")).not.toContain("http");
       expect(await readFile(path.join(temp, "artifacts", "index.html"), "utf8")).toBe(written);
       await rm(path.join(temp, "game.js"));
-      expect(await runBench([...argv, "--perf"], execute, path.join(temp, "artifacts"))).toBe(0);
+      expect(await runBench([...argv, "--perf"], execute, path.join(temp, "artifacts"), idle)).toBe(
+        0,
+      );
       const profiled = JSON.parse(
         await readFile(path.join(directories.at(-1) ?? "", "result.json"), "utf8"),
       );
@@ -369,10 +458,10 @@ describe("Perry native benchmark", () => {
       });
       expect(launches.slice(4)).toEqual(["perry", "v8", "perry", "v8", "perry", "v8"]);
       missing = true;
-      expect(await runBench(argv, execute, path.join(temp, "artifacts"))).toBe(2);
+      expect(await runBench(argv, execute, path.join(temp, "artifacts"), idle)).toBe(2);
       missing = false;
       crashed = true;
-      expect(await runBench(argv, execute, path.join(temp, "artifacts"))).toBe(2);
+      expect(await runBench(argv, execute, path.join(temp, "artifacts"), idle)).toBe(2);
       const failure = JSON.parse(
         await readFile(path.join(directories.at(-1) ?? "", "result.json"), "utf8"),
       );

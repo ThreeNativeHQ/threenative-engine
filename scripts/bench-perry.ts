@@ -2,7 +2,7 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { loadavg } from "node:os";
+import { availableParallelism, loadavg } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -26,6 +26,7 @@ export interface IBenchArgs {
   perf: boolean;
   open: boolean;
   incumbent?: string;
+  maxLoad: number;
 }
 export interface IMeasurement {
   firstFrameMs: number;
@@ -65,6 +66,26 @@ const command: Command = async (file, args, cwd) => {
   }
 };
 
+const DEFAULT_MAX_LOAD = 0.75;
+const LOAD_WAIT_MS = 300_000;
+const LOAD_POLL_MS = 15_000;
+export interface IHostLoad {
+  load1: number;
+  cores: number;
+}
+/** Injectable so the spec can fake an overloaded host and skip the waits. */
+export interface IHost {
+  load: () => IHostLoad;
+  sleep: (ms: number) => Promise<void>;
+}
+const realHost: IHost = {
+  load: () => ({ load1: loadavg()[0] ?? 0, cores: availableParallelism() }),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+const overloaded = (reading: IHostLoad, maxLoad: number) => reading.load1 > maxLoad * reading.cores;
+const overloadError = (reading: IHostLoad) =>
+  new Error(`host overloaded: load ${reading.load1.toFixed(2)} on ${reading.cores} cores`);
+
 export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
   const values = new Map<string, string>();
   let perf = false;
@@ -82,7 +103,15 @@ export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
     }
     if (
       !flag ||
-      !["--project", "--scenario", "--perry", "--v8-bundle", "--runs", "--incumbent"].includes(flag)
+      ![
+        "--project",
+        "--scenario",
+        "--perry",
+        "--v8-bundle",
+        "--runs",
+        "--incumbent",
+        "--max-load",
+      ].includes(flag)
     )
       throw new Error(`Unknown argument: ${flag}`);
     const value = argv[++i];
@@ -96,12 +125,15 @@ export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
   const runs = Number(values.get("--runs") ?? 3);
   if (!perry) throw new Error("--perry <prebuilt game binary> is required");
   if (!Number.isSafeInteger(runs) || runs < 1) throw new Error("--runs must be a positive integer");
+  const maxLoad = Number(values.get("--max-load") ?? DEFAULT_MAX_LOAD);
+  if (!Number.isFinite(maxLoad) || maxLoad <= 0) throw new Error("--max-load must be a number > 0");
   return {
     project,
     perry: path.resolve(perry),
     runs,
     perf,
     open,
+    maxLoad,
     incumbent: values.has("--incumbent")
       ? path.resolve(values.get("--incumbent") ?? "")
       : undefined,
@@ -837,6 +869,7 @@ export async function runBench(
   argv: readonly string[],
   execute: Command = command,
   outputRoot = path.join(root, "artifacts/perf-loop"),
+  host: IHost = realHost,
 ): Promise<number> {
   const time = new Date().toISOString();
   const load = loadavg();
@@ -850,6 +883,7 @@ export async function runBench(
     perrySha256: string;
     args?: IBenchArgs;
     regression?: IRegression;
+    hostLoad?: { maxLoadPerCore: number; start?: IHostLoad; end?: IHostLoad };
     arms: typeof arms;
     comparison?: ReturnType<typeof compareArms>;
     error?: string;
@@ -859,6 +893,23 @@ export async function runBench(
     const args = parseBenchArgs(argv);
     result.args = args;
     // Fail before any measurement when the accepted run cannot be read.
+    // A loaded host skews the arms unevenly (V8 startup more than Perry), so wait, then refuse.
+    let start = host.load();
+    if (overloaded(start, args.maxLoad)) {
+      process.stdout.write(
+        `host load ${start.load1.toFixed(2)} on ${start.cores} cores is above ${args.maxLoad} x cores; waiting up to 5 minutes\n`,
+      );
+      for (
+        let waited = 0;
+        waited < LOAD_WAIT_MS && overloaded(start, args.maxLoad);
+        waited += LOAD_POLL_MS
+      ) {
+        await host.sleep(LOAD_POLL_MS);
+        start = host.load();
+      }
+    }
+    result.hostLoad = { maxLoadPerCore: args.maxLoad, start };
+    if (overloaded(start, args.maxLoad)) throw overloadError(start);
     const incumbent = args.incumbent ? await loadIncumbent(args.incumbent) : undefined;
     const head = await execute("git", ["rev-parse", "HEAD"], root);
     if (head.code !== 0) throw new Error("Cannot read git HEAD");
@@ -991,6 +1042,9 @@ export async function runBench(
       await measure("perry", i + 1, false);
       await measure("v8", i + 1, false);
     }
+    const end = host.load();
+    result.hostLoad.end = end;
+    if (overloaded(end, args.maxLoad)) throw overloadError(end);
     result.comparison = compareArms(arms);
     if (incumbent) result.regression = compareToIncumbent(result.comparison, incumbent);
     if (args.perf) {
