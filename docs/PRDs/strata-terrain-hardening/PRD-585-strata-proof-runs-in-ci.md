@@ -1,6 +1,6 @@
 # PRD-585 — Strata's proof runs in CI, not only by hand
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — No Strata playtest, consumer check or editor script runs in CI, so every later PRD in this epic can regress unseen (AC-1 to AC-5).
 **Complexity:** 4 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
@@ -33,9 +33,9 @@ index them in the example's `AGENTS.md`.
 
 - [ ] AC-1 [shared]: The `strata` job runs `test:terrain:web` green on a PR touching `packages/terrain/`. proof: CI run link — Evidence: pending.
 - [ ] AC-2 [shared]: The same job runs `test:consumer` and `test:terrain:editor` green. proof: CI run link — Evidence: pending.
-- [ ] AC-3 [local]: The change-scope selects the job for terrain, example and `world-cells` paths and skips it for an unrelated template. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` — Evidence: pending.
-- [ ] AC-4 [local]: A baked 3×3-cell package loads through a real `WorldCells`; walking across cells gives resident cells and instance counts equal to the bake. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-terrain.spec.ts` — Evidence: pending.
-- [ ] AC-5 [local]: Every file under the example's `scripts/` and `playtests/` is wired from `package.json` or named in its `AGENTS.md`. proof: a spec listing the folder against both — Evidence: pending.
+- [x] AC-3 [local]: The change-scope selects the job for terrain, example and `world-cells` paths and skips it for an unrelated template. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` — Evidence: PASS (213 tests), including `world.ts`, qualification, and required-verdict missing/skipped/failed/unmapped cases.
+- [x] AC-4 [local]: A baked 3×3-cell package loads through a real `WorldCells`; walking across cells gives resident cells and instance counts equal to the bake. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-terrain.spec.ts` — Evidence: PASS (1 test); bounded drain fails on timeout and cleanup runs in `finally`.
+- [x] AC-5 [local]: Every file under the example's `scripts/` and `playtests/` is wired from `package.json` or named in its `AGENTS.md`. proof: `pnpm exec vitest run scripts/__tests__/strata-script-census.spec.ts` — Evidence: PASS (1 test); recursive, nonempty inventory matches exact documented relative paths, including fixtures.
 
 ## Integration Ledger
 
@@ -47,14 +47,16 @@ index them in the example's `AGENTS.md`.
 ## Execution Phases
 
 #### Phase 1: integration spec and script census
-**Status:** NOT STARTED
+**Status:** COMPLETE
 **Files:** `packages/core/__tests__/world-cells-terrain.spec.ts` (new), `examples/strata-terrain-preview/AGENTS.md`, orphan scripts (delete or index)
-- [ ] Real `WorldCells` loads a baked package. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-terrain.spec.ts`
-- [ ] No unwired script or playtest is left. proof: census spec
+- [x] Real `WorldCells` loads a baked package. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-terrain.spec.ts` — PASS (1 test); core typecheck also passed.
+- [x] No unwired script or playtest is left. proof: census spec — PASS (1 test); original package scripts preserved, manual/preparation helpers indexed by purpose. `pnpm sync:agents`, mirror contracts (8 tests), and `pnpm check:docs` passed.
 
 #### Phase 2: the CI job
-**Status:** NOT STARTED
-**Files:** `.github/workflows/ci.yml`, `scripts/ci-change-scope.mjs`, `scripts/__tests__/ci-structure.spec.ts`
-- [ ] Scope selects and skips correctly. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts`
+**Status:** PARTIAL
+**Files:** `.github/workflows/ci.yml`, `scripts/ci-change-scope.mjs`, `scripts/__tests__/ci-structure.spec.ts`, `scripts/__tests__/ci-needs.spec.ts`
+- [x] Scope selects and skips correctly. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` — PASS (213 tests); the existing protected main-job join rejects missing, skipped, failed and unmapped results. Focused Biome checks passed with complexity warnings.
 - [ ] Web playtest green in CI. proof: CI run link
 - [ ] Consumer and editor scripts green in CI. proof: CI run link
+
+The local job wiring is verified; AC-1/AC-2 need a real candidate CI run with successful `strata` execution. Skipped draft checks are not runtime proof.
