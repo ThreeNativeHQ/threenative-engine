@@ -231,20 +231,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // strata branch: measured through createProject on the merged tree.
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
-  "action-rpg": "29a2e2f8a8e1dbe84bed6b9752f9b50bc359c0526649b74236cab66e3ce5beec",
-  minimal: "29de540167ba97c5fd3883c0cf8c3a5435686312a97826426871b21a76f18607",
-  platformer: "ca93bd64f1efedd927b9cc428e1a20742a89d82930f8296fe0054ddb1d934ab8",
-  puzzle: "6b6896141c66be49c8a1a519b6c53039cfacb337fa816ad212b80c65daa864d7",
-  racing: "fd9affe9069f72f1c3a93eb1b126caeb156cb56e342c0768c646cbf1a831af34",
-  rain: "38302a90e87c5c1e4f864a75a6d4e8bdf108059df470798741a74cc6d3d990e0",
-  rts: "d7f3f1e9c3664386d32f99a8bdb8b5267632843f5dd2ed1804128fe3ddd0752d",
-  runner: "11a74a807e5e2f80c703098f3059bef04d3b8b42170b9ba68e37f71c247f5b27",
+  "action-rpg": "72539cd4803384cbf8d1d13dcc80116740fd241e2122a19e7b9efd5b6023a145",
+  minimal: "286787918a1d8aa9e6a7d1ea7cddfeb6016b8582edf4947099771d7a4d5d77c2",
+  platformer: "fb3acdd77377eb38039aaa6fa634b0e301bb0b42b579260d90948256513d2fce",
+  puzzle: "d2aa9144346b81cad693db90c38e223c269baaaca00ac2015eb3a22d0c6b0373",
+  racing: "c0692610b232e12a659eeb591afc7dc03cff265cc278c773f1731b331bcd3382",
+  rain: "a5485e777dbf56e578641f078cb426821e1f64952dd8ec7ffb1674b1ee8586d0",
+  rts: "9e8f064a139ee84c0a30079e97f3ff910724b6a9a7bfe5e61d2a915091318dbe",
+  runner: "3c425e56f0ae0193fd4af6587ebf97e9b94102c3d70d644fc1692d8ce375051a",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "3303a84c672a02dbbb5100cc4d647940c83c8a119e55c8cebf498b710cdd3e43",
-  shooter: "b856407fa828dc9ac76991cbffc4da8d327179a7f901229ccb2670cd4a486bd8",
-  snow: "0d3c4003a00e9b0772a877359ee204cffde78d2be21449e97ccc6e93ef941248",
-  starter: "27e4be7581d9ba96af39e2263c7645678aa30de6cb7b8fda4e0abb8195d6ee0b",
-  "tower-defense": "ff1a494154b4d2db224143046d4b2ffb02dd9cf74ad602b38af7eb72071042b3",
+  sailing: "8255df7db8cd434c3b832ae7f9dc71f11145839ebbd0012f876fea766362d824",
+  shooter: "f29ccbc565b468c0c476078f39103469bc59cd074c4511e90a62cac4b52680cb",
+  snow: "7a49725bf82aaa6373851f4d326d71f0a0981562a0a011312e462696acea5bf9",
+  starter: "b2a367f2f73cd700bd5e1d447fa810ba823ce4a71f3b54e07d8bdf5e1c45726e",
+  "tower-defense": "fbb8c4f10c0ee48f244a53bc82920c6089440bc1d73a6ad33a1a65e383e7ccc6",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -517,6 +517,25 @@ describe("create-threenative", () => {
     expect(source.match(/substituteTemplateVariables\(/gu)).toHaveLength(2);
     expect(source.match(/replaceAll\(placeholder, value\)/gu)).toHaveLength(1);
   });
+
+  it.each([undefined, {}])(
+    "pins the supported packageManager in generated projects (%j)",
+    async (packageSources) => {
+      const root = await makeTempDir("threenative-scaffold-pm-");
+      try {
+        const created = await createProject(
+          { install: false, packageSources, target: "pm-game", template: "starter" },
+          root,
+        );
+        const manifest = JSON.parse(
+          await readFile(path.join(created.target, "package.json"), "utf8"),
+        ) as { packageManager?: string };
+        expect(manifest.packageManager).toBe("pnpm@10.25.0");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("keeps every no-install scaffold tree byte-stable against the PRD parent", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
