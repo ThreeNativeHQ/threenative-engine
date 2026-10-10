@@ -72,7 +72,7 @@ earlier wave unless the "Waits on" column says so.
 | Wave | PRD | Outcome | Complexity | Waits on |
 | --- | --- | --- | --- | --- |
 | 1 | [PRD-560](./PRD-560-height-fog-follows-the-ground.md) | Fog thickens toward the ground and glows toward the sun, at near-zero cost | 3 LOW | — |
-| 1 | [PRD-571](./PRD-571-exposure-meters-a-histogram-and-ignores-the-sun.md) | Exposure ignores the brightest and darkest tenth of the frame | 2 LOW | — |
+| 1 | [PRD-571](../BLOCKED/requires-physical-device/PRD-571-exposure-meters-a-histogram-and-ignores-the-sun.md) | Exposure ignores the brightest and darkest tenth of the frame | 2 LOW | — |
 | 1 | [PRD-572](../done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md) | A moving shadow caster updates its shadow without a `trackCaster` call | 3 LOW | — |
 | 1 | [PRD-567](../done/PRD-567-terrain-layers-blend-by-their-own-height.md) | Terrain layers blend by their own height maps | 3 LOW | owner confirms the core/template split |
 | 2 | [PRD-561](./PRD-561-contact-shadows-from-screen-depth.md) | Small objects and feet sit on the ground (screen-space contact shadows) | 5 MEDIUM | — |

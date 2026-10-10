@@ -2,12 +2,16 @@ import {
   ACESFilmicToneMapping,
   AmbientLight,
   BoxGeometry,
+  CircleGeometry,
   Color,
   DirectionalLight,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   type PerspectiveCamera,
+  PlaneGeometry,
   Vector2,
+  Vector3,
 } from "three";
 import { pass } from "three/tsl";
 import type { WebGPURenderer } from "three/webgpu";
@@ -28,8 +32,49 @@ export interface IExposureFixtureOptions {
   deterministic?: boolean;
   coldBoot?: boolean;
   cameraCut?: boolean;
+  /** "sky": a band over the top 8% of the frame, 10 stops over the room. "disc": a 1% disc, 14 stops. */
+  backlit?: "sky" | "disc";
   nativeValidation?: boolean;
   nativeValidationInject?: boolean;
+}
+
+/** A flat emissive patch fixed in front of the camera; it lights nothing, so only the meter sees it. */
+function createBacklit(
+  ctx: ICtx,
+  camera: PerspectiveCamera,
+  kind: IExposureFixtureOptions["backlit"],
+  roomLuminance: number,
+) {
+  if (kind === undefined) return undefined;
+  camera.updateMatrixWorld(true);
+  const distance = 20;
+  const height = 2 * distance * Math.tan((camera.fov * Math.PI) / 360);
+  const aspect = 16 / 9;
+  const stops = kind === "sky" ? 10 : 14;
+  const material = new MeshBasicMaterial({
+    color: new Color(1, 1, 1).multiplyScalar(roomLuminance * 2 ** stops),
+    toneMapped: false,
+  });
+  const geometry =
+    kind === "sky"
+      ? new PlaneGeometry(height * aspect * 2, height * 0.08)
+      : new CircleGeometry(Math.sqrt((0.01 * aspect) / Math.PI) * height, 48);
+  const patch = new Mesh(geometry, material);
+  const up = kind === "sky" ? height * (0.5 - 0.04) : height * 0.3;
+  const right = kind === "sky" ? 0 : height * aspect * 0.25;
+  patch.quaternion.copy(camera.quaternion);
+  patch.position
+    .copy(camera.position)
+    .addScaledVector(camera.getWorldDirection(new Vector3()), distance)
+    .addScaledVector(new Vector3(0, 1, 0).applyQuaternion(camera.quaternion), up)
+    .addScaledVector(new Vector3(1, 0, 0).applyQuaternion(camera.quaternion), right);
+  ctx.add(patch);
+  return {
+    dispose() {
+      geometry.dispose();
+      material.dispose();
+    },
+  };
 }
 
 /** Portable scene and engine loop. The browser entry only supplies controls and mounts the canvas. */
@@ -79,7 +124,14 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
           ctx.scene.background = new Color(0x445565).multiplyScalar(intensity);
         };
         applyLight();
+        const backlit = createBacklit(
+          ctx,
+          camera,
+          options.backlit,
+          options.bright ? 3.896 : 0.0019189,
+        );
         disposeRoom = () => {
+          backlit?.dispose();
           floor.dispose();
           block.dispose();
           for (const material of materials) material.dispose();

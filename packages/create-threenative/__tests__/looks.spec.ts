@@ -168,7 +168,14 @@ describe("starter visual floor", () => {
         // WorldEnvironment is the starter's complete, Godot-named visual recipe. It intentionally
         // carries the stage contracts and their reasons in one editable file; the ownership check
         // above still prevents it from becoming a hidden framework import.
-        if (!name.endsWith("loading.ts") && !name.endsWith("worldEnvironment.ts"))
+        // AutoExposureNode sequences five GPU passes (meter, reduce, histogram tiles, histogram
+        // bins, adapt) with their disposal. It stays plain Three.js the game can rewrite, so the
+        // ownership check above is the rule that matters for it.
+        if (
+          !name.endsWith("loading.ts") &&
+          !name.endsWith("worldEnvironment.ts") &&
+          !name.endsWith("autoExposure.ts")
+        )
           expect(source.trimEnd().split("\n").length, name).toBeLessThan(200);
       }
     }

@@ -6,8 +6,18 @@ not engine configuration. `enabled: false` is the qualification default; no ship
 merely because these files exist. The generated quality presets additionally keep
 `autoExposureEnabled: false`, avoiding GPU metering cost until the game explicitly opts in.
 
-`autoExposure.ts` reduces the existing unexposed colour texture in 4×4 blocks and adapts in log2
-space on separate 1×1 ping-pong targets. Odd-sized edge blocks are masked rather than repeated.
+`autoExposure.ts` reduces the existing unexposed colour texture in 4×4 blocks, collects the blocks
+into a 64-bin histogram of log2 luminance, and adapts in log2 space on separate 1×1 ping-pong
+targets. The bins span `log2(key) - maxStops` to `log2(key) - minStops`. Odd-sized edge blocks are
+masked rather than repeated.
+
+The meter reads the histogram, not a mean. `lowPercent` and `highPercent` (default 10 and 90) set
+how much weight each end of the histogram loses before the average: a small bright sun disc or a
+dark corner stays out of the exposure. Lower `highPercent` when a large bright backdrop still sets
+the exposure. Raise it toward 100 for a night scene whose only light sources are the subject. Keep
+`0 <= lowPercent < highPercent <= 100`. The spatial weight in `exposureMeter` (`1 + uv.y`, so the
+bottom of the frame counts more than the top) is the weight each sample adds to its bin. When the
+clip leaves no weight, the previous exposure stays.
 There is no extra scene draw, tonemapper, or render loop. Wire it ahead of bloom and the output
 transform; never multiply both its absolute exposure and the old constant. `applyExposure` scales
 RGB and preserves alpha: multiplying a whole vec4 darkens low-exposure output again when the

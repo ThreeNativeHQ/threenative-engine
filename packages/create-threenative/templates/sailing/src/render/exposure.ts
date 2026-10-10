@@ -9,6 +9,12 @@ export interface IExposureSettings {
   /** Exposure limits in stops. Expand only if the scene needs more range. */
   minStops: number;
   maxStops: number;
+  /**
+   * Percent of metered weight, dark to bright, ignored at each end of the histogram.
+   * Raise highPercent's gap (lower it) when a large bright backdrop still sets the exposure.
+   */
+  lowPercent: number;
+  highPercent: number;
   /** Exponential response per second in log2 space. Up opens the eye; down squints. */
   rateUp: number;
   rateDown: number;
@@ -30,6 +36,8 @@ export const exposureSettings: Readonly<IExposureSettings> = {
   key: 0.18,
   minStops: -12,
   maxStops: 12,
+  lowPercent: 10,
+  highPercent: 90,
   rateUp: 2,
   rateDown: 4,
   snapLo: 3,
@@ -41,15 +49,18 @@ export const exposureSettings: Readonly<IExposureSettings> = {
   reportInterval: 0.5,
 };
 
-/** Return weighted luminance and weight. Lower the clamp to reject small bright sources. */
+/**
+ * Return weighted luminance and weight. The histogram's percent clip, not a clamp here, rejects
+ * small bright sources. The upper bound only keeps a half-float overflow from poisoning a block.
+ */
 export function exposureMeter(colour: Node<"vec4">, uv: Node<"vec2">): Node<"vec2"> {
-  const luminance = dot(colour.rgb, vec3(0.2126, 0.7152, 0.0722)).clamp(0.0001, 8);
+  const luminance = dot(colour.rgb, vec3(0.2126, 0.7152, 0.0722)).clamp(0.0001, 65504);
   // Larger bottom-of-frame preference favours ground over bright sky (WebGPU UV y is down).
   const weight = float(1).add(uv.y);
   return vec2(luminance.mul(weight), weight);
 }
 
-/** Change this with the metric if the game encodes RMS or log-mean values. */
+/** Receives the clipped histogram's linear mean luminance. Change it if the game encodes RMS. */
 export function exposureLuminance(mean: Node<"float">): Node<"float"> {
   return mean.max(0.0001);
 }
@@ -71,6 +82,9 @@ export function validateExposureSettings(value: IExposureSettings): void {
     value.snapHi <= value.snapLo ||
     value.snapGain < 0 ||
     value.snapGain > 1 ||
+    value.lowPercent < 0 ||
+    value.highPercent > 100 ||
+    value.lowPercent >= value.highPercent ||
     value.minStops >= value.maxStops ||
     value.minStops < -126 ||
     value.maxStops > 126 ||
