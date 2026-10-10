@@ -133,7 +133,12 @@ function uniformScale(asset: string, id: string, scale: readonly [number, number
   return mean;
 }
 
-function placementRecord(item: IPlacement, extent: IWorldPackageManifest["extent"]): number[] {
+function writePlacementRecord(
+  out: Float32Array,
+  offset: number,
+  item: IPlacement,
+  extent: IWorldPackageManifest["extent"],
+): void {
   if (item.transform === undefined && !Number.isFinite(item.rotation))
     throw Error(`World package: placement '${item.id}' has a non-finite rotation.`);
   const { position, quaternion, scale } = poseOf(item);
@@ -156,16 +161,14 @@ function placementRecord(item: IPlacement, extent: IWorldPackageManifest["extent
     );
   const length = Math.hypot(...quaternion);
   if (!(length > 0)) throw Error(`World package: placement '${item.id}' has a zero quaternion.`);
-  return [
-    position[0],
-    position[1],
-    position[2],
-    quaternion[0] / length,
-    quaternion[1] / length,
-    quaternion[2] / length,
-    quaternion[3] / length,
-    uniformScale(item.asset, item.id, scale),
-  ];
+  out[offset] = position[0];
+  out[offset + 1] = position[1];
+  out[offset + 2] = position[2];
+  out[offset + 3] = quaternion[0] / length;
+  out[offset + 4] = quaternion[1] / length;
+  out[offset + 5] = quaternion[2] / length;
+  out[offset + 6] = quaternion[3] / length;
+  out[offset + 7] = uniformScale(item.asset, item.id, scale);
 }
 
 /**
@@ -215,7 +218,7 @@ function placementCells(
     for (const [asset, items] of [...cell.items.entries()].sort(byId)) {
       runs.push({ asset, count: items.length, offset: written });
       for (const item of items) {
-        records.set(placementRecord(item, extent), written * RECORD_VALUES);
+        writePlacementRecord(records, written * RECORD_VALUES, item, extent);
         written += 1;
       }
     }
@@ -322,12 +325,15 @@ function splatBytes(state: ITerrainState, resolution: number): Uint8Array {
   const bytes = new Uint8Array(planeBytes * PLANES);
   for (let row = 0; row < resolution; row += 1) {
     const source = (resolution - 1 - row) * resolution;
+    const rowOffset = row * resolution * 4;
     for (let column = 0; column < resolution; column += 1) {
       const sample = (source + column) * MATERIAL_IDS.length;
+      const rowCol = rowOffset + column * 4;
       for (const slot of SLOTS) {
         const weight = state.splat[sample + slot.channel] as number;
-        bytes[slot.plane * planeBytes + row * resolution * 4 + column * 4 + slot.componentIndex] =
-          Math.round(Math.min(1, Math.max(0, weight)) * 255);
+        bytes[slot.plane * planeBytes + rowCol + slot.componentIndex] = Math.round(
+          (weight <= 0 ? 0 : weight >= 1 ? 1 : weight) * 255,
+        );
       }
     }
   }
