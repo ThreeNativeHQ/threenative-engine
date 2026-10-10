@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <utility>
 
 namespace tn::engine {
 
@@ -268,11 +269,18 @@ BufferAttribute& BufferAttribute::setXYZW(uint64_t index, double x, double y, do
 
 // The three floats of an in-range item of a Float32, unnormalized attribute with itemSize >= 3 (the
 // position and normal layout): the element path converts these exactly as a direct float read does.
-float* BufferAttribute::floatXYZ(uint64_t index) const {
+// The const form reads, so the store's write count holds; the other is a write and moves it.
+const float* BufferAttribute::floatXYZ(uint64_t index) const {
     if (store->scalar() != Scalar::F32 || normalized || itemSize < 3) return nullptr;
     const uint64_t stride = static_cast<uint64_t>(itemSize) * sizeof(float);
     if (index >= store->byteLength() / stride) return nullptr;
-    return reinterpret_cast<float*>(store->data() + index * stride);
+    return reinterpret_cast<const float*>(std::as_const(*store).data() + index * stride);
+}
+
+float* BufferAttribute::floatXYZ(uint64_t index) {
+    const float* at = std::as_const(*this).floatXYZ(index);
+    if (at != nullptr) (void)store->data();
+    return const_cast<float*>(at);
 }
 
 Vector3& BufferAttribute::getXYZ(uint64_t index, Vector3& target) const {
@@ -511,7 +519,7 @@ void BufferGeometry::normalizeNormals() {
 
 std::shared_ptr<BufferAttribute> BufferAttribute::clone() const {
     auto copy = std::make_shared<BufferAttribute>(store->scalar(), store->count(), itemSize, normalized);
-    copy->store->write(0, store->data(), store->byteLength());
+    copy->store->write(0, std::as_const(*store).data(), store->byteLength());
     copy->name = name;
     copy->usage = usage;
     copy->gpuType = gpuType;
@@ -574,11 +582,13 @@ std::shared_ptr<BufferGeometry> BufferGeometry::toNonIndexed() const {
         const uint64_t elementBytes = scalarSize(attribute->store->scalar());
         const uint64_t itemBytes = size * elementBytes;
         const uint64_t items = attribute->count();
+        std::byte* to = copy->store->data();
+        const std::byte* from = std::as_const(*attribute->store).data();
         uint64_t out = 0;
         for (const double vertex : indices) {
             const auto item = static_cast<uint64_t>(vertex);
             if (item < items) {
-                std::memcpy(copy->store->data() + out * elementBytes, attribute->store->data() + item * itemBytes, itemBytes);
+                std::memcpy(to + out * elementBytes, from + item * itemBytes, itemBytes);
                 out += size;
             } else {
                 for (uint64_t j = 0; j < size; ++j) copy->setRaw(out++, attribute->raw(item * size + j));

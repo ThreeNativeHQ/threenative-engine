@@ -153,7 +153,28 @@ void floatItemsMatchElements() {
     }
 }
 
+// A read leaves the source's write count, so the Wasm back end's copy of `attribute.array` stays
+// current: bounds, clone and toNonIndexed read their source; only a write moves the count.
+void readsLeaveWrites() {
+    BufferGeometry geometry;
+    const auto position = BufferAttribute::fromDoubles(Scalar::F32, {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1}, 3);
+    geometry.setAttribute("position", position);
+    geometry.setIndex(BufferAttribute::fromIndices({0, 1, 2, 0, 2, 3}));
+    const uint64_t start = position->store->writes();
+    Vector3 point;
+    position->getXYZ(1, point);
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    const auto copy = geometry.clone();
+    const auto flat = geometry.toNonIndexed();
+    CHECK(position->store->writes() == start);
+    CHECK(point.x == 1 && flat->getAttribute("position")->count() == 6);
+    CHECK(copy->getAttribute("position")->raw(10) == 0 && copy->getAttribute("position")->raw(11) == 1);
+    position->setXYZ(0, 5, 5, 5);
+    CHECK(position->store->writes() != start);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"float_items_match_elements", floatItemsMatchElements}, {"from_doubles_matches_set_raw", fromDoublesMatchesSetRaw}, {"js_numbers", jsNumbers}, {"typed_writes", typedWrites}, {"normalized", normalized},
+TN_TEST_MAIN({"reads_leave_writes", readsLeaveWrites}, {"float_items_match_elements", floatItemsMatchElements}, {"from_doubles_matches_set_raw", fromDoublesMatchesSetRaw}, {"js_numbers", jsNumbers}, {"typed_writes", typedWrites}, {"normalized", normalized},
              {"out_of_range", outOfRange}, {"nan_bounds", nanBounds})

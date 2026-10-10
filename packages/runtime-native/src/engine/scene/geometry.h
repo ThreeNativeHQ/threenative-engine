@@ -102,7 +102,8 @@ public:
     void setRaw(uint64_t elementIndex, double value);
 
 private:
-    [[nodiscard]] float* floatXYZ(uint64_t index) const;
+    [[nodiscard]] const float* floatXYZ(uint64_t index) const;
+    [[nodiscard]] float* floatXYZ(uint64_t index);
     [[nodiscard]] double denormalize(double value) const;
     [[nodiscard]] double normalize(double value) const;
 };
