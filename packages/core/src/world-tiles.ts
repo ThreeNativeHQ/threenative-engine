@@ -17,6 +17,7 @@ import {
   type ILodView,
   type IModelLodPolicy,
   conservativeViewDepth,
+  projectedLodError,
   selectLodLevel,
   worldSphere,
 } from "./model-lod.js";
@@ -2548,7 +2549,68 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   debug(): Record<string, unknown> {
     const topology = this.#topology;
+    const view = this.#lodView;
+    // Inspection only: retain per-frame selection and sampling costs unchanged.
+    const lodDecisions = [...this.#resident.values()].map((tile) => {
+      const distance =
+        this.#focus === undefined
+          ? 0
+          : Math.hypot(
+              this.#focus.x - tile.tileX * this.tileSize,
+              this.#focus.z - tile.tileZ * this.tileSize,
+            );
+      const next = tile.levels[tile.lodLevel + 1];
+      const finest = tile.levels[0];
+      const bounds = finest?.geometry.boundingSphere;
+      let projection: { errorPixels?: number; depth: number; degenerate: boolean } | undefined;
+      if (view !== undefined && next !== undefined && finest !== undefined && bounds != null) {
+        finest.mesh.updateWorldMatrix(true, false);
+        const sphere = worldSphere(bounds, finest.mesh);
+        const depth = conservativeViewDepth(
+          view.camera,
+          sphere.center,
+          sphere.radius,
+          (view.camera as Camera & { near?: number }).near ?? 0,
+        );
+        const errorPixels = projectedLodError(
+          next.surfaceError * finest.mesh.matrixWorld.getMaxScaleOnAxis(),
+          view.camera,
+          view.viewportHeight,
+          depth.depth,
+        );
+        projection = { ...depth, ...(Number.isFinite(errorPixels) ? { errorPixels } : {}) };
+      }
+      return {
+        key: tile.key,
+        lodLevel: tile.lodLevel,
+        distance,
+        distanceLod: lodLevelForDistance(distance, this.#lodDistances),
+        maxLodLevel: tile.maxLodLevel,
+        targetLod: this.#targetLod(tile, distance),
+        ...(next === undefined
+          ? {}
+          : {
+              nextCoarser: {
+                lodLevel: tile.lodLevel + 1,
+                surfaceError: next.surfaceError,
+                ...projection,
+              },
+            }),
+      };
+    });
     return {
+      lodDecisions,
+      lodPolicy: {
+        lodDistances: [...this.#lodDistances],
+        ...(view === undefined
+          ? {}
+          : {
+              viewportHeight: view.viewportHeight,
+              maxPixelError: view.maxPixelError,
+              hysteresis: view.hysteresis,
+              coarsenBelowPixels: (1 - view.hysteresis) * view.maxPixelError,
+            }),
+      },
       ...(this.maxSeamGap === undefined ? {} : { maxSeamGap: this.maxSeamGap }),
       ...(this.maxVisualSeamGap === undefined ? {} : { maxVisualSeamGap: this.maxVisualSeamGap }),
       maxLodTransitionFrames: this.#maxLodTransitionFrames,

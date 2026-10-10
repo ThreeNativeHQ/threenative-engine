@@ -723,6 +723,143 @@ describe("TerrainTiles", () => {
     }
   });
 
+  it("projects retained metre errors through the installed selector rather than treating metres as pixels", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      sampleHeight: (x) => 0.01 * x * x,
+      residentByteBudget: 20_000_000,
+      residentTileBudget: 9,
+      tileResolution: 65,
+      tileSize: 64,
+      streamRadius: 1,
+      lodDistances: [48, 96],
+      mergeTiles: false,
+    });
+    const camera = new OrthographicCamera(
+      (-150 * 1280) / 720,
+      (150 * 1280) / 720,
+      150,
+      -150,
+      1,
+      1000,
+    );
+    camera.position.set(64, 180, 180);
+    camera.lookAt(64, 0, 0);
+    const view = { camera, viewportHeight: 720, maxPixelError: 1, hysteresis: 0.15 };
+    const decision = () =>
+      (
+        tiles.debug().lodDecisions as {
+          key: string;
+          lodLevel: number;
+          targetLod: number;
+          nextCoarser: { surfaceError: number; errorPixels: number };
+        }[]
+      ).find((tile) => tile.key === "0:0");
+    try {
+      tiles.follow({ x: 64, z: 0 }, undefined, view);
+      expect(decision()).toMatchObject({ lodLevel: 1, targetLod: 1 });
+      camera.zoom = 100;
+      camera.updateProjectionMatrix();
+      tiles.process(undefined, camera, undefined, view);
+      expect(decision()).toMatchObject({ lodLevel: 0, targetLod: 0 });
+      // A two-metre coarse cell interpolates x² at its one-metre midpoint:
+      // 0.01 * ((0² + 2²)/2 - 1²) = 0.01 m; 720/300 * zoom = 240 px/m.
+      expect(decision()?.nextCoarser.surfaceError).toBeCloseTo(0.01, 4);
+      expect(decision()?.nextCoarser.errorPixels).toBeCloseTo(2.4, 2);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("reports actual resident LOD decisions and world-metre sampler error at the probe projection", () => {
+    const sampled = vi.fn(terrainHeight);
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      sampleHeight: sampled,
+      residentByteBudget: 20_000_000,
+      residentTileBudget: 9,
+      tileResolution: 65,
+      tileSize: 64,
+      streamRadius: 1,
+      lodDistances: [48, 96],
+      mergeTiles: false,
+    });
+    const camera = new OrthographicCamera(
+      -(150 * 1280) / 720,
+      (150 * 1280) / 720,
+      150,
+      -150,
+      1,
+      1000,
+    );
+    camera.position.set(0, 180, 180);
+    camera.lookAt(0, 0, 0);
+    const view = {
+      camera,
+      viewportHeight: 720,
+      maxPixelError: DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+      hysteresis: DISCRETE_LOD_DEFAULT_HYSTERESIS,
+    };
+    try {
+      tiles.follow({ x: 0, z: 0 }, undefined, view);
+      const calls = sampled.mock.calls.length;
+      const debug = tiles.debug();
+      const decisions = debug.lodDecisions as {
+        key: string;
+        lodLevel: number;
+        distance: number;
+        distanceLod: number;
+        maxLodLevel: number;
+        targetLod: number;
+        nextCoarser?: {
+          lodLevel: number;
+          surfaceError: number;
+          errorPixels: number;
+          degenerate: boolean;
+        };
+      }[];
+      expect(decisions).toHaveLength(9);
+      expect(debug.lodPolicy).toEqual({
+        lodDistances: [48, 96],
+        maxPixelError: 1,
+        hysteresis: 0.15,
+        coarsenBelowPixels: 0.85,
+        viewportHeight: 720,
+      });
+      for (const decision of decisions) {
+        const tile = tiles.getTile(decision.key);
+        expect(tile).toBeDefined();
+        expect(decision.lodLevel).toBe(tile?.lodLevel);
+        expect(decision.distanceLod).toBe(
+          decision.distance < 48 ? 0 : decision.distance < 96 ? 1 : 2,
+        );
+        expect(decision.targetLod).toBeLessThanOrEqual(
+          Math.min(decision.distanceLod, decision.maxLodLevel),
+        );
+        const next = decision.nextCoarser;
+        expect(next).toBeDefined();
+        expect(next?.lodLevel).toBe(decision.lodLevel + 1);
+        expect(next?.surfaceError).toBeGreaterThan(0);
+        expect(next?.errorPixels).toBeCloseTo(((next?.surfaceError ?? 0) * 720) / 300, 10);
+        expect(next?.degenerate).toBe(false);
+      }
+      const center = tiles.getTile("0:0");
+      expect(center?.field.heightAt(-31, -30)).toBeCloseTo(terrainHeight(-31, -30), 5);
+      expect(sampled).toHaveBeenCalledWith(-31, -30);
+      expect(tiles.getTile("1:0")?.field.heightAt(33, -30)).toBeCloseTo(terrainHeight(33, -30), 5);
+      expect(sampled).toHaveBeenCalledWith(33, -30);
+      expect(sampled).toHaveBeenCalledTimes(calls); // Diagnostics use retained errors, never resample.
+      tiles.follow({ x: 0, z: 0 });
+      expect(tiles.debug().lodPolicy).toEqual({ lodDistances: [48, 96] });
+      expect(
+        (tiles.debug().lodDecisions as { nextCoarser?: { errorPixels?: number } }[])[0]
+          ?.nextCoarser,
+      ).not.toHaveProperty("errorPixels");
+    } finally {
+      tiles.dispose();
+    }
+  });
+
   it("owes a budgeted merge pass after a view-only LOD change", () => {
     const tiles = new TerrainTiles({
       surface: new MeshBasicMaterial(),

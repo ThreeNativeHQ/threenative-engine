@@ -180,6 +180,13 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
     ctx.entities.add("terrain", {
       debug: () => ({
         ...(this.#tiles?.debug() ?? {}),
+        lodCamera: {
+          type: ctx.camera.type,
+          projectionMatrix: ctx.camera.projectionMatrix.toArray(),
+          matrixWorld: ctx.camera.matrixWorld.toArray(),
+          rasterWidth: ctx.renderer.domElement.width,
+          rasterHeight: ctx.renderer.domElement.height,
+        },
         maxBlendingTiles: this.#maxBlendingTiles,
         blendFrames: [...this.#blendFrames],
         cpuFallbackIterations: this.#capabilities?.cpuFallbackIterations ?? 0,
