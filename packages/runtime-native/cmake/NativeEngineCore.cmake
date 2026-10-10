@@ -60,7 +60,8 @@ tn_native_engine_target(tn_engine_foundation)
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # The N03 C ABI over the foundation: version handshake, contexts, generational object handles.
-add_library(tn_engine_abi STATIC src/engine/abi/abi.cpp src/engine/abi/identity.cpp src/engine/abi/tsl_call.cpp)
+add_library(tn_engine_abi STATIC src/engine/abi/abi.cpp src/engine/abi/identity.cpp src/engine/abi/tsl_call.cpp
+    src/engine/abi/perry_post.cpp)
 tn_native_engine_target(tn_engine_abi)
 target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation tn_engine_bindings tn_engine_shader)
 target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -324,6 +325,12 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_attribute_view_writes=attribute_view_writes
     native_engine_abi_attribute_defer=attribute_defer)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
+
+tn_native_engine_test(tn-native-engine-perry-post-abi-test tests/native-engine/perry_post_abi_test.cpp
+    native_engine_perry_post_abi_graph=graph
+    native_engine_perry_post_abi_rejects=rejects
+    native_engine_perry_post_template_chain=template_chain)
+target_link_libraries(tn-native-engine-perry-post-abi-test PRIVATE tn_engine_abi)
 
 # PRD-508 phase 3: the geometry edges a JS caller reaches that no fixture states.
 tn_native_engine_test(tn-native-engine-geometry-edges-test tests/native-engine/geometry_edges_test.cpp

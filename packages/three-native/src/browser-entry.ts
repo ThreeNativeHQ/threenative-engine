@@ -197,7 +197,10 @@ interface IPipelineRenderer {
  * the web host, which draws it between the scene and the output, over the scene and camera the
  * graph's `pass(scene, camera)` points at (`target`), else the renderer's last scene.
  */
-function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camera?: unknown }) {
+export function defineRenderPipeline(
+  tsl: ITslRuntime,
+  target: { scene?: unknown; camera?: unknown },
+) {
   return class RenderPipeline {
     outputNode: unknown;
     readonly renderer: IPipelineRenderer;
@@ -213,7 +216,8 @@ function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camer
       tsl.setPost(this.outputNode[TSL_NODE]);
       if (target.scene !== undefined && target.camera !== undefined && this.renderer.render)
         this.renderer.render(target.scene, target.camera);
-      else this.renderer[RENDER_AGAIN]?.();
+      else if (this.renderer[RENDER_AGAIN]) this.renderer[RENDER_AGAIN]();
+      else throw new Error("TN_NATIVE_POST_TARGET: RenderPipeline requires pass(scene, camera)");
     }
 
     dispose(): void {

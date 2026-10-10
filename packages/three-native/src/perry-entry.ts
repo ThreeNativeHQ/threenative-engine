@@ -3,10 +3,11 @@ import catalog from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
 import { type IAudioEngine, defineAudioClasses } from "./audio.js";
 import { type IRegistryDump, defineBrowserClasses } from "./browser-backend.js";
-import { bindUpstreamExports, withTextureSources } from "./browser-entry.js";
+import { bindUpstreamExports, defineRenderPipeline, withTextureSources } from "./browser-entry.js";
 import { defineTsl } from "./browser-tsl.js";
 import type { ICatalog } from "./catalog.js";
 import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
+import { definePass } from "./pass-node.js";
 import { definePerryRenderer } from "./perry-renderer.js";
 import { createPerryRuntime } from "./perry-transport.js";
 import { definePropertyBinding } from "./property-binding.js";
@@ -37,6 +38,15 @@ export function bindPerryEngine(names: readonly string[]): Record<string, unknow
   if (runtime.tsl === undefined) throw new Error("TN_PERRY_TSL_MISSING");
   const tsl = defineTsl(runtime.tsl, classes as never);
   const bound = { ...withTextureSources(classes, runtime), ...tsl.exports };
+  const target: { scene?: unknown; camera?: unknown } = {};
+  bound.RenderPipeline = defineRenderPipeline(runtime.tsl, target);
+  Object.assign(
+    bound,
+    definePass(tsl.exports as never, (scene, camera) => {
+      target.scene = scene;
+      target.camera = camera;
+    }),
+  );
   const audio = defineAudioClasses({
     ...(classes as unknown as Omit<IAudioEngine, "read">),
     read: async (url) => {

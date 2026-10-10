@@ -45,6 +45,11 @@ export function writeString(text: string, pointer: number, capacity: number): nu
   return js_tnp_write_string(text, pointer, capacity);
 }
 
+declare function js_tnp_set_post(context: number, node: number): number;
+export function setPost(context: number, node: number): number {
+  return js_tnp_set_post(context, node);
+}
+
 declare function js_tnp_render(
   scene: number,
   camera: number,

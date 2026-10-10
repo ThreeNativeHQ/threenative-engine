@@ -27,6 +27,8 @@ engine::shader::graph::Node shaderNode(tn_handle_t handle, const std::string& pa
 void setShaderNode(tn_handle_t handle, const std::string& path, engine::shader::graph::Node node);
 /** The graph a tn_tsl_call node id names in `context`, or null. */
 engine::shader::graph::Node tslNode(tn_context_t* context, uint64_t id);
+/** Perry's pending post graph, retained until replaced or cleared, including before player open. */
+const engine::shader::graph::Node& perryPostGraph();
 
 /**
  * A numeric property write for a caller that repeats one member on one class (the V8 adapter's
@@ -43,3 +45,5 @@ tn_status_t setNumber(tn_handle_t handle, SetterSlot& slot, const std::string& n
 uint64_t crossings();
 
 }  // namespace tn::abi
+
+extern "C" int64_t js_tnp_set_post(int64_t context, int64_t node);

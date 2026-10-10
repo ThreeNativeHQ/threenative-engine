@@ -72,7 +72,12 @@ extern "C" int32_t js_tnp_player_open() try {
         return world && view ? 1 : 0;
     };
     game.clear = [] { return clear; };
-    game.beforeRender = [frame](Renderer& renderer, RenderDatabase&) { frame(); renderer.setOutput(output); };
+    game.beforeRender = [frame, applied = shader::graph::Node{}](Renderer& renderer, RenderDatabase&) mutable {
+        frame();
+        renderer.setOutput(output);
+        const auto& graph = tn::abi::perryPostGraph();
+        if (graph != applied) { renderer.setPostGraph(graph); applied = graph; }
+    };
     game.observe = [](const std::string& method, const json::Value* argument, json::Value& result, std::string& error) {
         const std::string text = argument ? json::stringify(*argument) : "";
         const auto pointer = static_cast<int64_t>(tnp_player_observe(
@@ -108,6 +113,7 @@ extern "C" int32_t js_tnp_player_step() {
 }
 extern "C" void js_tnp_player_close() {
     session.reset(); endpoint = nullptr; scene.reset(); camera.reset(); held.clear(); codes.clear();
+    js_tnp_set_post(0, 0);
 }
 extern "C" int32_t js_tnp_player_running() { return session ? 1 : 0; }
 extern "C" int32_t js_tnp_player_runner() { return !player::Mailbox::rootFromEnvironment().empty(); }

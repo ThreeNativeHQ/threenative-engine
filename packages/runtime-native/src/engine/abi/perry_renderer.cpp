@@ -52,6 +52,7 @@ extern "C" int64_t js_tnp_render(int64_t sceneHandle, int64_t cameraHandle, int3
         Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
         renderer.setSize(width, height);
         renderer.setOutput(*output);
+        if (const auto& graph = tn::abi::perryPostGraph()) renderer.setPostGraph(graph);
         RenderDatabase database;
         database.render(renderer, *static_cast<Scene*>(scene->ptr.get()),
                         *static_cast<Camera*>(camera->ptr.get()), {clear[0], clear[1], clear[2], clear[3]});

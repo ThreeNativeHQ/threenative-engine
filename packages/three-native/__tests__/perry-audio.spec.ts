@@ -6,6 +6,8 @@ import { runInNewContext } from "node:vm";
 import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import { expect, it, vi } from "vitest";
 import { defineAudioClasses } from "../src/audio.js";
+import { defineRenderPipeline } from "../src/browser-entry.js";
+import { definePass } from "../src/pass-node.js";
 
 class Vector3 {
   x = 0;
@@ -202,10 +204,12 @@ it("loads packaged audio through the Perry host, retains native PCM and drains s
       },
       "./browser-backend.js": { defineBrowserClasses: () => ({ classes, collect }) },
       "./browser-entry.js": {
+        defineRenderPipeline,
         withTextureSources: () => classes,
         bindUpstreamExports: (_names: unknown, _catalog: unknown, bound: unknown) => bound,
       },
       "./browser-tsl.js": { defineTsl: () => ({ exports: {}, sync: syncTsl }) },
+      "./pass-node.js": { definePass },
       "./object-surface.js": { Material: Object, defineTypeFlags() {}, defineObjectSurface() {} },
       "./perry-transport.js": { createPerryRuntime: () => ({ tsl: {}, render() {} }) },
       "./perry-renderer.js": {

@@ -10,6 +10,7 @@ import {
   physicsCopy,
   readString,
   render,
+  setPost,
   stringBytes,
   writeString,
 } from "tn-native-transport";
@@ -291,9 +292,13 @@ export function createPerryRuntime(): IPerryRuntime {
         check(call(15, context, self, string(name).at, input, out, diag), diag, `effect ${name}`);
         return read(out, 4);
       }),
-    setPost: () => {
-      throw new Error("TN_PERRY_POST: desktop post transport is not bound");
-    },
+    setPost: (node) =>
+      scoped(() => {
+        const at = node === null ? 0 : alloc(8);
+        if (at !== 0) write(at, node as number, 3);
+        const error = readString(setPost(context, at));
+        if (error) throw new Error(error);
+      }),
   };
   const scalars = [
     Float32Array,
