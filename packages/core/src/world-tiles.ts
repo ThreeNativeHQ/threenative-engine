@@ -2,6 +2,7 @@ import {
   Box3,
   BufferAttribute,
   BufferGeometry,
+  type Camera,
   LOD,
   type Matrix4,
   Mesh,
@@ -12,6 +13,13 @@ import {
 import type { InterleavedBufferAttribute } from "three";
 import type { IAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
+import {
+  type ILodView,
+  type IModelLodPolicy,
+  conservativeViewDepth,
+  selectLodLevel,
+  worldSphere,
+} from "./model-lod.js";
 import { SPANS, type SpanId, addSpan, spanNow, spanRecorder } from "./profiling/Spans.js";
 import type { IRendererLike } from "./renderer.js";
 import {
@@ -86,6 +94,11 @@ export interface IWorldTilesFollowPosition {
   readonly z: number;
 }
 
+/** Actual render view and the resolved model LOD policy; distance floors still apply. */
+export interface IWorldTilesLodView
+  extends Pick<ILodView, "camera" | "viewportHeight">,
+    IModelLodPolicy {}
+
 export interface IWorldTilesTopologyObservation {
   readonly columns: number;
   readonly depth: number;
@@ -124,7 +137,7 @@ export interface IWorldTilesOptions {
   readonly tileSize: number;
   /** Vertex decimation factors. Defaults to 1, 2, and 4 over the same field. */
   readonly lodFactors?: readonly number[];
-  /** Distances in world units at which the next LOD becomes active. */
+  /** Nearest world-unit distances at which the next LOD may become active; screen error may delay it. */
   readonly lodDistances?: readonly number[];
   /**
    * Re-derive the terrain every frame and assert it: a finiteness scan of every rendered vertex,
@@ -149,6 +162,7 @@ export interface IWorldTilesOptions {
 }
 
 interface ILevelGeometry {
+  surfaceError: number;
   readonly edgeSamples: IEdgeSamples;
   geometry: BufferGeometry;
   readonly mesh: Mesh;
@@ -677,6 +691,7 @@ function* buildLevel(
   geometry.boundingSphere = bounds.sphere;
   const skirt = inspectSkirtGeometry(geometry, resolution, edges);
   return {
+    surfaceError: 0,
     edgeSamples: edgeSamplesFor(heights, resolution),
     geometry,
     mesh: terrainMesh(new Mesh(geometry, surface)),
@@ -1600,6 +1615,7 @@ function* coarsestSelectableLevel(
         ),
       );
     }
+    level.surfaceError = error;
     if (error > LOD_POP_THRESHOLD) break;
     coarsest = index;
   }
@@ -1998,6 +2014,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #construction: { key: string; work: Generator<void, IResidentTile> } | undefined;
   #topologyMetrics: ReturnType<typeof summarizeWorldTopology> | undefined;
   #focus: IWorldTilesFollowPosition | undefined;
+  #lodView: IWorldTilesLodView | undefined;
   #peakBytes = 0;
   #peakTiles = 0;
   #lodTransitions = 0;
@@ -2297,15 +2314,18 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * `budget` caps construction chunks as well as completed admissions. An unfinished tile stays
    * outside residency and resumes on a later call while it remains wanted. Moving it outside the
    * selected ring cancels and releases that work. Omitted, a call drains synchronously as before.
+   * `view` shares the resolved model pixel policy; omitted, selection remains distance-only.
    */
   follow(
     position: IWorldTilesFollowPosition | Pick<Vector3, "x" | "z">,
     budget?: IAdmissionBudget,
+    view?: IWorldTilesLodView,
   ): void {
     if (this.#released) throw new Error("TerrainTiles cannot follow after release.");
     // This pass starts owing nothing; a refusal below sets the flag that owes the next one, so
     // `deferredAdmissions` is exactly "the last pass did not get everything it wanted".
     this.#deferredAdmissions = 0;
+    this.#setLodView(view);
     const x = finite(position.x, "follow x");
     const z = finite(position.z, "follow z");
     const hadFocus = this.#focus !== undefined;
@@ -2345,7 +2365,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const candidate of selected) {
       const resident = this.#resident.get(keyFor(candidate.tileX, candidate.tileZ));
       if (resident !== undefined)
-        targets.set(resident, lodLevelForDistance(candidate.distance, this.#lodDistances));
+        targets.set(resident, this.#targetLod(resident, candidate.distance));
       // A selected tile keeps its construction progress when sub-tile camera motion changes the
       // distance order. Only leaving the wanted set cancels it; otherwise a jittering camera could
       // restart two equally near tiles forever.
@@ -2375,7 +2395,6 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       // Keep incomplete work out of the scene; later calls resume it under the same allowance.
       const tile = this.#admitCandidate(candidate, centerX, centerZ, budget, built === 0);
       if (tile === undefined) break;
-      this.#selectLod(tile, candidate.distance, false);
       built += 1;
       if (this.residentBytes + tile.bytes > this.residentByteBudget) {
         this.#disposeTile(tile);
@@ -2388,6 +2407,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#resident.set(tile.key, tile);
       this.#morphEdgesDirty = true;
       this.add(tile.lod);
+      this.#selectLod(tile, candidate.distance, false);
       this.#markTileDirty(tile);
       this.#ringEpoch += 1;
       this.#recordPeaks();
@@ -2425,8 +2445,26 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const tile of this.#resident.values()) tile.field.attachRenderer(renderer);
   }
 
-  process(renderer = this.#renderer): void {
+  process(
+    renderer = this.#renderer,
+    _camera?: Camera,
+    _covered?: boolean,
+    view = this.#lodView,
+  ): void {
     if (this.#released) return;
+    this.#setLodView(view);
+    if (view !== undefined && this.#focus !== undefined) {
+      const targets = new Map<IResidentTile, number>();
+      for (const tile of this.#resident.values())
+        targets.set(
+          tile,
+          this.#targetLod(
+            tile,
+            Math.hypot(this.#focus.x - tile.origin.x, this.#focus.z - tile.origin.z),
+          ),
+        );
+      this.#applyLodTargets(targets);
+    }
     const lodFrame = this.#validate ? this.#captureLodFrame() : undefined;
     this.#advanceLodTransitions();
     if (renderer !== undefined) {
@@ -2437,6 +2475,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       }
     }
     this.#seamPass();
+    // View-only retargets still owe the existing admission-budgeted block rebuild in follow.
+    if (view !== undefined && this.#dirtyBlocks.size > 0) this.#deferredAdmissions = 1;
     if (lodFrame !== undefined) this.#recordLodPopAfterReconciliation(lodFrame);
     this.#recordPeaks();
     this.#reportTileMarker();
@@ -2829,7 +2869,50 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #selectLod(tile: IResidentTile, distance: number, countTransition = true): void {
-    this.#setLodLevel(tile, lodLevelForDistance(distance, this.#lodDistances), countTransition);
+    this.#setLodLevel(tile, this.#targetLod(tile, distance), countTransition);
+  }
+
+  #setLodView(view: IWorldTilesLodView | undefined): void {
+    if (
+      view !== undefined &&
+      (!Number.isFinite(view.viewportHeight) ||
+        view.viewportHeight <= 0 ||
+        !Number.isFinite(view.maxPixelError) ||
+        view.maxPixelError <= 0 ||
+        !Number.isFinite(view.hysteresis) ||
+        view.hysteresis < 0 ||
+        view.hysteresis >= 1)
+    )
+      throw new Error(
+        "TerrainTiles needs a positive raster height/pixel budget and hysteresis in [0, 1).",
+      );
+    this.#lodView = view;
+    view?.camera.updateWorldMatrix(true, false);
+  }
+
+  #targetLod(tile: IResidentTile, distance: number): number {
+    const floor = Math.min(lodLevelForDistance(distance, this.#lodDistances), tile.maxLodLevel);
+    const view = this.#lodView;
+    if (view === undefined) return floor;
+    const finest = tile.levels[0];
+    const bounds = finest?.geometry.boundingSphere;
+    if (finest === undefined || bounds == null) return 0;
+    finest.mesh.updateWorldMatrix(true, false);
+    const sphere = worldSphere(bounds, finest.mesh);
+    const depth = conservativeViewDepth(
+      view.camera,
+      sphere.center,
+      sphere.radius,
+      (view.camera as Camera & { near?: number }).near ?? 0,
+    );
+    const scale = finest.mesh.matrixWorld.getMaxScaleOnAxis();
+    return selectLodLevel(
+      tile.levels.slice(0, floor + 1).map((level) => level.surfaceError * scale),
+      tile.lodLevel,
+      view.maxPixelError,
+      view.hysteresis,
+      [{ ...view, ...depth }],
+    );
   }
 
   #syncMorphEdges(): void {

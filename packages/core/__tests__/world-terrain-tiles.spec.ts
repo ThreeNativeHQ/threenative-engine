@@ -1,4 +1,11 @@
-import { BufferAttribute, BufferGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  Mesh,
+  MeshBasicMaterial,
+  PerspectiveCamera,
+  Vector3,
+} from "three";
 import { describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { type IWorldTile, type IWorldTileCollider, TerrainTiles } from "../src/world-tiles.js";
@@ -632,6 +639,132 @@ describe("TerrainTiles", () => {
       }
     },
   );
+
+  it("keeps the default distance floor, preserves no-view calls and reuses retained errors across residency", () => {
+    const sampleHeight = vi.fn((x: number) => Math.cos((Math.PI * x) / 8));
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 49,
+      mergeTiles: false,
+      sampleHeight,
+      streamRadius: 3,
+      tileResolution: 9,
+      tileSize: 64,
+      skirtDepth: 1,
+    });
+    const camera = new PerspectiveCamera(60, 1280 / 720, 0.1, 10_000);
+    camera.position.set(0, 0, 4000);
+    camera.lookAt(0, 0, 0);
+    const view = { camera, viewportHeight: 720, maxPixelError: 1, hysteresis: 0.15 };
+    try {
+      tiles.follow({ x: 127, z: 0 }, undefined, view);
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+      tiles.follow({ x: 129, z: 0 }, undefined, view);
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(1);
+      const sampled = sampleHeight.mock.calls.length;
+      const tileBytes = tiles.residentKeys.reduce(
+        (sum, key) => sum + (tiles.getTile(key)?.bytes ?? 0),
+        0,
+      );
+      for (let frame = 0; frame < 6; frame++) tiles.process();
+      expect(sampleHeight).toHaveBeenCalledTimes(sampled);
+      expect(tiles.residentBytes).toBeGreaterThanOrEqual(tileBytes);
+      expect(tiles.residentBytes).toBeLessThanOrEqual(tiles.residentByteBudget);
+      camera.position.z = 100;
+      tiles.process();
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+      tiles.follow({ x: 129, z: 0 });
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(1);
+      tiles.follow({ x: 0, z: 0 }, undefined, view);
+      expect(tiles.residentTileCount).toBe(49);
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+      tiles.follow({ x: 640, z: 0 }, undefined, view);
+      expect(tiles.getTile("0:0")).toBeUndefined();
+      expect(tiles.residentTileCount).toBe(49);
+      expect(tiles.residentBytes).toBeGreaterThanOrEqual(tileBytes);
+      expect(tiles.residentBytes).toBeLessThanOrEqual(tiles.residentByteBudget);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("owes a budgeted merge pass after a view-only LOD change", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 2_000_000,
+      residentTileBudget: 25,
+      sampleHeight: (x) => Math.cos((Math.PI * x) / 8),
+      streamRadius: 2,
+      tileResolution: 9,
+      tileSize: 64,
+      skirtDepth: 1,
+    });
+    const camera = new PerspectiveCamera(60, 1280 / 720, 0.1, 10_000);
+    camera.position.set(0, 0, 4000);
+    camera.lookAt(0, 0, 0);
+    const view = { camera, viewportHeight: 720, maxPixelError: 1, hysteresis: 0.15 };
+    try {
+      for (let frame = 0; frame < 12; frame++) {
+        tiles.follow({ x: 127, z: 0 }, undefined, view);
+        tiles.process();
+      }
+      expect(tiles.deferredAdmissions).toBe(0);
+      expect(tiles.getTile("1:0")?.lodLevel).toBe(0);
+      expect(tiles.getTile("4:0")?.lodLevel).toBe(1);
+      camera.position.z = 100;
+      tiles.process();
+      expect(tiles.deferredAdmissions).toBe(1);
+      for (let frame = 0; frame < 12; frame++) {
+        tiles.follow({ x: 127, z: 0 }, undefined, view);
+        tiles.process();
+      }
+      expect(tiles.deferredAdmissions).toBe(0);
+      expect(tiles.blendingTiles).toBe(0);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("holds a finer terrain level at 1440 raster rows and refreshes a settled view", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 2_000_000,
+      residentTileBudget: 1,
+      sampleHeight: (x) => Math.cos((Math.PI * x) / 4),
+      streamRadius: 0,
+      tileResolution: 17,
+      tileSize: 64,
+      skirtDepth: 1,
+      lodDistances: [8, 16],
+    });
+    const camera = new PerspectiveCamera(60, 1280 / 720, 0.1, 5000);
+    camera.position.set(0, 0, 2000);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    const view = { camera, viewportHeight: 720, maxPixelError: 1, hysteresis: 0.15 };
+    try {
+      tiles.follow({ x: 7, z: 0 }, undefined, view);
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+      tiles.follow({ x: 9, z: 0 }, undefined, view);
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(1);
+      for (let frame = 0; frame < 3; frame += 1) tiles.process();
+      const transitions = tiles.lodTransitions;
+      tiles.process(undefined, undefined, undefined, { ...view, viewportHeight: 1440 });
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+      expect(tiles.lodTransitions).toBe(transitions + 1);
+      for (let frame = 0; frame < 3; frame += 1) tiles.process();
+      camera.position.z = 4000;
+      camera.updateMatrixWorld(true);
+      tiles.process();
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(1);
+      for (let frame = 0; frame < 3; frame += 1) tiles.process();
+      expect(tiles.maxLodTransitionFrames).toBe(3);
+      expect(tiles.blendingTiles).toBe(0);
+    } finally {
+      tiles.dispose();
+    }
+  });
 
   it("morphs one LOD surface within the measured pop bound for three frames", () => {
     const tiles = new TerrainTiles({
