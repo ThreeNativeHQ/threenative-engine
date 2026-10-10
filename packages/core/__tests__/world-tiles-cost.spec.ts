@@ -289,9 +289,10 @@ function expectContainsEveryVertex(mesh: Mesh): void {
 }
 
 describe("TerrainTiles blend-frame cost", () => {
-  function blendingTile(): TerrainTiles {
+  function blendingTile(validate = false): TerrainTiles {
     const tiles = new TerrainTiles({
       mergeTiles: false,
+      validate,
       residentByteBudget: 2_000_000,
       residentTileBudget: 1,
       sampleHeight,
@@ -306,8 +307,8 @@ describe("TerrainTiles blend-frame cost", () => {
     return tiles;
   }
 
-  it("counts field reads for one blending 65×65 tile", () => {
-    const tiles = blendingTile();
+  it("retains the validating CPU reference's field reads for one blending 65×65 tile", () => {
+    const tiles = blendingTile(true);
     try {
       tiles.follow({ x: 9, z: 0 });
       expect(tiles.residentKeys).toEqual(["0:0"]);
@@ -323,6 +324,26 @@ describe("TerrainTiles blend-frame cost", () => {
         normals.mockRestore();
       }
       expect(tiles.blendingTiles).toBe(1);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("reads no field heights or normals for a GPU blend frame", () => {
+    const tiles = blendingTile();
+    try {
+      tiles.follow({ x: 9, z: 0 });
+      const heights = vi.spyOn(Heightfield.prototype, "heightAt");
+      const normals = vi.spyOn(Heightfield.prototype, "normalAt");
+      try {
+        tiles.process();
+        expect(tiles.blendingTiles).toBe(1);
+        expect(heights).not.toHaveBeenCalled();
+        expect(normals).not.toHaveBeenCalled();
+      } finally {
+        heights.mockRestore();
+        normals.mockRestore();
+      }
     } finally {
       tiles.dispose();
     }

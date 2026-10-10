@@ -150,7 +150,7 @@ export interface IWorldTilesOptions {
 
 interface ILevelGeometry {
   readonly edgeSamples: IEdgeSamples;
-  readonly geometry: BufferGeometry;
+  geometry: BufferGeometry;
   readonly mesh: Mesh;
   readonly resolution: number;
   readonly skirtDepth: number;
@@ -170,6 +170,7 @@ interface IResidentTile extends Omit<IWorldTile, "lodLevel"> {
   readonly levels: readonly ILevelGeometry[];
   lodTransition?: ILodTransition;
   lodLevel: number;
+  sharedMorphEdges: number;
   /** Coarsest level whose height error against every finer level stays inside the pop bound. */
   readonly maxLodLevel: number;
   readonly origin: IHeightfieldOrigin;
@@ -349,14 +350,23 @@ function resolutionFor(tileResolution: number, factor: number): number {
   return cells + 1;
 }
 
-function estimatedLevelBytes(resolution: number): number {
+function morphBytes(resolution: number, targets: number): number {
+  const vertices = resolution * resolution + resolution * 4;
+  // Stock Three packs both vec3 deltas into RGBA32F: retain its CPU texture and GPU copy too.
+  const texels = vertices * 2;
+  const packedTexels = texels <= 4096 ? texels : Math.ceil(texels / 4096) * 4096;
+  return targets * (vertices * 3 * 4 * 2 + packedTexels * 4 * 4 * 2);
+}
+
+function estimatedLevelBytes(resolution: number, targets = 0): number {
   const vertices = resolution * resolution + resolution * 4;
   const triangles = (resolution - 1) * (resolution - 1) + (resolution - 1) * 4;
   const edgeSampleBytes = resolution * 4 * Float32Array.BYTES_PER_ELEMENT;
   return (
     vertices * 3 * Float32Array.BYTES_PER_ELEMENT * 2 +
     triangles * 6 * Uint32Array.BYTES_PER_ELEMENT +
-    edgeSampleBytes
+    edgeSampleBytes +
+    morphBytes(resolution, targets)
   );
 }
 
@@ -375,9 +385,15 @@ function estimatedTileBytes(
   tileResolution: number,
   factors: readonly number[],
   worldPasses: IHeightfieldWorldPassOptions | undefined,
+  validate: boolean,
 ): number {
   return factors.reduce(
-    (total, factor) => total + estimatedLevelBytes(resolutionFor(tileResolution, factor)),
+    (total, factor) =>
+      total +
+      estimatedLevelBytes(
+        resolutionFor(tileResolution, factor),
+        validate ? 0 : factors.filter((candidate) => candidate >= factor).length - 1,
+      ),
     estimatedFieldBytes(tileResolution, worldPasses),
   );
 }
@@ -652,6 +668,7 @@ function* buildLevel(
   const positionArray = Float32Array.from(positions);
   const bounds = yield* levelBounds(positionArray, chunked);
   const geometry = new BufferGeometry();
+  geometry.morphTargetsRelative = true;
   geometry.setAttribute("position", new BufferAttribute(positionArray, 3));
   geometry.setAttribute("normal", new BufferAttribute(Float32Array.from(normals), 3));
   geometry.setIndex(new BufferAttribute(Uint32Array.from(indices), 1));
@@ -1267,6 +1284,85 @@ function interpolatedLevelNormal(
       ),
     )
     .normalize();
+}
+
+/** Immutable stock morph buffers; shared sides keep the canonical surface used by seam jobs. */
+function* buildLodMorphTargets(
+  finer: ILevelGeometry,
+  coarserLevels: readonly ILevelGeometry[],
+  sharedEdges: number,
+  chunked: boolean,
+): Generator<void> {
+  const position = finer.geometry.getAttribute("position");
+  const normal = finer.geometry.getAttribute("normal");
+  const positions: BufferAttribute[] = [];
+  const normals: BufferAttribute[] = [];
+  const coarseNormal = new Vector3();
+  const last = finer.resolution - 1;
+  for (const coarser of coarserLevels) {
+    const deltaPosition = new BufferAttribute(new Float32Array(position.count * 3), 3);
+    const deltaNormal = new BufferAttribute(new Float32Array(position.count * 3), 3);
+    const coarsePosition = coarser.geometry.getAttribute("position") as BufferAttribute;
+    const coarseNormals = coarser.geometry.getAttribute("normal") as BufferAttribute;
+    for (let row = 0; row <= last; row += 1) {
+      for (let column = 0; column <= last; column += 1) {
+        const index = row * finer.resolution + column;
+        const pinned =
+          (row === 0 && sharedEdges & 1) ||
+          (row === last && sharedEdges & 2) ||
+          (column === 0 && sharedEdges & 4) ||
+          (column === last && sharedEdges & 8);
+        if (!pinned) {
+          deltaPosition.setY(
+            index,
+            interpolatedLevelHeight(coarser, coarsePosition, column / last, row / last) -
+              position.getY(index),
+          );
+          interpolatedLevelNormal(coarser, coarseNormals, column / last, row / last, coarseNormal);
+          deltaNormal.setXYZ(
+            index,
+            coarseNormal.x - normal.getX(index),
+            coarseNormal.y - normal.getY(index),
+            coarseNormal.z - normal.getZ(index),
+          );
+        }
+        if (chunked && (index + 1) % (CONSTRUCTION_CHUNK_SAMPLES / 2) === 0) yield;
+      }
+    }
+    const edges = [
+      (index: number) => index,
+      (index: number) => last * finer.resolution + index,
+      (index: number) => index * finer.resolution,
+      (index: number) => index * finer.resolution + last,
+    ];
+    for (const [edgeIndex, edge] of edges.entries())
+      for (let index = 0; index <= last; index += 1)
+        deltaPosition.setY(
+          finer.resolution ** 2 + edgeIndex * finer.resolution + index,
+          deltaPosition.getY(edge(index)),
+        );
+    positions.push(deltaPosition);
+    normals.push(deltaNormal);
+  }
+  finer.geometry.morphAttributes.position = positions;
+  finer.geometry.morphAttributes.normal = normals;
+}
+
+function updateLodMorph(tile: IResidentTile, transition: ILodTransition, progress: number): void {
+  const from = tile.levels[transition.from];
+  const to = tile.levels[transition.to];
+  if (from === undefined || to === undefined)
+    throw new Error("TerrainTiles LOD transition references a missing level.");
+  const finer = from.resolution >= to.resolution ? from : to;
+  const coarser = finer === from ? to : from;
+  const target = tile.levels
+    .filter((level) => level !== finer && level.resolution <= finer.resolution)
+    .indexOf(coarser);
+  const influences = finer.mesh.morphTargetInfluences;
+  if (influences === undefined || influences[target] === undefined)
+    throw new Error("TerrainTiles LOD transition references a missing morph target.");
+  influences.fill(0);
+  influences[target] = finer === from ? progress : 1 - progress;
 }
 
 function updateLevelSkirts(level: ILevelGeometry): void {
@@ -1897,6 +1993,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #topologyBytes: number;
   readonly #worldPasses: IHeightfieldWorldPassOptions | undefined;
   readonly #resident = new Map<string, IResidentTile>();
+  #morphEdgesDirty = false;
   #construction: { key: string; work: Generator<void, IResidentTile> } | undefined;
   #topologyMetrics: ReturnType<typeof summarizeWorldTopology> | undefined;
   #focus: IWorldTilesFollowPosition | undefined;
@@ -2260,7 +2357,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     let built = 0;
     for (const candidate of missing) {
       const key = keyFor(candidate.tileX, candidate.tileZ);
-      const estimate = estimatedTileBytes(this.tileResolution, this.#factors, this.#worldPasses);
+      const estimate = estimatedTileBytes(
+        this.tileResolution,
+        this.#factors,
+        this.#worldPasses,
+        this.#validate,
+      );
       if (this.residentBytes + estimate > this.residentByteBudget) {
         if (this.#construction?.key === key) this.#cancelConstruction();
         if (candidate.tileX === centerX && candidate.tileZ === centerZ)
@@ -2283,6 +2385,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         continue;
       }
       this.#resident.set(tile.key, tile);
+      this.#morphEdgesDirty = true;
       this.add(tile.lod);
       this.#markTileDirty(tile);
       this.#ringEpoch += 1;
@@ -2290,6 +2393,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
     this.#recordPeaks();
     this.#updateColliders(centerX, centerZ, budget);
+    if (!this.#validate && this.#morphEdgesDirty)
+      timedSpan(SPANS.terrainSeam, () => this.#syncMorphEdges());
     this.#applyLodTargets(targets);
     // Retargeting already coordinates the resident ring; only newly admitted tiles can owe it.
     if (built > 0) this.#coordinateNeighborLods(hadFocus);
@@ -2523,6 +2628,15 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         mesh.receiveShadow = this.#receiveShadow;
       });
       const maxLodLevel = yield* coarsestSelectableLevel(levels, chunked);
+      if (!this.#validate)
+        for (const level of levels) {
+          const coarser = levels.filter(
+            (candidate) => candidate !== level && candidate.resolution <= level.resolution,
+          );
+          if (coarser.length === 0) continue;
+          yield* buildLodMorphTargets(level, coarser, 0, chunked);
+          level.mesh.updateMorphTargets();
+        }
       collider =
         this.#createCollider === undefined
           ? new EmptyCollider()
@@ -2530,8 +2644,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
             ? this.#createCollider({ field, key: keyFor(tileX, tileZ), object: lod, tileX, tileZ })
             : undefined;
       const bytes =
-        levels.reduce((total, level) => total + estimatedLevelBytes(level.resolution), 0) +
-        field.memoryBytes;
+        levels.reduce(
+          (total, level) =>
+            total +
+            estimatedLevelBytes(
+              level.resolution,
+              this.#validate
+                ? 0
+                : levels.filter((candidate) => candidate.resolution <= level.resolution).length - 1,
+            ),
+          0,
+        ) + field.memoryBytes;
       const tile: IResidentTile = {
         ...(assetKey === undefined ? {} : { assetKey }),
         bytes,
@@ -2540,6 +2663,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         key: keyFor(tileX, tileZ),
         lod,
         lodLevel: 0,
+        sharedMorphEdges: 0,
         levels,
         maxLodLevel,
         object: lod,
@@ -2707,6 +2831,42 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#setLodLevel(tile, lodLevelForDistance(distance, this.#lodDistances), countTransition);
   }
 
+  #syncMorphEdges(): void {
+    for (const tile of this.#resident.values()) {
+      const shared =
+        (this.#resident.has(keyFor(tile.tileX, tile.tileZ - 1)) ? 1 : 0) |
+        (this.#resident.has(keyFor(tile.tileX, tile.tileZ + 1)) ? 2 : 0) |
+        (this.#resident.has(keyFor(tile.tileX - 1, tile.tileZ)) ? 4 : 0) |
+        (this.#resident.has(keyFor(tile.tileX + 1, tile.tileZ)) ? 8 : 0);
+      if (shared === tile.sharedMorphEdges) continue;
+      for (const level of tile.levels) {
+        const coarser = tile.levels.filter(
+          (candidate) => candidate !== level && candidate.resolution <= level.resolution,
+        );
+        if (coarser.length === 0) continue;
+        const previous = level.geometry;
+        const geometry = new BufferGeometry();
+        geometry.morphTargetsRelative = true;
+        geometry.setAttribute("position", previous.getAttribute("position"));
+        geometry.setAttribute("normal", previous.getAttribute("normal"));
+        geometry.setIndex(previous.getIndex());
+        geometry.boundingBox = previous.boundingBox?.clone() ?? null;
+        geometry.boundingSphere = previous.boundingSphere?.clone() ?? null;
+        const influences = level.mesh.morphTargetInfluences?.slice();
+        // Three caches morph textures by geometry, ignoring attribute versions; retire that cache.
+        for (const _ of buildLodMorphTargets({ ...level, geometry }, coarser, shared, false)) {
+        }
+        level.geometry = geometry;
+        level.mesh.geometry = geometry;
+        level.mesh.updateMorphTargets();
+        if (influences !== undefined) level.mesh.morphTargetInfluences = influences;
+        previous.dispose();
+      }
+      tile.sharedMorphEdges = shared;
+    }
+    this.#morphEdgesDirty = false;
+  }
+
   #setLodLevel(tile: IResidentTile, level: number, countTransition = true): void {
     const selectable = Math.min(level, tile.maxLodLevel);
     if (selectable === tile.lodLevel) {
@@ -2747,7 +2907,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const finer = previous.resolution >= next.resolution ? previous : next;
     setManualLodLevel(tile.lod, finerLevel);
     widenLevelBoundsForBlend(finer, finer === previous ? next : previous);
-    updateLodTransitionGeometry(tile, tile.lodTransition, 0);
+    if (this.#validate) updateLodTransitionGeometry(tile, tile.lodTransition, 0);
+    else updateLodMorph(tile, tile.lodTransition, 0);
     this.#setLodVisibility(tile, [finerLevel]);
     this.#recordLodPopAfterRetarget(interruptedFrame);
   }
@@ -2814,13 +2975,13 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         throw new Error("TerrainTiles LOD transition references a missing level.");
       transition.elapsedFrames += 1;
       transition.remainingFrames -= 1;
-      updateLodTransitionGeometry(
+      (this.#validate ? updateLodTransitionGeometry : updateLodMorph)(
         tile,
         transition,
         Math.min(1, transition.elapsedFrames / LOD_TRANSITION_FRAMES),
       );
       if (transition.remainingFrames > 0) {
-        // A blend frame rewrote the finer level's vertices, which the ring state reads.
+        // The validating CPU blend moved; GPU morphs keep shared edges canonical.
         this.#ringEpoch += 1;
         continue;
       }
@@ -3016,7 +3177,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const from = tile.levels[transition.from];
     const to = tile.levels[transition.to];
     if (from === undefined || to === undefined) return;
-    restoreLevelSurface(tile.field, from.resolution >= to.resolution ? from : to);
+    const finer = from.resolution >= to.resolution ? from : to;
+    if (this.#validate) restoreLevelSurface(tile.field, finer);
+    else finer.mesh.morphTargetInfluences?.fill(0);
   }
 
   #recordLodPop(pop: number): void {
@@ -3372,7 +3535,10 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#releaseStaleBlock(tile.lodLevel, tile.tileX, tile.tileZ);
       this.#mergedMembers.delete(tile.key);
     }
-    if (this.#resident.get(tile.key) === tile) this.#resident.delete(tile.key);
+    if (this.#resident.get(tile.key) === tile) {
+      this.#resident.delete(tile.key);
+      this.#morphEdgesDirty = true;
+    }
     this.#ringEpoch += 1;
     this.#removeStitchesForTile(tile.key);
     this.remove(tile.lod);
