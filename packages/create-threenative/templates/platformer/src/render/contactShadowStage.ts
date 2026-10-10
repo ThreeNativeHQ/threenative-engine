@@ -39,6 +39,11 @@ export interface IContactShadowLook {
   readonly silhouetteJump: number;
   /** Surface-to-sun cosine where the term starts, and where it is whole. Faces below it get none. */
   readonly sunFacing: readonly [number, number];
+  /**
+   * Sun shadow-map texel over screen-pixel footprint, where the term starts and where it is whole.
+   * Below it the map already out-resolves the pixel, so the term adds no contact, only edge noise.
+   */
+  readonly texelsPerPixel: readonly [number, number];
 }
 
 /**
@@ -54,6 +59,7 @@ export function contactShadowStages(
   let mask: Node | undefined;
   const towardSun = uniform(new Vector3());
   const texelSize = uniform(new Vector2(1, 1));
+  const shadowTexel = uniform(1);
   const from = new Vector3();
   const to = new Vector3();
   return [
@@ -80,6 +86,8 @@ export function contactShadowStages(
             sun.target.getWorldPosition(to);
             const world = from.sub(to).normalize();
             texelSize.value.set(1 / depth.value.image.width, 1 / depth.value.image.height);
+            const lens = sun.shadow.camera;
+            shadowTexel.value = (lens.right - lens.left) / lens.zoom / sun.shadow.mapSize.x;
             towardSun.value.copy(world).transformDirection(context.camera.matrixWorldInverse);
             return world;
           },
@@ -126,7 +134,13 @@ export function contactShadowStages(
           .cross(upRaw.mul(sign(upRaw.y)))
           .normalize();
         const facing = smoothstep(look.sunFacing[0], look.sunFacing[1], normal.dot(towardSun));
-        const reach = facing.mul(smooth).mul(look.strength);
+        // Where the shadow map's texel is not wider than the pixel, it already resolves the contact.
+        const resolvable = smoothstep(
+          look.texelsPerPixel[0],
+          look.texelsPerPixel[1],
+          shadowTexel.div(footprint.max(1e-4)),
+        );
+        const reach = facing.mul(smooth).mul(resolvable).mul(look.strength);
         // `.r` is 1 where lit and 0 where shadowed; `reach` is how much of that this game wants.
         const term = float(1).sub(float(1).sub(node.r).mul(reach));
         return (input as Node<"vec4">).mul(term);
@@ -141,27 +155,31 @@ export function contactShadowStages(
 
 /**
  * The contact shadow under small things, per tier. The numbers hold things on the ground rather
- * than draw a dark halo: 24 px is the shadow's reach on screen, the first 3 samples stay hard so
- * the contact is pinned, and the last 6 fade so the far end does not stop on a line. `low` does
- * not run the stage: the chain refuses it by name, so its entry only says what it would use. Cost
- * is unmeasured; read `TN_FRAME_BUDGET` after you change a number.
+ * than draw a dark halo: the reach is 8 px on screen, which is a foot at this camera's distance,
+ * the first samples stay hard so the contact is pinned, and the last fade so the far end does not
+ * stop on a line. A longer reach grows with distance (a tower 50 m away gets over a metre of it),
+ * and where the sun's shadow-map texel is already no wider than a pixel the map resolves the
+ * contact itself, so `texelsPerPixel` hands those pixels back to it. `low` does not run the
+ * stage: the chain refuses it by name, so its entry only says what it would use. Cost is
+ * unmeasured; read `TN_FRAME_BUDGET` after you change a number.
  */
 const CONTACT_SHADOW_HIGH: IContactShadowLook = {
   bilinearThreshold: 0.02,
-  contrast: 2,
-  fadeSamples: 6,
-  hardSamples: 3,
-  sampleCount: 24,
+  contrast: 1,
+  fadeSamples: 4,
+  hardSamples: 1,
+  sampleCount: 8,
   strength: 0.75,
   surfaceThickness: 0.005,
   silhouetteJump: 8,
   sunFacing: [0.25, 0.6],
+  texelsPerPixel: [1, 1.6],
 };
 const CONTACT_SHADOW_MEDIUM: IContactShadowLook = {
   ...CONTACT_SHADOW_HIGH,
-  fadeSamples: 4,
-  hardSamples: 2,
-  sampleCount: 16,
+  fadeSamples: 3,
+  hardSamples: 1,
+  sampleCount: 6,
 };
 const CONTACT_SHADOW: Record<QualityTier, IContactShadowLook> = {
   high: CONTACT_SHADOW_HIGH,

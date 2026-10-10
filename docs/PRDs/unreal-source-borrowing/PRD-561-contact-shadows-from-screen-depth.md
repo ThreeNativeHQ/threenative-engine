@@ -125,6 +125,7 @@ flowchart LR
 **Files:** `packages/core/src/render/contact-shadow.ts` (new), `packages/core/src/render/chain.ts`, `packages/core/src/index.ts`, `packages/core/THIRD_PARTY_NOTICES.md` (new), `packages/core/src/render/contact-shadow-dispatch.ts` (new, the CPU dispatch builder), `packages/core/__tests__/contact-shadow-dispatch.spec.ts` (new), `docs/architecture/CHARTER.md`
 - [x] The dispatch-list builder writes every on-screen pixel at least once, except the pixel under the light, for a light in front of, behind, beside and far off screen, and for viewports that are not multiples of 64. Overlap stays bounded (see `## Decisions`). proof: `pnpm exec vitest run packages/core/__tests__/contact-shadow-dispatch.spec.ts` — Evidence: 7 passed (1920x1080, 1001x577, 63x65, 1x1, 130x70, 1024x512, six light placements each; bounds case 301,203 to 700,510).
 - [ ] Arm A or Arm B is chosen with the judge's verdict, and the choice is written under `## Decisions`. proof: `pnpm visuals:ab --before <arm A> --after <arm B> --raters 3` on the starter and the dark-environment fixture.
+  Left open: the 2026-10-10 artifact-fix candidate is captured but UNJUDGED (see `## Decisions`).
 
 #### Phase 2: Templates use it
 **Status:** NOT STARTED
@@ -150,3 +151,21 @@ flowchart LR
   size`. The emulation found it: a light at x = 38400 on a 1920-wide target left column 1919 unwritten.
   The port uses `floor(light)` for both and an inclusive `max = size - 1`, and rounds the light to float32
   so the CPU and the GPU agree on `floor`. The spec case "far off screen" at 1920x1080 is the red-green.
+- 2026-10-10 — **Artifact-fix candidate: UNJUDGED, and no benefit shown over run-to-run noise.** Cause: the
+  stage's reach was a constant 24 screen pixels, so its length in the world grew with distance (about
+  53 cm at the fox, about 1.4 m at the castle) and, where the sun shadow-map texel is already narrower than
+  a pixel, the term only added depth-edge hits: tower-rim dashes, porthole and silhouette halos, bridge-edge
+  dashes and an ear-on-forehead gash on the fox. Candidate (both template stage files, no core change):
+  reach 8 px, one hard sample, `contrast: 1`, and a `texelsPerPixel` gate read from the sun's shadow
+  camera (map texel over pixel footprint) that hands pixels back to the map. Desktop WebGPU (NVIDIA Turing,
+  headed), key-light map 1024 and 4096, two runs per arm, stage off against on, same pose, `BODY_REST` 0.377 in
+  both arms. The author reported reduced castle, porthole, silhouette and bridge artifacts, with a short
+  dash remaining at the fox's ear base; this is not a formal judgment. Pixel differences (fuzz 2%) were
+  0.37% for feet versus 0.55% control run variation, and 1.0% for the fox versus 0.89% control variation.
+  These measurements do not establish useful grounding; the candidate suppresses the effect on these
+  poses and is parked. No visual verdict is assigned. The
+  platformer's `contact-shadow.playtest.json` is green with the stage (the chain lists `contactShadows`)
+  and red with it removed (`TN_PLAYTEST_RENDER_CHAIN_STAGES_FAILED`). No formal
+  visual judge ran, so the D12 decline stands and no acceptance box is ticked. Open doubt: the premise
+  (a map texel wider than the contact gap) holds only where the camera is far from the receiver and no
+  template renders that.
