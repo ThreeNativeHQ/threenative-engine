@@ -30,6 +30,7 @@
       { "id": "state", "path": "crowdRate.projectedRigs", "gte": 32 },
       { "id": "state", "path": "crowdRate.ready", "equals": true },
       { "id": "state", "path": "crowdRate.gpuSamples", "gte": 1 },
+      { "id": "state", "path": "crowdRate.gpuMainSamples", "gte": 1 },
       { "id": "state", "path": "crowdRate.gpuShadowSamples", "gte": 1 },
       { "id": "state", "path": "crowdRate.gpuMainMs", "gte": 0 },
       { "id": "state", "path": "crowdRate.gpuShadowMs", "gte": 0 },

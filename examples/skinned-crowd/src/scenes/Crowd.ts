@@ -53,6 +53,7 @@ export const crowdRate: Record<string, unknown> = { count, arm, measuring, ready
 export function crowdBudget(window: IFrameBudgetWindow): void {
   if (!measuring) return;
   crowdRate.gpuMainMs = window.gpuMain ?? null;
+  crowdRate.gpuMainSamples = window.gpuMainSamples ?? null;
   crowdRate.gpuShadowMs = window.gpuShadow ?? null;
   crowdRate.gpuShadowSamples = window.gpuShadowRendered?.samples ?? null;
   crowdRate.gpuSamples = window.gpu?.samples ?? null;
@@ -92,7 +93,8 @@ export function crowdSpans(line: string): void {
     Number.isFinite(crowdRate.gpuShadowMs) &&
     Number(crowdRate.mainDraws) > 0 &&
     Number(crowdRate.shadowDraws) > 0 &&
-    Number(crowdRate.gpuShadowSamples) > 0;
+    Number(crowdRate.gpuShadowSamples) > 0 &&
+    Number(crowdRate.gpuMainSamples) > 0;
   console.info(`TN_CROWD_RATE:${JSON.stringify(crowdRate)}`);
 }
 

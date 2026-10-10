@@ -186,13 +186,38 @@ which is compatibility mode, not the core WebGPU that this engine requests.
   animated/held/static windows are ready; an incomplete CPU window or missing GPU data is not.
   These local changes have not been pushed or exercised on the GPU.
 
-The next runtime command, after that window is granted, is:
+- The local GPU coverage extension exposes `gpuMainSamples` from the same existing ring
+  summary that supplies `gpuMain`; absent measurements stay absent in FrameBudget and publish
+  `null` in the fixture. Readiness now requires an observed main sample as well as rendered-shadow
+  samples. The focused fresh/deduplicated-main assertion failed before the field existed, then
+  all **17 frame-budget GPU-series tests passed**, including measured zero and missing-main cases.
+  Core ESM/DTS/bundler build and publint pass. Crowd TypeScript, scenario schema and Vite build
+  pass. Six bridge/readiness cases pass: a global GPU sample count cannot substitute for missing
+  main samples. Main sample counts are observed independently of the 120 render frames.
+
+The bounded functional preflight is pending coordinator review of these local commits. Its doctor
+command uses the four approved extras; doctor supplies the shipped five browser arguments itself:
+
+```sh
+node packages/playtest/dist/runner/cli.js doctor --url 'http://127.0.0.1:5173/?tnFrameSpans=1&crowdCount=32&crowdArm=animated' --text \
+  --browser-arg=--use-angle=vulkan --browser-arg=--use-vulkan \
+  --browser-arg=--disable-vulkan-surface --browser-arg=--no-sandbox
+```
+
+The following single 32-animated run uses an explicit manual override equivalent to the shipped
+WebGPU recipe plus those four extras (the scenario CLI rejects combining recipe and arguments):
 
 ```sh
 node packages/playtest/dist/runner/cli.js examples/skinned-crowd/playtests/crowd-rate.playtest.json \
   --url 'http://127.0.0.1:5173/?tnFrameSpans=1&crowdCount=32&crowdArm=animated' \
-  --server-command 'pnpm --filter skinned-crowd dev --host 127.0.0.1' --browser-recipe webgpu
+  --server-command 'pnpm --filter skinned-crowd dev --host 127.0.0.1' --headed \
+  --browser-arg=--ozone-platform=x11 --browser-arg=--enable-unsafe-webgpu \
+  --browser-arg=--disable-gpu-sandbox --browser-arg=--ignore-gpu-blocklist \
+  --browser-arg=--enable-features=Vulkan --browser-arg=--use-angle=vulkan \
+  --browser-arg=--use-vulkan --browser-arg=--disable-vulkan-surface --browser-arg=--no-sandbox
 ```
 
-Repeat from the same build for all three counts and the held/static controls, name the actual
-adapter, and record the measurements here. AC-1's 40% reduction is a later Phase 2 gate.
+Actual `adapter.info` must identify NVIDIA/Turing; SwiftShader invalidates the preflight. No runtime
+or adapter result has been obtained yet. A separate exclusive cost window is required before the
+nine count/control arms; their observed main and rendered-shadow sample coverage must be recorded.
+AC-1's 40% reduction is a later Phase 2 gate.
