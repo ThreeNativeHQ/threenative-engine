@@ -103,7 +103,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
   #measuredBounds: Box3 | undefined;
   readonly #padding: number | undefined;
   readonly #onCull: "pause" | "clear";
-  readonly #graceSeconds: number;
+  #graceSeconds = 1;
   readonly #boundsEveryFrames: number;
   readonly #partials: StorageBufferNode<"vec4"> | undefined;
   readonly #reduce: ComputeNode | undefined;
@@ -150,13 +150,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
       throw new Error("GPUParticles3D.start must be a function.");
     if (typeof options.process !== "function")
       throw new Error("GPUParticles3D.process must be a function.");
-    const graceSeconds = options.graceSeconds ?? 1;
     const boundsEveryFrames = options.boundsEveryFrames ?? 8;
-    if (
-      (!Number.isFinite(graceSeconds) && graceSeconds !== Number.POSITIVE_INFINITY) ||
-      graceSeconds < 0
-    )
-      throw new Error("GPUParticles3D.graceSeconds must be non-negative.");
     if (!Number.isInteger(boundsEveryFrames) || boundsEveryFrames <= 0)
       throw new Error("GPUParticles3D.boundsEveryFrames must be a positive integer.");
     if (options.padding !== undefined && (!Number.isFinite(options.padding) || options.padding < 0))
@@ -174,7 +168,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
     this.#boundsOverride = options.bounds;
     this.#padding = options.padding;
     this.#onCull = options.onCull ?? "pause";
-    this.#graceSeconds = graceSeconds;
+    this.graceSeconds = options.graceSeconds ?? 1;
     this.#boundsEveryFrames = boundsEveryFrames;
     this.amount = options.amount;
     this.buffers = {
@@ -214,6 +208,17 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
 
   get released(): boolean {
     return this.#released;
+  }
+
+  /** Seconds outside view before culling; Infinity disables it at runtime. */
+  get graceSeconds(): number {
+    return this.#graceSeconds;
+  }
+
+  set graceSeconds(value: number) {
+    if ((!Number.isFinite(value) && value !== Number.POSITIVE_INFINITY) || value < 0)
+      throw new Error("GPUParticles3D.graceSeconds must be non-negative.");
+    this.#graceSeconds = value;
   }
 
   attachRenderer(renderer: IRendererLike): void {

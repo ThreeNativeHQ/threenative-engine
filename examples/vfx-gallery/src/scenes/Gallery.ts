@@ -434,7 +434,9 @@ export class Gallery extends Scene<GalleryState> {
     const graceSeconds = (): number => (cullOn ? 1 : Number.POSITIVE_INFINITY);
     const pageEmitters = (): GPUParticles3D[] =>
       [...effectEntities.values()].flatMap((entity) =>
-        entity.objects.filter((object): object is GPUParticles3D => object instanceof GPUParticles3D),
+        entity.objects.filter(
+          (object): object is GPUParticles3D => object instanceof GPUParticles3D,
+        ),
       );
 
     const mountParticles = (definition: GalleryEffectDefinition): void => {
@@ -552,8 +554,7 @@ export class Gallery extends Scene<GalleryState> {
         overBudgetPaused: overBudget,
         pausedWithoutReason: unnamed,
         dispatchRatio: latest.ratio,
-        runningDispatchRatio:
-          running === 0 ? 0 : runningDelta / (RATIO_WINDOW_RENDERS * running),
+        runningDispatchRatio: running === 0 ? 0 : runningDelta / (RATIO_WINDOW_RENDERS * running),
         shortestDwellSeconds: Number.isFinite(shortestDwell) ? shortestDwell : 0,
       });
     });
@@ -576,9 +577,7 @@ export class Gallery extends Scene<GalleryState> {
         // The ratio sampled while the cull was off is the control the cull-on ratio is judged
         // against, so it is kept before the state flips.
         for (const emitter of pageEmitters()) emitter.graceSeconds = graceSeconds();
-        frameCtx.state.set(
-          cullOn ? { cullOn, baselineRatio: latest.ratio } : { cullOn },
-        );
+        frameCtx.state.set(cullOn ? { cullOn, baselineRatio: latest.ratio } : { cullOn });
       }
       if (frameCtx.input.justPressed("toggleBudget")) {
         const tightBudget = budgetKnob.maxFps === undefined;

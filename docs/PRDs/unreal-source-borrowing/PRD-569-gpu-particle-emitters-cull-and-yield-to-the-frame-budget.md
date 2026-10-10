@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-569 — GPU particle emitters out of view stop costing, and effects yield to the frame budget
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — checkpoint corrections verified; runtime acceptance remains open.
 **Priority:** P2 — AC-1 and AC-2 are open: every `GPUParticles3D` simulates and draws every frame, on screen or not, and no effect reads the measured budget.
 **Complexity:** 5 (MEDIUM) — 1–5 engine files (`particles.ts`, `render-camera-cull.ts`, a small bounds/significance module) (+1), a measured-bounds reduction is a new mechanism (+2), culled/paused state carries across frames (+2); risk override: none
 **Owner:** João
@@ -163,8 +163,16 @@ camera)` → `GPUParticles3D.process(renderer, camera)` → skip or dispatch. Th
 
 ## Execution Phases
 
+### Checkpoint corrections — 2026-10-10
+
+- `GPUParticles3D.graceSeconds` is now a validated runtime control, shared with constructor validation. The gallery's existing assignments take effect; Infinity resumes view-culled emitters, and re-enabling culling starts a fresh grace interval. Four regression cases failed before the fix and passed afterward; `pnpm exec vitest run packages/core/__tests__/particles.spec.ts packages/core/__tests__/particle-significance.spec.ts packages/core/__tests__/compute-driven.spec.ts`: **39/39 passed**.
+- Strict types in the changed particle tests are corrected. `pnpm exec tsc --noEmit -p packages/core/tsconfig.json` and `pnpm exec tsc --noEmit -p examples/vfx-gallery/tsconfig.json`: **passed**. Root `pnpm exec tsc --noEmit` still fails only on the same preexisting missing procedural-animals declarations and resulting implicit-any errors; no unrelated source was edited.
+- Biome formatted the gallery and existing emitter-cull scenario. `pnpm exec biome check . --diagnostic-level=error`: **passed**, with existing warnings retained. The action-rpg scaffold fingerprint was refreshed for this PRD's changed template bytes; `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts -t 'byte-stable|mobile-shippable'`: **2/2 passed** after the shipped assets copy script restored the missing `basis_encoder.wasm` build artifact. `pnpm ci:fast`: **passed** (lint, docs, agent mirrors, drift); the two prior push-gate failures are resolved, without bypassing a gate.
+- `pnpm --filter @threenative/core build` emitted the updated JS and declarations, then **failed** because `packages/engine-mcp/dist/index.js` is missing. The gallery typecheck passed against those rebuilt declarations; the full build is not claimed green. `pnpm capabilities:sync` and `pnpm api:surface:sync`: **passed**, with no tracked artifact changes.
+- All seven phase boxes and both acceptance boxes remain open: the original bounds/cull/significance red-green requirements, web AC-1/AC-2, native desktop pan, and action-rpg combat proof are not accepted by these corrections. No push or PR creation; parent review remains required before pushing.
+
 #### Phase 1: An emitter out of view stops simulating and drawing
-**Status:** NOT STARTED
+**Status:** PARTIAL — runtime grace control corrected; phase proofs remain open.
 **Files:** `packages/core/src/particles.ts`, `packages/core/src/render-camera-cull.ts`, `packages/core/__tests__/particles.spec.ts`, `examples/vfx-gallery/src/scenes/Gallery.ts`, `examples/vfx-gallery/playtests/emitter-cull.playtest.json` (new)
 - [ ] [local] The reduction measures a known particle cloud inside one sample's bounds, and an emitter with no landed sample is never culled. proof: red-green cases in `pnpm exec vitest run packages/core/__tests__/particles.spec.ts`.
 - [ ] [local] An emitter culled past the grace time skips its dispatch, `"pause"` resumes with its buffers intact, and `"clear"` restarts. proof: red-green cases in the same spec, counting `renderer.compute` calls on a stub renderer.

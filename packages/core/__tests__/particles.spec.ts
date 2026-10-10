@@ -1,4 +1,4 @@
-import { Box3, Group, PerspectiveCamera, Vector3 } from "three";
+import { Box3, Group, type Object3D, PerspectiveCamera, Vector3 } from "three";
 import { Fn } from "three/tsl";
 import { SpriteNodeMaterial } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -93,14 +93,16 @@ describe("GPUParticles3D", () => {
   });
 });
 
-function partialsOf(cloud: readonly Vector3[]): Float32Array {
+function partialsOf(cloud: readonly Vector3[]): Float32Array<ArrayBuffer> {
   const data = new Float32Array(256 * 8);
   for (let lane = 0; lane < 256; lane += 1) {
     const lo = new Vector3(1e30, 1e30, 1e30);
     const hi = new Vector3(-1e30, -1e30, -1e30);
     for (let index = lane; index < cloud.length; index += 256) {
-      lo.min(cloud[index]);
-      hi.max(cloud[index]);
+      const point = cloud[index];
+      if (point === undefined) throw new Error("Missing particle fixture point.");
+      lo.min(point);
+      hi.max(point);
     }
     lo.toArray(data, lane * 4);
     hi.toArray(data, (lane + 256) * 4);
@@ -142,7 +144,7 @@ describe("particle bounds and culling", () => {
     let land: ((bytes: ArrayBuffer) => void) | undefined;
     gpu.readback = vi.fn(
       () =>
-        new Promise((resolve) => {
+        new Promise<ArrayBuffer>((resolve) => {
           land = resolve;
         }),
     );
@@ -230,6 +232,43 @@ describe("particle bounds and culling", () => {
     expect(infinite.visible).toBe(true);
   });
 
+  it("toggles view culling at runtime and starts a fresh grace period on re-enable", () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const gpu = renderer([]);
+    const emitter = particles({ bounds: localBounds });
+    const view = camera();
+    emitter.position.set(100, 0, -5);
+    emitter.attachRenderer(gpu);
+    emitter.process(gpu, view);
+    vi.advanceTimersByTime(1000);
+    emitter.process(gpu, view);
+    expect(emitter.cull.reason).toBe("outside-view");
+    emitter.graceSeconds = Number.POSITIVE_INFINITY;
+    emitter.process(gpu, view);
+    expect(emitter.visible).toBe(true);
+    expect(emitter.dispatches).toBe(2);
+    emitter.graceSeconds = 1;
+    emitter.process(gpu, view);
+    vi.advanceTimersByTime(999);
+    emitter.process(gpu, view);
+    expect(emitter.cull.state).toBe("running");
+    vi.advanceTimersByTime(1);
+    emitter.process(gpu, view);
+    expect(emitter.cull.reason).toBe("outside-view");
+  });
+
+  it.each([-1, Number.NEGATIVE_INFINITY, Number.NaN])(
+    "rejects invalid graceSeconds %s in constructor and runtime assignments",
+    (value) => {
+      expect(() => particles({ graceSeconds: value })).toThrow("GPUParticles3D.graceSeconds");
+      const emitter = particles({ graceSeconds: 0 });
+      expect(() => {
+        emitter.graceSeconds = value;
+      }).toThrow("GPUParticles3D.graceSeconds");
+      expect(emitter.graceSeconds).toBe(0);
+    },
+  );
+
   it("respects emitting, game visibility, and shadow casters", () => {
     const gpu = renderer([]);
     const emitter = particles({ bounds: localBounds, graceSeconds: 0 });
@@ -247,7 +286,8 @@ describe("particle bounds and culling", () => {
     expect(emitter.visible).toBe(false);
     expect(emitter.cull.state).toBe("running");
     emitter.visible = true;
-    emitter.castShadow = true;
+    const shadowCaster: Object3D = emitter;
+    shadowCaster.castShadow = true;
     emitter.position.x = 100;
     emitter.process(gpu, camera());
     expect(emitter.visible).toBe(true);
@@ -304,7 +344,9 @@ describe("particle bounds and culling", () => {
     });
     const emitter = particles({ boundsEveryFrames: 1 });
     emitter.attachRenderer(gpu);
-    const dispose = vi.spyOn(emitter.warmupNodes[2], "dispose");
+    const reduction = emitter.warmupNodes[2];
+    if (reduction === undefined) throw new Error("Missing particle reduction node.");
+    const dispose = vi.spyOn(reduction, "dispose");
     emitter.process(gpu, camera());
     await Promise.resolve();
     await Promise.resolve();

@@ -188,7 +188,8 @@ const BUG_REPORT_SKILL_PATHS = [
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed on develop 07bcdf8d2 with the shooter fix and PRD-572 merged in; PRD-572 changes
   // the starter instructions, so only its fingerprint moved from the shooter-fix values.
-  "action-rpg": "cfc4fdaa7aff7713f6cbeea93ef0b680bf665031fe3c04dd2bf3ba32476389d4",
+  // PRD-569 adds the template's onCull reactions and culling instructions.
+  "action-rpg": "238f79be333915fbaa49fab868cc7b91c277e9eb886aadd996d02bda85853da4",
   minimal: "18d511d041161e706b450496e8b05cd2be8ad7224b75848da463b79ddc88b1f5",
   platformer: "c31ad80077d41a7ecfcd497f78b36029ee872fe6249f9c71e04da10dff161cb1",
   puzzle: "90bbb8d0ac5c969fca75ec879301a3adcc2f9cbf65ba52f82835905f07fb50de",

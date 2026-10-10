@@ -7,9 +7,21 @@
   "subject": "fire",
   "artifacts": { "screenshots": "before-after" },
   "steps": [
-    { "kind": "wait", "label": "settle", "waitTicks": 240, "release": true, "screenshot": "centered" },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 240,
+      "release": true,
+      "screenshot": "centered"
+    },
     { "kind": "input", "label": "cull-off", "press": "KeyC", "holdTicks": 1, "release": true },
-    { "kind": "input", "label": "pan-right-cull-off", "press": "KeyD", "holdTicks": 1, "release": true },
+    {
+      "kind": "input",
+      "label": "pan-right-cull-off",
+      "press": "KeyD",
+      "holdTicks": 1,
+      "release": true
+    },
     { "kind": "wait", "label": "baseline-window", "waitTicks": 240, "release": true },
     { "kind": "input", "label": "cull-on", "press": "KeyC", "holdTicks": 1, "release": true },
     {
@@ -29,7 +41,13 @@
       "release": true,
       "screenshot": "over-budget"
     },
-    { "kind": "input", "label": "budget-relaxed", "press": "KeyB", "holdTicks": 1, "release": true },
+    {
+      "kind": "input",
+      "label": "budget-relaxed",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
     { "kind": "wait", "label": "recovered", "waitTicks": 900, "release": true }
   ],
   "assert": {
