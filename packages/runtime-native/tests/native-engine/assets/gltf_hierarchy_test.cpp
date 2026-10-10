@@ -360,6 +360,29 @@ int main() {
     if (refused.error.rfind("TN_NATIVE_GLTF_IMAGE_INVALID", 0) != 0) {
         std::printf("image textures: a corrupt image was not refused (%s)\n", refused.error.c_str()); ++differ;
     }
+    // GLTFLoader's caches: two nodes that use one mesh share its geometry, two primitives with the same
+    // indices, attributes and mode share one geometry, and an accessor loads once, so the GPU holds
+    // those bytes once. A third primitive with another attribute set keeps its own geometry but shares the accessor.
+    const std::string sharedJson = R"({"asset":{"version":"2.0"},
+      "buffers":[{"byteLength":36,"uri":"data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}],
+      "bufferViews":[{"buffer":0,"byteLength":36}],
+      "accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[0,0,0]}],
+      "meshes":[{"primitives":[{"attributes":{"POSITION":0}},{"attributes":{"POSITION":0}},{"attributes":{"NORMAL":0,"POSITION":0}}]}],
+      "nodes":[{"mesh":0,"name":"a"},{"mesh":0,"name":"b"}],"scenes":[{"nodes":[0,1]}],"scene":0})";
+    auto shared = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(sharedJson.data()), sharedJson.size()));
+    const auto primitiveOf = [&](const char* node, std::size_t i) -> Mesh* {
+        Object3D* group = shared.scene ? shared.scene->getObjectByName(node) : nullptr;
+        return group && group->children.size() > i ? dynamic_cast<Mesh*>(group->children[i]) : nullptr;
+    };
+    Mesh* a0 = primitiveOf("a", 0);
+    Mesh* a1 = primitiveOf("a", 1);
+    Mesh* a2 = primitiveOf("a", 2);
+    Mesh* b0 = primitiveOf("b", 0);
+    if (!shared.error.empty() || !a0 || !a1 || !b0 || a0->geometry != b0->geometry || a0->geometry != a1->geometry ||
+        !a2 || a2->geometry == a0->geometry || !a0->geometry->getAttribute("position") ||
+        a0->geometry->getAttribute("position") != a2->geometry->getAttribute("position")) {
+        std::printf("shared mesh: geometry or accessor duplicated per use (%s)\n", shared.error.c_str()); ++differ;
+    }
     for (const Value& expected : reference.find("files")->items()) {
         const std::string file = expected.find("file")->string();
         const std::string bytes = readFile(std::string(TN_REPO_ROOT) + "/" + file);

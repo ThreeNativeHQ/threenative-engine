@@ -8,9 +8,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <map>
 #include <set>
+#include <string>
 
 #include "cgltf.h"
 #include "engine/animation/skinning/skeleton.h"
@@ -344,11 +346,16 @@ class Builder {
                     return;
                 }
                 Mesh& mesh = *use.meshes[p];
-                mesh.geometry = geometryFor(primitive);
+                // GLTFLoader's primitive cache: a mesh a second node uses, or a primitive naming the same
+                // accessors, shares the geometry.
+                std::shared_ptr<BufferGeometry>& geometry = geometries_[primitiveKey(primitive)];
+                const bool fresh = !geometry;
+                if (fresh) geometry = geometryFor(primitive);
+                mesh.geometry = geometry;
                 if (!error_.empty()) return;
                 mesh.material = finalMaterial(primitive, *mesh.geometry);
                 if (!error_.empty()) return;
-                if (auto* skinned = dynamic_cast<SkinnedMesh*>(&mesh)) normalizeSkinWeights(*skinned);
+                if (auto* skinned = dynamic_cast<SkinnedMesh*>(&mesh); skinned && fresh) normalizeSkinWeights(*skinned);
                 if (!mesh.geometry->morphPositions.empty() || !mesh.geometry->morphNormals.empty()) {
                     mesh.updateMorphTargets();
                     if (const Value* weights = member(json, "weights"))
@@ -380,6 +387,22 @@ class Builder {
         return lower;
     }
 
+    // createPrimitiveKey: indices, attributes (sorted by name), mode and morph-target attributes.
+    static std::string primitiveKey(const cgltf_primitive& primitive) {
+        std::string key = std::to_string(reinterpret_cast<std::uintptr_t>(primitive.indices)) + ':' +
+                          std::to_string(primitive.type);
+        const auto attributes = [&](const cgltf_attribute* list, std::size_t count) {
+            std::map<std::string, std::uintptr_t> sorted;
+            for (std::size_t a = 0; a < count; ++a) sorted[list[a].name] = reinterpret_cast<std::uintptr_t>(list[a].data);
+            for (const auto& [name, data] : sorted) key += ':' + name + '=' + std::to_string(data);
+        };
+        attributes(primitive.attributes, primitive.attributes_count);
+        for (std::size_t t = 0; t < primitive.targets_count; ++t) {
+            key += '|';
+            attributes(primitive.targets[t].attributes, primitive.targets[t].attributes_count);
+        }
+        return key;
+    }
     std::shared_ptr<BufferGeometry> geometryFor(const cgltf_primitive& primitive) {
         auto geometry = std::make_shared<BufferGeometry>();
         for (std::size_t a = 0; a < primitive.attributes_count; ++a) {
@@ -427,7 +450,14 @@ class Builder {
     // loadAccessor: the accessor's own typed array (interleaved views de-interleaved, sparse values
     // applied), its item size and normalized flag. The bytes copy as stored, as three's typed-array
     // view reads them: no widening to double, which also quiets a signalling NaN.
+    // GLTFLoader's dependency cache: primitives that name one accessor share one attribute, so the
+    // GPU holds its bytes once.
     std::shared_ptr<BufferAttribute> accessor(const cgltf_accessor& a) {
+        std::shared_ptr<BufferAttribute>& cached = accessors_[&a];
+        if (!cached) cached = loadAccessor(a);
+        return cached;
+    }
+    std::shared_ptr<BufferAttribute> loadAccessor(const cgltf_accessor& a) {
         Scalar scalar = Scalar::F32;
         if (!scalarOf(a, scalar)) return nullptr;
         const int itemSize = static_cast<int>(cgltf_num_components(a.type));
@@ -878,6 +908,8 @@ class Builder {
     std::vector<std::shared_ptr<Object3D>> nodes_;
     std::map<const Object3D*, std::string> nodeNames_;
     std::vector<MeshUse> uses_;
+    std::map<const cgltf_accessor*, std::shared_ptr<BufferAttribute>> accessors_;
+    std::map<std::string, std::shared_ptr<BufferGeometry>> geometries_;
     std::map<std::size_t, std::shared_ptr<Camera>> cameras_;
     std::map<std::size_t, std::size_t> cameraUses_, lightUses_;
     std::map<std::size_t, std::string> lightNames_;
