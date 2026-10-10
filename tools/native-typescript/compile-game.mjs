@@ -248,8 +248,11 @@ async function runPlayer() {
   try {
     while (!failed && stepPlayer()) await Promise.resolve();
   } finally {
+    console.error("TN_SHUTDOWN:game.stop");
     game.stop();
+    console.error("TN_SHUTDOWN:closePlayer");
     closePlayer();
+    console.error("TN_SHUTDOWN:exit");
   }
   if (failed) process.exit(1);
 }

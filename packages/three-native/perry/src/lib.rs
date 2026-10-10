@@ -1,6 +1,7 @@
 //! Perry strings and rooted callback trampolines; all engine memory belongs to the C shim.
 use std::ffi::CStr;
 use std::sync::{Mutex, Once};
+mod physics;
 use perry_ffi::{alloc_string, read_string, gc_register_mutable_root_scanner_named, GcRootVisitor,
     JsString, JsClosure, RawClosureHeader, StringHeader};
 

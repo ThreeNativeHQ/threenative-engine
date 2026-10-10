@@ -35,10 +35,12 @@ it("drives core frames, input, timers and async mailbox observations through pla
       return 0;
     },
   };
-  const source = readFileSync(new URL("../src/perry-host.ts", import.meta.url), "utf8").replace(
-    /import\s*\{([^}]+)\}\s*from "tn-native-transport";/u,
-    "const {$1} = native;",
-  );
+  const source = readFileSync(new URL("../src/perry-host.ts", import.meta.url), "utf8")
+    .replace(/import\s*\{([^}]+)\}\s*from "tn-native-transport";/u, "const {$1} = native;")
+    .replace(
+      'import { createPerryPhysicsHost } from "./perry-physics.js";',
+      'const createPerryPhysicsHost = () => ({ version: "0.30.0", createSimulation() {} });',
+    );
   const sandbox = { native, exports: {}, console } as unknown as {
     exports: {
       platform: {
@@ -48,7 +50,7 @@ it("drives core frames, input, timers and async mailbox observations through pla
       stepPlayer(): boolean;
       closePlayer(): void;
     };
-    __THREENATIVE_NATIVE__: { platform: { runtime: string } };
+    __THREENATIVE_NATIVE__: { platform: { runtime: string }; physics: { version: string } };
     __THREENATIVE_PLAYTEST_BRIDGE__?: Record<string, (...args: unknown[]) => unknown>;
     requestAnimationFrame(callback: (time: number) => void): number;
     setTimeout(callback: () => void, delay: number): number;
@@ -60,6 +62,7 @@ it("drives core frames, input, timers and async mailbox observations through pla
     sandbox,
   );
   expect(sandbox.__THREENATIVE_NATIVE__.platform.runtime).toBe("native");
+  expect(sandbox.__THREENATIVE_NATIVE__.physics.version).toBe("0.30.0");
   const canvas = sandbox.exports.platform.inputTarget;
   const keyDown = vi.fn();
   const keyUp = vi.fn();

@@ -75,6 +75,15 @@ describe("shared Perry facade staging", () => {
         fs.readFileSync(path.join(staged.adapter, "package.json"), "utf8"),
       );
       expect(manifest.name).toBe("tn-native-transport");
+      expect(fs.readFileSync(path.join(staged.adapter, "Cargo.toml"), "utf8")).toContain(
+        'path = "native-physics"',
+      );
+      expect(
+        fs.readFileSync(path.join(staged.adapter, "native-physics/Cargo.toml"), "utf8"),
+      ).toContain('name = "threenative-native-physics"');
+      expect(
+        manifest.perry.nativeLibrary.functions.map((entry: { name: string }) => entry.name),
+      ).toContain("js_tnp_physics_copy");
       expect(manifest.perry.nativeLibrary.targets.linux.libDirs).toEqual(["/engine"]);
       expect(
         JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")).perry.allow
@@ -295,7 +304,8 @@ describe("discoverCases", () => {
     expect(names).toContain("dynamic-tsl-unsupported");
     expect(names).toContain("import-identity");
     expect(names).toContain("three-native-minimal");
-    expect(names).toHaveLength(20);
+    expect(names).toContain("three-native-midway-assets");
+    expect(names).toHaveLength(21);
   });
 
   it("turns a top-level .ts with no .expected into a named failure, not a skip", () => {

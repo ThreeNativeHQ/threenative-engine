@@ -100,3 +100,59 @@ export function playerCodes(): string {
 export function playerCapture(on: boolean): number {
   return js_tnp_player_capture(on ? 1 : 0);
 }
+
+declare function js_tnp_physics_version(): number;
+declare function js_tnp_physics_call(
+  op: number,
+  world: number,
+  packet: number,
+  input: number,
+  count: number,
+  output: number,
+  capacity: number,
+  auxiliary: number,
+  auxiliaryCount: number,
+): number;
+export function physicsVersion(): string {
+  return readString(js_tnp_physics_version());
+}
+export function physicsCall(
+  op: number,
+  world: number,
+  packet: number,
+  input = 0,
+  count = 0,
+  output = 0,
+  capacity = 0,
+  auxiliary = 0,
+  auxiliaryCount = 0,
+): number {
+  return js_tnp_physics_call(
+    op,
+    world,
+    packet,
+    input,
+    count,
+    output,
+    capacity,
+    auxiliary,
+    auxiliaryCount,
+  );
+}
+
+declare function js_tnp_physics_copy(
+  value: unknown,
+  pointer: number,
+  count: number,
+  kind: number,
+  toNative: number,
+): number;
+export function physicsCopy(
+  value: Float32Array | Uint32Array | Float64Array,
+  pointer: number,
+  count: number,
+  kind: number,
+  toNative: boolean,
+): number {
+  return js_tnp_physics_copy(value, pointer, count, kind, toNative ? 1 : 0);
+}

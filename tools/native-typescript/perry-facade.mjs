@@ -113,6 +113,22 @@ export function stageSharedFacade(project, bridge) {
     recursive: true,
     filter: (file) => !file.includes(`${path.sep}target${path.sep}`),
   });
+  // The staged transport is standalone; preserve its local Rapier dependency offline.
+  fs.cpSync(
+    path.join(facade, "../runtime-native/native/physics"),
+    path.join(adapter, "native-physics"),
+    {
+      recursive: true,
+      filter: (file) => !file.split(path.sep).includes("target"),
+    },
+  );
+  const cargoFile = path.join(adapter, "Cargo.toml");
+  fs.writeFileSync(
+    cargoFile,
+    fs
+      .readFileSync(cargoFile, "utf8")
+      .replace("../../runtime-native/native/physics", "native-physics"),
+  );
   if (bridge) {
     const manifestFile = path.join(adapter, "package.json");
     const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));

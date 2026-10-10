@@ -13,6 +13,7 @@ import {
   stringBytes,
   writeString,
 } from "tn-native-transport";
+import { createPerryPhysicsHost } from "./perry-physics.js";
 
 interface ITimer {
   callback: () => void;
@@ -61,6 +62,7 @@ function flushFrames(now: number): void {
 }
 const runner = playerRunner() !== 0;
 globals.__THREENATIVE_NATIVE__ = {
+  physics: createPerryPhysicsHost(),
   platform: { runtime: "native", os: "linux", formFactor: "desktop", maxTouchPoints: 0 },
 };
 if (runner) globals.TN_PLAYTEST_ENDPOINT = {};
