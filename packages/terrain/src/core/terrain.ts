@@ -433,7 +433,7 @@ export class Terrain {
   biome(options: OperationOptions<"biome"> = {}): this {
     return this._operation("biome", options);
   }
-  scatter(options: OperationOptions<"scatter"> = {}): this {
+  scatter(options: OperationOptions<"scatter">): this {
     return this._operation("scatter", options);
   }
   clear(options: OperationOptions<"clear">): this {

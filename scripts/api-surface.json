@@ -7,6 +7,7 @@
         "@threenative/assets#audioPass": "export function audioPass(options: IAudioPassOptions = { … }",
         "@threenative/assets#censusDocument": "export function censusDocument( model: string, document: Document, pageSize = 4_096, ): IContentCensus { … }",
         "@threenative/assets#compileAssets": "export async function compileAssets( options: IAssetCompileOptions = { … }",
+        "@threenative/assets#cookTerrainWorld": "export async function cookTerrainWorld( options: ICookTerrainWorldOptions, ): Promise<ICookTerrainWorldResult> { … }",
         "@threenative/assets#dedupeMaterials": "export function dedupeMaterials(materials: readonly IMaterialState[]): { … }",
         "@threenative/assets#formatAudioSizes": "export function formatAudioSizes(rows: readonly IAudioRow[]): readonly string[] { … }",
         "@threenative/assets#formatHealthReport": "export function formatHealthReport(report: IAssetHealthReport): readonly string[] { … }",

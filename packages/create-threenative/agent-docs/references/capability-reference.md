@@ -70,6 +70,16 @@ export async function compileAssets( options: IAssetCompileOptions = { … }
 const result = await compileAssets({ source: "assets", output: "public" });
 ```
 
+### `cookTerrainWorld`
+
+`function` — Bake evaluated terrain and static species into an instanced GLB and streaming world package.
+
+```ts
+export async function cookTerrainWorld( options: ICookTerrainWorldOptions, ): Promise<ICookTerrainWorldResult> { … }
+```
+
+- **Use when:** bake a terrain world headlessly into a GLB with instanced trees and rocks
+
 ### `dedupeMaterials`
 
 `function` — Collapse materials that became identical once their textures shared an atlas page, and count the buckets a merge would find — before and after — so the promise can be checked rather than made.

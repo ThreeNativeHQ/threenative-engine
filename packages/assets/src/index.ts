@@ -258,3 +258,17 @@ export type { IDedupeCensus, IMaterialBucket, IMaterialState } from "./content/d
  */
 export { censusDocument, materialStateOf, totalCensus } from "./content/census.js";
 export type { IContentCensus } from "./content/census.js";
+/**
+ * Bake evaluated terrain and static species into an instanced GLB and streaming world package.
+ * @situation bake a terrain world headlessly into a GLB with instanced trees and rocks
+ */
+export { cookTerrainWorld } from "./world/terrain-world.js";
+export type {
+  ICookTerrainWorldMaterialLayer,
+  ICookTerrainWorldOptions,
+  ICookTerrainWorldResult,
+  ISpeciesLODSpec,
+  ISpeciesSpec,
+  IWorldPackageAsset,
+  IWorldPackageManifest,
+} from "./world/terrain-world.js";

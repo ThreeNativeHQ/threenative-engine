@@ -3526,6 +3526,67 @@ describe("PRD-373 selective feature verification", () => {
     }
   });
 
+  describe("strata terrain CI selection", () => {
+    it.each([
+      "packages/terrain/src/index.ts",
+      "examples/strata-terrain-preview/src/game.ts",
+      "packages/core/src/world.ts",
+      "packages/core/src/world-cells.ts",
+      "packages/core/__tests__/world-cells-terrain.spec.ts",
+    ])("selects strata job when %s changes on develop PR", async (path) => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(
+          fixture,
+          path,
+          "export const terrainTouch = true;\n",
+          "terrain change",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan.selection).toBe("full");
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(jobs.strata?.required).toBe(true);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("skips strata job for an unrelated template change on develop PR", async () => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(
+          fixture,
+          "packages/create-threenative/templates/rain/src/game.ts",
+          "export const rainTouch = true;\n",
+          "unrelated template",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(jobs.strata?.required).toBe(false);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("requires strata job in full qualification mode", async () => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(
+          fixture,
+          "packages/create-threenative/templates/rain/src/game.ts",
+          "export const rainTouch = true;\n",
+          "unrelated template",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "main"]);
+        expect(plan.qualification).toBe(true);
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(jobs.strata?.required).toBe(true);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+  });
+
   it("a fresh install cannot stop on the interactive node_modules purge prompt", () => {
     // A checkout whose node_modules was not created by this pnpm makes `pnpm install` ask before
     // purging it. Agents run without a TTY, so the prompt hangs them until `CI=true` is added by
@@ -3809,6 +3870,7 @@ const CI_SKIPPED_JOBS = [
   "golden-path-template",
   "native-platforms",
   "performance-contracts",
+  "strata",
   "template-nonvisual",
   "test",
   "test-browser",
@@ -3860,10 +3922,13 @@ describe("a CI-configuration-only pull request", () => {
       expect(Object.values(jobs).filter((job) => job.required).length).toBeGreaterThan(6);
       // Every gate the `ci` selection skipped comes back. `native-platforms` is the one a clean
       // develop diff legitimately waives, and this diff does not touch a native path.
-      for (const name of CI_SKIPPED_JOBS.filter((job) => job !== "native-platforms")) {
+      for (const name of CI_SKIPPED_JOBS.filter(
+        (job) => job !== "native-platforms" && job !== "strata",
+      )) {
         expect(jobs[name]?.required, name).toBe(true);
       }
       expect(jobs["native-platforms"]?.required).toBe(true);
+      expect(jobs.strata?.required).toBe(false);
     } finally {
       await removeFixture(fixture.root);
     }

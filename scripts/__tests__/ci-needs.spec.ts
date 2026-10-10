@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { integrationEvidence } from "../../test-support/ci-integration-fixture.js";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { formatJobTimings, formatRunSummary, summaryRows } from "../ci-run-summary.js";
 import { ciJobGraph, ciNeedsFindings, declaredNeeds, jobSections } from "../ci-workflow.js";
@@ -413,6 +414,7 @@ function boardLegs(): string[] {
     "test-native",
     "test-browser",
     "test-playtest",
+    "strata",
     "golden-path-template (starter)",
     "template-nonvisual (rain, 1/1)",
     "golden-path",
@@ -890,18 +892,7 @@ describe("PRD-481 the runner class is compared per job, because every board is m
 });
 
 /** The verdict gate on a non-reuse plan, with every job's own result supplied by the caller. */
-function verifyWarmPlan(
-  fixture: IReuseFixture,
-  plan: Record<string, unknown>,
-  results: Record<string, string>,
-) {
-  const jobs = plan.jobs as Record<string, { required: boolean }>;
-  const needs = {
-    scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
-    ...Object.fromEntries(
-      Object.entries(jobs).map(([name]) => [name, { result: results[name] ?? "skipped" }]),
-    ),
-  };
+function verifyNeedsVerdict(fixture: IReuseFixture, needs: Record<string, unknown>) {
   return spawnSync(process.execPath, [path.join(repo, "scripts/ci-required.mjs")], {
     cwd: fixture.root,
     encoding: "utf8",
@@ -915,6 +906,22 @@ function verifyWarmPlan(
       GITHUB_RUN_ID: String(SELF_RUN_ID),
     },
   });
+}
+
+/** The verdict gate on a non-reuse plan, with every job's own result supplied by the caller. */
+function verifyWarmPlan(
+  fixture: IReuseFixture,
+  plan: Record<string, unknown>,
+  results: Record<string, string>,
+) {
+  const jobs = plan.jobs as Record<string, { required: boolean }>;
+  const needs = {
+    scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
+    ...Object.fromEntries(
+      Object.entries(jobs).map(([name]) => [name, { result: results[name] ?? "skipped" }]),
+    ),
+  };
+  return verifyNeedsVerdict(fixture, needs);
 }
 
 describe("PRD-481 a develop push only warms the caches every pull request reads", () => {
@@ -1012,6 +1019,86 @@ describe("PRD-481 a develop push only warms the caches every pull request reads"
     const red = verifyWarmPlan(fixture, plan, { "build-artifacts": "success" });
     expect(red.status).toBe(1);
     expect(red.stderr).toContain("CI_REQUIRED_JOB_NOT_SUCCESS: test-native");
+  });
+
+  it("enforces selected strata in ci-required verdict: rejects missing, skipped, failed, and unmapped, and accepts success", () => {
+    const planResult = spawnSync(
+      process.execPath,
+      ["scripts/ci-change-scope.mjs", "--event", "push", "--format", "json"],
+      { cwd: repo, encoding: "utf8" },
+    );
+    expect(planResult.status, planResult.stderr).toBe(0);
+    const plan = JSON.parse(planResult.stdout) as Record<string, unknown>;
+    const jobs = plan.jobs as Record<string, { required: boolean }>;
+    expect(jobs.strata?.required).toBe(true);
+
+    function runWithNeeds(targetPlan: Record<string, unknown>, needs: Record<string, unknown>) {
+      const directory = makeTempDirSync("ci-strata-verdict-");
+      try {
+        const evidence = integrationEvidence(
+          repo,
+          directory,
+          targetPlan as unknown as Parameters<typeof integrationEvidence>[2],
+        ).env;
+        return spawnSync(process.execPath, ["scripts/ci-required.mjs"], {
+          cwd: repo,
+          encoding: "utf8",
+          env: {
+            ...Object.fromEntries(
+              Object.entries(process.env).filter(([key]) => !key.startsWith("TN_CI_")),
+            ),
+            ...evidence,
+            TN_CI_NEEDS: JSON.stringify(needs),
+          },
+        });
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }
+
+    const baseNeeds: Record<string, unknown> = {
+      scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
+      ...Object.fromEntries(
+        Object.entries(jobs).map(([name, job]) => [
+          name,
+          { result: job.required ? "success" : "skipped" },
+        ]),
+      ),
+    };
+
+    // 1. Success when strata succeeds
+    const successResult = runWithNeeds(plan, baseNeeds);
+    expect(successResult.status, successResult.stdout + successResult.stderr).toBe(0);
+    expect(successResult.stdout).toContain("strata: required (success)");
+
+    // 2. Rejected when strata is missing from needs
+    const missingNeeds = Object.fromEntries(
+      Object.entries(baseNeeds).filter(([name]) => name !== "strata"),
+    );
+    const missingResult = runWithNeeds(plan, missingNeeds);
+    expect(missingResult.status).toBe(1);
+    expect(missingResult.stderr).toContain("CI_REQUIRED_JOB_NOT_SUCCESS: strata (missing)");
+
+    // 3. Rejected when strata skipped
+    const skippedNeeds = { ...baseNeeds, strata: { result: "skipped" } };
+    const skippedResult = runWithNeeds(plan, skippedNeeds);
+    expect(skippedResult.status).toBe(1);
+    expect(skippedResult.stderr).toContain("CI_REQUIRED_JOB_NOT_SUCCESS: strata (skipped)");
+
+    // 4. Rejected when strata failed
+    const failedNeeds = { ...baseNeeds, strata: { result: "failure" } };
+    const failedResult = runWithNeeds(plan, failedNeeds);
+    expect(failedResult.status).toBe(1);
+    expect(failedResult.stderr).toContain("CI_REQUIRED_JOB_NOT_SUCCESS: strata (failure)");
+
+    // 5. Rejected when strata is in needs but unmapped in plan.jobs
+    const unmappedNeeds = {
+      ...baseNeeds,
+      "strata-unmapped": { result: "success" },
+    };
+    const unmappedResult = runWithNeeds(plan, unmappedNeeds);
+    expect(unmappedResult.status).toBe(1);
+    expect(unmappedResult.stderr).toContain("CI_REQUIRED_UNMAPPED_JOB: strata-unmapped");
   });
 });
 

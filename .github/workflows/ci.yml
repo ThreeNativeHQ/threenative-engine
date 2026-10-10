@@ -659,6 +659,40 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
 
+  strata:
+    needs: [scope, build-artifacts]
+    if: ${{ needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs.strata.required }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 30
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+        with:
+          shared-artifact: workspace-packages
+          save-bundles: "false"
+      - uses: ./.github/actions/playwright-chromium
+      - name: Generate the terrain example's ignored world source
+        run: pnpm --filter strata-terrain-preview bake
+      - name: Run strata web playtest
+        run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:web
+      - name: Run strata consumer verification
+        run: pnpm --filter strata-terrain-preview test:consumer
+      - name: Run strata editor verification
+        run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:editor
+
   golden-path-template:
     needs: [scope, build-artifacts]
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
@@ -1241,7 +1275,7 @@ jobs:
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.
   # Legacy main contexts stay in place until the owner changes protection after full qualification.
   ci-required:
-    needs: [scope, integration, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
+    needs: [scope, integration, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, strata, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
@@ -1295,6 +1329,7 @@ jobs:
       - test-native
       - test-browser
       - test-playtest
+      - strata
       - golden-path-template
       - template-nonvisual
       - golden-path
