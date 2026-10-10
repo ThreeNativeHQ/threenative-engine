@@ -3,6 +3,7 @@ import {
   type BufferGeometry,
   Color,
   type ColorRepresentation,
+  Float32BufferAttribute,
   type InstancedMesh,
   type Material,
   Matrix4,
@@ -151,7 +152,7 @@ function flatten(
   for (const name of Object.keys(flat.attributes)) {
     const attribute = flat.getAttribute(name);
     if (
-      attribute.array instanceof Float32Array &&
+      (attribute instanceof Float32BufferAttribute || attribute.array instanceof Float32Array) &&
       !attribute.normalized &&
       !("isInterleavedBufferAttribute" in attribute)
     )

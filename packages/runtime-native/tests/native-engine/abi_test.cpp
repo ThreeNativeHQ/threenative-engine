@@ -1047,6 +1047,8 @@ void geometry_shapes() {
         CHECK(tn_get(entry.handle, "__shape", &result, &d.value) == TN_OK && result.kind == TN_VALUE_NUMBERS);
         CHECK(std::vector<double>(result.numbers, result.numbers + result.count) == entry.shape);
         CHECK(entry.shape.size() == 4 && entry.shape[1] == (entry.name == "uv" ? 2 : 3));
+        // Float data answers as its real class, so `instanceof Float32BufferAttribute` needs no array copy.
+        CHECK(entry.handle.type == tn_type_id("Float32BufferAttribute"));
     }
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }

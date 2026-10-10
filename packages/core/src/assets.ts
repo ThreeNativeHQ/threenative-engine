@@ -4,6 +4,7 @@ import {
   type Bone,
   BufferAttribute,
   type BufferGeometry,
+  Float32BufferAttribute,
   Mesh,
   NoColorSpace,
   Object3D,
@@ -536,7 +537,9 @@ function widenQuantizedPositions(root: Object3D): void {
     const position = geometry.getAttribute("position");
     if (position === undefined) return;
     const plain = position instanceof BufferAttribute;
-    if (plain && !position.normalized && position.array instanceof Float32Array) return;
+    const float = () =>
+      position instanceof Float32BufferAttribute || position.array instanceof Float32Array;
+    if (plain && !position.normalized && float()) return;
     const values = new Float32Array(position.count * 3);
     for (let index = 0; index < position.count; index += 1) {
       values[index * 3] = position.getX(index);

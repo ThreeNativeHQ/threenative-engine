@@ -4,6 +4,7 @@ import {
   BufferGeometry,
   Color,
   ExtrudeGeometry,
+  Float32BufferAttribute,
   Group,
   InstancedMesh,
   InterleavedBuffer,
@@ -16,6 +17,23 @@ import {
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { describe, expect, it, vi } from "vitest";
+
+// Marks the merge itself, so a spec can tell flatten's reads from `mergeGeometries`' own.
+const merging = vi.hoisted(() => ({ now: false }));
+vi.mock("three/addons/utils/BufferGeometryUtils.js", async (load) => {
+  const actual = await load<typeof import("three/addons/utils/BufferGeometryUtils.js")>();
+  return {
+    ...actual,
+    mergeGeometries: (...args: Parameters<typeof actual.mergeGeometries>) => {
+      merging.now = true;
+      try {
+        return actual.mergeGeometries(...args);
+      } finally {
+        merging.now = false;
+      }
+    },
+  };
+});
 import { mergeByMaterial, mergeParts } from "../src/merge-parts.js";
 
 /** The mismatch that actually happens: a lofted profile is non-indexed, a primitive is indexed. */
@@ -192,6 +210,32 @@ describe("mergeParts", () => {
 
     expect(Object.keys(morphed.morphAttributes)).toEqual(["position"]);
     expect(morphed.morphTargetsRelative).toBe(true);
+  });
+
+  it("should tell a float part's array type without reading its array", () => {
+    // On the native back end each `.array` read copies the whole buffer out of the engine.
+    let reads = 0;
+    const watch = (attribute: BufferAttribute) => {
+      const array = attribute.array;
+      Object.defineProperty(attribute, "array", {
+        get: () => {
+          if (!merging.now) reads += 1;
+          return array;
+        },
+      });
+    };
+    const part = () => {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
+      geometry.clone = () => {
+        const copy = BufferGeometry.prototype.clone.call(geometry);
+        watch(copy.getAttribute("position") as BufferAttribute);
+        return copy;
+      };
+      return { geometry };
+    };
+    mergeParts([part(), part()], { label: "float parts" });
+    expect(reads).toBe(0);
   });
 
   it("should drop attributes that cannot survive a merge and keep only position and colour", () => {

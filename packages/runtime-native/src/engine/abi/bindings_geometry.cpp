@@ -139,6 +139,13 @@ BufferAttribute& attributeArg(Store& store, const Value& arg) {
 
 Value string(std::string text) { return Value{Value::Kind::String, 0, std::move(text)}; }
 
+// Float data shares as three's Float32BufferAttribute, so an `instanceof` test answers the array
+// type without copying the array out of the engine.
+Value shareAttribute(Store& store, const std::shared_ptr<BufferAttribute>& attribute) {
+    const bool float32 = attribute != nullptr && !attribute->perInstance && attribute->store->scalar() == Scalar::F32;
+    return store.share(float32 ? "Float32BufferAttribute" : "BufferAttribute", attribute);
+}
+
 // count, itemSize, normalized (0 or 1) and gpuType: the web surface reads the shape with one call.
 Value shapeOf(const BufferAttribute& attribute) {
     return numbers({double(attribute.count()), double(attribute.itemSize), attribute.normalized ? 1.0 : 0.0,
@@ -365,7 +372,7 @@ void registerBufferGeometry(ClassBinding& b) {
     b.members["__attributes"] = [](void* self, const Args&, Store& store) {
         std::vector<std::pair<std::string, Value>> attributes;
         for (const auto& [name, attribute] : as<BufferGeometry>(self)->attributes)
-            attributes.emplace_back(name, Value::array({store.share("BufferAttribute", attribute), shapeOf(*attribute)}));
+            attributes.emplace_back(name, Value::array({shareAttribute(store, attribute), shapeOf(*attribute)}));
         return Value::record(std::move(attributes));
     };
     b.getters["parameters"] = [](void* self) {
@@ -425,19 +432,19 @@ void registerBufferGeometry(ClassBinding& b) {
 
     b.members["attributes.position"] = [](void* self, const Args&, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
-        return store.share("BufferAttribute", geometry->getAttribute("position"));
+        return shareAttribute(store, geometry->getAttribute("position"));
     };
     b.members["attributes.normal"] = [](void* self, const Args&, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
-        return store.share("BufferAttribute", geometry->getAttribute("normal"));
+        return shareAttribute(store, geometry->getAttribute("normal"));
     };
     b.members["attributes.uv"] = [](void* self, const Args&, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
-        return store.share("BufferAttribute", geometry->getAttribute("uv"));
+        return shareAttribute(store, geometry->getAttribute("uv"));
     };
     b.members["index"] = [](void* self, const Args&, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
-        return store.share("BufferAttribute", geometry->index);
+        return shareAttribute(store, geometry->index);
     };
     b.members["boundingBox"] = [](void* self, const Args&, Store& store) {
         return store.share("Box3", as<BufferGeometry>(self)->boundingBox);
@@ -464,7 +471,7 @@ void registerBufferGeometry(ClassBinding& b) {
     b.methods["getIndex"] = [](void* self, const Args&, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
         if (geometry->index == nullptr) return Value{};
-        return store.share("BufferAttribute", geometry->index);
+        return shareAttribute(store, geometry->index);
     };
     // morphAttributes.position / .normal as an array of attributes, and morphTargetsRelative.
     for (const bool normals : {false, true}) {
@@ -501,7 +508,7 @@ void registerBufferGeometry(ClassBinding& b) {
     b.methods["getAttribute"] = [](void* self, const Args& a, Store& store) {
         const std::shared_ptr<BufferAttribute> attribute = as<BufferGeometry>(self)->getAttribute(a.at(0).text);
         if (attribute == nullptr) return Value{};
-        return store.share("BufferAttribute", attribute);
+        return shareAttribute(store, attribute);
     };
     b.methods["deleteAttribute"] = [](void* self, const Args& a, Store&) {
         as<BufferGeometry>(self)->deleteAttribute(a.at(0).text);
@@ -591,7 +598,7 @@ void registerBufferGeometry(ClassBinding& b) {
                 std::vector<Value> targets;
                 const BufferGeometry* geometry = as<BufferGeometry>(self);
                 for (const auto& target : normals ? geometry->morphNormals : geometry->morphPositions)
-                    targets.push_back(store.share("BufferAttribute", target));
+                    targets.push_back(shareAttribute(store, target));
                 return Value::array(std::move(targets));
             };
     }

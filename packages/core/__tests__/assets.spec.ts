@@ -4,6 +4,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   type CompressedTexture,
+  Float32BufferAttribute,
   Group,
   InterleavedBuffer,
   InterleavedBufferAttribute,
@@ -1128,6 +1129,48 @@ describe("IAssetLoader compressed textures", () => {
     const loaded = await assets.model<{ scene: Group }>("b.glb");
 
     expect((loaded.scene.children[0] as Mesh).geometry.getAttribute("position")).toBe(source);
+  });
+
+  it("should tell a float model's position type without reading its array", async () => {
+    // On the native back end each `.array` read copies the whole buffer out of the engine.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | RequestInfo) =>
+        String(url).endsWith(".glb")
+          ? new Response(JSON.stringify({ asset: { version: "2.0" } }))
+          : manifestResponse({
+              version: 1,
+              entries: {
+                "b.glb": { output: "b.22222222.glb", kind: "model", bytes: 9, passes: [] },
+              },
+            }),
+      ),
+    );
+    const source = new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3);
+    const array = source.array;
+    let reads = 0;
+    Object.defineProperty(source, "array", {
+      get: () => {
+        reads += 1;
+        return array;
+      },
+    });
+    const scene = new Group();
+    scene.add(new Mesh(new BufferGeometry().setAttribute("position", source)));
+    vi.spyOn(GLTFLoader.prototype, "parse").mockImplementation(function (
+      this: GLTFLoader,
+      _data: ArrayBuffer,
+      _path: string,
+      onLoad: never,
+    ) {
+      (onLoad as (value: unknown) => void)({ scene });
+      return this;
+    } as never);
+    const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer({}) });
+
+    await assets.model<{ scene: Group }>("b.glb");
+
+    expect(reads).toBe(0);
   });
 
   it("should not require KTX2 support for a model that does not declare Basis textures", async () => {
