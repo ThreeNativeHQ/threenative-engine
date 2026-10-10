@@ -14,7 +14,8 @@ import {
 } from "three";
 import { positionLocal } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { SpanRecorder, setSpanRecorder } from "../src/profiling/Spans.js";
 import { SkinnedBatch, isSimilarityTransform } from "../src/projection-skinned.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
@@ -109,6 +110,41 @@ function expectPalette(batch: SkinnedBatch, slot: number, mesh: SkinnedMesh): vo
 }
 
 describe("skinned lane of the render projection", () => {
+  it("attributes each actual palette write, excluding reconcile overhead", () => {
+    const { scene } = crowd(8);
+    const projection = new SceneRenderProjection(scene);
+    const recorder = new SpanRecorder();
+    setSpanRecorder(recorder);
+    try {
+      projection.reconcile();
+      recorder.endFrame(10);
+      expect(recorder.window()?.spans.skinnedWrite?.perFrame).toBe(8);
+    } finally {
+      setSpanRecorder(undefined);
+      projection.dispose();
+    }
+  });
+
+  it("closes the write span if skeleton evaluation throws", () => {
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    const batch = new SkinnedBatch({ first: mesh, capacity: 2, velocity: false });
+    const slot = batch.claim(mesh) as number;
+    const recorder = new SpanRecorder();
+    const update = vi.spyOn(mesh.skeleton, "update").mockImplementation(() => {
+      throw new Error("failed skeleton update");
+    });
+    setSpanRecorder(recorder);
+    try {
+      expect(() => batch.write(slot, mesh)).toThrow("failed skeleton update");
+      recorder.endFrame(10);
+      expect(recorder.window()?.spans.skinnedWrite?.perFrame).toBe(1);
+    } finally {
+      setSpanRecorder(undefined);
+      update.mockRestore();
+      batch.dispose();
+    }
+  });
+
   it("draws a crowd sharing geometry and material as one palette draw, with no game code", () => {
     const { scene, rigs } = crowd(8);
     const projection = new SceneRenderProjection(scene);

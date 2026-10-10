@@ -1,0 +1,29 @@
+{
+  "name": "crowd-rate-measured-baseline",
+  "schemaVersion": 1,
+  "subject": "Run with ?tnFrameSpans=1&crowdCount=32|128|256&crowdArm=animated|held|static. CPU spans cover actual AnimationPlayer.update and SkinnedBatch.write calls; held versus baked static controls report main and shadow GPU buckets separately.",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 120,
+  "artifacts": { "screenshots": false },
+  "steps": [{ "kind": "wait", "label": "measure-steady-crowd", "waitTicks": 600, "release": true }],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "state", "path": "crowdRate.measuring", "equals": true },
+      { "id": "state", "path": "crowdRate.count", "gte": 32, "lte": 256 },
+      { "id": "state", "path": "crowdRate.projectedRigs", "gte": 32 },
+      { "id": "state", "path": "crowdRate.ready", "equals": true },
+      { "id": "state", "path": "crowdRate.gpuSamples", "gte": 1 },
+      { "id": "state", "path": "crowdRate.gpuShadowSamples", "gte": 1 },
+      { "id": "state", "path": "crowdRate.gpuMainMs", "gte": 0 },
+      { "id": "state", "path": "crowdRate.gpuShadowMs", "gte": 0 },
+      { "id": "state", "path": "crowdRate.mainDraws", "gte": 1 },
+      { "id": "state", "path": "crowdRate.shadowDraws", "gte": 1 }
+    ]
+  }
+}

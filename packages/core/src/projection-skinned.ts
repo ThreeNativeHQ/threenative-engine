@@ -33,6 +33,8 @@ import {
   StorageBufferAttribute,
 } from "three/webgpu";
 
+import { SPANS, beginSpan, endSpan } from "./profiling/Spans.js";
+
 /**
  * The skinned lane of the render projection: every rig that shares a geometry and material is one
  * instanced draw per pass instead of one draw per rig per pass.
@@ -355,36 +357,41 @@ export class SkinnedBatch {
    * bind mode `matrixWorld · bindMatrixInverse` is the identity and is skipped.
    */
   write(slot: number, rig: SkinnedMesh): void {
-    const skeleton = rig.skeleton;
-    if (this.#updated.get(skeleton) !== this.#frame) {
-      skeleton.update();
-      this.#updated.set(skeleton, this.#frame);
-    }
-    const bones = skeleton.boneMatrices as Float32Array;
-    const bind = rig.bindMatrix.elements;
-    const bindIsIdentity = isIdentity(bind);
-    const detached = rig.bindMode !== "attached";
-    const prefix = this.#bindScratch;
-    if (detached)
-      multiply(rig.matrixWorld.elements, 0, rig.bindMatrixInverse.elements, 0, prefix, 0);
-    const out = this.#current;
-    const offset = slot * this.bones * 16;
-    // The common case is one contiguous copy: `skeleton.update` has already written this rig's
-    // bone matrices in palette order, and an identity bind matrix leaves them unchanged.
-    if (bindIsIdentity) out.set(bones, offset);
-    else {
-      for (let bone = 0; bone < this.bones; bone += 1) {
-        multiply(bones, bone * 16, bind, 0, out, offset + bone * 16);
+    beginSpan(SPANS.skinnedWrite);
+    try {
+      const skeleton = rig.skeleton;
+      if (this.#updated.get(skeleton) !== this.#frame) {
+        skeleton.update();
+        this.#updated.set(skeleton, this.#frame);
       }
-    }
-    if (detached) {
-      for (let bone = 0; bone < this.bones; bone += 1) {
-        const at = offset + bone * 16;
-        // In place is safe: `multiply` reads each right-hand column before writing it.
-        multiply(prefix, 0, out, at, out, at);
+      const bones = skeleton.boneMatrices as Float32Array;
+      const bind = rig.bindMatrix.elements;
+      const bindIsIdentity = isIdentity(bind);
+      const detached = rig.bindMode !== "attached";
+      const prefix = this.#bindScratch;
+      if (detached)
+        multiply(rig.matrixWorld.elements, 0, rig.bindMatrixInverse.elements, 0, prefix, 0);
+      const out = this.#current;
+      const offset = slot * this.bones * 16;
+      // The common case is one contiguous copy: `skeleton.update` has already written this rig's
+      // bone matrices in palette order, and an identity bind matrix leaves them unchanged.
+      if (bindIsIdentity) out.set(bones, offset);
+      else {
+        for (let bone = 0; bone < this.bones; bone += 1) {
+          multiply(bones, bone * 16, bind, 0, out, offset + bone * 16);
+        }
       }
+      if (detached) {
+        for (let bone = 0; bone < this.bones; bone += 1) {
+          const at = offset + bone * 16;
+          // In place is safe: `multiply` reads each right-hand column before writing it.
+          multiply(prefix, 0, out, at, out, at);
+        }
+      }
+      this.#dirty = true;
+    } finally {
+      endSpan(SPANS.skinnedWrite);
     }
-    this.#dirty = true;
   }
 
   /** Ends one reconcile: brand-new slots get history equal to their pose, then the palette uploads. */

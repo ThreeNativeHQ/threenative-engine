@@ -74,6 +74,10 @@ export const SPANS = {
   terrainBlock: 14,
   /** Terrain seam reconciliation and bridge-attribute swap on the calling thread. */
   terrainSeam: 15,
+  /** One actual AnimationPlayer.update call, measured by the crowd fixture. */
+  animationUpdate: 16,
+  /** One actual SkinnedBatch.write call, including skeleton.update and palette copy. */
+  skinnedWrite: 17,
 } as const;
 
 export type SpanId = (typeof SPANS)[keyof typeof SPANS];
@@ -96,6 +100,8 @@ export const SPAN_NAMES: readonly string[] = [
   "draw",
   "terrainBlock",
   "terrainSeam",
+  "animationUpdate",
+  "skinnedWrite",
 ];
 
 export const SPAN_COUNT = SPAN_NAMES.length;
