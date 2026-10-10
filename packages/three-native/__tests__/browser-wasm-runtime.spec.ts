@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { type IEngineRef, type TnAbiModule, createWasmRuntime } from "../src/browser-backend.js";
 
 const VALUE = 56;
-const KIND = { number: 1, handle: 4, numbers: 5 };
+const KIND = { number: 1, handle: 4, numbers: 5, array: 6 };
 
 function fakeModule() {
   let memory = new ArrayBuffer(1 << 20);
@@ -114,6 +114,13 @@ describe("createWasmRuntime", () => {
       [7, 1, 42, 3],
     ]);
     expect(fake.calls[1]?.args).toEqual([KIND.handle, KIND.numbers, KIND.numbers]);
+  });
+
+  it("sends a list as numbers only when every element is a number", () => {
+    const fake = fakeModule();
+    const runtime = createWasmRuntime(fake.module as unknown as TnAbiModule);
+    runtime.invoke(ref, "set", [[1, 2], [], [1, "a"], [ref, 2]]);
+    expect(fake.calls[0]?.args).toEqual([KIND.numbers, KIND.numbers, KIND.array, KIND.array]);
   });
 
   it("writes every handle field of a ref it has not seen before, up to 32-bit values", () => {

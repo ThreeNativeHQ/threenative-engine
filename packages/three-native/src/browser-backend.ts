@@ -166,6 +166,12 @@ function isRef(value: unknown): value is IEngineRef {
   return typeof value === "object" && value !== null && "key" in value && "type" in value;
 }
 
+// An indexed scan: `every` with a callback cost a call per element of each matrix and vertex list.
+function allNumbers(list: readonly unknown[]): boolean {
+  for (let i = 0; i < list.length; i++) if (typeof list[i] !== "number") return false;
+  return true;
+}
+
 function isPlainObject(value: unknown): boolean {
   return (
     typeof value === "object" && value !== null && Object.getPrototypeOf(value) === Object.prototype
@@ -647,7 +653,8 @@ export function defineBrowserClasses(
   };
   const fromEngine = (value: EngineValue): unknown => {
     if (isRef(value)) return wrap(value);
-    if (Array.isArray(value)) return value.map(fromEngine);
+    // A numbers result is a fresh plain array already; mapping it tested every element for a ref.
+    if (Array.isArray(value)) return allNumbers(value) ? value : value.map(fromEngine);
     if (typeof value === "object" && value !== null)
       return Object.fromEntries(
         Object.entries(value).map(([key, item]) => [key, fromEngine(item)]),
@@ -1345,54 +1352,53 @@ export function defineBrowserClasses(
     };
     // three's element accessors (BufferAttribute.js) over the JS array: an element read or write is
     // a typed-array access, not an engine call. A read leaves the attribute as it is; a write marks
-    // it pending, so the whole array goes back once before the next engine call.
-    const read = (self: object, at: number): number => {
+    // it pending, so the whole array goes back once before the next engine call. Each looks the
+    // shape up once: a load reads millions of elements, and every lookup is a WeakMap get.
+    const read = (self: object, index: number, k: number): number => {
+      const { itemSize, normalized } = shape(self);
       const array = current(self);
-      return shape(self).normalized
-        ? denormalize(array[at] as number, array)
-        : (array[at] as number);
+      const value = array[index * itemSize + k] as number;
+      return normalized ? denormalize(value, array) : value;
     };
-    const write = (self: object, at: number, value: number): void => {
+    const write = (self: object, index: number, k: number, value: number): void => {
+      const { itemSize, normalized } = shape(self);
       const array = current(self);
       pending.add(self);
-      array[at] = shape(self).normalized ? normalize(value, array) : value;
+      array[index * itemSize + k] = normalized ? normalize(value, array) : value;
     };
     const accessors: Record<string, (this: object, ...args: number[]) => unknown> = {
       getComponent(index, k) {
-        return read(this, index * shape(this).itemSize + k);
+        return read(this, index, k);
       },
       setComponent(index, k, value) {
-        write(this, index * shape(this).itemSize + k, value);
+        write(this, index, k, value);
         return this;
       },
       setXY(index, x, y) {
-        const at = index * shape(this).itemSize;
-        write(this, at, x);
-        write(this, at + 1, y);
+        write(this, index, 0, x);
+        write(this, index, 1, y);
         return this;
       },
       setXYZ(index, x, y, z) {
-        const at = index * shape(this).itemSize;
-        write(this, at, x);
-        write(this, at + 1, y);
-        write(this, at + 2, z);
+        write(this, index, 0, x);
+        write(this, index, 1, y);
+        write(this, index, 2, z);
         return this;
       },
       setXYZW(index, x, y, z, w) {
-        const at = index * shape(this).itemSize;
-        write(this, at, x);
-        write(this, at + 1, y);
-        write(this, at + 2, z);
-        write(this, at + 3, w);
+        write(this, index, 0, x);
+        write(this, index, 1, y);
+        write(this, index, 2, z);
+        write(this, index, 3, w);
         return this;
       },
     };
     for (const [k, axis] of ["X", "Y", "Z", "W"].entries()) {
       accessors[`get${axis}`] = function (this: object, index: number) {
-        return read(this, index * shape(this).itemSize + k);
+        return read(this, index, k);
       };
       accessors[`set${axis}`] = function (this: object, index: number, value: number) {
-        write(this, index * shape(this).itemSize + k, value);
+        write(this, index, k, value);
         return this;
       };
     }
@@ -1973,7 +1979,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       w.setUint32(pointer + 48, children, true);
       return w.setBigUint64(pointer + 40, BigInt(entries.length), true);
     }
-    if (value.every((item) => typeof item === "number")) {
+    if (allNumbers(value)) {
       writeNumbers(pointer, value as number[], 0);
     } else {
       const children = values(value);

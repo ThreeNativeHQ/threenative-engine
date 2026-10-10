@@ -327,6 +327,53 @@ describe("three's math values on the browser back end", () => {
     expect(reads).toEqual(["__shape"]);
   });
 
+  it("reads and writes attribute elements at index * itemSize + k, scaled when normalized", () => {
+    const { runtime } = memoryRuntime();
+    const shapes = [
+      [2, 3, 0, 1015],
+      [2, 2, 1, 1015],
+    ];
+    let next = 0;
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      construct: (name) => ({ key: String(next++), type: runtime.typeId(name) }),
+      get: (self, property) => {
+        if (property === "__shape") return shapes[Number(self.key)] as number[];
+        throw new Error(`unexpected get ${property}`);
+      },
+      attributeArray: () => {
+        throw new Error("an adopted array is read in place");
+      },
+      attributeWrite: () => undefined,
+    });
+    type Attribute = {
+      getX(i: number): number;
+      getY(i: number): number;
+      getZ(i: number): number;
+      getComponent(i: number, k: number): number;
+      setXY(i: number, x: number, y: number): Attribute;
+      setXYZ(i: number, x: number, y: number, z: number): Attribute;
+      setComponent(i: number, k: number, value: number): Attribute;
+    };
+    const Attribute = classes.BufferAttribute as new (
+      array: ArrayLike<number>,
+      itemSize: number,
+      normalized?: boolean,
+    ) => Attribute;
+    const floats = new Float32Array([1, 2, 3, 4, 5, 6]);
+    const plain = new Attribute(floats, 3);
+    expect([plain.getX(1), plain.getY(1), plain.getZ(0), plain.getComponent(1, 2)]).toEqual([
+      4, 5, 3, 6,
+    ]);
+    plain.setXYZ(0, 7, 8, 9).setComponent(1, 0, 10);
+    expect([...floats]).toEqual([7, 8, 9, 10, 5, 6]);
+    const bytes = new Uint8Array([0, 255, 51, 102]);
+    const unit = new Attribute(bytes, 2, true);
+    expect([unit.getX(0), unit.getY(0), unit.getX(1), unit.getY(1)]).toEqual([0, 1, 0.2, 0.4]);
+    unit.setXY(1, 1, 0.6);
+    expect([...bytes]).toEqual([0, 255, 255, 153]);
+  });
+
   it("answers a geometry's attributes, names and shapes with one engine call", () => {
     const { runtime } = memoryRuntime();
     const reads: string[] = [];
