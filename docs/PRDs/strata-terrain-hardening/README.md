@@ -34,6 +34,6 @@ Start with PRD-592 golden bytes and validation, then execute 585, 583, 587, 593,
 
 Current baseline: `pnpm build` and `pnpm check:docs` passed; six documentation contract spec files passed (244 tests). No runtime or performance acceptance is established by those checks.
 
-## Active worker checkout
+## Active worker checkouts
 
-PRD-585 phase 1 has an isolated execution checkout at `/home/joao/projects/threenative/threenative-engine/.worktrees/strata-terrain-proof`, branch `epic/strata-terrain-proof`, based on EPIC commit `227cb944b`. Codex owns integration into PR #483. Its first arm was interrupted before edits to serialize Gemini provider use with the PRD-592 repair. Dependencies and focused package builds passed; its phase-1 arm resumed after that repair terminated. Cleanup must inspect ignored data and confirm its owner has stopped after integration.
+PRD-592 phase 1 is committed at `6c40d8757`; phase 2 remains open pending the 30% speed proof. Its worker watches the queued quiet benchmark and has released the EPIC index for integration. PRD-585 owns `/home/joao/projects/threenative/threenative-engine/.worktrees/strata-terrain-proof`, branch `epic/strata-terrain-proof`, based on `227cb944b`; its integration test passes, with census repair and CI wiring in progress. PRD-583 owns `/home/joao/projects/threenative/threenative-engine/.worktrees/strata-terrain-bake`, branch `epic/strata-terrain-bake`, based on `9e7a8cab0`, for headless GLB baking. Codex coordinates integration into PR #483. Coding arms share a provider lock. Cleanup must inspect ignored data and confirm each owner has stopped after integration.
