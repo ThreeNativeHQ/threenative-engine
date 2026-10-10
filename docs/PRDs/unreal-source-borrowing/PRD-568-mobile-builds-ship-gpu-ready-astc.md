@@ -72,7 +72,7 @@ A done PRD made the opposite trade on purpose. [PRD-349](../done/PRD-349-the-coo
 
 #### Phase 2: Load and check on the host
 **Status:** NOT STARTED
-**Files:** `native-bundle.mjs` (generated native bundle: decoder-free raw KTX2 route), `packages/core/src/assets.ts` (route raw ASTC through `createRawTexture`; adapter check), `packages/core/__tests__/`
+**Files:** `packages/runtime-native/scripts/bundle.mjs` (generates the decoder-free raw KTX2 route in `native-bundle.mjs`), `packages/core/src/assets.ts` (route raw ASTC through `createRawTexture`; adapter check), `packages/core/__tests__/`
 **Verification:** AC-1 and AC-2 close this phase.
 - [ ] A package with ASTC on an adapter without `texture-compression-astc` fails at startup with a named error. proof: red-green `pnpm exec vitest run packages/core/__tests__/assets.spec.ts`
 - [ ] The texture bytes and APK size of the ASTC build against the PNG build are recorded here. proof: the AC-1 runner's artifact listing
