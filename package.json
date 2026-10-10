@@ -98,6 +98,7 @@
     "@gltf-transform/extensions": "catalog:",
     "@gltf-transform/functions": "catalog:",
     "@playwright/test": "1.62.1",
+    "@threenative/assets": "workspace:*",
     "@types/node": "20.19.43",
     "@types/pngjs": "6.0.5",
     "@vitest/coverage-v8": "catalog:",

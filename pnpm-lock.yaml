@@ -145,6 +145,9 @@ importers:
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
+      '@threenative/assets':
+        specifier: workspace:*
+        version: link:packages/assets
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
