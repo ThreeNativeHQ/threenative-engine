@@ -931,14 +931,15 @@ extern "C" void tnw_attribute_view_release(uintptr_t lease) {
 }
 
 namespace {
-void (*pullTrampoline)(uintptr_t key, uintptr_t data, uint32_t count, uint32_t scalar) = nullptr;
+uint32_t (*pullTrampoline)(uintptr_t key, uintptr_t data, uint32_t count, uint32_t scalar) = nullptr;
 void (*forgetTrampoline)(uintptr_t key) = nullptr;
 }  // namespace
 
 // The JS side keeps its own copy of `attribute.array` and defers writing it back: the store calls
-// `pull` (key, data address, element count, Scalar) before the engine next reads or writes its
-// bytes, so a copy the engine does not read never crosses, and `forget` (key) when the store dies
-// still deferred. The result is the store's key (0: not an attribute).
+// `pull` (key, data address, element count, Scalar; answers the elements it wrote) before the
+// engine next reads or writes its bytes, so a copy the engine does not read never crosses, and
+// `forget` (key) when the store dies still deferred. The result is the store's key (0: not an
+// attribute).
 extern "C" uintptr_t tnw_attribute_defer(const tn_handle_t* attribute, uintptr_t pull, uintptr_t forget) {
     tn::binding::Object* object = attribute ? tn::abi::objectOf(*attribute) : nullptr;
     if (object == nullptr || pull == 0 || forget == 0) return 0;
@@ -948,8 +949,8 @@ extern "C" uintptr_t tnw_attribute_defer(const tn_handle_t* attribute, uintptr_t
         return 0;
     pullTrampoline = reinterpret_cast<decltype(pullTrampoline)>(pull);
     forgetTrampoline = reinterpret_cast<decltype(forgetTrampoline)>(forget);
-    tn::engine::BufferStore::pullHook = [](const tn::engine::BufferStore& store, std::byte* data) {
-        pullTrampoline(reinterpret_cast<uintptr_t>(&store), reinterpret_cast<uintptr_t>(data),
+    tn::engine::BufferStore::pullHook = [](const tn::engine::BufferStore& store, std::byte* data) -> uint64_t {
+        return pullTrampoline(reinterpret_cast<uintptr_t>(&store), reinterpret_cast<uintptr_t>(data),
                        static_cast<uint32_t>(store.count()), static_cast<uint32_t>(store.scalar()));
     };
     tn::engine::BufferStore::forgetHook = [](const tn::engine::BufferStore& store) {

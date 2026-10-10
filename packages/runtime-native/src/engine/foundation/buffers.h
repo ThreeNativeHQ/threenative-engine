@@ -39,9 +39,10 @@ public:
     /**
      * A back end that keeps its own copy of the bytes and defers writing it (the Wasm JS mirror of
      * `attribute.array`) sets these: `pull` fills `data` before the store next reads or writes its
-     * bytes, and `forget` drops a deferral the store dies with. A pull leaves the write count.
+     * bytes, and `forget` drops a deferral the store dies with. A pull leaves the write count, and
+     * answers how many elements it wrote: past those, bytes the store never filled read as zero.
      */
-    static inline void (*pullHook)(const BufferStore& store, std::byte* data) = nullptr;
+    static inline uint64_t (*pullHook)(const BufferStore& store, std::byte* data) = nullptr;
     static inline void (*forgetHook)(const BufferStore& store) = nullptr;
     void defer() { deferred_ = pullHook != nullptr; }
 
@@ -84,14 +85,28 @@ public:
     }
 
 private:
+    // Storage left unwritten when made: a deferred store's pull writes it, and one that dies unread
+    // never touches its pages. `unfilled_` zeroes what no pull wrote before the first use.
+    template <typename T>
+    struct Uninitialized : std::allocator<T> {
+        template <typename U>
+        struct rebind {
+            using other = Uninitialized<U>;
+        };
+        template <typename U>
+        void construct(U* at) noexcept {
+            ::new (static_cast<void*>(at)) U;
+        }
+    };
+
     void pull() const {
-        if (!deferred_) return;
-        deferred_ = false;
-        pullHook(*this, const_cast<std::byte*>(bytes_.data()));  // the bytes are the pulled value
+        if (deferred_ || unfilled_) fill();
     }
+    void fill() const;
 
     Scalar scalar_;
-    std::vector<std::byte> bytes_;
+    std::vector<std::byte, Uninitialized<std::byte>> bytes_;
+    mutable bool unfilled_ = true;
     uint64_t epoch_ = 0;
     uint64_t writes_ = 0;
     uint64_t pendingCount_ = 0;

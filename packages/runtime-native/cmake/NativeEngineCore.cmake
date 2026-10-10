@@ -229,7 +229,8 @@ tn_native_engine_test(tn-native-engine-buffers-test tests/native-engine/buffers_
     native_engine_buffers_views=views
     native_engine_buffer_view_regrowth=view_regrowth
     native_engine_buffers_writes=writes
-    native_engine_buffers_deferred=deferred)
+    native_engine_buffers_deferred=deferred
+    native_engine_buffers_lazy_zero=lazy_zero)
 
 tn_native_engine_test(tn-native-engine-lifetime-test tests/native-engine/lifetime_test.cpp
     native_engine_lifetime_detach=detach

@@ -2,9 +2,14 @@
 #include "engine/foundation/buffers.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <utility>
+
+#ifdef __linux__
+#include <unistd.h>
+#endif
 
 using namespace tn::engine;
 
@@ -118,10 +123,11 @@ int forgets = 0;
 // A deferred store pulls the back end's copy once, before it next reads or writes its bytes, and
 // leaves its write count; a store that dies deferred tells the back end to forget it.
 void deferred() {
-    BufferStore::pullHook = [](const BufferStore&, std::byte* data) {
+    BufferStore::pullHook = [](const BufferStore&, std::byte* data) -> uint64_t {
         ++pulls;
         const float pulled[2] = {7, 8};
         std::memcpy(data, pulled, sizeof pulled);
+        return 2;
     };
     BufferStore::forgetHook = [](const BufferStore&) { ++forgets; };
     {
@@ -153,11 +159,55 @@ void deferred() {
         store.defer();
     }
     CHECK(forgets == 1 && pulls == 4);
+    // A pull shorter than the store (a back end that copied what fit) leaves the rest zero.
+    BufferStore::pullHook = [](const BufferStore&, std::byte* data) -> uint64_t {
+        const float pulled = 9;
+        std::memcpy(data, &pulled, sizeof pulled);
+        return 1;
+    };
+    {
+        BufferStore store(Scalar::F32, 3);
+        store.defer();
+        float value = 1;
+        CHECK(store.read(0, &value, 4) == BufferError::None && value == 9);
+        CHECK(store.read(8, &value, 4) == BufferError::None && value == 0);
+    }
     BufferStore::pullHook = nullptr;
     BufferStore::forgetHook = nullptr;
+}
+
+#ifdef __linux__
+uint64_t residentBytes() {
+    uint64_t size = 0, resident = 0;
+    if (FILE* statm = std::fopen("/proc/self/statm", "r")) {
+        if (std::fscanf(statm, "%lu %lu", &size, &resident) != 2) resident = 0;
+        std::fclose(statm);
+    }
+    return resident * uint64_t(sysconf(_SC_PAGESIZE));
+}
+#endif
+
+// A store zeroes its bytes on first use, not when it is made: a deferred store's pull writes them
+// all, and one that dies unread never touches them. Every read still sees zeros where nothing wrote.
+void lazyZero() {
+#ifdef __linux__
+    const uint64_t before = residentBytes();
+    {
+        BufferStore store(Scalar::F32, uint64_t(64) << 20);  // 256 MB
+        CHECK(residentBytes() - before < (uint64_t(32) << 20));
+        float value = 1;
+        CHECK(store.read(store.byteLength() - 4, &value, 4) == BufferError::None && value == 0);
+    }
+#endif
+    BufferStore grown(Scalar::F32, 2);
+    float value = 3;
+    CHECK(grown.write(0, &value, 4) == BufferError::None);
+    CHECK(grown.resize(4));
+    CHECK(grown.read(0, &value, 4) == BufferError::None && value == 3);
+    CHECK(grown.read(12, &value, 4) == BufferError::None && value == 0);
 }
 
 }  // namespace
 
 TN_TEST_MAIN({"range", range}, {"lease", lease}, {"views", views}, {"view_regrowth", viewRegrowth}, {"writes", writes},
-             {"deferred", deferred})
+             {"deferred", deferred}, {"lazy_zero", lazyZero})

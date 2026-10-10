@@ -2182,14 +2182,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       const take = deferred.get((key ?? 0) >>> 0);
       deferred.delete((key ?? 0) >>> 0);
       const Typed = SCALARS[scalar ?? -1];
-      if (take === undefined || Typed === undefined) return undefined;
+      if (take === undefined || Typed === undefined) return 0;
       const target = new Typed(abi.HEAPU8.buffer as ArrayBuffer, (address ?? 0) >>> 0, count ?? 0);
       const array = take();
       // The engine pulls before it resizes, so the lengths agree; a throw here would unwind the
-      // engine's frames, so a mismatch copies what fits.
+      // engine's frames, so a mismatch copies what fits, and the engine zeroes the rest.
       target.set(array.length > target.length ? array.subarray(0, target.length) : array);
-      return undefined;
-    }, "viiii");
+      return Math.min(array.length, target.length);
+    }, "iiiii");
     forgetTrampoline = abi.addFunction((key) => {
       deferred.delete((key ?? 0) >>> 0);
       return undefined;
