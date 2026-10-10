@@ -194,11 +194,8 @@ describe("compileAssets", () => {
     ).toBe(true);
   });
 
-  it("should drop compression for a platform that cannot decode it, and say which", async () => {
-    // Android and iOS run the native host without WebAssembly, so a `.ktx2` in the bundle is a
-    // black screen. Before this the author had to pin `textures: "none"` in the config to satisfy
-    // that one target, and the pin then followed their web build — a scaffolded game shipped
-    // 2,003 MB of uncompressed output for it. The build names the target; the engine decides.
+  it("should cook decoder-free ASTC on mobile while web keeps Basis", async () => {
+    // ASTC needs no runtime decoder; model Basis/Meshopt remain unavailable.
     const root = await makeTempDir("threenative-compile-platform-");
     await mkdir(path.join(root, "assets"));
     const source = rgbaPng({
@@ -210,12 +207,17 @@ describe("compileAssets", () => {
     });
     await writeFile(path.join(root, "assets", "rock.png"), source);
 
-    const mobile = await compileAssets({ cwd: root, platform: "android", transcoder: TRANSCODER });
+    const mobile = await compileAssets({
+      cwd: root,
+      platform: "android",
+      transcoder: TRANSCODER,
+      config: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } },
+    });
     const mobileManifest = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
     ) as { entries: Record<string, { output: string }> };
 
-    expect(mobileManifest.entries["rock.png"]?.output).toMatch(/\.png$/u);
+    expect(mobileManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
     expect(mobile.skippedCompression).toEqual([
       {
         bytes: 0,
@@ -224,7 +226,6 @@ describe("compileAssets", () => {
         kind: "model",
         reason: "platform",
       },
-      { bytes: source.length, files: 1, kind: "texture", reason: "platform" },
     ]);
 
     // The same config, the target that can decode it: compression ships.

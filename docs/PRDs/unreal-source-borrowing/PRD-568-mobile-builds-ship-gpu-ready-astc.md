@@ -1,7 +1,7 @@
 # PRD-568 — Mobile builds ship GPU-ready ASTC, so no phone transcodes or uploads RGBA8
 
-**Status:** NOT STARTED
-**Priority:** P2 — Mobile ASTC cook, decoder-free admission and the emulator proof are all unbuilt.
+**Status:** PARTIAL
+**Priority:** P2 — Standalone mobile ASTC cooking is implemented; embedded/lightmap cooking, admission and native proof remain open.
 **Complexity:** 4 (MEDIUM) — 1–5 implementation files (`packages/assets` texture pass, `create-threenative` build gate, the asset loader route) (+1); the cook output crosses into the native package (+2); one new output variant (+1); risk override: none
 **Owner:** João
 **Depends on:** [PRD-VQ-01](../done/PRD-VQ-01-native-asset-capabilities.md) (owns runtime-aware decoder admission; this PRD adds a format that needs no decoder)
@@ -28,7 +28,7 @@ A done PRD made the opposite trade on purpose. [PRD-349](../done/PRD-349-the-coo
 
 ## Solution
 
-1. **Cook (packages/assets, mechanism).** For `--target android|ios`, the texture pass transcodes each cooked Basis texture once, at build time in Node, to ASTC 4×4 blocks. It writes a KTX2 with the matching `vkFormat` (sRGB for colour, UNORM for data), the full mip chain and no supercompression. Basis already targets ASTC 4×4 (`TRANSCODE_TARGETS`), so the bytes match what V8 makes at runtime. The manifest records the format.
+1. **Cook (packages/assets, mechanism).** For `--target android|ios`, the texture pass transcodes each cooked Basis texture once, at build time in Node, to ASTC 4×4 blocks. It writes a KTX2 with the matching `vkFormat` (sRGB for colour, UNORM for data), the full mip chain and no supercompression. The installed Basis transcoder supports direct ASTC 4×4 output for both codecs. V8 currently selects BC1/ETC2 for ETC1S, so this mobile output does not claim byte identity with that runtime selection. The manifest records the format.
 2. **Admission (create-threenative).** The build gate separates Basis KTX2, which needs a decoder, from raw-block KTX2, which needs none. Raw ASTC is admitted on every mobile runtime. Basis KTX2 keeps today's refusal on QuickJS and JSC.
 3. **Device check (fail closed).** At startup, a game whose package holds ASTC on an adapter without `texture-compression-astc` stops with a named error that names the first texture. No silent RGBA8 fallback is shipped.
 4. **Block size.** Only 4×4, because ETC1S and UASTC transcode to 4×4 and to no larger block. Unreal's 6×6 size default would need a new encoder and is out of scope.
@@ -36,8 +36,12 @@ A done PRD made the opposite trade on purpose. [PRD-349](../done/PRD-349-the-coo
 **Risks:**
 
 - **Package size.** Raw ASTC 4×4 is 8 bits per pixel before the APK's deflate. ETC1S Basis is far smaller. Phase 2 records the bytes and the APK size.
-- **Quality.** ETC1S transcoded to ASTC keeps ETC1S quality. The PRD-351 compression floor still applies to the source.
+- **Quality.** The existing PRD-351 ladder measures the Basis candidate before the offline transcode. ASTC rendering and final visual quality remain unverified until the native and visual proof lanes run.
 - **Emulator.** ASTC support on an emulator may differ from hardware (as recorded in PRD-097). The emulator proves the path. Only a device proves VRAM.
+
+## Decisions
+
+- **2026-10-10, implementation lane:** reuse the installed Three Basis transcoder directly, with no extra encoder or dependency. The local two-colour 8×8 ETC1S probe reported `isETC1S=true`, `cTFASTC_4x4_RGBA=10` and successful full-mip ASTC lengths `[64,16,16,16]` (exit 0). `packages/assets/__tests__/image-quality.spec.ts` retains that invocation as an asserted ETC1S/UASTC test, comparing every output mip to the shipped transcoder. This proves block production, not rendering, VQ-01 completion or visual quality.
 
 ## Acceptance Criteria
 
@@ -60,14 +64,17 @@ A done PRD made the opposite trade on purpose. [PRD-349](../done/PRD-349-the-coo
 ## Execution Phases
 
 #### Phase 1: Cook and admit raw ASTC
-**Status:** NOT STARTED
-**Files:** `packages/assets/src/passes/texture.ts`, `packages/assets/__tests__/`, `packages/create-threenative/src/build.ts`, `packages/create-threenative/__tests__/native-ktx2.spec.ts`
+**Status:** PARTIAL
+**Files:** `packages/assets/src/image-quality.ts`, `packages/assets/src/compile.ts`, `packages/assets/src/passes/texture.ts`, `packages/assets/src/passes/model-textures.ts`, `packages/assets/src/passes/lightmap.ts`, `packages/assets/__tests__/`, `packages/create-threenative/src/build.ts`, `packages/create-threenative/__tests__/native-ktx2.spec.ts`
 - [ ] A mobile-target cook writes ASTC 4×4 KTX2 with the right `vkFormat`, full mips and no supercompression; web and desktop output is byte-identical to before. proof: red-green `pnpm exec vitest run packages/assets/__tests__`
+  Partial: standalone Android/iOS output now transcodes the selected Basis result to raw ASTC, preserving the quality ladder, caps, codec opt-outs and target cache identity. Embedded/shared model textures and generated lightmaps remain open; this complete cook box stays unticked. Focused proof (2026-10-10): `pnpm exec vitest run packages/assets/__tests__/image-quality.spec.ts packages/assets/__tests__/texture-pass.spec.ts packages/assets/__tests__/compile.spec.ts -t 'transcodes every|rejects invalid or incomplete|cooks raw ASTC|should cook decoder-free ASTC|should let a caller that probed|should emit a full mip chain|should leave sources verbatim|should refuse a source whose|keeps a texture a|should reject corrupt image' --silent` — 12 passed, 73 skipped, exit 0 (22.85 s); helper tests first failed because the ASTC function was absent, then passed. `pnpm --filter @threenative/assets typecheck`, focused Biome checks and `git diff --check` passed. The full assets suite, native bundling, emulator, timing, GPU and visual judge were not run.
 - [ ] The packaging gate admits raw-block KTX2 on QuickJS and still refuses Basis KTX2 there. proof: red-green `pnpm exec vitest run packages/create-threenative/__tests__/native-ktx2.spec.ts`
 
 #### Phase 2: Load and check on the host
 **Status:** NOT STARTED
-**Files:** `packages/core/src/assets.ts` (route raw ASTC through `createRawTexture`; adapter check), `packages/core/__tests__/`
+**Files:** `native-bundle.mjs` (generated native bundle: decoder-free raw KTX2 route), `packages/core/src/assets.ts` (route raw ASTC through `createRawTexture`; adapter check), `packages/core/__tests__/`
 **Verification:** AC-1 and AC-2 close this phase.
 - [ ] A package with ASTC on an adapter without `texture-compression-astc` fails at startup with a named error. proof: red-green `pnpm exec vitest run packages/core/__tests__/assets.spec.ts`
 - [ ] The texture bytes and APK size of the ASTC build against the PNG build are recorded here. proof: the AC-1 runner's artifact listing
+
+**Current lane:** `.worktrees/prd568`, branch `feat/prd568-mobile-astc`, owner `/root/prd568_support`, base `origin/develop` at `2d212479255cf725f64343dc72aa2eafe9b7b92d`; retained for active implementation/review. No push, merge or cleanup yet.

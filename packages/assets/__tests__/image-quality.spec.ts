@@ -5,7 +5,7 @@ import { read as readKTX2 } from "ktx-parse";
 import { describe, expect, it } from "vitest";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { deltaE00, imageQuality, ssim } from "../src/image-quality.js";
-import { measureKtx2 } from "../src/image-quality.js";
+import { measureKtx2, transcodeKtx2ToAstc } from "../src/image-quality.js";
 import { encodeToKTX2 } from "../src/ktx2-encoder.js";
 import { decodeImageBytes } from "../src/passes/decode-image.js";
 
@@ -23,6 +23,90 @@ function pixels(noise = false): Uint8Array {
 }
 
 describe("image quality instrument", () => {
+  it.each([false, true])(
+    "transcodes every ETC1S/UASTC mip directly to raw ASTC (UASTC=%s)",
+    async (isUASTC) => {
+      const data = new Uint8Array(8 * 8 * 4);
+      for (let i = 0; i < 64; i += 1)
+        data.set(i % 8 < 4 ? [200, 130, 40, 255] : [20, 60, 220, 255], i * 4);
+      const encoded = await encodeToKTX2(data, {
+        imageDecoder: async () => ({ data, height: 8, width: 8 }),
+        isUASTC,
+        isSetKTX2SRGBTransferFunc: !isUASTC,
+      });
+      const paths = basisTranscoderPaths();
+      const shim = { exports: {} as unknown };
+      new Function(
+        "module",
+        "exports",
+        "require",
+        "__filename",
+        "__dirname",
+        await readFile(paths.javascriptPath, "utf8"),
+      )(
+        shim,
+        shim.exports,
+        createRequire(import.meta.url),
+        paths.javascriptPath,
+        path.dirname(paths.javascriptPath),
+      );
+      const basis = await (
+        shim.exports as (options: { wasmBinary: Uint8Array }) => Promise<{
+          initializeBasis(): void;
+          transcoder_texture_format: { cTFASTC_4x4_RGBA: { value: number } };
+          KTX2File: new (
+            bytes: Uint8Array,
+          ) => {
+            isETC1S(): boolean;
+            startTranscoding(): boolean;
+            getLevels(): number;
+            getImageTranscodedSizeInBytes(...args: number[]): number;
+            transcodeImage(dst: Uint8Array, ...args: number[]): boolean;
+            close(): void;
+            delete(): void;
+          };
+        }>
+      )({ wasmBinary: await readFile(paths.wasmPath) });
+      basis.initializeBasis();
+      const file = new basis.KTX2File(encoded);
+      try {
+        expect(Boolean(file.isETC1S())).toBe(!isUASTC);
+        expect(Boolean(file.startTranscoding())).toBe(true);
+        const format = basis.transcoder_texture_format.cTFASTC_4x4_RGBA.value;
+        expect(format).toBe(10);
+        const raw = readKTX2(await transcodeKtx2ToAstc(encoded));
+        expect(raw.vkFormat).toBe(isUASTC ? 157 : 158);
+        expect(raw.supercompressionScheme).toBe(0);
+        expect(raw.globalData).toBeNull();
+        expect(raw.levelCount).toBe(4);
+        expect(raw.levels.map((level) => level.levelData.byteLength)).toEqual([64, 16, 16, 16]);
+        for (let mip = 0; mip < file.getLevels(); mip += 1) {
+          const expected = new Uint8Array(file.getImageTranscodedSizeInBytes(mip, 0, 0, format));
+          expect(Boolean(file.transcodeImage(expected, mip, 0, 0, format, 0, -1, -1))).toBe(true);
+          expect(expected.some((byte) => byte !== 0)).toBe(true);
+          expect(raw.levels[mip]?.levelData).toEqual(expected);
+          expect(raw.levels[mip]?.uncompressedByteLength).toBe(expected.byteLength);
+        }
+        expect(raw.dataFormatDescriptor[0]).toMatchObject({
+          colorModel: 162,
+          texelBlockDimension: [3, 3, 0, 0],
+          bytesPlane: [16, 0, 0, 0, 0, 0, 0, 0],
+        });
+      } finally {
+        file.close();
+        file.delete();
+      }
+    },
+  );
+  it("rejects invalid or incomplete Basis input for the mobile cook", async () => {
+    await expect(transcodeKtx2ToAstc(new Uint8Array([0]))).rejects.toThrow();
+    const data = new Uint8Array(8 * 8 * 4).fill(128);
+    const encoded = await encodeToKTX2(data, {
+      imageDecoder: async () => ({ data, width: 8, height: 8 }),
+      generateMipmap: false,
+    });
+    await expect(transcodeKtx2ToAstc(encoded)).rejects.toThrow(/TN_ASSETS_ASTC_INPUT/);
+  });
   it("encodes both RDO lambdas through the current vendored encoder with Zstd", async () => {
     const fixture = "examples/prd493-terrain-splat/public/world/terrain/tex/layer-00_diff.jpg";
     const input = await readFile(new URL(`../../../${fixture}`, import.meta.url));

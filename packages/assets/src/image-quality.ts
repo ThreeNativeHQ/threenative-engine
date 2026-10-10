@@ -2,6 +2,15 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  KHR_DF_MODEL_ASTC,
+  KHR_DF_TRANSFER_SRGB,
+  KHR_SUPERCOMPRESSION_NONE,
+  VK_FORMAT_ASTC_4x4_SRGB_BLOCK,
+  VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
+  read as readKTX2,
+  write as writeKTX2,
+} from "ktx-parse";
 import { resolveBasisTranscoder } from "./compile.js";
 
 // The sculpt MCP math is not present in this repository. Minimal SSIM port: Rec.709
@@ -290,6 +299,7 @@ interface IBasisFile {
   startTranscoding(): boolean;
   getWidth(): number;
   getHeight(): number;
+  getLevels(): number;
   getImageTranscodedSizeInBytes(mip: number, layer: number, face: number, format: number): number;
   transcodeImage(
     dst: Uint8Array,
@@ -305,7 +315,10 @@ interface IBasisFile {
 interface IBasisModule {
   readonly KTX2File: new (bytes: Uint8Array) => IBasisFile;
   initializeBasis(): void;
-  readonly transcoder_texture_format: { readonly cTFRGBA32: { readonly value: number } };
+  readonly transcoder_texture_format: {
+    readonly cTFRGBA32: { readonly value: number };
+    readonly cTFASTC_4x4_RGBA: { readonly value: number };
+  };
 }
 let basisPromise: Promise<IBasisModule> | undefined;
 
@@ -329,6 +342,73 @@ async function basisModule(): Promise<IBasisModule> {
     return basis;
   })();
   return basisPromise;
+}
+
+/** Cook the measured Basis result to decoder-free ASTC without re-encoding its pixels. */
+export async function transcodeKtx2ToAstc(encoded: Uint8Array): Promise<Uint8Array> {
+  const container = readKTX2(encoded);
+  const descriptor = container.dataFormatDescriptor[0];
+  if (
+    container.vkFormat !== 0 ||
+    container.pixelWidth <= 0 ||
+    container.pixelHeight <= 0 ||
+    container.pixelDepth !== 0 ||
+    container.layerCount !== 0 ||
+    container.faceCount !== 1 ||
+    container.levelCount !==
+      Math.floor(Math.log2(Math.max(container.pixelWidth, container.pixelHeight))) + 1 ||
+    descriptor === undefined
+  )
+    throw new Error("TN_ASSETS_ASTC_INPUT: expected a 2D Basis KTX2 with its full mip chain.");
+  const basis = await basisModule();
+  const file = new basis.KTX2File(encoded);
+  try {
+    if (!file.isValid() || !file.startTranscoding() || file.getLevels() !== container.levelCount)
+      throw new Error("TN_ASSETS_ASTC_INPUT: the Basis transcoder rejected the cooked texture.");
+    const format = basis.transcoder_texture_format.cTFASTC_4x4_RGBA.value;
+    container.levels = container.levels.map((_, mip) => {
+      const width = Math.max(1, container.pixelWidth >> mip);
+      const height = Math.max(1, container.pixelHeight >> mip);
+      const bytes = Math.ceil(width / 4) * Math.ceil(height / 4) * 16;
+      const levelData = new Uint8Array(bytes);
+      if (
+        file.getImageTranscodedSizeInBytes(mip, 0, 0, format) !== bytes ||
+        !file.transcodeImage(levelData, mip, 0, 0, format, 0, -1, -1)
+      )
+        throw new Error(
+          `TN_ASSETS_ASTC_TRANSCODE: mip ${String(mip)} could not transcode to ASTC 4x4.`,
+        );
+      return { levelData, uncompressedByteLength: bytes };
+    });
+    container.vkFormat =
+      descriptor.transferFunction === KHR_DF_TRANSFER_SRGB
+        ? VK_FORMAT_ASTC_4x4_SRGB_BLOCK
+        : VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+    container.supercompressionScheme = KHR_SUPERCOMPRESSION_NONE;
+    container.globalData = null;
+    container.dataFormatDescriptor = [
+      {
+        ...descriptor,
+        colorModel: KHR_DF_MODEL_ASTC,
+        texelBlockDimension: [3, 3, 0, 0],
+        bytesPlane: [16, 0, 0, 0, 0, 0, 0, 0],
+        samples: [
+          {
+            bitOffset: 0,
+            bitLength: 127,
+            channelType: 0,
+            samplePosition: [0, 0, 0, 0],
+            sampleLower: 0,
+            sampleUpper: 0xffffffff,
+          },
+        ],
+      },
+    ];
+    return writeKTX2(container);
+  } finally {
+    file.close();
+    file.delete();
+  }
 }
 
 /** Decode only mip zero to RGBA32 using the shipped Basis transcoder; never re-encode. */

@@ -59,6 +59,102 @@ function compressiblePng(alpha?: (x: number, y: number) => number): Buffer {
 }
 
 describe("the ktx2 texture pass", () => {
+  it.each(["android", "ios"] as const)(
+    "cooks raw ASTC on %s without admitting decoder-backed custom passes",
+    async (platform) => {
+      const root = await makeTempDir("threenative-mobile-astc-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "colour.png"), compressiblePng());
+      await writeFile(path.join(root, "assets", "map_normal.png"), compressiblePng());
+      const config = {
+        textures: {
+          maxSize: 32,
+          overrides: [
+            { glob: "colour.png", codec: "etc1s" },
+            { glob: "map_normal.png", codec: "uastc" },
+          ],
+          floor: { ssim: 0, meanDeltaE00: 100 },
+        },
+      } satisfies IAssetSourceConfig;
+      const readOutputs = async () => {
+        const manifest = JSON.parse(
+          await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+        ) as {
+          entries: Record<
+            string,
+            {
+              output: string;
+              format: string;
+              transcodeTargets?: string[];
+              quality: { codec: string };
+            }
+          >;
+        };
+        return Promise.all(
+          Object.values(manifest.entries).map(async (entry) => ({
+            entry,
+            bytes: await readFile(path.join(root, "public", entry.output)),
+          })),
+        );
+      };
+      await compileAssets({
+        cwd: root,
+        config,
+        platform: "web",
+        transcoder: TRANSCODER,
+        concurrency: 1,
+      });
+      const web = await readOutputs();
+      await compileAssets({
+        cwd: root,
+        config,
+        platform: "desktop",
+        transcoder: TRANSCODER,
+        concurrency: 1,
+      });
+      expect(await readOutputs()).toEqual(web);
+      const options = {
+        cwd: root,
+        config,
+        platform,
+        runtimeDecoders: { ktx2: false, meshopt: false },
+        concurrency: 1,
+      };
+      const mobile = await compileAssets(options);
+      expect(mobile.written).toBe(2);
+      const outputs = await readOutputs();
+      expect(outputs.map(({ entry }) => entry.format)).toEqual(["astc4x4", "astc4x4"]);
+      for (const { entry, bytes } of outputs) {
+        const raw = readKTX2(bytes);
+        expect(raw.vkFormat).toBe(entry.quality.codec === "etc1s" ? 158 : 157);
+        expect(raw.supercompressionScheme).toBe(0);
+        expect([raw.pixelWidth, raw.pixelHeight, raw.levelCount]).toEqual([32, 32, 6]);
+        expect(entry.transcodeTargets).toBeUndefined();
+      }
+      await expect(
+        stat(path.join(root, "public", "basis", "basis_transcoder.wasm")),
+      ).rejects.toThrow();
+      expect((await compileAssets(options)).written).toBe(0);
+      expect(await readOutputs()).toEqual(outputs);
+      await compileAssets({
+        cwd: root,
+        config,
+        platform: "web",
+        transcoder: TRANSCODER,
+        concurrency: 1,
+      });
+      expect(await readOutputs()).toEqual(web);
+      const apply = vi.fn(async (input: Buffer) => input);
+      const custom = await compileAssets({
+        ...options,
+        passes: [{ name: "basis-only", appliesTo: ["texture"], needsRuntimeDecoder: true, apply }],
+      });
+      expect(apply).not.toHaveBeenCalled();
+      expect(custom.skippedCompression).toContainEqual(
+        expect.objectContaining({ pass: "basis-only", reason: "platform" }),
+      );
+    },
+  );
   it("preserves pure noise when every compressed rung falls below the quality floor", async () => {
     const channel = (x: number, y: number, shift: number): number => {
       let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
@@ -499,12 +595,13 @@ describe("the decoder-free size cap", () => {
     await writeFile(path.join(root, "assets", "decal.png"), alpha);
     await writeFile(path.join(root, "assets", "small.png"), small);
 
-    // Android is the decoder-free case: no WebAssembly, so the KTX2 pass drops and the cap is
-    // applied by the resize pass. Read back the emitted bytes, not the resolved config.
+    // A decoder-free desktop runtime retains the PNG resize path. Mobile cooks raw ASTC.
+    // Read back the emitted bytes, not the resolved config.
     await compileAssets({
       config: { textures: { maxSize: 1024 } },
       cwd: root,
-      platform: "android",
+      platform: "desktop",
+      runtimeDecoders: { ktx2: false, meshopt: false },
     });
 
     const manifest = JSON.parse(
@@ -567,7 +664,8 @@ describe("the decoder-free size cap", () => {
     await compileAssets({
       config: { textures: { maxSize: 64, overrides: [{ codec: "none", glob: "ui/**" }] } },
       cwd: root,
-      platform: "android",
+      platform: "desktop",
+      runtimeDecoders: { ktx2: false, meshopt: false },
     });
 
     const manifest = JSON.parse(
@@ -594,7 +692,8 @@ describe("the decoder-free size cap", () => {
       compileAssets({
         config: { textures: { maxSize: 1024 } },
         cwd: root,
-        platform: "android",
+        platform: "desktop",
+        runtimeDecoders: { ktx2: false, meshopt: false },
       }),
     ).rejects.toThrow(/TN_ASSETS_TEXTURE_UNDECODABLE.*broken\.png/su);
   });

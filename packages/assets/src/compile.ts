@@ -1644,7 +1644,13 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
               }),
           ...embeddedTexturesFor(configuredModels.textures, runtimeDecoderCapabilities.ktx2),
         };
-  const textures = configuredTextures;
+  const mobileAstc = options.platform === "android" || options.platform === "ios";
+  const textures =
+    configuredTextures === undefined
+      ? undefined
+      : mobileAstc
+        ? { ...configuredTextures, astc: true }
+        : configuredTextures;
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
     ?.lightmap;
   // The built-in registry runs only when the caller did not replace it wholesale; each
@@ -1669,13 +1675,14 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     if (textures !== undefined) {
       registerBuiltin(texturePass(textures), {
         kind: "texture",
-        needsRuntimeDecoder: true,
+        needsRuntimeDecoder: !mobileAstc,
         options: textures,
       });
     }
     if (
       textures !== undefined &&
       !runtimeDecoderCapabilities.ktx2 &&
+      !mobileAstc &&
       textures.maxSize !== undefined
     ) {
       // The KTX2 pass dropped for this target, but the declared cap is still honoured: the
@@ -1780,11 +1787,14 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         ? undefined
         : configuredTextures === undefined
           ? "config"
-          : runtimeDecoderCapabilities.ktx2
+          : runtimeDecoderCapabilities.ktx2 || mobileAstc
             ? undefined
             : "platform",
     texturesActive:
-      textures !== undefined && options.passes === undefined && runtimeDecoderAvailable,
+      textures !== undefined &&
+      options.passes === undefined &&
+      runtimeDecoderAvailable &&
+      !mobileAstc,
   };
 }
 

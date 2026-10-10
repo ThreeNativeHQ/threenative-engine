@@ -7,6 +7,7 @@ import {
   IMAGE_QUALITY_IDENTITY,
   imageQuality,
   resolveImageQualityFloor,
+  transcodeKtx2ToAstc,
 } from "../image-quality.js";
 import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
@@ -54,6 +55,8 @@ export interface ITextureOverride {
 }
 
 export interface ITexturePassOptions {
+  /** Compiler-selected mobile output; the quality ladder still measures Basis first. */
+  readonly astc?: boolean;
   readonly floor?: Partial<IImageQualityFloor>;
   /** Internal reporting control; selection still measures and enforces the floor. */
   readonly measureQuality?: boolean;
@@ -109,6 +112,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
     appliesTo: ["texture"],
     configuration: {
       encoder: KTX2_ENCODER_VERSION,
+      ...(options.astc === true ? { gpuFormat: "astc4x4-v1" } : {}),
       instrument: IMAGE_QUALITY_IDENTITY,
       floor: resolveImageQualityFloor(options.floor),
       keepSmallerSource: true,
@@ -211,10 +215,15 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
         );
       }
       return {
-        buffer: Buffer.from(encoded),
+        buffer: Buffer.from(options.astc === true ? await transcodeKtx2ToAstc(encoded) : encoded),
         entry: {
-          format: selected.codec,
-          transcodeTargets: TRANSCODE_TARGETS[selected.codec as Exclude<TextureCodec, "none">],
+          ...(options.astc === true
+            ? { format: "astc4x4" }
+            : {
+                format: selected.codec,
+                transcodeTargets:
+                  TRANSCODE_TARGETS[selected.codec as Exclude<TextureCodec, "none">],
+              }),
           ...(options.measureQuality === false
             ? {}
             : {
