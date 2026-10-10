@@ -14,6 +14,7 @@ import {
   runBench,
 } from "../bench-perry.js";
 
+const TAILWIND_CDN = "https://cdn.tailwindcss.com/3.4.17";
 const sample = (scale = 1) => ({
   gameJsMs: 0.5 * scale,
   renderMs: 0.6 * scale,
@@ -179,11 +180,17 @@ describe("Perry native benchmark", () => {
       ),
     });
     for (const metric of ["firstFrameMs", "gameJsMs", "renderMs", "cpuFrameMs", "readyMs"])
-      expect(html).toContain(`<th scope="row">${metric}</th>`);
-    expect(html).toContain('<td class="verdict miss">MISS</td>');
+      expect(html).toContain(`<article data-metric="${metric}"`);
+    expect(html).toContain('data-verdict="MISS"');
     expect(html).toContain("<svg");
     expect(html).toContain("present");
-    expect(html).not.toContain("http");
+    // The pinned Tailwind Play CDN is the only external origin.
+    expect(html).toContain(TAILWIND_CDN);
+    expect(html.replace(TAILWIND_CDN, "")).not.toContain("http");
+    // Previous ledger row was 0.5x everywhere, this run is 1.01x: regressed, +102%.
+    expect(html).toContain('data-trend="regressed"');
+    expect(html).toContain("+102%");
+    expect(html).not.toMatch(/fps/i);
   });
   it("runs the consumer P,V,P,V and returns 2 on a missing metric or crashed journey", async () => {
     const temp = await mkdtemp(path.join(tmpdir(), "bench-perry-spec-"));
@@ -249,8 +256,8 @@ describe("Perry native benchmark", () => {
       expect(await runBench(argv, execute, path.join(temp, "artifacts"))).toBe(0);
       expect(launches).toEqual(["perry", "v8", "perry", "v8"]);
       const written = await readFile(path.join(directories.at(-1) ?? "", "report.html"), "utf8");
-      expect(written).toContain('<th scope="row">firstFrameMs</th>');
-      expect(written).not.toContain("http");
+      expect(written).toContain('<article data-metric="firstFrameMs"');
+      expect(written.replace(TAILWIND_CDN, "")).not.toContain("http");
       expect(await readFile(path.join(temp, "artifacts", "index.html"), "utf8")).toBe(written);
       await rm(path.join(temp, "game.js"));
       expect(await runBench([...argv, "--perf"], execute, path.join(temp, "artifacts"))).toBe(0);

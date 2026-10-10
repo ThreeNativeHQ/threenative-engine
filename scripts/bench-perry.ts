@@ -302,67 +302,179 @@ function escapeHtml(value: string): string {
 }
 
 type ComparisonRow = ReturnType<typeof compareArms>["rows"][number];
+type Trend = "improving" | "regressed" | "flat";
 
-/** Two horizontal bars, Perry over V8, scaled to the larger median. */
-function barSvg(row: ComparisonRow): string {
-  const max = Math.max(row.perry.median, row.v8.median);
-  const width = (value: number) => (max > 0 ? Math.max(2, Math.round((value / max) * 220)) : 2);
-  const label = `${row.metric}: Perry ${row.perry.median.toFixed(3)} ms, V8 ${row.v8.median.toFixed(3)} ms`;
+const CDN = "https://cdn.tailwindcss.com/3.4.17";
+const LABEL: Record<Metric, string> = {
+  firstFrameMs: "First frame",
+  gameJsMs: "Game JS p50",
+  renderMs: "Render p50",
+  cpuFrameMs: "CPU frame p50",
+  readyMs: "Launch to ready",
+};
+const TREND_EPSILON = 0.02;
+// 1-2-5 axis ticks from 0.001x to 5000x; the log axes snap their ends to these.
+const TICKS = Array.from({ length: 8 }, (_, e) =>
+  [1, 2, 5].map((s) => Number((s * 10 ** (e - 3)).toPrecision(3))),
+).flat();
+const TONE = {
+  pass: {
+    hex: "#34d399",
+    text: "text-emerald-300",
+    box: "border-emerald-500/40 bg-emerald-500/10",
+  },
+  improving: { hex: "#fbbf24", text: "text-amber-300", box: "border-amber-500/40 bg-amber-500/10" },
+  miss: { hex: "#f87171", text: "text-red-300", box: "border-red-500/40 bg-red-500/10" },
+  report: { hex: "#38bdf8", text: "text-sky-300", box: "border-sky-500/40 bg-sky-500/10" },
+};
+const TREND_CHIP: Record<Trend, string> = {
+  improving: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  regressed: "bg-red-500/15 text-red-300 ring-red-500/30",
+  flat: "bg-slate-500/15 text-slate-300 ring-slate-500/30",
+};
+const ARROW: Record<Trend, string> = {
+  improving: "&#9660;",
+  regressed: "&#9650;",
+  flat: "&#9644;",
+};
+
+const trendOf = (now: number, before: number): Trend => {
+  const change = now / before - 1;
+  return change < -TREND_EPSILON ? "improving" : change > TREND_EPSILON ? "regressed" : "flat";
+};
+const pct = (now: number, before: number): string => {
+  const change = Math.round((now / before - 1) * 100);
+  return `${change > 0 ? "+" : ""}${change}%`;
+};
+const fmtX = (value: number): string => `${value.toFixed(value >= 10 ? 1 : 2)}x`;
+const fmtMs = (value: number): string => value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 3);
+const shortTime = (time: string): string => time.slice(5, 16).replace("T", " ");
+
+/** A log axis whose ends snap to 1-2-5 ticks; `pos` maps a ratio to 0..1. */
+function logDomain(values: number[]) {
+  const lo = TICKS.filter((tick) => tick <= Math.min(...values) * 0.9).at(-1) ?? TICKS[0] ?? 0.001;
+  const hi = TICKS.find((tick) => tick >= Math.max(...values) * 1.1) ?? Math.max(...values);
+  const span = Math.log(hi / lo);
+  return {
+    ticks: TICKS.filter((tick) => tick >= lo && tick <= hi),
+    pos: (value: number) => Math.min(1, Math.max(0, Math.log(value / lo) / span)),
+  };
+}
+
+/** Log-scale ruler: green up to the target, amber up to V8 parity, red past it. */
+function gaugeHtml(
+  row: ComparisonRow,
+  previous: number | undefined,
+  domain: ReturnType<typeof logDomain>,
+  hex: string,
+): string {
+  const at = (value: number) => `${(domain.pos(value) * 100).toFixed(2)}%`;
+  const goal = row.target ?? 1;
+  const tick = (value: number, label: string, color: string, above: boolean) =>
+    `<div class="absolute -top-1 -bottom-1 w-0.5 ${color}" style="left:${at(value)}"></div><span class="absolute ${above ? "-top-5" : "top-5"} -translate-x-1/2 whitespace-nowrap text-[10px] ${color.replace("bg-", "text-")}" style="left:${at(value)}">${label}</span>`;
   return [
-    `<svg class="bar" viewBox="0 0 240 28" role="img" aria-label="${escapeHtml(label)}">`,
-    `<title>${escapeHtml(label)}</title>`,
-    `<rect class="perry" x="0" y="1" width="${width(row.perry.median)}" height="11"></rect>`,
-    `<rect class="v8" x="0" y="16" width="${width(row.v8.median)}" height="11"></rect>`,
-    "</svg>",
+    '<div class="relative mx-3 mb-7 mt-7 h-3">',
+    '<div class="absolute inset-0 overflow-hidden rounded-full bg-slate-800">',
+    `<div class="absolute inset-y-0 left-0 bg-emerald-500/30" style="width:${at(goal)}"></div>`,
+    `<div class="absolute inset-y-0 bg-amber-500/25" style="left:${at(goal)};width:${(Math.max(0, domain.pos(1) - domain.pos(goal)) * 100).toFixed(2)}%"></div>`,
+    `<div class="absolute inset-y-0 right-0 bg-red-500/25" style="left:${at(1)}"></div>`,
+    "</div>",
+    row.target !== null && row.target !== 1
+      ? tick(row.target, `target ${row.target}x`, "bg-emerald-300", true)
+      : "",
+    tick(1, row.target === 1 ? "target = V8 parity" : "V8 parity", "bg-amber-300", false),
+    previous === undefined
+      ? ""
+      : `<div title="previous run ${fmtX(previous)}" class="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-300 bg-slate-950" style="left:${at(previous)}"></div>`,
+    `<div title="this run ${fmtX(row.ratio)}" class="absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-lg" style="left:${at(row.ratio)};background:${hex}"></div>`,
+    "</div>",
   ].join("");
 }
 
-/** One metric's Perry/V8 ratio across the ledger, with a dashed target line. */
+/** One metric's Perry/V8 ratio over the ledger: log axis, target and parity lines, pass/miss points. */
 function historySvg(
-  ledger: readonly ILedgerRow[],
+  series: readonly ILedgerRow[],
   metricIndex: number,
   target: number | null,
   metric: string,
+  currentIndex: number,
 ): string {
-  const points = ledger
-    .map((row, index) => ({ index, ratio: row.ratios[metricIndex] ?? null }))
-    .filter((point): point is { index: number; ratio: number } => point.ratio !== null);
-  if (points.length === 0)
-    return `<p class="empty">No ledger history for ${escapeHtml(metric)}.</p>`;
-  const bounds = points.map((point) => point.ratio);
-  if (target !== null) bounds.push(target);
-  let min = Math.min(...bounds);
-  let max = Math.max(...bounds);
-  if (min === max) {
-    min -= 0.1;
-    max += 0.1;
-  }
-  const span = Math.max(1, ledger.length - 1);
-  const x = (index: number) => Math.round(10 + (index / span) * 280);
-  const y = (value: number) => Math.round(70 - ((value - min) / (max - min)) * 60);
-  const line = points.map((point) => `${x(point.index)},${y(point.ratio)}`).join(" ");
-  const targetLine =
-    target === null
-      ? ""
-      : `<line class="target" x1="10" y1="${y(target)}" x2="290" y2="${y(target)}"></line>`;
+  const [W, H, L, R, T, B] = [480, 230, 40, 84, 14, 28] as const;
+  const goal = target ?? 1;
+  const valid = series.flatMap((row, index) => {
+    const ratio = row.ratios[metricIndex];
+    return ratio === null || ratio === undefined ? [] : [{ index, ratio, time: row.time }];
+  });
+  const failed = series.flatMap((row, index) => (row.ratios[metricIndex] == null ? [index] : []));
+  const domain = logDomain([...valid.map((point) => point.ratio), goal, 1]);
+  const x = (index: number) =>
+    (
+      L + (series.length < 2 ? (W - L - R) / 2 : (index / (series.length - 1)) * (W - L - R))
+    ).toFixed(1);
+  const y = (value: number) => (T + (1 - domain.pos(value)) * (H - T - B)).toFixed(1);
+  const label = `${metric} Perry/V8 ratio over time, log scale`;
+  const hline = (value: number, color: string, text: string, textY: number) =>
+    `<line x1="${L}" x2="${W - R}" y1="${y(value)}" y2="${y(value)}" stroke="${color}" stroke-width="1.5" stroke-dasharray="6 4"></line><text x="${W - R + 6}" y="${textY.toFixed(1)}" fill="${color}" font-size="11" font-weight="600">${text}</text>`;
+  const parityY = Math.min(Number(y(1)), Number(y(goal)) - 13);
   return [
-    `<svg class="history" viewBox="0 0 300 80" role="img" aria-label="${escapeHtml(`${metric} ratio over time`)}">`,
-    `<title>${escapeHtml(`${metric} ratio over time`)}</title>`,
-    targetLine,
-    `<polyline class="series" fill="none" points="${line}"></polyline>`,
-    ...points.map(
-      (point) =>
-        `<circle class="point" cx="${x(point.index)}" cy="${y(point.ratio)}" r="2"></circle>`,
+    `<svg viewBox="0 0 ${W} ${H}" class="w-full" role="img" aria-label="${escapeHtml(label)}"><title>${escapeHtml(label)}</title>`,
+    ...domain.ticks.map(
+      (tick) =>
+        `<line x1="${L}" x2="${W - R}" y1="${y(tick)}" y2="${y(tick)}" stroke="#1e293b"></line><text x="${L - 6}" y="${Number(y(tick)) + 3.5}" text-anchor="end" fill="#64748b" font-size="10">${tick}x</text>`,
     ),
+    `<rect x="${L}" y="${y(goal)}" width="${W - L - R}" height="${(H - B - Number(y(goal))).toFixed(1)}" fill="#34d399" opacity=".09"></rect>`,
+    goal === 1
+      ? ""
+      : hline(1, "#fbbf24", target === null ? "V8 parity" : "V8 parity 1x", parityY + 4),
+    hline(
+      goal,
+      "#34d399",
+      target === null ? "report-only 1x" : target === 1 ? "target 1x" : `target ${target}x`,
+      Number(y(goal)) + 4,
+    ),
+    ...failed.map(
+      (index) =>
+        `<g><title>${escapeHtml(`${series[index]?.time ?? ""}: MEASUREMENT_FAILURE`)}</title><line x1="${x(index)}" x2="${x(index)}" y1="${T}" y2="${H - B}" stroke="#f87171" stroke-opacity=".35" stroke-dasharray="2 3"></line><text x="${x(index)}" y="${H - B - 6}" text-anchor="middle" fill="#f87171" font-size="14" font-weight="700">&times;</text></g>`,
+    ),
+    `<polyline fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linejoin="round" points="${valid.map((point) => `${x(point.index)},${y(point.ratio)}`).join(" ")}"></polyline>`,
+    ...valid.map((point) => {
+      const current = point.index === currentIndex;
+      const color = point.ratio <= goal ? "#34d399" : "#f87171";
+      return `<circle cx="${x(point.index)}" cy="${y(point.ratio)}" r="${current ? 6 : 4}" fill="${color}" stroke="${current ? "#fff" : "#0f172a"}" stroke-width="${current ? 2 : 1.5}"><title>${escapeHtml(`${point.time}: ${fmtX(point.ratio)}`)}</title></circle>`;
+    }),
+    ...valid
+      .filter((point) => point.index === currentIndex)
+      .map(
+        (point) =>
+          `<text x="${Number(x(point.index)) + 10}" y="${Number(y(point.ratio)) - 8}" fill="#f1f5f9" font-size="12" font-weight="700">${fmtX(point.ratio)}</text>`,
+      ),
+    series.length > 0
+      ? `<text x="${L}" y="${H - 8}" fill="#64748b" font-size="10">${escapeHtml(shortTime(series[0]?.time ?? ""))}</text><text x="${W - R}" y="${H - 8}" text-anchor="end" fill="#64748b" font-size="10">${escapeHtml(shortTime(series.at(-1)?.time ?? ""))}</text>`
+      : "",
     "</svg>",
   ].join("");
 }
 
+function stackBars(
+  title: string,
+  entries: ReturnType<typeof parsePerfSelf> | undefined,
+  scale: number,
+  bar: string,
+): string {
+  const items = (entries ?? [])
+    .map(
+      (entry) =>
+        `<li class="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2"><span class="text-right font-mono text-xs tabular-nums text-slate-300">${entry.percent.toFixed(2)}%</span><div class="relative h-6 overflow-hidden rounded bg-slate-800/70"><div class="absolute inset-y-0 left-0 ${bar}" style="width:${Math.max(1, (entry.percent / scale) * 100).toFixed(1)}%"></div><span class="relative block truncate px-2 font-mono text-[11px] leading-6 text-slate-100" title="${escapeHtml(entry.symbol)}">${escapeHtml(entry.symbol)}</span></div></li>`,
+    )
+    .join("");
+  return `<div><h3 class="mb-3 text-sm font-semibold text-slate-200">${title}</h3><ol class="space-y-1">${items || '<li class="text-sm text-slate-500">No samples.</li>'}</ol></div>`;
+}
+
 /**
- * The one self-contained dashboard file (inline CSS and SVG, no CDN, no framework) that the
- * native-performance-loop skill's `references/dashboard.md` contract describes. Writing it as
- * `report.html` beside `report.md` and refreshing the campaign `index.html` from the same renderer
- * keeps a single format.
+ * The one dashboard file: Tailwind from its pinned Play CDN, inline SVG charts, no other URL.
+ * The latest run is compared with the previous and the first measured ledger row so the page
+ * answers "is Perry getting closer to V8?" at a glance. Written as `report.html` beside
+ * `report.md`, and copied to the campaign `index.html`.
  */
 export function reportHtml(result: {
   time: string;
@@ -373,91 +485,206 @@ export function reportHtml(result: {
   error?: string;
   stacks?: Partial<Record<Arm, ReturnType<typeof parsePerfSelf>>>;
   ledger?: readonly ILedgerRow[];
+  args?: { runs: number };
 }): string {
-  const ledger = result.ledger ?? [];
+  const names = Object.keys(metrics) as Metric[];
+  const rows = result.error ? [] : (result.comparison?.rows ?? []);
   const verdict = result.error
     ? "MEASUREMENT_FAILURE"
     : (result.comparison?.verdict ?? "MEASUREMENT_FAILURE");
-  const rows = result.comparison?.rows ?? [];
-  const metricNames = Object.keys(metrics) as Metric[];
-  const metricRows = rows
-    .map((row) =>
-      [
-        "<tr>",
-        `<th scope="row">${escapeHtml(row.metric)}</th>`,
-        `<td>${row.perry.median.toFixed(3)} [${row.perry.min.toFixed(3)}&ndash;${row.perry.max.toFixed(3)}]</td>`,
-        `<td>${row.v8.median.toFixed(3)} [${row.v8.min.toFixed(3)}&ndash;${row.v8.max.toFixed(3)}]</td>`,
-        `<td>${row.ratio.toFixed(3)}</td>`,
-        `<td>${row.target === null ? "report only" : `${row.target}x`}</td>`,
-        `<td class="verdict ${row.verdict.toLowerCase()}">${row.verdict}</td>`,
-        "</tr>",
-      ].join(""),
-    )
+  const ledger = result.ledger ?? [];
+  const current = rows.length
+    ? {
+        time: result.time,
+        ratios: names.map((name) => rows.find((row) => row.metric === name)?.ratio ?? null),
+        verdict,
+      }
+    : undefined;
+  // The run appends its own ledger row before rendering; a caller without one still gets its point.
+  const series =
+    current && !ledger.some((row) => row.time === result.time) ? [...ledger, current] : [...ledger];
+  const currentIndex = current ? series.findIndex((row) => row.time === result.time) : -1;
+  const measured = series.flatMap((row, index) =>
+    row.ratios.every((ratio) => ratio !== null) ? [{ index, row }] : [],
+  );
+  const previous = measured.filter((entry) => entry.index < currentIndex).at(-1)?.row;
+  const first = measured[0] && measured[0].index < currentIndex ? measured[0].row : undefined;
+  const targeted = names.flatMap((name, index) => (metrics[name] === null ? [] : [index]));
+  // Gap = geometric mean of ratio/target over the gated metrics; 1.0x means every target is met.
+  const gap = (ratios: ReadonlyArray<number | null>): number =>
+    Math.exp(
+      targeted.reduce((sum, index) => {
+        const target = metrics[names[index] as Metric] ?? 1;
+        return sum + Math.log((ratios[index] ?? 1) / target);
+      }, 0) / Math.max(1, targeted.length),
+    );
+  const gapNow = current ? gap(current.ratios) : undefined;
+  const sinceLast =
+    gapNow !== undefined && previous ? trendOf(gapNow, gap(previous.ratios)) : undefined;
+  const hero = result.error
+    ? {
+        key: "failed",
+        word: "MEASUREMENT FAILED",
+        icon: "&#10005;",
+        ring: "from-red-500/25 border-red-500/50",
+        text: "text-red-300",
+      }
+    : verdict === "PASS" && sinceLast !== "regressed"
+      ? {
+          key: "on-target",
+          word: "ON TARGET",
+          icon: "&#10003;",
+          ring: "from-emerald-500/25 border-emerald-500/50",
+          text: "text-emerald-300",
+        }
+      : sinceLast === "improving"
+        ? {
+            key: "improving",
+            word: "IMPROVING",
+            icon: "&#9660;",
+            ring: "from-emerald-500/25 border-emerald-500/50",
+            text: "text-emerald-300",
+          }
+        : sinceLast === "regressed"
+          ? {
+              key: "regressed",
+              word: "REGRESSED",
+              icon: "&#9650;",
+              ring: "from-red-500/25 border-red-500/50",
+              text: "text-red-300",
+            }
+          : sinceLast === "flat"
+            ? {
+                key: "flat",
+                word: "HOLDING",
+                icon: "&#9644;",
+                ring: "from-slate-500/25 border-slate-500/50",
+                text: "text-slate-200",
+              }
+            : {
+                key: "baseline",
+                word: "BASELINE",
+                icon: "&#9679;",
+                ring: "from-sky-500/25 border-sky-500/50",
+                text: "text-sky-300",
+              };
+  const sentence = result.error
+    ? "No ratios this run. The ledger records a failure and the charts below mark it."
+    : gapNow === undefined
+      ? ""
+      : sinceLast && previous
+        ? `Gap to target ${sinceLast === "flat" ? "is unchanged" : `${sinceLast === "improving" ? "shrank" : "grew"} ${pct(gapNow, gap(previous.ratios)).replace(/^[+-]/, "")}`} since the previous run.`
+        : "First measured run. The next run shows the trend against it.";
+  const tile = (title: string, value: string, note: string, tone = "text-slate-100") =>
+    `<div class="rounded-xl border border-white/10 bg-slate-950/40 p-4"><div class="text-xs uppercase tracking-wide text-slate-400">${title}</div><div class="mt-1 text-3xl font-bold tabular-nums ${tone}">${value}</div><div class="mt-1 text-xs text-slate-400">${note}</div></div>`;
+  const deltaTile = (title: string, base: ILedgerRow | undefined, empty: string) => {
+    if (!base || gapNow === undefined) return tile(title, "&mdash;", empty);
+    const trend = trendOf(gapNow, gap(base.ratios));
+    const tone = {
+      improving: "text-emerald-300",
+      regressed: "text-red-300",
+      flat: "text-slate-200",
+    }[trend];
+    return tile(
+      title,
+      `${ARROW[trend]} ${pct(gapNow, gap(base.ratios))}`,
+      `gap ${fmtX(gap(base.ratios))} &rarr; ${fmtX(gapNow)}`,
+      tone,
+    );
+  };
+  const met = rows.filter((row) => row.target !== null && row.verdict === "PASS").length;
+  const chips = rows
+    .map((row) => {
+      const before = previous?.ratios[names.indexOf(row.metric)];
+      const trend = before == null ? undefined : trendOf(row.ratio, before);
+      return `<span class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm ring-1 ${trend ? TREND_CHIP[trend] : "bg-sky-500/15 text-sky-200 ring-sky-500/30"}"><span class="font-medium">${LABEL[row.metric]}</span><span class="tabular-nums">${before == null ? fmtX(row.ratio) : `${fmtX(before)} &rarr; ${fmtX(row.ratio)}`}</span>${trend && before != null ? `<span class="font-bold tabular-nums">${ARROW[trend]} ${pct(row.ratio, before)}</span>` : ""}</span>`;
+    })
     .join("");
-  const bars = rows
-    .map(
-      (row) =>
-        `<figure><figcaption>${escapeHtml(row.metric)} &mdash; Perry vs V8 (ms, lower is better)</figcaption>${barSvg(row)}</figure>`,
-    )
+  const domain = logDomain([
+    ...rows.flatMap((row) => [
+      row.ratio,
+      row.target ?? 1,
+      previous?.ratios[names.indexOf(row.metric)] ?? row.ratio,
+    ]),
+    1,
+  ]);
+  const order = [...names].sort(
+    (a, b) => Number(metrics[a] === null) - Number(metrics[b] === null),
+  );
+  const cards = order
+    .map((name) => {
+      const index = names.indexOf(name);
+      const row = rows.find((candidate) => candidate.metric === name);
+      const chart = historySvg(series, index, metrics[name], name, currentIndex);
+      const before = previous?.ratios[index] ?? undefined;
+      const start = first?.ratios[index] ?? undefined;
+      const status = !row
+        ? undefined
+        : row.verdict === "PASS"
+          ? "pass"
+          : row.verdict === "REPORT"
+            ? "report"
+            : before !== undefined && trendOf(row.ratio, before) === "improving"
+              ? "improving"
+              : "miss";
+      const tone = TONE[status ?? "report"];
+      const delta = (title: string, base: number | undefined) => {
+        if (!row || base === undefined) return "";
+        const trend = trendOf(row.ratio, base);
+        return `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ${TREND_CHIP[trend]}">${ARROW[trend]} ${pct(row.ratio, base)} <span class="font-normal opacity-70">${title}</span></span>`;
+      };
+      const goal = row?.target ?? 1;
+      const distance = !row
+        ? ""
+        : row.ratio <= goal
+          ? `${Math.round((1 - row.ratio / goal) * 100)}% headroom under ${row.target === null ? "V8 parity" : "the target"}`
+          : `${fmtX(row.ratio / goal)} over ${row.target === null ? "V8 parity" : "target"}: cut ${Math.round((1 - goal / row.ratio) * 100)}% more`;
+      const ms = (arm: "perry" | "v8", dot: string) =>
+        row
+          ? `<div class="flex items-baseline justify-between gap-2"><span class="flex items-center gap-2 text-slate-300"><span class="inline-block h-2 w-2 rounded-full ${dot}"></span>${arm === "perry" ? "Perry" : "V8"}</span><span class="font-mono tabular-nums text-slate-100">${fmtMs(row[arm].median)} ms <span class="text-xs text-slate-500">[${fmtMs(row[arm].min)}&ndash;${fmtMs(row[arm].max)}]</span></span></div>`
+          : "";
+      const left = row
+        ? `<div class="flex items-start justify-between gap-3"><div><h3 class="text-lg font-semibold text-slate-100">${LABEL[name]}</h3><div class="font-mono text-xs text-slate-500">${name}</div></div><span data-verdict="${row.verdict}" class="verdict ${row.verdict.toLowerCase()} rounded-md border px-2 py-1 text-xs font-bold tracking-wide ${tone.box} ${tone.text}">${row.verdict}${status === "improving" ? " &middot; IMPROVING" : ""}</span></div>
+<div class="mt-4 flex flex-wrap items-end gap-x-3 gap-y-1"><span class="text-5xl font-extrabold tabular-nums ${tone.text}">${fmtX(row.ratio)}</span><span class="pb-2 text-sm text-slate-400">${row.target === null ? "report only, V8 parity 1x" : `target &le; ${row.target}x`}</span></div>
+<div class="mt-2 flex flex-wrap gap-2">${delta("vs last", before)}${delta("vs first", start)}</div>
+<p class="mt-3 text-sm ${tone.text}">${distance}</p>
+${gaugeHtml(row, before, domain, tone.hex)}
+<div class="space-y-1 text-sm">${ms("perry", "bg-sky-400")}${ms("v8", "bg-violet-400")}</div>`
+        : `<h3 class="text-lg font-semibold text-slate-100">${LABEL[name]}</h3><div class="font-mono text-xs text-slate-500">${name}</div><p class="mt-4 text-sm text-slate-400">No measurement this run.</p>`;
+      return `<article data-metric="${name}" class="grid gap-6 rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-xl lg:grid-cols-5 border-l-4" style="border-left-color:${row ? tone.hex : "#334155"}"><div class="lg:col-span-2">${left}</div><div class="lg:col-span-3"><div class="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400"><span>Perry / V8 ratio per run, log scale, lower is better</span><span class="text-red-300">&times; = measurement failure</span></div>${chart}</div></article>`;
+    })
     .join("");
-  const history = metricNames
-    .map(
-      (metric, index) =>
-        `<figure><figcaption>${escapeHtml(metric)} ratio over time (dashed = target)</figcaption>${historySvg(ledger, index, metrics[metric], metric)}</figure>`,
-    )
-    .join("");
+  const scale = Math.max(
+    1,
+    ...(["perry", "v8"] as const).flatMap((arm) =>
+      (result.stacks?.[arm] ?? []).map((entry) => entry.percent),
+    ),
+  );
   const stacks = result.stacks
-    ? [
-        "<h2>Top self-time</h2>",
-        '<div class="table-wrap"><table><thead><tr><th>#</th><th>Perry</th><th>V8</th></tr></thead><tbody>',
-        ...Array.from({ length: 15 }, (_, index) => {
-          const cell = (arm: Arm) => {
-            const entry = result.stacks?.[arm]?.[index];
-            return entry ? `${entry.percent.toFixed(2)}% ${escapeHtml(entry.symbol)}` : "&mdash;";
-          };
-          return `<tr><td>${index + 1}</td><td>${cell("perry")}</td><td>${cell("v8")}</td></tr>`;
-        }),
-        "</tbody></table></div>",
-      ].join("")
+    ? `<section class="mt-12"><h2 class="mb-1 text-xl font-bold text-slate-100">Where the CPU time goes</h2><p class="mb-5 text-sm text-slate-400">Top self-time symbols from <code>perf report --no-children</code>, one bar per symbol on a shared scale.</p><div class="grid gap-8 rounded-2xl border border-white/10 bg-slate-900/70 p-5 lg:grid-cols-2">${stackBars("Perry", result.stacks.perry, scale, "bg-sky-500/50")}${stackBars("V8", result.stacks.v8, scale, "bg-violet-500/50")}</div></section>`
     : "";
-  const style = [
-    ":root{--fg:#1a1a1a;--bg:#fff;--muted:#555;--line:#ccc;--pass:#0a7d32;--miss:#c0261b;--report:#5a5a5a;--perry:#2563eb;--v8:#9333ea;--target:#888;color-scheme:light dark}",
-    "@media (prefers-color-scheme:dark){:root{--fg:#e8e8e8;--bg:#161616;--muted:#aaa;--line:#444;--pass:#4ade80;--miss:#f87171;--report:#bdbdbd;--perry:#60a5fa;--v8:#c084fc;--target:#999}}",
-    "body{margin:1rem auto;max-width:1100px;padding:0 1rem;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif;line-height:1.4}",
-    "h1{font-size:1.3rem}h2{font-size:1.1rem;margin-top:1.5rem}dt{font-weight:600}dl{display:grid;grid-template-columns:auto 1fr;gap:.1rem .8rem;font-size:.9rem}dd{margin:0;color:var(--muted)}",
-    ".table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%}th,td{border:1px solid var(--line);padding:.35rem .5rem;text-align:right}th:first-child{text-align:left}",
-    ".verdict.pass{color:var(--pass);font-weight:700}.verdict.miss{color:var(--miss);font-weight:700}.verdict.report{color:var(--report);font-weight:700}.verdict.measurement_failure{color:var(--miss);font-weight:700}",
-    ".figures{display:flex;flex-wrap:wrap;gap:1rem}figure{margin:0}figcaption{font-size:.85rem;color:var(--muted)}",
-    "svg.bar{width:100%;max-width:320px;height:auto}svg.bar rect.perry{fill:var(--perry)}svg.bar rect.v8{fill:var(--v8)}",
-    "svg.history{width:100%;max-width:340px;height:auto}svg.history polyline.series{stroke:var(--perry);stroke-width:2}svg.history circle.point{fill:var(--perry)}svg.history line.target{stroke:var(--target);stroke-width:1;stroke-dasharray:4 3}",
-    ".error{color:var(--miss)}.empty{color:var(--muted);font-size:.85rem}@media (max-width:600px){body{font-size:.9rem}th,td{padding:.25rem}}",
-  ].join("");
+  const footerItem = (title: string, value: string, full?: string) =>
+    `<div><dt class="text-xs uppercase tracking-wide text-slate-500">${title}</dt><dd class="mt-0.5 break-all font-mono text-sm text-slate-300"${full ? ` title="${escapeHtml(full)}"` : ""}>${escapeHtml(value)}</dd></div>`;
   return [
     "<!doctype html>",
-    '<html lang="en"><head><meta charset="utf-8">',
+    '<html lang="en" class="dark"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    '<meta name="color-scheme" content="dark">',
     `<title>Perry vs V8 &mdash; ${escapeHtml(result.time)}</title>`,
-    `<style>${style}</style></head><body>`,
-    "<header>",
-    `<h1>Perry vs V8 &mdash; ${escapeHtml(result.time)}</h1>`,
-    `<p class="verdict ${verdict.toLowerCase()}">Verdict: ${escapeHtml(verdict)}</p>`,
-    "<dl>",
-    `<dt>Git HEAD</dt><dd>${escapeHtml(result.head?.slice(0, 12) ?? "unknown")}</dd>`,
-    `<dt>Perry SHA-256</dt><dd>${escapeHtml(result.perrySha256?.slice(0, 12) ?? "unknown")}</dd>`,
-    `<dt>Host load (1/5/15 min)</dt><dd>${result.load.map((value) => value.toFixed(2)).join(" / ")}</dd>`,
-    "</dl>",
-    "</header>",
-    result.error ? `<p class="error">Error: ${escapeHtml(result.error)}</p>` : "",
-    "<h2>Metrics</h2>",
-    rows.length
-      ? `<div class="table-wrap"><table><thead><tr><th>metric (ms)</th><th>Perry median [min&ndash;max]</th><th>V8 median [min&ndash;max]</th><th>ratio</th><th>target</th><th>verdict</th></tr></thead><tbody>${metricRows}</tbody></table></div>`
-      : '<p class="empty">No metric comparison for this run.</p>',
-    `<div class="figures">${bars}</div>`,
-    "<h2>Ledger history</h2>",
-    '<p class="empty">Ratio of Perry median to V8 median per metric; lower is better. A missing point is a gap for a failed measurement, never zero.</p>',
-    `<div class="figures">${history}</div>`,
+    "<style>body{background:#020617;color:#e2e8f0;font-family:system-ui,sans-serif}</style>",
+    `<script src="${CDN}"></script></head>`,
+    '<body class="min-h-screen bg-slate-950 text-slate-200 antialiased"><main class="mx-auto max-w-7xl px-4 py-8 sm:px-6">',
+    `<div class="mb-4 flex flex-wrap items-baseline justify-between gap-2"><h1 class="text-lg font-semibold text-slate-300">Perry <span class="text-slate-500">vs</span> V8</h1><span class="font-mono text-sm text-slate-500">${escapeHtml(result.time)}</span></div>`,
+    `<section data-trend="${hero.key}" class="rounded-3xl border bg-gradient-to-br ${hero.ring} to-slate-900/60 p-6 shadow-2xl sm:p-8"><div class="grid gap-8 lg:grid-cols-5"><div class="lg:col-span-2"><div class="flex items-center gap-4"><span class="text-5xl ${hero.text}">${hero.icon}</span><h2 class="text-4xl font-black tracking-tight sm:text-5xl ${hero.text}">${hero.word}</h2></div><p class="mt-4 text-lg text-slate-200">${sentence}</p><p class="mt-2 text-sm text-slate-400">Verdict <span class="font-bold ${verdict === "PASS" ? "text-emerald-300" : "text-red-300"}">${escapeHtml(verdict)}</span>. Lower ratio is better; a ratio above 1x means Perry is slower than V8.</p></div>${
+      rows.length
+        ? `<div class="grid grid-cols-2 gap-3 lg:col-span-3">${tile("Gap to target", gapNow === undefined ? "&mdash;" : fmtX(gapNow), "1.0x = every gated target met")}${deltaTile("Since last run", previous, "no earlier run")}${deltaTile("Since first run", first, "this is the first run")}${tile("Targets met", `${met} / ${targeted.length}`, "render is report only", met === targeted.length ? "text-emerald-300" : "text-red-300")}</div>`
+        : ""
+    }</div>${chips ? `<div class="mt-6 flex flex-wrap gap-2" aria-label="Change per metric since the previous run">${chips}</div>` : ""}${result.error ? `<pre class="mt-6 whitespace-pre-wrap rounded-lg bg-slate-950/60 p-4 text-sm text-red-300">Error: ${escapeHtml(result.error)}</pre>` : ""}</section>`,
+    '<h2 class="mb-4 mt-12 text-xl font-bold text-slate-100">Metrics and history</h2>',
+    `<div class="space-y-4">${cards}</div>`,
     stacks,
-    "</body></html>",
+    `<footer class="mt-12 border-t border-white/10 pt-6"><dl class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">${footerItem("Run time", result.time)}${footerItem("Git HEAD", result.head?.slice(0, 12) ?? "unknown", result.head)}${footerItem("Perry SHA-256", result.perrySha256?.slice(0, 12) ?? "unknown", result.perrySha256)}${footerItem("Load 1/5/15 min", result.load.map((value) => value.toFixed(2)).join(" / "))}${footerItem("Runs per arm", String(result.args?.runs ?? "unknown"))}${footerItem("Ledger rows", `${series.length} (${measured.length} measured)`)}</dl></footer>`,
+    "</main></body></html>",
     "",
   ].join("\n");
 }
