@@ -1,4 +1,7 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import { expect, it, vi } from "vitest";
@@ -41,8 +44,24 @@ it("drives core frames, input, timers and async mailbox observations through pla
       'import { createPerryPhysicsHost } from "./perry-physics.js";',
       'const createPerryPhysicsHost = () => ({ version: "0.30.0", createSimulation() {} });',
     );
-  const sandbox = { native, exports: {}, console } as unknown as {
+  const assets = mkdtempSync(join(tmpdir(), "perry-host-"));
+  mkdirSync(join(assets, "models"));
+  writeFileSync(join(assets, "models", "a b.json"), "{}");
+  const hostFetch = vi.fn(async () => new Response("net"));
+  const sandbox = {
+    native,
+    exports: {},
+    console,
+    require: createRequire(import.meta.url),
+    process: { env: { TN_ASSET_ROOT: `${assets}/` } },
+    fetch: hostFetch,
+    Response,
+    URL,
+    setTimeout,
+  } as unknown as {
+    fetch(url: string): Promise<Response>;
     exports: {
+      nextHostTurn(): Promise<void>;
       platform: {
         inputTarget: { addEventListener(type: string, callback: (event: unknown) => void): void };
       };
@@ -117,4 +136,12 @@ it("drives core frames, input, timers and async mailbox observations through pla
   expect(sandbox.exports.stepPlayer()).toBe(false);
   sandbox.exports.closePlayer();
   expect(native.playerClose).toHaveBeenCalledTimes(1);
+  // The game clock replaced setTimeout; the host turn still runs on the platform timer.
+  await sandbox.exports.nextHostTurn();
+  expect(await (await sandbox.fetch("/models/a%20b.json?v=1")).text()).toBe("{}");
+  expect(await (await sandbox.fetch("./models/a b.json")).text()).toBe("{}");
+  expect((await sandbox.fetch("models/missing.json")).status).toBe(404);
+  await expect(sandbox.fetch("../secret")).rejects.toThrow("TN_PERRY_ASSET_PATH");
+  expect(await (await sandbox.fetch("https://example.test/x")).text()).toBe("net");
+  expect(hostFetch).toHaveBeenCalledTimes(1);
 });

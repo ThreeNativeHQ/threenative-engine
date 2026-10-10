@@ -1,4 +1,5 @@
 /** Core's browser-service seams over the shared native player, with no DOM renderer. */
+import { existsSync, readFileSync } from "node:fs";
 import {
   alloc,
   free,
@@ -24,6 +25,9 @@ interface IBridge {
   [method: string]: ((argument?: unknown) => unknown) | undefined;
 }
 const globals = globalThis as unknown as Record<string, unknown>;
+// Perry's own timer, kept before the game clock replaces it: a step loop that awaits only
+// microtasks never lets Perry's event loop settle fetch or any other host I/O.
+const hostTimeout = globalThis.setTimeout;
 const frames = new Map<number, (time: number) => void>();
 const timers = new Map<number, ITimer>();
 const listeners = new Map<string, Set<(event: unknown) => void>>();
@@ -84,6 +88,26 @@ globals.setInterval = (callback: () => void, delay: number) => {
   return nextId;
 };
 globals.clearInterval = globals.clearTimeout;
+
+// Perry's fetch takes only absolute network URLs; a web game fetches its own files relative to
+// the page. Those resolve against the game's `public/` directory (TN_ASSET_ROOT overrides it), and
+// a missing file answers 404, as a static server would. A URL with a scheme keeps Perry's fetch.
+const hostFetch = globalThis.fetch;
+const assetRoot = (process.env.TN_ASSET_ROOT ?? "public").replace(/\/+$/, "");
+export function assetPath(url: string): string | undefined {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return undefined;
+  const path = decodeURIComponent(url.replace(/[?#].*$/, "")).replace(/^(\.?\/)+/, "");
+  if (path.split("/").includes(".."))
+    throw new Error(`TN_PERRY_ASSET_PATH: ${url} leaves the root`);
+  return `${assetRoot}/${path}`;
+}
+globals.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  const file = assetPath(url);
+  if (file === undefined) return hostFetch(input, init);
+  if (!existsSync(file)) return new Response(null, { status: 404, statusText: "Not Found" });
+  return new Response(readFileSync(file), { status: 200 });
+};
 
 // The mailbox retries a pending observation after Perry drains its promises between player steps.
 const observations = new Map<string, { answer?: string }>();
@@ -204,6 +228,10 @@ export function stepPlayer(): boolean {
   const result = playerStep();
   if (result < 0) throw new Error(`TN_PERRY_PLAYER_STEP_FAILED:${result}`);
   return result > 0;
+}
+/** One turn of Perry's event loop between player steps, so pending host I/O settles. */
+export function nextHostTurn(): Promise<void> {
+  return new Promise((resolve) => hostTimeout(() => resolve(), 0));
 }
 export function closePlayer(): void {
   playerClose();

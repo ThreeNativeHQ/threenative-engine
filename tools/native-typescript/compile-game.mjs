@@ -22,10 +22,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import {
   STRICT_FLAGS,
   buildStrict,
 } from "../../packages/runtime-native/scripts/package-strict.mjs";
+import { PERRY_TRANSPORT } from "./perry-facade.mjs";
 import { provision } from "./provision.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -203,6 +205,69 @@ async function perry() {
   };
 }
 
+// Pinned Perry compiles these free names to its own natives and ignores a reassignment on
+// globalThis, so perry-host's game clock and asset fetch would never reach core or the game.
+export const HOST_GLOBALS = [
+  "fetch",
+  "performance",
+  "setTimeout",
+  "clearTimeout",
+  "setInterval",
+  "clearInterval",
+];
+
+const LOCAL_BINDINGS = [
+  ts.isVariableDeclaration,
+  ts.isParameter,
+  ts.isFunctionDeclaration,
+  ts.isClassDeclaration,
+  ts.isBindingElement,
+  ts.isImportSpecifier,
+  ts.isImportClause,
+  ts.isNamespaceImport,
+];
+
+/** Rewrites each free reference to a host global as `globalThis.<name>`; returns the new text. */
+export function bindHostGlobals(source, fileName) {
+  const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const declared = new Set();
+  const references = [];
+  const visit = (node) => {
+    if (ts.isIdentifier(node) && HOST_GLOBALS.includes(node.text)) {
+      const parent = node.parent;
+      if (ts.isShorthandPropertyAssignment(parent)) references.push([node, `${node.text}: `]);
+      else if (parent.name === node || parent.propertyName === node) {
+        if (parent.name === node && LOCAL_BINDINGS.some((is) => is(parent)))
+          declared.add(node.text);
+      } else if (!(ts.isQualifiedName(parent) && parent.right === node))
+        references.push([node, ""]);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  // ponytail: any local binding of a name keeps the whole file on it; scope analysis if one mixes both.
+  let text = source;
+  for (const [node, prefix] of references.reverse()) {
+    if (declared.has(node.text)) continue;
+    const start = node.getStart(file);
+    text = `${text.slice(0, start)}${prefix}globalThis.${node.text}${text.slice(node.end)}`;
+  }
+  return text;
+}
+
+function bindStagedHostGlobals(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== "target" && entry.name !== PERRY_TRANSPORT) bindStagedHostGlobals(file);
+    } else if (/\.(?:[cm]?[jt]s|tsx)$/u.test(entry.name) && !entry.name.startsWith("perry-host.")) {
+      const source = fs.readFileSync(file, "utf8");
+      const bound = bindHostGlobals(source, file);
+      if (bound !== source) fs.writeFileSync(file, bound);
+    }
+  }
+}
+
 export async function compileGame({
   gameDir,
   entry = "src/game.ts",
@@ -231,12 +296,13 @@ export async function compileGame({
       errors: build.errors,
     };
   if (stageOnly) return { staged: outDir, errors: build.errors };
+  bindStagedHostGlobals(outDir);
   // The same driver scripts/bundle.mjs wraps around nativeEntry: the entry only exports the game.
   const driver = path.join(outDir, "tn-native-start.ts");
   const gameImport = `./${entry.replace(/\.ts$/u, ".js").split(path.sep).join("/")}`;
   fs.writeFileSync(
     driver,
-    `import { openPlayer, stepPlayer, closePlayer } from "./node_modules/three/engine/src/perry-host.js";
+    `import { openPlayer, stepPlayer, nextHostTurn, closePlayer } from "./node_modules/three/engine/src/perry-host.js";
 import game from ${JSON.stringify(gameImport)};
 openPlayer();
 let failed = false;
@@ -246,7 +312,7 @@ game.start().then(() => console.log("TN_NATIVE_START_READY"), (error: unknown) =
 });
 async function runPlayer() {
   try {
-    while (!failed && stepPlayer()) await Promise.resolve();
+    while (!failed && stepPlayer()) await nextHostTurn();
   } finally {
     console.error("TN_SHUTDOWN:game.stop");
     game.stop();

@@ -6,6 +6,7 @@ import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 // @ts-expect-error -- plain ESM with no type declarations.
 import {
   assertOutsideGameAndRepo,
+  bindHostGlobals,
   classifyPerryOutput,
   compareRuns,
   convertCheckScript,
@@ -160,5 +161,33 @@ describe("assertOutsideGameAndRepo", () => {
       /this checkout/u,
     );
     expect(() => assertOutsideGameAndRepo("/tmp/out", "/games/midway", "/repo")).not.toThrow();
+  });
+});
+
+describe("bindHostGlobals", () => {
+  it("routes free host globals through globalThis, where Perry honours the host's override", () => {
+    const source = [
+      "const t0 = performance.now();",
+      "const id: ReturnType<typeof setTimeout> = setTimeout(() => clearTimeout(id), 1);",
+      "const r = await fetch(url);",
+      "const o = { fetch, x: window.setTimeout, setInterval: 1 };",
+      "class C { fetch() {} }",
+    ].join("\n");
+    expect(bindHostGlobals(source, "a.ts")).toBe(
+      [
+        "const t0 = globalThis.performance.now();",
+        "const id: ReturnType<typeof globalThis.setTimeout> = globalThis.setTimeout(() => globalThis.clearTimeout(id), 1);",
+        "const r = await globalThis.fetch(url);",
+        "const o = { fetch: globalThis.fetch, x: window.setTimeout, setInterval: 1 };",
+        "class C { fetch() {} }",
+      ].join("\n"),
+    );
+  });
+
+  it("leaves a name the file binds itself", () => {
+    const source = "const fetch = (o: object) => o;\nfetch(this);\nsetTimeout(f);";
+    expect(bindHostGlobals(source, "b.ts")).toBe(
+      "const fetch = (o: object) => o;\nfetch(this);\nglobalThis.setTimeout(f);",
+    );
   });
 });
