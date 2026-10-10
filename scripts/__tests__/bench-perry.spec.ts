@@ -1,10 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   compareArms,
+  compareToIncumbent,
   ledgerLine,
+  loadIncumbent,
   parseBenchArgs,
   parseLedger,
   parsePerfSelf,
@@ -191,6 +193,103 @@ describe("Perry native benchmark", () => {
     expect(html).toContain('data-trend="regressed"');
     expect(html).toContain("+102%");
     expect(html).not.toMatch(/fps/i);
+  });
+  it("gates a candidate against the incumbent: REGRESSED exits 3, within margin is SAME, missing throws", async () => {
+    const temp = await mkdtemp(path.join(tmpdir(), "bench-perry-incumbent-"));
+    await writeFile(path.join(temp, "game"), "binary");
+    await writeFile(path.join(temp, "game.js"), "bundle");
+    await mkdir(path.join(temp, "native"));
+    await writeFile(path.join(temp, "native/assets.tnpk"), "assets");
+    await writeFile(path.join(temp, "scenario.json"), JSON.stringify({ assert: {} }));
+    let launches = 0;
+    const execute = async (command: string, args: string[]) => {
+      if (command === "git") return { code: 0, stdout: "head", stderr: "" };
+      launches++;
+      const artifacts = args[args.indexOf("--artifacts") + 1] ?? "";
+      await mkdir(artifacts, { recursive: true });
+      const text = markers(path.basename(artifacts).startsWith("perry") ? 0.3 : 1);
+      await writeFile(
+        path.join(artifacts, "console.json"),
+        JSON.stringify(text.split("\n").map((line) => ({ text: line }))),
+      );
+      return { code: 0, stdout: "{}", stderr: "" };
+    };
+    // The candidate ratio is 0.3 on every metric.
+    const incumbentDir = async (name: string, ratio: number, runs = 1) => {
+      const dir = path.join(temp, name);
+      await mkdir(dir);
+      const arms = { perry: [] as unknown[], v8: [] as unknown[] };
+      for (let i = 0; i < runs; i++) {
+        // Per-run ratios ratio*(0.9, 1.1, 1.0...) widen the margin to 2x the largest deviation.
+        arms.perry.push(measurement(0.3 * (i === 0 ? 1 : 1.5)));
+        arms.v8.push(measurement());
+      }
+      const comparison = compareArms({ perry: [measurement(ratio)], v8: [measurement()] });
+      await writeFile(path.join(dir, "result.json"), JSON.stringify({ comparison, arms }));
+      return dir;
+    };
+    const argv = (incumbent?: string) => [
+      "--project",
+      temp,
+      "--scenario",
+      "scenario.json",
+      "--perry",
+      path.join(temp, "game"),
+      "--v8-bundle",
+      temp,
+      "--runs",
+      "1",
+      ...(incumbent ? ["--incumbent", incumbent] : []),
+    ];
+    const out = path.join(temp, "artifacts");
+    try {
+      const better = await incumbentDir("better", 0.1);
+      expect(await runBench(argv(better), execute, out)).toBe(3);
+      const index = await readFile(path.join(out, "index.html"), "utf8");
+      expect(index).toContain("REGRESSION vs incumbent");
+      expect(index).toContain("do not commit");
+      expect(index).toContain('data-incumbent="REGRESSED"');
+      const ledger = await readFile(path.join(out, "ledger.tsv"), "utf8");
+      expect(ledger.trim().split("\n").at(-1)).toMatch(/\tREGRESSION$/);
+      const dirs = (await readdir(out)).filter((name) => name.startsWith("20")).sort();
+      const result = JSON.parse(
+        await readFile(path.join(out, dirs.at(-1) ?? "", "result.json"), "utf8"),
+      );
+      expect(result.regression.verdict).toBe("REGRESSION");
+      const first = result.regression.rows[0];
+      expect(first).toMatchObject({ metric: "firstFrameMs", margin: 0.03, verdict: "REGRESSED" });
+      expect(first.incumbent).toBeCloseTo(0.1, 6);
+
+      // 0.305 -> 0.3 is inside the 3% margin: SAME, exit follows the V8 verdict (PASS = 0).
+      const same = await incumbentDir("same", 0.305);
+      expect(await runBench(argv(same), execute, out)).toBe(0);
+      const sameDirs = (await readdir(out)).filter((name) => name.startsWith("20")).sort();
+      const sameResult = JSON.parse(
+        await readFile(path.join(out, sameDirs.at(-1) ?? "", "result.json"), "utf8"),
+      );
+      expect(sameResult.regression.verdict).toBe("OK");
+      expect(
+        sameResult.regression.rows.every((row: { verdict: string }) => row.verdict === "SAME"),
+      ).toBe(true);
+
+      // A noisy incumbent (per-run ratios 0.3 and 0.45) widens the margin to 2 x 20% = 40%.
+      const noisy = compareToIncumbent(
+        compareArms({ perry: [measurement(0.3)], v8: [measurement()] }),
+        await loadIncumbent(await incumbentDir("noisy", 0.25, 2)),
+      );
+      expect(noisy.rows[0]?.margin).toBeCloseTo(0.4, 5);
+      expect(noisy.rows[0]?.verdict).toBe("SAME");
+
+      // Fail closed: a missing incumbent throws, and the bench measures nothing.
+      await expect(loadIncumbent(path.join(temp, "missing"))).rejects.toThrow(
+        "Cannot read incumbent",
+      );
+      const before = launches;
+      expect(await runBench(argv(path.join(temp, "missing")), execute, out)).toBe(2);
+      expect(launches).toBe(before);
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
   });
   it("runs the consumer P,V,P,V and returns 2 on a missing metric or crashed journey", async () => {
     const temp = await mkdtemp(path.join(tmpdir(), "bench-perry-spec-"));

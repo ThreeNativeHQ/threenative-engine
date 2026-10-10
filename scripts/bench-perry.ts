@@ -25,6 +25,7 @@ export interface IBenchArgs {
   runs: number;
   perf: boolean;
   open: boolean;
+  incumbent?: string;
 }
 export interface IMeasurement {
   firstFrameMs: number;
@@ -79,7 +80,10 @@ export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
       open = true;
       continue;
     }
-    if (!flag || !["--project", "--scenario", "--perry", "--v8-bundle", "--runs"].includes(flag))
+    if (
+      !flag ||
+      !["--project", "--scenario", "--perry", "--v8-bundle", "--runs", "--incumbent"].includes(flag)
+    )
       throw new Error(`Unknown argument: ${flag}`);
     const value = argv[++i];
     if (!value || value.startsWith("--") || values.has(flag)) throw new Error(`Invalid ${flag}`);
@@ -98,6 +102,9 @@ export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
     runs,
     perf,
     open,
+    incumbent: values.has("--incumbent")
+      ? path.resolve(values.get("--incumbent") ?? "")
+      : undefined,
     scenario: path.resolve(project, values.get("--scenario") ?? "playtests/play.playtest.json"),
     v8Bundle: path.resolve(
       values.get("--v8-bundle") ??
@@ -186,11 +193,87 @@ export function compareArms(arms: Record<Arm, IMeasurement[]>) {
   };
 }
 
+export interface IRegressionRow {
+  metric: string;
+  incumbent: number;
+  candidate: number;
+  margin: number;
+  verdict: "IMPROVED" | "SAME" | "REGRESSED";
+}
+export interface IRegression {
+  incumbent: string;
+  verdict: "REGRESSION" | "OK";
+  rows: IRegressionRow[];
+}
+export interface IIncumbent {
+  dir: string;
+  ratios: Record<string, number>;
+  arms?: Partial<Record<Arm, IMeasurement[]>>;
+}
+
+/** Fail closed: the accepted run must have a readable result.json with a ratio for every metric. */
+export async function loadIncumbent(dir: string): Promise<IIncumbent> {
+  const file = path.join(dir, "result.json");
+  let parsed: {
+    comparison?: { rows?: Array<{ metric?: string; ratio?: number }> };
+    arms?: IIncumbent["arms"];
+  };
+  try {
+    parsed = JSON.parse(await readFile(file, "utf8"));
+  } catch (error) {
+    throw new Error(`Cannot read incumbent ${file}: ${(error as Error).message}`);
+  }
+  const ratios: Record<string, number> = {};
+  for (const row of parsed.comparison?.rows ?? []) {
+    if (row.metric && typeof row.ratio === "number" && Number.isFinite(row.ratio) && row.ratio > 0)
+      ratios[row.metric] = row.ratio;
+  }
+  for (const metric of Object.keys(metrics))
+    if (ratios[metric] === undefined) throw new Error(`Incumbent ${file} has no ${metric} ratio`);
+  return { dir, ratios, arms: parsed.arms };
+}
+
+/**
+ * Regression = candidate ratio > incumbent ratio * (1 + margin); margin = max(3%, 2x the largest
+ * relative deviation of the incumbent's per-run Perry/V8 ratios from their median; 3% for one run).
+ */
+export function compareToIncumbent(
+  candidate: ReturnType<typeof compareArms>,
+  incumbent: IIncumbent,
+): IRegression {
+  const rows = candidate.rows.map((row): IRegressionRow => {
+    const before = incumbent.ratios[row.metric] ?? Number.NaN;
+    const perry = incumbent.arms?.perry ?? [];
+    const v8 = incumbent.arms?.v8 ?? [];
+    const runs = perry.length === v8.length ? perry.length : 0;
+    const perRun = Array.from(
+      { length: runs },
+      (_, i) => Number(perry[i]?.[row.metric as Metric]) / Number(v8[i]?.[row.metric as Metric]),
+    ).filter((ratio) => Number.isFinite(ratio) && ratio > 0);
+    const center = perRun.length > 1 ? median(perRun) : 0;
+    const spread = perRun.length > 1 ? Math.max(...perRun.map((r) => Math.abs(r / center - 1))) : 0;
+    const margin = Math.max(0.03, 2 * spread);
+    const verdict =
+      row.ratio > before * (1 + margin)
+        ? "REGRESSED"
+        : row.ratio < before * (1 - margin)
+          ? "IMPROVED"
+          : "SAME";
+    return { metric: row.metric, incumbent: before, candidate: row.ratio, margin, verdict };
+  });
+  return {
+    incumbent: incumbent.dir,
+    verdict: rows.some((row) => row.verdict === "REGRESSED") ? "REGRESSION" : "OK",
+    rows,
+  };
+}
+
 export function ledgerLine(
   time: string,
   head: string,
   hash: string,
   comparison?: ReturnType<typeof compareArms>,
+  verdict?: string,
 ): string {
   return `${[
     time,
@@ -199,7 +282,7 @@ export function ledgerLine(
     ...(Object.keys(metrics) as Metric[]).map(
       (metric) => comparison?.rows.find((row) => row.metric === metric)?.ratio.toFixed(6) ?? "NA",
     ),
-    comparison?.verdict ?? "MEASUREMENT_FAILURE",
+    verdict ?? comparison?.verdict ?? "MEASUREMENT_FAILURE",
   ].join("\t")}\n`;
 }
 
@@ -227,6 +310,7 @@ export function reportMarkdown(result: {
   error?: string;
   arms?: Record<Arm, IMeasurement[]>;
   stacks?: Partial<Record<Arm, ReturnType<typeof parsePerfSelf>>>;
+  regression?: IRegression;
 }): string {
   const lines = [
     `# Perry vs V8 — ${result.time}`,
@@ -245,6 +329,10 @@ export function reportMarkdown(result: {
     );
   }
   lines.push("", `Verdict: ${result.error ? "MEASUREMENT_FAILURE" : result.comparison?.verdict}`);
+  if (result.regression)
+    lines.push(
+      `Regression vs incumbent ${result.regression.incumbent}: ${result.regression.verdict}${result.regression.verdict === "REGRESSION" ? " (do not commit)" : ""}. ${result.regression.rows.map((row) => `${row.metric} ${row.verdict}`).join(", ")}.`,
+    );
   if (result.arms?.perry.length && result.arms.v8.length) {
     const calls = (arm: Arm) => {
       const values = result.arms?.[arm].map((run) => run.bridgeCalls) ?? [];
@@ -486,6 +574,7 @@ export function reportHtml(result: {
   stacks?: Partial<Record<Arm, ReturnType<typeof parsePerfSelf>>>;
   ledger?: readonly ILedgerRow[];
   args?: { runs: number };
+  regression?: IRegression;
 }): string {
   const names = Object.keys(metrics) as Metric[];
   const rows = result.error ? [] : (result.comparison?.rows ?? []);
@@ -521,6 +610,7 @@ export function reportHtml(result: {
   const gapNow = current ? gap(current.ratios) : undefined;
   const sinceLast =
     gapNow !== undefined && previous ? trendOf(gapNow, gap(previous.ratios)) : undefined;
+  const regressed = result.regression?.rows.filter((row) => row.verdict === "REGRESSED") ?? [];
   const hero = result.error
     ? {
         key: "failed",
@@ -529,52 +619,62 @@ export function reportHtml(result: {
         ring: "from-red-500/25 border-red-500/50",
         text: "text-red-300",
       }
-    : verdict === "PASS" && sinceLast !== "regressed"
+    : regressed.length
       ? {
-          key: "on-target",
-          word: "ON TARGET",
-          icon: "&#10003;",
-          ring: "from-emerald-500/25 border-emerald-500/50",
-          text: "text-emerald-300",
+          key: "regression",
+          word: "REGRESSION",
+          icon: "&#9650;",
+          ring: "from-red-500/25 border-red-500/50",
+          text: "text-red-300",
         }
-      : sinceLast === "improving"
+      : verdict === "PASS" && sinceLast !== "regressed"
         ? {
-            key: "improving",
-            word: "IMPROVING",
-            icon: "&#9660;",
+            key: "on-target",
+            word: "ON TARGET",
+            icon: "&#10003;",
             ring: "from-emerald-500/25 border-emerald-500/50",
             text: "text-emerald-300",
           }
-        : sinceLast === "regressed"
+        : sinceLast === "improving"
           ? {
-              key: "regressed",
-              word: "REGRESSED",
-              icon: "&#9650;",
-              ring: "from-red-500/25 border-red-500/50",
-              text: "text-red-300",
+              key: "improving",
+              word: "IMPROVING",
+              icon: "&#9660;",
+              ring: "from-emerald-500/25 border-emerald-500/50",
+              text: "text-emerald-300",
             }
-          : sinceLast === "flat"
+          : sinceLast === "regressed"
             ? {
-                key: "flat",
-                word: "HOLDING",
-                icon: "&#9644;",
-                ring: "from-slate-500/25 border-slate-500/50",
-                text: "text-slate-200",
+                key: "regressed",
+                word: "REGRESSED",
+                icon: "&#9650;",
+                ring: "from-red-500/25 border-red-500/50",
+                text: "text-red-300",
               }
-            : {
-                key: "baseline",
-                word: "BASELINE",
-                icon: "&#9679;",
-                ring: "from-sky-500/25 border-sky-500/50",
-                text: "text-sky-300",
-              };
-  const sentence = result.error
-    ? "No ratios this run. The ledger records a failure and the charts below mark it."
-    : gapNow === undefined
-      ? ""
-      : sinceLast && previous
-        ? `Gap to target ${sinceLast === "flat" ? "is unchanged" : `${sinceLast === "improving" ? "shrank" : "grew"} ${pct(gapNow, gap(previous.ratios)).replace(/^[+-]/, "")}`} since the previous run.`
-        : "First measured run. The next run shows the trend against it.";
+            : sinceLast === "flat"
+              ? {
+                  key: "flat",
+                  word: "HOLDING",
+                  icon: "&#9644;",
+                  ring: "from-slate-500/25 border-slate-500/50",
+                  text: "text-slate-200",
+                }
+              : {
+                  key: "baseline",
+                  word: "BASELINE",
+                  icon: "&#9679;",
+                  ring: "from-sky-500/25 border-sky-500/50",
+                  text: "text-sky-300",
+                };
+  const sentence = regressed.length
+    ? "Worse than the accepted incumbent on the metrics named above. Do not commit this candidate."
+    : result.error
+      ? "No ratios this run. The ledger records a failure and the charts below mark it."
+      : gapNow === undefined
+        ? ""
+        : sinceLast && previous
+          ? `Gap to target ${sinceLast === "flat" ? "is unchanged" : `${sinceLast === "improving" ? "shrank" : "grew"} ${pct(gapNow, gap(previous.ratios)).replace(/^[+-]/, "")}`} since the previous run.`
+          : "First measured run. The next run shows the trend against it.";
   const tile = (title: string, value: string, note: string, tone = "text-slate-100") =>
     `<div class="rounded-xl border border-white/10 bg-slate-950/40 p-4"><div class="text-xs uppercase tracking-wide text-slate-400">${title}</div><div class="mt-1 text-3xl font-bold tabular-nums ${tone}">${value}</div><div class="mt-1 text-xs text-slate-400">${note}</div></div>`;
   const deltaTile = (title: string, base: ILedgerRow | undefined, empty: string) => {
@@ -633,6 +733,22 @@ export function reportHtml(result: {
         const trend = trendOf(row.ratio, base);
         return `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ${TREND_CHIP[trend]}">${ARROW[trend]} ${pct(row.ratio, base)} <span class="font-normal opacity-70">${title}</span></span>`;
       };
+      const incumbentChip = (metric: Metric) => {
+        const entry = result.regression?.rows.find((candidate) => candidate.metric === metric);
+        if (!entry) return "";
+        const change = pct(entry.candidate, entry.incumbent);
+        const style = {
+          REGRESSED: TREND_CHIP.regressed,
+          IMPROVED: TREND_CHIP.improving,
+          SAME: TREND_CHIP.flat,
+        }[entry.verdict];
+        const text = {
+          REGRESSED: `${change} REGRESSED`,
+          IMPROVED: `${change} improved`,
+          SAME: `${change} same`,
+        }[entry.verdict];
+        return `<span data-incumbent="${entry.verdict}" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ${style}">vs incumbent ${text}</span>`;
+      };
       const goal = row?.target ?? 1;
       const distance = !row
         ? ""
@@ -646,7 +762,7 @@ export function reportHtml(result: {
       const left = row
         ? `<div class="flex items-start justify-between gap-3"><div><h3 class="text-lg font-semibold text-slate-100">${LABEL[name]}</h3><div class="font-mono text-xs text-slate-500">${name}</div></div><span data-verdict="${row.verdict}" class="verdict ${row.verdict.toLowerCase()} rounded-md border px-2 py-1 text-xs font-bold tracking-wide ${tone.box} ${tone.text}">${row.verdict}${status === "improving" ? " &middot; IMPROVING" : ""}</span></div>
 <div class="mt-4 flex flex-wrap items-end gap-x-3 gap-y-1"><span class="text-5xl font-extrabold tabular-nums ${tone.text}">${fmtX(row.ratio)}</span><span class="pb-2 text-sm text-slate-400">${row.target === null ? "report only, V8 parity 1x" : `target &le; ${row.target}x`}</span></div>
-<div class="mt-2 flex flex-wrap gap-2">${delta("vs last", before)}${delta("vs first", start)}</div>
+<div class="mt-2 flex flex-wrap gap-2">${delta("vs last", before)}${delta("vs first", start)}${incumbentChip(name)}</div>
 <p class="mt-3 text-sm ${tone.text}">${distance}</p>
 ${gaugeHtml(row, before, domain, tone.hex)}
 <div class="space-y-1 text-sm">${ms("perry", "bg-sky-400")}${ms("v8", "bg-violet-400")}</div>`
@@ -674,6 +790,9 @@ ${gaugeHtml(row, before, domain, tone.hex)}
     "<style>body{background:#020617;color:#e2e8f0;font-family:system-ui,sans-serif}</style>",
     `<script src="${CDN}"></script></head>`,
     '<body class="min-h-screen bg-slate-950 text-slate-200 antialiased"><main class="mx-auto max-w-7xl px-4 py-8 sm:px-6">',
+    regressed.length
+      ? `<div role="alert" data-regression="true" class="mb-4 rounded-2xl border-2 border-red-500 bg-red-600/20 p-4 text-red-100 shadow-xl"><div class="text-xl font-black tracking-tight sm:text-2xl">&#9650; REGRESSION vs incumbent &mdash; do not commit</div><p class="mt-1 text-sm">Worse than the accepted run by more than the margin: ${regressed.map((row) => `<b>${LABEL[row.metric as Metric] ?? escapeHtml(row.metric)}</b> ${pct(row.candidate, row.incumbent)} (${fmtX(row.incumbent)} &rarr; ${fmtX(row.candidate)}, margin ${Math.round(row.margin * 100)}%)`).join("; ")}. Fix the cause and bench again.</p></div>`
+      : "",
     `<div class="mb-4 flex flex-wrap items-baseline justify-between gap-2"><h1 class="text-lg font-semibold text-slate-300">Perry <span class="text-slate-500">vs</span> V8</h1><span class="font-mono text-sm text-slate-500">${escapeHtml(result.time)}</span></div>`,
     `<section data-trend="${hero.key}" class="rounded-3xl border bg-gradient-to-br ${hero.ring} to-slate-900/60 p-6 shadow-2xl sm:p-8"><div class="grid gap-8 lg:grid-cols-5"><div class="lg:col-span-2"><div class="flex items-center gap-4"><span class="text-5xl ${hero.text}">${hero.icon}</span><h2 class="text-4xl font-black tracking-tight sm:text-5xl ${hero.text}">${hero.word}</h2></div><p class="mt-4 text-lg text-slate-200">${sentence}</p><p class="mt-2 text-sm text-slate-400">Verdict <span class="font-bold ${verdict === "PASS" ? "text-emerald-300" : "text-red-300"}">${escapeHtml(verdict)}</span>. Lower ratio is better; a ratio above 1x means Perry is slower than V8.</p></div>${
       rows.length
@@ -730,6 +849,7 @@ export async function runBench(
     head: string;
     perrySha256: string;
     args?: IBenchArgs;
+    regression?: IRegression;
     arms: typeof arms;
     comparison?: ReturnType<typeof compareArms>;
     error?: string;
@@ -738,6 +858,8 @@ export async function runBench(
   try {
     const args = parseBenchArgs(argv);
     result.args = args;
+    // Fail before any measurement when the accepted run cannot be read.
+    const incumbent = args.incumbent ? await loadIncumbent(args.incumbent) : undefined;
     const head = await execute("git", ["rev-parse", "HEAD"], root);
     if (head.code !== 0) throw new Error("Cannot read git HEAD");
     result.head = head.stdout.trim();
@@ -870,6 +992,7 @@ export async function runBench(
       await measure("v8", i + 1, false);
     }
     result.comparison = compareArms(arms);
+    if (incumbent) result.regression = compareToIncumbent(result.comparison, incumbent);
     if (args.perf) {
       await measure("perry", 1, true);
       await measure("v8", 1, true);
@@ -880,7 +1003,13 @@ export async function runBench(
   const ledgerPath = path.join(outputRoot, "ledger.tsv");
   await appendFile(
     ledgerPath,
-    ledgerLine(time, result.head, result.perrySha256, result.error ? undefined : result.comparison),
+    ledgerLine(
+      time,
+      result.head,
+      result.perrySha256,
+      result.error ? undefined : result.comparison,
+      result.regression?.verdict === "REGRESSION" ? "REGRESSION" : undefined,
+    ),
   );
   const ledger = parseLedger(await readFile(ledgerPath, "utf8").catch(() => ""));
   const html = reportHtml({ ...result, ledger });
@@ -891,7 +1020,8 @@ export async function runBench(
   await writeFile(path.join(outputRoot, "index.html"), html);
   if (result.args?.open && !process.env.CI) openReport(reportPath);
   process.stdout.write(`${path.join(directory, "report.md")}\n`);
-  return result.error ? 2 : (result.comparison?.exitCode ?? 2);
+  if (result.error) return 2;
+  return result.regression?.verdict === "REGRESSION" ? 3 : (result.comparison?.exitCode ?? 2);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
