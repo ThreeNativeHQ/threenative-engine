@@ -39,6 +39,7 @@ BufferError BufferStore::validate(uint64_t byteOffset, uint64_t byteLength, uint
 BufferError BufferStore::write(uint64_t byteOffset, const void* source, uint64_t byteLength) {
     const BufferError error = validate(byteOffset, byteLength);
     if (error != BufferError::None) return error;
+    pull();
     ++writes_;
     if (byteLength > 0) std::memcpy(bytes_.data() + byteOffset, source, byteLength);
     return BufferError::None;
@@ -47,6 +48,7 @@ BufferError BufferStore::write(uint64_t byteOffset, const void* source, uint64_t
 BufferError BufferStore::read(uint64_t byteOffset, void* destination, uint64_t byteLength) const {
     const BufferError error = validate(byteOffset, byteLength);
     if (error != BufferError::None) return error;
+    pull();
     if (byteLength > 0) std::memcpy(destination, bytes_.data() + byteOffset, byteLength);
     return BufferError::None;
 }
@@ -60,6 +62,7 @@ bool BufferStore::resize(uint64_t count) {
     const uint64_t size = scalarSize(scalar_);
     const uint64_t bytes = count <= std::numeric_limits<uint64_t>::max() / size ? count * size : 0;
     if (bytes == bytes_.size()) return true;
+    pull();
     // A fresh allocation every time, so the storage really moves and stale readers are caught.
     std::vector<std::byte> next(bytes);
     // memcpy with a null pointer is undefined even for zero bytes, and empty storage has none.

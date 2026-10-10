@@ -2,7 +2,9 @@
 #include "engine/foundation/buffers.h"
 
 #include <cstdint>
+#include <cstring>
 #include <limits>
+#include <utility>
 
 using namespace tn::engine;
 
@@ -110,6 +112,52 @@ void writes() {
     CHECK(store.writes() > start + 2);
 }
 
+int pulls = 0;
+int forgets = 0;
+
+// A deferred store pulls the back end's copy once, before it next reads or writes its bytes, and
+// leaves its write count; a store that dies deferred tells the back end to forget it.
+void deferred() {
+    BufferStore::pullHook = [](const BufferStore&, std::byte* data) {
+        ++pulls;
+        const float pulled[2] = {7, 8};
+        std::memcpy(data, pulled, sizeof pulled);
+    };
+    BufferStore::forgetHook = [](const BufferStore&) { ++forgets; };
+    {
+        BufferStore store(Scalar::F32, 2);
+        const uint64_t start = store.writes();
+        store.defer();
+        CHECK(pulls == 0);
+        float value = 0;
+        CHECK(store.read(4, &value, 4) == BufferError::None);
+        CHECK(pulls == 1 && value == 8 && store.writes() == start);
+        CHECK(std::as_const(store).data() != nullptr);
+        CHECK(pulls == 1);
+        store.defer();
+        value = 5;
+        CHECK(store.write(0, &value, 4) == BufferError::None);
+        CHECK(pulls == 2);
+        CHECK(store.read(0, &value, 4) == BufferError::None && value == 5);
+        store.defer();
+        CHECK(store.resize(4));
+        CHECK(pulls == 3);
+        CHECK(store.read(4, &value, 4) == BufferError::None && value == 8);
+        store.defer();
+        CHECK(store.data() != nullptr);
+        CHECK(pulls == 4);
+    }
+    CHECK(forgets == 0);
+    {
+        BufferStore store(Scalar::F32, 2);
+        store.defer();
+    }
+    CHECK(forgets == 1 && pulls == 4);
+    BufferStore::pullHook = nullptr;
+    BufferStore::forgetHook = nullptr;
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"range", range}, {"lease", lease}, {"views", views}, {"view_regrowth", viewRegrowth}, {"writes", writes})
+TN_TEST_MAIN({"range", range}, {"lease", lease}, {"views", views}, {"view_regrowth", viewRegrowth}, {"writes", writes},
+             {"deferred", deferred})

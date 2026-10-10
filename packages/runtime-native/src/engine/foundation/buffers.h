@@ -32,6 +32,18 @@ struct UpdateRange {
 class BufferStore : public std::enable_shared_from_this<BufferStore> {
 public:
     BufferStore(Scalar scalar, uint64_t count);
+    ~BufferStore() {
+        if (deferred_ && forgetHook != nullptr) forgetHook(*this);
+    }
+
+    /**
+     * A back end that keeps its own copy of the bytes and defers writing it (the Wasm JS mirror of
+     * `attribute.array`) sets these: `pull` fills `data` before the store next reads or writes its
+     * bytes, and `forget` drops a deferral the store dies with. A pull leaves the write count.
+     */
+    static inline void (*pullHook)(const BufferStore& store, std::byte* data) = nullptr;
+    static inline void (*forgetHook)(const BufferStore& store) = nullptr;
+    void defer() { deferred_ = pullHook != nullptr; }
 
     /** Accepts a byte window and element stride only if both fit the storage and the scalar type. */
     BufferError validate(uint64_t byteOffset, uint64_t byteLength, uint64_t byteStride = 0) const;
@@ -62,18 +74,29 @@ public:
     /** Moves on every `write`, resize and mutable `data()`: a JS copy of the bytes is current while it holds. */
     uint64_t writes() const { return writes_; }
     std::byte* data() {
+        pull();
         ++writes_;
         return bytes_.data();
     }
-    const std::byte* data() const { return bytes_.data(); }
+    const std::byte* data() const {
+        pull();
+        return bytes_.data();
+    }
 
 private:
+    void pull() const {
+        if (!deferred_) return;
+        deferred_ = false;
+        pullHook(*this, const_cast<std::byte*>(bytes_.data()));  // the bytes are the pulled value
+    }
+
     Scalar scalar_;
     std::vector<std::byte> bytes_;
     uint64_t epoch_ = 0;
     uint64_t writes_ = 0;
     uint64_t pendingCount_ = 0;
     bool resizePending_ = false;
+    mutable bool deferred_ = false;
     uint32_t leases_ = 0;
     uint32_t version_ = 0;
     uint32_t gpuReleases_ = 0;

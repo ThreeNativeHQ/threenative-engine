@@ -344,7 +344,7 @@ describe("three's math values on the browser back end", () => {
       attributeArray: () => {
         throw new Error("an adopted array is read in place");
       },
-      attributeWrite: () => undefined,
+      attributeDefer: () => undefined,
     });
     type Attribute = {
       getX(i: number): number;
@@ -380,12 +380,16 @@ describe("three's math values on the browser back end", () => {
     let writes = 0;
     let engineWrites = false;
     const copies: string[] = [];
+    let take: (() => ArrayLike<number>) | undefined;
     const { classes } = defineBrowserClasses(registry, {
       ...runtime,
       construct: (name) => ({ key: name, type: runtime.typeId(name) }),
       get: () => [1, 3, 0, 1015],
       invoke: () => {
         if (engineWrites) {
+          // The engine pulls the deferred JS copy before it writes; the pull leaves the count.
+          data.set(take?.() ?? []);
+          take = undefined;
           data[0] = 7;
           writes++;
         }
@@ -395,8 +399,9 @@ describe("three's math values on the browser back end", () => {
         copies.push(self.key);
         return data.slice();
       },
-      // The JS copy going back is not an engine write: it leaves the count.
-      attributeWrite: (_self, array) => data.set(array),
+      attributeDefer: (_self, pull) => {
+        take = pull;
+      },
       attributeWrites: () => writes,
     });
     const attribute = new (
@@ -413,6 +418,50 @@ describe("three's math values on the browser back end", () => {
     geometry.translate(1);
     expect(attribute.array).toBe(array);
     expect([[...array], copies.length]).toEqual([[7, 2, 3], 2]);
+  });
+
+  it("writes the game's array into the attribute only when the engine pulls it", () => {
+    const { runtime } = memoryRuntime();
+    const takes: (() => Float32Array)[] = [];
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      construct: (name) => ({ key: name, type: runtime.typeId(name) }),
+      get: () => [2, 2, 0, 1015],
+      invoke: () => null,
+      attributeArray: () => {
+        throw new Error("an adopted array is read in place");
+      },
+      attributeDefer: (_self, take) => {
+        takes.push(take as () => Float32Array);
+      },
+      attributeWrites: () => 0,
+    });
+    type Attribute = {
+      array: Float32Array;
+      setX(i: number, x: number): void;
+      needsUpdate: boolean;
+    };
+    const handed = new Float32Array([1, 2, 3, 4]);
+    const attribute = new (
+      classes.BufferAttribute as new (
+        array: Float32Array,
+        itemSize: number,
+      ) => Attribute
+    )(handed, 2);
+    const geometry = new (classes.BufferGeometry as new () => { translate(x: number): void })();
+    // Reads, element writes and engine calls before the pull defer once: nothing crosses.
+    attribute.array[0] = 5;
+    attribute.setX(1, 6);
+    geometry.translate(1);
+    geometry.translate(1);
+    expect(takes.length).toBe(1);
+    expect([...(takes[0]?.() ?? [])]).toEqual([5, 2, 6, 4]);
+    // After the pull, the next hand-out or needsUpdate defers again.
+    expect(attribute.array).toBe(handed);
+    expect(takes.length).toBe(2);
+    takes[1]?.();
+    attribute.needsUpdate = true;
+    expect(takes.length).toBe(3);
   });
 
   it("answers a geometry's attributes, names and shapes with one engine call", () => {

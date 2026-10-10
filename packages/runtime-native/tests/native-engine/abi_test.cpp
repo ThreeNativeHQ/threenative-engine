@@ -19,6 +19,7 @@
 
 extern "C" uintptr_t tnw_attribute_view(const tn_handle_t* attribute, uint64_t* out);
 extern "C" void tnw_attribute_view_release(uintptr_t lease);
+extern "C" uintptr_t tnw_attribute_defer(const tn_handle_t* attribute, uintptr_t pull, uintptr_t forget);
 
 namespace {
 
@@ -1135,8 +1136,48 @@ void attribute_view_writes() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+std::vector<uintptr_t> pulled;
+std::vector<uintptr_t> forgotten;
+
+// The Wasm back end defers writing its copy of an attribute's array: the store calls the pull
+// trampoline with the key, data, count and Scalar before the engine next reads it, and the forget
+// trampoline when it dies still deferred.
+void attribute_defer() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t attribute{};
+    const float positions[3] = {1, 2, 3};
+    const tn_value_t f32[2] = {bytes("Float32Array", positions, 3), num(3)};
+    CHECK(tn_construct(ctx, "BufferAttribute", f32, 2, &attribute, &d.value) == TN_OK);
+    void (*pull)(uintptr_t, uintptr_t, uint32_t, uint32_t) = [](uintptr_t key, uintptr_t data, uint32_t count,
+                                                                  uint32_t scalar) {
+        CHECK(count == 3 && scalar == 0);
+        reinterpret_cast<float*>(data)[2] = 9;
+        pulled.push_back(key);
+    };
+    void (*forget)(uintptr_t) = [](uintptr_t key) { forgotten.push_back(key); };
+    const uintptr_t key =
+        tnw_attribute_defer(&attribute, reinterpret_cast<uintptr_t>(pull), reinterpret_cast<uintptr_t>(forget));
+    CHECK(key != 0 && pulled.empty());
+    CHECK(numbersOf(attribute, "array", d) == (std::vector<double>{1, 2, 9}));
+    CHECK(pulled == std::vector<uintptr_t>{key});
+    CHECK(numbersOf(attribute, "array", d) == (std::vector<double>{1, 2, 9}));
+    CHECK(pulled.size() == 1);
+    CHECK(tnw_attribute_defer(&attribute, reinterpret_cast<uintptr_t>(pull), reinterpret_cast<uintptr_t>(forget)) ==
+          key);
+    CHECK(tn_object_release(attribute, &d.value) == TN_OK);
+    CHECK(forgotten == std::vector<uintptr_t>{key} && pulled.size() == 1);
+    tn_handle_t scene{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tnw_attribute_defer(&scene, reinterpret_cast<uintptr_t>(pull), reinterpret_cast<uintptr_t>(forget)) == 0);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"attribute_view_writes", attribute_view_writes})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"attribute_view_writes", attribute_view_writes},
+             {"attribute_defer", attribute_defer})

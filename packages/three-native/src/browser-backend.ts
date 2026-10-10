@@ -76,9 +76,12 @@ export interface IBrowserRuntime {
   readByte?(address: number): number;
   /** A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it. */
   attributeArray?(self: IEngineRef): TypedArray;
-  /** Writes `array` into the attribute's data; present with attributeArray. */
-  attributeWrite?(self: IEngineRef, array: TypedArray): void;
-  /** The count of engine writes to the attribute's data; attributeWrite leaves it. */
+  /**
+   * Defers writing the game's copy of the attribute's data: the engine calls `take` and writes what
+   * it answers before it next reads or writes that data. Present with attributeArray.
+   */
+  attributeDefer?(self: IEngineRef, take: () => TypedArray): void;
+  /** The count of engine writes to the attribute's data; a deferred write leaves it. */
   attributeWrites?(self: IEngineRef): number;
   /** Sets (or, with null, clears) a callback the engine runs; `handler` gets the engine's arguments. */
   setCallback(
@@ -514,17 +517,28 @@ export function defineBrowserClasses(
   // three's `attribute.array` is the attribute's own JS typed array (PRD-540): the array the
   // constructor was handed, or a copy of the engine's data on first read. A view of Wasm memory
   // would detach when the memory grows. A read hands the game the array, so the attribute is
-  // `pending` until its array is written back before the next engine call; a geometry or attribute
-  // method that may write attribute data bumps `epoch`, and a later read refreshes the copy when the
-  // engine's write count for the attribute moved since the copy was taken.
+  // `pending`: the engine pulls the array before it next reads or writes the attribute's data, and an
+  // array the engine does not read again (a merge source, disposed after) never crosses. A geometry
+  // or attribute method that may write attribute data bumps `epoch`, and a later read refreshes the
+  // copy when the engine's write count for the attribute moved since the copy was taken.
   // ponytail: a game that writes a kept array after such a method and before its next read loses
   // that write to the refresh; track writes per attribute if a game does that.
-  const { attributeArray, attributeWrite, attributeWrites } = runtime;
-  const arrays = new WeakMap<
-    object,
-    { array: TypedArray; epoch: number; writes: number | undefined }
-  >();
-  const pending = new Set<object>();
+  const { attributeArray, attributeDefer, attributeWrites } = runtime;
+  type ArrayEntry = {
+    array: TypedArray;
+    epoch: number;
+    writes: number | undefined;
+    pending: boolean;
+  };
+  const arrays = new WeakMap<object, ArrayEntry>();
+  const defer = (self: object, entry: ArrayEntry): void => {
+    if (entry.pending) return;
+    entry.pending = true;
+    attributeDefer?.call(runtime, refOf(self), () => {
+      entry.pending = false;
+      return entry.array;
+    });
+  };
   let epoch = 0;
   // An attribute a geometry's `getAttribute` answered -> [that geometry, its name, the epoch]. A shape
   // changes only through a method that bumps `epoch`, so until one runs the geometry's one
@@ -534,7 +548,6 @@ export function defineBrowserClasses(
   // One `__attributes` call answers every getAttribute, hasAttribute and `__attributeNames` read on
   // the geometry, kept in its labels, and every attribute's shape for this epoch.
   const listAttributes = (geometry: object): Map<string, unknown> => {
-    if (pending.size > 0) writeBack();
     const found = runtime.get(refOf(geometry), "__attributes") as Record<
       string,
       [EngineValue, number[]]
@@ -564,13 +577,6 @@ export function defineBrowserClasses(
       geometryShapes.get(home[0])?.shapes[home[1]] ??
       (runtime.get(refOf(attribute), "__shape") as number[])
     );
-  };
-  const writeBack = (): void => {
-    for (const attribute of pending) {
-      const entry = arrays.get(attribute);
-      if (entry !== undefined) attributeWrite?.call(runtime, refOf(attribute), entry.array);
-    }
-    pending.clear();
   };
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
@@ -670,7 +676,7 @@ export function defineBrowserClasses(
 
   for (const [name, binding] of Object.entries(registry.classes)) {
     const adopts =
-      attributeWrite !== undefined &&
+      attributeDefer !== undefined &&
       (name === "BufferAttribute" || name === "InstancedBufferAttribute");
     const writesAttributes = ATTRIBUTE_CLASSES.has(name) || name.endsWith("Geometry");
     const engineClass = class {
@@ -692,8 +698,9 @@ export function defineBrowserClasses(
         const handed = args[0];
         if (adopts && ArrayBuffer.isView(handed) && !(handed instanceof DataView)) {
           const writes = attributeWrites?.call(runtime, refOf(this));
-          arrays.set(this, { array: handed as TypedArray, epoch, writes });
-          pending.add(this);
+          const entry = { array: handed as TypedArray, epoch, writes, pending: false };
+          arrays.set(this, entry);
+          defer(this, entry);
         }
       }
     };
@@ -755,7 +762,6 @@ export function defineBrowserClasses(
             if (known?.has("__attributes")) return method === "getAttribute" ? null : false;
             return listAttributes(this).get(key) ?? (method === "getAttribute" ? null : false);
           }
-          if (pending.size > 0) writeBack();
           // A JS value runs a method only the engine has (`color.setStyle`) as an engine object.
           if (info !== undefined && !(REF in this)) {
             promote(this as Record<string, number>, info);
@@ -1328,15 +1334,16 @@ export function defineBrowserClasses(
     byType.set(runtime.typeId(name), { prototype: accessors });
     typeNames.set(runtime.typeId(name), name);
   }
-  if (attributeArray !== undefined && attributeWrite !== undefined) {
+  if (attributeArray !== undefined && attributeDefer !== undefined) {
     // The attribute's current array, refreshed when an engine method may have written it.
-    const current = (self: object): TypedArray => {
+    const current = (self: object): ArrayEntry => {
       let entry = arrays.get(self);
       if (entry === undefined) {
         const array = attributeArray.call(runtime, refOf(self));
-        entry = { array, epoch, writes: attributeWrites?.call(runtime, refOf(self)) };
+        const writes = attributeWrites?.call(runtime, refOf(self));
+        entry = { array, epoch, writes, pending: false };
         arrays.set(self, entry);
-      } else if (entry.epoch !== epoch && !pending.has(self)) {
+      } else if (entry.epoch !== epoch && !entry.pending) {
         const writes = attributeWrites?.call(runtime, refOf(self));
         if (writes === undefined || writes !== entry.writes) {
           const fresh = attributeArray.call(runtime, refOf(self));
@@ -1346,7 +1353,7 @@ export function defineBrowserClasses(
         }
         entry.epoch = epoch;
       }
-      return entry.array;
+      return entry;
     };
     // itemSize, normalized and count, read from the engine once per epoch (an engine method that may
     // write attributes moves it) and again after any of them is set: three keeps them as plain
@@ -1364,18 +1371,19 @@ export function defineBrowserClasses(
     };
     // three's element accessors (BufferAttribute.js) over the JS array: an element read or write is
     // a typed-array access, not an engine call. A read leaves the attribute as it is; a write marks
-    // it pending, so the whole array goes back once before the next engine call. Each looks the
+    // it pending, so the whole array goes back once, when the engine next reads it. Each looks the
     // shape up once: a load reads millions of elements, and every lookup is a WeakMap get.
     const read = (self: object, index: number, k: number): number => {
       const { itemSize, normalized } = shape(self);
-      const array = current(self);
+      const { array } = current(self);
       const value = array[index * itemSize + k] as number;
       return normalized ? denormalize(value, array) : value;
     };
     const write = (self: object, index: number, k: number, value: number): void => {
       const { itemSize, normalized } = shape(self);
-      const array = current(self);
-      pending.add(self);
+      const entry = current(self);
+      defer(self, entry);
+      const { array } = entry;
       array[index * itemSize + k] = normalized ? normalize(value, array) : value;
     };
     const accessors: Record<string, (this: object, ...args: number[]) => unknown> = {
@@ -1443,22 +1451,19 @@ export function defineBrowserClasses(
       Object.defineProperty(cls.prototype, "array", {
         configurable: true,
         get(this: object) {
-          const array = current(this);
-          pending.add(this);
-          return array;
+          const entry = current(this);
+          defer(this, entry);
+          return entry.array;
         },
       });
-      // needsUpdate is a property write, not a call, so it writes the array back itself.
+      // needsUpdate marks a kept array's later writes: the engine pulls it again.
       const needsUpdate = Object.getOwnPropertyDescriptor(cls.prototype, "needsUpdate");
       if (needsUpdate?.set !== undefined)
         Object.defineProperty(cls.prototype, "needsUpdate", {
           ...needsUpdate,
           set(this: object, value: unknown) {
             const entry = arrays.get(this);
-            if (value === true && entry !== undefined) {
-              attributeWrite.call(runtime, refOf(this), entry.array);
-              pending.delete(this);
-            }
+            if (value === true && entry !== undefined) defer(this, entry);
             needsUpdate.set?.call(this, value);
           },
         });
@@ -1530,7 +1535,10 @@ type AbiCall =
   | "_tn_diagnostic_release";
 export type TnAbiModule = Record<AbiCall, (...args: number[]) => number> &
   Partial<
-    Record<"_tnw_attribute_view" | "_tnw_attribute_view_release", (...args: number[]) => number>
+    Record<
+      "_tnw_attribute_view" | "_tnw_attribute_view_release" | "_tnw_attribute_defer",
+      (...args: number[]) => number
+    >
   > &
   Record<"HEAPU8", Uint8Array> &
   Record<"HEAPF64", Float64Array> &
@@ -2146,6 +2154,31 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       }
     });
 
+  // Deferred attribute copies by store key (see attributeDefer): the engine's pull trampoline writes
+  // one into the store's data before the engine reads it, and forget drops one whose store died.
+  const deferred = new Map<number, () => TypedArray>();
+  let pullTrampoline = 0;
+  let forgetTrampoline = 0;
+  const deferTrampolines = () => {
+    if (pullTrampoline !== 0) return;
+    pullTrampoline = abi.addFunction((key, address, count, scalar) => {
+      const take = deferred.get((key ?? 0) >>> 0);
+      deferred.delete((key ?? 0) >>> 0);
+      const Typed = SCALARS[scalar ?? -1];
+      if (take === undefined || Typed === undefined) return undefined;
+      const target = new Typed(abi.HEAPU8.buffer as ArrayBuffer, (address ?? 0) >>> 0, count ?? 0);
+      const array = take();
+      // The engine pulls before it resizes, so the lengths agree; a throw here would unwind the
+      // engine's frames, so a mismatch copies what fits.
+      target.set(array.length > target.length ? array.subarray(0, target.length) : array);
+      return undefined;
+    }, "viiii");
+    forgetTrampoline = abi.addFunction((key) => {
+      deferred.delete((key ?? 0) >>> 0);
+      return undefined;
+    }, "vi");
+  };
+
   const context = scoped(() => {
     const version = alloc(32);
     abi._tn_engine_version(version);
@@ -2236,13 +2269,15 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         abi._tn_diagnostic_release(diag);
       }),
     attributeArray: (self) => withAttributeView(self, (array) => array.slice()),
-    attributeWrite: (self, array) =>
-      withAttributeView(self, (target) => {
-        if (target.length !== array.length)
-          throw new RangeError(
-            `TN_NATIVE_ATTRIBUTE_LENGTH: attribute.array has ${String(array.length)} elements, the attribute ${String(target.length)}`,
-          );
-        target.set(array);
+    attributeDefer: (self, take) =>
+      scoped(() => {
+        const call = abi._tnw_attribute_defer;
+        if (call === undefined)
+          throw new TypeError("TN_WASM_MODULE: this module exports no attribute deferral");
+        deferTrampolines();
+        const key = call(handleOf(self), pullTrampoline, forgetTrampoline) >>> 0;
+        if (key === 0) throw new TypeError("TN_NATIVE_UNSUPPORTED array: not an attribute");
+        deferred.set(key, take);
       }),
     attributeWrites: (self) => withAttributeView(self, (_view, writes) => writes),
     setCallback: (self, name, handler) =>

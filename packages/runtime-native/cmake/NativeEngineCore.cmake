@@ -228,7 +228,8 @@ tn_native_engine_test(tn-native-engine-buffers-test tests/native-engine/buffers_
     native_engine_buffers_lease=lease
     native_engine_buffers_views=views
     native_engine_buffer_view_regrowth=view_regrowth
-    native_engine_buffers_writes=writes)
+    native_engine_buffers_writes=writes
+    native_engine_buffers_deferred=deferred)
 
 tn_native_engine_test(tn-native-engine-lifetime-test tests/native-engine/lifetime_test.cpp
     native_engine_lifetime_detach=detach
@@ -311,7 +312,8 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_object_addresses=object_addresses
     native_engine_abi_geometry_shapes=geometry_shapes
     native_engine_abi_typed_bytes=typed_bytes
-    native_engine_abi_attribute_view_writes=attribute_view_writes)
+    native_engine_abi_attribute_view_writes=attribute_view_writes
+    native_engine_abi_attribute_defer=attribute_defer)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 # PRD-508 phase 3: the geometry edges a JS caller reaches that no fixture states.
@@ -445,7 +447,7 @@ if(EMSCRIPTEN)
     tn_native_engine_target(tn-native-engine-abi-module)
     target_link_options(tn-native-engine-abi-module PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_NAME=createTnAbi
         -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_fire_before_render,_tnw_tsl_dump,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_malloc,_free"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_attribute_defer,_tnw_fire_before_render,_tnw_tsl_dump,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
     target_include_directories(tn-native-engine-abi-module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     find_program(TN_PNPM_EXECUTABLE pnpm)
@@ -480,7 +482,7 @@ if(EMSCRIPTEN)
     target_link_options(tn-native-engine-wasm-browser PRIVATE --no-entry -sMODULARIZE=1
         --profiling-funcs
         -sASSERTIONS=0 -sSAFE_HEAP=0 -sEXPORT_NAME=createTnBrowser -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_fire_before_render,_tnw_init,_tnw_render,_tnw_verify_package,_tnw_load_package,_tnw_bench_init,_tnw_bench_step,_tnw_bulk_transforms,_tnw_bench_stats,_tnw_bench_prepare,_malloc,_free"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_attribute_defer,_tnw_fire_before_render,_tnw_init,_tnw_render,_tnw_verify_package,_tnw_load_package,_tnw_bench_init,_tnw_bench_step,_tnw_bulk_transforms,_tnw_bench_stats,_tnw_bench_prepare,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
     # PRD-540: the product browser host a web game gets under `engine: "native"`. It is an ES
     # module beside its .wasm in the package's build/web/ directory, where createWebEnginePlugin finds it.
@@ -503,7 +505,7 @@ if(EMSCRIPTEN)
         # The whole 32-bit address space: a game the size of Midway (161 MB of GLBs, decoded on the
         # engine side) ran past emscripten's 2 GB default maximum and failed with std::bad_alloc.
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_set_samples,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_compile,_tnw_web_compile_poll,_tnw_web_init_texture,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_gpu_timer,_tnw_web_texture_image"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_attribute_defer,_tnw_web_init,_tnw_web_set_samples,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_compile,_tnw_web_compile_poll,_tnw_web_init_texture,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_gpu_timer,_tnw_web_texture_image"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
     find_program(TN_WASM_NODE node REQUIRED)
     configure_file(tests/native-engine/wasm/assets.html ${CMAKE_CURRENT_BINARY_DIR}/native-core-assets.html COPYONLY)
