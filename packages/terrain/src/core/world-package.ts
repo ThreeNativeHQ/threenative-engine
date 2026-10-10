@@ -89,6 +89,7 @@ const SCALE_TOLERANCE = 1e-3;
 const SLOTS = MATERIAL_IDS.map((id, channel) => ({
   channel,
   component: COMPONENTS[channel % COMPONENTS.length] as Component,
+  componentIndex: channel % COMPONENTS.length,
   id,
   plane: Math.floor(channel / COMPONENTS.length),
 }));
@@ -325,12 +326,8 @@ function splatBytes(state: ITerrainState, resolution: number): Uint8Array {
       const sample = (source + column) * MATERIAL_IDS.length;
       for (const slot of SLOTS) {
         const weight = state.splat[sample + slot.channel] as number;
-        bytes[
-          slot.plane * planeBytes +
-            row * resolution * 4 +
-            column * 4 +
-            COMPONENTS.indexOf(slot.component)
-        ] = Math.round(Math.min(1, Math.max(0, weight)) * 255);
+        bytes[slot.plane * planeBytes + row * resolution * 4 + column * 4 + slot.componentIndex] =
+          Math.round(Math.min(1, Math.max(0, weight)) * 255);
       }
     }
   }
