@@ -12,6 +12,7 @@ import {
 import { toGeometry } from "@threenative/terrain/three";
 import { BufferGeometry, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import { finiteTree } from "../src/core/validation.js";
 
 describe("public terrain consumer", () => {
   it("returns measured erosion transport, respects masks and isolates cached arrays", () => {
@@ -266,4 +267,26 @@ it("rejects a scatter layer without asset", () => {
       asset: undefined,
     }),
   ).toThrow(/asset/);
+});
+
+describe("finiteTree validation fast-path and edge guards", () => {
+  it("accepts numeric leaves at depth 32 and rejects them at depth 33", () => {
+    let d32: unknown = 42;
+    for (let i = 0; i < 32; i++) d32 = [d32];
+    expect(() => finiteTree(d32)).not.toThrow();
+
+    let d33: unknown = 42;
+    for (let i = 0; i < 33; i++) d33 = [d33];
+    expect(() => finiteTree(d33)).toThrow(`value${".0".repeat(33)}: nesting is too deep`);
+  });
+
+  it("names the non-finite array entry", () => {
+    expect(() => finiteTree([1, 2, Number.NaN], "samples")).toThrow("samples.2 must be finite");
+  });
+
+  it("rejects an unsafe own array key", () => {
+    const unsafeArray = [1, 2];
+    Object.defineProperty(unsafeArray, "constructor", { value: 123, enumerable: true });
+    expect(() => finiteTree(unsafeArray, "samples")).toThrow("samples: unsafe object key");
+  });
 });
