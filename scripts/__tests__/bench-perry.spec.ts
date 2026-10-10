@@ -246,6 +246,10 @@ describe("Perry native benchmark", () => {
     try {
       expect(await runBench(argv, execute, path.join(temp, "artifacts"))).toBe(0);
       expect(launches).toEqual(["perry", "v8", "perry", "v8"]);
+      const written = await readFile(path.join(directories.at(-1) ?? "", "report.html"), "utf8");
+      expect(written).toContain('<th scope="row">firstFrameMs</th>');
+      expect(written).not.toContain("http");
+      expect(await readFile(path.join(temp, "artifacts", "index.html"), "utf8")).toBe(written);
       await rm(path.join(temp, "game.js"));
       expect(await runBench([...argv, "--perf"], execute, path.join(temp, "artifacts"))).toBe(0);
       const profiled = JSON.parse(
