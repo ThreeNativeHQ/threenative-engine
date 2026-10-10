@@ -13,7 +13,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** `--key value` after the script; `--assets` and `--out` default as noted below. */
 function flag(name, fallback) {
   const at = process.argv.indexOf(`--${name}`);
-  return at === -1 ? fallback : resolve(process.argv[at + 1] ?? "");
+  if (at === -1) return fallback;
+  const value = process.argv[at + 1];
+  if (value === undefined || value === "" || value.startsWith("--")) {
+    throw new Error(`bake: --${name} needs a nonempty directory value`);
+  }
+  return resolve(value);
 }
 
 // The installed kit ships its models and textures beside the package manifest, so a copied kit

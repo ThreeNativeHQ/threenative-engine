@@ -248,22 +248,26 @@ describe("forest starter kit", () => {
     expect(kitBytes).toBeLessThanOrEqual(40 * 1024 * 1024);
   });
 
-  it("refuses a bare, empty or flag-valued --out/--assets before writing", () => {
-    const dir = kitInTempDir();
-    const bakeWith = (...args: string[]) =>
-      execFileSync(process.execPath, [join(packageRoot, "starter/forest/bake.mjs"), ...args], {
-        cwd: dir,
-        stdio: "pipe",
-      });
+  it.each(["forest", "alpine", "coastal", "desert", "tundra"] as const)(
+    "refuses a bare, empty or flag-valued --out/--assets before writing (%s)",
+    (kitName) => {
+      const dir = makeTempDirSync(`terrain-starter-flags-${kitName}-`);
+      const bakeWith = (...args: string[]) =>
+        execFileSync(
+          process.execPath,
+          [join(packageRoot, "starter", kitName, "bake.mjs"), ...args],
+          { cwd: dir, stdio: "pipe" },
+        );
 
-    // A bare flag, an empty value and a following flag are all refused, by name.
-    expect(() => bakeWith("--out")).toThrow(/--out needs a nonempty/);
-    expect(() => bakeWith("--out", "")).toThrow(/--out needs a nonempty/);
-    expect(() => bakeWith("--out", "--assets", starterAssets)).toThrow(/--out needs a nonempty/);
-    expect(() => bakeWith("--assets")).toThrow(/--assets needs a nonempty/);
-    expect(() => bakeWith("--assets", "")).toThrow(/--assets needs a nonempty/);
-    expect(() => bakeWith("--assets", "--out", dir)).toThrow(/--assets needs a nonempty/);
-    // Nothing was written beside the kit.
-    expect(() => statSync(join(dir, "world"))).toThrow();
-  });
+      // A bare flag, an empty value and a following flag are all refused, by name.
+      expect(() => bakeWith("--out")).toThrow(/--out needs a nonempty/);
+      expect(() => bakeWith("--out", "")).toThrow(/--out needs a nonempty/);
+      expect(() => bakeWith("--out", "--assets", starterAssets)).toThrow(/--out needs a nonempty/);
+      expect(() => bakeWith("--assets")).toThrow(/--assets needs a nonempty/);
+      expect(() => bakeWith("--assets", "")).toThrow(/--assets needs a nonempty/);
+      expect(() => bakeWith("--assets", "--out", dir)).toThrow(/--assets needs a nonempty/);
+      // Nothing was written into the working directory.
+      expect(readdirSync(dir)).toEqual([]);
+    },
+  );
 });
