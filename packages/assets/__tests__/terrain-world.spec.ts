@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Document, type Buffer as GltfBuffer, type Material, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { type ITerrainState, Terrain, bakeTerrain, bakeWorldPackage } from "@threenative/terrain";
+import {
+  type ITerrainState,
+  Terrain,
+  bakeTerrain,
+  bakeWorldPackage,
+  sampleHeight,
+} from "@threenative/terrain";
 import { PNG } from "pngjs";
 import { type Group, InstancedMesh, Mesh } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -16,10 +22,12 @@ import { cookTerrainWorld } from "../src/world/terrain-world.js";
 Object.assign(globalThis, { self: globalThis });
 
 /** A real evaluated terrain. The fixed seed fixes every scatter position. */
-function evaluatedTerrain(): ITerrainState {
-  const state = new Terrain({ resolution: 33, seed: 73, size: 256 })
-    .scatter({ id: "firs", asset: "fir", count: 40, minDistance: 3 })
-    .evaluate();
+function evaluatedTerrain(assets: readonly string[] = ["fir"]): ITerrainState {
+  let terrain = new Terrain({ resolution: 33, seed: 73, size: 256 });
+  for (const asset of assets) {
+    terrain = terrain.scatter({ id: `${asset}s`, asset, count: 40, minDistance: 3 });
+  }
+  const state = terrain.evaluate();
   if (state.instances.length === 0) throw new Error("fixture terrain has no placements");
   return state;
 }
@@ -124,11 +132,48 @@ async function skinnedSpecies(): Promise<Uint8Array> {
   return io().writeBinary(doc);
 }
 
+/** A species with a scene but no mesh at all. The cook must refuse it by name. */
+async function noMeshSpecies(): Promise<Uint8Array> {
+  const doc = new Document();
+  const scene = doc.createScene("Scene");
+  scene.addChild(doc.createNode("prop"));
+  return io().writeBinary(doc);
+}
+
+/** A species whose one mesh has no primitive, so it draws nothing. The cook must refuse it. */
+async function emptyMeshSpecies(): Promise<Uint8Array> {
+  const doc = new Document();
+  const scene = doc.createScene("Scene");
+  scene.addChild(doc.createNode("emptyNode").setMesh(doc.createMesh("empty")));
+  return io().writeBinary(doc);
+}
+
 /** Parses a GLB with the vanilla three loader, the same reader a game uses. */
 function loadWorld(glb: Uint8Array): Promise<Group> {
   return new Promise((resolve, reject) => {
     new GLTFLoader().parse(glb.slice().buffer, "", (gltf) => resolve(gltf.scene), reject);
   });
+}
+
+/** Every scene of a cooked GLB, with the default scene and each scene's instancing nodes. */
+function loadScenes(glb: Uint8Array): Promise<{ scene: Group; scenes: Group[] }> {
+  return new Promise((resolve, reject) => {
+    new GLTFLoader().parse(
+      glb.slice().buffer,
+      "",
+      (gltf) => resolve({ scene: gltf.scene, scenes: gltf.scenes as Group[] }),
+      reject,
+    );
+  });
+}
+
+/** The instancing nodes directly in a loaded scene, each with its instance count. */
+function instancedNodes(scene: Group): { name: string; instances: number }[] {
+  const found: { name: string; instances: number }[] = [];
+  scene.traverse((object) => {
+    if (object instanceof InstancedMesh) found.push({ name: object.name, instances: object.count });
+  });
+  return found.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 describe("cookTerrainWorld", () => {
@@ -364,6 +409,54 @@ describe("cookTerrainWorld", () => {
     await expect(stat(path.join(dir, "world.glb"))).rejects.toThrow();
   });
 
+  it("refuses a meshless or empty-draw species by name before writing", async () => {
+    // Positive placement counts and zero source bounds must not hide a species with nothing to draw.
+    for (const glb of [await noMeshSpecies(), await emptyMeshSpecies()]) {
+      await expect(
+        cookTerrainWorld({ state: evaluatedTerrain(), species: { fir: { glb } }, out: dir }),
+      ).rejects.toThrow(/species 'fir' .*empty draw/);
+    }
+    await expect(stat(path.join(dir, "world.glb"))).rejects.toThrow();
+  });
+
+  it("refuses an authored LOD that declares a skin, same as the near model", async () => {
+    await expect(
+      cookTerrainWorld({
+        state: evaluatedTerrain(),
+        species: {
+          fir: {
+            glb: await simpleSpecies(),
+            lods: [{ distance: 40, glb: await skinnedSpecies() }],
+          },
+        },
+        out: dir,
+      }),
+    ).rejects.toThrow(/species 'fir' .*skin/);
+    await expect(stat(path.join(dir, "world.glb"))).rejects.toThrow();
+  });
+
+  it("discovers an authored -mid sibling before falling back to simplification", async () => {
+    const nearPath = path.join(dir, "pine.glb");
+    const midPath = path.join(dir, "pine-mid.glb");
+    const near = await simpleSpecies();
+    const mid = await twoMeshSpecies();
+    await writeFile(nearPath, near);
+    await writeFile(midPath, mid.glb);
+
+    const result = await cookTerrainWorld({
+      state: evaluatedTerrain(),
+      species: { fir: { glb: nearPath } },
+      out: dir,
+    });
+
+    expect(result.manifest.assets.fir?.lods).toHaveLength(1);
+    expect(result.manifest.assets.fir?.lods?.[0]?.glb).toBe("models/fir_lod1.glb");
+    // The written level is the sibling's bytes, not a simplification of the near model.
+    expect(new Uint8Array(await readFile(path.join(dir, "models", "fir_lod1.glb")))).toEqual(
+      new Uint8Array(mid.glb),
+    );
+  });
+
   it("names a placement that is mirrored in Z as a contact failure", async () => {
     const state = evaluatedTerrain();
     const spacing = state.size / (state.resolution - 1);
@@ -393,6 +486,78 @@ describe("cookTerrainWorld", () => {
       `Placement '${item.id}' of species 'fir' contact check failed`,
     );
     expect(error?.message).toContain("mirrored-Z");
+  });
+
+  it("checks ground contact against the quantized heightmap, not the horizontal spacing", async () => {
+    const state = evaluatedTerrain();
+    // A real relief, so one uint16 height step is a meaningful, non-zero tolerance.
+    const spacing = state.size / (state.resolution - 1);
+    state.height.set(
+      Array.from(state.height, (_, i) => Math.floor(i / state.resolution) * spacing),
+    );
+    const species = { fir: { glb: await simpleSpecies() } };
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const height of state.height) {
+      min = Math.min(min, height);
+      max = Math.max(max, height);
+    }
+    // One uint16 step of the heightmap range the bake writes.
+    const quantStep = (max - min) / 65_535;
+    const first = state.instances[0];
+    assert.ok(first);
+    const groundY = sampleHeight(state, first.position[0], first.position[2]);
+    const at = (delta: number): [number, number, number] => [
+      first.position[0],
+      groundY + delta,
+      first.position[2],
+    ];
+    const posed = (delta: number, grounding: boolean): ITerrainState => ({
+      ...state,
+      instances: [
+        {
+          ...first,
+          transform: {
+            position: at(delta),
+            quaternion: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+            grounding,
+          },
+        },
+      ],
+    });
+
+    // A sub-texel hop passes: below one uint16 height step.
+    await expect(
+      cookTerrainWorld({
+        state: posed(quantStep * 0.25, true),
+        species,
+        out: path.join(dir, "sub"),
+      }),
+    ).resolves.toBeDefined();
+
+    // A real offset above one height step fails by name, with no output written.
+    const error = await cookTerrainWorld({
+      state: posed(quantStep * 4, true),
+      species,
+      out: path.join(dir, "lift"),
+    }).then(
+      () => null,
+      (caught: Error) => caught,
+    );
+    expect(error?.message).toContain(
+      `Placement '${first.id}' of species 'fir' contact check failed`,
+    );
+    await expect(stat(path.join(dir, "lift", "world.glb"))).rejects.toThrow();
+
+    // The authored grounding override is honored: the same lifted pose is skipped.
+    await expect(
+      cookTerrainWorld({
+        state: posed(quantStep * 4, false),
+        species,
+        out: path.join(dir, "override"),
+      }),
+    ).resolves.toBeDefined();
   });
 
   it("writes a world package core's validator accepts, with a GLB and a LOD per species", async () => {
@@ -426,7 +591,7 @@ describe("cookTerrainWorld", () => {
     }
   });
 
-  it("keeps the node count constant from 1 000 to 10 000 placements", async () => {
+  it("keeps the node count and all-scene census constant from 1 000 to 10 000 placements", async () => {
     const base = evaluatedTerrain();
     const withPlacements = (count: number): ITerrainState => ({
       ...base,
@@ -453,5 +618,57 @@ describe("cookTerrainWorld", () => {
     expect(small.instancedMeshCount).toBe(1);
     expect(large.instancedMeshCount).toBe(1);
     expect(large.placementCounts.fir).toBe(10_000);
+
+    // The authoritative walk: the default scene plus the generated alternate-LOD scene.
+    const census = await loadScenes(large.worldGlb);
+    expect(census.scenes.map((scene) => scene.name)).toEqual(["TerrainWorld", "fir_lod1"]);
+    const allNodes = census.scenes.flatMap((scene) => instancedNodes(scene));
+    expect(allNodes).toEqual([
+      { name: "fir_instances", instances: 10_000 },
+      { name: "fir_lod1_instances", instances: 10_000 },
+    ]);
+    // The default scene carries the near LOD only.
+    expect(instancedNodes(census.scene)).toEqual([{ name: "fir_instances", instances: 10_000 }]);
+  });
+
+  it("holds near nodes in the default scene and one node per species-and-LOD pair in named scenes", async () => {
+    const state = evaluatedTerrain(["fir", "boulder"]);
+    const near = await simpleSpecies();
+    const authoredLod = await simpleSpecies();
+    const result = await cookTerrainWorld({
+      state,
+      species: {
+        fir: { glb: near }, // generated LOD
+        boulder: { glb: near, lods: [{ distance: 45, glb: authoredLod }] }, // authored LOD
+      },
+      out: dir,
+    });
+
+    const counts: Record<string, number> = {
+      fir: state.instances.filter((i) => i.asset === "fir").length,
+      boulder: state.instances.filter((i) => i.asset === "boulder").length,
+    };
+
+    const census = await loadScenes(result.worldGlb);
+    // One default scene plus one named scene per alternate LOD.
+    expect(census.scenes.map((scene) => scene.name)).toEqual([
+      "TerrainWorld",
+      "fir_lod1",
+      "boulder_lod1",
+    ]);
+    // Default scene: only the near nodes, each rendering every placement once.
+    expect(instancedNodes(census.scene)).toEqual([
+      { name: "boulder_instances", instances: counts.boulder },
+      { name: "fir_instances", instances: counts.fir },
+    ]);
+    // Every species-and-LOD pair is exactly one node, with all logical placements.
+    expect(instancedNodes(census.scenes[1] as Group)).toEqual([
+      { name: "fir_lod1_instances", instances: counts.fir },
+    ]);
+    expect(instancedNodes(census.scenes[2] as Group)).toEqual([
+      { name: "boulder_lod1_instances", instances: counts.boulder },
+    ]);
+    // The compatibility stat counts the default scene only; the all-scene walk is authoritative.
+    expect(result.instancedMeshCount).toBe(2);
   });
 });
