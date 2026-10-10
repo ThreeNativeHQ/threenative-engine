@@ -335,7 +335,14 @@ async function main() {
     await createProject(
       {
         install: true,
-        packageSources: Object.fromEntries(GAME_PACKAGES.map(({ name }) => [name, archives[name]])),
+        // The terrain tarball is a source here too, not only the later `pnpm add -D`: the minimal
+        // template's `@threenative/assets` dev dependency now depends on `@threenative/terrain`,
+        // and the override this writes is what resolves that transitive edge to the local tarball
+        // instead of the registry (which 404s). The kit's own `pnpm add -D` then moves it to the
+        // devDependency the README names.
+        packageSources: Object.fromEntries(
+          [...GAME_PACKAGES, TERRAIN_PACKAGE].map(({ name }) => [name, archives[name]]),
+        ),
         target: "kit-game",
         template: "minimal",
       },
