@@ -3,6 +3,7 @@ import { EXTTextureWebP, KHRTextureBasisu } from "@gltf-transform/extensions";
 import { getTextureColorSpace, listTextureInfo, listTextureSlots } from "@gltf-transform/functions";
 import { read as readKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
+import { EXTTextureAstc, isRawAstc } from "../gltf-io.js";
 import { textureStats } from "../health.js";
 import {
   COLOUR_SLOTS,
@@ -46,6 +47,8 @@ export interface IModelTextureOverride {
 export type TextureMaxSize = number | Readonly<Record<string, number>>;
 
 export interface IModelTexturesOptions {
+  /** Internal target-selected raw ASTC output. */
+  readonly astc?: boolean;
   readonly floor?: Partial<IImageQualityFloor>;
   /** Internal reporting switch; selection still measures and enforces the floor. */
   readonly measureQuality?: boolean;
@@ -111,6 +114,7 @@ const MIP_FACTOR = 4 / 3;
 /** Bytes per pixel of the format each codec transcodes to on a desktop GPU. */
 const GPU_BYTES_PER_PIXEL: Readonly<Record<string, number>> = {
   // BC1 from ETC1S, BC7 from UASTC, RGBA8 for anything left uncompressed.
+  astc4x4: 1,
   etc1s: 0.5,
   none: 4,
   uastc: 1,
@@ -444,6 +448,7 @@ export async function encodeTextureLadder(
   height: number,
   options: IImageQualityOptions & {
     readonly astc?: boolean;
+    readonly gltfColorPrimaries?: 0 | 1;
     readonly forced?: TextureCodec;
     /** Automatic source retention: candidates that cannot save bytes need no quality score. */
     readonly maxBytes?: number;
@@ -483,7 +488,9 @@ export async function encodeTextureLadder(
             ...(candidate.rdoLambda === undefined ? {} : { rdoLambda: candidate.rdoLambda }),
           });
     const encoded =
-      options.astc === true && basis !== undefined ? await transcodeKtx2ToAstc(basis) : basis;
+      options.astc === true && basis !== undefined
+        ? await transcodeKtx2ToAstc(basis, options.gltfColorPrimaries)
+        : basis;
     if (encoded !== undefined && options.maxBytes !== undefined) {
       if (encoded.byteLength >= options.maxBytes) {
         // ponytail: ETC1S is the ladder's lowest bitrate, so on a large image the UASTC rungs it
@@ -737,6 +744,9 @@ export async function compressEmbeddedTextures(
       floor: options.floor,
       srgb,
       quality,
+      ...(options.astc === true
+        ? { astc: true, gltfColorPrimaries: srgb ? (1 as const) : (0 as const) }
+        : {}),
       ...(!explicit &&
       target.width === decoded.width &&
       target.height === decoded.height &&
@@ -800,15 +810,20 @@ export async function compressEmbeddedTextures(
       };
     }
     texture.setImage(encoded).setMimeType("image/ktx2");
-    formats[key] = selected.codec;
+    formats[key] = options.astc === true ? "astc4x4" : selected.codec;
     bytesAfter += encoded.byteLength;
-    gpuBytesAfter += gpuBytes(target.width, target.height, selected.codec);
+    gpuBytesAfter += gpuBytes(target.width, target.height, formats[key] ?? selected.codec);
     compressed += 1;
   }
 
-  if (compressed > 0) {
-    // Required, not merely used: a reader with no Basis transcoder cannot draw this model,
-    // and a glTF that pretends otherwise fails at the first frame instead of at load.
+  const hasAstc = textures.some(isRawAstc);
+  if (hasAstc) document.createExtension(EXTTextureAstc).setRequired(true);
+  else document.disposeExtension(EXTTextureAstc.EXTENSION_NAME);
+  if (options.astc === true || hasAstc) {
+    if (textures.some((texture) => texture.getMimeType() === "image/ktx2" && !isRawAstc(texture)))
+      document.createExtension(KHRTextureBasisu).setRequired(true);
+    else document.disposeExtension(KHRTextureBasisu.EXTENSION_NAME);
+  } else if (compressed > 0) {
     document.createExtension(KHRTextureBasisu).setRequired(true);
   }
   // A glTF writer emits every extension still attached, so a model authored with WebP images

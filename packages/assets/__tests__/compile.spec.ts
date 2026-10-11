@@ -221,12 +221,16 @@ describe("compileAssets", () => {
     expect(mobile.skippedCompression).toEqual([
       {
         bytes: 0,
-        decoders: ["meshopt", "KTX2"],
+        decoders: ["meshopt"],
         files: 0,
         kind: "model",
         reason: "platform",
       },
     ]);
+
+    expect(
+      mobile.skippedCompression.flatMap((row) => ("decoders" in row ? row.decoders : [])),
+    ).not.toContain("KTX2");
 
     // The same config, the target that can decode it: compression ships.
     await rm(path.join(root, "public"), { force: true, recursive: true });
@@ -242,6 +246,81 @@ describe("compileAssets", () => {
 
     expect(webManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
   });
+
+  it.each(["android", "ios"] as const)(
+    "cooks embedded ASTC on %s while retaining Meshopt",
+    async (platform) => {
+      const root = await makeTempDir("threenative-embedded-astc-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "character.glb"), await singleImageFixtureGlb());
+      const result = await compileAssets({
+        cwd: root,
+        platform,
+        runtimeDecoders: { ktx2: false, meshopt: true },
+        config: {
+          budget: "none",
+          textures: "none",
+          lod: "none",
+          models: {
+            sharedImages: false,
+            compact: false,
+            virtual: "none",
+            textures: { overrides: [{ slot: "baseColorTexture", codec: "etc1s" }] },
+          },
+        },
+      });
+      expect(result.skippedCompression.filter((row) => row.kind === "model")).toEqual([]);
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+      );
+      const bytes = await readFile(
+        path.join(root, "public", manifest.entries["character.glb"].output),
+      );
+      const { json, bin } = unpackGlb(bytes);
+      expect(json.extensionsRequired).toContain("EXT_texture_astc");
+      expect(json.extensionsUsed).not.toContain("KHR_texture_basisu");
+      expect(json.extensionsRequired).toContain("EXT_meshopt_compression");
+      const texture = json.textures?.[0];
+      const source = (texture?.extensions?.EXT_texture_astc as { source: number }).source;
+      expect(texture?.source).toBeUndefined();
+      const image = json.images?.[source];
+      const view = json.bufferViews?.[image?.bufferView ?? -1];
+      if (!view || !bin) throw new Error("embedded ASTC view missing");
+      const astc = readKtx2(
+        bin.subarray(view.byteOffset ?? 0, (view.byteOffset ?? 0) + view.byteLength),
+      );
+      expect(astc.vkFormat).toBe(158);
+      expect(astc.supercompressionScheme).toBe(0);
+      expect(astc.levelCount).toBe(
+        Math.floor(Math.log2(Math.max(astc.pixelWidth, astc.pixelHeight))) + 1,
+      );
+      expect(astc.dataFormatDescriptor[0]?.colorPrimaries).toBe(1);
+      await compileAssets({
+        cwd: root,
+        platform,
+        runtimeDecoders: { ktx2: false, meshopt: true },
+        config: {
+          budget: "none",
+          textures: "none",
+          lod: "none",
+          models: {
+            sharedImages: false,
+            compact: false,
+            virtual: "none",
+            textures: "none",
+          },
+        },
+      });
+      const disabled = JSON.parse(
+        await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+      );
+      const disabledJson = unpackGlb(
+        await readFile(path.join(root, "public", disabled.entries["character.glb"].output)),
+      ).json;
+      expect(disabledJson.extensionsUsed).not.toContain("EXT_texture_astc");
+      expect(disabledJson.images?.map((image) => image.mimeType)).toEqual(["image/png"]);
+    },
+  );
 
   it.each([
     ["android", true, true],
@@ -488,7 +567,10 @@ describe("compileAssets", () => {
       expect(shared).toHaveLength(1);
       expect(shared[0]).toMatch(/\.none\.png$/u);
       expect(lines.join("\n")).toContain("meshopt");
-      expect(lines.join("\n")).toContain("KTX2");
+      expect(lines.join("\n")).not.toContain("KTX2");
+      expect(result.skippedCompression.find((row) => row.kind === "model")).toMatchObject({
+        decoders: ["meshopt"],
+      });
       expect(lines.join("\n")).not.toContain("dedupe");
     } finally {
       log.mockRestore();

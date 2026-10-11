@@ -1561,7 +1561,9 @@ function parseModelQuantize(raw: unknown): IModelQuantizeOptions {
 function embeddedTexturesFor(
   configured: IModelTexturesOptions | "none" | undefined,
   ktx2: boolean,
+  astc = false,
 ): { readonly textures?: IModelTexturesOptions | "none" } {
+  if (astc && configured !== "none") return { textures: { ...configured, astc: true } };
   if (ktx2) return {};
   if (configured !== undefined && configured !== "none" && configured.maxSize !== undefined) {
     return {
@@ -1617,6 +1619,9 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   };
   const runtimeDecoderAvailable =
     runtimeDecoderCapabilities.ktx2 && runtimeDecoderCapabilities.meshopt;
+  const mobileAstc =
+    (options.platform === "android" || options.platform === "ios") &&
+    !runtimeDecoderCapabilities.ktx2;
   const audio = parseAudioConfig(config.audio);
   const configuredTextures = parseTexturesConfig(config.textures);
   const configuredModels = parseModelsConfig(config.models);
@@ -1630,7 +1635,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       ? []
       : [
           (configuredModels.passes?.meshopt ?? true) ? "meshopt" : undefined,
-          configuredModels.textures === "none" ? undefined : "KTX2",
+          configuredModels.textures === "none" || mobileAstc ? undefined : "KTX2",
         ].filter((decoder): decoder is "meshopt" | "KTX2" => decoder !== undefined);
   const models =
     configuredModels === undefined
@@ -1642,11 +1647,12 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
             : {
                 passes: { ...(configuredModels.passes ?? {}), meshopt: false },
               }),
-          ...embeddedTexturesFor(configuredModels.textures, runtimeDecoderCapabilities.ktx2),
+          ...embeddedTexturesFor(
+            configuredModels.textures,
+            runtimeDecoderCapabilities.ktx2,
+            mobileAstc,
+          ),
         };
-  const mobileAstc =
-    (options.platform === "android" || options.platform === "ios") &&
-    !runtimeDecoderCapabilities.ktx2;
   const textures =
     configuredTextures === undefined
       ? undefined
@@ -1664,7 +1670,15 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const registerBuiltin = (pass: IAssetPass, spec: PassSpec): void => {
     if (
       spec.needsRuntimeDecoder === true &&
-      !(spec.kind === "texture" ? runtimeDecoderCapabilities.ktx2 : runtimeDecoderAvailable)
+      !(spec.kind === "texture"
+        ? runtimeDecoderCapabilities.ktx2
+        : spec.kind === "model"
+          ? (!(spec.options.passes?.meshopt ?? true) || runtimeDecoderCapabilities.meshopt) &&
+            (spec.options.textures === "none" ||
+              spec.options.textures?.decoderFree === true ||
+              spec.options.textures?.astc === true ||
+              runtimeDecoderCapabilities.ktx2)
+          : runtimeDecoderAvailable)
     )
       return;
     builtinPasses.push(pass);
@@ -1777,7 +1791,11 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
           ? "config"
           : modelCompressionDecoders.length === 0
             ? undefined
-            : runtimeDecoderAvailable
+            : modelCompressionDecoders.every((decoder) =>
+                  decoder === "KTX2"
+                    ? runtimeDecoderCapabilities.ktx2
+                    : runtimeDecoderCapabilities.meshopt,
+                )
               ? undefined
               : "platform",
     modelCompressionDecoders,

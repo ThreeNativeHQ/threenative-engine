@@ -947,13 +947,60 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         const extensions = declaredExtensions(data);
         const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
         const loader = new GLTFLoader();
-        // Models carrying KHR_texture_basisu textures transcode through the same shared,
-        // support-detected instance `texture()` uses — never a second detection pass.
-        if (compressedTextures !== undefined && extensions.has("KHR_texture_basisu")) {
-          const shared = await compressedTextures.loader;
+        // Both glTF texture extensions use the same support-detected instance as texture().
+        const astcExtension = "EXT_texture_astc";
+        const hasBasis = extensions.has("KHR_texture_basisu");
+        const hasAstc = extensions.has(astcExtension);
+        let shared: IKTX2LoaderLike | undefined;
+        if (compressedTextures !== undefined && (hasBasis || hasAstc)) {
+          try {
+            shared = await compressedTextures.loader;
+          } catch (error) {
+            // Only ASTC-only models may select their ordinary fallback on capability refusal.
+            // Import/setup failures and the existing Basis contract still reject unchanged.
+            if (
+              hasBasis ||
+              !(error instanceof Error) ||
+              !error.message.startsWith("TN_ASSETS_KTX2_UNSUPPORTED:")
+            )
+              throw error;
+          }
           if (shared !== undefined) {
             loader.setKTX2Loader(shared as unknown as Parameters<typeof loader.setKTX2Loader>[0]);
           }
+        }
+        if (hasAstc) {
+          const astcLoader = shared;
+          const astcSupported =
+            (
+              astcLoader as
+                | (IKTX2LoaderLike & {
+                    workerConfig?: { astcSupported?: boolean };
+                  })
+                | undefined
+            )?.workerConfig?.astcSupported === true;
+          // EXT_texture_astc is an official vendor draft. Borrow Three's Basis plugin handoff,
+          // but raw ASTC cannot use Basis's format fallback and needs this explicit GPU guard.
+          loader.register((parser) => {
+            if (!astcSupported && parser.json.extensionsRequired?.includes(astcExtension)) {
+              throw new Error(
+                "TN_ASSETS_ASTC_UNSUPPORTED: required EXT_texture_astc needs a renderer with ASTC texture-compression support.",
+              );
+            }
+            return {
+              name: astcExtension,
+              loadTexture(textureIndex) {
+                const extension = parser.json.textures[textureIndex].extensions?.[astcExtension];
+                if (extension === undefined || !astcSupported || astcLoader === undefined)
+                  return null;
+                return parser.loadTextureImage(
+                  textureIndex,
+                  extension.source,
+                  astcLoader as unknown as Parameters<typeof parser.loadTextureImage>[2],
+                );
+              },
+            };
+          });
         }
         // three's own decoder embeds its WASM; it compiles only once a compressed model is
         // actually loaded. The native bundle inlines this branch (no runtime import remains),

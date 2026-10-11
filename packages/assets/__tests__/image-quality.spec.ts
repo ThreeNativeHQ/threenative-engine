@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -23,6 +24,60 @@ function pixels(noise = false): Uint8Array {
 }
 
 describe("image quality instrument", () => {
+  it.each([
+    { slot: "normalTexture", rgba: [128, 128, 255, 255], srgb: false, primaries: 0 as const },
+    {
+      slot: "metallicRoughnessTexture",
+      rgba: [10, 128, 255, 255],
+      srgb: false,
+      primaries: 0 as const,
+    },
+    { slot: "baseColorTexture", rgba: [240, 20, 40, 128], srgb: true, primaries: 1 as const },
+  ])(
+    "glTF ASTC metadata matches $slot before final-buffer scoring",
+    async ({ slot, rgba, srgb, primaries }) => {
+      const data = new Uint8Array(8 * 8 * 4);
+      for (let i = 0; i < data.length; i += 4) data.set(rgba, i);
+      const basis = await encodeToKTX2(data, {
+        imageDecoder: async () => ({ data, width: 8, height: 8 }),
+        isUASTC: true,
+        isNormalMap: slot === "normalTexture",
+        isSetKTX2SRGBTransferFunc: srgb,
+      });
+      const original = await transcodeKtx2ToAstc(basis);
+      // Exact default bytes captured before this change at e49bb087f (8x8 RGBA fixture).
+      if (srgb)
+        expect(createHash("sha256").update(original).digest("hex")).toBe(
+          "2e75ef39257d356a9c433626b70fbe7fa25528734c7342fc6deccfa83aedbaf4",
+        );
+      const final = await transcodeKtx2ToAstc(basis, primaries);
+      const before = readKTX2(original);
+      const after = readKTX2(final);
+      const beforeDescriptor = before.dataFormatDescriptor[0];
+      const afterDescriptor = after.dataFormatDescriptor[0];
+      if (beforeDescriptor === undefined || afterDescriptor === undefined)
+        throw new Error("fixture descriptor missing");
+      expect(afterDescriptor.colorPrimaries).toBe(primaries);
+      expect(after.vkFormat).toBe(srgb ? 158 : 157);
+      expect(afterDescriptor.transferFunction).toBe(srgb ? 2 : 1);
+      expect(afterDescriptor.flags).toBe(0);
+      expect(after.keyValue.KTXorientation).toBeUndefined();
+      expect(after.levels.map((level) => level.levelData.byteLength)).toEqual([64, 16, 16, 16]);
+      expect(after.levels.map((level) => level.levelData)).toEqual(
+        before.levels.map((level) => level.levelData),
+      );
+      const score = await measureKtx2(data, final, 8, 8, { slots: [slot] });
+      expect(score.status).toBe(srgb ? "pass" : "unvalidated-slots");
+      afterDescriptor.colorPrimaries = beforeDescriptor.colorPrimaries;
+      expect(writeKTX2(after)).toEqual(original);
+      expect(await transcodeKtx2ToAstc(basis)).toEqual(original);
+      await expect(transcodeKtx2ToAstc(basis, 2 as 0)).rejects.toThrow(/TN_ASSETS_ASTC_METADATA/u);
+      await expect(transcodeKtx2ToAstc(basis, srgb ? 0 : 1)).rejects.toThrow(
+        /TN_ASSETS_ASTC_METADATA/u,
+      );
+    },
+  );
+
   it.each([false, true])(
     "transcodes every ETC1S/UASTC mip directly to raw ASTC (UASTC=%s)",
     async (isUASTC) => {

@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   KHR_DF_MODEL_ASTC,
+  KHR_DF_TRANSFER_LINEAR,
   KHR_DF_TRANSFER_SRGB,
   KHR_SUPERCOMPRESSION_NONE,
   VK_FORMAT_ASTC_4x4_SRGB_BLOCK,
@@ -346,9 +347,19 @@ async function basisModule(): Promise<IBasisModule> {
 }
 
 /** Cook the measured Basis result to decoder-free ASTC without re-encoding its pixels. */
-export async function transcodeKtx2ToAstc(encoded: Uint8Array): Promise<Uint8Array> {
+export async function transcodeKtx2ToAstc(
+  encoded: Uint8Array,
+  gltfColorPrimaries?: 0 | 1,
+): Promise<Uint8Array> {
   const container = readKTX2(encoded);
   const descriptor = container.dataFormatDescriptor[0];
+  if (
+    gltfColorPrimaries !== undefined &&
+    ((gltfColorPrimaries !== 0 && gltfColorPrimaries !== 1) ||
+      descriptor?.transferFunction !==
+        (gltfColorPrimaries === 0 ? KHR_DF_TRANSFER_LINEAR : KHR_DF_TRANSFER_SRGB))
+  )
+    throw new Error("TN_ASSETS_ASTC_METADATA: explicit glTF primaries must be 0/linear or 1/sRGB.");
   if (
     container.vkFormat !== 0 ||
     container.pixelWidth <= 0 ||
@@ -390,6 +401,7 @@ export async function transcodeKtx2ToAstc(encoded: Uint8Array): Promise<Uint8Arr
     container.dataFormatDescriptor = [
       {
         ...descriptor,
+        ...(gltfColorPrimaries === undefined ? {} : { colorPrimaries: gltfColorPrimaries }),
         colorModel: KHR_DF_MODEL_ASTC,
         texelBlockDimension: [3, 3, 0, 0],
         bytesPlane: [16, 0, 0, 0, 0, 0, 0, 0],
