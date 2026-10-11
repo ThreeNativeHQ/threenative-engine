@@ -46,6 +46,7 @@
         "gte": 1
       },
       {
+        "allowTrivial": "The validated CPU reference measures seam gaps from its first observation; the bound must hold from startup, not only after movement.",
         "component": "maxSeamGap",
         "entity": "terrainCpuReference",
         "gte": 1e-6,
@@ -58,6 +59,7 @@
         "lte": 0
       },
       {
+        "allowTrivial": "The validated CPU reference counts stitched edges from its first observation; the count must stay positive from startup, not only after movement.",
         "component": "stitchedEdges",
         "entity": "terrainCpuReference",
         "gte": 1
