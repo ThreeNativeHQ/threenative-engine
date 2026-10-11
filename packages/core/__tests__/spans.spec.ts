@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  GAME_SPANS,
   SPANS,
   SPAN_NAMES,
   SpanRecorder,
@@ -9,6 +10,7 @@ import {
   spanRecorder,
   spansRequested,
 } from "../src/profiling/Spans.js";
+import { connectUiBridge } from "../src/ui-bridge.js";
 
 afterEach(() => {
   setSpanRecorder(undefined);
@@ -151,4 +153,46 @@ describe("spansRequested", () => {
       expect(globalThis.location).toBe(original);
     }
   });
+});
+
+it("routes span boundaries to the native monotonic sink without reading simulation time", () => {
+  setSpanRecorder(undefined);
+  const now = vi.spyOn(performance, "now");
+  const sink = vi.fn();
+  vi.stubGlobal("__tnGameSpan", sink);
+  try {
+    beginSpan(SPANS.sceneUpdate);
+    endSpan(SPANS.sceneUpdate);
+    expect(sink.mock.calls).toEqual([
+      [SPANS.sceneUpdate, 0],
+      [SPANS.sceneUpdate, 1],
+    ]);
+    expect(now).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+    now.mockRestore();
+  }
+});
+
+it("closes the UI transport span when its host rejects a message", () => {
+  const sink = vi.fn();
+  vi.stubGlobal("__tnGameSpan", sink);
+  const bridge = connectUiBridge({
+    end: "game",
+    scope: {
+      __tnUiPost: () => {
+        throw new Error("host rejected");
+      },
+    },
+  });
+  try {
+    expect(() => bridge.post({ type: "state" })).toThrow("host rejected");
+    expect(sink.mock.calls).toEqual([
+      [GAME_SPANS.ui, 0],
+      [GAME_SPANS.ui, 1],
+    ]);
+  } finally {
+    bridge.close();
+    vi.unstubAllGlobals();
+  }
 });

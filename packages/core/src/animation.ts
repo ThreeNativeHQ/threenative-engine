@@ -9,6 +9,7 @@ import {
   type VectorKeyframeTrack,
 } from "three";
 import { clipTrackBindings } from "./clip-audit.js";
+import { GAME_SPANS, nativeSpan } from "./profiling/Spans.js";
 import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
 
 export interface IAnimationPlayerOptions {
@@ -566,24 +567,29 @@ export class AnimationPlayer {
   }
 
   play(name: string, options: IAnimationPlayOptions = {}): void {
-    const next = this.#actions.get(name);
-    if (next === undefined) throw new Error(`Unknown animation clip '${name}'.`);
-    // One owner at a time. A single-clip request takes the rig back from a weighted blend, exactly
-    // as it took it back from a crossfade.
-    const weighted = this.#blendTargets !== undefined;
-    this.#blendTargets = undefined;
-    this.#blendDuration = 0;
-    this.#blendStarts.clear();
-    if (this.#current === name) {
-      if (weighted) {
-        const time = next.time;
-        const keepPhase = this.#mode === "loop" && options.mode !== "once";
-        this.#playNext(name, next, options);
-        if (keepPhase) next.time = time;
-      } else this.#playCurrent(next, options.mode);
-      return;
+    nativeSpan(GAME_SPANS.animationPlay, 0);
+    try {
+      const next = this.#actions.get(name);
+      if (next === undefined) throw new Error(`Unknown animation clip '${name}'.`);
+      // One owner at a time. A single-clip request takes the rig back from a weighted blend, exactly
+      // as it took it back from a crossfade.
+      const weighted = this.#blendTargets !== undefined;
+      this.#blendTargets = undefined;
+      this.#blendDuration = 0;
+      this.#blendStarts.clear();
+      if (this.#current === name) {
+        if (weighted) {
+          const time = next.time;
+          const keepPhase = this.#mode === "loop" && options.mode !== "once";
+          this.#playNext(name, next, options);
+          if (keepPhase) next.time = time;
+        } else this.#playCurrent(next, options.mode);
+        return;
+      }
+      this.#playNext(name, next, options);
+    } finally {
+      nativeSpan(GAME_SPANS.animationPlay, 1);
     }
-    this.#playNext(name, next, options);
   }
 
   /**
@@ -741,7 +747,12 @@ export class AnimationPlayer {
     // once-clip, and that final frame still counts as advancement.
     const wasFinished = this.#finished;
     const before = this.mixer.time;
-    this.mixer.update(dt);
+    nativeSpan(GAME_SPANS.mixer, 0);
+    try {
+      this.mixer.update(dt);
+    } finally {
+      nativeSpan(GAME_SPANS.mixer, 1);
+    }
     if (this.#fadeOut.length > 0) {
       this.#fadeElapsed = Math.min(this.#fadeDuration, this.#fadeElapsed + dt);
       const linear = this.#fadeDuration === 0 ? 1 : this.#fadeElapsed / this.#fadeDuration;
@@ -764,8 +775,18 @@ export class AnimationPlayer {
     // pose is frozen, so counting there would report idle frames as animation progress.
     if (this.#current !== undefined && !wasFinished && this.mixer.time !== before)
       this.#advancedFrames += 1;
-    this.#advanceBlend(dt);
-    this.#syncStride(dt);
+    nativeSpan(GAME_SPANS.blend, 0);
+    try {
+      this.#advanceBlend(dt);
+    } finally {
+      nativeSpan(GAME_SPANS.blend, 1);
+    }
+    nativeSpan(GAME_SPANS.stride, 0);
+    try {
+      this.#syncStride(dt);
+    } finally {
+      nativeSpan(GAME_SPANS.stride, 1);
+    }
   }
 
   stop(): void {

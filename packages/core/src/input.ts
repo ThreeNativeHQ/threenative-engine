@@ -1,4 +1,5 @@
 import { Vector2 } from "three";
+import { GAME_SPANS, nativeSpan } from "./profiling/Spans.js";
 
 /**
  * One action, read either as a button through `pressed`/`justPressed`, a 2D axis through
@@ -298,22 +299,27 @@ export class InputMap {
    * `Input.get_vector`, where up is -y.
    */
   vector(name: string): Vector2 {
-    let vector = this.#vectors.get(name);
-    if (vector === undefined) {
-      vector = new Vector2();
-      this.#vectors.set(name, vector);
+    nativeSpan(GAME_SPANS.inputVector, 0);
+    try {
+      let vector = this.#vectors.get(name);
+      if (vector === undefined) {
+        vector = new Vector2();
+        this.#vectors.set(name, vector);
+      }
+      const binding = this.#bindings[name];
+      if (binding === undefined) return vector.set(0, 0);
+      vector.set(this.#isHeld(binding.left) ? -1 : 0, this.#isHeld(binding.down) ? -1 : 0);
+      if (this.#isHeld(binding.right)) vector.x += 1;
+      if (this.#isHeld(binding.up)) vector.y += 1;
+      if (name === "move" && this.#gamepadAxes.length >= 2) {
+        vector.x += this.#gamepadAxes[0] ?? 0;
+        vector.y += -(this.#gamepadAxes[1] ?? 0);
+      }
+      if (binding.pointerRelative === true) vector.add(this.#relativeSample);
+      return binding.pointerRelative === true ? vector : vector.clampLength(0, 1);
+    } finally {
+      nativeSpan(GAME_SPANS.inputVector, 1);
     }
-    const binding = this.#bindings[name];
-    if (binding === undefined) return vector.set(0, 0);
-    vector.set(this.#isHeld(binding.left) ? -1 : 0, this.#isHeld(binding.down) ? -1 : 0);
-    if (this.#isHeld(binding.right)) vector.x += 1;
-    if (this.#isHeld(binding.up)) vector.y += 1;
-    if (name === "move" && this.#gamepadAxes.length >= 2) {
-      vector.x += this.#gamepadAxes[0] ?? 0;
-      vector.y += -(this.#gamepadAxes[1] ?? 0);
-    }
-    if (binding.pointerRelative === true) vector.add(this.#relativeSample);
-    return binding.pointerRelative === true ? vector : vector.clampLength(0, 1);
   }
 
   /**

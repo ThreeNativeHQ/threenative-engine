@@ -212,3 +212,11 @@ export function audioCall(
 ): number {
   return js_tnp_audio_call(op, context, object, packet, data, bytes);
 }
+
+// Player-owned monotonic profiling; absent from the game hot path unless the host flag is enabled.
+declare function js_tnp_player_span(id: number, action: number): number;
+export function playerSpan(id: number, action: number): number {
+  const result = js_tnp_player_span(id, action);
+  if (result < 0) throw new Error("TN_GAME_SPANS_INVALID");
+  return result;
+}

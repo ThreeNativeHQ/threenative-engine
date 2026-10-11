@@ -23,6 +23,7 @@ import type { EntitySnapshot } from "./entities.js";
 import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
 import { GEOMETRY_CAPTURE_CAPABILITY } from "./geometry-capture.js";
 import { PIPELINE_CENSUS_CAPABILITY } from "./pipeline-census.js";
+import { GAME_SPANS, nativeSpan } from "./profiling/Spans.js";
 import { readRenderChainObservation } from "./render/chain.js";
 import type { ICtx } from "./scene.js";
 import { CORE_VERSION } from "./version.js";
@@ -60,8 +61,18 @@ export function playtest<
     update: (ctx) => {
       const tick = readTick?.();
       if (tick === undefined) return;
-      drainContacts(ctx, contactHistory, tick);
-      watcher.observe(ctx, tick);
+      nativeSpan(GAME_SPANS.contacts, 0);
+      try {
+        drainContacts(ctx, contactHistory, tick);
+      } finally {
+        nativeSpan(GAME_SPANS.contacts, 1);
+      }
+      nativeSpan(GAME_SPANS.transitions, 0);
+      try {
+        watcher.observe(ctx, tick);
+      } finally {
+        nativeSpan(GAME_SPANS.transitions, 1);
+      }
     },
     setup: async (ctx, runtime) => {
       readTick = runtime?.tick;
@@ -707,13 +718,23 @@ function objectGraphValues(root: object | undefined): object[] {
   const values: object[] = [];
   const visited = new Set<object>();
   const visit = (value: unknown, depth: number): void => {
-    if (value === null || typeof value !== "object" || visited.has(value)) return;
-    visited.add(value);
-    values.push(value);
-    if (depth >= 4 || value instanceof Object3D) return;
-    for (const child of Object.values(value)) visit(child, depth + 1);
+    nativeSpan(GAME_SPANS.graphVisit, 0);
+    try {
+      if (value === null || typeof value !== "object" || visited.has(value)) return;
+      visited.add(value);
+      values.push(value);
+      if (depth >= 4 || value instanceof Object3D) return;
+      for (const child of Object.values(value)) visit(child, depth + 1);
+    } finally {
+      nativeSpan(GAME_SPANS.graphVisit, 1);
+    }
   };
-  visit(root, 0);
+  nativeSpan(GAME_SPANS.objectGraph, 0);
+  try {
+    visit(root, 0);
+  } finally {
+    nativeSpan(GAME_SPANS.objectGraph, 1);
+  }
   return values;
 }
 

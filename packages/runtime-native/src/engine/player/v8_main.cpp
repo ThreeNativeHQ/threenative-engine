@@ -760,6 +760,20 @@ bool V8Game::start(const std::string& path, std::string& error) {
                                          std::pair{"__tnPointerCapture", &pointerCaptureCallback}})
         ctx->Global()->Set(ctx, v8str(isolate_, name), v8::Function::New(ctx, callback).ToLocalChecked()).Check();
 
+    if (player::gameSpan(-1, 0) == 1) {
+        ctx->Global()->Set(ctx, v8str(isolate_, "__tnGameSpan"), v8::Function::New(ctx,
+            [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                auto* isolate = info.GetIsolate();
+                if (info.Length() != 2 || !info[0]->IsInt32() || !info[1]->IsInt32()) {
+                    isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_GAME_SPANS_ARGUMENT")));
+                    return;
+                }
+                const double value = player::gameSpan(info[0].As<v8::Int32>()->Value(), info[1].As<v8::Int32>()->Value());
+                if (value < 0) isolate->ThrowException(v8::Exception::Error(v8str(isolate, "TN_GAME_SPANS_INVALID")));
+                else info.GetReturnValue().Set(value);
+            }).ToLocalChecked()).Check();
+    }
+
     std::ifstream file(path);
     if (!file)
         return error = "cannot read " + path, false;

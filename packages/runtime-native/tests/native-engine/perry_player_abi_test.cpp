@@ -7,6 +7,8 @@
 #include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
 #include <cmath>
+#include <cstdlib>
+#include <stdexcept>
 
 extern "C" int32_t js_tnp_player_open();
 extern "C" int32_t js_tnp_player_step();
@@ -59,6 +61,41 @@ void uiMessages() {
 #endif
 }
 void frameMetrics() {
+    using tn::engine::player::gameSpan;
+    using tn::engine::player::gameSpanTiming;
+    const char* priorFlag = std::getenv("TN_GAME_SPANS");
+    const std::string savedFlag = priorFlag ? priorFlag : "";
+    for (const char* flag : {"", "0", "false", "yes", "1"}) {
+        setenv("TN_GAME_SPANS", flag, 1);
+        CHECK(gameSpan(-1, 0) == (std::string(flag) == "1" ? 1 : 0));
+    }
+    if (priorFlag) setenv("TN_GAME_SPANS", savedFlag.c_str(), 1);
+    else unsetenv("TN_GAME_SPANS");
+    const double started = gameSpan(-2, 0);
+    CHECK(gameSpan(26, 0) == 0);
+    CHECK(gameSpan(14, 0) == 0);
+    CHECK(gameSpan(-3, 0) == 0);
+    CHECK(gameSpan(14, 1) == 0);
+    CHECK(gameSpan(26, 1) == 0);
+    const double elapsed = gameSpan(-2, 0) - started;
+    const auto spans = gameSpanTiming(elapsed);
+    const auto* root = spans.find("spans")->find("hostUpdate");
+    const auto* input = spans.find("spans")->find("input");
+    CHECK(root->find("calls")->number() == 1);
+    CHECK(input->find("calls")->number() == 1);
+    CHECK(root->find("ms")->number() >= input->find("ms")->number());
+    CHECK(std::abs(root->find("selfMs")->number() + input->find("selfMs")->number()
+        + spans.find("residualMs")->number() - elapsed) < 1e-9);
+    CHECK(gameSpanTiming(0).find("spans")->find("input")->find("calls")->number() == 0);
+    // Mailbox observations after render must not leak into the next game-JS window.
+    CHECK(gameSpan(42, 0) == 0);
+    CHECK(gameSpan(42, 1) == 0);
+    CHECK(gameSpanTiming(0).find("spans")->find("graphVisit")->find("calls")->number() == 0);
+    CHECK(gameSpan(26, 0) == 0);
+    CHECK(gameSpan(14, 1) == -1);
+    bool refused = false;
+    try { gameSpanTiming(0); } catch (const std::runtime_error&) { refused = true; }
+    CHECK(refused);
     const auto sample = tn::engine::player::frameTiming(0.5, 0.6, 1.1, 28.5, 42);
     CHECK(sample.find("gameJsMs")->number() == 0.5);
     CHECK(sample.find("renderMs")->number() == 0.6);

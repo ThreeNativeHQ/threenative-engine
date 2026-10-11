@@ -8,6 +8,34 @@ must name the target, hardware, scene, build, sample duration and before/after m
 Simulator and emulator measurements may prove plumbing but must not stand in for physical
 driver or phone-performance evidence.
 
+## PRD-581 desktop game-frame attribution
+
+`TN_GAME_SPANS=1` installs the internal `__tnGameSpan(id, action)` sink on the Perry
+and V8 players. It uses `steady_clock`, because both core hosts expose simulation time
+through `performance.now()`. The sink reuses core's render-span hooks and adds input,
+scheduler, scene/plugin callbacks, animation, physics, transport, playtest and UI spans.
+UI spans cover host polling, shared message serialization/delivery and composite-counter
+sampling; state publication has its own span, and native UI drawing is outside gameJsMs.
+Only the native update and pre-render host windows record spans; mailbox observations
+between them are outside `gameJsMs`. Invalid ids, actions, nesting or stack overflow fail
+closed. With the flag absent, no span clock, allocation or per-span FFI call occurs.
+
+Each completed `TN_PLAYER_FRAME` includes `gameSpans` only when requested: the same
+`gameJsMs`, unclaimed `residualMs`, and named spans with inclusive `ms`, exclusive
+`selfMs` and `calls`. Add exclusive times when checking coverage; inclusive parents
+contain their children. Records reset at the measured boundary and travel with the
+completed frame, so an unfinished final frame cannot leave an unmatched span record.
+The flagged host also runs three 100,000-call no-op FFI batches, subtracting an empty
+checksum loop and reporting `TN_GAME_FFI`; this measures the bare numeric crossing,
+not property conversion or useful engine work.
+
+Linux desktop proof (2026-10-11): the strict B17/B16 minimal binary and V8 bundle
+completed three paired runs on RTX 2080. Native flag/boundary cases passed RED→GREEN;
+completed-frame accounting matched the shared metric on every sample, with grouped p50
+coverage 98.9%/97.5%. Details, timings, controls and ranked hypotheses remain in the
+PRD-581 minimal-journey note; raw runs are under
+`artifacts/perf-loop/2026-10-11T14:16:37.008Z/`. No other platform or FPS claim.
+
 ## PRD-068 measurement path
 
 The Android JavaScript-engine spike now has a default-off, fail-closed measurement path:

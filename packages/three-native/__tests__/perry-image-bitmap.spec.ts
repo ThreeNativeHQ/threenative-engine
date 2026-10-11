@@ -67,7 +67,7 @@ it("decodes encoded bytes natively and adopts each bitmap once with the V8 flipY
       "const nativeImageBitmaps = bitmaps;",
     );
   const sandbox = {
-    native: { playerRunner: () => 0, playerBind: () => 0 },
+    native: { playerRunner: () => 0, playerBind: () => 0, playerSpan: () => 0 },
     load,
     bitmaps: textures.nativeImageBitmaps,
     exports: {},

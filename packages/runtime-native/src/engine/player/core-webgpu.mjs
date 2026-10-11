@@ -64,10 +64,14 @@ export class WebGPURenderer {
   }
   getDrawingBufferSize(target) { return target.set(this.domElement.width, this.domElement.height); }
   render(scene, camera) {
-    syncUniforms();
-    globalThis.tn.scene = scene;
-    globalThis.tn.camera = camera;
-    globalThis.tn.setRendererState(this);
+    globalThis.__tnGameSpan?.(23, 0);
+    try { syncUniforms(); } finally { globalThis.__tnGameSpan?.(23, 1); }
+    globalThis.__tnGameSpan?.(24, 0);
+    try {
+      globalThis.tn.scene = scene;
+      globalThis.tn.camera = camera;
+      globalThis.tn.setRendererState(this);
+    } finally { globalThis.__tnGameSpan?.(24, 1); }
   }
   compileAsync(root, camera, scene) {
     syncUniforms();

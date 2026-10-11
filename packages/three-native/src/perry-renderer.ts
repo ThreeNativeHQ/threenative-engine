@@ -129,18 +129,40 @@ export function definePerryRenderer(host: IPerryRenderHost) {
       const cameraRef = engineRef(camera);
       if (sceneRef === undefined || cameraRef === undefined)
         throw new TypeError("TN_PERRY_RENDER_ARGUMENT");
-      host.sync();
-      const [width, height] = this.drawSize();
-      host.render(
-        sceneRef,
-        cameraRef,
-        width,
-        height,
-        this.toneMapping,
-        this.toneMappingExposure,
-        this.outputColorSpace === "srgb",
-        this.clear,
+      (globalThis as { __tnGameSpan?: (id: number, action: number) => number }).__tnGameSpan?.(
+        23,
+        0,
       );
+      try {
+        host.sync();
+      } finally {
+        (globalThis as { __tnGameSpan?: (id: number, action: number) => number }).__tnGameSpan?.(
+          23,
+          1,
+        );
+      }
+      const [width, height] = this.drawSize();
+      (globalThis as { __tnGameSpan?: (id: number, action: number) => number }).__tnGameSpan?.(
+        24,
+        0,
+      );
+      try {
+        host.render(
+          sceneRef,
+          cameraRef,
+          width,
+          height,
+          this.toneMapping,
+          this.toneMappingExposure,
+          this.outputColorSpace === "srgb",
+          this.clear,
+        );
+      } finally {
+        (globalThis as { __tnGameSpan?: (id: number, action: number) => number }).__tnGameSpan?.(
+          24,
+          1,
+        );
+      }
     }
     dispose(): void {
       this.disposed = true;

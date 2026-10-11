@@ -1,4 +1,5 @@
 import type { FrameBudget, IFramePhaseSample } from "./frame-budget.js";
+import { GAME_SPANS, nativeSpan } from "./profiling/Spans.js";
 import type { SpanRecorder } from "./profiling/Spans.js";
 import type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 
@@ -397,6 +398,7 @@ export class FixedStepLoop {
     let callbackMs: number | undefined;
     let metrics: IRenderPerformanceMetrics | undefined;
     let phases: IFramePhaseSample | undefined;
+    nativeSpan(GAME_SPANS.loop, 0);
     try {
       updates = this.#advanceSimulation(now);
       budget?.markSimulationEnd(this.#now(), updates);
@@ -421,6 +423,7 @@ export class FixedStepLoop {
         if (renderMs !== undefined && spans.depth === 0) spans.endFrame(renderMs);
         else spans.abandonFrame();
       }
+      nativeSpan(GAME_SPANS.loop, 1);
       const callbackFinishedAt = this.#now();
       if (Number.isFinite(callbackStartedAt) && Number.isFinite(callbackFinishedAt)) {
         callbackMs = Math.max(0, callbackFinishedAt - callbackStartedAt);

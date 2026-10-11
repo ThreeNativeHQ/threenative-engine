@@ -11,6 +11,7 @@ import {
   playerCodes,
   playerOpen,
   playerRunner,
+  playerSpan,
   playerStep,
   playerUiAttached,
   playerUiPost,
@@ -76,6 +77,28 @@ function flushFrames(now: number): void {
   for (const callback of pending) callback(now);
 }
 const runner = playerRunner() !== 0;
+const span = playerSpan(-1, 0) === 1 ? playerSpan : undefined;
+globals.__tnGameSpan = span;
+if (span !== undefined) {
+  const calls = 100_000;
+  for (let warm = 0; warm < 10_000; warm++) playerSpan(-3, 0);
+  for (let batch = 0; batch < 3; batch++) {
+    let checksum = 0;
+    const emptyStart = playerSpan(-2, 0);
+    for (let i = 0; i < calls; i++) checksum += i & 1;
+    const emptyMs = playerSpan(-2, 0) - emptyStart;
+    const start = playerSpan(-2, 0);
+    for (let i = 0; i < calls; i++) {
+      playerSpan(-3, 0);
+      checksum += i & 1;
+    }
+    const ms = playerSpan(-2, 0) - start;
+    console.log(
+      `TN_GAME_FFI:${JSON.stringify({ calls, ms, emptyMs, netNs: ((ms - emptyMs) * 1e6) / calls, checksum })}`,
+    );
+  }
+}
+
 globals.__THREENATIVE_NATIVE__ = {
   physics: createPerryPhysicsHost(),
   platform: { runtime: "native", os: "linux", formFactor: "desktop", maxTouchPoints: 0 },
@@ -245,13 +268,21 @@ const status = playerBind(
     runDueTimers();
     if (runner) {
       const bridge = globals.__THREENATIVE_PLAYTEST_BRIDGE__ as IBridge | undefined;
-      if (typeof bridge?.advance === "function") void bridge.advance(1);
+      if (typeof bridge?.advance === "function") {
+        span?.(25, 0);
+        try {
+          void bridge.advance(1);
+        } finally {
+          span?.(25, 1);
+        }
+      }
     } else flushFrames(time);
   },
   (frameMs: number) => {
     // Decodes settle on the host's frames, not on simulation ticks: a game held by a runner
     // (no ticks yet) still finishes loading its audio before its first describe().
     audioHost.update();
+    span?.(28, 0);
     for (let message = playerUiTake(); message !== undefined; message = playerUiTake()) {
       const receive = globals.__tnUiGameReceive;
       if (typeof receive !== "function") {
@@ -264,6 +295,7 @@ const status = playerBind(
         console.error(`TN_UI_RECEIVE_FAILED: ${String(error)}`);
       }
     }
+    span?.(28, 1);
     if (!runner) return;
     // A game held by a runner has no ticks, yet its loading timers (setTimeout 0 between warm-up
     // slices) must fire: until the first tick they follow the host's frame clock, as the V8

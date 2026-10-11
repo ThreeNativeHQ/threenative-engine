@@ -95,6 +95,11 @@
           "returns": "i32"
         },
         {
+          "name": "js_tnp_player_span",
+          "params": ["i32", "i32"],
+          "returns": "f64"
+        },
+        {
           "name": "js_tnp_player_codes",
           "params": [],
           "returns": "i64"

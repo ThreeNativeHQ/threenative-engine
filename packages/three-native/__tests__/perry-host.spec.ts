@@ -84,7 +84,7 @@ it("transports UI strings over the numeric ABI and frees outbound buffers on fai
   expect(post).toHaveBeenCalledTimes(2);
 });
 
-it("drives core frames, input, timers and async mailbox observations through player callbacks", async () => {
+it.each([false, true])("drives core with game spans=%s", async (spans) => {
   let update!: (dt: number) => void;
   let frame!: (ms: number) => void;
   let observe!: (method: number, argument: number) => number;
@@ -107,6 +107,7 @@ it("drives core frames, input, timers and async mailbox observations through pla
     playerClose: vi.fn(),
     playerOpen: () => 0,
     playerRunner: () => 1,
+    playerSpan: vi.fn((id: number) => (id === -1 ? Number(spans) : 0)),
     playerStep: () => 0,
     playerCodes: () => codes,
     playerUiAttached: () => attached,
@@ -170,6 +171,7 @@ it("drives core frames, input, timers and async mailbox observations through pla
     };
     __THREENATIVE_NATIVE__: { platform: { runtime: string }; physics: { version: string } };
     __THREENATIVE_PLAYTEST_BRIDGE__?: Record<string, (...args: unknown[]) => unknown>;
+    __tnGameSpan?: (id: number, action: number) => number;
     audioUpdates?: number;
     __tnUiGameReceive?: (frame: string) => void;
     requestAnimationFrame(callback: (time: number) => void): number;
@@ -181,6 +183,8 @@ it("drives core frames, input, timers and async mailbox observations through pla
     }).outputText,
     sandbox,
   );
+  expect(sandbox.__tnGameSpan).toBe(spans ? native.playerSpan : undefined);
+  expect(native.playerSpan).toHaveBeenCalledWith(-1, 0);
   expect(sandbox.__THREENATIVE_NATIVE__.platform.runtime).toBe("native");
   expect(sandbox.__THREENATIVE_NATIVE__.physics.version).toBe("0.30.0");
   // Use core's real bridge: host state out, queued intents back while simulation is held.

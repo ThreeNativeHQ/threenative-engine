@@ -74,6 +74,35 @@ export const SPANS = {
 
 export type SpanId = (typeof SPANS)[keyof typeof SPANS];
 
+/** Native game-JS spans use the player's monotonic clock, independent of the simulation clock. */
+export const GAME_SPANS = {
+  input: 14,
+  scheduler: 15,
+  plugins: 16,
+  sceneCallbacks: 17,
+  entities: 18,
+  afterPhysics: 19,
+  mixer: 20,
+  stride: 21,
+  blend: 22,
+  transport: 23,
+  publish: 24,
+  playtest: 25,
+  ui: 28,
+  loop: 31,
+  state: 32,
+  contacts: 33,
+  transitions: 34,
+  objectGraph: 35,
+  physicsStep: 36,
+  physicsRead: 37,
+  physicsApply: 38,
+  characterMove: 39,
+  animationPlay: 40,
+  inputVector: 41,
+  graphVisit: 42,
+} as const;
+
 /** Names, indexed by id. The only place a span name is a string. */
 export const SPAN_NAMES: readonly string[] = [
   "compute",
@@ -428,17 +457,24 @@ export function spanNow(): number {
   return globalThis.performance?.now() ?? Date.now();
 }
 
-/**
- * Opens a span. One guarded return when spans are off — no clock read, no allocation, no branch on
- * anything but the recorder's own presence.
- */
+/** Player sink only; does not alter the existing render-recorder tree. No clocks or allocations off. */
+export function nativeSpan(id: number, action: number): void {
+  (globalThis as { __tnGameSpan?: (id: number, action: number) => number }).__tnGameSpan?.(
+    id,
+    action,
+  );
+}
+
+/** Opens a render span, including the opt-in native wall-time sink. */
 export function beginSpan(id: SpanId): void {
+  nativeSpan(id, 0);
   const active = recorder;
   if (active === undefined) return;
   active.begin(id, spanNow());
 }
 
 export function endSpan(id: SpanId): void {
+  nativeSpan(id, 1);
   const active = recorder;
   if (active === undefined) return;
   active.end(id, spanNow());

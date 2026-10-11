@@ -11,11 +11,15 @@
 #endif
 
 #include <chrono>
+#include <array>
+#include <cstring>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 #include "engine/inspect/endpoint.h"
@@ -30,6 +34,78 @@
 using namespace tn::engine;
 
 namespace tn::engine::player {
+
+namespace {
+// Same numeric ids as core's render spans and GAME_SPANS; the host owns the wall clock.
+constexpr const char* kGameSpanNames[] = {
+    "compute", "beforeRender", "sceneUpdate", "reconcile", "clustered", "lod", "cull",
+    "mainPass", "shadowPass", "reflectionPass", "nestedPass", "projectObject", "sort", "draw",
+    "input", "scheduler", "plugins", "sceneCallbacks", "entities", "afterPhysics", "mixer",
+    "stride", "blend", "transport", "publish", "playtest", "hostUpdate", "hostFrame", "ui",
+    "gc", "view", "loop", "state", "contacts", "transitions", "objectGraph", "physicsStep",
+    "physicsRead", "physicsApply", "characterMove", "animationPlay", "inputVector", "graphVisit"};
+constexpr size_t kGameSpanCount = std::size(kGameSpanNames);
+struct GameSpans {
+    struct Entry { int id; std::chrono::steady_clock::time_point start; double childMs; };
+    std::array<Entry, 64> stack{};
+    size_t depth = 0;
+    std::array<double, kGameSpanCount> inclusive{}, exclusive{};
+    std::array<uint64_t, kGameSpanCount> calls{};
+    bool invalid = false;
+} gameSpans;
+}
+
+double gameSpan(int id, int action) {
+    if ((id < 0 && action != 0) || (action != 0 && action != 1)) {
+        gameSpans.invalid = true;
+        return -1;
+    }
+    if (id == -1) {
+        const char* flag = std::getenv("TN_GAME_SPANS");
+        return flag && std::strcmp(flag, "1") == 0 ? 1 : 0;
+    }
+    if (id == -2) return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (id == -3) return 0;  // diagnostic no-op: measures the runtime-to-engine call, not clock_gettime
+    if (id < 0 || size_t(id) >= kGameSpanCount) {
+        gameSpans.invalid = true;
+        return -1;
+    }
+    // Mailbox observations between frames are outside gameJsMs's update/pre-render windows.
+    if (gameSpans.depth == 0 && id != 26 && id != 27) return 0;
+    if ((action == 0 && gameSpans.depth == gameSpans.stack.size()) ||
+        (action == 1 && (gameSpans.depth == 0 || gameSpans.stack[gameSpans.depth - 1].id != id))) {
+        gameSpans.invalid = true;
+        return -1;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (action == 0) gameSpans.stack[gameSpans.depth++] = {id, now, 0};
+    else {
+        const auto entry = gameSpans.stack[--gameSpans.depth];
+        const double ms = std::chrono::duration<double, std::milli>(now - entry.start).count();
+        gameSpans.inclusive[id] += ms;
+        gameSpans.exclusive[id] += ms - entry.childMs;
+        ++gameSpans.calls[id];
+        if (gameSpans.depth) gameSpans.stack[gameSpans.depth - 1].childMs += ms;
+    }
+    return 0;
+}
+
+json::Value gameSpanTiming(double gameMs) {
+    if (gameSpans.invalid || gameSpans.depth) throw std::runtime_error("TN_GAME_SPANS_INVALID");
+    std::vector<std::pair<std::string, json::Value>> spans;
+    double measured = 0;
+    for (size_t id = 0; id < kGameSpanCount; ++id) {
+        measured += gameSpans.exclusive[id];
+        spans.emplace_back(kGameSpanNames[id], json::Value::makeObject({
+            {"ms", json::Value::makeNumber(gameSpans.inclusive[id])},
+            {"selfMs", json::Value::makeNumber(gameSpans.exclusive[id])},
+            {"calls", json::Value::makeNumber(gameSpans.calls[id])}}));
+    }
+    gameSpans = {};
+    return json::Value::makeObject({{"gameJsMs", json::Value::makeNumber(gameMs)},
+        {"residualMs", json::Value::makeNumber(gameMs - measured)},
+        {"spans", json::Value::makeObject(std::move(spans))}});
+}
 
 /** The high-performance adapter's `info` fields, empty ones left out; empty when there is none. */
 std::vector<std::pair<std::string, std::string>> adapterIdentity() {
@@ -246,12 +322,15 @@ struct Session {
     RenderDatabase database;
     bool runner = false, initialized = false, readbackInFlight = false, firstFrame = true;
     bool viewFailed = false;
-    bool metrics = std::getenv("TN_PLAYER_METRICS") != nullptr;
+    bool metrics = std::getenv("TN_PLAYER_METRICS") != nullptr || gameSpan(-1, 0) == 1;
+    bool spans = gameSpan(-1, 0) == 1;
     uint64_t measuredFrames = 0, previousCrossings = 0;
     double updateMs = 0, readyMs = 0;
     void update(double dt) {
         const auto begin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        if (spans) gameSpan(26, 0);
         if (game.update) game.update(dt);
+        if (spans) gameSpan(26, 1);
         if (metrics) updateMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
     }
 #if defined(__ANDROID__)
@@ -260,6 +339,7 @@ struct Session {
     explicit Session(const Game& source) : game(source), scene(game.scene), camera(game.camera) {
         // Benchmarks need one rendered sample per driven simulation tick, not a batch of 600 updates.
         if (metrics) game.renderEachTick = true;
+        if (spans) gameSpans = {};
     }
     int initialize();
     int step();
@@ -385,14 +465,18 @@ int Session::initialize() {
     previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
     renderFrame = [this] {
         const auto frameBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        if (spans) gameSpan(27, 0);
         double presentMs = 0;
+        std::optional<json::Value> frameSpans;
         const auto elapsed = [](auto begin) {
             return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
         };
         if (firstFrame) startupStage("first-render-begin");
+        if (spans) gameSpan(29, 0);
         if (game.afterRender)  // after the previous frame; between frames, never inside one
             game.afterRender();
-        if (!refreshView()) return;
+        if (spans) gameSpan(29, 1);
+        if (!refreshView()) { if (spans) gameSpan(27, 1); return; }
 
         if (presenter && (presenter->width() != window.width || presenter->height() != window.height)) {
             presenter->resize(window.width, window.height);
@@ -402,18 +486,23 @@ int Session::initialize() {
         // Nothing is drawn until the game publishes its view, as a page's canvas stays blank while it loads.
         if (scene == nullptr || camera == nullptr) {
             if (game.frameWithoutView) game.frameWithoutView();
+            if (spans) { gameSpan(27, 1); gameSpanTiming(0); }
             renderer->poll();
             events.drain();
             return;
         }
         if (game.beforeRender) game.beforeRender(*renderer, database);
         // Frame callbacks can replace the published view and release its previous owners.
-        if (!refreshView() || scene == nullptr || camera == nullptr) return;
+        if (!refreshView() || scene == nullptr || camera == nullptr) { if (spans) gameSpan(27, 1); return; }
         if (metrics && measuredFrames == 0) {
             const char* launch = std::getenv("TN_BENCH_LAUNCH_MS");
             if (launch) readyMs = std::chrono::duration<double, std::milli>(std::chrono::system_clock::now().time_since_epoch()).count() - std::strtod(launch, nullptr);
         }
         const double gameMs = metrics ? updateMs + elapsed(frameBegin) : 0;
+        if (spans) {
+            gameSpan(27, 1);
+            frameSpans = gameSpanTiming(gameMs);
+        }
         const auto renderBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1});
         const double renderMs = metrics ? elapsed(renderBegin) : 0;
@@ -481,6 +570,11 @@ int Session::initialize() {
             const double duration = updateMs + elapsed(frameBegin);
             auto sample = frameTiming(gameMs, renderMs, duration - presentMs, duration,
                                       (game.bridgeCalls ? game.bridgeCalls() : 0) - previousCrossings);
+            if (spans) {
+                auto members = sample.members();
+                members.emplace_back("gameSpans", std::move(*frameSpans));
+                sample = json::Value::makeObject(std::move(members));
+            }
             ++measuredFrames;
             std::printf("TN_PLAYER_FRAME:%s\n", json::stringify(sample).c_str());
             std::fflush(stdout);

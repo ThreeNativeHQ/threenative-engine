@@ -156,13 +156,20 @@ export class CharacterBody3D {
    * typically on the next frame, to measure the motion that the solver applied.
    */
   moveAndSlide(dt: number): void {
-    if (!Number.isFinite(dt) || dt < 0)
-      throw new Error("CharacterBody3D.moveAndSlide requires a finite non-negative dt.");
-    this.velocity.y = Math.max(this.velocity.y + this.gravity * dt, -this.maxFallSpeed);
-    this.#desired.x = this.velocity.x * dt;
-    this.#desired.y = this.velocity.y * dt;
-    this.#desired.z = this.velocity.z * dt;
-    this.#sliding = true;
+    const span = (globalThis as { __tnGameSpan?: (id: number, action: number) => number })
+      .__tnGameSpan;
+    span?.(39, 0);
+    try {
+      if (!Number.isFinite(dt) || dt < 0)
+        throw new Error("CharacterBody3D.moveAndSlide requires a finite non-negative dt.");
+      this.velocity.y = Math.max(this.velocity.y + this.gravity * dt, -this.maxFallSpeed);
+      this.#desired.x = this.velocity.x * dt;
+      this.#desired.y = this.velocity.y * dt;
+      this.#desired.z = this.velocity.z * dt;
+      this.#sliding = true;
+    } finally {
+      span?.(39, 1);
+    }
   }
 
   /** Called by the shared plugin before a bulk step. */

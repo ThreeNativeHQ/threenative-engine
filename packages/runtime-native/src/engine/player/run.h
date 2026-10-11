@@ -89,6 +89,12 @@ struct Game {
  * bridgeCalls counts the shared C ABI entries since the previous rendered frame. */
 json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double frameMs, uint64_t bridgeCalls);
 
+/** Default-off TN_GAME_SPANS sink: -1 queries the flag, -2 reads monotonic ms, -3 is a no-op FFI probe.
+ * Normal ids begin (action 0) or end (action 1) inside host windows 26/27; outside spans are ignored.
+ * Invalid input/nesting returns -1. */
+double gameSpan(int id, int action);
+json::Value gameSpanTiming(double gameMs);
+
 /** One owned player session; step returns 1 while running, 0 on close, a negative error on failure. */
 struct Session;
 Session* open(const Game& game, int& status);

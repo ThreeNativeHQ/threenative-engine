@@ -22,6 +22,8 @@
  * stops updating, which is the failure this refuses to have.
  */
 
+import { GAME_SPANS, nativeSpan } from "./profiling/Spans.js";
+
 /** Which side of the bridge a caller is on. `ui` runs in the web view; `game` in the runtime. */
 export type UiBridgeEnd = "game" | "ui";
 
@@ -329,9 +331,14 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
       return typeof attached === "function" ? (attached as () => boolean)() === true : false;
     },
     post(message) {
-      const frame = assertSendable(message);
-      if (closed) throw new Error("TN_UI_BRIDGE_CLOSED: post on a closed bridge.");
-      outbound(frame);
+      nativeSpan(GAME_SPANS.ui, 0);
+      try {
+        const frame = assertSendable(message);
+        if (closed) throw new Error("TN_UI_BRIDGE_CLOSED: post on a closed bridge.");
+        outbound(frame);
+      } finally {
+        nativeSpan(GAME_SPANS.ui, 1);
+      }
     },
     onMessage(listener) {
       listeners.add(listener);

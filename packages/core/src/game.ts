@@ -36,12 +36,14 @@ import { getPlatform } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
 import { FrameCounters, counterDeviceOf } from "./profiling/FrameCounters.js";
 import {
+  GAME_SPANS,
   SPANS,
   SpanRecorder,
   addSpan,
   beginSpan,
   endSpan,
   formatSpansWindow,
+  nativeSpan,
   setSpanRecorder,
   spanNow,
   spansRequested,
@@ -1749,6 +1751,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // and an active one both get the gate.
           const drawingBufferHeight = renderer.surface().drawingBufferHeight;
           const cullApplyStart = spans === undefined ? 0 : spanNow();
+          nativeSpan(SPANS.cull, 0);
           this.#cameraCull?.apply(
             this.#projection?.root ?? threeScene,
             camera,
@@ -1756,6 +1759,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           );
           // Added, not bracketed: the render call sits between the apply and the restore, and a
           // span that contained it would report the world pass as cull work.
+          nativeSpan(SPANS.cull, 1);
           if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullApplyStart);
           const capturing = geometryCapture.armed();
           if (capturing) {
@@ -1784,8 +1788,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // is the walk. Handing it the mirror sets the mirror scene's flag; the authored scene was
           // marked at construction.
           renderRoot.matrixWorldAutoUpdate = false;
-          this.#matrixWorld?.apply(renderRoot);
-          renderer.render(renderRoot, camera);
+          nativeSpan(SPANS.sceneUpdate, 0);
+          try {
+            this.#matrixWorld?.apply(renderRoot);
+          } finally {
+            nativeSpan(SPANS.sceneUpdate, 1);
+          }
+          nativeSpan(SPANS.mainPass, 0);
+          try {
+            renderer.render(renderRoot, camera);
+          } finally {
+            nativeSpan(SPANS.mainPass, 1);
+          }
           // *After* the render, because that is where the draw happened. The matrices read here are
           // the ones drawn: the walk above refreshed them and `render()` did not touch them. The
           // frozen roots are passed because the draw root is the projection's mirror when the
@@ -1795,7 +1809,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // argument zero times — and this stays a single undefined check in a shipped game.
           renderListValidator?.frame(renderRoot, ...staticRoots());
           const cullRestoreStart = spans === undefined ? 0 : spanNow();
+          nativeSpan(SPANS.cull, 0);
           this.#cameraCull?.restore();
+          nativeSpan(SPANS.cull, 1);
           if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullRestoreStart);
           this.#projection?.commit();
           renderer.observeRenderChainFrame?.();
@@ -1884,7 +1900,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         }
         if (mustPresentLoader) loadingFramePresented = true;
         // Include state written by beforeRender and Scene.render in this frame's UI snapshot.
-        if (this.#config.stateFlushMs === undefined) this.#state.flush();
+        nativeSpan(GAME_SPANS.state, 0);
+        try {
+          if (this.#config.stateFlushMs === undefined) this.#state.flush();
+        } finally {
+          nativeSpan(GAME_SPANS.state, 1);
+        }
         // Every frame, including one whose canvas layer is empty: the native UI is composited into
         // the game's own frame whether or not the game draws a HUD of its own, so a frame that
         // skipped this would report work it did pay as `residual`. The host reports what the
@@ -1894,9 +1915,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // than unknown, so an absent global must read as zero and not as a missing measurement.
         if (frameCounters !== undefined) frameBudget?.addCounters(frameCounters.read());
         const uiHost = globalThis as { __tnUiCompositeMs?: () => number };
-        frameBudget?.addUi(
-          typeof uiHost.__tnUiCompositeMs === "function" ? (uiHost.__tnUiCompositeMs() ?? 0) : 0,
-        );
+        nativeSpan(GAME_SPANS.ui, 0);
+        try {
+          frameBudget?.addUi(
+            typeof uiHost.__tnUiCompositeMs === "function" ? (uiHost.__tnUiCompositeMs() ?? 0) : 0,
+          );
+        } finally {
+          nativeSpan(GAME_SPANS.ui, 1);
+        }
         if (canvasLayer.scene.children.length > 0) {
           const overlayStart = frameBudget === undefined ? 0 : budgetNow();
           // The overlay is its own render call and its own frame-budget phase. The span probes sit
@@ -1920,24 +1946,80 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       },
       onAfterPhysics: (dt) => {
         if (this.#paused) return;
-        afterPhysicsPhase.run(dt);
+        nativeSpan(GAME_SPANS.afterPhysics, 0);
+        try {
+          afterPhysicsPhase.run(dt);
+        } finally {
+          nativeSpan(GAME_SPANS.afterPhysics, 1);
+        }
       },
       onUpdate: (dt) => {
         if (this.#paused) return;
-        this.#input?.tick();
-        scheduler.tick(dt);
-        pointerEvents.tick(input.raw.pointers, picker, input.raw.pointer, input.raw.pointerEdges);
-        for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
+        nativeSpan(GAME_SPANS.input, 0);
+        try {
+          this.#input?.tick();
+        } finally {
+          nativeSpan(GAME_SPANS.input, 1);
+        }
+        nativeSpan(GAME_SPANS.scheduler, 0);
+        try {
+          scheduler.tick(dt);
+        } finally {
+          nativeSpan(GAME_SPANS.scheduler, 1);
+        }
+        nativeSpan(GAME_SPANS.input, 0);
+        try {
+          pointerEvents.tick(input.raw.pointers, picker, input.raw.pointer, input.raw.pointerEdges);
+        } finally {
+          nativeSpan(GAME_SPANS.input, 1);
+        }
+        for (const plugin of this.#activePlugins) {
+          if ((globalThis as { __tnGameSpan?: unknown }).__tnGameSpan === undefined) {
+            plugin.beforeUpdate?.(ctx, dt);
+            continue;
+          }
+          const callback = plugin.beforeUpdate;
+          if (callback === undefined) continue;
+          nativeSpan(GAME_SPANS.plugins, 0);
+          try {
+            callback.call(plugin, ctx, dt);
+          } finally {
+            nativeSpan(GAME_SPANS.plugins, 1);
+          }
+        }
         const scene = this.#scene;
         const frame = this.#sceneFrame;
-        if (frame !== undefined) frame(ctx, dt);
-        // An async goto() installs the incoming scene before its load resolves; until enter()
-        // has run there is no gameplay to step and a game-overridden update() would run against
-        // a cleared graph.
-        else if (this.#sceneEntered && scene !== undefined) scene.update(ctx, dt);
+        nativeSpan(GAME_SPANS.sceneCallbacks, 0);
+        try {
+          if (frame !== undefined) frame(ctx, dt);
+          // An async goto() installs the incoming scene before its load resolves; until enter()
+          // has run there is no gameplay to step and a game-overridden update() would run against
+          // a cleared graph.
+          else if (this.#sceneEntered && scene !== undefined) scene.update(ctx, dt);
+        } finally {
+          nativeSpan(GAME_SPANS.sceneCallbacks, 1);
+        }
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
-        for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
-        this.#entities?.sweep();
+        for (const plugin of this.#activePlugins) {
+          if ((globalThis as { __tnGameSpan?: unknown }).__tnGameSpan === undefined) {
+            plugin.update?.(ctx, dt);
+            continue;
+          }
+          const callback = plugin.update;
+          if (callback === undefined) continue;
+          nativeSpan(GAME_SPANS.plugins, 0);
+          try {
+            callback.call(plugin, ctx, dt);
+          } finally {
+            nativeSpan(GAME_SPANS.plugins, 1);
+          }
+        }
+        nativeSpan(GAME_SPANS.entities, 0);
+        try {
+          this.#entities?.sweep();
+        } finally {
+          nativeSpan(GAME_SPANS.entities, 1);
+        }
         const computeBlockedByStartup =
           !worldRendered &&
           ((this.#warmUpConfiguredExplicitly() && !explicitWarmUpSettled) ||

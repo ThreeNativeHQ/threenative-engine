@@ -221,3 +221,5 @@ extern "C" int64_t js_tnp_player_publish(int64_t sceneHandle, int64_t cameraHand
     std::copy(values, values + 4, clear.begin());
     return 0;
 }
+
+extern "C" double js_tnp_player_span(int32_t id, int32_t action) { return player::gameSpan(id, action); }

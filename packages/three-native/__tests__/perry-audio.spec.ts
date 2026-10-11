@@ -113,6 +113,7 @@ it("loads packaged audio through the Perry host, retains native PCM and drains s
       return 0;
     },
     playerRunner: () => 0,
+    playerSpan: () => 0,
     playerBind: (tick: typeof update) => {
       update = tick;
       return 0;

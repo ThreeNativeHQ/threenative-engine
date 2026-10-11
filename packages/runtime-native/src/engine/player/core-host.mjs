@@ -76,7 +76,10 @@ globalThis.tn.onUpdate((dt) => {
   // render sample is a real frame time: tick time never satisfies minFps or p95 (owner, 2026-10-08).
   if (runnerAttached()) {
     const bridge = globalThis.__THREENATIVE_PLAYTEST_BRIDGE__;
-    if (typeof bridge?.advance === "function") void bridge.advance(1);
+    if (typeof bridge?.advance === "function") {
+      globalThis.__tnGameSpan?.(25, 0);
+      try { void bridge.advance(1); } finally { globalThis.__tnGameSpan?.(25, 1); }
+    }
   } else {
     flushFrames(time);
   }
@@ -92,3 +95,18 @@ export const platform = {
   mountCanvas() {},
   unmountCanvas() {},
 };
+
+if (globalThis.__tnGameSpan !== undefined) {
+  const calls = 100_000;
+  for (let warm = 0; warm < 10_000; warm++) globalThis.__tnGameSpan(-3, 0);
+  for (let batch = 0; batch < 3; batch++) {
+    let checksum = 0;
+    const emptyStart = globalThis.__tnGameSpan(-2, 0);
+    for (let i = 0; i < calls; i++) checksum += i & 1;
+    const emptyMs = globalThis.__tnGameSpan(-2, 0) - emptyStart;
+    const start = globalThis.__tnGameSpan(-2, 0);
+    for (let i = 0; i < calls; i++) { globalThis.__tnGameSpan(-3, 0); checksum += i & 1; }
+    const ms = globalThis.__tnGameSpan(-2, 0) - start;
+    console.log(`TN_GAME_FFI:${JSON.stringify({ calls, ms, emptyMs, netNs: (ms - emptyMs) * 1e6 / calls, checksum })}`);
+  }
+}

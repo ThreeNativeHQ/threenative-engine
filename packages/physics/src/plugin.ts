@@ -213,7 +213,14 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
         kinematicTransforms: kinematic,
       };
       for (const buoyancy of buoyancies) buoyancy.apply(dt);
-      simulation.step(dt, input);
+      const span = (globalThis as { __tnGameSpan?: (id: number, action: number) => number })
+        .__tnGameSpan;
+      span?.(36, 0);
+      try {
+        simulation.step(dt, input);
+      } finally {
+        span?.(36, 1);
+      }
       completedSteps += 1;
 
       visible = growFloat(visible, bodies.size + areas.size);
@@ -223,7 +230,12 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       let visibleResizeAttempts = 0;
       for (;;) {
         try {
-          visibleCount = simulation.readVisibleTransforms(visible);
+          span?.(37, 0);
+          try {
+            visibleCount = simulation.readVisibleTransforms(visible);
+          } finally {
+            span?.(37, 1);
+          }
           break;
         } catch (error) {
           if (!isSmallBufferError(error) || visibleResizeAttempts >= PHYSICS_BUFFER_RESIZE_ATTEMPTS)
@@ -237,11 +249,21 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
         const id = visibleId(visible, offset);
         const body = bodiesById.get(id);
         if (body !== undefined) {
-          body.applyTransform(visible, offset);
+          span?.(38, 0);
+          try {
+            body.applyTransform(visible, offset);
+          } finally {
+            span?.(38, 1);
+          }
           continue;
         }
         // An unregistered body has no node to sync; that is what unregistered means.
-        areas.get(id)?.applyTransform(visible, offset);
+        span?.(38, 0);
+        try {
+          areas.get(id)?.applyTransform(visible, offset);
+        } finally {
+          span?.(38, 1);
+        }
       }
 
       events = growEvents(events, bodies.size + areas.size);
