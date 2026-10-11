@@ -1,6 +1,9 @@
+import { spawn } from "node:child_process";
 import { mkdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { cpus } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { decodeRAW16 } from "../src/core/io.js";
 import type { ITerrainDocument } from "../src/core/types.js";
@@ -519,4 +522,54 @@ describe("terrain_generate result", () => {
     },
     120_000,
   );
+});
+
+describe("terrain_generate cold GLB handoff", () => {
+  it("generates a pine forest that vanilla GLTFLoader loads within 60 seconds", async () => {
+    const project = await realpath(await makeTempDir("tn-terrain-cold-"));
+    await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+    await symlink(
+      new URL("../../assets/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "assets"),
+    );
+    const start = performance.now();
+    const child = spawn(
+      process.execPath,
+      [new URL("../dist/mcp/server.js", import.meta.url).pathname],
+      { cwd: project, stdio: ["pipe", "pipe", "inherit"] },
+    );
+    try {
+      const response = new Promise<string>((resolve, reject) => {
+        let buffer = "";
+        child.stdout.on("data", (chunk: Buffer) => {
+          buffer += chunk.toString();
+          if (buffer.includes("\n")) resolve(buffer.split("\n")[0] ?? "");
+        });
+        child.on("error", reject);
+        child.on("exit", (code) => reject(new Error(`terrain server exited ${code}`)));
+      });
+      child.stdin.write(
+        `${JSON.stringify({ id: 1, jsonrpc: "2.0", method: "tools/call", params: { name: "terrain_generate", arguments: { request: "a pine forest" } } })}\n`,
+      );
+      const reply = JSON.parse(await response);
+      expect(reply.result.isError).toBe(false);
+      const result = JSON.parse(reply.result.content[0].text);
+      expect(result.worldGlb).toMatch(/world\.glb$/);
+      const bytes = await readFile(join(project, result.worldGlb));
+      vi.stubGlobal("self", globalThis);
+      vi.stubGlobal("createImageBitmap", async () => ({ width: 1, height: 1, close() {} }));
+      const gltf = await new GLTFLoader().parseAsync(
+        bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+        "",
+      );
+      expect(gltf.scene.children.length).toBeGreaterThan(0);
+      const ms = performance.now() - start;
+      console.log(`TN_TERRAIN_COLD_LOAD: ${ms.toFixed(1)} ms; CPU: ${cpus()[0]?.model}`);
+      expect(ms).toBeLessThan(60_000);
+    } finally {
+      child.kill();
+      vi.unstubAllGlobals();
+      await rm(project, { recursive: true, force: true });
+    }
+  }, 65_000);
 });
