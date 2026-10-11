@@ -7,6 +7,7 @@ import {
   IMAGE_QUALITY_IDENTITY,
   imageQuality,
   resolveImageQualityFloor,
+  transcodeKtx2ToAstc,
 } from "../image-quality.js";
 import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
@@ -82,13 +83,14 @@ export async function encodeLinearRgbaKtx2(
   data: Uint8Array,
   width: number,
   height: number,
+  astc = false,
 ): Promise<Buffer> {
   const encoded = await encodeToKTX2(new Uint8Array([0]), {
     generateMipmap: true,
     imageDecoder: async () => ({ data, height, width }),
     isPerceptual: false,
     isSetKTX2SRGBTransferFunc: false,
-    isUASTC: false,
+    isUASTC: astc,
     qualityLevel: DEFAULT_ETC1S_QUALITY,
   });
   const container = readKTX2(encoded);
@@ -97,7 +99,7 @@ export async function encodeLinearRgbaKtx2(
       `TN_ASSETS_MIP_CHAIN_INCOMPLETE: generated lightmap encoded without a mip chain (${String(container.levelCount)} level(s)).`,
     );
   }
-  return Buffer.from(encoded);
+  return Buffer.from(astc ? await transcodeKtx2ToAstc(encoded, 0) : encoded);
 }
 
 /**

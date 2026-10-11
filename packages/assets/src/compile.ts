@@ -57,7 +57,7 @@ import type {
   IModelCompactSummary,
 } from "./passes/compact.js";
 import { globMatch } from "./passes/glob.js";
-import { lightmapPass } from "./passes/lightmap.js";
+import { createLightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { TEXTURE_SIZE_SLOTS, type TextureMaxSize } from "./passes/model-textures.js";
 import { modelPass } from "./passes/model.js";
@@ -1716,9 +1716,10 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       });
     }
     if (lightmap !== undefined) {
-      registerBuiltin(lightmapPass(lightmap), {
+      registerBuiltin(createLightmapPass(lightmap, mobileAstc), {
         kind: "lightmap",
-        needsRuntimeDecoder: true,
+        ...(mobileAstc ? { astc: true } : {}),
+        needsRuntimeDecoder: !mobileAstc,
         options: lightmap,
       });
     }

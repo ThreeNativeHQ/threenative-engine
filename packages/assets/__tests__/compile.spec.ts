@@ -13,6 +13,7 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
+import { decodeAstcKtx2 } from "../src/ktx2-encoder.js";
 import { modelPass } from "../src/passes/model.js";
 import { unpackGlb } from "../src/passes/shared-images.js";
 import { sine, wavClip } from "./audio-fixtures.js";
@@ -23,6 +24,26 @@ const THREE_INSTALL = path.resolve(import.meta.dirname, "../node_modules/three")
 async function installThree(root: string): Promise<void> {
   await mkdir(path.join(root, "node_modules"), { recursive: true });
   await symlink(THREE_INSTALL, path.join(root, "node_modules/three"));
+}
+
+async function lightmapFixtureGlb(): Promise<Buffer> {
+  const source = await readFile(
+    new URL("../../create-threenative/templates/starter/assets/native-proof.glb", import.meta.url),
+  );
+  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+  const document = await io.readBinary(source);
+  const extension = document.createExtension(KHRLightsPunctual);
+  const light = extension.createLight("bake-light").setType("point").setIntensity(1);
+  document
+    .getRoot()
+    .listScenes()[0]
+    ?.addChild(
+      document
+        .createNode("bake-light")
+        .setTranslation([0, 3, 0])
+        .setExtension("KHR_lights_punctual", light),
+    );
+  return Buffer.from(await io.writeBinary(document));
 }
 
 /**
@@ -1161,26 +1182,7 @@ describe("compileAssets", () => {
   it("should run the configured lightmap UV pass through the built-in registry", async () => {
     const root = await makeTempDir("threenative-compile-lightmap-");
     await mkdir(path.join(root, "assets"));
-    const source = await readFile(
-      new URL(
-        "../../create-threenative/templates/starter/assets/native-proof.glb",
-        import.meta.url,
-      ),
-    );
-    const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
-    const document = await io.readBinary(source);
-    const extension = document.createExtension(KHRLightsPunctual);
-    const light = extension.createLight("bake-light").setType("point").setIntensity(1);
-    document
-      .getRoot()
-      .listScenes()[0]
-      ?.addChild(
-        document
-          .createNode("bake-light")
-          .setTranslation([0, 3, 0])
-          .setExtension("KHR_lights_punctual", light),
-      );
-    await writeFile(path.join(root, "assets", "room.glb"), await io.writeBinary(document));
+    await writeFile(path.join(root, "assets", "room.glb"), await lightmapFixtureGlb());
 
     await compileAssets({
       config: { models: { lightmap: { atlasSize: 128, padding: 2 } } },
@@ -1204,6 +1206,95 @@ describe("compileAssets", () => {
     const json = JSON.parse(compiled.subarray(20, 20 + compiled.readUInt32LE(12)).toString("utf8"));
     expect(json.meshes[0].primitives[0].attributes.TEXCOORD_1).toEqual(expect.any(Number));
   });
+
+  it.each(["android", "ios"] as const)(
+    "cooks linear lightmaps on %s without decoders across workers and cache changes",
+    async (platform) => {
+      const root = await makeTempDir("threenative-mobile-lightmap-");
+      await mkdir(path.join(root, "assets"));
+      const input = await lightmapFixtureGlb();
+      await writeFile(path.join(root, "assets", "room.glb"), input);
+      const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+      const secondRoom = await io.readBinary(input);
+      secondRoom.getRoot().listNodes()[0]?.setTranslation([0.25, 0, 0]);
+      await writeFile(path.join(root, "assets", "room2.glb"), await io.writeBinary(secondRoom));
+      const config: IAssetSourceConfig = {
+        audio: "none",
+        textures: "none",
+        lod: false,
+        models: {
+          textures: "none",
+          passes: { meshopt: false },
+          lightmap: { atlasSize: 128, padding: 2 },
+        },
+      };
+      const options = {
+        config,
+        cwd: root,
+        platform,
+        runtimeDecoders: { ktx2: false, meshopt: false },
+      };
+      const worker = await compileAssets({ ...options, concurrency: 2 });
+      expect(worker.concurrencyUsed).toBe(2);
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      );
+      const lightmap = manifest.entries["room.glb"].lightmaps?.[0];
+      expect(lightmap).toMatchObject({ format: "astc4x4", texCoord: 1 });
+      const bytes = await readFile(path.join(root, "public", lightmap.output));
+      const container = readKtx2(bytes);
+      expect(container.vkFormat).toBe(157);
+      expect(container.supercompressionScheme).toBe(0);
+      expect(container.globalData).toBeNull();
+      expect(container.levelCount).toBe(
+        Math.floor(Math.log2(Math.max(container.pixelWidth, container.pixelHeight))) + 1,
+      );
+      expect(container.dataFormatDescriptor[0]).toMatchObject({
+        colorPrimaries: 0,
+        transferFunction: 1,
+        texelBlockDimension: [3, 3, 0, 0],
+      });
+      await expect(
+        decodeAstcKtx2(bytes, container.pixelWidth, container.pixelHeight),
+      ).resolves.toHaveLength(container.pixelWidth * container.pixelHeight * 4);
+      const warm = await compileAssets({ ...options, concurrency: 1 });
+      expect(warm.written).toBe(0);
+      expect(warm.skipped).toBe(2);
+      const serial = await compileAssets({ ...options, concurrency: 1, output: "serial" });
+      expect(serial.written).toBe(2);
+      const serialManifest = JSON.parse(
+        await readFile(path.join(root, "serial", "assets.manifest.json"), "utf8"),
+      );
+      for (const name of ["room.glb", "room2.glb"]) {
+        const parallelEntry = manifest.entries[name];
+        const serialEntry = serialManifest.entries[name];
+        expect(serialEntry.output).toBe(parallelEntry.output);
+        expect(serialEntry.lightmaps[0].output).toBe(parallelEntry.lightmaps[0].output);
+        for (const output of [parallelEntry.output, parallelEntry.lightmaps[0].output])
+          expect(await readFile(path.join(root, "serial", output))).toEqual(
+            await readFile(path.join(root, "public", output)),
+          );
+      }
+      const basis = await compileAssets({
+        ...options,
+        concurrency: 1,
+        platform: "web",
+        runtimeDecoders: { ktx2: true, meshopt: true },
+      });
+      expect(basis.written).toBe(2);
+      const basisManifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      );
+      const basisLightmap = basisManifest.entries["room.glb"].lightmaps[0];
+      expect(basisLightmap.format).toBe("etc1s");
+      expect(basisLightmap.output).not.toBe(lightmap.output);
+      const basisBytes = await readFile(path.join(root, "public", basisLightmap.output));
+      expect(readKtx2(basisBytes).vkFormat).toBe(0);
+      const restored = await compileAssets({ ...options, concurrency: 1 });
+      expect(restored.written).toBe(2);
+      expect(await readFile(path.join(root, "public", lightmap.output))).toEqual(bytes);
+    },
+  );
 
   it("should ship a model byte-identical when assets.models is none", async () => {
     const root = await makeTempDir("threenative-compile-model-none-");
