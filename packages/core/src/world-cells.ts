@@ -6,7 +6,6 @@ import type {
   ICellBatch,
   ICellProxyState,
   IKeyDescriptor,
-  IPrewarmEntry,
   IResidentCell,
   IShadowRegion,
   ISpawnWaiter,
@@ -96,6 +95,7 @@ import { DEFAULT_TARGET_FPS } from "./target-fps.js";
 import { within, yieldToHost } from "./warmup.js";
 import { BundleSurfaceSafety, bundleSafe, ownHook } from "./world-bundle-safety.js";
 import { type ICasterScaleMesh, SharedBatch, sameSquares } from "./world-cell-batches.js";
+import { CellPrewarm, WIDE_CLUSTER } from "./world-cell-prewarm.js";
 import {
   CellProxySelection,
   type IPreparedCellProxy,
@@ -221,32 +221,6 @@ const LEVEL_REFILTER_STEP_METRES = 2;
  */
 const RETIRED_SHARED_BYTES = 8_000_000;
 /**
- * Prewarmed batches minted per update, and the updates a minted batch must survive before it counts
- * as drawn. Three keys its render-object/node cache by `object.uuid`, so every InstancedMesh it has
- * never drawn costs a NodeBuilder build the first frame it is projected (~9 ms in the main pass, and
- * again in the shadow pass for a level that casts): hundreds of them land in a few seconds of
- * walking, which is the walk-time frame cost this pays earlier instead.
- *
- * The rate is a rate of *rendered* updates, not of `update` calls. Minting a batch is cheap (an
- * InstancedMesh and a zeroed buffer) and its build is paid by the next render, so an unbounded queue
- * would hand the whole map's seconds of builds to one frame. 8 per update is ~150 ms of build on the
- * frame that pays it, which the loading screen covers.
- */
-const PREWARM_PER_UPDATE = 8;
-/**
- * Two updates is the honest floor for "drawn at least once in both the main and the shadow
- * context": the mesh is added during one update and the next render projects it. Tracking it per
- * context would mean hooking the renderer, which this class does not own.
- */
-const PREWARM_WARM_UPDATES = 2;
-/**
- * Updates a mesh may still be owed a prewarm draw after the gate settled before its borrow is handed
- * back anyway. An empty prewarmed batch draws, so this is the ceiling on the ones that never will —
- * a projection that collapsed the world, a camera that never reached the mesh — and not a diagnosis
- * of any of them. Without it those meshes would hold their hook for the whole walk.
- */
-const PREWARM_RELEASE_UPDATES = 8;
-/**
  * The projection a baked chain's levels are switched at when the world names none: 60° of vertical
  * field of view over 1080 raster rows, which is the desktop view a switch distance is a function of.
  * See `autoLod`.
@@ -359,8 +333,6 @@ const VIRTUAL_SHADOW_KEY_LAYER = 25;
 const GPU_KEY_SUFFIX = "@gpu";
 /** An asset shorter than this casts into the finest level only; see the layer above. */
 const SMALL_CASTER_METRES = 1.5;
-/** The whole ring, as one caster cluster: `@*` is every square's records in one mesh. */
-const WIDE_CLUSTER = "*";
 /**
  * Placements filtered per unit of admission work.
  *
@@ -1653,65 +1625,6 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #retired = new Map<string, SharedBatch>();
   #retiredBytes = 0;
   /**
-   * Every `asset:level:part` of a loaded asset is minted empty, before any placement wants it, so
-   * the node build lands in the loading phase instead of the frame a cell row first draws the key.
-   * `#prewarmQueue` is the keys still to mint, `#prewarmKeys` the ones queued (a retried load must
-   * not queue the same key twice), and `#prewarmPending` the ones minted but not yet
-   * `PREWARM_WARM_UPDATES` updates old. `prewarmed` is the game's gate for "safe to show me this
-   * world"; `stats().pendingPrewarm` is the same thing as a number.
-   */
-  readonly #prewarmQueue: IPrewarmEntry[] = [];
-  readonly #prewarmKeys = new Set<string>();
-  #prewarmPending = 0;
-  /** Every mint so far, so a loading bar can read minted / (minted + pending). */
-  #prewarmMinted = 0;
-  /**
-   * Minted meshes whose first draw has been submitted, and the meshes still owed one. A mint is
-   * only half the work: the node is built when the mesh is first submitted, and that is the frame
-   * the loading bar used to sit still for. `pendingPrewarm` reports this pair, so the bar counts the
-   * draw half instead of jumping from minting straight to done. The gate is a promise about batches
-   * (`#prewarmPending`), never about these: a companion no shadow level covers is owed a draw
-   * forever, and the gate must not wait on it.
-   */
-  #prewarmOwed = 0;
-  #prewarmDrawn = 0;
-  #prewarmEpoch = 0;
-  #prewarmWait = 0;
-  /**
-   * Awaited meshes that only a shadow level can draw, and the share of them that have had one.
-   *
-   * A caster's node is built in the shadow context, so a walk-time first shadow draw of a streamed
-   * key is a `NodeBuilder.build` inside a shadow pass — a third of the shadow lane's CPU on the
-   * 2 km walk. Counting them separately is what `TN_WORLD_PREWARM`'s `shadowPrewarmed` reports and
-   * what the gate waits on; a count of "every batch drew once" cannot tell the two apart.
-   */
-  #prewarmCasterMinted = 0;
-  #prewarmCasterOwed = 0;
-  #prewarmCasterDrawn = 0;
-  /**
-   * Meshes still carrying a prewarm borrow, with the hook each one has to be handed back, the batch
-   * holding it visible, and the post-settle updates it has waited; see
-   * {@link #releaseImpossibleBorrows}.
-   */
-  readonly #awaited = new Map<
-    InstancedMesh,
-    {
-      batch: SharedBatch;
-      borrow: unknown;
-      own: unknown;
-      hadOwn: boolean;
-      waited: number;
-      epoch: number;
-    }
-  >();
-  #prewarmSettled = false;
-  #prewarmResolve: () => void = () => {
-    // replaced in the field initialiser below, once `this` exists
-  };
-  readonly #prewarmed: Promise<void> = new Promise<void>((resolve) => {
-    this.#prewarmResolve = resolve;
-  });
-  /**
    * Games waiting on `whenSpawnReady`, settled by the update that follows admissions or by dispose.
    * One set, no listener registry and no polling: the update that already walks residency observes
    * these, so a world nobody is waiting on scans nothing. See {@link whenSpawnReady}.
@@ -1997,8 +1910,33 @@ export class WorldCells extends Group implements IComputeDriven {
   /** Every candidate is settled, so the idle pump can stop scanning the map; see `#pumpFarAcquisition`. */
   #farExhausted = false;
 
+  readonly #prewarm: CellPrewarm;
+
   private constructor(init: IWorldCellsInit) {
     super();
+    this.#prewarm = new CellPrewarm({
+      released: () => this.#released,
+      parent: () => this.parent,
+      invalidateShadows: () => this.#invalidateShadows?.(),
+      backlog: () => this.#backlog(),
+      keysForShadow: () => this.#keysForShadow(),
+      hasShared: (key) => this.#shared.has(key),
+      hasRetired: (key) => this.#retired.has(key),
+      runMax: (asset) => this.#runMax.get(asset),
+      residentCells: () => this.#budgets.residentCells,
+      extentBounds: () => this.#extentBounds,
+      smallCaster: (asset) => this.#smallCaster(asset),
+      dressMesh: (shared, receiveShadow) => this.#dressMesh(shared, receiveShadow),
+      receiveShadow: () => this.#receiveShadow,
+      adoptGpu: (shared, asset, key, level, part) =>
+        this.#adoptGpu(shared, asset, key, level, part),
+      setShared: (key, shared) => this.#shared.set(key, shared),
+      attach: (shared) => this.#attach(shared),
+      casts: (level) => this.#casts(level),
+      wideOwed: (asset, part) => this.#wideOwed(asset, part),
+      followCluster: () => this.#followCluster(),
+      wideShape: (asset, level, part, fallback) => this.#wideShape(asset, level, part, fallback),
+    });
     this.#budgets = {
       bytes: positiveInteger(init.budgets.bytes, "budgets.bytes"),
       instances: positiveInteger(init.budgets.instances, "budgets.instances"),
@@ -2334,7 +2272,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * a game awaiting it forever.
    */
   get prewarmed(): Promise<void> {
-    return this.#prewarmed;
+    return this.#prewarm.prewarmed;
   }
 
   /**
@@ -2469,7 +2407,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // The prewarm runs outside the admission budget on purpose — it is not residency, it is the
     // shader builds the residency is about to need, and the allowance that spreads those is
     // `PREWARM_PER_UPDATE`.
-    this.#drainPrewarm();
+    this.#prewarm.drainPrewarm();
     // One bake view per render update, after the prewarm so its own atlas allocation never delays a
     // node build the walk is waiting on, and before the levels are told so a level the bake just
     // appended is in this frame's window.
@@ -2752,8 +2690,8 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#limiter.queued > 0 ||
       this.#jobs.length > 0 ||
       this.#refilterOwed ||
-      this.#prewarmQueue.length > 0 ||
-      this.#prewarmPending > 0 ||
+      this.#prewarm.queued > 0 ||
+      this.#prewarm.pending > 0 ||
       this.#shadowMoved === true ||
       (this.#terrain?.deferredAdmissions ?? 0) > 0
     );
@@ -2788,263 +2726,6 @@ export class WorldCells extends Group implements IComputeDriven {
         z - this.#refilterPoint.z,
       ) >= this.#refilterStepMetres()
     );
-  }
-
-  /**
-   * Mint this update's prewarm allowance, then settle the readiness signal.
-   *
-   * A batch minted while the world is not in a scene is projected by nothing and builds nothing, so
-   * the ready count only advances on an update that had somewhere to draw: a `load()` loop filling
-   * the ring mints the whole ring and still leaves the gate shut, which is the honest answer.
-   */
-  #drainPrewarm(): void {
-    if (this.#released) return;
-    // The loading rate drops to the same 2-per-update a fresh mesh costs once the loading screen is
-    // gone. 8 per update is ~150 ms of node builds on the frame that pays it, and the loading
-    // screen is the only thing that was covering it: a walk that streams a new asset in afterwards
-    // used to hand that frame's builds to a frame that is trying to hold its rate.
-    const perUpdate = this.#prewarmSettled ? 2 : PREWARM_PER_UPDATE;
-    let minted = 0;
-    while (minted < perUpdate && this.#prewarmQueue.length > 0) {
-      const entry = this.#prewarmQueue.shift() as IPrewarmEntry;
-      this.#prewarmKeys.delete(entry.key);
-      this.#mintPrewarm(entry);
-      minted += 1;
-    }
-    // A minted batch is only *owed* a draw by `#awaitDraw`; nothing made anything draw it. A main
-    // batch is drawn by the next main render, but a caster is drawn by a shadow level, and the
-    // levels render when their window moves or something invalidates them — on a loading screen the
-    // follow point stands still, so every caster minted after the first frame sat in the graph with
-    // a node no level had ever asked for and the walk's first window move built all of them in one
-    // shadow pass. Invalidating while the gate is open, minting or not, is what makes the prewarm
-    // prewarm: the build is paid by the loading screen, which is the only frame rate hiding it.
-    if (minted > 0) this.#prewarmWait = 0;
-    // A caster's draw is a shadow level's, and the levels render at most one per frame, so the gate
-    // keeps asking them to while one is owed — bounded, because a borrow nothing draws is handed
-    // back by `#releaseImpossibleBorrows` below and a world that never draws one settles anyway.
-    const waitingOnCasters = this.parent !== null && this.#prewarmCasterOwed > 0;
-    if (minted > 0 || waitingOnCasters) this.#invalidateShadows?.();
-    else if (this.parent !== null) this.#prewarmWait += 1;
-    this.#releaseImpossibleBorrows();
-    if (this.#prewarmQueue.length > 0 || this.#prewarmPending <= 0) return;
-    if (this.#prewarmWait < PREWARM_WARM_UPDATES) return;
-    // A caster still owed a draw is a build the walk would otherwise pay inside a shadow pass, so the
-    // gate holds for it until its borrow is handed back, which is the bound.
-    if (waitingOnCasters) return;
-    // A build still owed draws nothing until it lands. When the scene comes up over a ring built
-    // without it, that is the whole ring re-seeded: the gate settled over 1,378 owed builds and a
-    // third of Machinefall's forest arrived in the first 4 s of play (PRD-478). The loading screen
-    // covers them instead.
-    if (this.#backlog() > 0) return;
-    this.#prewarmPending = 0;
-    // The gate is settled, so nothing is owed a draw. A companion no shadow level covers leaves its
-    // pair non-zero, and `pendingPrewarm` is documented `0` from here on.
-    this.#prewarmOwed = 0;
-    this.#prewarmDrawn = 0;
-    // Retained first-draw hooks belong to the counters just cleared, not later streamed work.
-    this.#prewarmEpoch += 1;
-    this.#prewarmWait = 0;
-    this.#settlePrewarm();
-  }
-
-  /**
-   * The empty batch for one prewarmed key, built exactly as `#batchFor` builds the real one so a
-   * placement that later wants it draws into this mesh and keeps the node three built for it. Both
-   * halves of the split are queued: the main key, and the follow point's own caster cluster, which
-   * is the one the first shadow level render asks for.
-   */
-  #mintPrewarm(entry: IPrewarmEntry): void {
-    // A world whose shadow levels draw its keys mints no caster half: the two are the same
-    // placements by two routes, and a level's map can only draw one of them, so a prewarmed half is
-    // a build behind the gate that pays for nothing and an owed draw the gate waits on until it
-    // gives up. Decided at the mint rather than at the queue, which is filled before the first
-    // renderer hands the GPU scene over. The shadow keys are prewarmed where they are minted
-    // instead; see `#shadowKeyFor`.
-    if (entry.role !== "main" && this.#keysForShadow()) return;
-    // A key the retained set is holding needs no prewarmed batch: `#batchFor` rebinds that mesh
-    // when the walk comes back, and rebinding is the whole point of keeping it. The prewarm did not
-    // ask, so it minted a second InstancedMesh for a key that already had one — a uuid three built a
-    // node for twice, in the main pass and in every shadow pass, for the whole of a walk back.
-    if (this.#released || this.#shared.has(entry.key) || this.#retired.has(entry.key)) return;
-    const shared = new SharedBatch(
-      entry.geometry,
-      entry.material,
-      this.#runMax.get(entry.asset) ?? 1,
-      this.#budgets.residentCells + 1,
-      entry.key,
-      this.#extentBounds,
-      entry.role,
-    );
-    shared.smallCaster = this.#smallCaster(entry.asset);
-    this.#dressMesh(shared, entry.role === "main" && this.#receiveShadow);
-    // Dressed here, before the walk that fills it: the prewarm is what mints every key of an asset
-    // before its first placement is swapped, so this is where the whole gate table comes from.
-    this.#adoptGpu(shared, entry.asset, entry.key, entry.level, entry.part);
-    this.#shared.set(entry.key, shared);
-    this.#attach(shared);
-    this.#prewarmPending += 1;
-    this.#prewarmMinted += 1;
-    // Every role is owed a draw by `#awaitDraw` and is shown while empty until that draw is counted:
-    // the node, the bindings and the pipeline are built by a submission, and one zero-count
-    // submission per prewarmed batch is the price of having the walk never pay for it. A caster's
-    // submission is a shadow level's, not the main pass's — which is why `#drainPrewarm` keeps the
-    // levels rendering while one is owed, and why `VirtualShadowNode`'s `#probe` renders both caster
-    // layers when it finds one. A caster that is not awaited here is built on the first shadow draw
-    // of the walk, inside a shadow pass, which is the cost this prewarm exists to move.
-    this.#awaitDraw(shared);
-  }
-
-  /** Count this batch's first submitted draw, once, then hand `onBeforeRender` back to whoever had it. */
-  #awaitDraw(shared: SharedBatch): void {
-    const mesh = shared.mesh;
-    const caster = shared.role !== "main";
-    this.#prewarmOwed += 1;
-    if (caster) {
-      this.#prewarmCasterMinted += 1;
-      this.#prewarmCasterOwed += 1;
-    }
-    shared.awaitPrewarmDraw();
-    // three's `Object3D` carries an inherited no-op, so reading `onBeforeRender` off a fresh mesh
-    // hands back a function that was never an own property. Writing it back as one leaves every
-    // batch that has drawn since looking permanently hooked, and the projection's `hasRenderHook`
-    // reads own properties — so the borrow has to remember whether there was one to give back.
-    const hadOwn = Object.hasOwn(mesh, "onBeforeRender");
-    this.#borrowDraw(shared, mesh, hadOwn, hadOwn ? mesh.onBeforeRender : undefined);
-  }
-
-  /**
-   * The borrow that counts `mesh`'s first submitted draw and then gives the mesh its own hook back,
-   * keyed by the mesh object — so an object that is replaced has to be handed the borrow of the one
-   * it replaces; see `#carryPrewarm`.
-   */
-  #borrowDraw(
-    shared: SharedBatch,
-    mesh: InstancedMesh,
-    hadOwn: boolean,
-    own: unknown,
-    epoch = this.#prewarmEpoch,
-  ): void {
-    const caster = shared.role !== "main";
-    const borrow = own as ((...args: unknown[]) => void) | undefined;
-    const counted = (...args: unknown[]): void => {
-      if (epoch === this.#prewarmEpoch) this.#prewarmDrawn += 1;
-      if (caster) {
-        this.#prewarmCasterOwed -= 1;
-        this.#prewarmCasterDrawn += 1;
-      }
-      this.#handBack(mesh, hadOwn, own);
-      this.#awaited.delete(mesh);
-      // The node is built and the pipeline is compiled: the batch owes nothing more, so an empty one
-      // goes back to hiding.
-      shared.prewarmDrew();
-      borrow?.(...args);
-    };
-    // Engine bookkeeping, not a claim on the mesh: the scene-render projection's `hasRenderHook`
-    // ignores a marked borrow, so a streamed world's prewarmed batches stay eligible for the
-    // collapse they exist to be folded into. Unmarked, 202 of them permanently declined it.
-    markEngineRenderHook(counted);
-    this.#awaited.set(mesh, { batch: shared, borrow: counted, own, hadOwn, waited: 0, epoch });
-    mesh.onBeforeRender = counted as typeof mesh.onBeforeRender;
-  }
-
-  /**
-   * Hand back the borrow of a mesh whose prewarm draw can never come, so no hook outlives the
-   * prewarm it served.
-   *
-   * A mesh that is merely empty now draws — `visible` at count 0 is what builds its node and its
-   * pipeline, and the borrow is counted off that one submission — so emptiness is no longer a
-   * reason to release anything. What is left is a mesh nothing can draw, and which mesh that is
-   * depends on the role: a main batch is drawn by the main pass, so a world projected by nothing
-   * (`parent === null`, which is a `load()` loop's prewarm and settles the moment the world joins a
-   * scene) still owes it one, while a *caster* is drawn by a shadow level, and a world nothing
-   * projects has no level to draw it — its visible-at-count-0 exception is handed straight back
-   * rather than held for the whole load. Otherwise a level is a frame's schedule away and the
-   * borrow waits `PREWARM_RELEASE_UPDATES` updates for it. That is a ceiling rather than a
-   * diagnosis — a projection that collapsed the world, a camera that never reached the mesh, a game
-   * that passed no `shadows.invalidate` for the levels to be told by — and it is here so those
-   * meshes neither hold a hook nor sit visible at count 0 for the whole walk.
-   */
-  #releaseImpossibleBorrows(): void {
-    const projected = this.parent !== null;
-    for (const [mesh, entry] of [...this.#awaited]) {
-      entry.waited += 1;
-      const caster = entry.batch.role !== "main";
-      if (projected === true && entry.waited < PREWARM_RELEASE_UPDATES) continue;
-      if (projected === false && caster === false) continue;
-      if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
-      this.#awaited.delete(mesh);
-      if (caster) this.#prewarmCasterOwed -= 1;
-      entry.batch.prewarmDrew();
-    }
-  }
-
-  /** Give a borrowed mesh back the hook it had, or none at all when it never had one of its own. */
-  #handBack(mesh: InstancedMesh, hadOwn: boolean, own: unknown): void {
-    if (hadOwn) mesh.onBeforeRender = own as typeof mesh.onBeforeRender;
-    // Deleted rather than assigned `undefined`: three calls `object.onBeforeRender(...)`
-    // unconditionally, and an own `undefined` shadows the prototype's no-op and throws.
-    // quality-allow: the hook must go back to the prototype, which only `delete` can restore.
-    // biome-ignore lint/performance/noDelete: restoring the prototype lookup is the point.
-    else delete (mesh as Partial<InstancedMesh>).onBeforeRender;
-  }
-
-  /**
-   * Every level and every part of one asset, queued to be minted empty: the main key, and the one
-   * caster cluster under the follow point. One square because a cluster per cell of the map would
-   * be a prewarm of the whole package, and the squares a walk reaches first are minted by
-   * residency, two an update.
-   */
-  #queuePrewarm(asset: IAssetState): void {
-    const wideKey = `${asset.id}:*@${WIDE_CLUSTER}`;
-    for (const [level, parts] of asset.levels.entries()) {
-      for (const [part, entry] of parts.entries()) {
-        const key = `${asset.id}:${String(level)}:${String(part)}`;
-        for (const role of ["main", "cluster", "wide"] as const) {
-          // Only a level that casts has a caster half at all; see `#casts`.
-          if (role !== "main" && !this.#casts(level)) continue;
-          // One whole-asset representation covers the far shadow; see `#wideOwed`.
-          if (role === "wide" && !this.#wideOwed(asset.id, part)) continue;
-          // A baked impostor's far half is one mesh per asset, not one per level; prewarm the mesh the
-          // handoff will keep rather than a per-level key it would retire one frame later.
-          const name =
-            role === "main"
-              ? key
-              : role === "wide" && asset.impostor !== undefined
-                ? wideKey
-                : `${key}@${role === "cluster" ? this.#followCluster() : WIDE_CLUSTER}`;
-          // A retained key is already paid for; see `#mintPrewarm`.
-          if (this.#shared.has(name) || this.#retired.has(name) || this.#prewarmKeys.has(name))
-            continue;
-          // The wide half is prewarmed with the same shape the swap draws; see `#wideShape`.
-          const shape = role === "wide" ? this.#wideShape(asset, level, part, entry) : entry;
-          this.#prewarmKeys.add(name);
-          this.#prewarmQueue.push({
-            asset: asset.id,
-            role,
-            geometry: shape.geometry,
-            key: name,
-            level,
-            material: shape.material,
-            part,
-          });
-        }
-      }
-    }
-  }
-
-  #settlePrewarm(): void {
-    if (this.#prewarmSettled) return;
-    this.#prewarmSettled = true;
-    // The one line a walk's log needs to say the prewarm paid what it exists to pay:
-    // `shadowPrewarmed` is the casters whose shadow-context node was built behind the gate, and
-    // `castersUnbuilt` the ones it could not reach — a non-zero there is the walk-time first shadow
-    // build the prewarm was supposed to move, named rather than inferred.
-    console.info(
-      `TN_WORLD_PREWARM minted=${String(this.#prewarmMinted)} ` +
-        `shadowPrewarmed=${String(this.#prewarmCasterDrawn)} ` +
-        `castersUnbuilt=${String(Math.max(0, this.#prewarmCasterMinted - this.#prewarmCasterDrawn))}`,
-    );
-    this.#prewarmResolve();
   }
 
   /**
@@ -3132,8 +2813,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * thing being judged, which is what the warmup seconds were standing in for.
    */
   #biasOverBudget(): number {
-    if (this.#prewarmQueue.length > 0 || this.#prewarmOwed > this.#prewarmDrawn)
-      return this.#lodBias;
+    if (this.#prewarm.queued > 0 || this.#prewarm.owed > this.#prewarm.drawn) return this.#lodBias;
     if (this.gpuSceneTally()?.triangles === 0) return this.#lodBias;
     return Math.min(LOD_BIAS_MAX, this.#lodBias * LOD_BIAS_RISE);
   }
@@ -3295,8 +2975,8 @@ export class WorldCells extends Group implements IComputeDriven {
       // number, so a loading bar read minting as the whole of the prewarm and then stood still for
       // the whole draw — the node builds a bar cannot show. The gate is a promise about batches, so
       // the settle zeroes this pair: `0` once `prewarmed` has resolved.
-      pendingPrewarm: this.#prewarmQueue.length + this.#prewarmOwed - this.#prewarmDrawn,
-      prewarmMinted: this.#prewarmMinted,
+      pendingPrewarm: this.#prewarm.queued + this.#prewarm.owed - this.#prewarm.drawn,
+      prewarmMinted: this.#prewarm.minted,
       pressure: { ...this.#pressure },
       // The pass itself, counted whether or not it found anything: `rebuilds` cannot tell a skipped
       // pass from one that scanned every resident cell and found the same brackets, and that gap is
@@ -3451,10 +3131,7 @@ export class WorldCells extends Group implements IComputeDriven {
       waiter.reject(new Error("WorldCells spawn cancelled"));
     }
     this.#spawnWaiters.clear();
-    for (const [mesh, entry] of [...this.#awaited]) {
-      if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
-    }
-    this.#awaited.clear();
+    this.#prewarm.releaseHooks();
     for (const cell of [...this.#resident.values()]) this.#evict(cell);
     // Every chunk is gone by now, so the surfaces the world owns on their behalf are the last thing
     // holding them, and they are released here rather than by whichever chunk contributed them.
@@ -3477,9 +3154,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#retired.clear();
     this.#retiredBytes = 0;
     // A world torn down mid-prewarm must not leave a game awaiting its gate.
-    this.#prewarmQueue.length = 0;
-    this.#prewarmKeys.clear();
-    this.#settlePrewarm();
+    this.#prewarm.settleDisposal();
     drainMeshPool();
     this.#terrain?.dispose();
     this.removeFromParent();
@@ -4509,7 +4184,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // Owed a draw, and shown because it is empty: a key is submitted by a shadow level, so the
       // build behind the gate is the prewarm's whole job. Only while the gate is still open — a key
       // streamed in afterwards owes nothing, exactly as a streamed caster half does not.
-      if (this.#prewarmSettled === false) this.#awaitDraw(shared);
+      if (this.#prewarm.settled === false) this.#prewarm.awaitDraw(shared);
     }
     this.#dressShadowKey(shared, key.key);
   }
@@ -4554,7 +4229,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (mesh.instanceMatrix !== drawn) {
       const next = freshMeshFor(mesh, view, mesh.count) as ICasterScaleMesh;
       redressMaterial(next);
-      this.#carryPrewarm(mesh, next);
+      this.#prewarm.carryPrewarm(mesh, next);
       this.#seat(shared.replaceMesh(next), next);
       next.instanceMatrix = drawn;
       next.frustumCulled = false;
@@ -5143,7 +4818,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (mesh.instanceMatrix !== drawn) {
       const next = freshMeshFor(mesh, view, mesh.count) as ICasterScaleMesh;
       redressMaterial(next);
-      this.#carryPrewarm(mesh, next);
+      this.#prewarm.carryPrewarm(mesh, next);
       this.#seat(shared.replaceMesh(next), next);
       next.instanceMatrix = drawn;
       next.frustumCulled = false;
@@ -5174,21 +4849,6 @@ export class WorldCells extends Group implements IComputeDriven {
     // level that draws keys finds its mesh in the same frame the main pass found its buffer, and a
     // regrown twin is re-dressed here rather than left on the buffer the dispatch replaced.
     this.#shadowKeyFor(key, part);
-  }
-
-  /**
-   * Hand a replaced mesh's prewarm borrow to the object that replaced it.
-   *
-   * The borrow is keyed by the mesh object and counts *that* object's first submitted draw, so an
-   * object that goes away before its draw would take the owed draw with it: the batch would sit
-   * visible at count 0 for the rest of the load, and the owed counters would never balance. Nothing
-   * new is prewarmed here — the batch still owes exactly the one draw it owed.
-   */
-  #carryPrewarm(old: InstancedMesh, next: InstancedMesh): void {
-    const entry = this.#awaited.get(old);
-    if (entry === undefined) return;
-    this.#awaited.delete(old);
-    this.#borrowDraw(entry.batch, next, entry.hadOwn, entry.own, entry.epoch);
   }
 
   /**
@@ -5699,7 +5359,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // Every level and part of the asset now, before any of them is asked for. A level with no
     // placement in it is not drawn and would otherwise mint its mesh — and pay its node build — on
     // the frame a walk first moves far enough to switch into it.
-    this.#queuePrewarm(asset);
+    this.#prewarm.queuePrewarm(asset);
     for (const cell of [...this.#resident.values()]) {
       for (const run of cell.cell.runs) {
         if (this.#canonical(run.asset) === asset.id) this.#queueBuild(asset, cell, run);
@@ -6054,7 +5714,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#retargetWideCasters(asset);
     // The terminal level's keys and every resident run of this asset, through the same prewarm and
     // swap the first build took: no active job array is mutated halfway.
-    this.#queuePrewarm(asset);
+    this.#prewarm.queuePrewarm(asset);
     for (const cell of [...this.#resident.values()]) {
       for (const run of cell.cell.runs) {
         if (this.#canonical(run.asset) === asset.id) this.#queueBuild(asset, cell, run, true);
@@ -6263,7 +5923,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#jobs.length > 0 ||
       this.#limiter.inFlight > 0 ||
       this.#limiter.queued > 0 ||
-      this.#prewarmQueue.length > 0 ||
+      this.#prewarm.queued > 0 ||
       this.#impostorQueue.length > 0 ||
       this.#impostorBaking !== undefined
     )
