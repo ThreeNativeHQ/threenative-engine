@@ -115,6 +115,7 @@ export class CellPrewarm {
     }
   >();
   #prewarmSettled = false;
+  #prewarmAsked = false;
   #prewarmResolve: () => void = () => {
     // replaced in the field initialiser below, once `this` exists
   };
@@ -158,7 +159,9 @@ export class CellPrewarm {
     if (minted > 0 || waitingOnCasters) this.#host.invalidateShadows();
     else if (this.#host.parent() !== null) this.#prewarmWait += 1;
     this.#releaseImpossibleBorrows();
-    if (this.#prewarmQueue.length > 0 || this.#prewarmPending <= 0) return;
+    // Nothing to settle until an asset has asked; once one has, an ask whose keys were all already
+    // built minted nothing and is owed nothing, so it settles like a drained one.
+    if (this.#prewarmQueue.length > 0 || (this.#prewarmPending <= 0 && !this.#prewarmAsked)) return;
     if (this.#prewarmWait < PREWARM_WARM_UPDATES) return;
     // A caster still owed a draw is a build the walk would otherwise pay inside a shadow pass, so the
     // gate holds for it until its borrow is handed back, which is the bound.
@@ -332,6 +335,7 @@ export class CellPrewarm {
    * residency, two an update.
    */
   queuePrewarm(asset: IAssetState): void {
+    this.#prewarmAsked = true;
     const wideKey = `${asset.id}:*@${WIDE_CLUSTER}`;
     for (const [level, parts] of asset.levels.entries()) {
       for (const [part, entry] of parts.entries()) {
