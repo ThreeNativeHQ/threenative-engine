@@ -1,0 +1,362 @@
+765472.351453: 
+	    5614019117f3 perry_runtime::object::shapes::scan_shape_table_rekey_mut (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+
+765472.351463: 
+	    561401911676 perry_runtime::object::shapes::scan_shape_table_rekey_mut (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+
+765472.351467: 
+	    561401911676 perry_runtime::object::shapes::scan_shape_table_rekey_mut (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+
+765472.351470: 
+	    561401911676 perry_runtime::object::shapes::scan_shape_table_rekey_mut (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+
+765472.351474: 
+	    561401911ad2 perry_runtime::object::shapes::scan_shape_table_rekey_mut (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+
+765473.012909: 
+	    5614018b9cbb perry_runtime::buffer::header::is_registered_buffer_slow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ff454444ff454343 [unknown] ([unknown])
+
+765473.034338: 
+	    5614018b9cde perry_runtime::buffer::header::is_registered_buffer_slow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ff454444ff454343 [unknown] ([unknown])
+
+765473.068524: 
+	    5614018b9cc3 perry_runtime::buffer::header::is_registered_buffer_slow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ff413f3fff413f3e [unknown] ([unknown])
+
+765473.385476: 
+	    7ff234c73cc0 __vdso_clock_gettime ([vdso])
+	    7ff23490214d clock_gettime (/usr/lib/libc.so.6)
+	    7ff230df4ed0 [unknown] (/usr/lib/libnvidia-glcore.so.615.71.09)
+	5355f48949544155 [unknown] ([unknown])
+
+765473.386089: 
+	    7ff234c73cc0 __vdso_clock_gettime ([vdso])
+	    7ff23490214d clock_gettime (/usr/lib/libc.so.6)
+	    7ff230df4ed0 [unknown] (/usr/lib/libnvidia-glcore.so.615.71.09)
+	5355f48949544155 [unknown] ([unknown])
+
+765473.603327: 
+	    5614018b9fe1 perry_runtime::buffer::header::is_registered_buffer_slow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb5625 js_native_call_method (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+
+765473.633344: 
+	    5614018b9be5 perry_runtime::buffer::header::is_registered_buffer_slow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	             406 [unknown] ([unknown])
+
+765473.780728: 
+	    561401afd8c1 js_array_get_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	7ffd04ef41086118 [unknown] ([unknown])
+
+765474.082239: 
+	    561402683ac0 trunc (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a4fee perry_closure_node_modules_three_engine_src_perry_transport_ts__2 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011c1c68 perry_closure_node_modules_three_engine_src_perry_transport_ts__77 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011b6937 perry_closure_node_modules_three_engine_src_perry_transport_ts__50 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a54ea perry_closure_node_modules_three_engine_src_perry_transport_ts__7 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011b6604 perry_closure_node_modules_three_engine_src_perry_transport_ts__49 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bfd42 perry_closure_node_modules_three_engine_src_perry_transport_ts__76 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9c0d js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765474.349965: 
+	    561401afd8c0 js_array_get_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	               0 [unknown] ([unknown])
+
+765474.562891: 
+	    561401afd8c1 js_array_get_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	               0 [unknown] ([unknown])
+
+765474.965824: 
+	    561401afd8c1 js_array_get_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	               0 [unknown] ([unknown])
+
+765474.980183: 
+	    7ff2348bf8a0 __libc_calloc (/usr/lib/libc.so.6)
+	    5614013560e1 perry_fn_node_modules_tn_native_transport_src_index_ts__alloc (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a5226 perry_closure_node_modules_three_engine_src_perry_transport_ts__6 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a6eec perry_closure_node_modules_three_engine_src_perry_transport_ts__8 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011badce perry_closure_node_modules_three_engine_src_perry_transport_ts__62 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a54ea perry_closure_node_modules_three_engine_src_perry_transport_ts__7 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bac32 perry_closure_node_modules_three_engine_src_perry_transport_ts__61 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9b33 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765475.066392: 
+	    561401afd8c1 js_array_get_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	               0 [unknown] ([unknown])
+
+765475.118518: 
+	    561401afd8c1 js_array_get_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	               0 [unknown] ([unknown])
+
+765475.126575: 
+	    561401afd8d0 js_array_get_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	               0 [unknown] ([unknown])
+
+765475.352358: 
+	    561402ace595 js_tnp_memory (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401356164 perry_fn_node_modules_tn_native_transport_src_index_ts__memory (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a4fee perry_closure_node_modules_three_engine_src_perry_transport_ts__2 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011c1c68 perry_closure_node_modules_three_engine_src_perry_transport_ts__77 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011b6937 perry_closure_node_modules_three_engine_src_perry_transport_ts__50 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a54ea perry_closure_node_modules_three_engine_src_perry_transport_ts__7 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011b6604 perry_closure_node_modules_three_engine_src_perry_transport_ts__49 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bfd42 perry_closure_node_modules_three_engine_src_perry_transport_ts__76 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9c0d js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765476.943636: 
+	    5614018b9bb3 perry_runtime::buffer::header::is_registered_buffer_slow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561400fd8574 perry_closure_node_modules_three_engine_src_browser_backend_ts__51 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401b06893 js_array_map (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	7ffd04ef40350be8 [unknown] ([unknown])
+
+765477.066951: 
+	    5614018b9c2c perry_runtime::buffer::header::is_registered_buffer_slow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	     4ef410f9720 [unknown] ([unknown])
+	     4ef410f9730 [unknown] ([unknown])
+
+765477.147231: 
+	    56140268247c _mi_page_malloc_zero (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5613fe7d8862 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global> (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bcc18 <alloc::string::String as core::fmt::Write>::write_str (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026f1844 <isize as core::fmt::Display>::fmt (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026e812a core::fmt::write (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bc68b alloc::fmt::format::format_inner (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401919d34 perry_runtime::string::format::js_format_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ad3e9 perry_closure_node_modules_three_engine_src_perry_transport_ts__21 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ae1ee perry_closure_node_modules_three_engine_src_perry_transport_ts__23 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9937 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765477.344729: 
+	    56140268247c _mi_page_malloc_zero (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5613fe7d8862 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global> (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bcc18 <alloc::string::String as core::fmt::Write>::write_str (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026f1844 <isize as core::fmt::Display>::fmt (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026e812a core::fmt::write (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bc68b alloc::fmt::format::format_inner (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401919d34 perry_runtime::string::format::js_format_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ad3e9 perry_closure_node_modules_three_engine_src_perry_transport_ts__21 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ae1ee perry_closure_node_modules_three_engine_src_perry_transport_ts__23 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9937 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765477.409139: 
+	    561402682504 mi_theap_malloc_aligned (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5613fe7d8862 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global> (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bcc18 <alloc::string::String as core::fmt::Write>::write_str (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026f1844 <isize as core::fmt::Display>::fmt (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026e812a core::fmt::write (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bc68b alloc::fmt::format::format_inner (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401919d34 perry_runtime::string::format::js_format_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ad3e9 perry_closure_node_modules_three_engine_src_perry_transport_ts__21 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ae1ee perry_closure_node_modules_three_engine_src_perry_transport_ts__23 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9937 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765478.035286: 
+	    5613fe7d883a <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global> (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bcc18 <alloc::string::String as core::fmt::Write>::write_str (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026f1844 <isize as core::fmt::Display>::fmt (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026e812a core::fmt::write (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bc68b alloc::fmt::format::format_inner (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401919d34 perry_runtime::string::format::js_format_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ad3e9 perry_closure_node_modules_three_engine_src_perry_transport_ts__21 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ae1ee perry_closure_node_modules_three_engine_src_perry_transport_ts__23 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9937 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765478.125473: 
+	    56140268247c _mi_page_malloc_zero (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5613fe7d8862 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global> (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bcc18 <alloc::string::String as core::fmt::Write>::write_str (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026f1844 <isize as core::fmt::Display>::fmt (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026e812a core::fmt::write (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bc68b alloc::fmt::format::format_inner (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401919d34 perry_runtime::string::format::js_format_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ad3e9 perry_closure_node_modules_three_engine_src_perry_transport_ts__21 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ae1ee perry_closure_node_modules_three_engine_src_perry_transport_ts__23 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9937 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765478.432579: 
+	    561402682510 mi_theap_malloc_aligned (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5613fe7d8862 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global> (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bcc18 <alloc::string::String as core::fmt::Write>::write_str (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026f1844 <isize as core::fmt::Display>::fmt (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026e812a core::fmt::write (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bc68b alloc::fmt::format::format_inner (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401919d34 perry_runtime::string::format::js_format_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ad3e9 perry_closure_node_modules_three_engine_src_perry_transport_ts__21 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ae1ee perry_closure_node_modules_three_engine_src_perry_transport_ts__23 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9937 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765478.960096: 
+	    56140268247c _mi_page_malloc_zero (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5613fe7d8862 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global> (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bcc18 <alloc::string::String as core::fmt::Write>::write_str (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026f1844 <isize as core::fmt::Display>::fmt (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026e812a core::fmt::write (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bc68b alloc::fmt::format::format_inner (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401919d34 perry_runtime::string::format::js_format_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ad3e9 perry_closure_node_modules_three_engine_src_perry_transport_ts__21 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ae1ee perry_closure_node_modules_three_engine_src_perry_transport_ts__23 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9937 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765479.106685: 
+	    561401afd8c0 js_array_get_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	               0 [unknown] ([unknown])
+
+765479.456067: 
+	    5614018b9cc3 perry_runtime::buffer::header::is_registered_buffer_slow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401b06893 js_array_map (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561400ff27e1 perry_closure_node_modules_three_engine_src_browser_backend_ts__60 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    56140194325e perry_runtime::closure::registry::dispatch_rest_bundled (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+
+765480.166835: 
+	    561401afd8c0 js_array_get_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	               0 [unknown] ([unknown])
+
+765480.261350: 
+	    561402ace666 js_tnp_memory (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401356164 perry_fn_node_modules_tn_native_transport_src_index_ts__memory (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a5087 perry_closure_node_modules_three_engine_src_perry_transport_ts__3 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a811d perry_closure_node_modules_three_engine_src_perry_transport_ts__13 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a8d08 perry_closure_node_modules_three_engine_src_perry_transport_ts__14 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bad84 perry_closure_node_modules_three_engine_src_perry_transport_ts__62 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a54ea perry_closure_node_modules_three_engine_src_perry_transport_ts__7 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bac32 perry_closure_node_modules_three_engine_src_perry_transport_ts__61 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9b33 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765480.647859: 
+	    7ff234c73cc0 __vdso_clock_gettime ([vdso])
+	    7ff23490214d clock_gettime (/usr/lib/libc.so.6)
+	    7ff230df4ed0 [unknown] (/usr/lib/libnvidia-glcore.so.615.71.09)
+	5355f48949544155 [unknown] ([unknown])
+
+765480.649286: 
+	    7ff234c73cc0 __vdso_clock_gettime ([vdso])
+	    7ff23490214d clock_gettime (/usr/lib/libc.so.6)
+	    7ff230df4ed0 [unknown] (/usr/lib/libnvidia-glcore.so.615.71.09)
+	5355f48949544155 [unknown] ([unknown])
+
+765480.652459: 
+	    7ff234c73cc0 __vdso_clock_gettime ([vdso])
+	    7ff23490214d clock_gettime (/usr/lib/libc.so.6)
+	    7ff230df4ed0 [unknown] (/usr/lib/libnvidia-glcore.so.615.71.09)
+	5355f48949544155 [unknown] ([unknown])
+
+765480.665914: 
+	    7ff234c73cc0 __vdso_clock_gettime ([vdso])
+	    7ff23490214d clock_gettime (/usr/lib/libc.so.6)
+	    7ff230df4ed0 [unknown] (/usr/lib/libnvidia-glcore.so.615.71.09)
+	5355f48949544155 [unknown] ([unknown])
+
+765480.667916: 
+	    7ff234c73cda __vdso_clock_gettime ([vdso])
+	    7ff23490214d clock_gettime (/usr/lib/libc.so.6)
+	    7ff230df4ed0 [unknown] (/usr/lib/libnvidia-glcore.so.615.71.09)
+	5355f48949544155 [unknown] ([unknown])
+
+765480.669905: 
+	    7ff234c73cc0 __vdso_clock_gettime ([vdso])
+	    7ff23490214d clock_gettime (/usr/lib/libc.so.6)
+	    7ff230df4ed0 [unknown] (/usr/lib/libnvidia-glcore.so.615.71.09)
+	5355f48949544155 [unknown] ([unknown])
+
+765480.671883: 
+	    7ff234c73cc0 __vdso_clock_gettime ([vdso])
+	    7ff23490214d clock_gettime (/usr/lib/libc.so.6)
+	    7ff230df4ed0 [unknown] (/usr/lib/libnvidia-glcore.so.615.71.09)
+	5355f48949544155 [unknown] ([unknown])
+
+765487.383523: 
+	ffffffffa8ed2820 [unknown] ([unknown])
+	ffffffffa8ed14af [unknown] ([unknown])
+	ffffffffa8eb590d [unknown] ([unknown])
+	ffffffffa8e1449e [unknown] ([unknown])
+	ffffffffa8ebaa33 [unknown] ([unknown])
+	ffffffffaa1e2cae [unknown] ([unknown])
+	ffffffffa8c0160a [unknown] ([unknown])
+	    7ff234c73cc0 __vdso_clock_gettime ([vdso])
+	    7ff23490214d clock_gettime (/usr/lib/libc.so.6)
+	    7ff230df4ed0 [unknown] (/usr/lib/libnvidia-glcore.so.615.71.09)
+	5355f48949544155 [unknown] ([unknown])
+
+765488.689342: 
+	    561402ae1642 js_tnp_player_codes (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    56140115f206 perry_closure_node_modules_three_engine_src_perry_host_ts__42 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561402ae098b js_tnp_player_open::{lambda(double)#1}::operator()(double) const (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561402ae3e7a void std::__invoke_impl<void, js_tnp_player_open::{lambda(double)#1}&, double>(std::__invoke_other, js_tnp_player_open::{lambda(double)#1}&, double&&) (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561402ae32e2 std::enable_if<is_invocable_r_v<void, js_tnp_player_open::{lambda(double)#1}&, double>, void>::type std::__invoke_r<void, js_tnp_player_open::{lambda(double)#1}&, double>(js_tnp_player_open::{lambda(double)#1}&, double&&) (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561402ae2882 std::_Function_handler<void (double), js_tnp_player_open::{lambda(double)#1}>::_M_invoke(std::_Any_data const&, double&&) (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561403a60746 std::_Function_handler<void (), tn::engine::player::Session::initialize()::{lambda()#2}>::_M_invoke(std::_Any_data const&) (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	               0 [unknown] ([unknown])
+	               a [unknown] ([unknown])
+	    56142200656d [unknown] ([unknown])
+
+765489.501330: 
+	    5614026f17a9 <isize as core::fmt::Display>::fmt (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026e812a core::fmt::write (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bc68b alloc::fmt::format::format_inner (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401919d34 perry_runtime::string::format::js_format_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ad3e9 perry_closure_node_modules_three_engine_src_perry_transport_ts__21 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bb44a perry_closure_node_modules_three_engine_src_perry_transport_ts__62 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a54ea perry_closure_node_modules_three_engine_src_perry_transport_ts__7 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bac32 perry_closure_node_modules_three_engine_src_perry_transport_ts__61 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9b33 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765494.750391: 
+	    5613fe7d8901 <alloc::raw_vec::RawVecInner>::finish_grow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bcc18 <alloc::string::String as core::fmt::Write>::write_str (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026f1844 <isize as core::fmt::Display>::fmt (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026e812a core::fmt::write (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614026bc68b alloc::fmt::format::format_inner (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401919d34 perry_runtime::string::format::js_format_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ad3e9 perry_closure_node_modules_three_engine_src_perry_transport_ts__21 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bb44a perry_closure_node_modules_three_engine_src_perry_transport_ts__62 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a54ea perry_closure_node_modules_three_engine_src_perry_transport_ts__7 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bac32 perry_closure_node_modules_three_engine_src_perry_transport_ts__61 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9b33 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765495.971829: 
+	ffffffffa8ec9945 [unknown] ([unknown])
+	ffffffffa8e1443a [unknown] ([unknown])
+	ffffffffa8ebaa33 [unknown] ([unknown])
+	ffffffffaa1e2cae [unknown] ([unknown])
+	ffffffffa8c0160a [unknown] ([unknown])
+	    561401afd9e4 js_array_get_f64 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+
+765506.425969: 
+	    561402ace509 js_tnp_memory (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401356164 perry_fn_node_modules_tn_native_transport_src_index_ts__memory (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a4fee perry_closure_node_modules_three_engine_src_perry_transport_ts__2 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401b4d3b0 js_closure_call1 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ad3e9 perry_closure_node_modules_three_engine_src_perry_transport_ts__21 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bb44a perry_closure_node_modules_three_engine_src_perry_transport_ts__62 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011a54ea perry_closure_node_modules_three_engine_src_perry_transport_ts__7 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011bac32 perry_closure_node_modules_three_engine_src_perry_transport_ts__61 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401bb9b33 js_native_call_value (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	ec83485354415541 [unknown] ([unknown])
+
+765512.487868: 
+	    5614018b9b91 perry_runtime::buffer::header::is_registered_buffer_slow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614011ac76a perry_closure_node_modules_three_engine_src_perry_transport_ts__19 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561401afc3d0 js_array_forEach (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	7ffd04ef3f30c780 [unknown] ([unknown])
+
+765515.048214: 
+	    5614018b9cc3 perry_runtime::buffer::header::is_registered_buffer_slow (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    561400ff8a41 perry_closure_node_modules_three_engine_src_browser_backend_ts__72 (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    5614016846c5 perry_runtime::proxy::ordinary_set_with_receiver (/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/54d678a1-413c-4530-a6e0-9faeb3523423/scratchpad/minimal-r14/game)
+	    7ff2346ae780 [unknown] ([unknown])
+	     4ef3c3c1800 [unknown] ([unknown])
+

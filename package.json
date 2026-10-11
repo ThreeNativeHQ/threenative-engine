@@ -15,6 +15,7 @@
     "api:surface:sync": "tsx scripts/check-api-surface.ts --update && biome format --write scripts/api-surface.json",
     "bake:delete-test": "sh scripts/xvfb.sh tsx scripts/bake-delete-test.ts",
     "bench:perry": "node --import tsx scripts/bench-perry.ts",
+    "perry:profile": "node --import tsx scripts/perry-profile.ts",
     "bench:engines": "tsx scripts/engine-load-test/cli.ts",
     "bench:engines:report": "tsx scripts/engine-load-test/cli.ts --compare",
     "bench:engines:monitor": "tsx scripts/engine-load-test/monitor.ts",

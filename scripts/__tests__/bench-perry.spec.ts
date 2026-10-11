@@ -198,6 +198,16 @@ describe("Perry native benchmark", () => {
     expect(html).toContain('data-trend="regressed"');
     expect(html).toContain("+102%");
     expect(html).not.toMatch(/fps/i);
+    // The previous row benched binary 123456789abc, this run deadbeefcafe: say so beside "vs last".
+    expect(html).toContain('data-other-binary="123456789abc"');
+    const same = reportHtml({
+      time: "2026-01-01T00:00:00.000Z",
+      load: [1, 2, 3],
+      perrySha256: "123456789abcdef",
+      comparison: compareArms({ perry: [measurement(1.01)], v8: [measurement()] }),
+      ledger: parseLedger("t1\thead\t123456789abc\t0.5\t0.5\t0.5\t0.5\t0.5\tPASS\n"),
+    });
+    expect(same).not.toContain("data-other-binary");
   });
   it("gates a candidate against the incumbent: REGRESSED exits 3, within margin is SAME, missing throws", async () => {
     const temp = await mkdtemp(path.join(tmpdir(), "bench-perry-incumbent-"));
@@ -404,7 +414,20 @@ describe("Perry native benchmark", () => {
         await writeFile(path.join(temp, "game.js"), "rebuilt bundle");
         return { code: 0, stdout: "built", stderr: "" };
       }
-      if (command === "perf") return { code: 0, stdout: "  50.00% [.] game\n", stderr: "" };
+      if (command === "nice") {
+        expect(args.slice(0, 3)).toEqual(["-n", "19", "perf"]);
+        return {
+          code: 0,
+          stdout:
+            args[3] === "report"
+              ? "  50.00% [.] game\n"
+              : await readFile(
+                  path.join(import.meta.dirname, "fixtures/perry-profile/perf-script.txt"),
+                  "utf8",
+                ),
+          stderr: "",
+        };
+      }
       const artifactIndex = args.indexOf("--artifacts");
       const artifacts = args[artifactIndex + 1];
       if (!artifacts) throw new Error("missing artifact argument");
@@ -418,8 +441,10 @@ describe("Perry native benchmark", () => {
       );
       expect(scenario.assert.performance).toEqual({ maxDrawCalls: 128 });
       await mkdir(artifacts, { recursive: true });
-      if (artifacts.endsWith("-perf"))
+      if (artifacts.endsWith("-perf")) {
         await writeFile(path.join(path.dirname(artifacts), `${arm}.data.pid`), "999999999\n");
+        await writeFile(path.join(path.dirname(artifacts), `${arm}.data`), "fake perf data");
+      }
       const text = missing
         ? "TN_PLAYER_FIRST_PRESENT: runtime perry"
         : markers(arm === "perry" ? 0.3 : 1);
@@ -459,6 +484,17 @@ describe("Perry native benchmark", () => {
         perry: [{ symbol: "game", percent: 50 }],
         v8: [{ symbol: "game", percent: 50 }],
       });
+      const profiledDir = directories.at(-1) ?? "";
+      expect(await readFile(path.join(profiledDir, "perry-top.txt"), "utf8")).toContain(
+        "TS functions inclusive",
+      );
+      expect(await readFile(path.join(profiledDir, "perry-callers.txt"), "utf8")).toContain(
+        "nearest TS frame",
+      );
+      expect(await readFile(path.join(profiledDir, "perry.data.folded"), "utf8")).toContain("# {");
+      expect(await readFile(path.join(profiledDir, "profile.sh"), "utf8")).toContain(
+        "TN_PROFILE_CLOCK",
+      );
       expect(launches.slice(4)).toEqual(["perry", "v8", "perry", "v8", "perry", "v8"]);
       missing = true;
       expect(await runBench(argv, execute, path.join(temp, "artifacts"), idle)).toBe(2);

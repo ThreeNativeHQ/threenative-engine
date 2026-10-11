@@ -7,6 +7,7 @@ import { availableParallelism, loadavg } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { formatCallers, formatTop, loadProfile, runtimePatterns } from "./perry-profile.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const metrics = {
@@ -47,7 +48,7 @@ type Command = (command: string, args: string[], cwd: string) => Promise<IComman
 const exec = promisify(execFile);
 const command: Command = async (file, args, cwd) => {
   try {
-    const output = await exec(file, args, {
+    const running = exec(file, args, {
       cwd,
       env: {
         ...process.env,
@@ -59,6 +60,8 @@ const command: Command = async (file, args, cwd) => {
       timeout: 180_000,
       maxBuffer: 64 * 1024 * 1024,
     });
+    running.child.stdin?.end();
+    const output = await running;
     return { code: 0, ...output };
   } catch (error) {
     const failure = error as { code?: unknown; stdout?: string; stderr?: string; killed?: boolean };
@@ -394,6 +397,8 @@ export function reportMarkdown(result: {
 
 export interface ILedgerRow {
   time: string;
+  /** First 12 hex of the Perry binary's SHA-256; "vs last" across two binaries is not a code delta. */
+  binary?: string;
   ratios: Array<number | null>;
   verdict: string;
 }
@@ -408,6 +413,7 @@ export function parseLedger(text: string): ILedgerRow[] {
       if (columns.length !== 9) throw new Error("Malformed ledger row");
       return {
         time: columns[0] ?? "",
+        binary: columns[2] ?? "",
         ratios: columns.slice(3, 8).map((value) => (value === "NA" ? null : Number(value))),
         verdict: columns[8] ?? "",
       };
@@ -618,6 +624,7 @@ export function reportHtml(result: {
   const current = rows.length
     ? {
         time: result.time,
+        binary: result.perrySha256?.slice(0, 12),
         ratios: names.map((name) => rows.find((row) => row.metric === name)?.ratio ?? null),
         verdict,
       }
@@ -630,6 +637,11 @@ export function reportHtml(result: {
     row.ratios.every((ratio) => ratio !== null) ? [{ index, row }] : [],
   );
   const previous = measured.filter((entry) => entry.index < currentIndex).at(-1)?.row;
+  // A control rerun of an older binary makes "vs last" look like a regression of the new code.
+  const otherBinary =
+    previous?.binary && current?.binary && previous.binary !== current.binary
+      ? `<p data-other-binary="${escapeHtml(previous.binary)}" class="basis-full text-xs text-amber-200">Previous run benched another Perry binary (${escapeHtml(previous.binary)} &rarr; ${escapeHtml(current.binary)}): "vs last" compares two builds, not one change. The incumbent verdict is the commit gate.</p>`
+      : "";
   const first = measured[0] && measured[0].index < currentIndex ? measured[0].row : undefined;
   const targeted = names.flatMap((name, index) => (metrics[name] === null ? [] : [index]));
   // Gap = geometric mean of ratio/target over the gated metrics; 1.0x means every target is met.
@@ -831,7 +843,7 @@ ${gaugeHtml(row, before, domain, tone.hex)}
       rows.length
         ? `<div class="grid grid-cols-2 gap-3 lg:col-span-3">${tile("Gap to target", gapNow === undefined ? "&mdash;" : fmtX(gapNow), "1.0x = every gated target met")}${deltaTile("Since last run", previous, "no earlier run")}${deltaTile("Since first run", first, "this is the first run")}${tile("Targets met", `${met} / ${targeted.length}`, "render is report only", met === targeted.length ? "text-emerald-300" : "text-red-300")}</div>`
         : ""
-    }</div>${chips ? `<div class="mt-6 flex flex-wrap gap-2" aria-label="Change per metric since the previous run">${chips}</div>` : ""}${result.error ? `<pre class="mt-6 whitespace-pre-wrap rounded-lg bg-slate-950/60 p-4 text-sm text-red-300">Error: ${escapeHtml(result.error)}</pre>` : ""}</section>`,
+    }</div>${chips ? `<div class="mt-6 flex flex-wrap gap-2" aria-label="Change per metric since the previous run">${otherBinary}${chips}</div>` : ""}${result.error ? `<pre class="mt-6 whitespace-pre-wrap rounded-lg bg-slate-950/60 p-4 text-sm text-red-300">Error: ${escapeHtml(result.error)}</pre>` : ""}</section>`,
     '<h2 class="mb-4 mt-12 text-xl font-bold text-slate-100">Metrics and history</h2>',
     `<div class="space-y-4">${cards}</div>`,
     stacks,
@@ -934,10 +946,11 @@ export async function runBench(
     // The playtest stops the host's process group with SIGTERM, then SIGKILL after 2 s; perf in
     // that group dies mid-write while a slow-exiting game holds it. Attached from its own session,
     // perf survives the kill and finishes the file when the game exits.
+    // DWARF call graphs: libc/vdso frames carry no frame pointer, so -g stops at clock_gettime.
     const profiler = path.join(directory, "profile.sh");
     await writeFile(
       profiler,
-      '#!/bin/sh\nexport TN_PLAYER_METRICS=1\nexport TN_BENCH_LAUNCH_MS=$(date +%s%3N)\ndata=$1; shift\n"$@" &\npid=$!\nsetsid perf record --no-buildid -F 499 -g -o "$data" -p "$pid" </dev/null >/dev/null 2>&1 &\necho $! > "$data.pid"\nwait "$pid"\n',
+      '#!/bin/sh\nexport TN_PLAYER_METRICS=1\nexport TN_BENCH_LAUNCH_MS=$(date +%s%3N)\ndata=$1; shift\nnode -e \'console.log("TN_PROFILE_CLOCK:" + JSON.stringify({perfTimeSec: Number(process.hrtime.bigint()) / 1e9, wallTimeMs: Date.now()}))\'\n"$@" &\npid=$!\nsetsid perf record --clockid mono --no-buildid -F 499 --call-graph dwarf,8192 -o "$data" -p "$pid" </dev/null >/dev/null 2>&1 &\necho $! > "$data.pid"\nwait "$pid"\n',
     );
     const bundle = path.join(args.v8Bundle, "game.js");
     try {
@@ -1017,8 +1030,11 @@ export async function runBench(
       else {
         await waitForProfiler(`${perfData}.pid`);
         const profile = await execute(
-          "perf",
+          "nice",
           [
+            "-n",
+            "19",
+            "perf",
             "report",
             "--stdio",
             "--no-children",
@@ -1037,6 +1053,18 @@ export async function runBench(
         await writeFile(path.join(directory, `${arm}-perf.txt`), profile.stdout + profile.stderr);
         result.stacks ??= {};
         result.stacks[arm] = parsePerfSelf(profile.stdout);
+        if (arm === "perry") {
+          const profiled = await loadProfile(perfData, undefined, async (scriptArgs) => {
+            const output = await execute("nice", scriptArgs, root);
+            if (output.code !== 0) throw new Error(`Perry perf script failed: ${output.stderr}`);
+            return output.stdout;
+          });
+          await writeFile(path.join(directory, "perry-top.txt"), formatTop(profiled));
+          await writeFile(
+            path.join(directory, "perry-callers.txt"),
+            formatCallers(profiled, runtimePatterns(profiled)),
+          );
+        }
       }
     };
     for (let i = 0; i < args.runs; i++) {
