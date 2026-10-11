@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type Accessor,
@@ -47,6 +46,7 @@ import {
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { INSTANCED_LOD_MAX_PIXEL_ERROR } from "../../core/src/instanced-batch-lod.js";
 import {
   DISCRETE_LOD_DEFAULT_HYSTERESIS,
@@ -264,7 +264,7 @@ describe("cookTerrainWorld", () => {
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(path.join(tmpdir(), "strata-terrain-world-"));
+    dir = await makeTempDir("strata-terrain-world-");
   });
 
   afterEach(async () => {

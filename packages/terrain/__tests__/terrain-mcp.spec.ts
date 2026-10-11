@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { decodeRAW16 } from "../src/core/io.js";
 import type { ITerrainDocument } from "../src/core/types.js";
 import { IsolatedKillError, runIsolated } from "../src/mcp/child.js";
@@ -78,7 +78,7 @@ describe("terrain_generate output guard", () => {
   let root: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "tn-terrain-mcp-"));
+    root = await makeTempDir("tn-terrain-mcp-");
   });
 
   afterEach(async () => {
@@ -103,8 +103,8 @@ describe("terrain_generate output containment", () => {
   let outside: string;
 
   beforeEach(async () => {
-    root = await realpath(await mkdtemp(join(tmpdir(), "tn-terrain-root-")));
-    outside = await realpath(await mkdtemp(join(tmpdir(), "tn-terrain-outside-")));
+    root = await realpath(await makeTempDir("tn-terrain-root-"));
+    outside = await realpath(await makeTempDir("tn-terrain-outside-"));
   });
 
   afterEach(async () => {
@@ -169,7 +169,7 @@ describe("species bounds", () => {
 
 describe("cooker resolution", () => {
   it("names the install command when the game project has no @threenative/assets", async () => {
-    const project = await mkdtemp(join(tmpdir(), "tn-terrain-noassets-"));
+    const project = await makeTempDir("tn-terrain-noassets-");
     try {
       await expect(loadCooker(project)).rejects.toThrow(/npm i -D @threenative\/assets/);
     } finally {
@@ -180,7 +180,7 @@ describe("cooker resolution", () => {
 
 describe("isolated generation child", () => {
   it("never spawns when the signal is already aborted", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tn-terrain-preabort-"));
+    const dir = await makeTempDir("tn-terrain-preabort-");
     const marker = join(dir, "spawned");
     try {
       const controller = new AbortController();
@@ -201,7 +201,7 @@ describe("isolated generation child", () => {
   });
 
   it("kills the whole process group on timeout, grandchildren included", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tn-terrain-group-"));
+    const dir = await makeTempDir("tn-terrain-group-");
     const pidFile = join(dir, "grandchild.pid");
     const script = `
       const { spawn } = require('node:child_process');
@@ -416,7 +416,7 @@ describe("measureGlb", () => {
 
 describe("terrain_generate result", () => {
   it("returns the recipe, paths, counts measured from the GLB and a load snippet for the forest", async () => {
-    const project = await realpath(await mkdtemp(join(tmpdir(), "tn-terrain-result-")));
+    const project = await realpath(await makeTempDir("tn-terrain-result-"));
     try {
       await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
       await symlink(
