@@ -14,7 +14,8 @@ import {
 import { describe, expect, it } from "vitest";
 import { flat } from "../templates/platformer/src/render/materials.js";
 import { palette } from "../templates/platformer/src/render/palette.js";
-import { setupSky, skyEnvironment, skyTexture } from "../templates/platformer/src/render/sky.js";
+import { setupSky, skyTexture } from "../templates/platformer/src/render/sky.js";
+import { skyEnvironment } from "../templates/platformer/src/render/skyEnvironment.js";
 import { qualityPreset } from "../templates/starter/src/render/quality.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");

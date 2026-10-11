@@ -39,7 +39,8 @@ import {
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
-import { cloudLobes, setupSky, skyEnvironment, skyFloor, skyTexture } from "../render/sky.js";
+import { cloudLobes, setupSky, skyFloor, skyTexture } from "../render/sky.js";
+import { skyEnvironment } from "../render/skyEnvironment.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
