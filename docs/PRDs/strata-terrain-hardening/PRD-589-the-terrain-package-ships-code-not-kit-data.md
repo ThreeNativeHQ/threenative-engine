@@ -53,7 +53,7 @@ example. Fix the generator string, the peer-range sync and the CHARTER row.
   - Two stale forest assertions were aligned with cooker commit `4cf0664e7`: historical comparison proves only six model path aliases changed in the manifest. The combined GLB (24,641,592 B) and streamed package (24,073,955 B) each retain the 25 MiB cap. All other golden hashes remain unchanged. Scoped Biome and diff checks pass.
 
 #### Phase 2: kits leave the tarball
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/terrain/package.json` `files`, `packages/create-threenative/src/` kit copy, `starter-assets/` moves
 - [ ] Tarball under 2 MB. proof: `pnpm budgets`
 - [ ] Kit still scaffolds and plays. proof: `test:kit`
@@ -70,3 +70,5 @@ example. Fix the generator string, the peer-range sync and the CHARTER row.
 2026-10-11 charter clarification: the closed-list row now names the existing narrow terrain-only authoring allowance, and root `AGENTS.md` places those optional companions in `packages/terrain/` while preserving game-owned appearance. `pnpm sync:agents` updated one generated mirror. Parent documentation checks pass: 3,057 links across 1,360 Markdown files and all 252 tests in the six required documentation specs (8.40 s). Release synchronization and package-list drift proof are recorded below.
 
 2026-10-11 release synchronization follow-up: actual terrain peers stay unchanged when absent from the selected versions map; a selected cohort peer uses the existing range synchronizer. Terrain generator versions now use `requiredVersion` and the existing source-update table. Three new fixtures fail before the source fix; all 37 release/drift/consumer tests pass afterward (2.30 s). The focused core-independent strict typecheck passes; package-wide missing physics output and horizon fixture are not repaired by this phase. Documentation proof for the charter and mirrors remains the parent’s accepted 252-test run.
+
+2026-10-11 current kit delivery component evidence: the earlier full run passed 27 of 27 terrain-kit tests in 8.78 s. Prerequisite builds passed in order (BlenderMCP, physics, playtest, then create-threenative tsup, DTS and publint), and the full create-threenative typecheck and Biome passed. With the root rule `/packages/create-threenative/template-assets/terrain/`, the packed-tarball case passed: 1 test passed, 26 skipped, in 5.71 s. The packed tarball holds 5 kits and 30 source files, including HDR provenance records but no HDR, texture or model binaries. An external import of `create-threenative/terrain-kit` from the extracted tarball copied 6 files for one kit. Phase 2 stays PARTIAL, and Phase 2, AC-1, AC-3 and AC-4 stay open until the under-2 MB tarball, scaffolded asset delivery and playtest proof pass.

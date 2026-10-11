@@ -478,7 +478,7 @@
       }
     },
     "create-threenative": {
-      "exports": [".", "./package.json", "./web-brand"],
+      "exports": [".", "./package.json", "./terrain-kit", "./web-brand"],
       "symbols": {}
     },
     "threenative-blender-mcp": {
