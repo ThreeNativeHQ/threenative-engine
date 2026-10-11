@@ -237,6 +237,9 @@ const status = playerBind(
     } else flushFrames(time);
   },
   (frameMs: number) => {
+    // Decodes settle on the host's frames, not on simulation ticks: a game held by a runner
+    // (no ticks yet) still finishes loading its audio before its first describe().
+    audioHost.update();
     if (runner) flushFrames(frameMs);
   },
   observe,

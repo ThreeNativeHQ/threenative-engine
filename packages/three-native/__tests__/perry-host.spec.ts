@@ -76,7 +76,7 @@ it("drives core frames, input, timers and async mailbox observations through pla
     )
     .replace(
       'import { createPerryAudioHost } from "./perry-audio.js";',
-      "const createPerryAudioHost = () => ({ AudioContext: class {}, update() {}, close() {} });",
+      "const createPerryAudioHost = () => ({ AudioContext: class {}, update() { globalThis.audioUpdates = (globalThis.audioUpdates ?? 0) + 1; }, close() {} });",
     )
     .replace(
       'import { createPerryPhysicsHost } from "./perry-physics.js";',
@@ -114,6 +114,7 @@ it("drives core frames, input, timers and async mailbox observations through pla
     };
     __THREENATIVE_NATIVE__: { platform: { runtime: string }; physics: { version: string } };
     __THREENATIVE_PLAYTEST_BRIDGE__?: Record<string, (...args: unknown[]) => unknown>;
+    audioUpdates?: number;
     requestAnimationFrame(callback: (time: number) => void): number;
     setTimeout(callback: () => void, delay: number): number;
   };
@@ -141,6 +142,10 @@ it("drives core frames, input, timers and async mailbox observations through pla
   frame(48);
   frame(64);
   expect(draw).toHaveBeenCalledExactlyOnceWith(48);
+  // A game held by a runner gets no simulation ticks, yet its audio decodes must still settle.
+  const settled = sandbox.audioUpdates;
+  frame(80);
+  expect(sandbox.audioUpdates).toBe((settled ?? 0) + 1);
   const timer = vi.fn();
   sandbox.setTimeout(timer, 10);
   update(1 / 60);
