@@ -1191,6 +1191,18 @@ export async function verifyPackedMutationControl(
       },
     );
     await cp(path.join(REPO_ROOT, "patches"), path.join(root, "patches"), { recursive: true });
+    // Prepack stages the terrain kits from the sibling terrain package: the five kit sources and
+    // the credits record. The 34 MB of textures beside credits.json are not read.
+    await cp(
+      path.join(REPO_ROOT, "packages/terrain/starter"),
+      path.join(root, "packages/terrain/starter"),
+      { recursive: true },
+    );
+    await mkdir(path.join(root, "packages/terrain/starter-assets"), { recursive: true });
+    await cp(
+      path.join(REPO_ROOT, "packages/terrain/starter-assets/credits.json"),
+      path.join(root, "packages/terrain/starter-assets/credits.json"),
+    );
     await materializeTemporaryPackageVersions(mutatedPackage);
     const templateManifestPath = path.join(mutatedPackage, "templates", template, PACKAGE_FILE);
     const templateManifest = JSON.parse(await readFile(templateManifestPath, "utf8")) as Record<
