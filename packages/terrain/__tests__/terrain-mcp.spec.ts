@@ -14,6 +14,7 @@ import {
   parseGenerateInput,
   parsePatchInput,
   patchRecipe,
+  resolveAssetSource,
   resolveOutput,
 } from "../src/mcp/tools.js";
 
@@ -105,6 +106,26 @@ describe("terrain_generate input", () => {
 });
 
 describe("terrain_generate output guard", () => {
+  it("derives the asset source from project config and defaults to assets", async () => {
+    const project = await makeTempDir("tn-terrain-config-");
+    expect(await resolveAssetSource(project)).toBe(join(project, "assets"));
+    await writeFile(
+      join(project, "threenative.config.ts"),
+      'export default { assets: { source: "content" } };',
+    );
+    expect(await resolveAssetSource(project)).toBe(join(project, "content"));
+    await writeFile(
+      join(project, "threenative.config.ts"),
+      "export default { assets: { source: 1 } };",
+    );
+    await expect(resolveAssetSource(project)).rejects.toThrow(/assets.source/);
+    await writeFile(
+      join(project, "threenative.config.ts"),
+      'export default { assets: { source: "../escape" } };',
+    );
+    await expect(resolveAssetSource(project)).rejects.toThrow(/inside the project/);
+  });
+
   let root: string;
 
   beforeEach(async () => {
@@ -445,43 +466,51 @@ describe("measureGlb", () => {
 });
 
 describe("terrain_generate result", () => {
-  it("returns the recipe, paths, counts measured from the GLB and a load snippet for the forest", async () => {
-    const project = await realpath(await makeTempDir("tn-terrain-result-"));
-    try {
-      await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
-      await symlink(
-        new URL("../../assets/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "assets"),
-      );
-      const out = join(project, "public", "worlds", "forest");
-      const result = JSON.parse(await cookKit({ kit: "forest", out, projectRoot: project }));
-      expect(result).toMatchObject({
-        recipe: "forest",
-        out: "public/worlds/forest",
-        worldGlb: "public/worlds/forest/world.glb",
-        recipeJson: "public/worlds/forest/recipe.json",
-        worldPackage: "public/worlds/forest/world.json",
-      });
-      for (const file of [result.worldGlb, result.recipeJson, result.worldPackage]) {
-        expect((await stat(join(project, file))).size, file).toBeGreaterThan(0);
+  it.each(["assets", "content"])(
+    "returns a manifest-relative forest load snippet under %s",
+    async (source) => {
+      const project = await realpath(await makeTempDir("tn-terrain-result-"));
+      try {
+        await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+        await symlink(
+          new URL("../../assets/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "assets"),
+        );
+        await writeFile(
+          join(project, "threenative.config.ts"),
+          `export default { assets: { source: "${source}" } };`,
+        );
+        const out = join(project, source, "worlds", "forest");
+        const result = JSON.parse(await cookKit({ kit: "forest", out, projectRoot: project }));
+        expect(result).toMatchObject({
+          recipe: "forest",
+          out: `${source}/worlds/forest`,
+          worldGlb: `${source}/worlds/forest/world.glb`,
+          recipeJson: `${source}/worlds/forest/recipe.json`,
+          worldPackage: `${source}/worlds/forest/world.json`,
+        });
+        for (const file of [result.worldGlb, result.recipeJson, result.worldPackage]) {
+          expect((await stat(join(project, file))).size, file).toBeGreaterThan(0);
+        }
+        // The counts are the file's own: measuring the written GLB again gives the same numbers.
+        const written = new Uint8Array(await readFile(join(project, result.worldGlb)));
+        expect(measureGlb(written)).toEqual({
+          draws: result.draws,
+          instances: result.instances,
+          triangles: result.triangles,
+        });
+        expect(result.instances).toBeGreaterThan(0);
+        expect(result.draws).toBeGreaterThan(0);
+        expect(result.triangles).toBeGreaterThan(result.instances);
+        expect(result.load.split("\n")).toHaveLength(3);
+        expect(result.load).toContain('ctx.assets.model("worlds/forest/world.glb")');
+        // recipe.json is a document `terrain_patch` accepts as is.
+        const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
+        expect(patchRecipe(recipe, []).layers).toHaveLength(recipe.layers.length);
+      } finally {
+        await rm(project, { recursive: true, force: true });
       }
-      // The counts are the file's own: measuring the written GLB again gives the same numbers.
-      const written = new Uint8Array(await readFile(join(project, result.worldGlb)));
-      expect(measureGlb(written)).toEqual({
-        draws: result.draws,
-        instances: result.instances,
-        triangles: result.triangles,
-      });
-      expect(result.instances).toBeGreaterThan(0);
-      expect(result.draws).toBeGreaterThan(0);
-      expect(result.triangles).toBeGreaterThan(result.instances);
-      expect(result.load.split("\n")).toHaveLength(3);
-      expect(result.load).toContain('ctx.assets.model("worlds/forest/world.glb")');
-      // recipe.json is a document `terrain_patch` accepts as is.
-      const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
-      expect(patchRecipe(recipe, []).layers).toHaveLength(recipe.layers.length);
-    } finally {
-      await rm(project, { recursive: true, force: true });
-    }
-  }, 120_000);
+    },
+    120_000,
+  );
 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { IsolatedKillError, runIsolated } from "./child.js";
@@ -10,6 +10,7 @@ import {
   parseGenerateInput,
   parsePatchInput,
   patchRecipe,
+  resolveAssetSource,
   resolveOutput,
 } from "./tools.js";
 
@@ -17,7 +18,6 @@ const SERVER_NAME = "threenative-terrain";
 const SERVER_VERSION = "0.1.0";
 // The cook must finish inside the 60 s cold budget (PRD-584 AC-2). The child is killed past it.
 const COOK_TIMEOUT_MS = 60_000;
-const DEFAULT_OUT = "public/worlds/forest";
 const COOK_CHILD = fileURLToPath(new URL("./cook-child.js", import.meta.url));
 
 interface IRpcRequest {
@@ -44,11 +44,19 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
     if (name === "terrain_generate") {
       const input = parseGenerateInput(args);
       const projectRoot = process.cwd();
-      const out = await resolveOutput(projectRoot, input.out ?? DEFAULT_OUT);
+      const assetSource = await resolveAssetSource(projectRoot);
+      const out = await resolveOutput(
+        projectRoot,
+        input.out ?? relative(projectRoot, join(assetSource, "worlds", input.kit)),
+      );
       const child = await runIsolated({
         command: process.execPath,
         // Inherits the parent's loader flags, so the same TypeScript runtime starts the child.
-        args: [...process.execArgv, COOK_CHILD, JSON.stringify({ ...input, out, projectRoot })],
+        args: [
+          ...process.execArgv,
+          COOK_CHILD,
+          JSON.stringify({ ...input, out, projectRoot, assetSource }),
+        ],
         timeoutMs: COOK_TIMEOUT_MS,
       }).catch(async (error: unknown) => {
         // A killed cook cannot clean up after itself; `resolveOutput` proved `out` was new, so it is ours.

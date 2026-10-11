@@ -7,11 +7,12 @@ import { applyPlacementOverrides } from "../core/placements.js";
 import { Terrain } from "../core/terrain.js";
 import { bakeWorldPackage } from "../core/world-package.js";
 import { measureGlb } from "./glb-stats.js";
-import { TERRAIN_KITS } from "./tools.js";
+import { TERRAIN_KITS, resolveAssetSource } from "./tools.js";
 
 /** One cook request, passed as the child's only argument. The parent validates every field first. */
 export interface ICookRequest {
   kit: string;
+  assetSource?: string;
   out: string;
   /** The game project root: `@threenative/assets` is resolved from here, never bundled. */
   projectRoot: string;
@@ -113,6 +114,13 @@ export async function cookKit(request: ICookRequest): Promise<string> {
   if (!(TERRAIN_KITS as readonly string[]).includes(request.kit)) {
     throw new Error(`cook: unknown kit '${request.kit}'.`);
   }
+  const assetSource = request.assetSource ?? (await resolveAssetSource(request.projectRoot));
+  const logicalOut = relative(assetSource, request.out);
+  if (logicalOut === "" || logicalOut === ".." || logicalOut.startsWith(`..${sep}`)) {
+    throw new Error(
+      "terrain_generate: out must be under assets.source so the build can list it in the manifest.",
+    );
+  }
   const cooker = await loadCooker(request.projectRoot);
   // The starter kits and their species models ship beside this file in the package.
   const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -131,7 +139,7 @@ export async function cookKit(request: ICookRequest): Promise<string> {
   }
   // This cook owns `out` from here on, so a failure leaves nothing partial behind.
   try {
-    return await cookInto(request, cooker, kitDir, assetsDir);
+    return await cookInto({ ...request, assetSource }, cooker, kitDir, assetsDir);
   } catch (error) {
     await rm(request.out, { recursive: true, force: true });
     throw error;
@@ -258,8 +266,10 @@ async function cookInto(
   const shown = relative(await realpath(request.projectRoot), request.out)
     .split(sep)
     .join("/");
-  // `public/` is the web root, so a file under it loads without that prefix.
-  const url = shown.replace(/^public\//u, "");
+  // The same source-relative key resolves through the dev and production asset manifests.
+  const url = relative(request.assetSource as string, request.out)
+    .split(sep)
+    .join("/");
   return JSON.stringify({
     recipe: request.kit,
     out: shown,

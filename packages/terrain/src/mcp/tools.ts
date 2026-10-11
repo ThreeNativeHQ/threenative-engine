@@ -265,3 +265,42 @@ export function patchRecipe(
 ): ITerrainDocument {
   return Terrain.fromJSON(recipe).applyPatch(commands).toJSON() as ITerrainDocument;
 }
+
+/** Read the same TypeScript config the game builds, using its installed Vite loader. */
+export async function resolveAssetSource(projectRoot: string): Promise<string> {
+  const configFile = join(projectRoot, "threenative.config.ts");
+  const exists = await lstat(configFile).then(
+    () => true,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    },
+  );
+  let source: unknown = "assets";
+  if (exists) {
+    const { loadConfigFromFile } = await import("vite");
+    const loaded = await loadConfigFromFile(
+      { command: "build", mode: "production" },
+      configFile,
+      projectRoot,
+    );
+    const assets: unknown = (loaded?.config as Record<string, unknown> | undefined)?.assets;
+    if (assets !== undefined) {
+      if (!isRecord(assets)) throw new TypeError("terrain_generate: assets must be an object.");
+      source = assets.source === undefined ? "assets" : assets.source;
+    }
+  }
+  if (typeof source !== "string" || source.trim() === "") {
+    throw new TypeError("terrain_generate: assets.source must be a non-empty path.");
+  }
+  const configuredRoot = resolve(projectRoot, source);
+  const sourceRoot = await realpath(configuredRoot).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return configuredRoot;
+    throw error;
+  });
+  const inside = relative(projectRoot, sourceRoot);
+  if (inside === "" || inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
+    throw new TypeError("terrain_generate: assets.source must be inside the project.");
+  }
+  return sourceRoot;
+}
