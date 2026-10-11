@@ -18,7 +18,7 @@ import {
   createAdaptiveQuality,
   formatQualityAdaptation,
 } from "./adaptiveQuality.js";
-import { type IGradeTable, gradeStages } from "./grade.js";
+import { type IGradeTable, filterableTable, gradeStages } from "./grade.js";
 import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
 import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
 import type { FogMedium } from "./volumetricFog.js";
@@ -115,15 +115,17 @@ export function setupPost(
   apply();
   // The table is a file, so it lands after the chain that would read it. Until then both stages
   // are refused with a reason rather than grading nothing, and the chain is rebuilt once it does.
-  // `FloatType`, because the default 8-bit load *truncates* `value * 255` into a `Uint8Array`: an
-  // identity table then reads low by up to 0.875 of a step and the round trip through the grade is
-  // never the frame the game drew. A float table keeps the file's own numbers, so the arithmetic in
-  // `__tests__/grade.spec.ts` and the frame agree at one step.
+  // The loader parses `FloatType`, because the default 8-bit load *truncates* `value * 255` into a
+  // `Uint8Array`. An identity table then reads low by up to 0.875 of a step, and the round trip
+  // through the grade is never the frame the game drew. Parsed floats keep the file's own numbers.
+  // `filterableTable` then uploads them as half floats. A float32 3D texture is not filterable
+  // without the optional `float32-filterable` feature, so the lookup would sample the nearest of
+  // the nine cells. The arithmetic in `__tests__/grade.spec.ts` runs on those half floats.
   const tableLoader = new LUTCubeLoader().setType(FloatType);
   void tableLoader.loadAsync(GRADE_TABLE_URL).then(
     (loaded) => {
       table?.texture.dispose();
-      table = { size: loaded.size, texture: loaded.texture3D };
+      table = { size: loaded.size, texture: filterableTable(loaded.texture3D) };
       if (!disposed) apply();
     },
     (error: unknown) => {

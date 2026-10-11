@@ -239,6 +239,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-11 for the PRD-563 render-chain tier fix: ten kits' medium presets now request
   // the medium chain, the four flat-high scenarios gained family and software rows, and every
   // render-chain scenario names the GPU families. Measured by the same actual-tree test; snow moves not.
+  // Recomputed 2026-10-11 for the PRD-563 grade table upload as half floats: only starter's grade.ts
+  // and postprocessing.ts changed, and the actual-tree test moved only starter.
   "action-rpg": "a8181c6ded553b6e6c5806d1b012a1d8402368db8b8f87227db865f764ac4410",
   minimal: "fab4fe473ea958ff51b1aad63bd2282c9c110bacb72d46a347f4c391b1dcb406",
   platformer: "e0be69b862ffa1af8f36f10d7c9fb66bbab116c807173acc1539bace1fae7626",
@@ -251,7 +253,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "f6d5e41ae7f2836e5a814ed084dfb677e81ea00d71f748d7bb9cb21d17b0df51",
   shooter: "853db95e8b1f21bf1c63be80844b0bc6a1a92c95a67ee11d6cc28768d3e9e0e6",
   snow: "fc9c353994584c6a7633cf523cb7427b1dcfdb69d8157c670f2a9de0c1aab84f",
-  starter: "b83d40c519a7b76c92b73bd2dfa7576617d86c3a876542e17f53e7b3bb073a13",
+  starter: "dec29cf3f878c0e30a476b9f5c7c6afc5750a5782e4aa5872a5eedae5e5e570e",
   "tower-defense": "53d467a902a3c883b73b283cbc83c3d4c66169f8b5175eed8719515a7f6f465e",
 };
 
