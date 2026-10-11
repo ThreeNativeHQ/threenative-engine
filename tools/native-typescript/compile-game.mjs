@@ -267,14 +267,16 @@ export function bindHostGlobals(source, fileName) {
 export function bindImportMeta(source, fileName, env = process.env) {
   if (!source.includes("import.meta")) return source;
   const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
-  const inlined = JSON.stringify({
-    BASE_URL: "/",
-    DEV: false,
-    MODE: "production",
-    PROD: true,
-    SSR: false,
-    ...Object.fromEntries(Object.entries(env).filter(([key]) => key.startsWith("VITE_"))),
-  });
+  const inlined = JSON.stringify(
+    Object.fromEntries([
+      ["BASE_URL", "/"],
+      ["DEV", false],
+      ["MODE", "production"],
+      ["PROD", true],
+      ["SSR", false],
+      ...Object.entries(env).filter(([key]) => key.startsWith("VITE_")),
+    ]),
+  );
   const found = [];
   const visit = (node) => {
     if (
