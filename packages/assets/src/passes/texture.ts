@@ -54,7 +54,7 @@ export interface ITextureOverride {
 }
 
 export interface ITexturePassOptions {
-  /** Compiler-selected mobile output; the quality ladder still measures Basis first. */
+  /** Compiler-selected mobile output; the quality ladder measures final ASTC bytes. */
   readonly astc?: boolean;
   readonly floor?: Partial<IImageQualityFloor>;
   /** Internal reporting control; selection still measures and enforces the floor. */
@@ -111,7 +111,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
     appliesTo: ["texture"],
     configuration: {
       encoder: KTX2_ENCODER_VERSION,
-      ...(options.astc === true ? { gpuFormat: "astc4x4-v2" } : {}),
+      ...(options.astc === true ? { gpuFormat: "astc4x4-final-quality-v3" } : {}),
       instrument: IMAGE_QUALITY_IDENTITY,
       floor: resolveImageQualityFloor(options.floor),
       keepSmallerSource: true,

@@ -1,11 +1,12 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { read as readKTX2 } from "ktx-parse";
+import { read as readKTX2, write as writeKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
 import { describe, expect, it, vi } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
+import * as imageQualityModule from "../src/image-quality.js";
 import { transcodeKtx2ToAstc } from "../src/image-quality.js";
 import { type IAssetSourceConfig, compileAssets, texturePass } from "../src/index.js";
 import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../src/ktx2-encoder.js";
@@ -61,6 +62,38 @@ function compressiblePng(alpha?: (x: number, y: number) => number): Buffer {
 }
 
 describe("the ktx2 texture pass", () => {
+  it("rejects final off-colour ASTC despite a passing Basis intermediate", async () => {
+    const emit = transcodeKtx2ToAstc;
+    const spy = vi
+      .spyOn(imageQualityModule, "transcodeKtx2ToAstc")
+      .mockImplementation(async (basis) => {
+        const astc = readKTX2(await emit(basis));
+        for (const level of astc.levels)
+          for (let offset = 0; offset < level.levelData.length; offset += 16)
+            level.levelData.set(
+              [252, 253, 255, 255, 255, 255, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255],
+              offset,
+            );
+        return writeKTX2(astc);
+      });
+    try {
+      const input = rgbaPng({
+        width: 8,
+        height: 8,
+        red: () => 240,
+        green: () => 20,
+        blue: () => 40,
+      });
+      await expect(
+        texturePass({ astc: true, overrides: [{ glob: "colour.png", codec: "uastc" }] }).apply(
+          input,
+          "colour.png",
+        ),
+      ).rejects.toThrow(/TN_ASSETS_TEXTURE_FLOOR/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it("retains the source when Basis saves bytes but emitted ASTC would grow it", async () => {
     const input = compressiblePng();
     const floor = { ssim: 0, meanDeltaE00: 100 };

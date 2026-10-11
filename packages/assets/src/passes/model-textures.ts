@@ -502,11 +502,11 @@ export async function encodeTextureLadder(
       encoded.byteLength >= smallest.encoded.byteLength
     )
       continue;
-    // Byte admission uses the emitted buffer; shipped ASTC quality still needs its own decoder.
+    // Admission and quality both observe the exact buffer that will be written.
     const score =
-      basis === undefined
+      encoded === undefined
         ? imageQuality(data, data, width, height, options)
-        : await measureKtx2(data, basis, width, height, options);
+        : await measureKtx2(data, encoded, width, height, options);
     if (
       score.status !== "below-floor" &&
       ((options.alphaThresholds?.length ?? 0) > 0 || score.alpha.meanAbsoluteError === 0)

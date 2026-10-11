@@ -12,6 +12,7 @@ import {
   write as writeKTX2,
 } from "ktx-parse";
 import { resolveBasisTranscoder } from "./compile.js";
+import { decodeAstcKtx2 } from "./ktx2-encoder.js";
 
 // The sculpt MCP math is not present in this repository. Minimal SSIM port: Rec.709
 // encoded luma (0..255), non-overlapping 8x8 windows, population moments, equal-window mean.
@@ -411,7 +412,7 @@ export async function transcodeKtx2ToAstc(encoded: Uint8Array): Promise<Uint8Arr
   }
 }
 
-/** Decode only mip zero to RGBA32 using the shipped Basis transcoder; never re-encode. */
+/** Score final mip zero; raw ASTC also validates and decodes every emitted mip. */
 export async function measureKtx2(
   source: Uint8Array,
   encoded: Uint8Array,
@@ -420,6 +421,14 @@ export async function measureKtx2(
   options: IImageQualityOptions = {},
 ): Promise<IImageQuality> {
   validatePixels(source, width, height);
+  if (readKTX2(encoded).vkFormat !== 0)
+    return imageQuality(
+      source,
+      await decodeAstcKtx2(encoded, width, height),
+      width,
+      height,
+      options,
+    );
   const basis = await basisModule();
   const file = new basis.KTX2File(encoded);
   try {

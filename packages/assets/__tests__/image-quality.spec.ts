@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { read as readKTX2 } from "ktx-parse";
+import { read as readKTX2, write as writeKTX2 } from "ktx-parse";
 import { describe, expect, it } from "vitest";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { deltaE00, imageQuality, ssim } from "../src/image-quality.js";
 import { measureKtx2, transcodeKtx2ToAstc } from "../src/image-quality.js";
-import { encodeToKTX2 } from "../src/ktx2-encoder.js";
+import { decodeAstcKtx2, encodeToKTX2 } from "../src/ktx2-encoder.js";
 import { decodeImageBytes } from "../src/passes/decode-image.js";
 
 function pixels(noise = false): Uint8Array {
@@ -98,6 +98,78 @@ describe("image quality instrument", () => {
       }
     },
   );
+  it.each([false, true])(
+    "scores final ASTC bytes, profiles and edge mips (UASTC=%s)",
+    async (isUASTC) => {
+      const data = new Uint8Array(5 * 3 * 4);
+      for (let i = 0; i < data.length; i += 4) data.set([240, 20, 40, 128], i);
+      for (const srgb of [false, true]) {
+        const basis = await encodeToKTX2(data, {
+          imageDecoder: async () => ({ data, width: 5, height: 3 }),
+          isUASTC,
+          isSetKTX2SRGBTransferFunc: srgb,
+        });
+        expect((await measureKtx2(data, basis, 5, 3)).status).toBe("pass");
+        const astc = await transcodeKtx2ToAstc(basis);
+        const good = await measureKtx2(data, astc, 5, 3);
+        expect(good.status).toBe("pass");
+        expect(good.alpha.meanAbsoluteError).toBe(0);
+        expect(readKTX2(astc).levels.map((level) => level.levelData.length)).toEqual([32, 16, 16]);
+        const offColour = readKTX2(astc.slice());
+        for (const level of offColour.levels) {
+          for (let block = 0; block < level.levelData.length; block += 16)
+            level.levelData.set(
+              [252, 253, 255, 255, 255, 255, 255, 255, 0, 0, 255, 255, 0, 0, 128, 128],
+              block,
+            );
+        }
+        expect((await measureKtx2(data, writeKTX2(offColour), 5, 3)).status).toBe("below-floor");
+        for (const mip of [0, 1]) {
+          const corrupt = readKTX2(astc.slice());
+          const level = corrupt.levels[mip];
+          if (level === undefined) throw new Error("fixture mip missing");
+          level.levelData.fill(0, 0, 16);
+          await expect(measureKtx2(data, writeKTX2(corrupt), 5, 3)).rejects.toThrow(
+            /TN_ASSETS_QUALITY_DECODE/,
+          );
+        }
+      }
+    },
+  );
+
+  it("rejects malformed final ASTC containers before quality scoring", async () => {
+    const data = new Uint8Array(5 * 3 * 4).fill(128);
+    const basis = await encodeToKTX2(data, {
+      imageDecoder: async () => ({ data, width: 5, height: 3 }),
+    });
+    const astc = await transcodeKtx2ToAstc(basis);
+    await expect(decodeAstcKtx2(astc, 0, 3)).rejects.toThrow(/TN_ASSETS_QUALITY_DECODE/);
+    await expect(decodeAstcKtx2(astc, 4, 3)).rejects.toThrow(/TN_ASSETS_QUALITY_DECODE/);
+    // Mutate the serialized header: the writer expects a consistent valid container.
+    for (const [offset, value] of [
+      [12, 159],
+      [16, 2],
+      [28, 1],
+      [32, 1],
+      [36, 6],
+      [40, 2],
+      [44, 2],
+    ]) {
+      const corrupt = astc.slice();
+      new DataView(corrupt.buffer).setUint32(offset ?? 0, value ?? 0, true);
+      await expect(decodeAstcKtx2(corrupt, 5, 3)).rejects.toThrow(/TN_ASSETS_QUALITY_DECODE/);
+    }
+    for (const offset of [88, 96]) {
+      const corrupt = astc.slice();
+      new DataView(corrupt.buffer).setBigUint64(offset, 16n, true);
+      await expect(decodeAstcKtx2(corrupt, 5, 3)).rejects.toThrow(/TN_ASSETS_QUALITY_DECODE/);
+    }
+    const corrupt = astc.slice();
+    const view = new DataView(corrupt.buffer);
+    view.setUint8(view.getUint32(48, true) + 14, 1);
+    await expect(decodeAstcKtx2(corrupt, 5, 3)).rejects.toThrow(/TN_ASSETS_QUALITY_DECODE/);
+  });
+
   it("rejects invalid or incomplete Basis input for the mobile cook", async () => {
     await expect(transcodeKtx2ToAstc(new Uint8Array([0]))).rejects.toThrow();
     const data = new Uint8Array(8 * 8 * 4).fill(128);
