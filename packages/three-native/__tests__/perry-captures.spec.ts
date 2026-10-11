@@ -128,3 +128,12 @@ it.runIf(process.env.TN_NATIVE_TS_CACHE)(
   },
   60_000,
 );
+
+// Pinned Perry compiles a closure's read of a const declared later in the function as a global read
+// (`scalarBytes is not defined` when the attribute pull callback ran), so each table comes first.
+it.each(["scalarKinds", "scalarBytes"])("declares %s before the callbacks that read it", (name) => {
+  const source = readFileSync(new URL("../src/perry-transport.ts", import.meta.url), "utf8");
+  const declared = source.indexOf(`const ${name} =`);
+  expect(declared).toBeGreaterThan(-1);
+  expect(declared).toBeLessThan(source.indexOf(`${name}[`));
+});

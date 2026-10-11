@@ -198,6 +198,9 @@ export function createPerryRuntime(): IPerryRuntime {
     }
     return null;
   };
+  // Declared before the callbacks read them: pinned Perry resolves a later const as a global.
+  const scalarKinds = [5, 4, 6, 0, 7, 1, 8, 2];
+  const scalarBytes = [4, 8, 1, 1, 2, 2, 4, 4];
   const context = scoped(() => {
     const version = alloc(32);
     const out = alloc(pointerBytes);
@@ -342,8 +345,6 @@ export function createPerryRuntime(): IPerryRuntime {
     Int32Array,
     Uint32Array,
   ];
-  const scalarKinds = [5, 4, 6, 0, 7, 1, 8, 2];
-  const scalarBytes = [4, 8, 1, 1, 2, 2, 4, 4];
   const attribute = <T>(
     ref: IEngineRef,
     use: (at: number, count: number, scalar: number, writes: number) => T,
