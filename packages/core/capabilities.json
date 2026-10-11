@@ -7623,6 +7623,21 @@
     },
     {
       "aliases": [],
+      "constraints": ["Node authoring only; recipes, asset tables and sky paths stay in the game"],
+      "example": "await bakeKit(import.meta.url, { sky: \"hdri/game-sky.hdr\" });",
+      "importPath": "@threenative/terrain/kit",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function bakeKit( url: string, { … }",
+      "situations": ["bake a copied terrain starter kit into its offline world package"],
+      "summary": "Bake a copied kit, optionally using the caller's installed world cook.",
+      "supersedes": [],
+      "symbol": "bakeKit"
+    },
+    {
+      "aliases": [],
       "constraints": ["creates only geometry; the caller owns its material, scene and disposal"],
       "example": "const geometry = toGeometry(bakeMesh(new Terrain({ resolution: 17 }).evaluate()));",
       "importPath": "@threenative/terrain/three",

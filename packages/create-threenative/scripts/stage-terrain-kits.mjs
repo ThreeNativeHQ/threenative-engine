@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const KITS = ["alpine", "coastal", "desert", "forest", "tundra"];
 const INPUTS = ["assets.json", "bake.mjs", "heightmap.r16", "recipe.json", "surface.json"];
-// Each bake copies one sky HDRI to sky.hdr. This line names that HDRI file.
-const SKY_COPY = /^await copy\("(hdri\/[^"]+\.hdr)", "sky\.hdr"\);$/gmu;
+// Each bakeKit call supplies the sky HDRI copied to sky.hdr.
+const SKY_SOURCE = /^\s*sky: "(hdri\/[^"]+\.hdr)",$/gmu;
 // The sky record names no set. These fields hold its own provenance.
 const SKY_FIELDS = ["asset", "author", "bytes", "license", "sha256", "url"];
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,10 +31,10 @@ function missingRecord(kit, what, ref) {
 // Reads the one sky HDRI that a bake copies. Its record must carry its own provenance.
 async function skyRecord(kit, dir, credits) {
   const bake = await readFile(path.join(dir, "bake.mjs"), "utf8");
-  const found = [...bake.matchAll(SKY_COPY)];
+  const found = [...bake.matchAll(SKY_SOURCE)];
   if (found.length !== 1) {
     throw new Error(
-      `TN_TERRAIN_STAGE_METADATA: ${kit} bake.mjs must copy one sky HDRI to sky.hdr. Found ${found.length}.`,
+      `TN_TERRAIN_STAGE_METADATA: ${kit} bake.mjs must supply one sky HDRI to bakeKit. Found ${found.length}.`,
     );
   }
   const file = found[0][1];

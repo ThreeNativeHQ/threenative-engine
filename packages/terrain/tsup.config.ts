@@ -5,6 +5,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     index: "src/index.ts",
+    kit: "src/kit.ts",
     three: "src/three.ts",
     export: "src/export.ts",
     "editor/server": "src/editor/server.ts",

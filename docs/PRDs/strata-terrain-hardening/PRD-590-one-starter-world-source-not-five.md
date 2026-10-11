@@ -1,6 +1,6 @@
 # PRD-590 — One starter-world source, not five copies
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P2 — About 6 000 lines of near-copies across kits, fixtures and specs remain until AC-1 to AC-4 land; a fix in one kit misses the other four.
 **Complexity:** 4 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
@@ -26,15 +26,16 @@ Package and example audits of `2d2124792` (2026-10-10), diff lines measured agai
 
 ## Solution
 
-One `bakeKit(dir)` in `@threenative/terrain` (or its `bin`); each kit's `bake.mjs` becomes a
-three-line call. One `addStarterWorld(spec)` holds the shared world loader; each kit's `world.ts`
+One `bakeKit(url, { sky, cookTerrainWorld })` at `@threenative/terrain/kit`, built
+from `src/kit.ts`; each kit's `bake.mjs` becomes a small call. Forest supplies its existing
+`@threenative/assets` cook; the other four retain their streamed-world bake. One `addStarterWorld(spec)` holds the shared world loader; each kit's `world.ts`
 keeps only its look data. One `KitScene` fixture parameterised by kit. One `describe.each(kits)`
 runtime spec with a table of per-kit expectations. Package specs that need example code move into
 the example, or the code they test moves into the package (PRD-591).
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: Each kit `bake.mjs` is at most 10 lines, and all five kits bake the same bytes as before. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` with golden hashes — Evidence: pending.
+- [x] AC-1 [local]: Each kit `bake.mjs` is at most 10 lines, and all five kits bake the same bytes as before. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` with golden hashes — Evidence: 2026-10-11, 19/19 tests passed before and after; alpine/coastal/desert/tundra wrappers are 6 lines each, forest is 8; all five pinned hashes unchanged.
 - [ ] AC-2 [local]: Five kit playtests pass on one `KitScene` fixture. proof: `pnpm --filter strata-terrain-preview test:kit` for each `KIT` — Evidence: pending.
 - [ ] AC-3 [local]: One table-driven runtime spec replaces the four per-kit runtime specs with the same assertions. proof: `pnpm --filter @threenative/terrain test` — Evidence: pending.
 - [ ] AC-4 [local]: No file under `packages/terrain/__tests__` imports from `examples/`. proof: a grep spec — Evidence: pending.
@@ -43,9 +44,11 @@ the example, or the code they test moves into the package (PRD-591).
 ## Execution Phases
 
 #### Phase 1: bake and world source
-**Status:** NOT STARTED
-**Files:** `packages/terrain/src/kit.ts` (new), `starter/*/bake.mjs`, `starter/*/world.ts`
-- [ ] Same bytes from one bake helper. proof: `starter-kit.spec.ts`
+**Status:** PARTIAL — bake dedup verified; optional starter-world loader dedup deferred.
+**Files:** `packages/terrain/src/kit.ts` (new), `packages/terrain/tsup.config.ts`, `packages/terrain/package.json`, `starter/*/bake.mjs`, `packages/create-threenative/scripts/stage-terrain-kits.mjs`
+- [x] Same bytes from one bake helper. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` — 2026-10-11: 19/19 before and after, including all-five golden hashes and invalid flags. `pnpm exec vitest run packages/create-threenative/__tests__/terrain-kit.spec.ts`: 27/27 after preparing its missing dist with `pnpm exec tsup --config tsup.config.ts` in that package (first run 26/27). `pnpm --filter @threenative/terrain build`: exit 0, including publint.
+
+`pnpm exec tsc -p packages/terrain --noEmit`: exit 1, six errors from the existing example import of missing generated `examples/strata-terrain-preview/src/world/horizon.json`; no kit/helper diagnostics. No assertions or goldens changed. World source and later phases remain open.
 
 #### Phase 2: fixtures and specs
 **Status:** NOT STARTED

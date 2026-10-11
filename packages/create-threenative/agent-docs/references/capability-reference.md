@@ -6355,6 +6355,24 @@ export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBEx
 const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });
 ```
 
+## `@threenative/terrain/kit`
+
+### `bakeKit`
+
+`function` — Bake a copied kit, optionally using the caller's installed world cook.
+
+```ts
+export async function bakeKit( url: string, { … }
+```
+
+- **Use when:** bake a copied terrain starter kit into its offline world package
+- **Constraints:** Node authoring only; recipes, asset tables and sky paths stay in the game
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+await bakeKit(import.meta.url, { sky: "hdri/game-sky.hdr" });
+```
+
 ## `@threenative/terrain/three`
 
 ### `toGeometry`

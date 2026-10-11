@@ -39,6 +39,10 @@
       "types": "./dist/export.d.ts",
       "import": "./dist/export.js"
     },
+    "./kit": {
+      "types": "./dist/kit.d.ts",
+      "import": "./dist/kit.js"
+    },
     "./package.json": "./package.json",
     "./editor/server": {
       "types": "./dist/editor/server.d.ts",
