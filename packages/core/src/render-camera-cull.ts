@@ -1,4 +1,4 @@
-import { type Camera, Frustum, Matrix4, type Object3D, Vector3 } from "three";
+import { type Camera, Frustum, Matrix4, type Object3D, Sphere, Vector3 } from "three";
 
 import { isRenderable } from "./projection-plan.js";
 
@@ -72,6 +72,14 @@ interface IPositionVersion {
 /** A sphere nearer than this to the camera would divide by zero; treat it as this far away. */
 const MIN_DISTANCE = 1e-4;
 
+/** Internal observations shared with AnimationPlayer, owned by the root rather than the game. */
+export interface IAnimationRateState {
+  rate: number;
+  frame: number;
+  source: RenderCameraCull | undefined;
+}
+export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
+
 export interface IRenderCameraCullOptions {
   /**
    * Projected diameter in pixels below which an object is skipped, or `false` to leave every
@@ -141,6 +149,8 @@ export function alwaysRender(object: Object3D, enabled = true): void {
  * all owned by the instance.
  */
 export class RenderCameraCull {
+  #animationFrame = 0;
+  readonly #animationSphere = new Sphere();
   readonly #enabled: boolean;
   readonly #minimumPixels: number;
   readonly #center = new Vector3();
@@ -195,6 +205,10 @@ export class RenderCameraCull {
     };
   }
 
+  get animationFrame(): number {
+    return this.#animationFrame;
+  }
+
   /**
    * Hides every renderable under `root` that this camera resolves to fewer than the threshold,
    * then calls `restore` implicitly on the next call. Call {@link restore} after the render.
@@ -209,6 +223,7 @@ export class RenderCameraCull {
     viewportHeight: number,
   ): void {
     this.restore();
+    this.#animationFrame += 1;
     this.#considered = 0;
     this.#culled = 0;
     this.#exemptCameraAttached = 0;
@@ -267,10 +282,12 @@ export class RenderCameraCull {
     if (!isRenderable(object)) return;
     this.#considered += 1;
     if (this.#isCameraAttached(object)) {
+      this.#observeAnimation(object, undefined);
       this.#exemptCameraAttached += 1;
       return;
     }
     if (object.userData[ALWAYS_RENDER_KEY] === true) {
+      this.#observeAnimation(object, undefined);
       this.#exemptMarked += 1;
       return;
     }
@@ -278,6 +295,7 @@ export class RenderCameraCull {
     // trusted — the pooled tracer, particle and whitewater batches set it for exactly that
     // reason. A second, stricter cull does not get to override the opt-out.
     if (object.frustumCulled === false) {
+      this.#observeAnimation(object, undefined);
       this.#exemptFrustumCulled += 1;
       return;
     }
@@ -288,6 +306,7 @@ export class RenderCameraCull {
     // main camera *can* see is ordinary geometry — its shadow is in view with it, and a
     // sub-resolution object casts a sub-resolution shadow.
     const sphere = boundsOf(object, this.#positionVersions);
+    this.#observeAnimation(object, sphere);
     // A buffer rewritten every frame has extents the gate cannot know without a full scan each
     // frame, which costs more than the draw it might remove. Keep it drawn, like an opt-out.
     if (sphere === DYNAMIC_BOUNDS) {
@@ -322,6 +341,48 @@ export class RenderCameraCull {
     this.#hidden[this.#hiddenCount] = object;
     this.#hiddenCount += 1;
     this.#culled += 1;
+  }
+
+  #observeAnimation(
+    object: Object3D,
+    sphere: IBoundingSphereLike | typeof DYNAMIC_BOUNDS | undefined,
+  ): void {
+    for (let root: Object3D | null = object; root !== null; root = root.parent) {
+      const state = animationRateStates.get(root);
+      if (state === undefined) continue;
+      let rate = 1;
+      if (
+        this.#cameraResolved &&
+        sphere !== undefined &&
+        sphere !== DYNAMIC_BOUNDS &&
+        Number.isFinite(sphere.radius) &&
+        sphere.radius > 0
+      ) {
+        this.#center.copy(sphere.center).applyMatrix4(object.matrixWorld);
+        const radius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
+        const distance = Math.hypot(
+          this.#center.x - this.#cameraX,
+          this.#center.y - this.#cameraY,
+          this.#center.z - this.#cameraZ,
+        );
+        const pixels = (2 * radius * this.#scale) / Math.max(distance - radius, MIN_DISTANCE);
+        // PRD-570's provisional pixel bands; the visual gate still has to earn these thresholds.
+        rate = this.#frustum.intersectsSphere(this.#animationSphere.set(this.#center, radius))
+          ? pixels >= 128
+            ? 1
+            : pixels >= 32
+              ? 2
+              : pixels >= 8
+                ? 4
+                : 8
+          : 8;
+      }
+      if (state.source === this && state.frame === this.#animationFrame)
+        state.rate = Math.min(state.rate, rate);
+      else state.rate = rate;
+      state.source = this;
+      state.frame = this.#animationFrame;
+    }
   }
 
   #isCameraAttached(object: Object3D): boolean {

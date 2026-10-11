@@ -9,6 +9,7 @@ import {
   type VectorKeyframeTrack,
 } from "three";
 import { clipTrackBindings } from "./clip-audit.js";
+import { type IAnimationRateState, animationRateStates } from "./render-camera-cull.js";
 import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
 
 export interface IAnimationPlayerOptions {
@@ -38,6 +39,14 @@ export interface IAnimationPlayerOptions {
    * the clip's motion back as if it were the body's.
    */
   readonly strideRoot?: Object3D;
+  /** Evaluate by measured screen size by default; a positive integer names a frame interval. */
+  readonly updateRate?: "auto" | number;
+}
+
+export interface IAnimationUpdateRateReport {
+  readonly rate: number;
+  readonly overridden: boolean;
+  readonly evaluated: boolean;
 }
 
 /**
@@ -225,10 +234,25 @@ export interface IAnimationPlayOptions {
 }
 
 type AnimationMode = "loop" | "once";
+let nextAnimationOffset = 0;
 
 export class AnimationPlayer {
   readonly mixer: AnimationMixer;
   readonly root: Object3D;
+  readonly #rateState: IAnimationRateState = {
+    rate: 1,
+    frame: 0,
+    source: undefined,
+  };
+  readonly #staggerOffset = nextAnimationOffset++;
+  #updateRate: "auto" | number = "auto";
+  #updateFrame = 0;
+  #skippedFrames = 0;
+  #pendingDt = 0;
+  readonly #pendingActionTimes = new Map<AnimationAction, number>();
+  readonly #evaluationScales = new Map<AnimationAction, number>();
+  readonly #evaluationPaused = new Set<AnimationAction>();
+  #evaluated = false;
   #actions = new Map<string, AnimationAction>();
   #current: string | undefined;
   #mode: AnimationMode = "loop";
@@ -264,6 +288,7 @@ export class AnimationPlayer {
   constructor(options: IAnimationPlayerOptions) {
     const owner = new.target.name || "AnimationPlayer";
     this.root = options.root;
+    this.updateRate = options.updateRate ?? "auto";
     this.mixer = new AnimationMixer(options.root);
     this.#preparation = options.preparation;
     this.#strideSync = options.strideSync ?? true;
@@ -300,6 +325,39 @@ export class AnimationPlayer {
         );
     }
     this.mixer.addEventListener("finished", this.#onFinished);
+    animationRateStates.set(this.root, this.#rateState);
+  }
+
+  get updateRate(): "auto" | number {
+    return this.#updateRate;
+  }
+
+  set updateRate(value: "auto" | number) {
+    if (value !== "auto" && (!Number.isSafeInteger(value) || value < 1))
+      throw new Error("AnimationPlayer.updateRate requires 'auto' or a positive safe integer.");
+    this.#updateRate = value;
+  }
+
+  get updateRateReport(): IAnimationUpdateRateReport {
+    return {
+      rate: this.#effectiveUpdateRate(),
+      overridden: this.#updateRate !== "auto",
+      evaluated: this.#evaluated,
+    };
+  }
+
+  #effectiveUpdateRate(): number {
+    // Event deadlines and changing blend weights remain exactly on the gameplay tick.
+    if (
+      this.#mode === "once" ||
+      this.#fadeOut.length > 0 ||
+      this.#blendElapsed < this.#blendDuration
+    )
+      return 1;
+    if (this.#updateRate !== "auto") return this.#updateRate;
+    const state = this.#rateState;
+    if (state.source === undefined) return 1;
+    return state.frame === state.source.animationFrame ? state.rate : 8;
   }
 
   get current(): string | undefined {
@@ -565,6 +623,8 @@ export class AnimationPlayer {
   play(name: string, options: IAnimationPlayOptions = {}): void {
     const next = this.#actions.get(name);
     if (next === undefined) throw new Error(`Unknown animation clip '${name}'.`);
+    if (this.#current !== name || this.#finished || (options.mode ?? "loop") !== this.#mode)
+      this.#flushPending();
     // One owner at a time. A single-clip request takes the rig back from a weighted blend, exactly
     // as it took it back from a crossfade.
     const weighted = this.#blendTargets !== undefined;
@@ -623,6 +683,7 @@ export class AnimationPlayer {
       [...targets].every(([name, weight]) => this.#blendTargets?.get(name) === weight)
     )
       return;
+    this.#flushPending();
     // Any crossfade in flight stops owning the rig; its outgoing actions join the blend ramp below
     // as participants with a target of zero, so they leave the same bounded way they arrived.
     this.#fadeOut = [];
@@ -731,14 +792,71 @@ export class AnimationPlayer {
     }
   }
 
-  update(dt: number): void {
+  /** `force` evaluates accumulated time now, even outside this player's stagger slot. */
+  update(dt: number, force = false): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
+    const elapsed = dt * this.mixer.timeScale;
+    this.#pendingDt += elapsed;
+    for (const action of this.#actions.values()) {
+      if (!action.isScheduled()) continue;
+      const time = action.paused ? 0 : action.timeScale * elapsed;
+      this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
+    }
+    const rate = this.#effectiveUpdateRate();
+    this.#updateFrame += 1;
+    this.#skippedFrames += 1;
+    this.#evaluated =
+      force ||
+      (this.#updateFrame + this.#staggerOffset) % rate === 0 ||
+      this.#skippedFrames >= rate;
+    if (this.#evaluated) this.#evaluate(dt);
+    // Measure the body's movement on every tick, including skipped pose evaluations.
+    this.#syncStride(dt);
+  }
+
+  #flushPending(): void {
+    if (this.#pendingDt !== 0) this.#evaluate(this.#pendingDt);
+  }
+
+  #evaluate(dt: number): void {
     // Read before mixer.update(): the "finished" listener fires inside it for a completing
     // once-clip, and that final frame still counts as advancement.
     const wasFinished = this.#finished;
     const before = this.mixer.time;
-    this.mixer.update(dt);
+    const elapsed = this.#pendingDt;
+    const mixerScale = this.mixer.timeScale;
+    this.mixer.timeScale = 1;
+    for (const [action, pending] of this.#pendingActionTimes) {
+      this.#evaluationScales.set(action, action.timeScale);
+      if (action.paused && pending !== 0) {
+        this.#evaluationPaused.add(action);
+        action.paused = false;
+      }
+      let time = pending;
+      const duration = action.getClip().duration;
+      if (action.loop === LoopRepeat && duration > 0) {
+        const end = action.time + time;
+        const seam = Math.round(end / duration) * duration;
+        // Grouped addition must not hold the last pose when rate 1 already crossed a loop seam.
+        if (Math.abs(end - seam) <= Number.EPSILON * 16 * Math.max(duration, Math.abs(end)))
+          time = seam - action.time;
+      }
+      // Integrate changing stride rates; the last tick's rate must not own earlier skipped time.
+      if (elapsed !== 0) action.setEffectiveTimeScale(time / elapsed);
+    }
+    try {
+      this.mixer.update(elapsed);
+    } finally {
+      this.mixer.timeScale = mixerScale;
+      for (const action of this.#evaluationPaused) action.paused = true;
+      this.#evaluationPaused.clear();
+      for (const [action, scale] of this.#evaluationScales) action.setEffectiveTimeScale(scale);
+      this.#evaluationScales.clear();
+      this.#pendingDt = 0;
+      this.#pendingActionTimes.clear();
+      this.#skippedFrames = 0;
+    }
     if (this.#fadeOut.length > 0) {
       this.#fadeElapsed = Math.min(this.#fadeDuration, this.#fadeElapsed + dt);
       const linear = this.#fadeDuration === 0 ? 1 : this.#fadeElapsed / this.#fadeDuration;
@@ -762,10 +880,13 @@ export class AnimationPlayer {
     if (this.#current !== undefined && !wasFinished && this.mixer.time !== before)
       this.#advancedFrames += 1;
     this.#advanceBlend(dt);
-    this.#syncStride(dt);
   }
 
   stop(): void {
+    this.#pendingDt = 0;
+    this.#pendingActionTimes.clear();
+    this.#skippedFrames = 0;
+    this.#evaluated = false;
     this.mixer.stopAllAction();
     this.#current = undefined;
     this.#mode = "loop";
@@ -796,6 +917,8 @@ export class AnimationPlayer {
     this.#clips.clear();
     this.#clipGroundSpeed.clear();
     this.#preparation = undefined;
+    if (animationRateStates.get(this.root) === this.#rateState)
+      animationRateStates.delete(this.root);
   }
 }
 

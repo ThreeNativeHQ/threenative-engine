@@ -33,6 +33,7 @@ export { AnimationPlayer } from "./animation.js";
 export type {
   IAnimationPlayerOptions,
   IAnimationPlayOptions,
+  IAnimationUpdateRateReport,
   IStrideReport,
 } from "./animation.js";
 /**
