@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import {
   DoubleSide,
   InstancedBufferAttribute,
@@ -7,13 +8,15 @@ import {
   Texture,
   Vector3,
 } from "three";
-import { MeshStandardNodeMaterial } from "three/webgpu";
+import { MeshStandardNodeMaterial, NodeUpdateType } from "three/webgpu";
+import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import {
   IMPOSTOR_SURFACE_PARALLAX,
   WorldImpostorSurface,
   impostorFrameBasis,
   impostorFrameUv,
+  instanceSyncEvent,
   syncInstanceRanges,
 } from "../src/render/world-impostor-surface.js";
 import {
@@ -194,7 +197,10 @@ describe("impostorFrameBasis", () => {
 });
 
 describe("impostorFrameUv", () => {
-  it("projects an offset to the same uv the baker's camera itself projects", () => {
+  // A three render target's texture row 0 is the top of the frame the camera drew (WebGPU writes
+  // top-down and three samples it unflipped; WebGL's flip lands the same place), so the texel the
+  // bake wrote for NDC y sits at v = 0.5 - y/2. The GL-style 0.5 + y/2 drew every impostor upside down.
+  it("projects an offset to the texel the baker's camera wrote it into", () => {
     const center = new Vector3(0.5, -1, 2);
     const radius = 3;
     for (const direction of VIEW_DIRECTIONS) {
@@ -212,7 +218,7 @@ describe("impostorFrameUv", () => {
         const ndc = point.clone().project(camera);
         const uv = impostorFrameUv(point.clone().sub(center), basis, radius);
         expect(uv.u).toBeCloseTo(ndc.x * 0.5 + 0.5, 5);
-        expect(uv.v).toBeCloseTo(ndc.y * 0.5 + 0.5, 5);
+        expect(uv.v).toBeCloseTo(0.5 - ndc.y * 0.5, 5);
       }
     }
   });
@@ -240,6 +246,39 @@ describe("syncInstanceRanges", () => {
     source.needsUpdate = true;
     syncInstanceRanges(source, derived);
     expect(derived.updateRanges).toEqual([]);
+    expect(derived.version).toBe(source.version);
+  });
+});
+
+describe("instanceSyncEvent", () => {
+  it("typechecks the frame event against the installed Three declarations", () => {
+    const file = fileURLToPath(new URL("../src/render/world-impostor-surface.ts", import.meta.url));
+    const program = ts.createProgram([file], {
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      noEmit: true,
+      skipLibCheck: true,
+      strict: true,
+      target: ts.ScriptTarget.ES2022,
+    });
+    const diagnostics = ts
+      .getPreEmitDiagnostics(program)
+      .filter(({ file: source }) => source?.fileName === file);
+    expect(
+      diagnostics.map(({ messageText }) => ts.flattenDiagnosticMessageText(messageText, "\n")),
+    ).toEqual([]);
+  }, 20_000);
+
+  // World batches are `static`, and the patched three skips OBJECT node updates of a settled static
+  // object: an OBJECT-typed sync never ran, the derived buffer kept its first (zeroed) upload, and
+  // every near impostor drew nothing. FRAME is the type three's own `Instance.js` sync uses.
+  it("syncs once per frame, the update a settled static object still runs", () => {
+    const source = new InstancedBufferAttribute(new Float32Array(16 * 2), 16);
+    const derived = new InstancedInterleavedBuffer(source.array as Float32Array, 16, 1);
+    const event = instanceSyncEvent(source, derived);
+    expect(event.updateType).toBe(NodeUpdateType.FRAME);
+    source.needsUpdate = true;
+    event.update({} as never);
     expect(derived.version).toBe(source.version);
   });
 });

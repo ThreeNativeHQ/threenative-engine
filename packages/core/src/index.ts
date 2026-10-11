@@ -648,6 +648,25 @@ export {
 } from "./profiling/scene-warning.js";
 export type { ISceneShape, ISceneWarning } from "./profiling/scene-warning.js";
 /**
+ * Tell the agent that built the scene that its imported foliage is drawing with no image-based light:
+ * an alpha-cutout `MeshStandardMaterial` (or its Node twin) with `scene.environment` unset and no
+ * `envMap` of its own gets a hemisphere fill and one flat dark value, which is cardboard. Printed
+ * once per scene entry as `TN_UNLIT_FOLIAGE`, after `enter()`, with the fix in the same line.
+ * @situation catch the "why does my forest look like cardboard" question before a human plays it
+ * @situation audit a scene a game built from imported GLB foliage
+ * @constraint derived from the scene graph, not from a constant: cutout PBR with no environment in the scene and none on the material
+ * @constraint it changes nothing and never throws — the environment is appearance, so setting it stays the game's decision
+ * @override `material.userData.tnUnlitOk = true` on a material a game deliberately renders unlit (the same `userData.tn*` naming the alpha and impostor conventions use)
+ * @example defineGame({ scenes: { Forest } }); // one TN_UNLIT_FOLIAGE line when the forest has no sky
+ */
+export {
+  UNLIT_FOLIAGE_FIX,
+  UNLIT_FOLIAGE_MARKER,
+  formatUnlitFoliageWarning,
+  unlitFoliageWarning,
+} from "./profiling/unlit-foliage-warning.js";
+export type { IUnlitFoliageWarning } from "./profiling/unlit-foliage-warning.js";
+/**
  * Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the
  * subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and
  * `invalidateStatic(object)` announces a write deeper inside one.
@@ -883,7 +902,7 @@ export type { IVirtualShadowOptions, IVirtualShadowStats } from "./render/virtua
  * @constraint the objects, and where each one goes, stay the game's; this decides only when each joins the graph
  * @constraint input order is the attach order and cannot be changed
  * @constraint a false `while` stops the run and is reported as `stopped`, never thrown
- * @override sliceSize defaults to 256; `marker: false` silences the TN_ADD_SLICES line, not the report
+ * @override a slice ends on an 8 ms budget unless the game gives `sliceSize`, and the reported sliceSize is then the measured average; `marker: false` silences the TN_ADD_SLICES line, not the report
  * @example const report = await addInSlices(objects, (object) => ctx.add(object), {
  *   onProgress: ({ added, total }) => setProgress(added / total),
  *   while: () => generation.live,

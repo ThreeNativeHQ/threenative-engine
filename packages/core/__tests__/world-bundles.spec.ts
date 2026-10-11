@@ -17,7 +17,7 @@ import {
 // one rather than the `Frustum` this file's world was built with.
 import { Frustum } from "three/src/math/Frustum.js";
 import Renderer from "three/src/renderers/common/Renderer.js";
-import { viewportSharedTexture } from "three/tsl";
+import { uniform, viewportSharedTexture } from "three/tsl";
 import {
   BundleGroup,
   type Material,
@@ -636,7 +636,15 @@ describe("the main pass's draw bundles", () => {
 
     // No group, and the marker and the stats say so.
     expect(mainBundleGroups(cells)).toEqual([]);
-    expect(cells.stats().bundle).toEqual({ children: 0, on: false, reason: "option", records: 0 });
+    expect(cells.stats().bundle).toEqual({
+      children: 0,
+      cpuMeshes: 0,
+      gpuMeshes: 0,
+      eligibility: { checks: 0, refreshes: 0, validations: 0, uncached: 0 },
+      on: false,
+      reason: "option",
+      records: 0,
+    });
     const dressed = mainKeys(cells);
     expect(dressed.length).toBeGreaterThan(0);
     for (const mesh of dressed) expect(mesh.parent).toBe(cells);
@@ -747,6 +755,31 @@ describe("the main pass's draw bundles", () => {
     cells.dispose();
     expect(lifted.parent).not.toBe(group);
     expect(lifted.parent instanceof BundleGroup).toBe(false);
+  });
+
+  it("never copies a texture's pixels while it asks whether a draw can be recorded", async () => {
+    // A sky-lit prop carries an HDR DataTexture as its envMap. The structural walk that looks for a
+    // framebuffer node must not descend into the texture's pixel array: Object.values on a typed
+    // array copies every element, which measured 4 s of a 4.3 s profile (5 fps) in a fresh game.
+    const materials = mixedChunkMaterials();
+    const painted = materials[0] as Material & { envMap: DataTexture | null };
+    painted.envMap = new DataTexture(new Float32Array(64 * 64 * 4), 64, 64);
+    const values = vi.spyOn(Object, "values");
+    try {
+      const { renderer, world: cells } = await world({
+        bundles: true,
+        chunkModel: (url) => standAtCellOf(url, chunkOf(materials)),
+      });
+      cells.update(renderer, eastCamera());
+      await flushed(cells, renderer, eastCamera());
+      const drawn = project(cells, eastCamera());
+      expect(drawn.bundled.filter(isChunk).map((mesh) => (mesh as Mesh).material)).toEqual([
+        painted,
+      ]);
+      expect(values.mock.calls.filter(([value]) => ArrayBuffer.isView(value))).toEqual([]);
+    } finally {
+      values.mockRestore();
+    }
   });
 
   it("asks a textured surface whether it can be recorded without reading its pixels", async () => {
@@ -874,6 +907,348 @@ describe("the main pass's draw bundles", () => {
     expect([...new Set([...names(west), ...names(east)])].sort()).toEqual(names(dressed));
     cells.dispose();
   });
+
+  it("reuses structural bundle eligibility without recursive values allocations on a settled CPU frame", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const probe = {
+      isBundleProbe: true,
+      nested: { node: { isNode: true, updateBeforeType: "none" } },
+    };
+    painted.userData.bundleProbe = probe;
+    const values = vi.spyOn(Object, "values");
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      expect(mainKeys(cells).length).toBeGreaterThan(1);
+      values.mockClear();
+      const records = cells.stats().bundle.records;
+      for (let frame = 0; frame < 20; frame++) cells.update(renderer, playerCamera());
+      expect(values.mock.calls.filter(([value]) => value === probe)).toHaveLength(0);
+      expect(cells.stats().bundle.records).toBe(records);
+      expect(cells.stats().bundle).toMatchObject({
+        on: true,
+        cpuMeshes: expect.any(Number),
+        gpuMeshes: 0,
+      });
+      expect(cells.stats().bundle.cpuMeshes).toBeGreaterThan(0);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it("validates own TSL graph properties without visiting inherited chain methods", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const node = uniform(1);
+    painted.colorNode = node;
+    // The installed TSL prototype carries thousands of enumerable chaining methods. They are
+    // outside Object.values' safety graph, so scanning them cannot certify any additional link.
+    const inherited = new Set<string>();
+    for (const key in node) if (!Object.hasOwn(node, key)) inherited.add(key);
+    expect(inherited.size).toBeGreaterThan(1000);
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const records = cells.stats().bundle.records;
+      const validations = cells.stats().bundle.eligibility.validations;
+      const hasOwn = vi.spyOn(Object, "hasOwn");
+      for (let frame = 0; frame < 20; frame++) cells.update(renderer, playerCamera());
+      expect(cells.stats().bundle.eligibility.validations).toBeGreaterThan(validations);
+      expect(cells.stats().bundle.records).toBe(records);
+      expect(
+        hasOwn.mock.calls.filter(([object, key]) => object === node && inherited.has(String(key))),
+      ).toHaveLength(0);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it("matches Three's exclusion of a directly inherited Node child", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const node = uniform(1);
+    const reader = viewportSharedTexture();
+    const prototype = Object.create(Object.getPrototypeOf(node));
+    prototype.bundleInheritedChild = reader;
+    Object.setPrototypeOf(node, prototype);
+    painted.colorNode = node;
+    expect([...node.getChildren()]).not.toContain(reader);
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const keys = mainKeys(cells);
+      expect(keys.length).toBeGreaterThan(0);
+      expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it.each(["node", "material"] as const)(
+    "checks a renderer-visible non-enumerable %s child and its deep mutation",
+    async (target) => {
+      const painted = new MeshStandardNodeMaterial();
+      const root = uniform(1);
+      const child = uniform(2);
+      Reflect.set(child, "updateBefore", () => undefined);
+      if (target === "node") {
+        Object.defineProperty(root, "bundleHiddenChild", {
+          value: child,
+          enumerable: false,
+          configurable: true,
+        });
+        painted.colorNode = root;
+        expect([...root.getChildren()]).toContain(child);
+      } else {
+        Object.defineProperty(painted, "colorNode", {
+          value: child,
+          enumerable: false,
+          configurable: true,
+        });
+        const getNodes = Reflect.get(painted, "_getNodeChildren") as () => { childNode: unknown }[];
+        expect(getNodes.call(painted).map((entry) => entry.childNode)).toContain(child);
+      }
+      const { renderer, world: cells } = await world({
+        bundles: true,
+        gpuScene: false,
+        chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+      });
+      try {
+        cells.update(renderer, playerCamera());
+        await flushed(cells, renderer, playerCamera());
+        const keys = mainKeys(cells);
+        expect(keys.length).toBeGreaterThan(0);
+        expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+        Reflect.set(child, "updateBeforeType", "render");
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+        Reflect.set(child, "updateBeforeType", "none");
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      } finally {
+        cells.dispose();
+      }
+    },
+  );
+  it.each(["dictionary", "sparse-array"] as const)(
+    "checks Three's inherited %s child, prototype change and unversioned mutation",
+    async (container) => {
+      const painted = new MeshStandardNodeMaterial();
+      const root = uniform(1);
+      const child = uniform(2);
+      Reflect.set(child, "updateBefore", () => undefined);
+      const branch = container === "dictionary" ? Object.create(null) : new Array(105);
+      Reflect.set(root, "bundleChildren", branch);
+      painted.colorNode = root;
+      const { renderer, world: cells } = await world({
+        bundles: true,
+        gpuScene: false,
+        chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+      });
+      const prototype = container === "dictionary" ? Object.prototype : Array.prototype;
+      const arrayLength = Object.getOwnPropertyDescriptor(Array.prototype, "length");
+      const key = container === "dictionary" ? "bundleInheritedChild" : "104";
+      expect(Object.hasOwn(prototype, key)).toBe(false);
+      try {
+        cells.update(renderer, playerCamera());
+        await flushed(cells, renderer, playerCamera());
+        const keys = mainKeys(cells);
+        expect(keys.length).toBeGreaterThan(0);
+        expect([...root.getChildren()]).not.toContain(child);
+        const records = cells.stats().bundle.records;
+        Object.defineProperty(prototype, key, {
+          value: child,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+        if (container === "dictionary") Object.setPrototypeOf(branch, Object.prototype);
+        expect([...root.getChildren()]).toContain(child);
+        cells.update(renderer, playerCamera());
+        expect(cells.stats().bundle.records).toBeGreaterThan(records);
+        Reflect.set(child, "updateBeforeType", "render");
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+        Reflect.set(child, "updateBeforeType", "none");
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      } finally {
+        Reflect.deleteProperty(prototype, key);
+        if (container === "sparse-array" && arrayLength !== undefined)
+          Object.defineProperty(Array.prototype, "length", arrayLength);
+        cells.dispose();
+      }
+    },
+  );
+  it.each([
+    "malformed",
+    "oversized",
+    "reader-error",
+    "iterator-error",
+    "invalid-iterator",
+  ] as const)(
+    "retains the source path for %s Node child output and permits repair",
+    async (output) => {
+      const painted = new MeshStandardNodeMaterial();
+      const root = uniform(1);
+      const child = uniform(2);
+      painted.colorNode = root;
+      const { renderer, world: cells } = await world({
+        bundles: true,
+        gpuScene: false,
+        chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+      });
+      try {
+        cells.update(renderer, playerCamera());
+        await flushed(cells, renderer, playerCamera());
+        const keys = mainKeys(cells);
+        expect(keys.length).toBeGreaterThan(0);
+        Reflect.set(root, "getChildren", () => {
+          if (output === "reader-error") throw new Error("reader failed");
+          if (output === "invalid-iterator")
+            return { [Symbol.iterator]: () => ({ next: () => 1 }) };
+          return (function* () {
+            if (output === "iterator-error") throw new Error("iterator failed");
+            if (output === "malformed") yield {};
+            else for (let index = 0; index < 8193; index++) yield child;
+          })();
+        });
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+        expect(keys.every((mesh) => mesh.parent === cells)).toBe(true);
+        Reflect.deleteProperty(root, "getChildren");
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      } finally {
+        cells.dispose();
+      }
+    },
+  );
+  it("removes CPU keys on a deep unsafe graph edit without needsUpdate and records them again after repair", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const branch: { child?: unknown } = {};
+    painted.userData.branch = branch;
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const keys = mainKeys(cells);
+      expect(keys.length).toBeGreaterThan(0);
+      expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      branch.child = { isNode: true, updateBefore() {}, updateBeforeType: "render" };
+      cells.update(renderer, playerCamera());
+      expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+      expect(keys.every((mesh) => mesh.parent === cells)).toBe(true);
+      const refused = cells.stats().bundle.records;
+      Reflect.deleteProperty(branch, "child");
+      cells.update(renderer, playerCamera());
+      expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      expect(cells.stats().bundle.records).toBeGreaterThan(refused);
+      const recorded = cells.stats().bundle.records;
+      painted.needsUpdate = true;
+      cells.update(renderer, playerCamera());
+      expect(cells.stats().bundle.records).toBeGreaterThan(recorded);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it("rerecords live CPU material visibility changes without needsUpdate", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const before = cells.stats().bundle.records;
+      painted.visible = false;
+      cells.update(renderer, playerCamera());
+      const hidden = cells.stats().bundle.records;
+      expect(hidden).toBeGreaterThan(before);
+      painted.visible = true;
+      cells.update(renderer, playerCamera());
+      expect(cells.stats().bundle.records).toBeGreaterThan(hidden);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it("keeps mutable CPU array materials on the per-object path", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const keys = mainKeys(cells);
+      expect(keys.length).toBeGreaterThan(0);
+      for (const mesh of keys) mesh.material = [painted, new MeshStandardNodeMaterial()];
+      cells.update(renderer, playerCamera());
+      expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+      expect(keys.every((mesh) => mesh.parent === cells)).toBe(true);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it.each(["root", "flag", "transparent", "transmission", "hook", "node-version"] as const)(
+    "invalidates CPU bundle eligibility and records on %s mutation",
+    async (mutation) => {
+      const painted = new MeshStandardNodeMaterial();
+      const node = { isNode: true, updateBefore() {}, updateBeforeType: "none", version: 0 };
+      const branch = { child: node, pixels: new Uint8Array(64) };
+      painted.userData.branch = branch;
+      Reflect.set(branch, "self", branch);
+      const { renderer, world: cells } = await world({
+        bundles: true,
+        gpuScene: false,
+        chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+      });
+      try {
+        cells.update(renderer, playerCamera());
+        await flushed(cells, renderer, playerCamera());
+        const keys = mainKeys(cells);
+        expect(keys.length).toBeGreaterThan(0);
+        const before = cells.stats().bundle.records;
+        if (mutation === "root")
+          painted.userData.branch = {
+            child: { isNode: true, updateBefore() {}, updateBeforeType: "render" },
+          };
+        if (mutation === "flag") node.updateBeforeType = "render";
+        if (mutation === "transparent") painted.transparent = true;
+        if (mutation === "transmission") Reflect.set(painted, "transmission", 0.5);
+        if (mutation === "hook") for (const mesh of keys) mesh.onBeforeRender = () => undefined;
+        if (mutation === "node-version") node.version++;
+        cells.update(renderer, playerCamera());
+        if (mutation === "node-version") {
+          expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+          expect(cells.stats().bundle.records).toBeGreaterThan(before);
+        } else {
+          expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+          expect(keys.every((mesh) => mesh.parent === cells)).toBe(true);
+        }
+      } finally {
+        cells.dispose();
+      }
+    },
+  );
 
   it("re-records a main shard in the same update that changed which meshes it holds", async () => {
     // A record fixes its render list, so a mesh that joins a shard and is not followed by a re-record

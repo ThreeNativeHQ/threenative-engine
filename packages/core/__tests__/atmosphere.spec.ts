@@ -1,5 +1,5 @@
 import { Group, Vector3 } from "three";
-import { float, vec3, vec4 } from "three/tsl";
+import { float, vec2, vec3, vec4 } from "three/tsl";
 import { describe, expect, it } from "vitest";
 import {
   Atmosphere,
@@ -109,6 +109,17 @@ describe("Atmosphere", () => {
     expect((thicker.radiance(direction) as Vector3).toArray()).not.toEqual(
       (atmosphere.radiance(direction) as Vector3).toArray(),
     );
+  });
+
+  it("samples atmosphere LUTs through their linear filter at an explicit mip level", () => {
+    const atmosphere = new Atmosphere(earth);
+    for (const sample of [
+      atmosphere.luts.sampleSkyView(vec2(0.5, 0.5)),
+      atmosphere.luts.sampleTransmittance(vec2(0.5, 0.5)),
+    ]) {
+      expect(sample.sampler).toBe(true);
+      expect(sample.levelNode).not.toBeNull();
+    }
   });
 
   it("exposes TSL nodes for radiance, sun transmittance, and depth haze", () => {

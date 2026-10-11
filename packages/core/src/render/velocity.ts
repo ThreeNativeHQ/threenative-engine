@@ -43,7 +43,7 @@ const VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE = Symbol.for(
 );
 
 interface IInstanceMatrixSource {
-  instanceMatrix?: { array: ArrayLike<number> };
+  instanceMatrix?: { array: ArrayLike<number>; version?: number };
 }
 
 interface IBatchedMatrixSource {
@@ -125,6 +125,13 @@ export class VelocityTracker {
   readonly #worldSnapshots = new Map<Object3D, Matrix4>();
   readonly #bindInverseSnapshots = new Map<Object3D, Matrix4>();
   readonly #boneSnapshots = new Map<ITrackedSkeleton, Float32Array>();
+  // The previous frame's buffers, written at the next commit. The snapshot scheduled for the frame
+  // that just rendered stays untouched until `update` replaces it, and steady state allocates nothing.
+  readonly #spareInstances = new Map<Object3D, Float32Array>();
+  readonly #spareWorlds = new Map<Object3D, Matrix4>();
+  readonly #spareBones = new Map<ITrackedSkeleton, Float32Array>();
+  /** `instanceMatrix.version` at the last commit: an unchanged mesh's history already equals it. */
+  readonly #instanceVersions = new Map<Object3D, number>();
   readonly #ownedBatchedMeshes = new Set<BatchedMesh>();
   readonly #active = new Set<Object3D>();
   #updatedRoot: Object3D | undefined;
@@ -164,7 +171,10 @@ export class VelocityTracker {
       this.#active.delete(object);
     }
     for (const skeleton of this.#boneSnapshots.keys()) {
-      if (!seenSkeletons.has(skeleton)) this.#boneSnapshots.delete(skeleton);
+      if (!seenSkeletons.has(skeleton)) {
+        this.#boneSnapshots.delete(skeleton);
+        this.#spareBones.delete(skeleton);
+      }
     }
     for (const object of seen) this.#active.add(object);
   }
@@ -178,14 +188,20 @@ export class VelocityTracker {
     root.traverse((object) => {
       if (!this.#active.has(object) || !isVelocityRenderable(object)) return;
       seen.add(object);
-      this.#worldSnapshots.set(object, object.matrixWorld.clone());
+      const spare = this.#spareWorlds.get(object);
+      const scheduled = this.#worldSnapshots.get(object);
+      if (scheduled) this.#spareWorlds.set(object, scheduled);
+      this.#worldSnapshots.set(
+        object,
+        spare ? spare.copy(object.matrixWorld) : object.matrixWorld.clone(),
+      );
       const skeleton = getSkeleton(object);
       if (skeleton !== undefined) {
         this.#bindInverseSnapshots.set(object, (object as SkinnedMesh).bindMatrixInverse.clone());
         if (!seenSkeletons.has(skeleton)) {
           skeleton.update();
           seenSkeletons.add(skeleton);
-          this.#boneSnapshots.set(skeleton, copyArray(skeleton.boneMatrices));
+          rotate(this.#boneSnapshots, this.#spareBones, skeleton, skeleton.boneMatrices);
         }
       }
       this.commitInstance(object);
@@ -206,6 +222,10 @@ export class VelocityTracker {
     this.#worldSnapshots.clear();
     this.#bindInverseSnapshots.clear();
     this.#boneSnapshots.clear();
+    this.#spareInstances.clear();
+    this.#instanceVersions.clear();
+    this.#spareWorlds.clear();
+    this.#spareBones.clear();
     this.#updatedRoot = undefined;
   }
 
@@ -268,11 +288,22 @@ export class VelocityTracker {
 
   private commitInstance(object: Object3D): void {
     const batch = getBatchedMesh(object);
-    const current =
-      batch === undefined
-        ? (object as Object3D & IInstanceMatrixSource).instanceMatrix?.array
-        : batchedMatrixData(batch);
-    if (current !== undefined) this.#instanceSnapshots.set(object, copyArray(current));
+    const matrices =
+      batch === undefined ? (object as Object3D & IInstanceMatrixSource).instanceMatrix : undefined;
+    const current = batch === undefined ? matrices?.array : batchedMatrixData(batch);
+    if (current === undefined) return;
+    // A static forest is nearly every instance: copying 218,809 unchanged matrices each frame was
+    // the remaining per-frame cost. Same version means the scheduled history is already current.
+    const version = matrices?.version;
+    if (
+      version !== undefined &&
+      this.#instanceVersions.get(object) === version &&
+      this.#instanceSnapshots.get(object)?.length === current.length
+    )
+      return;
+    rotate(this.#instanceSnapshots, this.#spareInstances, object, current);
+    if (version !== undefined) this.#instanceVersions.set(object, version);
+    else this.#instanceVersions.delete(object);
   }
 
   private restore(object: Object3D): void {
@@ -291,6 +322,9 @@ export class VelocityTracker {
     this.#originalFlags.delete(object);
     this.#instanceSnapshots.delete(object);
     this.#worldSnapshots.delete(object);
+    this.#spareInstances.delete(object);
+    this.#instanceVersions.delete(object);
+    this.#spareWorlds.delete(object);
     this.#bindInverseSnapshots.delete(object);
   }
 }
@@ -358,6 +392,31 @@ function isNode(value: unknown): value is Node {
 
 function copyArray(source: ArrayLike<number>): Float32Array {
   const copy = new Float32Array(source.length);
-  for (let index = 0; index < source.length; index += 1) copy[index] = source[index] ?? 0;
+  copy.set(source);
   return copy;
+}
+
+/**
+ * The committed history, written into last frame's buffer when the length still matches. Three
+ * copies the scheduled history into its own attribute at draw time, so reuse is safe; a fresh array
+ * per instanced mesh per frame was ~14 MB of garbage a frame for 218,809 instances and produced
+ * multi-second collector stalls.
+ */
+/** Commit into last frame's spare buffer and keep the scheduled one as the next spare. */
+function rotate<K>(
+  snapshots: Map<K, Float32Array>,
+  spares: Map<K, Float32Array>,
+  key: K,
+  source: ArrayLike<number>,
+): void {
+  const scheduled = snapshots.get(key);
+  const next = copyInto(spares.get(key), source);
+  if (scheduled) spares.set(key, scheduled);
+  snapshots.set(key, next);
+}
+
+function copyInto(target: Float32Array | undefined, source: ArrayLike<number>): Float32Array {
+  if (target === undefined || target.length !== source.length) return copyArray(source);
+  target.set(source);
+  return target;
 }

@@ -18,6 +18,7 @@ import {
   AgXToneMapping,
   type Camera,
   type DirectionalLight,
+  MaterialBlending,
   NeutralToneMapping,
   type PerspectiveCamera,
   type Scene,
@@ -45,8 +46,9 @@ import {
   screenUV,
   smoothstep,
   vec2,
+  vec4,
 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import { BlendMode, type Node } from "three/webgpu";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
 
@@ -536,7 +538,11 @@ export class WorldEnvironment {
     // faceted bounce on exactly the smooth surfaces GI is bought for. Metalness and
     // roughness ride along so SSR knows which pixels are supposed to reflect.
     if (options.ssgiEnabled || options.ssrEnabled || options.gtaoEnabled) {
-      scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
+      // The normal target uses the material blend mode. Its alpha is zero, so a transparent card
+      // keeps the opaque normal beneath it. GTAO then does not darken a square behind the card.
+      const sceneMrt = mrt({ output, normal: vec4(normalView, 0), metalness, roughness });
+      sceneMrt.setBlendMode("normal", new BlendMode(MaterialBlending));
+      scenePass.setMRT(sceneMrt);
     }
     // Requested lazily, and this is not a micro-optimisation. **Asking a pass for `normal`,
     // `metalness` or `roughness` is what creates the extra render target.** A tier that runs none

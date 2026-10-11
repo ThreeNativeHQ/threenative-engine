@@ -446,6 +446,8 @@ export class RenderChain {
     const hasActiveVelocityStage = stages.some((name) =>
       requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
+    // Temporal nodes jitter the scene-side velocity node (TRAANode calls setProjectionMatrix on
+    // it); the pass texture is what a stage samples, so it stays on the build context only.
     if (velocityNode !== undefined && hasActiveVelocityStage)
       // TRAANode uses context.velocity to set the unjittered projection, not to sample MRT.
       // The sampled texture already travels to the factory via context.velocityNode.

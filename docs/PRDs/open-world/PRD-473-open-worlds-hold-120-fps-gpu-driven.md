@@ -82,12 +82,16 @@ The largest CPU and GPU win, and the prerequisite for bundles.
 - [x] The scene is on by default, and `gpuScene: false` / `?tnGpuScene=0` / `TN_GPU_SCENE=0` is the CPU path. proof: the same spec, with the CPU-path test asking for `gpuScene: false` explicitly.
 
 ### Phase 2 — Cached draw commands (AC-2)
+- [x] CPU main-batch material eligibility reuses bounded mutable-graph snapshots, invalidates deep unversioned edits and repaired joins, tracks live material visibility, and retains unsupported array materials on the per-object path; diagnostics report actual CPU/GPU bundle membership. proof: `world-bundles.spec.ts` → 25/25; three review regressions reproduced first; core TS7 7.0.2 package typecheck → exit 0. This proves source correctness and stable-graph allocation avoidance, not a measured frame-time gain.
 - [ ] Every GPU-dressed main batch mesh is parented under one `BundleGroup`, so a settled walk replays its draws instead of re-walking three's per-object path. proof: `pnpm exec vitest run packages/core/__tests__/world-bundles.spec.ts`.
 - [ ] `bundleGroup.needsUpdate` moves only on a structural change, and `stats().bundle` counts the records against the keys minted and retired. proof: the same spec's 200-frame streaming walk.
 - **Bundles: measured no gain, default off, and why.** On machinefall's map-walk, with bundles on (the old default) the trees near the camera were not drawn while their shadows were: the adaptive texel gate in `VirtualShadowNode#probe` hides sub-texel casters with `visible = false` and `#restoreHidden` puts them back, and a bundle bakes each object's `visible` into the render list it records — a re-record taken while a tree was gate-hidden lost the tree for good. A/B on the same walk also measured no CPU p50/p95 gain, because the main thread is mostly idle and the frame is GPU/present bound. So `bundles` is now opt-in (`bundles: true`, `?tnBundles=1` or `TN_BUNDLES=1`), and the gate skips a bundled mesh so opting in cannot reproduce the conflict.
 
 ### Phase 3 — Impostors (AC-3) and HLOD (AC-4)
 They are independent; the executable plan is below. Impostors are not implemented in the visibility pass.
+
+- [x] The existing cook accepts eligible static scatter alongside chunks, preserves cutout triangles and placement transforms, publishes explicit coverage/bounds and a conservative error, and declines an unsupported cell whole. proof: focused `packages/assets/__tests__/hlod.spec.ts`, `packages/core/__tests__/world-package.spec.ts` and `packages/core/__tests__/world-cell-proxy.spec.ts` → 76/76 CPU tests, one worker on cores 10,22; changed-source strict typecheck → exit 0. Runtime integration and visual/performance acceptance remain open.
+- [ ] WorldCells loads and atomically selects the ready cell proxy through its existing admission/cache paths, retaining source fallback, protected near detail, source shadows and collision; cancellation, eviction and charged decoded proxy resources stay bounded. proof: `packages/core/__tests__/world-cells-hlod.spec.ts` plus browser/native playtest observations of source/proxy coverage, lifecycle and timing. CPU implementation is present: four changed-behavior specs pass 68/68, including bundle, empty authored-LOD, selector and lifecycle controls. Real backend, visual, shadow-cost and timing acceptance remains unrun; zero-count submission observations and logical resource charges are not execution-time or physical GPU-memory measurements.
 
 ### Phase 4 — Measure and tune
 
@@ -143,6 +147,128 @@ Scope: near full visibility + sparse middle foliage + bare hills with the real e
 - **Runtime baker:** a real module exists — 16 octahedral views at 128 px, two RGBA8 arrays with mips, 2,796,160 B per atlas; the NVIDIA source pine GLB atlas has 16 non-empty views, 11 tests. A lit 2-triangle whole-asset surface is under verification, not integrated. This runtime bake supersedes the cook-time impostor proposal (executable plan step 3, now marked superseded); HLOD and other work are unchanged.
 - **Remaining bounded implementation:** integrate the automatic alpha-foliage bake with WorldCells load/prewarm; finite atlas budget and cache keyed on the resolved cooked content URL plus the source cutout contract; preserve full source leaf coverage through authored/generated LODs until the impostor switch. One whole-asset terminal part means the wide caster uses one quad and the root placement matrix, with no per-part fallback duplicates. Use existing raw renderer/public APIs, owned disposal, CPU/GPU buffer updates. **Next:** real game and native visual checks at the near transition, mid coverage and far hills; parent reviews and updates this PRD, no merge request. Broad 120 fps / HLOD acceptance stays open. No box is ticked from a unit check or a blank capture.
 - **Far residency:** a lightweight aggregate per atlas asset using the original placements, independent of the near full-geometry ring; upload matrices only on cell/run handoff; atomic near-ready swap/eviction avoids duplicates and holes; finite instance and atlas budgets. Terrain radius 8 vs near prop ring 2; of 60,331 exported tree placements, 49,516 are beyond 500 m. One `InstancedMesh` per asset (not per cell) is the minimum candidate; the full-geometry ring is not raised.
+
+## Strata HLOD implementation checkpoint
+
+The engine cook/schema slice is committed at `710b68c5cc09ee88058c3ebc5c156564d3db95c5`.
+Runtime and CPU bundle work is based on the parent-approved published PR381 head
+`786e236719a482062bc263bf3543a444b836095b`, with the readiness owner's source retained. It
+changes WorldCells/world exports and the internal cell-proxy helper, not terrain, startup or
+forest source. Capability search/detail preceded the implementation; models, placement inputs,
+cache holders, loader concurrency and admission use the existing engine paths.
+
+Cook staging and expansion are capped at 64 MiB, expanded nodes at 4,096 and each output GLB at
+4 MiB. Eligible static scatter and chunks have explicit coverage, transformed bounds and error;
+MASK triangles remain intact. Animated, skinned, morphed, nested instanced, sheared, alternate-scene,
+orphan, blended, tangent-bearing and complex-material sources retain detail with a diagnostic.
+
+The runtime considers proxies by default, with `hlod: false` as the named override. Selection uses
+existing projected-error hysteresis and conservative transformed bounds. Compilation alone does
+not make a proxy ready: engine hooks must observe a matching main-camera backend submission after
+compilation, while source stays drawn. That zero-count submission observation does not prove a
+full-triangle draw, absence of a hitch or visual quality. Unsupported/mutated materials, custom
+hooks, partial placement reach, nonzero source LODs and shared neighboring source batches retain
+source; game-owned appearance is never approximated silently. Existing engine observation hooks
+remain compatible, and collapsed transforms return safely to detail.
+
+Source segments remain resident, so near restoration is immediate. Only exclusive source main
+meshes are hidden; existing caster and collision representations stay intact. Both affected bundle
+groups are invalidated together. Actual visible post-cull source triangles and retired draws gate
+activation; the cook's LOD0 census is never a performance proof. Fixed private proxy geometries,
+conservatively decoded texture costs and pending reservations are charged against the existing
+world byte budget. Pending load/compile resources and cache holders survive eviction until their
+original promises settle. Counts are logical retained-resource charges, not measured driver memory
+or a bound on undocumented decoder transient allocations.
+
+An explicit empty authored `lods: []` now enrolls a valid installed chain for unchanged static
+parts. Nonempty authored LODs remain authoritative. Section ranges, changed attributes, alpha
+foliage and vertex deformation retain source instead of using a stale prepared chain. Active
+Strata's in-memory TSL foliage and placement-reach contract still require a faithful proxy binding;
+this slice does not activate an approximate forest proxy or claim a Strata HLOD performance gain.
+
+The parent profile identified bundle material eligibility taking 2.682 s of sampled CPU in a
+16.067 s pre-loss window. The fix checks bounded flat graph snapshots rather than allocating a
+recursive values array and visited set on every stable-frame check. It still checks mutable links
+on each frame; no version/root-only cache claims deep edits are safe. Overflow uses the original
+uncached safety walk. CPU bundle membership is reported when GPU culling is off; array materials
+retain the per-object path. Three replay regressions and two HLOD boundary regressions reproduced
+before fixes. The final changed-behavior suite passes 68/68, core's TS7 7.0.2 package typecheck and
+Biome pass, and independent source review reports no remaining concrete blockers.
+
+The final affected cook/schema/runtime controls pass 250/250 across 12 files (one worker on
+cores 10,22); the final core declaration build and publint pass. The bounded dependency/core/assets
+declaration build also passed. Assets package typecheck remains
+failed in raw-unreal because that workspace package cannot resolve its Three.js dependency; the
+changed assets files report no errors. Logs and earlier failures are retained in the isolated
+execution lane. GPU/native/playtest, full board, latency measurements and visual acceptance remain
+open. Documentation links pass; focused prose/capability/API contracts pass 279/280. The remaining
+failure is the unchanged `docs/verification` tree at 72.7 MB against its shipped 72 MB cap; this
+slice adds no evidence files and does not raise that cap. The CPU lane is shared, so no wall-time
+benchmark claim is made.
+
+The subsequent corrected bridge-off profile attributes 3.390 s of sampled CPU to attribute
+uploads in a 15.235 s window; that profile does not identify an exact mesh/buffer. Inspection and
+real installed-Three CPU controls reproduce unconditional far uploads caused by
+`DynamicDrawUsage`. The minimal correction removes that override. Growth, original-placement
+writes and near/far zero/restore handoffs retain their existing `needsUpdate` version signals;
+no static object flag or new dirty scheduler is added. Both the source attribute and interleaved
+shader buffer produced 60 uploads over 60 unchanged frames before the fix and zero afterward.
+Tests capture the actual production position graph, its four column bindings and its emitted FRAME
+sync event: real handoffs publish changed matrix/cull bytes, camera-only changes do not republish
+matrices, and real 85→86 growth allocates a fresh buffer and disposes the old mesh once. The seven
+nearest shader/residency/bundle/caster/static/HLOD specs pass 97/97; changed-source/tests strict
+TS7, Biome, and the rebuilt core declarations/publint pass. These are CPU backend-call controls,
+not measured GPU bandwidth or frame-time savings.
+
+The parent's matched baseline `786e2367` / candidate `9b33b68e` pair failed the same 120-second
+spawn-admission gate with all 6 required cells loaded and `worldReady` false. Each 90-frame warmup
+took about 90 seconds; neither arm reached the original 17-view gameplay/visual acceptance. The
+candidate's `graphSnapshotCurrent` consumes 17.383 sampled self-seconds over the actual 183.154-second
+browser profile (9.49%). This is loading-path cost, not a qualified steady gameplay comparison.
+The retained final counters show 55 eligible CPU bundle members, so they do not establish an
+unsafe-verdict-only cache as the measured fix.
+
+The narrow correction replaces `for-in` plus `hasOwn` with `Object.keys` in snapshot validation.
+Installed TSL node prototypes carry thousands of enumerable chaining methods that the original
+own-property safety walk never observes. A real installed-node regression reproduces 186,400
+inherited-method probes over 20 unchanged frames before the change and zero afterward, while
+validation continues and records stay unchanged. Own-key order, link identity, headers, deep
+unversioned mutation and node-version checks remain live on every eligibility check; each validated
+row now allocates an own-key array. No new pass cache or version-only authority is introduced.
+The seven nearest CPU specs pass 108/108, core package typecheck and changed source/tests strict
+TS7 pass, and Biome passes with existing warnings. Fresh independent source review finds no
+concrete blocker. The earlier red output and raw profiles remain retained; this source proof does
+not establish lower production frame time. The parent owns the fresh profile, readiness/cadence
+repair and GPU/visual acceptance; no new GPU, native, full-board or publication gate ran here.
+
+Before integration, the owner's inherited-link check compared the guard with installed
+Three 0.185.1 `Node.getChildren` / `_getChildren` and `NodeMaterial._getNodeChildren`.
+Direct inherited Node children are ignored by Three and remain ignored. Three does consume
+non-enumerable own Node/Material slots, inherited entries in plain node dictionaries and inherited
+indices in sparse node arrays; the earlier `Object.values` guard missed these too. Four real
+regressions reproduce those omissions, including a dictionary prototype change with unchanged own
+keys/version. The guard now uses own property names for Node/Material slots and the installed Node
+child reader for the remaining semantics, retaining reader identity and ordered child identities
+as live snapshot witnesses. Deep unsafe edits refuse bundles and repaired graphs rejoin without
+requiring `needsUpdate`. The TSL inherited-method regression still observes zero discarded probes.
+
+Stored child identities are capped at 8,192 and count toward the existing snapshot-link limit.
+Unsupported, malformed, oversized or throwing reader/iterator output retains the original source
+path, with repair controls; three additional exceptions reproduced before that refusal fix.
+Three's child reader eagerly scans authored array lengths before yielding, which this witness cap
+does not bound. Child discovery allocates arrays/sets; this safety follow-up makes no production
+speed claim. The final seven affected CPU specs pass 118/118 (36 bundle controls), package typecheck,
+changed-source/tests strict TS7 and Biome pass, and independent review finds no remaining concrete
+blocker. No GPU, native, broad board, publication or performance acceptance gate ran here.
+
+Remaining validation must repeat the parent's profiler on the same production workload and compare
+actual eligibility checks/refreshes alongside total CPU frame time. HLOD needs nonzero active proxy
+observations on eligible content, same-pose near/middle/far and transition captures, approach/turn/
+stream/eviction controls with collision and shadow coverage intact, and original PRD-475 visual,
+GPU/CPU p95, hitch and memory thresholds. Compare `hlod: false` to the candidate against the current
+globally instanced far-LOD/impostor baseline. Preserve the original acceptance; draw/triangle
+reductions alone cannot tick it. The parent owns the GPU lane and integration into PR381; no GPU,
+native, CI dispatch or publication has run for this slice.
 
 ## Phase 3 executable plan
 

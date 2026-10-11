@@ -1,0 +1,41 @@
+{
+  "base": {
+    "id": "sand",
+    "tile": 3.4,
+    "tint": [1, 1, 1],
+    "normal": true,
+    "triplanar": false
+  },
+  "breakup": {
+    "scale": 0.05,
+    "push": 0.12
+  },
+  "macro": {
+    "scale": 0.006,
+    "min": 0.75,
+    "max": 1.1
+  },
+  "layers": [
+    {
+      "id": "rock",
+      "tile": 3.8,
+      "tint": [1, 1, 1],
+      "normal": true,
+      "triplanar": true,
+      "mask": "rock",
+      "lo": 0.25,
+      "hi": 0.75
+    }
+  ],
+  "textures": "textures",
+  "sources": {
+    "sand": {
+      "diff": "sand_01/sand_01_diff_1k.jpg",
+      "nrm": "sand_01/sand_01_nor_gl_1k.jpg"
+    },
+    "rock": {
+      "diff": "rock_boulder_dry/rock_boulder_dry_diff_512.jpg",
+      "nrm": "rock_boulder_dry/rock_boulder_dry_nor_gl_512.jpg"
+    }
+  }
+}

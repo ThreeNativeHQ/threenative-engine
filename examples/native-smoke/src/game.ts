@@ -1,4 +1,5 @@
 import {
+  FrameBudget,
   type ICtx,
   Scene,
   debugFlag,
@@ -56,6 +57,7 @@ interface ISmokeState extends INetworkingState {
   slide: boolean;
   /** Native loading proof: the overlay must remain visible until startup work settles. */
   loadingVisible: boolean;
+  longTasksAvailable: boolean;
   startupReady: boolean;
   workerCallbacksAfterTerminate: number;
   workerComplete: boolean;
@@ -303,6 +305,7 @@ class NativeSmoke extends Scene<ISmokeState> {
     uiReady: false,
     uiRegions: 0,
     loadingVisible: false,
+    longTasksAvailable: isNative() ? new FrameBudget().window().longTasks.available : false,
     startupReady: false,
     workerCallbacksAfterTerminate: 0,
     workerComplete: false,

@@ -23,7 +23,11 @@ itself), so a scenario never opens windows over whatever the operator is doing �
 borrows `:0` makes the machine unusable for as long as it runs. Set `TN_PLAYTEST_HOST_DISPLAY=1` to
 paint on the session's own display instead; opt in when the run needs the session's real GPU adapter
 (heavy TSL post chains have been seen falling back to SwiftShader under Xvfb) or when a human wants
-to watch it. Do **not** reach for `--headless` to keep windows off a screen: headless Chromium
+to watch it. An explicit host request verifies the X connection with `xdpyinfo` (including
+abstract Xwayland sockets) using the session's `DISPLAY` and credentials. Missing `DISPLAY`,
+an unavailable connection, or a missing probe command fails with
+`TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE`; it never silently substitutes a private Xvfb.
+Do **not** reach for `--headless` to keep windows off a screen: headless Chromium
 cannot capture WebGPU here, so it changes what you measure. The runner takes a capture lock only
 when it detects competing runners — or always with `CAPTURE_LOCK=1`; lock state is printed to stderr
 either way. `sh scripts/xvfb.sh` remains as an optional compatibility wrapper — never `xvfb-run`,

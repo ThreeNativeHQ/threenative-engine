@@ -140,6 +140,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/procedural-animals` | Baked animal payloads, runtime poses, accepted-state following, and conservative bounds |
 | `@threenative/runtime-native` | Owned C++ host for desktop and Android |
 | `@threenative/raw-unreal` | Raw Unreal editor `.uasset` static-mesh loader — UE5 FMeshDescription and UE4.18 FRawMesh, no interchange conversion |
+| `@threenative/terrain` | Optional headless Strata authoring: validated recipes, baked heightfields and indexed Three.js geometry |
 | `@threenative/ui` | React bindings for HUD and game state |
 | `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader for meshes exported from Unreal packages |
 | `threenative-engine-mcp` | Offline MCP capability discovery for authoring agents |

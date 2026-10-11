@@ -1,0 +1,32 @@
+{
+  "fir": {
+    "near": "fir_tree_01/fir-b-lod1.glb",
+    "maxDistance": 600,
+    "bounds": {
+      "min": [-2.869, 0, -3.619],
+      "max": [2.763, 14.078, 2.465]
+    },
+    "mid": "fir_tree_01/fir-b-lod2.glb",
+    "midDistance": 45
+  },
+  "boulder": {
+    "near": "boulder_01/boulder-near.glb",
+    "mid": "boulder_01/boulder-mid.glb",
+    "midDistance": 35,
+    "maxDistance": 300,
+    "bounds": {
+      "min": [-0.716, 0, -0.991],
+      "max": [0.557, 1.004, 0.841]
+    }
+  },
+  "fir-c": {
+    "near": "fir_tree_01/fir-c-lod1.glb",
+    "maxDistance": 600,
+    "bounds": {
+      "min": [-2.727, 0, -3.498],
+      "max": [3.623, 14.552, 2.508]
+    },
+    "mid": "fir_tree_01/fir-c-lod2.glb",
+    "midDistance": 45
+  }
+}

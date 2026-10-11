@@ -1,0 +1,54 @@
+{
+  "base": {
+    "id": "moss",
+    "tile": 3.6,
+    "tint": [1, 1, 1],
+    "normal": true,
+    "triplanar": true
+  },
+  "breakup": {
+    "scale": 0.05,
+    "push": 0.12
+  },
+  "macro": {
+    "scale": 0.006,
+    "min": 0.75,
+    "max": 1.1
+  },
+  "layers": [
+    {
+      "id": "snow",
+      "tile": 4.5,
+      "tint": [1, 1, 1],
+      "normal": true,
+      "mask": "snow",
+      "lo": 0.3,
+      "hi": 0.7
+    },
+    {
+      "id": "rock",
+      "tile": 3.8,
+      "tint": [1, 1, 1],
+      "normal": true,
+      "triplanar": true,
+      "mask": "rock",
+      "lo": 0.25,
+      "hi": 0.75
+    }
+  ],
+  "textures": "textures",
+  "sources": {
+    "moss": {
+      "diff": "mossy_rock/mossy_rock_diff_1k.jpg",
+      "nrm": "mossy_rock/mossy_rock_nor_gl_1k.jpg"
+    },
+    "snow": {
+      "diff": "snow_02/snow_02_diff_1k.jpg",
+      "nrm": "snow_02/snow_02_nor_gl_1k.jpg"
+    },
+    "rock": {
+      "diff": "rock_boulder_dry/rock_boulder_dry_diff_512.jpg",
+      "nrm": "rock_boulder_dry/rock_boulder_dry_nor_gl_512.jpg"
+    }
+  }
+}

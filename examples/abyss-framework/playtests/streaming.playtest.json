@@ -9,12 +9,12 @@
       {
         "component": "attachSlices",
         "entity": "streaming",
-        "equals": 3
+        "gte": 1
       },
       {
-        "component": "attachSliceSize",
+        "component": "attachSliceBudgetMs",
         "entity": "streaming",
-        "equals": 256
+        "equals": 8
       },
       {
         "allowTrivial": "A run nothing interrupted must never report a stop, at any observation.",
@@ -77,10 +77,14 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "attach-detail",
       "release": true,
-      "waitFrames": 90
+      "timeoutMs": 10000,
+      "waitForResource": {
+        "equals": true,
+        "id": "state",
+        "path": "streamingDone"
+      }
     }
   ],
   "target": "web",

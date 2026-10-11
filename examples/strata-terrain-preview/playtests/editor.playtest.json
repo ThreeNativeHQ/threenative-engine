@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-editor",
+  "subject": "The recovered editor renders a project document in the ThreeNative scene",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "terrain-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "vertexCount",
+        "gte": 16641
+      },
+      "timeoutMs": 10000,
+      "release": true,
+      "screenshot": "editor-ready"
+    },
+    {
+      "kind": "wait",
+      "label": "terrain-renders",
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "editor-rendering"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "vertexCount",
+        "gte": 16641,
+        "allowTrivial": "The initial worker may finish during warmup; this requires measured terrain geometry vertices."
+      },
+      {
+        "id": "GameState",
+        "path": "propCount",
+        "gte": 100,
+        "allowTrivial": "The initial worker can finish during warmup; this counts actual instanced meshes in the rendered scene."
+      },
+      {
+        "id": "GameState",
+        "path": "renderedFrames",
+        "changed": true
+      }
+    ]
+  }
+}

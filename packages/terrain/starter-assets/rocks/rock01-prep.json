@@ -1,0 +1,37 @@
+{
+  "budgets": {
+    "mid": 600,
+    "near": 2500
+  },
+  "levels": {
+    "mid": {
+      "boundsMetres": [-1.0289, -1.6829, 0.0, 1.1371, 1.7124, 1.4622],
+      "budget": 600,
+      "bytes": 14636,
+      "cards_dropped": 0,
+      "cards_kept": 0,
+      "heightM": 1.4622,
+      "images": [],
+      "meshes": {
+        "wood.003": 529
+      },
+      "triangles": 529
+    },
+    "near": {
+      "boundsMetres": [-1.0386, -1.6673, 0.0, 1.1249, 1.6977, 1.4081],
+      "budget": 2500,
+      "bytes": 48972,
+      "cards_dropped": 0,
+      "cards_kept": 0,
+      "heightM": 1.4081,
+      "images": [],
+      "meshes": {
+        "wood.004": 2235
+      },
+      "triangles": 2235
+    }
+  },
+  "source": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/d66e89ee-9a5d-4d81-86f1-e323fe08ab71/scratchpad/trees/raw/rock_moss_set_01",
+  "species": "rock01",
+  "variant": "rock_moss_set_01_rock01"
+}

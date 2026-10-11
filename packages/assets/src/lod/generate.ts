@@ -1374,7 +1374,7 @@ export async function generateDiscreteLod(
   // Before every early return: a `BLEND` needle card is refused a chain by rule, so the conversion
   // is what makes one possible at all — and an asset can opt into it with `enabled: false`.
   const cutout = policy.cutout
-    ? convertFoliageCutout(document)
+    ? await convertFoliageCutout(document)
     : { converted: [], kept: [] as const };
   if (!policy.enabled) return emptySummary(policy, (now() - started) / 1000, cutout);
   const joinRequested = policy.generation.join;

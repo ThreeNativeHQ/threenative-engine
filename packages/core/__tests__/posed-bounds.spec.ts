@@ -59,6 +59,32 @@ function rig(): { root: Group; mesh: SkinnedMesh; hip: Bone } {
 }
 
 describe("posedBounds", () => {
+  it("calibrates upright static copies from shared geometry bounds without walking every vertex", () => {
+    const geometry = new BoxGeometry(2, 4, 3);
+    geometry.translate(0, 3, 0);
+    const material = new MeshBasicMaterial();
+    for (const scale of [0.5, 2, -1]) {
+      const mesh = new Mesh(geometry, material);
+      mesh.position.set(4, 7, -3);
+      mesh.rotation.y = 0.7;
+      mesh.scale.setScalar(scale);
+      const vertices = vi.spyOn(mesh, "getVertexPosition");
+      const bounds = posedBounds(mesh);
+      expect(bounds.min[1]).toBeCloseTo(7 + (scale < 0 ? 5 : 1) * scale, 6);
+      expect(vertices).not.toHaveBeenCalled();
+    }
+  });
+
+  it("still measures the exact lowest vertex on a tilted static copy", () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 2, 0, 0, 0, 3, 0], 3));
+    const mesh = new Mesh(geometry, new MeshBasicMaterial());
+    mesh.rotation.z = -Math.PI / 4;
+    const vertices = vi.spyOn(mesh, "getVertexPosition");
+    expect(posedBounds(mesh).min[1]).toBeCloseTo(-Math.SQRT2, 6);
+    expect(vertices).not.toHaveBeenCalled();
+  });
+
   it("tracks the posed skeleton instead of returning the bind-pose box", () => {
     const { root, mesh, hip } = rig();
     const bindCheapMin = posedBounds(root, [mesh]).min[1];

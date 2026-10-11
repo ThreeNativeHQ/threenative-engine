@@ -1,0 +1,4 @@
+/src/world/*.json
+/dist/
+/src/world/.bake-stamp
+/assets/

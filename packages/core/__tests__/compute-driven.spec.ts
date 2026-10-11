@@ -58,6 +58,106 @@ class ComputeProbe extends Group implements IComputeDriven {
 }
 
 describe("ComputeDrivenRegistry", () => {
+  it("admits only startup streaming while an opaque hold is waiting", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let complete: () => void = () => undefined;
+    const order: string[] = [];
+    const streaming = Object.assign(new ComputeProbe("stream", order), {
+      processCadence: "render" as const,
+      processDuringStartup: true,
+    });
+    const ordinary = Object.assign(new ComputeProbe("ordinary", order), {
+      processCadence: "render" as const,
+    });
+    let transitionDraws = 0;
+    let loadingDraws = 0;
+    class CoveredScene extends Scene {
+      static override readonly initialState = {};
+      override enter(ctx: ICtx): void {
+        ctx.canvasLayer.opaque = true;
+        ctx.canvasLayer.keepWorldRendering = true;
+        ctx.beforeRender(() => transitionDraws++);
+      }
+    }
+    class LoadingScene extends Scene {
+      static override readonly initialState = {};
+      override enter(ctx: ICtx): void {
+        ctx.canvasLayer.opaque = true;
+        ctx.canvasLayer.renderWorldDuringStartup = false;
+        ctx.beforeRender(() => loadingDraws++);
+        ctx.startup.hold(
+          "spawn",
+          new Promise<void>((resolve) => {
+            complete = resolve;
+          }),
+        );
+        ctx.add(streaming);
+        ctx.add(ordinary);
+      }
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "requestAnimationFrame");
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          compileAsync: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { loading: LoadingScene, covered: CoveredScene },
+      start: "loading",
+    });
+    try {
+      await game.start();
+      if (!frame || !game.ctx) throw new Error("Loop not started");
+      for (let i = 1; i <= 12; i++) {
+        frame(i * 16);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
+      expect(game.ctx.startup.phase).not.toBe("ready");
+      expect(streaming.processed).toBeGreaterThan(0);
+      expect(ordinary.processed).toBe(0);
+      expect(loadingDraws).toBe(0);
+      // Uploads have settled: allow real streamed first-use draws while the spawn hold remains.
+      game.ctx.canvasLayer.keepWorldRendering = true;
+      frame(200);
+      expect(game.ctx.startup.phase).not.toBe("ready");
+      expect(loadingDraws).toBeGreaterThan(0);
+      const prewarmDraws = loadingDraws;
+      game.ctx.canvasLayer.keepWorldRendering = false;
+      complete();
+      for (let i = 13; i <= 30; i++) {
+        frame(i * 16);
+        await Promise.resolve();
+      }
+      expect(game.ctx.startup.phase).toBe("ready");
+      frame(512);
+      expect(ordinary.processed).toBeGreaterThan(0);
+      expect(loadingDraws).toBe(prewarmDraws);
+      game.ctx.canvasLayer.opaque = false;
+      frame(520);
+      expect(loadingDraws).toBeGreaterThan(prewarmDraws);
+      await game.ctx.goto("covered");
+      frame(528);
+      expect(transitionDraws).toBeGreaterThan(0);
+    } finally {
+      complete();
+      game.stop();
+      if (descriptor) Object.defineProperty(globalThis, "requestAnimationFrame", descriptor);
+      else Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+    }
+  });
   it("documents fixed and render cadence", () => {
     const record = readFileSync(
       new URL("../../../docs/verification/PRD-242.md", import.meta.url),

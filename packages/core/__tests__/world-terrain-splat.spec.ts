@@ -206,6 +206,42 @@ describe("loadTerrainSplat", () => {
     );
   });
 
+  it("blends a layer's own map at the game's far tile, by distance, when the table asks", async () => {
+    // A repeated ground map reads as a grid at grazing angles; the same map at a much larger tile,
+    // mixed in with distance, breaks the period. Sizes and distances are the table's, not ours.
+    const textureNodes = (node: unknown, seen = new Set<unknown>()): number => {
+      if (node === null || typeof node !== "object" || ArrayBuffer.isView(node) || seen.has(node))
+        return 0;
+      seen.add(node);
+      let count = (node as { isTextureNode?: boolean }).isTextureNode === true ? 1 : 0;
+      for (const value of Object.values(node)) count += textureNodes(value, seen);
+      return count;
+    };
+    const surfaceFor = async (base: Record<string, unknown>) => {
+      const { assets } = served({
+        "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+        "world/terrain/layers.json": { ...table, base, layers: [] },
+        "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+      });
+      return (await loadTerrainSplat({
+        assets,
+        url: "world/world.json",
+      })) as MeshStandardNodeMaterial;
+    };
+    const plain = await surfaceFor(table.base);
+    const far = await surfaceFor({
+      ...table.base,
+      far: { amount: 0.6, from: 4, to: 40, tile: 17 },
+    });
+    expect(textureNodes(far.colorNode)).toBeGreaterThan(textureNodes(plain.colorNode));
+    await expect(
+      surfaceFor({ ...table.base, far: { amount: 0.6, from: 40, to: 4, tile: 17 } }),
+    ).rejects.toThrow(/far/u);
+    await expect(
+      surfaceFor({ ...table.base, far: { amount: 0.6, from: 4, to: 40, tile: 0 } }),
+    ).rejects.toThrow(/far/u);
+  });
+
   it("drives roughness, occlusion and metalness from the table and its ORM maps", async () => {
     const { assets } = served({
       "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),

@@ -3,7 +3,7 @@
 
 # Capability reference
 
-Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/metahuman`, `@threenative/physics`, `@threenative/playtest`, `@threenative/procedural-animals`, `@threenative/raw-unreal`, `@threenative/ueformat`, `@threenative/ui`, `template:rain`, `template:starter`, and `three`,
+Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/metahuman`, `@threenative/physics`, `@threenative/playtest`, `@threenative/procedural-animals`, `@threenative/raw-unreal`, `@threenative/terrain`, `@threenative/ueformat`, `@threenative/ui`, `template:rain`, `template:starter`, and `three`,
 generated from the doc tags the engine itself compiles, so this page cannot disagree with
 the code. Look here before writing a replacement; ask `engine_search_capabilities` when an
 MCP server is available.
@@ -427,7 +427,7 @@ export async function addInSlices<T>( objects: Iterable<T>, add: (object: T, ind
 
 - **Use when:** add hundreds of built objects to the scene without one multi-second frame · stream a detail tier in behind a loading curtain without the page looking hung
 - **Constraints:** the objects, and where each one goes, stay the game's; this decides only when each joins the graph · input order is the attach order and cannot be changed · a false `while` stops the run and is reported as `stopped`, never thrown
-- **Overrides:** sliceSize defaults to 256; `marker: false` silences the TN_ADD_SLICES line, not the report
+- **Overrides:** a slice ends on an 8 ms budget unless the game gives `sliceSize`, and the reported sliceSize is then the measured average; `marker: false` silences the TN_ADD_SLICES line, not the report
 
 ```ts
 const report = await addInSlices(objects, (object) => ctx.add(object), {
@@ -1262,6 +1262,22 @@ export function formatSpansWindow(window: ISpanWindow): string { … }
 
 ```ts
 if (spansRequested()) setSpanRecorder(new SpanRecorder());
+```
+
+### `formatUnlitFoliageWarning`
+
+`function` — Tell the agent that built the scene that its imported foliage is drawing with no image-based light: an alpha-cutout `MeshStandardMaterial` (or its Node twin) with `scene.environment` unset and no `envMap` of its own gets a hemisphere fill and one flat dark value, which is cardboard. Printed once per scene entry as `TN_UNLIT_FOLIAGE`, after `enter()`, with the fix in the same line.
+
+```ts
+export function formatUnlitFoliageWarning(warning: IUnlitFoliageWarning): string { … }
+```
+
+- **Use when:** catch the "why does my forest look like cardboard" question before a human plays it · audit a scene a game built from imported GLB foliage
+- **Constraints:** derived from the scene graph, not from a constant: cutout PBR with no environment in the scene and none on the material · it changes nothing and never throws — the environment is appearance, so setting it stays the game's decision
+- **Overrides:** `material.userData.tnUnlitOk = true` on a material a game deliberately renders unlit (the same `userData.tn*` naming the alpha and impostor conventions use)
+
+```ts
+defineGame({ scenes: { Forest } }); // one TN_UNLIT_FOLIAGE line when the forest has no sky
 ```
 
 ### `formatValidationReport`
@@ -2430,6 +2446,22 @@ const tracers = new TracerPool3D(ctx.scene, tracerOptions);
 tracers.spawn(muzzle, shotDirection, hit.distance);
 ```
 
+### `unlitFoliageWarning`
+
+`function` — Tell the agent that built the scene that its imported foliage is drawing with no image-based light: an alpha-cutout `MeshStandardMaterial` (or its Node twin) with `scene.environment` unset and no `envMap` of its own gets a hemisphere fill and one flat dark value, which is cardboard. Printed once per scene entry as `TN_UNLIT_FOLIAGE`, after `enter()`, with the fix in the same line.
+
+```ts
+export function unlitFoliageWarning( scene: Object3D & { … }
+```
+
+- **Use when:** catch the "why does my forest look like cardboard" question before a human plays it · audit a scene a game built from imported GLB foliage
+- **Constraints:** derived from the scene graph, not from a constant: cutout PBR with no environment in the scene and none on the material · it changes nothing and never throws — the environment is appearance, so setting it stays the game's decision
+- **Overrides:** `material.userData.tnUnlitOk = true` on a material a game deliberately renders unlit (the same `userData.tn*` naming the alpha and impostor conventions use)
+
+```ts
+defineGame({ scenes: { Forest } }); // one TN_UNLIT_FOLIAGE line when the forest has no sky
+```
+
 ### `unmarkStatic`
 
 `function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
@@ -3099,15 +3131,15 @@ const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer
 
 ### `WorldCells`
 
-`class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances. An asset whose package entry names no `lods` is drawn at the levels its own model carries a baked AutoLOD chain for: the levels an instanced draw cannot reach by itself, switched at the distance their error projects over the `autoLod` viewport. Authored `lods` win; a chain is only a fallback.
+`class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances. An asset with no nonempty authored `lods` can draw its own model's baked AutoLOD chain at distances measured over the `autoLod` viewport. An explicit empty list enrolls only unchanged static parts; section ranges, custom attributes, alpha foliage and vertex deformation retain source geometry.
 
 ```ts
 export class WorldCells extends Group implements IComputeDriven { … }
 ```
 
 - **Use when:** stream a large Blender-authored world by cell instead of one huge GLB · keep scattered props and hand-placed chunks resident around a moving player · honour per-asset draw distances and hard streaming budgets without a mid-frame throw
-- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose · a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with authored `lods` never consults it · `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number · every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers · two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct · the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds · a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left · `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
-- **Overrides:** ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
+- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose · a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts · eligible static CPU cells can use their cooked HLOD after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation · `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number · every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers · two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct · the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds · a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left · `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
+- **Overrides:** `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
 
 ```ts
 const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });
@@ -5587,6 +5619,749 @@ function sparkle
 
 ```ts
 sparkle(...)
+```
+
+## `@threenative/terrain`
+
+### `applyPlacementOverrides`
+
+`function` — Attach manual transforms to raw evaluated candidates and report orphan keys.
+
+```ts
+export function applyPlacementOverrides(state: ITerrainState, value: unknown): ITerrainState { … }
+```
+
+- **Use when:** retain manual prop transforms across terrain scatter re-evaluation
+- **Constraints:** headless authoring; game applies transforms against its model bounds and actual terrain surface
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** transform.grounding=false preserves requested Y while the game still measures clearance
+
+```ts
+const state = applyPlacementOverrides(terrain.evaluate(), document.placementOverrides ?? {});
+```
+
+### `bakeMesh`
+
+`function` — Bakes the recovered indexed top surface and optional vertical skirts into caller-owned arrays.
+
+```ts
+export function bakeMesh( state: ITerrainState, { … }
+```
+
+- **Use when:** bake an authored terrain into portable indexed mesh arrays
+- **Constraints:** no material is chosen; vertex colours exist only with a caller-supplied palette
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** step, chunk bounds, skirtDepth and palette belong to the caller
+
+```ts
+const mesh = bakeMesh(new Terrain({ resolution: 17 }).evaluate());
+```
+
+### `bakeTerrain`
+
+`function` — Bakes finite LOD chunks, the same collision samples and resolved placements.
+
+```ts
+export function bakeTerrain( state: ITerrainState, { … }
+```
+
+- **Use when:** prepare terrain arrays and collision before a game starts
+- **Constraints:** collision origin is the southwest corner; engine Heightfield origin is its centre
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** chunkCells, lodSteps, skirtDepth and palette are explicit authoring choices
+
+```ts
+const baked = bakeTerrain(new Terrain({ resolution: 129 }).evaluate(), { chunkCells: 64 });
+```
+
+### `bakeWorldPackage`
+
+`function` — Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.
+
+```ts
+export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPackageOptions, ): IBakedWorldPackage { … }
+```
+
+- **Use when:** hand an evaluated Strata terrain to a game without a Blender round trip
+- **Constraints:** headless authoring; no three, no DOM, and nothing here decides how the world looks
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** every asset path, bound, LOD distance and cell size comes from the caller's options
+
+```ts
+const { manifest, files } = bakeWorldPackage(state, { assets });
+```
+
+### `createSegmentIndex`
+
+`function` — Build the index once per world; ask `nearby` per scatter candidate or heightfield vertex.
+
+```ts
+export function createSegmentIndex<T>( segments: readonly IWaterSegment<T>[], cellSize: number, ): ISegmentIndex<T> { … }
+```
+
+- **Use when:** test scatter candidates or terrain vertices against rivers and lakes without scanning every segment · find which river stations can reach a heightfield vertex when baking a wet margin
+- **Constraints:** returns candidates only; the caller applies its own exact distance and level test
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const rivers = createSegmentIndex(segments, 32); const wet = rivers.nearby(x, z).some(isWet);
+```
+
+### `decodeHeightPNG`
+
+`function` — CRC-checked bounded non-interlaced grayscale PNG height decoder.
+
+```ts
+export async function decodeHeightPNG( input: Uint8Array | ArrayBuffer, options: IDecodeHeightPngOptions = { … }
+```
+
+- **Use when:** import numerical PNG8 or PNG16 terrain elevations
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const png = await encodeHeightPNG(new Terrain({ resolution: 17 }).evaluate()); const heights = await decodeHeightPNG(png);
+```
+
+### `decodeRAW16`
+
+`function` — Validates dimensions and range before decoding numerical height samples.
+
+```ts
+export function decodeRAW16( input: Uint8Array | ArrayBuffer, { … }
+```
+
+- **Use when:** import a RAW16 terrain height buffer with explicit dimensions
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const decoded = decodeRAW16(new Uint8Array(8), { width: 2, height: 2, min: 0, max: 1 });
+```
+
+### `encodeGLB`
+
+`function` — Legacy terrain-only GLB encoding with embedded mesh arrays and no chosen material.
+
+```ts
+export function encodeGLB(input: IBakedMesh | readonly IBakedMesh[]) { … }
+```
+
+- **Use when:** export baked terrain geometry without engine extensions
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const glb = encodeGLB(bakeMesh(new Terrain({ resolution: 17 }).evaluate()));
+```
+
+### `encodeHeightPNG`
+
+`function` — Encodes numerical grayscale PNG16 with embedded elevation range.
+
+```ts
+export async function encodeHeightPNG(state: ITerrainState, options: Partial<IHeightRange> = { … }
+```
+
+- **Use when:** export a terrain heightmap without an eight-bit colour conversion
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const png = await encodeHeightPNG(new Terrain({ resolution: 17 }).evaluate());
+```
+
+### `encodeRAW16`
+
+`function` — Encodes finite metre elevations as an explicit-range RAW16 buffer.
+
+```ts
+export function encodeRAW16( values: ArrayLike<number> & Iterable<number>, options: IRaw16Options = { … }
+```
+
+- **Use when:** export terrain heights with a numerical range sidecar
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const raw = encodeRAW16(new Float32Array([0, 1]), { min: 0, max: 1 });
+```
+
+### `encodeSplatPNGs`
+
+`function` — Encodes the eight linear material-weight channels as two RGBA images.
+
+```ts
+export async function encodeSplatPNGs(state: ITerrainState) { … }
+```
+
+- **Use when:** export terrain splat weights as linear data
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const maps = await encodeSplatPNGs(new Terrain({ resolution: 17 }).evaluate());
+```
+
+### `encodeZIP`
+
+`function` — Deterministic store-method ZIP with safe unique relative filenames.
+
+```ts
+export function encodeZIP(files: readonly IExportFile[]) { … }
+```
+
+- **Use when:** archive derived terrain files without another dependency
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const archive = encodeZIP([{ name: "height.raw", bytes: new Uint8Array(8) }]);
+```
+
+### `gradientAt`
+
+`function` — World-space height gradient from the canonical samples.
+
+```ts
+export function gradientAt(grid: ISampledGrid, x: number, z: number): [number, number] { … }
+```
+
+- **Use when:** measure an authored terrain gradient in metres
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const gradient = gradientAt(new Terrain({ resolution: 17 }).evaluate(), 0, 0);
+```
+
+### `makeExport`
+
+`function` — Recovered numerical/project exports; GLB/runtime outputs contain terrain only.
+
+```ts
+export async function makeExport( state: ITerrainState, recipe: ITerrainDocument, kind: ExportKind, ): Promise<IExportArchive> { … }
+```
+
+- **Use when:** export a terrain recipe and its numerical runtime data
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const terrain = new Terrain({ resolution: 17 }); const file = await makeExport(terrain.evaluate(), terrain.toJSON(), "project");
+```
+
+### `sampleHeight`
+
+`function` — Bilinear query of canonical height samples; triangle sampling is a separate contract.
+
+```ts
+sampleHeight = (grid: ISampledGrid, x: number, z: number): number => sampleGrid( grid.height, grid.resolution, grid.resolution, x / grid.size + 0.5, z / grid.size + 0.5, )
+```
+
+- **Use when:** query an authored heightfield at world coordinates
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const height = sampleHeight(new Terrain({ resolution: 17 }).evaluate(), 0, 0);
+```
+
+### `slopeAtIndex`
+
+`function` — Slope in degrees at a heightfield sample.
+
+```ts
+export function slopeAtIndex(grid: ISampledGrid, i: number): number { … }
+```
+
+- **Use when:** measure terrain slope for authoring diagnostics
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const slope = slopeAtIndex(new Terrain({ resolution: 17 }).evaluate(), 0);
+```
+
+### `slopeQuantile`
+
+`function` — A slope, in degrees, that the given share of this terrain's interior vertices lie at or below. Placement rules keyed to fixed degrees break when a world is rebaked smoother or rougher: an outcrop rule of "over 30 degrees" placed nothing on a forest whose 98th percentile is 22. Asking the terrain for its own steepest share keeps the rule meaning the same thing on every world.
+
+```ts
+export function slopeQuantile(grid: ISampledGrid, quantile: number): number { … }
+```
+
+- **Use when:** place rocks or cliffs on a terrain's own steepest ground instead of a fixed slope in degrees
+- **Constraints:** interior vertices only (edges have one-sided differences); quantile must be in [0, 1]
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const steep = slopeQuantile(grid, 0.98); if (slopeAt(x, z) > Math.min(30, steep)) placeRock(x, z);
+```
+
+### `splinePoints`
+
+`function` — Recovered horizontal Catmull–Rom and vertically linear profile sampler.
+
+```ts
+export function splinePoints( points: readonly (readonly [number, number, number])[], step = 3, smooth = true, ): [number, number, number][] { … }
+```
+
+- **Use when:** sample a road or river profile without vertical overshoot
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const points = splinePoints([[0, 4, 0], [10, 2, 10]], 3, false);
+```
+
+### `Terrain`
+
+`class` — Ordered, stable-ID terrain authoring with synchronous atomic transactions.
+
+```ts
+export class Terrain { … }
+```
+
+- **Use when:** author seeded terrain with noise, sculpting, erosion, roads, rivers and scatter · generate a procedural heightmap landscape or island for a game
+- **Constraints:** authoring stays outside the game's steady-play graph; no renderer or physics is created · units are metres with Y up; `size` is the world edge in metres (1 to 100000), centred on the origin · `resolution` counts vertices per edge and must be one of 17, 33, 65, 129, 257, 513 or 1025 · `seed` is an integer from 0 to 4294967295; one document and seed evaluate to the same arrays · `evaluate()` is synchronous on the calling thread: run it in a build script, never per frame · no art is chosen or shipped: materials, models and texture paths belong to the game
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** size, resolution, seed and all layer parameters are caller choices
+
+```ts
+const terrain = new Terrain({ size: 512, resolution: 257, seed: 73 }).noise({ id: "hills", amplitude: 35 });
+```
+
+### `TerrainEvaluator`
+
+`class` — Recovered prefix-caching authoring evaluator. Returned buffers belong to the caller.
+
+```ts
+export class TerrainEvaluator { … }
+```
+
+- **Use when:** reuse terrain evaluation prefixes while authoring a finite heightfield
+- **Constraints:** evaluates authoring documents only; games consume pre-baked arrays
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** cacheMB bounds retained prefix data
+
+```ts
+const terrain = new Terrain({ resolution: 17 }); const evaluator = new TerrainEvaluator(); const state = evaluator.evaluate(terrain.toJSON());
+```
+
+### `validateDocument`
+
+`function` — Validates the recovered recipe schema, operation allow-lists and numeric bounds.
+
+```ts
+export function validateDocument(doc: ITerrainDocument): void { … }
+```
+
+- **Use when:** validate a terrain document before accepting an authoring write
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+validateDocument(new Terrain({ resolution: 17 }).toJSON());
+```
+
+### `validatePlacementOverrides`
+
+`function` — Validate and clone stable-key placement transforms before saving or previewing them.
+
+```ts
+export function validatePlacementOverrides( value: unknown = { … }
+```
+
+- **Use when:** validate finite positive manual prop transforms before a terrain authoring transaction
+- **Constraints:** grounding defaults on only when omitted; position and scale have three components and quaternion is unit length
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** grounding=false preserves authored Y and keeps clearance observable
+
+```ts
+const transforms = validatePlacementOverrides(document.placementOverrides);
+```
+
+## `@threenative/terrain/editor`
+
+### `checkEnvironmentAssets`
+
+`function` — Check that the images an environment names are registered environment or image assets. @summary Validate the assets a preview environment refers to
+
+```ts
+export function checkEnvironmentAssets( environment: IEnvironment, assets: readonly { … }
+```
+
+- **Use when:** refuse a saved environment whose sky or lighting image is not a registered file
+- **Constraints:** throws by name; HDR/EXR environment files and ordinary images are accepted, models are not
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project owns which images it registers
+
+```ts
+checkEnvironmentAssets({ sky: { image: "dusk" } }, document.assets ?? []);
+```
+
+### `focusCamera`
+
+`function` — Frame a point, prop, landmark or region for the live viewport and projection. @summary Frame a focus target with an editor observation camera
+
+```ts
+export function focusCamera( camera: ISavedCamera, request: IFocusRequest, resolve: IFocusResolver, ): IFocusOutcome { … }
+```
+
+- **Use when:** frame one selected prop, a registered landmark, a terrain region or a local point
+- **Constraints:** framing only; an unknown target returns a named diagnostic and no camera
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the view supplies target bounds, the live aspect and the camera to keep
+
+```ts
+const outcome = focusCamera(camera, { target: { kind: "prop", id: "pine-3" }, aspect: 16 / 9 }, resolve);
+```
+
+### `inspectImage`
+
+`function` — Validate a PNG, JPEG, WebP, Radiance HDR or OpenEXR container and read its pixel size. @summary Inspect an image file's container and pixel size without decoding it
+
+```ts
+export function inspectImage( bytes: Uint8Array, format: string, limits: { … }
+```
+
+- **Use when:** check an imported surface or environment image for damage and for the project's size limit
+- **Constraints:** headers and checksums only; throws by name for a damaged, truncated or oversize file
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project sets the dimension limit
+
+```ts
+const report = inspectImage(bytes, "png", { maxDimension: 8192 });
+```
+
+### `inspectSpatial`
+
+`function` — Read-only spatial inspection of one evaluated terrain revision.
+
+```ts
+export function inspectSpatial( state: ITerrainState, revision: string, query: ISpatialQuery, ): ISpatialObservation { … }
+```
+
+- **Use when:** measure a point, profile a transect or score a saved reference against the world
+- **Constraints:** authoring data only; queries outside the extent or without observations throw
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the caller owns the revision identity and the evaluated state being inspected
+
+```ts
+const observation = inspectSpatial(state, revision, { kind: "point", at: [0, 0] });
+```
+
+### `mountTerrainEditor`
+
+`function` — Mount recovered terrain controls around the project-owned ThreeNative view.
+
+```ts
+export async function mountTerrainEditor(options: { … }
+```
+
+- **Use when:** open the terrain brush and layer GUI around game-owned rendering
+- **Constraints:** browser authoring only; createView and materialColours are required game choices
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** createView owns the renderer scene, materials, lighting and camera
+
+```ts
+await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });
+```
+
+### `probeTerrain`
+
+`function` — Probe the evaluated surface at one world point, separating bilinear from triangle values.
+
+```ts
+export function probeTerrain( state: ITerrainState, revision: string, at: readonly number[], ): IPointObservation { … }
+```
+
+- **Use when:** measure an authored terrain point with provenance and a revision identity
+- **Constraints:** authoring data only; non-finite, malformed and out-of-extent queries throw
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the caller owns the revision identity and the evaluated state being inspected
+
+```ts
+const probe = probeTerrain(state, revision, [12, -4]);
+```
+
+### `runCameraOperation`
+
+`function` — Run one create / get / list / update / delete / activate operation over saved cameras. @summary Apply an editor camera operation to a saved camera set
+
+```ts
+export function runCameraOperation(set: ICameraSet, operation: unknown): ICameraResult { … }
+```
+
+- **Use when:** drive the terrain editor camera list from an agent or the GUI through one shared dispatch
+- **Constraints:** pure: the input set is never mutated, an unknown id throws, and deleting the live camera falls back
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the caller persists the returned set against its own revision
+
+```ts
+const next = runCameraOperation(set, { op: "activate", id: "survey" });
+```
+
+### `runEnvironmentOperation`
+
+`function` — Apply one get / patch / reset against the saved environment overrides; the caller commits it. @summary Run one preview-environment operation
+
+```ts
+export function runEnvironmentOperation( current: IEnvironment, operation: unknown, ): IEnvironmentResult { … }
+```
+
+- **Use when:** patch sun, haze, exposure or sea overrides from a controller or the editor GUI
+- **Constraints:** authoring metadata only; a null field returns to the project's own value
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project's render source decides what each value does
+
+```ts
+const result = runEnvironmentOperation({}, { op: "patch", values: { sun: { elevation: 25 } } });
+```
+
+### `sniff`
+
+`function` — The kind and format a file's own bytes declare, whatever its name says. @summary Identify a GLB, PNG, JPEG, WebP, HDR or EXR file by its header
+
+```ts
+export function sniff( bytes: Uint8Array, ): { … }
+```
+
+- **Use when:** decide whether a dropped or downloaded file is a model, surface image or environment image
+- **Constraints:** reads only the first bytes; a file it cannot name returns undefined and must be refused
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the caller decides what to do with an unknown file
+
+```ts
+const kind = sniff(new Uint8Array(await file.arrayBuffer()))?.kind;
+```
+
+### `surfaceSpace`
+
+`function` — The colour space an input's pixels are read in, from the channel its name ends with. @summary Resolve a surface input name to sRGB or linear
+
+```ts
+export function surfaceSpace(input: string): "srgb" | "linear" { … }
+```
+
+- **Use when:** decide how an imported image bound to a named surface input must be sampled
+- **Constraints:** throws by name for an input that is not <surface>.<channel> with a known channel
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project owns which surface inputs exist
+
+```ts
+const space = surfaceSpace("bark.normal");
+```
+
+### `TerrainEditorController`
+
+`class` — HTTP controller for the project-local terrain editor.
+
+```ts
+export class TerrainEditorController { … }
+```
+
+- **Use when:** inspect and atomically edit the terrain editor from an agent
+- **Constraints:** optional tooling; only subscribe/mount touches DOM; stale revisions fail explicitly
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** editorUrl is the activation-returned project URL
+
+```ts
+const controller = new TerrainEditorController(editorUrl); const snapshot = await controller.snapshot();
+```
+
+### `validateAsset`
+
+`function` — Validate one saved asset registration exactly as a document commit stores it. @summary Validate a registered terrain-editor asset entry
+
+```ts
+export function validateAsset(input: unknown): IProjectAsset { … }
+```
+
+- **Use when:** check a model, image or environment asset entry before saving it in the authoring document
+- **Constraints:** authoring metadata only; ids, content-hashed paths, bounds and unit adjustments are checked, files are not read
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project owns its asset directory and which entries it keeps
+
+```ts
+const asset = validateAsset({ id: "oak", kind: "model", name: "oak.glb", path: "models/0123456789ab-oak.glb", sha256: "0123456789ab".padEnd(64, "0"), bytes: 2180, status: "ready" });
+```
+
+### `validateAssets`
+
+`function` — Validate the whole asset list of an authoring document. @summary Validate the registered terrain-editor assets
+
+```ts
+export function validateAssets(input: unknown): IProjectAsset[] { … }
+```
+
+- **Use when:** check every registered model, image and environment entry together, with unique ids
+- **Constraints:** at most 64 entries; unique ids; each entry as validateAsset
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project owns its asset directory and which entries it keeps
+
+```ts
+const assets = validateAssets(document.assets ?? []);
+```
+
+### `validateCamera`
+
+`function` — Normalise and validate one saved camera, exactly as a document commit would store it. @summary Validate an editor observation camera bookmark
+
+```ts
+export function validateCamera( input: unknown, existing: readonly ISavedCamera[] = [], ): ISavedCamera { … }
+```
+
+- **Use when:** create or update a named terrain-editor camera in the shared authoring document
+- **Constraints:** authoring metadata only; finite noncoincident poses, usable up, valid projection, ordered planes
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the caller owns the document revision and the live viewport aspect
+
+```ts
+const camera = validateCamera({ id: "survey", name: "Survey", position: [40, 60, 40], target: [0, 12, 0], up: [0, 1, 0], projection: "perspective", fov: 50, near: 0.5, far: 900 });
+```
+
+### `validateCameras`
+
+`function` — Validate a document's saved camera list, keeping ids unique across it. @summary Validate the saved editor camera list of an authoring document
+
+```ts
+export function validateCameras(input: unknown): ISavedCamera[] { … }
+```
+
+- **Use when:** reject a disk document whose saved cameras are malformed or duplicated
+- **Constraints:** authoring metadata only; the same validation the camera operations apply
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the document owns how many cameras it keeps; the list bound is the editor's own
+
+```ts
+const cameras = validateCameras(JSON.parse(saved).cameras ?? []);
+```
+
+### `validateEnvironment`
+
+`function` — Validate a complete overrides object exactly as a document commit stores it. @summary Validate preview environment overrides
+
+```ts
+export function validateEnvironment(input: unknown): IEnvironment { … }
+```
+
+- **Use when:** save sun, sky, haze, exposure or ocean overrides in the shared authoring document
+- **Constraints:** authoring metadata only; unknown fields and unsupported fog modes are refused by name
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project's render source defines what each value does; absent fields keep its own
+
+```ts
+const environment = validateEnvironment({ sun: { elevation: 25, intensity: 3 } });
+```
+
+### `validateSpatialReference`
+
+`function` — Normalise and validate one saved reference, exactly as a document commit would store it.
+
+```ts
+export function validateSpatialReference(input: unknown): ISavedSpatialReference { … }
+```
+
+- **Use when:** accept a bounded local reference image registration into the shared document
+- **Constraints:** authoring metadata only; rejects unknown fields, malformed points and unknown scale
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** a project owns the image file; only its hash and provenance travel in the document
+
+```ts
+const reference = validateSpatialReference(JSON.parse(saved));
+```
+
+### `validateSurfaces`
+
+`function` — Validate surface mappings against the registered images they name. @summary Validate terrain-editor surface image mappings
+
+```ts
+export function validateSurfaces( input: unknown, assets: readonly IProjectAsset[], ): ISurfaceMappings { … }
+```
+
+- **Use when:** save which imported PBR image replaces which named surface input of the project's render source
+- **Constraints:** authoring metadata only; each input is <surface>.<channel>; every asset must be a registered image
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project's render source defines which surface inputs exist and what they draw
+
+```ts
+const surfaces = validateSurfaces({ "bark.normal": { asset: "my-normal" } }, document.assets ?? []);
+```
+
+## `@threenative/terrain/editor/server`
+
+### `terrainEditor`
+
+`function` — Mount the optional terrain document API on an existing loopback Vite server.
+
+```ts
+export function terrainEditor(options: { … }
+```
+
+- **Use when:** share terrain recipe edits between an agent and the live terrain editor
+- **Constraints:** dev tooling only; serve a project-owned /terrain-editor/index.html; no runtime import
+- **Requires:** npm i -D @threenative/terrain vite
+- **Overrides:** documentPath and optional configured viewerUrl belong to the project
+
+```ts
+const editor = terrainEditor({ documentPath: resolve("terrain/world.json") });
+```
+
+### `TerrainEditorDocument`
+
+`class` — Project-local terrain document authority; no renderer or game dependency.
+
+```ts
+export class TerrainEditorDocument { … }
+```
+
+- **Use when:** validate atomic revision-based project-local terrain document edits
+- **Constraints:** Node authoring only; documentPath is a configured absolute regular file; input is bounded to 64 MiB
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project chooses its document path; revisions come from validated content
+
+```ts
+const document = new TerrainEditorDocument("/project/terrain/world.json"); const snapshot = document.snapshot();
+```
+
+## `@threenative/terrain/export`
+
+### `exportWorldGLB`
+
+`function` — Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.
+
+```ts
+export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }
+```
+
+- **Use when:** export terrain, resolved models and final manual placement transforms as a portable GLB · export the whole terrain world as one glb for another three.js project
+- **Constraints:** browser authoring (FileReader/canvas); caller supplies all appearance and coherent baked water; root and /three remain headless
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** actual static models, final matrices and baked PBR maps are supplied by the game
+
+```ts
+const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });
+```
+
+## `@threenative/terrain/three`
+
+### `toGeometry`
+
+`function` — Converts baked arrays to ordinary geometry using the consumer's installed Three.js.
+
+```ts
+export function toGeometry(mesh: IBakedMesh): BufferGeometry { … }
+```
+
+- **Use when:** put an authored terrain mesh in a game-owned Three.js scene
+- **Constraints:** creates only geometry; the caller owns its material, scene and disposal
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** every surface choice remains in game source
+
+```ts
+const geometry = toGeometry(bakeMesh(new Terrain({ resolution: 17 }).evaluate()));
 ```
 
 ## `@threenative/ueformat`

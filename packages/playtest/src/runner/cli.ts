@@ -104,6 +104,13 @@ export function classifyRunnerError(
     };
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (message.startsWith("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE:")) {
+    return diagnostic(
+      "TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE",
+      message,
+      "Check DISPLAY and its session credentials, and install xdpyinfo to verify the requested host display before rerunning.",
+    );
+  }
   if (message.startsWith("TN_PLAYTEST_BUILD_REPORT_STALE")) {
     return diagnostic(
       "TN_PLAYTEST_BUILD_REPORT_STALE",

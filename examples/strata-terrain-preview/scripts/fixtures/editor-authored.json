@@ -1,0 +1,299 @@
+{
+  "guiEdits": ["sculpt-1", "scatter-1", "override:scatter-1:candidate:688639014:59"],
+  "document": {
+    "version": 1,
+    "recipe": {
+      "version": 1,
+      "config": { "size": 512, "resolution": 129, "seed": 73 },
+      "layers": [
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "hills",
+          "type": "noise",
+          "params": { "base": 18, "amplitude": 16, "scale": 180, "warp": 35, "octaves": 5 }
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "eroded-hill",
+          "type": "stamp",
+          "params": {
+            "at": [-40, -60],
+            "radius": [130, 105],
+            "amplitude": 65,
+            "shape": "mountain",
+            "roughness": 0.17
+          }
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "weathering",
+          "type": "erode",
+          "params": { "method": "hydraulic", "droplets": 2400, "maxSteps": 40 }
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "surfaces",
+          "type": "materials",
+          "params": {
+            "rules": [
+              {
+                "material": "dirt",
+                "mask": {
+                  "type": "noise",
+                  "scale": 36,
+                  "threshold": 0.67,
+                  "seed": 73,
+                  "fade": 0.14
+                },
+                "strength": 0.55
+              },
+              { "material": "rock", "mask": { "type": "slope", "min": 34, "max": 90, "fade": 9 } }
+            ]
+          }
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "access-road",
+          "type": "road",
+          "params": {
+            "points": [[-240, 20, 160], [-100, 22, 160], [30, 25, 160], [230, 28, 160]],
+            "width": 10,
+            "shoulder": 8
+          }
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "building-pad",
+          "type": "flatten",
+          "params": { "at": [-120, 150], "radius": 18, "height": 22, "falloff": 0.35 }
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "pad-surface",
+          "type": "paint",
+          "params": { "at": [-120, 150], "radius": 18, "material": "dirt" }
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "river",
+          "type": "river",
+          "params": {
+            "points": [[55, 18, -240], [80, 12, -80], [70, 6, 80], [85, 3, 240]],
+            "width": 12,
+            "depth": 4,
+            "shoulder": 8,
+            "enforceDownhill": true
+          }
+        },
+        {
+          "id": "preview-pines",
+          "type": "scatter",
+          "name": "100 editable spruce placements",
+          "params": {
+            "asset": "spruce",
+            "count": 100,
+            "minDistance": 8,
+            "minSlope": 0,
+            "maxSlope": 50,
+            "avoidWater": true,
+            "scale": [0.9, 1.5]
+          }
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "sculpt-1",
+          "type": "sculpt",
+          "params": {
+            "radius": 36,
+            "strength": 7.699999999999999,
+            "falloff": 0.65,
+            "shape": "circle",
+            "rotation": 0,
+            "spacing": 0.15,
+            "jitter": 0,
+            "points": [
+              [-56.03389074378276, 12.19346213145809],
+              [-49.688756776977584, 4.217292314272754],
+              [-44.58711669934752, -5.373120242268101],
+              [-38.80605770920431, -14.134320695619635],
+              [-32.2530772702176, -21.868445519930447]
+            ]
+          },
+          "name": "Sculpt stroke"
+        },
+        {
+          "enabled": true,
+          "opacity": 1,
+          "id": "scatter-1",
+          "type": "scatter",
+          "params": {
+            "asset": "spruce",
+            "count": 12,
+            "minDistance": 1.5,
+            "scale": [0.7, 1.35],
+            "maxSlope": 36
+          },
+          "name": "Scatter spruce",
+          "mask": {
+            "type": "circle",
+            "at": [143.67172536768032, 132.50271492872844],
+            "radius": 36,
+            "falloff": 0.65
+          }
+        }
+      ]
+    },
+    "placementOverrides": {
+      "scatter-1:candidate:688639014:59": {
+        "position": [134.69887, 55, 154.271797],
+        "quaternion": [
+          -8.000390764101651e-17, -0.9238795325112867, -8.000390764101651e-17, -0.3826834323650898
+        ],
+        "scale": [2, 0.5, 1.5],
+        "grounding": false
+      }
+    },
+    "environment": {
+      "exposure": 1.2,
+      "sun": { "azimuth": 200, "elevation": 25, "intensity": 3.2, "colour": "#ffe2b8" },
+      "fill": { "intensity": 0.35 },
+      "sky": { "colour": "#7fb0d8" },
+      "fog": { "mode": "exp2", "colour": "#a9c4d6", "density": 0.0012 }
+    }
+  },
+  "revision": "b5711722577b33fb2e6f510d38571771158b2f25202df29eaccaf11c32e4aad3",
+  "resolution": 129,
+  "size": 512,
+  "sampleIndices": [0, 129, 4096, 8256, 8320, 12000, 16512, 16640, 8693, 8437, 8180, 7794, 7667],
+  "heights": [
+    17.29701042175293, 17.696762084960938, 22.745071411132812, 18.896892547607422,
+    34.99724197387695, 15.335803985595703, 15.940933227539062, 14.382721900939941,
+    37.75142288208008, 43.48900604248047, 47.62477111816406, 54.75786590576172, 58.032432556152344
+  ],
+  "glbHeights": [
+    17.29701042175293, 17.696762084960938, 22.745071411132812, 18.896892547607422,
+    34.99724197387695, 15.335803985595703, 15.940933227539062, 14.382721900939941,
+    37.75142288208008, 43.48900604248047, 47.62477111816406, 54.75786590576172, 58.032432556152344
+  ],
+  "posedId": "scatter-1:candidate:688639014:59",
+  "placements": [
+    { "id": "preview-pines:candidate:3334192960:0", "position": [-37.8966, 37.8368, 13.3698] },
+    { "id": "preview-pines:candidate:3334192960:1", "position": [-97.8392, 22.0464, 164.0105] },
+    { "id": "preview-pines:candidate:3334192960:2", "position": [154.8646, 25.3965, -135.4576] },
+    { "id": "preview-pines:candidate:3334192960:3", "position": [18.6687, 15.827, 95.7029] },
+    { "id": "preview-pines:candidate:3334192960:4", "position": [51.2935, 22.826, -95.5362] },
+    { "id": "preview-pines:candidate:3334192960:5", "position": [-73.4221, 15.0905, -249.8947] },
+    { "id": "preview-pines:candidate:3334192960:6", "position": [221.8008, 27.3079, 153.8156] },
+    { "id": "preview-pines:candidate:3334192960:7", "position": [24.2902, 19.393, 232.2001] },
+    { "id": "preview-pines:candidate:3334192960:8", "position": [37.3703, 18.4115, 233.3507] },
+    { "id": "preview-pines:candidate:3334192960:9", "position": [132.9906, 14.8516, 133.7121] },
+    { "id": "preview-pines:candidate:3334192960:10", "position": [169.4482, 14.8381, -59.0688] },
+    { "id": "preview-pines:candidate:3334192960:11", "position": [-245.9152, 15.743, 14.3918] },
+    { "id": "preview-pines:candidate:3334192960:13", "position": [108.8628, 22.2203, 166.4262] },
+    { "id": "preview-pines:candidate:3334192960:14", "position": [-21.8335, 29.8157, 18.5622] },
+    { "id": "preview-pines:candidate:3334192960:15", "position": [134.5474, 22.7951, -105.0962] },
+    { "id": "preview-pines:candidate:3334192960:16", "position": [63.991, 12.1309, -28.0849] },
+    { "id": "preview-pines:candidate:3334192960:17", "position": [-235.4946, 13.0822, 34.851] },
+    { "id": "preview-pines:candidate:3334192960:18", "position": [27.6632, 22.6978, 193.2212] },
+    { "id": "preview-pines:candidate:3334192960:19", "position": [-157.4925, 17.0123, 216.7165] },
+    { "id": "preview-pines:candidate:3334192960:20", "position": [146.0479, 19.4981, -70.5834] },
+    { "id": "preview-pines:candidate:3334192960:21", "position": [232.8513, 15.8784, 66.3365] },
+    { "id": "preview-pines:candidate:3334192960:22", "position": [145.962, 17.0934, -1.5429] },
+    { "id": "preview-pines:candidate:3334192960:23", "position": [-81.4788, 16.9743, 134.1665] },
+    { "id": "preview-pines:candidate:3334192960:24", "position": [78.274, 5.1053, 43.3735] },
+    { "id": "preview-pines:candidate:3334192960:25", "position": [123.1967, 19.9586, -231.1961] },
+    { "id": "preview-pines:candidate:3334192960:26", "position": [43.1124, 27.76, -28.0214] },
+    { "id": "preview-pines:candidate:3334192960:27", "position": [-133.5768, 17.5959, -124.4999] },
+    { "id": "preview-pines:candidate:3334192960:28", "position": [15.4205, 17.3406, -184.9225] },
+    { "id": "preview-pines:candidate:3334192960:29", "position": [219.9874, 16.5823, 128.0292] },
+    { "id": "preview-pines:candidate:3334192960:30", "position": [-135.5956, 17.9549, 135.9301] },
+    { "id": "preview-pines:candidate:3334192960:31", "position": [-98.6806, 14.9036, 84.3329] },
+    { "id": "preview-pines:candidate:3334192960:32", "position": [20.6183, 39.5517, -58.9403] },
+    { "id": "preview-pines:candidate:3334192960:33", "position": [143.0756, 17.8512, -12.2308] },
+    { "id": "preview-pines:candidate:3334192960:34", "position": [-235.4937, 17.9414, -254.5221] },
+    { "id": "preview-pines:candidate:3334192960:35", "position": [191.7216, 13.7512, -39.4764] },
+    { "id": "preview-pines:candidate:3334192960:36", "position": [-67.0602, 19.2262, 142.778] },
+    { "id": "preview-pines:candidate:3334192960:37", "position": [-21.9435, 21.8148, 36.7661] },
+    { "id": "preview-pines:candidate:3334192960:38", "position": [-77.0102, 15.3546, 113.8113] },
+    { "id": "preview-pines:candidate:3334192960:39", "position": [3.1243, 23.7877, 167.0773] },
+    { "id": "preview-pines:candidate:3334192960:40", "position": [128.0547, 18.8625, -1.664] },
+    { "id": "preview-pines:candidate:3334192960:41", "position": [6.6568, 16.5445, 77.5965] },
+    { "id": "preview-pines:candidate:3334192960:42", "position": [-41.2969, 19.0327, 135.0113] },
+    { "id": "preview-pines:candidate:3334192960:43", "position": [-152.4419, 18.3125, 124.2987] },
+    { "id": "preview-pines:candidate:3334192960:44", "position": [-188.5578, 14.9811, -19.9168] },
+    { "id": "preview-pines:candidate:3334192960:45", "position": [-33.0331, 49.6965, -9.9244] },
+    { "id": "preview-pines:candidate:3334192960:46", "position": [63.1363, 15.3002, -236.9904] },
+    { "id": "preview-pines:candidate:3334192960:47", "position": [-70.7107, 15.3586, -189.8626] },
+    { "id": "preview-pines:candidate:3334192960:48", "position": [-13.2727, 16.8666, 69.48] },
+    { "id": "preview-pines:candidate:3334192960:49", "position": [0.8231, 18.1147, -227.7806] },
+    { "id": "preview-pines:candidate:3334192960:50", "position": [-120.3492, 20.1327, 211.8202] },
+    { "id": "preview-pines:candidate:3334192960:51", "position": [-235.567, 15.0308, 13.2382] },
+    { "id": "preview-pines:candidate:3334192960:52", "position": [22.2586, 17.4591, -207.3139] },
+    { "id": "preview-pines:candidate:3334192960:53", "position": [182.8613, 18.7291, -106.4396] },
+    { "id": "preview-pines:candidate:3334192960:54", "position": [20.6286, 20.2553, 215.9383] },
+    { "id": "preview-pines:candidate:3334192960:55", "position": [-213.4972, 17.755, 244.5399] },
+    { "id": "preview-pines:candidate:3334192960:56", "position": [240.9246, 18.9051, -176.9864] },
+    { "id": "preview-pines:candidate:3334192960:57", "position": [-61.5815, 14.8641, -249.4615] },
+    { "id": "preview-pines:candidate:3334192960:58", "position": [111.7216, 20.4483, -215.3634] },
+    { "id": "preview-pines:candidate:3334192960:59", "position": [18.2962, 28.5217, 4.4023] },
+    { "id": "preview-pines:candidate:3334192960:60", "position": [-128.6202, 15.3327, 47.9874] },
+    { "id": "preview-pines:candidate:3334192960:61", "position": [222.1955, 15.2865, -72.2792] },
+    { "id": "preview-pines:candidate:3334192960:62", "position": [-181.1308, 20.0147, 113.8614] },
+    { "id": "preview-pines:candidate:3334192960:63", "position": [20.6176, 17.1128, 255.7914] },
+    { "id": "preview-pines:candidate:3334192960:64", "position": [214.2791, 13.2491, -18.6326] },
+    { "id": "preview-pines:candidate:3334192960:65", "position": [-162.8397, 16.6018, -29.7278] },
+    { "id": "preview-pines:candidate:3334192960:66", "position": [109.4085, 18.0315, 108.9817] },
+    { "id": "preview-pines:candidate:3334192960:67", "position": [-133.6114, 20.1452, -178.2338] },
+    { "id": "preview-pines:candidate:3334192960:68", "position": [-185.4686, 24.5584, -117.5785] },
+    { "id": "preview-pines:candidate:3334192960:69", "position": [-154.6092, 20.878, -176.9861] },
+    { "id": "preview-pines:candidate:3334192960:70", "position": [-183.4904, 21.7545, -159.7211] },
+    { "id": "preview-pines:candidate:3334192960:71", "position": [-80.3814, 32.197, -6.9958] },
+    { "id": "preview-pines:candidate:3334192960:72", "position": [-58.8679, 20.7287, 186.0712] },
+    { "id": "preview-pines:candidate:3334192960:73", "position": [106.7959, 20.2932, -59.3762] },
+    { "id": "preview-pines:candidate:3334192960:74", "position": [78.0582, 3.425, 91.1394] },
+    { "id": "preview-pines:candidate:3334192960:76", "position": [-88.0476, 15.1373, 75.161] },
+    { "id": "preview-pines:candidate:3334192960:78", "position": [-231.6452, 16.7512, 213.0639] },
+    { "id": "preview-pines:candidate:3334192960:79", "position": [-168.174, 16.4826, 86.0927] },
+    { "id": "preview-pines:candidate:3334192960:80", "position": [91.6482, 20.26, -185.1948] },
+    { "id": "preview-pines:candidate:3334192960:81", "position": [30.676, 20.1852, 47.2339] },
+    { "id": "preview-pines:candidate:3334192960:82", "position": [126.2973, 21.9175, -112.9962] },
+    { "id": "preview-pines:candidate:3334192960:83", "position": [-147.7335, 20.0815, 175.6352] },
+    { "id": "preview-pines:candidate:3334192960:84", "position": [15.4962, 16.5542, -148.1039] },
+    { "id": "preview-pines:candidate:3334192960:85", "position": [113.5973, 18.8726, 249.7436] },
+    { "id": "preview-pines:candidate:3334192960:86", "position": [157.6655, 25.611, -146.4421] },
+    { "id": "preview-pines:candidate:3334192960:87", "position": [109.3836, 15.6097, 200.4131] },
+    { "id": "preview-pines:candidate:3334192960:88", "position": [-224.3364, 23.2176, -157.2936] },
+    { "id": "preview-pines:candidate:3334192960:89", "position": [-207.054, 19.1736, 144.8375] },
+    { "id": "preview-pines:candidate:3334192960:90", "position": [13.1095, 18.1449, -236.8974] },
+    { "id": "preview-pines:candidate:3334192960:91", "position": [-159.9689, 19.5557, -117.6812] },
+    { "id": "preview-pines:candidate:3334192960:94", "position": [-235.2957, 12.1467, 47.2035] },
+    { "id": "preview-pines:candidate:3334192960:95", "position": [-33.3093, 29.912, -117.6806] },
+    { "id": "preview-pines:candidate:3334192960:96", "position": [-206.0925, 13.5295, 58.7313] },
+    { "id": "preview-pines:candidate:3334192960:97", "position": [174.6118, 18.4165, -237.1019] },
+    { "id": "preview-pines:candidate:3334192960:98", "position": [-94.0766, 19.4615, -126.6133] },
+    { "id": "preview-pines:candidate:3334192960:99", "position": [9.6815, 17.2221, 118.7038] },
+    { "id": "preview-pines:candidate:3334192960:100", "position": [31.6322, 17.5272, -223.5737] },
+    { "id": "preview-pines:candidate:3334192960:101", "position": [-151.6463, 16.358, -16.0197] },
+    { "id": "preview-pines:candidate:3334192960:102", "position": [187.5023, 14.2701, -52.6523] },
+    { "id": "preview-pines:candidate:3334192960:104", "position": [-52.0612, 56.1533, -28.3616] },
+    { "id": "preview-pines:candidate:3334192960:105", "position": [45.0537, 28.3919, -72.6334] },
+    { "id": "scatter-1:candidate:688639014:59", "position": [134.6989, 55, 154.2718] },
+    { "id": "scatter-1:candidate:688639014:158", "position": [137.34, 15.3774, 132.4279] },
+    { "id": "scatter-1:candidate:688639014:251", "position": [160.3614, 17.0545, 137.4638] },
+    { "id": "scatter-1:candidate:688639014:426", "position": [133.423, 14.9074, 133.8511] },
+    { "id": "scatter-1:candidate:688639014:456", "position": [148.3218, 26.1703, 153.9588] }
+  ],
+  "posedMatrix": [
+    -1.414214, 0, -1.414214, 0, 0, 0.5, 0, 0, 1.06066, 0, -1.06066, 0, 134.698868, 55, 154.27179, 1
+  ],
+  "waterIds": ["river"]
+}

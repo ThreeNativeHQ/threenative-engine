@@ -377,13 +377,59 @@ describe("foliage cutout conversion and LOD (PRD-458 AC-4)", () => {
     ).toBe("BLEND");
   }, 300_000);
 
-  it("converts a VEC4 vertex colour that is opaque, refuses a real per-vertex fade", () => {
-    // Asset packs export vertex colours as RGBA with alpha 255; a cutoff reproduces alpha 1 exactly,
-    // so only an alpha that actually falls below 1 is a fade the cutoff cannot preserve (PRD-458 §4).
-    expect(convertFoliageCutout(vertexAlphaDocument(1)).converted).toEqual(["needles"]);
-    const faded = convertFoliageCutout(vertexAlphaDocument(0.5));
+  it("converts a VEC4 vertex colour that is opaque, refuses a real per-vertex fade", async () => {
+    expect((await convertFoliageCutout(vertexAlphaDocument(1))).converted).toEqual(["needles"]);
+    const faded = await convertFoliageCutout(vertexAlphaDocument(0.5));
     expect(faded.converted).toEqual([]);
     expect(faded.kept).toEqual([{ name: "needles", reason: "vertex-colour-alpha" }]);
+  });
+
+  it("keeps BLEND when texture has no cutout texels (alpha everywhere >= 130), converts when holes exist", async () => {
+    const makePngDoc = (alphaVal: number) => {
+      const { PNG } = require("pngjs");
+      const png = new PNG({ width: 2, height: 2 });
+      png.data.fill(255);
+      for (let i = 0; i < 4; i += 1) {
+        png.data[i * 4 + 3] = alphaVal;
+      }
+      const pngBuffer = PNG.sync.write(png);
+      const document = new Document();
+      const buffer = document.createBuffer();
+      const texture = document.createTexture("glass").setImage(pngBuffer).setMimeType("image/png");
+      const material = document
+        .createMaterial("Scope")
+        .setAlphaMode("BLEND")
+        .setBaseColorTexture(texture);
+      const primitive = document
+        .createPrimitive()
+        .setAttribute(
+          "POSITION",
+          document.createAccessor().setType("VEC3").setArray(new Float32Array(9)).setBuffer(buffer),
+        )
+        .setMaterial(material);
+      document
+        .createScene()
+        .addChild(
+          document
+            .createNode("scope")
+            .setMesh(document.createMesh("scope").addPrimitive(primitive)),
+        );
+      return document;
+    };
+
+    // Alpha >= 130 everywhere (cutoff is 0.5 * 255 = 127.5): no cutout texels, stays BLEND
+    const translucentDoc = makePngDoc(147);
+    const translucentResult = await convertFoliageCutout(translucentDoc);
+    expect(translucentResult.converted).toEqual([]);
+    expect(translucentResult.kept).toEqual([{ name: "Scope", reason: "no-cutout-texels" }]);
+    expect(translucentDoc.getRoot().listMaterials()[0]?.getAlphaMode()).toBe("BLEND");
+
+    // Alpha has cutout holes (e.g. 0): converts to MASK
+    const cutoutDoc = makePngDoc(0);
+    const cutoutResult = await convertFoliageCutout(cutoutDoc);
+    expect(cutoutResult.converted).toEqual(["Scope"]);
+    expect(cutoutResult.kept).toEqual([]);
+    expect(cutoutDoc.getRoot().listMaterials()[0]?.getAlphaMode()).toBe("MASK");
   });
 });
 

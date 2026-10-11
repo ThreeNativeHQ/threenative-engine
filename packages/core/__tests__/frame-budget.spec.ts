@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   FRAME_BUDGET_MARKER,
   FRAME_BUDGET_PHASES,
@@ -132,6 +132,52 @@ function parseWindow(line: string): IFrameBudgetWindow {
 }
 
 describe("FrameBudget", () => {
+  it("reports Long Tasks separately from presentation gaps and disconnects on disposal", () => {
+    let deliver!: (list: { getEntries(): { startTime: number; duration: number }[] }) => void;
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      "PerformanceObserver",
+      class {
+        static supportedEntryTypes = ["longtask"];
+        constructor(callback: typeof deliver) {
+          deliver = callback;
+        }
+        observe() {}
+        disconnect = disconnect;
+      },
+    );
+    try {
+      const budget = new FrameBudget({ report: () => {}, reportEvery: 1 });
+      budget.beginFrame(100, 100);
+      budget.endFrame(101);
+      deliver({
+        getEntries: () => [
+          { startTime: 20, duration: 600 },
+          { startTime: 110, duration: 75 },
+        ],
+      });
+      expect(budget.window().longTasks).toEqual({
+        available: true,
+        count: 2,
+        longestMs: 600,
+        afterFirstFrameMs: 75,
+      });
+      budget.dispose();
+      expect(disconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reports Long Tasks as unavailable when the platform cannot observe them", () => {
+    vi.stubGlobal("PerformanceObserver", undefined);
+    try {
+      expect(new FrameBudget().window().longTasks).toEqual({ available: false });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("attributes the device frame to the phase that owns it", () => {
     const { budget, lines } = collectingBudget(10);
     const clock = { now: 0, timestamp: 0 };

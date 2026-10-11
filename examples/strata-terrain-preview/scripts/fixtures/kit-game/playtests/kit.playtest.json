@@ -1,0 +1,230 @@
+{
+  "name": "kit",
+  "target": "web",
+  "subject": "Forest starter kit: the world's ground, props, firs and daylight in a real game",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "world-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "driven-into-the-fir",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ground",
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "ground"
+    },
+    {
+      "kind": "input",
+      "label": "edge-view",
+      "press": "Digit2",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "edge",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "edge"
+    },
+    {
+      "kind": "input",
+      "label": "overview-view",
+      "press": "Digit3",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "overview",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "overview"
+    },
+    {
+      "kind": "input",
+      "label": "lake-view",
+      "press": "Digit4",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "lake",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "lake"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "performance": {
+      "maxPhaseMsP95": {
+        "render": 40
+      }
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "propColliders",
+        "gte": 20,
+        "allowTrivial": "Prop colliders near the camera are built while the scene loads, before the first scenario step; the live count is the claim."
+      },
+      {
+        "id": "GameState",
+        "path": "firInstancesDrawn",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "waterLakes",
+        "gte": 1,
+        "allowTrivial": "The lake is drawn when addForest resolves, before the first scenario step; the drawn count is the claim, and the lake view and the judge read the water itself."
+      },
+      {
+        "id": "GameState",
+        "path": "waterRivers",
+        "gte": 1,
+        "allowTrivial": "The river is drawn when addForest resolves, before the first scenario step; the drawn count is the claim, and the lake view and the judge read the water itself."
+      },
+      {
+        "id": "GameState",
+        "path": "groundError",
+        "gte": 0,
+        "lte": 0.15,
+        "allowTrivial": "Measured once, when the body first grounds during warm-up; paired with driveMetres, which only the scenario's own drive can satisfy."
+      },
+      {
+        "id": "GameState",
+        "path": "driveMetres",
+        "gte": 3
+      },
+      {
+        "id": "GameState",
+        "path": "closestToTrunk",
+        "gte": 0.3,
+        "allowTrivial": "The clearance the fir's own capsule left. It is paired with driveMetres above: a player that never reached the tree would satisfy this row alone."
+      },
+      {
+        "id": "GameState",
+        "path": "frames",
+        "gte": 120
+      },
+      {
+        "id": "GameState",
+        "path": "viewGpuP50.ground",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewGpuP95.ground",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewFrameP95.ground",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewGpuP50.edge",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewGpuP95.edge",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewFrameP95.edge",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewGpuP50.overview",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewGpuP95.overview",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewFrameP95.overview",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewGpuP50.lake",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewGpuP95.lake",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewFrameP95.lake",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "driveDone",
+        "equals": 1
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "minNonblankPixelRatio": 0.9
+        }
+      }
+    ]
+  }
+}

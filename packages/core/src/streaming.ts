@@ -46,18 +46,13 @@ export interface IAddInSlicesProgress {
 
 export interface IAddInSlicesOptions {
   /**
-   * Objects attached between presented frames. Default 256.
+   * Objects attached between presented frames, when the game wants that count.
    *
-   * The default is large because the reason it used to be small has been taken over by something
-   * better. One per frame was right when nothing else compiled the world: the renderer built a few
-   * newly visible pipelines per presented frame instead of all of them inside one multi-second
-   * frame. It is not right once the framework warms the held scene (`warmUpScene`) — the compile is
-   * then paid either way and the slice only chooses where, so a small slice buys nothing and costs
-   * one present per object.
-   *
-   * 256 is where the measured curve flattens without giving up the yields entirely: over a few
-   * hundred objects it still presents a handful of frames, so a browser watchdog cannot see a hung
-   * page, and it costs nothing against attaching everything in one go.
+   * Omitted, a slice ends on elapsed time instead: the loop measures what the game's own `add`
+   * costs, in the place where the cost is paid, and presents a frame once the slice has run for its
+   * budget. Objects that cost nothing stop paying a frame each, and objects that cost more than any
+   * fixed count allows get cut sooner than that count would. Given, the count decides and the budget
+   * is not used at all.
    */
   readonly sliceSize?: number;
   /** Called once per slice, and once more for a partial final slice. */
@@ -87,14 +82,19 @@ export interface IAddInSlicesReport {
   readonly added: number;
   /** Objects the run was given. */
   readonly total: number;
-  /** Slices the work was cut into, and therefore the frames the loop got to present, plus one. */
+  /** Slices the work was cut into: one host turn between each, several of which can share a frame. */
   readonly slices: number;
   /** Wall-clock milliseconds the run took, attaching and yielding together. */
   readonly elapsedMs: number;
-  /** The slice size actually used — the default, or the one the game chose. */
+  /**
+   * Objects per slice this run actually landed on: the count the game chose, or — when
+   * the budget chose — the measured average, which is the number a caller copies into `sliceSize`.
+   */
   readonly sliceSize: number;
-  /** Whether that slice size came from the game rather than from the default. */
+  /** Whether that count came from the game rather than from the engine. */
   readonly sliceSizeOverridden: boolean;
+  /** Milliseconds of attaching one slice may spend before it presents. Absent when the game gave a count. */
+  readonly sliceBudgetMs?: number;
   /** True when `while` ended the run early. `added` is then less than `total`. */
   readonly stopped: boolean;
 }
@@ -128,7 +128,7 @@ export interface ILoadAllOptions {
   readonly marker?: boolean;
 }
 
-const DEFAULT_SLICE_SIZE = 256;
+const DEFAULT_SLICE_BUDGET_MS = 8;
 export const DEFAULT_CONCURRENCY = 6;
 
 const now = (): number => globalThis.performance?.now() ?? Date.now();
@@ -161,9 +161,12 @@ export async function addInSlices<T>(
   add: (object: T, index: number) => void,
   options: IAddInSlicesOptions = {},
 ): Promise<IAddInSlicesReport> {
-  const sliceSize = options.sliceSize ?? DEFAULT_SLICE_SIZE;
-  assertWholeAtLeastOne(sliceSize, "sliceSize", "TN_ADD_SLICES_SLICE_INVALID");
-  const sliceSizeOverridden = options.sliceSize !== undefined;
+  const sliceSize = options.sliceSize;
+  if (sliceSize !== undefined) {
+    assertWholeAtLeastOne(sliceSize, "sliceSize", "TN_ADD_SLICES_SLICE_INVALID");
+  }
+  const countSlices = sliceSize !== undefined;
+  const sliceBudgetMs = countSlices ? undefined : DEFAULT_SLICE_BUDGET_MS;
   const yieldFrame = options.yieldFrame ?? yieldToHost;
   const shouldContinue = options.while;
   const startedAt = now();
@@ -177,13 +180,24 @@ export async function addInSlices<T>(
   let reported = 0;
   let slices = 0;
   let stopped = false;
+  let sliceStartedAt = now();
 
   const flush = async (yieldAfter: boolean): Promise<void> => {
     slices += 1;
     reported = added;
     options.onProgress?.({ added, total });
-    if (yieldAfter) await yieldFrame();
+    if (yieldAfter) {
+      await yieldFrame();
+      // The presented frame is not part of the next slice's work.
+      if (sliceBudgetMs !== undefined) sliceStartedAt = now();
+    }
   };
+
+  /** A slice ends on the count the game gave, or on the budget this run has spent. */
+  const sliceSpent = (): boolean =>
+    sliceSize !== undefined
+      ? added % sliceSize === 0
+      : now() - sliceStartedAt >= DEFAULT_SLICE_BUDGET_MS;
 
   for (let index = 0; index < total; index += 1) {
     if (shouldContinue !== undefined && !shouldContinue()) {
@@ -193,8 +207,9 @@ export async function addInSlices<T>(
     add(list[index] as T, index);
     added += 1;
     // Never after the final object: the caller is about to render anyway, and one more empty frame
-    // would only be added to the load.
-    if (added % sliceSize === 0 && added < total) await flush(true);
+    // would only be added to the load. The clock is read per object, because `performance.now()` is
+    // cheap beside the game's own `add` and a fixed count cannot see what that `add` costs.
+    if (added < total && sliceSpent()) await flush(true);
   }
   if (added > reported) await flush(false);
 
@@ -203,14 +218,17 @@ export async function addInSlices<T>(
     total,
     slices,
     elapsedMs: now() - startedAt,
-    sliceSize,
-    sliceSizeOverridden,
+    // Measured rather than assumed: with no count to divide by, the average is what the run did.
+    sliceSize: sliceSize ?? Math.round(added / Math.max(slices, 1)),
+    sliceSizeOverridden: countSlices,
+    sliceBudgetMs,
     stopped,
   };
   if (options.marker !== false) {
     console.info(
       `TN_ADD_SLICES added=${String(added)} total=${String(total)} slices=${String(slices)} ` +
-        `sliceSize=${String(sliceSize)} overridden=${String(sliceSizeOverridden)} ` +
+        `sliceSize=${String(report.sliceSize)} overridden=${String(countSlices)} ` +
+        `budgetMs=${String(sliceBudgetMs ?? "none")} ` +
         `stopped=${String(stopped)} ms=${report.elapsedMs.toFixed(1)}`,
     );
   }

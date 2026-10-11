@@ -1,4 +1,4 @@
-import type { BufferGeometry, Camera, DepthTexture, Object3D } from "three";
+import type { BufferGeometry, Camera, DepthTexture, Object3D, Texture } from "three";
 import {
   type PassNode,
   ReadbackBuffer,
@@ -244,6 +244,21 @@ export interface IRendererLike {
    */
   uploadTextures?(object: Object3D): number;
   /**
+   * Prepares unique cold compressed textures before their first compile or draw. WebGPU uses
+   * one upload lane, a measured 2 ms budget and at most 64 KiB per write; one final write may
+   * overshoot the time budget. Await this gate before exposing the textures to rendering.
+   * Original Texture/GPUTexture identities, formats and mip levels are retained. Cancellation
+   * releases this caller's interest; another caller of the same texture may still complete.
+   * Ordinary textures and the WebGL fallback retain their existing paths and report no work.
+   * `onProgress` receives the completed unique compressed texture count after each preparation
+   * promise resolves; queued textures and writes that have not settled receive no credit.
+   */
+  prepareTextures?(
+    textures: Iterable<Texture>,
+    signal?: AbortSignal,
+    onProgress?: (completed: number) => void,
+  ): Promise<number>;
+  /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
    *
    * It is on the wrapper for the same reason `compute` is: the call is WebGPU-only and a game that
@@ -453,6 +468,10 @@ type RendererInstance = IStorageBufferSource & {
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
+  prepareTextureAsync?: (
+    texture: Texture,
+    options: { budgetMs: number; maxBytesPerWrite: number; signal: AbortSignal },
+  ) => Promise<void>;
   compute?: (node: unknown) => void;
   getArrayBufferAsync?: (
     attribute: unknown,
@@ -540,6 +559,7 @@ function wrapRenderer(
   let activeCompiles = 0;
   let compileCount = 0;
   let disposed = false;
+  const texturePreparations = new Set<AbortController>();
   const storageBuffers = new StorageBufferLeases(() => raw);
   let computeTimings: ComputeTimingScopes | undefined;
   let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
@@ -569,8 +589,15 @@ function wrapRenderer(
    * same lagged sample every frame. `backend.getTimestampFrames("render")` is Three's tracked
    * resolved-frame list; its last entry is the sample, matching `gpuFrameAge`.
    */
+  /**
+   * The engine's own frame id once it has rendered. Three's `init()` starts its own rAF loop, which
+   * writes `info.frame = nodeFrame.frameId` every animation frame, so `info.frame` read between
+   * renders can be that smaller counter while the timestamp queries carry this one.
+   */
+  const currentFrame = (): number | undefined =>
+    timestampFrame >= 0 ? timestampFrame : raw.info?.frame;
   const gpuFrameSample = (): { frame: number; ms: number } | undefined => {
-    const frame = raw.info?.frame;
+    const frame = currentFrame();
     const frames = raw.backend?.getTimestampFrames?.("render");
     const sampled = frames?.[frames.length - 1];
     const timestamp = raw.info?.render?.timestamp;
@@ -665,7 +692,7 @@ function wrapRenderer(
     gpuFrameMs: () => gpuFrameSample()?.ms,
     gpuFrameAge: () => {
       const sample = gpuFrameSample();
-      const frame = raw.info?.frame;
+      const frame = currentFrame();
       if (sample === undefined || frame === undefined || !Number.isInteger(frame)) return undefined;
       // A fulfilled resolve may return the pool's lastValue on failure. The successful query's
       // frame ID, not the promise or a changed duration, is the evidence of freshness.
@@ -921,6 +948,40 @@ function wrapRenderer(
       }
       return created;
     },
+    prepareTextures: async (textures, signal, onProgress) => {
+      if (disposed) throw new Error("Renderer disposed during texture preparation.");
+      if (kind !== "webgpu") return 0;
+      const unique = new Set(
+        [...textures].filter(
+          (texture) => "isCompressedTexture" in texture && texture.isCompressedTexture === true,
+        ),
+      );
+      if (unique.size === 0) return 0;
+      if (typeof raw.prepareTextureAsync !== "function")
+        throw new Error("WebGPU renderer lacks bounded compressed texture preparation.");
+      const controller = new AbortController();
+      const abort = () => controller.abort(signal?.reason);
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
+      texturePreparations.add(controller);
+      let completed = 0;
+      try {
+        for (const texture of unique) {
+          if (controller.signal.aborted) throw controller.signal.reason;
+          await raw.prepareTextureAsync(texture, {
+            budgetMs: 2,
+            maxBytesPerWrite: 65_536,
+            signal: controller.signal,
+          });
+          completed += 1;
+          onProgress?.(completed);
+        }
+        return unique.size;
+      } finally {
+        texturePreparations.delete(controller);
+        signal?.removeEventListener("abort", abort);
+      }
+    },
     scenePassDepth: () => {
       // Three's implicit depth is in Textures.updateRenderTarget's data, not target.depthTexture.
       // Never fall through to presentation depth: the output blit does not draw the world there.
@@ -1023,6 +1084,9 @@ function wrapRenderer(
         return;
       }
       disposed = true;
+      for (const preparation of texturePreparations)
+        preparation.abort(new Error("Renderer disposed during texture preparation."));
+      texturePreparations.clear();
       gpuObservation?.dispose();
       gpuObservation = undefined;
       pendingScale = undefined;
@@ -1387,6 +1451,13 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     throw new Error("renderer.resolutionScale must be finite and positive.");
   const applied = { height: 1, width: 1 };
   const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
+  // An intrinsic canvas follows its width/height attributes. Scaling that buffer then changes
+  // clientWidth, so ResizeObserver scales it again until it is one pixel. Own the layout only
+  // for the browser canvas we created; supplied canvases and platform surfaces own theirs.
+  if (options.canvas === undefined && source === undefined && canvas.style !== undefined) {
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+  }
   const preferWebGPU = options.preferWebGPU ?? true;
   // `trackTimestamp` is on so GPU time is measured, not inferred from wall clock; it is inert on an
   // adapter without `timestamp-query`, and `gpuTimestampFrameInterval` samples it (PRD-446).

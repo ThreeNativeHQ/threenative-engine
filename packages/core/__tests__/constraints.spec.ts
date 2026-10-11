@@ -78,6 +78,14 @@ describe("core constraints", () => {
           // `render/foliage-alpha.ts`'s, and a cutoff a part names is the part's own. The word
           // "light" the generic filter trips on is inside `loadsInFlight`.
           file !== "world-cells.ts" &&
+          // The cell proxy decides whether a baked HLOD stand-in may replace a cell's source draws.
+          // It reads a material's identity and whether it is opaque, standard and untransformed to
+          // make that call, and constructs, configures and colours none. The assertions below keep
+          // that true.
+          file !== "world-cell-proxy.ts" &&
+          // The world package record only names `materialGroups`, an integer the cook counted for
+          // each proxy. It holds no material, colour or shader; the assertions below keep that true.
+          file !== "world-package.ts" &&
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
@@ -150,6 +158,11 @@ describe("core constraints", () => {
           // writes nothing on any of them. The white clone it exists to justify is built in
           // `projection-apply.ts`, which is allowlisted above for the same reason.
           file !== "projection-uniform.ts" &&
+          // The unlit-foliage warning reports that cutout PBR is drawing with no image-based light,
+          // which is why a forest renders as cardboard. It reads a material's alpha test and its
+          // envMap's ABSENCE to count it, and constructs no material, sets no property of one and
+          // chooses no environment: that sky stays the game's. The assertions below keep it so.
+          file !== "profiling/unlit-foliage-warning.ts" &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
@@ -238,6 +251,21 @@ describe("core constraints", () => {
     // roughness, a metalness, an opacity — is how a framework starts deciding one.
     expect(foliageAlpha).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
     expect(foliageAlpha.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The unlit-foliage warning names an envMap for the same reason foliage-alpha names a map: it
+    // asks whether one is there. Reading its absence is the whole finding, so the check is that it
+    // is never WRITTEN — a framework that assigns a sky has decided how the game looks.
+    const unlitFoliage = readFileSync(
+      path.join(sourceDirectory, "profiling/unlit-foliage-warning.ts"),
+      "utf8",
+    );
+    expect(unlitFoliage).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(unlitFoliage).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap|environment|alphaTest|alphaHash|alphaToCoverage)\b\s*(=[^=]|\?\?=)/iu,
+    );
+    expect(unlitFoliage.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // The impostor baker stages the package's own parts and captures their own albedo and normals.
     // Every material value is copied from the source twin; the one colour literal is the scratch
@@ -381,8 +409,28 @@ describe("core constraints", () => {
     expect(worldCells).not.toMatch(
       /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
-    expect(worldCells).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    // A property read, not the `Array.prototype.map` call the package's bookkeeping uses.
+    expect(worldCells).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b(?!\s*\()/iu,
+    );
     expect(worldCells.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // `world-cell-proxy.ts` is exempted on the same terms as `world-cells.ts`: it reads whether a
+    // surface is safe to replace and builds nothing that describes how anything looks.
+    const cellProxy = readFileSync(path.join(sourceDirectory, "world-cell-proxy.ts"), "utf8");
+    expect(cellProxy).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(cellProxy).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b(?!\s*\()/iu,
+    );
+    expect(cellProxy.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    const worldPackage = readFileSync(path.join(sourceDirectory, "world-package.ts"), "utf8");
+    expect(worldPackage).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(worldPackage.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // `gpu-scene-bvh.ts` is exempted on the same terms as `warmup.ts`: it reads a material's
     // *identity* — an integer index into the game's own surfaces — to pack triangles for the BVH's

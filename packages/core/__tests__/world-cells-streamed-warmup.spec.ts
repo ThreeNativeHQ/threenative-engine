@@ -133,6 +133,134 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("keeps settled prewarm counters at zero when an initial main batch first draws late", async () => {
+  vi.spyOn(console, "info").mockImplementation(() => undefined);
+  stubFixtureFetch();
+  const world = await WorldCells.load({
+    admissionBudgetMs: Number.POSITIVE_INFINITY,
+    budgets,
+    follow: { position: { ...FOLLOW } },
+    loadModel: async () => model(),
+    prefetchSeconds: 0,
+    ring: 0,
+    shadows: { cast: false },
+    terrain: false,
+    bundles: false,
+    surface,
+    url: "/world/world.json",
+  });
+  new Group().add(world);
+  let settled = false;
+  void world.prewarmed.then(() => {
+    settled = true;
+  });
+  try {
+    for (let frame = 0; frame < 100 && !settled; frame++) {
+      world.update();
+      await flush(1);
+    }
+    expect(settled).toBe(true);
+    expect(world.stats().pendingPrewarm).toBe(0);
+    const late: InstancedMesh[] = [];
+    world.traverse((object) => {
+      if (object instanceof InstancedMesh && Reflect.get(object, "casterPrewarmOwed") === true)
+        late.push(object);
+    });
+    expect(late.length).toBeGreaterThan(0);
+    for (const mesh of late) {
+      Reflect.apply(mesh.onBeforeRender, mesh, []);
+      expect(Reflect.get(mesh, "casterPrewarmOwed")).toBe(false);
+      expect(world.stats().pendingPrewarm).toBe(0);
+    }
+  } finally {
+    world.dispose();
+  }
+});
+
+it("keeps late initial draws separate from newly streamed prewarm work", async () => {
+  vi.spyOn(console, "info").mockImplementation(() => undefined);
+  const initial = manifest.cells.find((cell) => cell.x === 1 && cell.z === 1);
+  const distant = manifest.cells.find((cell) => cell.x === 3 && cell.z === 1);
+  const rock = manifest.assets.rock;
+  if (!initial || !distant || !rock) throw new Error("The fixture needs cells 1:1, 3:1 and rock.");
+  stubFixtureFetch({
+    ...manifest,
+    assets: {
+      ...manifest.assets,
+      rock: {
+        ...rock,
+        lods: [{ distance: 10_000, glb: "assets/rock_lod1.glb" }],
+      },
+    },
+    cells: [
+      { ...initial, chunks: [], runs: initial.runs.filter((run) => run.asset === "pine") },
+      { ...distant, chunks: [], runs: distant.runs.filter((run) => run.asset === "rock") },
+    ],
+  });
+  const follow = { position: { ...FOLLOW } };
+  const world = await WorldCells.load({
+    admissionBudgetMs: Number.POSITIVE_INFINITY,
+    budgets,
+    follow,
+    loadModel: async () => model(),
+    prefetchSeconds: 0,
+    ring: 1,
+    shadows: { cast: false },
+    terrain: false,
+    bundles: false,
+    surface,
+    url: "/world/world.json",
+  });
+  new Group().add(world);
+  let settled = false;
+  void world.prewarmed.then(() => {
+    settled = true;
+  });
+  try {
+    for (let frame = 0; frame < 100 && !settled; frame++) {
+      world.update();
+      await flush(1);
+    }
+    expect(settled).toBe(true);
+    const late: InstancedMesh[] = [];
+    world.traverse((object) => {
+      if (object instanceof InstancedMesh && Reflect.get(object, "casterPrewarmOwed") === true)
+        late.push(object);
+    });
+    expect(late.length).toBeGreaterThan(0);
+    follow.position.x += CELL_SIZE;
+    for (let frame = 0; frame < 100 && world.stats().pendingPrewarm === 0; frame++) {
+      world.update();
+      await flush(1);
+    }
+    const pending = world.stats().pendingPrewarm;
+    expect(pending).toBeGreaterThan(0);
+    for (const mesh of late) {
+      expect(Reflect.get(mesh, "casterPrewarmOwed")).toBe(true);
+      Reflect.apply(mesh.onBeforeRender, mesh, []);
+      expect(world.stats().pendingPrewarm).toBe(pending);
+    }
+    let newDraws = 0;
+    for (let frame = 0; frame < 100 && world.stats().pendingPrewarm > 0; frame++) {
+      world.traverse((object) => {
+        if (!(object instanceof InstancedMesh) || Reflect.get(object, "casterPrewarmOwed") !== true)
+          return;
+        const before = world.stats().pendingPrewarm;
+        Reflect.apply(object.onBeforeRender, object, []);
+        expect(world.stats().pendingPrewarm).toBe(before - 1);
+        newDraws += 1;
+      });
+      if (world.stats().pendingPrewarm === 0) break;
+      world.update();
+      await flush(1);
+    }
+    expect(newDraws).toBeGreaterThan(0);
+    expect(world.stats().pendingPrewarm).toBe(0);
+  } finally {
+    world.dispose();
+  }
+});
+
 describe("a chunk streamed into a walking world", () => {
   it("is compiled before it is attached, with the world's lights as its target scene", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);

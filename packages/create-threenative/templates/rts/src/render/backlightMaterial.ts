@@ -64,6 +64,8 @@ export function backlightMaterial(source: MeshStandardMaterial, controls: IBackl
     );
   validateControls(controls);
   const material = new MeshStandardNodeMaterial().copy(source);
+  // NodeMaterial.copy skips Material.copy, and `alphaTest` lives in `_alphaTest`, which it never copies.
+  material.alphaTest = source.alphaTest;
   let graph = graphs.get(controls);
   if (!graph) {
     graph = createGraph(controls);

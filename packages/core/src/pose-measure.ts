@@ -196,11 +196,42 @@ function staticSphereRadius(mesh: Mesh): number | undefined {
   return worldRadius + offset;
 }
 
-function preciseBounds(meshes: readonly Object3D[]): Box3 {
+function preciseMinimumY(meshes: readonly Object3D[]): number {
+  let minimum = Number.POSITIVE_INFINITY;
   const bounds = new Box3();
-  for (const mesh of meshes) bounds.expandByObject(mesh, true);
-  if (bounds.isEmpty()) throw new Error("posedBounds could not measure any mesh geometry.");
-  return bounds;
+  for (const object of meshes) {
+    const mesh = asMesh(object);
+    const position = mesh?.geometry.getAttribute("position");
+    if (
+      mesh &&
+      position &&
+      asSkinnedMesh(mesh) === undefined &&
+      !(mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh &&
+      mesh.children.length === 0 &&
+      (mesh.geometry.morphAttributes.position?.length ?? 0) === 0
+    ) {
+      // Calibration needs only the exact lowest world Y. Avoid transforming every vertex
+      // in X/Z and updating six box extrema for every copy of the same static geometry.
+      const e = mesh.matrixWorld.elements;
+      if (e[1] === 0 && e[9] === 0) {
+        if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+        const box = mesh.geometry.boundingBox;
+        if (box) minimum = Math.min(minimum, (e[5] < 0 ? box.max.y : box.min.y) * e[5] + e[13]);
+      } else {
+        for (let i = 0; i < position.count; i++)
+          minimum = Math.min(
+            minimum,
+            position.getX(i) * e[1] + position.getY(i) * e[5] + position.getZ(i) * e[9] + e[13],
+          );
+      }
+    } else {
+      bounds.makeEmpty().expandByObject(object, true);
+      minimum = Math.min(minimum, bounds.min.y);
+    }
+  }
+  if (!Number.isFinite(minimum))
+    throw new Error("posedBounds could not measure any mesh geometry.");
+  return minimum;
 }
 
 function rawBounds(envelope: IPosedBoundsEnvelope, target: IRawBounds): void {
@@ -290,8 +321,8 @@ function createEnvelope(
     result,
   };
   rawBounds(envelope, raw);
-  const truth = preciseBounds(meshes);
-  envelope.biasY = truth.min.y - raw.minY;
+  const minimumY = preciseMinimumY(meshes);
+  envelope.biasY = minimumY - raw.minY;
   return envelope;
 }
 

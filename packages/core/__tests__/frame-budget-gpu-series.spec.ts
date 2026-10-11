@@ -38,6 +38,33 @@ function driveGpu(
 }
 
 describe("frame-budget GPU series", () => {
+  it("keeps stale bucket samples out of a new window's resolved frame range", () => {
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = gpuBudget({ reportEvery: 4, onWindow: (window) => windows.push(window) });
+    for (let i = 0; i < 8; i++) {
+      budget.beginFrame(i * 16.7, i * 16.7);
+      budget.addGpuMs(i === 7 ? 1 : 100, i === 7 ? 20 : 10);
+      budget.addGpuBucketMs({ main: i === 7 ? 1 : 100 });
+      budget.endFrame(i * 16.7 + 1);
+    }
+    expect(windows[1]?.gpuFrames).toEqual({ first: 20, last: 20 });
+    expect(windows[1]?.gpuMain).toBe(1);
+  });
+  it("identifies the resolved frames measured by the window", () => {
+    const budget = gpuBudget();
+    driveGpu(budget, [
+      [10, 10],
+      [20, 12],
+    ]);
+    expect(budget.window().gpuFrames).toEqual({ first: 10, last: 12 });
+  });
+
+  it("leaves frame attribution unavailable for unframed measurements", () => {
+    const budget = gpuBudget();
+    driveGpu(budget, [[10, 10], [20]]);
+    expect(budget.window().gpuFrames).toBeUndefined();
+  });
+
   it("reports the resolved frames' mean/p50/p95/max, not the last value", () => {
     const budget = gpuBudget();
     driveGpu(budget, [

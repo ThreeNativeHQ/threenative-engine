@@ -11,6 +11,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The optional `@threenative/terrain` authoring addon validates and retains
+  stable-key placement overrides through `validatePlacementOverrides` and
+  `applyPlacementOverrides`. The example editor offers individual prop selection,
+  ordinary Three.js gizmos, numeric transforms and measured grounding overrides.
+
 - `create-threenative` ships an `optimizeModels()` Vite plugin, and every template
   wires it into `vite.config.ts`. At build time it regenerates each `public/assets/*.glb`
   from its source in `assets/models/` via gltf-transform whenever the source is newer
@@ -24,6 +29,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   overrides, so a game's shot-to-shot variation survives migration onto the pool.
 
 ### Breaking
+
+- The unreleased terrain editor's `mountTerrainEditor` view factory receives
+  `(host, controller)`. Its `IEditorView` implements `setDocument(document, revision)`
+  so metadata edits can update the scene without dispatching terrain evaluation;
+  `update(state)` can return resolved placements. Host-only callbacks remain valid.
 
 - `@threenative/core`'s `renderer.projection` now also accepts
   `{ materialChecks: "spread" | "everyFrame" }` and not only a boolean (PRD-462). This widens the

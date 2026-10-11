@@ -93,6 +93,18 @@ test.each([
   expect(c.debug()).toMatchObject({ enabled: false, convertedMaterials: 0 });
   c.dispose();
 });
+test("NodeMaterial conversion preserves source alphaTest", () => {
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  const { scene, camera, key } = world();
+  const source = new MeshStandardMaterial({ alphaTest: 0.5 });
+  const mesh = new Mesh(new BoxGeometry(), source);
+  scene.add(mesh);
+  const c = createMaterialLighting(scene, camera, key, { ...desktop, enabled: true });
+  const converted = mesh.material as MeshStandardMaterial;
+  expect(converted).not.toBe(source);
+  expect(converted.alphaTest).toBe(0.5);
+  c.dispose();
+});
 test("quality gate only admits high web hardware desktop, including pinned fallback", () => {
   expect(materialLightingEnabled("high", desktop)).toBe(true);
   for (const tier of ["low", "medium"] as const)

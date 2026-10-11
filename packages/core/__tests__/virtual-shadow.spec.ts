@@ -18,12 +18,15 @@ import {
   type OrthographicCamera,
   PerspectiveCamera,
   Raycaster,
-  type RenderTarget,
+  RenderTarget,
   Scene,
   Sphere,
   SphereGeometry,
+  type Texture,
   Vector3,
 } from "three";
+// @ts-expect-error Three's private texture manager has no public declaration; this test must exercise it directly.
+import Textures from "three/src/renderers/common/Textures.js";
 import {
   Fn,
   float,
@@ -32,6 +35,7 @@ import {
   mix,
   nodeObject,
   property,
+  renderGroup,
   vec3,
   vec4,
 } from "three/tsl";
@@ -85,6 +89,21 @@ function world(): { light: DirectionalLight; scene: Scene; camera: PerspectiveCa
   const camera = new PerspectiveCamera(60, 1, 0.1, 500);
   scene.add(camera);
   return { camera, light, scene };
+}
+
+/** The two calls a frame makes on three's private texture manager for a shadow map. */
+interface IThreeTextures {
+  updateTexture(texture: Texture): void;
+  updateRenderTarget(target: RenderTarget): void;
+}
+
+/** The stock shadow node's target factory, which three calls from `setupShadow`. */
+interface IStockShadowTarget {
+  readonly shadow: unknown;
+  setupRenderTarget(
+    shadow: unknown,
+    builder: unknown,
+  ): { depthTexture: Texture; shadowMap: RenderTarget };
 }
 
 /** The builder `setup` needs: a shadow-enabled renderer and an empty material context. */
@@ -175,6 +194,7 @@ function levelDebugGraph(
   uv = [0.25, 0.75],
   options = {},
   reversedDepthBuffer = false,
+  capture?: (built: Set<Node>) => void,
 ) {
   vi.stubGlobal("location", { search });
   const { light } = world();
@@ -213,11 +233,34 @@ function levelDebugGraph(
     "vec4",
   );
   node.dispose();
+  capture?.((graphBuilder as unknown as { nodes: Set<Node> }).nodes);
   return {
     code: flow.code.replace(/virtualShadowReceiverSlope\d+/gu, "virtualShadowReceiverSlope"),
     nodes: (graphBuilder as unknown as { nodes: Set<Node> }).nodes.size,
   };
 }
+
+it("keeps every receiver uniform in the render group, where a settled static receiver still reads it", () => {
+  // The patched renderer skips object-group uploads for a settled static object, so a window
+  // centre, mapped flag or offset in that group froze at the value the receiver settled with.
+  let built = new Set<Node>();
+  levelDebugGraph("", undefined, undefined, undefined, (nodes) => {
+    built = nodes;
+  });
+  // Scalar and vector values the node writes from the CPU. Matrices are three's per-object inputs,
+  // which belong to the object and stay right when it settles.
+  const uniforms = [...built].filter((n) => {
+    const value = (n as { value?: unknown }).value;
+    return (
+      (n as { isUniformNode?: boolean }).isUniformNode === true &&
+      (typeof value === "number" ||
+        (value as { isVector2?: boolean } | null)?.isVector2 === true ||
+        (value as { isVector3?: boolean } | null)?.isVector3 === true)
+    );
+  });
+  expect(uniforms.length).toBeGreaterThan(0);
+  for (const node of uniforms) expect((node as { groupNode?: Node }).groupNode).toBe(renderGroup);
+});
 
 it("blends the fine shadow contribution continuously before its guard edge", () => {
   const flow = levelDebugGraph("").code;
@@ -593,6 +636,45 @@ describe("VirtualShadowNode", () => {
     expect(flow.code).not.toMatch(/vec4<f32>[^\n]*\*\s*vec4<f32>/u);
     expect(flow.code).toContain("0.35");
     expect(flow.code).toContain("vec4<f32>( 1.0, 1.0, 1.0, 1.0 )");
+  });
+
+  it("should register every level target as three creates it, so a first render destroys no bound depth map", () => {
+    // three's own texture manager, on a backend that records what it destroys. three re-versions a
+    // target's depth texture on the target's first registration; when a bind group built during the
+    // material build already holds that texture, the re-version destroys it and every later submit
+    // through that bind group is `Destroyed texture [Texture "ShadowDepthTexture"] used in a submit`.
+    const destroyed: string[] = [];
+    const backend = {
+      createDefaultTexture: () => undefined,
+      createTexture: () => undefined,
+      destroyTexture: (texture: { name: string }) => destroyed.push(texture.name),
+      generateMipmaps: () => undefined,
+      get: () => ({}),
+      updateTexture: () => undefined,
+    };
+    const info = {
+      createTexture: () => undefined,
+      destroyTexture: () => undefined,
+      memory: { renderTargets: 0 },
+    };
+    const textures = new Textures({}, backend, info) as IThreeTextures;
+    const { light } = world();
+    const node = new VirtualShadowNode(light, { clipExtents: [8, 32], mapSize: 64, marker: false });
+    node.setup(builder);
+    const targetBuilder = {
+      createRenderTarget: (width: number, height: number) => new RenderTarget(width, height),
+      renderer: { _textures: textures, reversedDepthBuffer: false },
+    };
+    const stockNodes = [...node.levelNodes, ...node.moverNodes] as unknown as IStockShadowTarget[];
+    expect(stockNodes).toHaveLength(4);
+    for (const stock of stockNodes) {
+      // The order a frame runs in: the material build creates the target, the main pass binds its
+      // depth texture, and only then does the level's first shadow render register the target.
+      const { depthTexture, shadowMap } = stock.setupRenderTarget(stock.shadow, targetBuilder);
+      textures.updateTexture(depthTexture);
+      textures.updateRenderTarget(shadowMap);
+    }
+    expect(destroyed).toEqual([]);
   });
 
   it.each(["receiver", "heightfield"] as const)(

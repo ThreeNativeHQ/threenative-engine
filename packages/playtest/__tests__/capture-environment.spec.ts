@@ -1,4 +1,15 @@
-import { expect, test } from "vitest";
+import * as childProcess from "node:child_process";
+import * as fs from "node:fs";
+import { expect, test, vi } from "vitest";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof fs>();
+  return { ...actual, existsSync: vi.fn(actual.existsSync) };
+});
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof childProcess>();
+  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
 
 import {
   childEnvForDisplay,
@@ -37,14 +48,62 @@ test("TN_PLAYTEST_HOST_DISPLAY opts a run back onto the live X display", () => {
   ).toEqual({ kind: "existing", display: ":99" });
 });
 
-test("asking for the host display when it is unusable still falls to a private Xvfb, never blind", () => {
-  expect(
+test("an unusable explicitly requested host display fails instead of changing the measured display", () => {
+  expect(() =>
     decideDisplayStrategy({
       displaySocketExists: () => false,
       env: { DISPLAY: ":7", TN_PLAYTEST_HOST_DISPLAY: "1" },
       platform: "linux",
     }),
-  ).toMatchObject({ kind: "private-xvfb" });
+  ).toThrow(/TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE.*:7/);
+});
+
+test.each([undefined, ""])("an explicit host request with DISPLAY=%s fails by name", (display) => {
+  expect(() => decideDisplayStrategy({
+    env: { DISPLAY: display, TN_PLAYTEST_HOST_DISPLAY: "true" },
+    platform: "linux",
+  })).toThrow(/TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE.*DISPLAY/);
+});
+
+test.each([
+  { socketPresent: false, connectionStatus: 0, available: true },
+  { socketPresent: true, connectionStatus: 1, available: false },
+])("host availability follows the X connection, including abstract sockets: %o", (input) => {
+  const socket = vi.spyOn(fs, "existsSync").mockReturnValue(input.socketPresent);
+  const probe = vi.spyOn(childProcess, "spawnSync").mockReturnValue({
+    status: input.connectionStatus,
+    signal: null,
+    pid: 42,
+    output: [],
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.alloc(0),
+  });
+  const env = { DISPLAY: ":0", TN_PLAYTEST_HOST_DISPLAY: "1", XAUTHORITY: "/session/authority" };
+  try {
+    const decide = () => decideDisplayStrategy({ env, platform: "linux" });
+    if (input.available) expect(decide()).toEqual({ kind: "existing", display: ":0" });
+    else expect(decide).toThrow(/TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE.*:0/);
+    expect(probe).toHaveBeenCalledWith("xdpyinfo", ["-display", ":0"], expect.objectContaining({
+      env,
+      stdio: "ignore",
+      timeout: expect.any(Number),
+    }));
+  } finally {
+    probe.mockRestore();
+    socket.mockRestore();
+  }
+});
+
+test("a failed explicit host request never launches a substitute Xvfb", async () => {
+  const spawnProcess = vi.fn();
+  await expect(provideDisplay({
+    commandExists: () => false,
+    displaySocketExists: () => false,
+    env: { DISPLAY: ":7", TN_PLAYTEST_HOST_DISPLAY: "1" },
+    platform: "linux",
+    spawnProcess: spawnProcess as unknown as typeof childProcess.spawn,
+  })).rejects.toThrow(/TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE.*:7/);
+  expect(spawnProcess).not.toHaveBeenCalled();
 });
 
 test("a DISPLAY whose socket is gone is treated as unusable, not trusted", () => {

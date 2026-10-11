@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import type { IPlaytestScenario } from "../index.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
@@ -54,11 +54,9 @@ export const HOST_DISPLAY_ENV = "TN_PLAYTEST_HOST_DISPLAY";
 /** Wayland variables that make Chromium pick the wrong windowing system; stripped from the browser child. */
 export const STRIPPED_WAYLAND_VARS = ["WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XDG_SESSION_TYPE"] as const;
 
-const X11_SOCKET_DIR = "/tmp/.X11-unix";
-
 export interface IDisplayDecisionInput {
   env: NodeJS.ProcessEnv;
-  /** Defaults to checking `/tmp/.X11-unix/X<n>` for the numbered display. */
+  /** Availability override. By default, xdpyinfo verifies an authenticated X connection. */
   displaySocketExists?: (display: string) => boolean;
   platform: string;
 }
@@ -66,8 +64,8 @@ export interface IDisplayDecisionInput {
 /**
  * Decide where the browser's pixels come from. On Linux that is a private Xvfb unless the
  * caller asked for the session's display with `TN_PLAYTEST_HOST_DISPLAY`, and even then only
- * when that display is actually live — a Wayland session never satisfies a run by itself,
- * which is the hang measured at 120 s versus 175 ms.
+ * when an X connection succeeds. An explicit host request fails rather than silently changing
+ * the display being measured. A Wayland session never satisfies a run by itself.
  */
 export function decideDisplayStrategy(input: IDisplayDecisionInput): IDisplayStrategy {
   if (input.platform !== "linux") return { kind: "host" };
@@ -77,10 +75,14 @@ export function decideDisplayStrategy(input: IDisplayDecisionInput): IDisplayStr
   };
   if (!hostDisplayRequested(input.env)) return privateXvfb;
   const display = input.env.DISPLAY;
-  if (display !== undefined && display.length > 0 && (input.displaySocketExists ?? x11SocketExists)(display)) {
-    return { display, kind: "existing" };
+  if (display === undefined || display.length === 0) {
+    throw new Error("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE: the requested host display requires DISPLAY.");
   }
-  return privateXvfb;
+  const available = input.displaySocketExists?.(display) ?? x11DisplayIsUsable(display, input.env);
+  if (!available) {
+    throw new Error(`TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE: cannot connect to requested DISPLAY=${display}. Refusing to substitute a private Xvfb.`);
+  }
+  return { display, kind: "existing" };
 }
 
 /** Did the caller explicitly ask to paint on the session's own display? */
@@ -89,14 +91,14 @@ export function hostDisplayRequested(env: NodeJS.ProcessEnv): boolean {
   return value === "1" || value?.toLowerCase() === "true";
 }
 
-function x11SocketExists(display: string): boolean {
-  const number = displayNumber(display);
-  return number === undefined ? false : existsSync(join(X11_SOCKET_DIR, `X${number}`));
-}
-
-function displayNumber(display: string): number | undefined {
-  const parsed = Number.parseInt(display.replace(/^:/u, ""), 10);
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+function x11DisplayIsUsable(display: string, env: NodeJS.ProcessEnv): boolean {
+  // Xwayland can listen only on an abstract Unix socket. A filesystem path proves neither
+  // availability nor authorization; ask an X client using the browser's session credentials.
+  const probe = spawnSync("xdpyinfo", ["-display", display], { env, stdio: "ignore", timeout: 2000 });
+  if (probe.error) {
+    throw new Error(`TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE: cannot verify DISPLAY=${display}: xdpyinfo ${probe.error.message}.`);
+  }
+  return probe.status === 0;
 }
 
 /**
@@ -147,8 +149,8 @@ export interface IProvidedDisplay {
 
 /**
  * Provide a display for this run according to `decideDisplayStrategy`, spawning a private
- * Xvfb when Linux offers no usable X display. Throws — never falls back — when a pixel run
- * cannot be given one.
+ * Xvfb by default on Linux. An explicitly requested host display must be usable; otherwise
+ * the request fails before any substitute display or browser is launched.
  */
 export async function provideDisplay(options: IProvideDisplayOptions = {}): Promise<IProvidedDisplay> {
   const env = options.env ?? process.env;

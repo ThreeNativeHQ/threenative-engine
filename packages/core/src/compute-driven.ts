@@ -17,6 +17,8 @@ export interface IComputeDriven {
    * existing behavior of consumers whose simulation is intentionally tied to presentation.
    */
   readonly processCadence?: "fixed" | "render";
+  /** Render admission needed to settle a startup hold, after initial compilation. */
+  readonly processDuringStartup?: boolean;
   /**
    * Dispatched once per fixed step, in scene-add order unless render cadence is declared.
    *
@@ -24,8 +26,11 @@ export interface IComputeDriven {
    * the view — a streamed world narrowing its instanced windows to what the frustum covers — can do
    * it from the driver that runs every frame rather than from a draw three will not submit. An
    * implementation that does not need it simply declares one parameter.
+   *
+   * `covered` is true while the startup cover hides the world and readiness is still pending, so
+   * a streamed world may spend more of the frame admitting the spawn it is waiting on.
    */
-  process(renderer: IRendererLike, camera?: Camera): void;
+  process(renderer: IRendererLike, camera?: Camera, covered?: boolean): void;
   detach(): void;
   readonly released: boolean;
 }
@@ -75,18 +80,24 @@ export class ComputeDrivenRegistry {
    * Dispatch render-cadence objects once with the frame's render camera; detached scene children are
    * released before dispatch.
    */
-  processRender(renderer: IRendererLike, camera?: Camera): void {
-    this.#process(renderer, "render", camera);
+  processRender(renderer: IRendererLike, camera?: Camera, startupOnly = false): void {
+    this.#process(renderer, "render", camera, startupOnly);
   }
 
-  #process(renderer: IRendererLike, cadence: "fixed" | "render", camera?: Camera): void {
+  #process(
+    renderer: IRendererLike,
+    cadence: "fixed" | "render",
+    camera?: Camera,
+    startupOnly = false,
+  ): void {
     for (const entry of [...this.#entries.values()]) {
       if (entry.driven.released || entry.object.parent === null) {
         this.remove(entry.driven);
         continue;
       }
       if ((entry.driven.processCadence ?? "fixed") !== cadence) continue;
-      entry.driven.process(renderer, camera);
+      if (startupOnly && entry.driven.processDuringStartup !== true) continue;
+      entry.driven.process(renderer, camera, startupOnly);
     }
   }
 

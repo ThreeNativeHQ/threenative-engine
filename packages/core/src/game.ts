@@ -58,6 +58,11 @@ import {
   sceneWarning,
 } from "./profiling/scene-warning.js";
 import { installSpanProbes } from "./profiling/span-probes.js";
+import {
+  UNLIT_FOLIAGE_FIX,
+  formatUnlitFoliageWarning,
+  unlitFoliageWarning,
+} from "./profiling/unlit-foliage-warning.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
 import { RenderCameraCull } from "./render-camera-cull.js";
@@ -888,6 +893,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#scene !== scene) return false;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
+    // Cutout PBR with no image-based light renders as cardboard, and the compensating tint the
+    // author reaches for is invisible in a screenshot review. Once per scene entry, right after
+    // `enter()`: `load()` and `enter()` are where the game builds its meshes and sets its own
+    // environment, so an earlier read would be a census of an empty scene and a later one would be
+    // a census of a scene the author already fixed.
+    const unlit = unlitFoliageWarning(ctx.scene);
+    if (unlit !== undefined)
+      console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
     return true;
   }
 
@@ -1160,8 +1173,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
      * device, with the only account of either on a terminal the player does not have.
      */
     const stopStallWatch = watchStartupStall({
-      pending: () => assets.progress.pending,
+      pending: () => [...assets.progress.pending, ...startupReadiness.pendingHolds],
       progress: () => this.#ctx?.startup.progress ?? 0,
+      workProgress: () => assets.progress.settled + startupReadiness.workProgress,
       stallMs: STARTUP_STALL_MS,
     });
     watchDeviceLoss(
@@ -1193,6 +1207,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       // than on five in-budget frames, so a fast 300-frame run finishes before the world is shown
       // and captures the loading state. The native screenshot path waits on this flag.
       (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
+      // Again at ready: a world that streams its foliage in under `startup.hold` has none at entry.
+      const unlit = unlitFoliageWarning(threeScene);
+      if (unlit !== undefined)
+        console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
     });
     const warmUp = async (marker: string, budgetMs: number, stamp: boolean): Promise<void> => {
       if (this.#aborted || this.#renderer === undefined) return;
@@ -1345,8 +1363,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           reportedProgress = Math.max(reportedProgress, measuredProgress());
           return reportedProgress;
         },
-        hold: (label, work, budgetMs) => {
-          startupReadiness.hold(label, work, budgetMs);
+        hold: (label, work, budgetMs, progress) => {
+          startupReadiness.hold(label, work, budgetMs, progress);
         },
         get timeline() {
           return { ...timeline };
@@ -1401,11 +1419,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 ? undefined
                 : RESOLUTION_SCALER.startScaleByGpuClass[renderer.gpuClass.class],
             targetFps: initialTarget.targetFps,
-            // The renderer publishes no active-stage list, so this reads the one core-owned seam
-            // that is set exactly while the installed chain runs a stage consuming temporal
-            // motion data: while that is true the floor is lifted, and the deep rungs — the ones
-            // only a reconstruction can pay for — are reachable.
-            temporalUpscale: () => renderer.renderChainUsesPerObjectVelocity?.() === true,
+            // No floor lift from motion data: consuming velocity is not upscaling. Three's TRAA
+            // accumulates at the canvas's own size, so lifting the floor for it let a forest frame
+            // fall to 0.23 (442x248 on a 1920x1080 canvas). Only a stage that reconstructs a
+            // display-resolution frame may pass `temporalUpscale`, and none ships today.
           })
         : undefined;
     // A class that starts below the ceiling must draw there from the first frame; the scaler only
@@ -1639,20 +1656,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               : undefined,
           );
         }
-        // Render-cadence compute is first-use work too: keep it behind an opaque startup layer
-        // until readiness settles, or a particle process dispatch compiles in the loader frame.
-        //
-        // It is charged to the render phase, because it is render-path work and a bake hidden in
-        // `residual` leaves the frame budget unable to enforce its per-frame limit. It cannot be
-        // called from inside the render block below to get that attribution, though: that block
-        // runs on `!opaque || !ready`, which is exactly the window this dispatch has to stay out
-        // of. Moving the call in there dispatched on every loader frame and never once after
-        // readiness — the inverse of the rule — so it stays here and adds its own render time.
+        // Ordinary render compute waits for startup readiness. Streaming explicitly opts in
+        // after compilation so a spawn hold can finish behind the curtain. Present the loader
+        // first; charge this admission to the same render phase as normal render compute.
         if (
           this.#renderer !== undefined &&
           this.#sceneEntered &&
           !explicitWarmUpPending &&
-          (!startupCoverActive() || startupReadiness.ready)
+          !mustPresentLoader &&
+          (!startupCoverActive() || startupReadiness.compileSettled)
         ) {
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
           beginSpan(SPANS.compute);
@@ -1660,7 +1672,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // The render camera comes with it, because a render-cadence consumer that culls by the
             // view — a streamed world's main batches — has to be driven from here and not from a draw
             // three skips for a mesh that is hidden because it has nothing to draw.
-            this.#computeDriven.processRender(this.#renderer, camera);
+            this.#computeDriven.processRender(
+              this.#renderer,
+              camera,
+              startupCoverActive() && !startupReadiness.ready,
+            );
           } finally {
             endSpan(SPANS.compute);
           }
@@ -1673,7 +1689,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
-          (!canvasLayer.opaque || !startupReadiness.ready)
+          (!canvasLayer.opaque ||
+            (!startupReadiness.ready && canvasLayer.renderWorldDuringStartup) ||
+            canvasLayer.keepWorldRendering)
         ) {
           // The projection's own scene when it is faithful, the game's when it is not. Nothing
           // here branches on which: `root` is the single render input either way, so there is no
@@ -2196,6 +2214,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const failures: unknown[] = [];
     this.#disconnectUi();
     this.#loop?.stop();
+    this.#frameBudget?.dispose();
     this.#afterPhysicsPhase?.clear();
     this.#beforeRenderCallbacks.clear();
     if (this.#sceneEntered && ctx !== undefined) {

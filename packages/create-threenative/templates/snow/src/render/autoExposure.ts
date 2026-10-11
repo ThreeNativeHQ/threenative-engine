@@ -25,7 +25,11 @@ import {
   type Decode,
   type Meter,
   adaptExposure,
+  exposureBins,
   exposureTarget,
+  exposureTiles,
+  histogramExposure,
+  histogramTiles,
   reduceExposure,
 } from "./exposureGraph.js";
 import { ExposureReadback } from "./exposureReadback.js";
@@ -46,6 +50,7 @@ export class AutoExposureNode extends TempNode<"float"> {
   readonly #size = new Vector2();
   readonly #sourceSize = uniform(new Vector2(1, 1));
   readonly #reduceSize = uniform(new Vector2(1, 1));
+  readonly #blockSize = uniform(new Vector2(1, 1));
   readonly #delta = uniform(0);
   readonly #resetMode = uniform(1); // 0 = history, 1 = seed, 2 = next measured target
   readonly #seed = uniform(0);
@@ -53,11 +58,16 @@ export class AutoExposureNode extends TempNode<"float"> {
   readonly #quad = new QuadMesh();
   readonly #meterMaterial = new NodeMaterial();
   readonly #reduceMaterial = new NodeMaterial();
+  readonly #tilesMaterial = new NodeMaterial();
+  readonly #histogramMaterial = new NodeMaterial();
   readonly #adaptMaterial = new NodeMaterial();
+  readonly #tilesTarget = exposureTarget();
+  readonly #histogramTarget = exposureTarget();
   #readTarget = exposureTarget();
   #writeTarget = exposureTarget();
   #levels: RenderTarget[] = [];
   readonly #reduced = texture(new Texture());
+  readonly #blocks = texture(new Texture());
   readonly #previous = texture(this.#readTarget.texture);
   readonly #result = texture(this.#writeTarget.texture);
   #disposed = false;
@@ -86,8 +96,12 @@ export class AutoExposureNode extends TempNode<"float"> {
     this.updateBeforeType = NodeUpdateType.FRAME;
     this.#meterMaterial.fragmentNode = reduceExposure(input, this.#sourceSize, meter);
     this.#reduceMaterial.fragmentNode = reduceExposure(this.#reduced, this.#reduceSize);
+    this.#tilesTarget.setSize(exposureBins, exposureTiles);
+    this.#histogramTarget.setSize(exposureBins, 1);
+    this.#tilesMaterial.fragmentNode = histogramTiles(this.#blocks, this.#blockSize, policy);
+    this.#histogramMaterial.fragmentNode = histogramExposure(texture(this.#tilesTarget.texture));
     this.#adaptMaterial.fragmentNode = adaptExposure(
-      this.#reduced,
+      texture(this.#histogramTarget.texture),
       this.#previous,
       this.#resetMode,
       this.#seed,
@@ -140,7 +154,8 @@ export class AutoExposureNode extends TempNode<"float"> {
     if (!Number.isFinite(frame.deltaTime) || frame.deltaTime < 0 || !Number.isFinite(frame.time))
       throw new Error("Exposure frame time must be finite and nonnegative.");
     renderer.getDrawingBufferSize(this.#size);
-    const sizes = exposureReductionSizes(this.#size.x, this.#size.y);
+    // Level 0 meters 4x4 pixels, level 1 averages 16x16. The histogram gathers level 1.
+    const sizes = exposureReductionSizes(this.#size.x, this.#size.y).slice(0, 2);
     this.#sourceSize.value.copy(this.#size);
     this.#delta.value = Math.min(frame.deltaTime, this.settings.maxDelta);
     while (this.#levels.length > sizes.length) this.#levels.pop()?.dispose();
@@ -164,7 +179,14 @@ export class AutoExposureNode extends TempNode<"float"> {
       }
       const final = this.#levels.at(-1);
       if (final === undefined) throw new Error("Exposure reduction is empty.");
-      this.#reduced.value = final.texture;
+      this.#blocks.value = final.texture;
+      this.#blockSize.value.set(final.width, final.height);
+      this.#quad.material = this.#tilesMaterial;
+      renderer.setRenderTarget(this.#tilesTarget);
+      this.#quad.render(renderer);
+      this.#quad.material = this.#histogramMaterial;
+      renderer.setRenderTarget(this.#histogramTarget);
+      this.#quad.render(renderer);
       const write = this.#writeTarget;
       this.#previous.value = this.#readTarget.texture;
       this.#quad.material = this.#adaptMaterial;
@@ -184,10 +206,19 @@ export class AutoExposureNode extends TempNode<"float"> {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#observation.dispose();
-    for (const level of [...this.#levels, this.#readTarget, this.#writeTarget]) level.dispose();
+    for (const level of [
+      ...this.#levels,
+      this.#tilesTarget,
+      this.#histogramTarget,
+      this.#readTarget,
+      this.#writeTarget,
+    ])
+      level.dispose();
     this.#levels = [];
     this.#meterMaterial.dispose();
     this.#reduceMaterial.dispose();
+    this.#tilesMaterial.dispose();
+    this.#histogramMaterial.dispose();
     this.#adaptMaterial.dispose();
     super.dispose();
   }

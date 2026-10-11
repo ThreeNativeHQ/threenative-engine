@@ -44,6 +44,24 @@ const countingYield = (): { calls: () => number; yieldFrame: () => Promise<void>
   };
 };
 
+/**
+ * A clock the test drives by hand, so "this slice ran long" is an observation rather than a timer.
+ *
+ * `addInSlices` reads `globalThis.performance.now()` where it slices, which is the same call the
+ * browser makes; replacing the reading is all it takes to put a 5 ms object in front of an 8 ms
+ * budget without waiting 8 ms of wall clock to find out.
+ */
+const fakeClock = (): { advance: (ms: number) => void; restore: () => void } => {
+  let ms = 0;
+  const spy = vi.spyOn(globalThis.performance, "now").mockImplementation(() => ms);
+  return {
+    advance: (by) => {
+      ms += by;
+    },
+    restore: () => spy.mockRestore(),
+  };
+};
+
 describe("addInSlices", () => {
   test("adds every object, in order, and reports what it did", async () => {
     const added: number[] = [];
@@ -87,14 +105,83 @@ describe("addInSlices", () => {
     expect(report.added).toBe(3);
   });
 
-  test("the default slice is 256, and the report says so rather than leaving it implied", async () => {
-    const report = await addInSlices([1], () => undefined, {
-      marker: false,
-      yieldFrame: () => Promise.resolve(),
-    });
+  test("with no slice size the run is time-budgeted, and the report says so", async () => {
+    const clock = fakeClock();
+    try {
+      const report = await addInSlices([1], () => undefined, {
+        marker: false,
+        yieldFrame: () => Promise.resolve(),
+      });
 
-    expect(report.sliceSize).toBe(256);
-    expect(report.sliceSizeOverridden).toBe(false);
+      expect(report.sliceSizeOverridden).toBe(false);
+      expect(report.sliceBudgetMs).toBe(8);
+    } finally {
+      clock.restore();
+    }
+  });
+
+  test("a count of 256 is not paid for by objects that cost nothing", async () => {
+    const clock = fakeClock();
+    const { calls, yieldFrame } = countingYield();
+    try {
+      // A thousand cheap objects: the count-based default cut this into four presents, which is a
+      // frame each for work that costs microseconds. Nothing here advances the clock, so the whole
+      // run fits in one budget and the loop must present once, at the end.
+      const report = await addInSlices(
+        Array.from({ length: 1000 }, (_unused, index) => index),
+        () => undefined,
+        { marker: false, yieldFrame },
+      );
+
+      expect(report.added).toBe(1000);
+      expect(report.slices).toBe(1);
+      expect(calls()).toBe(0);
+      // Measured, not assumed: one slice for a thousand objects is what a caller reads back.
+      expect(report.sliceSize).toBe(1000);
+    } finally {
+      clock.restore();
+    }
+  });
+
+  test("an expensive object cuts the slice at the budget rather than at a count", async () => {
+    const clock = fakeClock();
+    const { calls, yieldFrame } = countingYield();
+    try {
+      // 5 ms per object against an 8 ms budget: a slice is two objects, so twelve objects are six
+      // slices and five presents — the last object still ends the run without a sixth.
+      const report = await addInSlices(
+        Array.from({ length: 12 }, (_unused, index) => index),
+        () => clock.advance(5),
+        { marker: false, yieldFrame },
+      );
+
+      expect(report.slices).toBe(6);
+      expect(calls()).toBe(5);
+      expect(report.sliceSize).toBe(2);
+    } finally {
+      clock.restore();
+    }
+  });
+
+  test("a slice size the game gave stays a count, even when the objects are expensive", async () => {
+    const clock = fakeClock();
+    const { calls, yieldFrame } = countingYield();
+    try {
+      // Three objects at 5 ms each is 15 ms, well past the budget: if the time mode leaked in, the
+      // slices would be six of two objects instead of four of three.
+      const report = await addInSlices(
+        Array.from({ length: 12 }, (_unused, index) => index),
+        () => clock.advance(5),
+        { marker: false, sliceSize: 3, yieldFrame },
+      );
+
+      expect(report.slices).toBe(4);
+      expect(calls()).toBe(3);
+      expect(report.sliceSize).toBe(3);
+      expect(report.sliceBudgetMs).toBeUndefined();
+    } finally {
+      clock.restore();
+    }
   });
 
   test("an overridden slice is reported as overridden", async () => {
@@ -188,6 +275,15 @@ describe("addInSlices", () => {
       // slow for the wrong reason can be read off a log without a rebuild.
       expect(line).toContain("sliceSize=1");
       expect(line).toContain("overridden=true");
+      expect(line).toContain("budgetMs=none");
+
+      info.mockClear();
+      await addInSlices([1], () => undefined, { yieldFrame: () => Promise.resolve() });
+      const budgeted = info.mock.calls
+        .map((call) => String(call[0]))
+        .find((c) => c.includes("TN_ADD_SLICES"));
+      expect(budgeted).toContain("budgetMs=8");
+      expect(budgeted).toContain("overridden=false");
     } finally {
       info.mockRestore();
     }
@@ -392,5 +488,43 @@ describe("loadAll", () => {
     // Two lanes, two items each: every item yields after settling, which is what stops a
     // full-width fan-out from freezing the loading screen it is supposed to be filling.
     expect(calls()).toBe(4);
+  });
+});
+
+describe("addInSlices yield", () => {
+  // A nested setTimeout(0) is clamped to 4 ms in Chrome (measured 4.56 ms against 0.009 ms for
+  // scheduler.yield), and the native host's timer queue is frame-coupled. Both hosts provide
+  // scheduler.yield, so the slice yield must take it whenever it exists.
+  test("yields through scheduler.yield when the host provides it", async () => {
+    const scope = globalThis as { scheduler?: unknown };
+    const previous = scope.scheduler;
+    const yieldSpy = vi.fn(() => Promise.resolve());
+    const timeout = vi.spyOn(globalThis, "setTimeout");
+    scope.scheduler = { yield: yieldSpy };
+    try {
+      const added: number[] = [];
+      await addInSlices([1, 2, 3], (n) => added.push(n), { sliceSize: 1 });
+      expect(added).toEqual([1, 2, 3]);
+      expect(yieldSpy).toHaveBeenCalled();
+      expect(timeout).not.toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+      if (previous === undefined) Reflect.deleteProperty(scope, "scheduler");
+      else scope.scheduler = previous;
+    }
+  });
+
+  test("falls back to setTimeout where no scheduler.yield exists", async () => {
+    const scope = globalThis as { scheduler?: unknown };
+    const previous = scope.scheduler;
+    Reflect.deleteProperty(scope, "scheduler");
+    const timeout = vi.spyOn(globalThis, "setTimeout");
+    try {
+      await addInSlices([1, 2], () => {}, { sliceSize: 1 });
+      expect(timeout).toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+      if (previous !== undefined) scope.scheduler = previous;
+    }
   });
 });

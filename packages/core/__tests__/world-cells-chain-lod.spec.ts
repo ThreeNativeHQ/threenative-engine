@@ -452,51 +452,110 @@ afterEach(() => {
 });
 
 describe("WorldCells with a baked AutoLOD chain and no authored lods", () => {
-  it("draws the chain's levels at the distances their errors project to", async () => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    const model = await chainedModel(REGISTERED_PIXEL_ERROR);
-    const chain = lodChainOf((model.children[0] as Mesh).geometry);
-    stubManifestFetch(withoutAuthoredLods());
+  it.each([{ lods: undefined }, { lods: [] }] as const)(
+    "draws compatible baked levels with authored metadata %j",
+    async ({ lods }) => {
+      vi.spyOn(console, "info").mockImplementation(() => undefined);
+      const model = await chainedModel(REGISTERED_PIXEL_ERROR);
+      const chain = lodChainOf((model.children[0] as Mesh).geometry);
+      const source = withoutAuthoredLods();
+      stubManifestFetch({
+        ...source,
+        assets: {
+          ...source.assets,
+          pine: {
+            ...(source.assets.pine as NonNullable<IWorldPackage["assets"][string]>),
+            ...(lods === undefined ? {} : { lods }),
+          },
+        },
+      });
 
-    const follow = { position: { x: -64, z: -64 } };
-    const world = await loadWorld({
-      budgets,
-      follow,
-      loadModel: chainLoader(model),
-      ring: 0,
-      surface,
-      url: "/world/world.json",
-    });
-    world.update();
-    await flushed(world);
+      const follow = { position: { x: -64, z: -64 } };
+      const world = await loadWorld({
+        budgets,
+        follow,
+        loadModel: chainLoader(model),
+        ring: 0,
+        surface,
+        url: "/world/world.json",
+      });
+      world.update();
+      await flushed(world);
 
-    // The asset is now drawn at three levels, switched at
-    // `error * pixelsPerUnit / autoLod.maxPixelError` — the world's 4 px budget, not the 1 px the
-    // chain was registered with — level 0 leading at 0. Triangles fall 16 -> 8 -> 4, the reduction
-    // the whole line is about.
-    expect(markers()).toEqual([
-      `TN_WORLD_LOD_CHAIN pine: levels=3 distances=0.0,${SWITCH[0]?.toFixed(1)},${SWITCH[1]?.toFixed(1)} tris=16,8,4`,
-    ]);
-    expect(chain?.levels.length).toBe(3);
+      // The asset is now drawn at three levels, switched at
+      // `error * pixelsPerUnit / autoLod.maxPixelError` — the world's 4 px budget, not the 1 px the
+      // chain was registered with — level 0 leading at 0. Triangles fall 16 -> 8 -> 4, the reduction
+      // the whole line is about.
+      expect(markers()).toEqual([
+        `TN_WORLD_LOD_CHAIN pine: levels=3 distances=0.0,${SWITCH[0]?.toFixed(1)},${SWITCH[1]?.toFixed(1)} tris=16,8,4`,
+      ]);
+      expect(chain?.levels.length).toBe(3);
 
-    // Every level is an ordinary one: its own batch key, holding the chain's own geometry, and the
-    // placements split across them at the reported distances. The follow point is on cell (1,1)'s
-    // corner, so the run reaches 83 m — past both switches.
-    const levels = [0, 1, 2].map((level) => levelMesh(world, "pine", level) as InstancedMesh);
-    for (const [level, mesh] of levels.entries()) expect(mesh.geometry).toBe(chain?.levels[level]);
-    expect(levels.reduce((sum, mesh) => sum + liveCount(mesh), 0)).toBe(85);
-    for (const [level, mesh] of levels.entries()) {
-      const lower = level === 0 ? 0 : (SWITCH[level - 1] as number);
-      // `SWITCH` is one shorter than the levels: nothing bounds the last one's far side.
-      const upper = SWITCH[level];
-      for (const distance of drawnDistances(mesh, follow.position)) {
-        expect(distance).toBeGreaterThan(lower);
-        if (upper !== undefined) expect(distance).toBeLessThanOrEqual(upper);
+      // Every level is an ordinary one: its own batch key, holding the chain's own geometry, and the
+      // placements split across them at the reported distances. The follow point is on cell (1,1)'s
+      // corner, so the run reaches 83 m — past both switches.
+      const levels = [0, 1, 2].map((level) => levelMesh(world, "pine", level) as InstancedMesh);
+      for (const [level, mesh] of levels.entries())
+        expect(mesh.geometry).toBe(chain?.levels[level]);
+      expect(levels.reduce((sum, mesh) => sum + liveCount(mesh), 0)).toBe(85);
+      for (const [level, mesh] of levels.entries()) {
+        const lower = level === 0 ? 0 : (SWITCH[level - 1] as number);
+        // `SWITCH` is one shorter than the levels: nothing bounds the last one's far side.
+        const upper = SWITCH[level];
+        for (const distance of drawnDistances(mesh, follow.position)) {
+          expect(distance).toBeGreaterThan(lower);
+          if (upper !== undefined) expect(distance).toBeLessThanOrEqual(upper);
+        }
       }
-    }
-    expect(world.stats().failures).toBe(0);
-    world.dispose();
-  });
+      expect(world.stats().failures).toBe(0);
+      world.dispose();
+    },
+  );
+
+  it.each(["section", "attributes", "wind", "alpha"] as const)(
+    "retains prepared source detail for incompatible empty-LOD %s",
+    async (reason) => {
+      vi.spyOn(console, "info").mockImplementation(() => undefined);
+      const model = await chainedModel(REGISTERED_PIXEL_ERROR);
+      const mesh = model.children[0] as Mesh;
+      if (reason === "section") mesh.geometry.setDrawRange(0, 12);
+      if (reason === "attributes")
+        mesh.geometry.setAttribute("inner", new BufferAttribute(new Float32Array(12), 1));
+      if (reason === "wind") Reflect.set(mesh.material, "positionNode", {});
+      if (reason === "alpha") (mesh.material as MeshBasicMaterial).alphaTest = 0.5;
+      const source = withoutAuthoredLods();
+      stubManifestFetch({
+        ...source,
+        assets: {
+          ...source.assets,
+          pine: {
+            ...(source.assets.pine as NonNullable<IWorldPackage["assets"][string]>),
+            lods: [],
+          },
+        },
+      });
+      const world = await loadWorld({
+        budgets,
+        follow: { position: { x: -64, z: -64 } },
+        loadModel: chainLoader(model),
+        ring: 0,
+        surface,
+        url: "/world/world.json",
+        preserveAuthoredParts: true,
+        adaptiveLod: false,
+      });
+      try {
+        world.update();
+        await flushed(world);
+        expect(markers()).toEqual([]);
+        expect(levelMesh(world, "pine", 1)).toBeUndefined();
+        expect(levelMesh(world, "pine", 0)?.geometry).toBe(mesh.geometry);
+        expect(world.stats().failures).toBe(0);
+      } finally {
+        world.dispose();
+      }
+    },
+  );
 
   it("keeps every level of the deepest part's chain when a sibling's chain is shallower", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
