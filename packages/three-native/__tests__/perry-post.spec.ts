@@ -118,6 +118,51 @@ it("reads a multi-lane field in one bulk copy, as a plain array", () => {
   expect(physicsCopy.mock.calls[1]?.[0]).toBe(physicsCopy.mock.calls[0]?.[0]);
   expect(elements).toEqual(Array.from(heap.subarray(2, 18)));
 });
+it("writes a returned ref back as the same handle, with or without its cached fields", () => {
+  const values = new Map<number, number>();
+  let next = 64;
+  const handles: number[][] = [];
+  const transport = {
+    layout: (f: number) => [8, 12, 56, 32, 32, 40, 48, 64][f],
+    alloc: (bytes: number) => {
+      const at = next;
+      next += bytes;
+      return at;
+    },
+    free: vi.fn(),
+    memory: (kind: number, at: number, value: number) => {
+      if (kind >= 16) values.set(at, value);
+      return values.get(at) ?? 0;
+    },
+    stringBytes: (text: string) => text.length,
+    writeString: () => 0,
+    call: (op: number, ...args: number[]) => {
+      const out = args[4] as number;
+      if (op === 5) [3, 1, 7, 9].forEach((v, i) => values.set(out + [0, 2, 4, 8][i]!, v));
+      if (op === 6) handles.push([0, 2, 4, 8].map((o) => values.get(args[0]! + o) ?? -1));
+      return 0;
+    },
+  };
+  const source = readFileSync(new URL("../src/perry-transport.ts", import.meta.url), "utf8")
+    .replace(/import\s*\{([^}]+)\}\s*from "tn-native-transport";/u, "const {$1} = native;")
+    .replace("alloc as malloc", "alloc: malloc");
+  const sandbox = { native: transport, exports: {} as { createPerryRuntime(): IPerryRuntime } };
+  runInNewContext(
+    transpileModule(source, {
+      compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
+    }).outputText,
+    sandbox,
+  );
+  const runtime = sandbox.exports.createPerryRuntime();
+  const ref = runtime.construct("Mesh", []);
+  expect(ref).toMatchObject({ type: 3, key: "3:1:7:9" });
+  runtime.invoke(ref, "updateMatrix", []);
+  runtime.invoke({ type: 3, key: "3:2:5:6" }, "updateMatrix", []);
+  expect(handles).toEqual([
+    [3, 1, 7, 9],
+    [3, 2, 5, 6],
+  ]);
+});
 vi.mock("../src/perry-transport.js", () => ({ createPerryRuntime: () => native }));
 vi.mock("tn-native-transport", () => ({
   playerRenderInfo: (field: number) => (field === 0 ? 3 : 36),

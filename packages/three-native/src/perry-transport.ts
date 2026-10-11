@@ -17,6 +17,10 @@ import {
 import type { EngineValue, IBrowserRuntime, IEngineRef, TypedArray } from "./browser-backend.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 
+interface IPerryRef extends IEngineRef {
+  readonly fields: readonly number[];
+}
+
 /** All sizes/offsets come from sizeof/offsetof in tn_abi.h, compiled for this target. */
 export interface IPerryRuntime extends IBrowserRuntime {
   loadAsset(kind: number, source: string | Uint8Array, type?: number): IEngineRef[];
@@ -64,7 +68,8 @@ export function createPerryRuntime(): IPerryRuntime {
     try {
       return work();
     } finally {
-      for (const at of allocations.splice(mark)) free(at);
+      // pop, not for...of splice(): Perry iterates a spliced array through the generic iterator protocol.
+      while (allocations.length > mark) free(allocations.pop() as number);
     }
   };
   const string = (text: string) => {
@@ -81,12 +86,13 @@ export function createPerryRuntime(): IPerryRuntime {
     call(10, diag);
     throw new Error(`TN_ABI_${status}: ${what}${message ? `: ${message}` : ""}`);
   };
-  const keyOf = (at: number): IEngineRef => {
-    const type = read(at, 1);
-    return { type, key: `${type}:${read(at + 2, 1)}:${read(at + 4)}:${read(at + 8)}` };
+  // Refs keep their numeric fields so a hot call writes a handle without parsing the key.
+  const keyOf = (at: number): IPerryRef => {
+    const fields = [read(at, 1), read(at + 2, 1), read(at + 4), read(at + 8)];
+    return { type: fields[0] as number, key: fields.join(":"), fields };
   };
   const writeHandle = (at: number, ref: IEngineRef) => {
-    const fields = ref.key.split(":").map(Number);
+    const fields = (ref as Partial<IPerryRef>).fields ?? ref.key.split(":").map(Number);
     write(at, fields[0] as number, 1);
     write(at + 2, fields[1] as number, 1);
     write(at + 4, fields[2] as number);
@@ -148,7 +154,7 @@ export function createPerryRuntime(): IPerryRuntime {
   };
   const values = (args: readonly EngineValue[]) => {
     const at = alloc(Math.max(valueSize, args.length * valueSize));
-    args.forEach((arg, i) => writeValue(at + i * valueSize, arg));
+    for (let i = 0; i < args.length; i++) writeValue(at + i * valueSize, args[i] as EngineValue);
     return at;
   };
   // One bulk copy into a reused scratch, not one memory() crossing per lane or a typed array per call.
@@ -171,7 +177,11 @@ export function createPerryRuntime(): IPerryRuntime {
     const data = pointer(at + numbersAt);
     const count = read(at + countAt, 3);
     if (kind === 5) return readNumbers(data, count);
-    if (kind === 6) return Array.from({ length: count }, (_, i) => readValue(data + i * valueSize));
+    if (kind === 6) {
+      const list = new Array<EngineValue>(count);
+      for (let i = 0; i < count; i++) list[i] = readValue(data + i * valueSize);
+      return list;
+    }
     if (kind === 7) {
       const record: Record<string, EngineValue> = {};
       for (let i = 0; i < count; i++) {
