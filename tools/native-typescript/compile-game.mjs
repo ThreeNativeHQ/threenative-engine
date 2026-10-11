@@ -258,6 +258,41 @@ export function bindHostGlobals(source, fileName) {
   return text;
 }
 
+/**
+ * Replaces Vite's `import.meta.env` with the production values a Vite build inlines (the VITE_*
+ * variables of this process) and `import.meta.hot` with undefined, so `import.meta.hot?.accept()`
+ * stays a no-op. Pinned Perry gives `import.meta` no such members, so a read throws at run time.
+ */
+// ponytail: process.env only; a .env file's VITE_* values are not read.
+export function bindImportMeta(source, fileName, env = process.env) {
+  if (!source.includes("import.meta")) return source;
+  const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const inlined = JSON.stringify({
+    BASE_URL: "/",
+    DEV: false,
+    MODE: "production",
+    PROD: true,
+    SSR: false,
+    ...Object.fromEntries(Object.entries(env).filter(([key]) => key.startsWith("VITE_"))),
+  });
+  const found = [];
+  const visit = (node) => {
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isMetaProperty(node.expression) &&
+      node.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
+      (node.name.text === "env" || node.name.text === "hot")
+    )
+      found.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  let text = source;
+  for (const node of found.reverse())
+    text = `${text.slice(0, node.getStart(file))}${node.name.text === "env" ? `(${inlined})` : "undefined"}${text.slice(node.end)}`;
+  return text;
+}
+
 function bindStagedHostGlobals(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, entry.name);
@@ -265,7 +300,7 @@ function bindStagedHostGlobals(dir) {
       if (entry.name !== "target" && entry.name !== PERRY_TRANSPORT) bindStagedHostGlobals(file);
     } else if (/\.(?:[cm]?[jt]s|tsx)$/u.test(entry.name) && !entry.name.startsWith("perry-host.")) {
       const source = fs.readFileSync(file, "utf8");
-      const bound = bindHostGlobals(source, file);
+      const bound = bindImportMeta(bindHostGlobals(source, file), file);
       if (bound !== source) fs.writeFileSync(file, bound);
     }
   }

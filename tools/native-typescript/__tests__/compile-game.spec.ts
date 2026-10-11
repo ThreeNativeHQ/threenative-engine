@@ -7,6 +7,7 @@ import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import {
   assertOutsideGameAndRepo,
   bindHostGlobals,
+  bindImportMeta,
   classifyPerryOutput,
   compareRuns,
   convertCheckScript,
@@ -161,6 +162,29 @@ describe("assertOutsideGameAndRepo", () => {
       /this checkout/u,
     );
     expect(() => assertOutsideGameAndRepo("/tmp/out", "/games/midway", "/repo")).not.toThrow();
+  });
+});
+
+describe("bindImportMeta", () => {
+  it("inlines import.meta.env the way a production Vite build does and drops import.meta.hot", () => {
+    const source = [
+      'const on = import.meta.env.VITE_FPS === "1";',
+      "const mode = import.meta.env.MODE;",
+      "import.meta.hot?.accept();",
+      "const here = import.meta.url;",
+    ].join("\n");
+    expect(bindImportMeta(source, "a.ts", { VITE_FPS: "1", HOME: "/root" })).toBe(
+      [
+        'const on = ({"BASE_URL":"/","DEV":false,"MODE":"production","PROD":true,"SSR":false,"VITE_FPS":"1"}).VITE_FPS === "1";',
+        'const mode = ({"BASE_URL":"/","DEV":false,"MODE":"production","PROD":true,"SSR":false,"VITE_FPS":"1"}).MODE;',
+        "undefined?.accept();",
+        "const here = import.meta.url;",
+      ].join("\n"),
+    );
+  });
+
+  it("returns a file without import.meta untouched", () => {
+    expect(bindImportMeta("const a = 1;", "a.ts", {})).toBe("const a = 1;");
   });
 });
 
