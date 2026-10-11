@@ -938,16 +938,39 @@ export async function writeScaffoldScript(
   options: {
     readonly cliRuntimePackages?: readonly string[];
     readonly ignoreInstallScripts?: boolean;
+    /** Packed tarballs by package name; `dlx` resolves any dependency on them locally. */
+    readonly localTarballs?: Readonly<Record<string, string>>;
     readonly noInstall?: boolean;
   } = {},
 ): Promise<string> {
   const script = path.join(directory, "scaffold.sh");
   const target = '"${1:-game}"';
+  // `pnpm dlx` ignores `overrides` in every config file, but it honours a pnpmfile. Without this,
+  // a packed package's `workspace:*` dependency on an unpublished sibling asks the registry.
+  const pnpmfile = path.join(directory, "scaffold-pnpmfile.cjs");
+  await writeFile(
+    pnpmfile,
+    `const local = ${JSON.stringify(options.localTarballs ?? {})};
+module.exports = {
+  hooks: {
+    readPackage(pkg) {
+      for (const field of ["dependencies", "optionalDependencies"]) {
+        for (const name of Object.keys(pkg[field] ?? {})) {
+          if (local[name] !== undefined) pkg[field][name] = "file:" + local[name];
+        }
+      }
+      return pkg;
+    },
+  },
+};
+`,
+  );
   const invocation = [
     ...(options.ignoreInstallScripts ? ["npm_config_ignore_scripts=true"] : []),
     "pnpm",
     "dlx",
     "--silent",
+    `--config.pnpmfile=${pnpmfile}`,
     "--package",
     cliSource,
     ...(options.cliRuntimePackages ?? []).flatMap((source) => ["--package", source]),
@@ -989,6 +1012,7 @@ export async function scaffold(
   const assetSource = sources["@threenative/assets"];
   await writeScaffoldScript(directory, template, cliSource, packageArgs, {
     ...options,
+    localTarballs: sources,
     ...(assetSource === undefined ? {} : { cliRuntimePackages: [assetSource] }),
   });
   assertTemplateDependencies(template, templateManifest, sources);

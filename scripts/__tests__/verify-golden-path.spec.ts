@@ -148,11 +148,16 @@ describe("golden path matrix", () => {
     try {
       const cli = path.join(root, "create-threenative-0.1.0.tgz");
       const core = path.join(root, "threenative-core-0.1.0.tgz");
-      const script = await writeScaffoldScript(root, "starter", cli, ["--core-package", core]);
+      const terrain = path.join(root, "threenative-terrain-0.1.0.tgz");
+      const script = await writeScaffoldScript(root, "starter", cli, ["--core-package", core], {
+        localTarballs: { "@threenative/terrain": terrain },
+      });
       expect(script).toBe(path.join(root, "scaffold.sh"));
+      expect(await readFile(path.join(root, "scaffold-pnpmfile.cjs"), "utf8")).toContain(terrain);
       expect((await stat(script)).mode & 0o111).not.toBe(0);
       const source = await readFile(script, "utf8");
       expect(source).toContain("pnpm dlx");
+      expect(source).toContain("--config.pnpmfile=");
       expect(source).toContain('"${1:-game}"');
       expect(source).toContain(cli);
       expect(source).toContain(core);
