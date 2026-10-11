@@ -483,6 +483,8 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
         static_cast<WGPUFeatureName>(WGPUNativeFeature_PipelineCache), "pipeline-cache");
 #endif
     appendIfSupported(WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable");
+    // Float LUTs need linear filtering for continuous color grading.
+    appendIfSupported(WGPUFeatureName_Float32Filterable, "float32-filterable");
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
     appendIfSupported(WGPUFeatureName_CoreFeaturesAndLimits, "core-features-and-limits");
 #endif

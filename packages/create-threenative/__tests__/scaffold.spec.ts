@@ -231,21 +231,25 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // strata branch: measured through createProject on the merged tree.
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
+  // PRD-560 (2026-10-10): the eleven FogExp2 kits carry height fog (heightFog.ts, sky.ts, AGENTS.md);
+  // rain and tower-defense do not and keep develop's values. Seven kits at the 150 m scale then
+  // took density 0.0018 so ridges read clearer than low ground (AC-1b).
   // Recomputed through all thirteen actual createProject trees after merging develop 2d2124792
   // into PRD-571; these fingerprints cover both the exposure and landed base changes.
-  "action-rpg": "257fa6d8b3e95c642f829600a74eee7d203deacf356f31dd047181df2da2c033",
-  minimal: "095a48b7498f6728b60daf13deceff0d93c22045cb903d0319ad80816c6f2365",
-  platformer: "f0ae170f7b2e9bb52e6a0887d36d7385ef5709e6538cb84595a702ad7e367b46",
-  puzzle: "a6fb07854dafd8c319dd9aa0dd4fe1cc78b2ae07c555ea3fa250ac2b2a1453a6",
-  racing: "7dd7aa66804a454f2c3ae6b16e32517f7cdcd92c0f5b38ff971c7ebf66fc834e",
+  // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
+  "action-rpg": "c022de28097aa344b891be25c55b29d2d3053a050f8bfb3c263d782690d7c245",
+  minimal: "3b5aa727964b59028d2b9f4850835a91857d9bb979430ace026b19505444efe1",
+  platformer: "2f53a214e863a18fe9d6c438a6d32609cf0c7e223f7308499b85c55c66604912",
+  puzzle: "edd2e8eb7e1602e23e42634afe2fc768ae8a2c4b8e9e1006c208aa9bab343ec3",
+  racing: "33900c8a4b715f9bc8eb5c0c22456b48b9b8f1987fcdbcf32965f0880c442367",
   rain: "93f8227373687566e46cc8d7f03586cb346b05bb5a5589c97a3e0ee83be76d91",
-  rts: "67f59aeac3cf3f8af6a3df412824293b7b1ac1f8f1e6a96ee6565bb29b7624b1",
-  runner: "82a16382e3d09128324d03468ef9e69fa2ba5c85c8441be3e2d1342e57d4b47d",
+  rts: "0da907cc2a6c4d3c5b782c6d5c57cd6be94f8cb8f6baebef74c045f32b7b70bf",
+  runner: "73e06ca20c752c35788b48faf9dd28ed38875c7fa3bc80ee2b4a54884bd5fcc4",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "349e4e8d9b6e0bf2b7508828fb2422b4007b5724cc76e48785e87c9ab25a0d7b",
-  shooter: "772513e8e41b1e241863fe9c74bf207085968102e45337b4868d2451609aad52",
-  snow: "53a8e6e9e8a01f1699ba063368e994d6e1f1431ea580d4fa7270a2c11c661489",
-  starter: "9d49e7de6d900b217cb6b7ac382309930764e29bda18297659bca4d7137a831b",
+  sailing: "01dd15cf54550a9679bb06519710387ae64b97af1d5441064753ff8517a422d6",
+  shooter: "894ac1cda8990b78431f20bd11853f3b4d6b55fee923c93aadd2502a97b3d680",
+  snow: "d10f698d21ed243bbc680a132de6c68f2bbeacf0a2488e0035e87e27f9d531da",
+  starter: "d4fbca1409a4dcba6cf052b5f3865f563a067a5e4e748522bd0716a118c7d1ba",
   "tower-defense": "e409e2de944c81ecd03d31b5ee404ff763263f8acb414e274e37546bc14da01a",
 };
 
