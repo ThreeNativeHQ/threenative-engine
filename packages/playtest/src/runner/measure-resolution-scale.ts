@@ -11,6 +11,7 @@ import {
   resolutionScaleFrame,
   preserveResolutionScaleFailure,
   resolutionScaleGate,
+  resolutionScalePending,
 } from "./resolution-scale-probe.js";
 import type { IPlaytestBridgeDescription, IPlaytestBridgeReady } from "../protocol.js";
 
@@ -22,13 +23,29 @@ const preflightOnly = process.argv[3] === "--preflight";
 if (process.argv[3] !== undefined && !preflightOnly)
   throw new Error("Expected --preflight or no mode");
 await mkdir(output, { recursive: true });
-const server = await serveStarter(output);
+let checkpointRun = 1;
+let checkpointEvidence: Record<string, unknown> = {
+  startup: { collected: false }, partial: { collected: false },
+};
+let checkpointLogs: string[] = [];
+const checkpointDisplay: { value?: Awaited<ReturnType<typeof provideDisplay>>["strategy"] } = {};
+const checkpoint = async (pendingOperation: string): Promise<void> => {
+  await writeFile(resolve(output, `run-${checkpointRun}.json`), JSON.stringify({
+    run: checkpointRun, mode: preflightOnly ? "preflight" : "measurement",
+    status: "pending", pendingOperation, display: checkpointDisplay.value, ...checkpointEvidence,
+  }, null, 2));
+  await writeFile(resolve(output, `run-${checkpointRun}.log`), checkpointLogs.join("\n"));
+};
+const pending = <T>(name: string, operation: () => Promise<T>): Promise<T> =>
+  resolutionScalePending(name, checkpoint, operation);
+const server = await pending("starter.bootstrap", () => serveStarter(output, checkpoint));
 const url = server.resolvedUrls!.local[0]!;
-const display = await provideDisplay();
+const display = await pending("display.provide", () => provideDisplay());
+checkpointDisplay.value = display.strategy;
 let browser: Browser | undefined;
 const measurements: IResolutionScaleRun[] = [];
 try {
-  browser = await chromium.launch({
+  browser = await pending("browser.launch", () => chromium.launch({
     headless: false,
     args: [
       ...WEBGPU_BROWSER_ARGS,
@@ -38,16 +55,11 @@ try {
       "--no-sandbox",
     ],
     env: display.env,
-  });
+  }));
   for (let run = 1; run <= (preflightOnly ? 1 : 3); run++) {
-    const context = await browser.newContext({
-      viewport: { width: 1280, height: 720 },
-      deviceScaleFactor: 1,
-    });
-    const page = await context.newPage();
+    checkpointRun = run;
     const logs: string[] = [];
-    page.on("console", (message) => logs.push(message.text()));
-    page.on("pageerror", (error) => logs.push(`PAGE_ERROR:${error.message}`));
+    checkpointLogs = logs;
     const evidence: {
       startup: {
         collected: boolean;
@@ -56,12 +68,20 @@ try {
       partial: { collected: boolean; value?: Record<string, unknown> };
       rows?: IResolutionScaleRow[];
     } = { startup: { collected: false }, partial: { collected: false } };
+    checkpointEvidence = evidence;
+    const launchedBrowser = browser;
+    const context = await pending("browser.context", () => launchedBrowser.newContext({
+      viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1,
+    }));
+    const page = await pending("browser.page", () => context.newPage());
+    page.on("console", (message) => logs.push(message.text()));
+    page.on("pageerror", (error) => logs.push(`PAGE_ERROR:${error.message}`));
     try {
-      await page.goto(url);
+      await pending("page.goto", () => page.goto(url));
       const transport = new PlaywrightTransport(page);
       const bootError = async () =>
         (await page.locator("[data-threenative-canvas-error]").allTextContents()).join("\n");
-      if (!(await transport.waitForBridge(bridgeWaitTimeoutMs()))) {
+      if (!(await pending("bridge.wait", () => transport.waitForBridge(bridgeWaitTimeoutMs())))) {
         const error = await bootError();
         throw new Error(
           error
@@ -69,12 +89,12 @@ try {
             : "TN_PLAYTEST_BRIDGE_MISSING: starter did not install its bridge",
         );
       }
-      const description = await transport.call<IPlaytestBridgeDescription>(
+      const description = await pending("bridge.describe", () => transport.call<IPlaytestBridgeDescription>(
         "describe",
         undefined,
         bridgeWaitTimeoutMs(),
-      );
-      const startup = await waitForStartupReady({
+      ));
+      const startup = await pending("startup.ready", () => waitForStartupReady({
         bridge: {
           description,
           readiness: async () => {
@@ -88,7 +108,7 @@ try {
           if (error) throw new Error(`TN_RESOLUTION_BOOT_REJECTED: ${error}`);
           await resolutionScaleFrame(page);
         },
-      });
+      }));
       evidence.startup = { collected: true, value: startup };
       if (startup === undefined)
         throw new Error("TN_PLAYTEST_STARTUP_NOT_READY: starter does not report startup");
@@ -96,6 +116,7 @@ try {
       page.on("framenavigated", (frame) => {
         if (frame === page.mainFrame()) navigations.push(frame.url());
       });
+      await checkpoint("page.evaluate");
       const observed = await page
         .evaluate<{
           preflight?: {
@@ -241,14 +262,20 @@ try {
 
 async function serveStarter(
   output: string,
+  checkpoint: (pendingOperation: string) => Promise<void>,
 ): Promise<{ resolvedUrls: { local: string[] } | null; close(): Promise<void> }> {
   const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
   const load = (path: string) => import(path);
   const tooling = createRequire(resolve(repo, "examples/abyss-framework/package.json"));
+  await checkpoint("starter.import-vite");
   const { createServer } = await load(tooling.resolve("vite"));
+  await checkpoint("starter.import-scaffolder");
   const { createProject } = await load(resolve(repo, "packages/create-threenative/src/index.ts"));
+  await checkpoint("starter.create-target");
   const target = await mkdtemp(resolve(output, "starter-"));
+  await checkpoint("starter.scaffold");
   await createProject({ target, template: "starter", install: false });
+  await checkpoint("starter.link-dependencies");
   await mkdir(resolve(target, "node_modules"));
   for (const name of [
     "three",
@@ -266,6 +293,7 @@ async function serveStarter(
       resolve(target, "node_modules", name),
       "dir",
     );
+  await checkpoint("starter.create-server");
   const server = await createServer({
     root: target,
     cacheDir: resolve(target, "node_modules/.vite"),
@@ -293,6 +321,7 @@ async function serveStarter(
     ],
     server: { host: "127.0.0.1", port: 0, fs: { allow: [repo] } },
   });
+  await checkpoint("starter.listen");
   await server.listen();
   return server;
 }

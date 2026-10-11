@@ -380,3 +380,13 @@ export async function preserveResolutionScaleFailure(
   await record();
   throw error;
 }
+
+// Await persistence before starting work so a hard deadline leaves the pending operation on disk.
+export async function resolutionScalePending<T>(
+  pendingOperation: string,
+  persist: (pendingOperation: string) => Promise<void>,
+  operation: () => Promise<T>,
+): Promise<T> {
+  await persist(pendingOperation);
+  return operation();
+}
