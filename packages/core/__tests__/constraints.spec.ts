@@ -92,6 +92,11 @@ describe("core constraints", () => {
           // constructs no material and reads no appearance property. The generic filter matches
           // "material" for that identity, not for a look the module chooses.
           file !== "world-cell-batches.ts" &&
+          // The chunk shadow seam builds position-only depth proxies for a merged chunk. Each proxy
+          // takes the world's own material for a side by reference. It constructs no material,
+          // light or colour and reads no appearance property. The generic filter matches "material"
+          // in its names. The assertions below apply to this file.
+          file !== "world-chunk-shadow.ts" &&
           // The cell proxy decides whether a baked HLOD stand-in may replace a cell's source draws.
           // It reads a material's identity and whether it is opaque, standard and untransformed to
           // make that call, and constructs, configures and colours none. The assertions below keep
@@ -415,8 +420,8 @@ describe("core constraints", () => {
     );
     expect(clusteredBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
-    // `world-cells.ts`, `world-bundle-safety.ts`, `world-load-limiter.ts` and
-    // `world-cell-batches.ts` are exempted on the same terms as `instanced-batch.ts`: none
+    // `world-cells.ts`, `world-bundle-safety.ts`, `world-load-limiter.ts`, `world-cell-batches.ts`
+    // and `world-chunk-shadow.ts` are exempted on the same terms as `instanced-batch.ts`: none
     // constructs a material, light or colour, and none reads a property that describes how
     // anything looks. The assertions below are what keep that true.
     for (const file of [
@@ -424,6 +429,7 @@ describe("core constraints", () => {
       "world-bundle-safety.ts",
       "world-load-limiter.ts",
       "world-cell-batches.ts",
+      "world-chunk-shadow.ts",
     ]) {
       const cellSource = readFileSync(path.join(sourceDirectory, file), "utf8");
       expect(cellSource).not.toMatch(
