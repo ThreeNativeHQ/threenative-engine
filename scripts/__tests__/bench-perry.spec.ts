@@ -287,13 +287,14 @@ describe("Perry native benchmark", () => {
         sameResult.regression.rows.every((row: { verdict: string }) => row.verdict === "SAME"),
       ).toBe(true);
 
-      // A noisy incumbent (per-run ratios 0.3 and 0.45) widens the margin to 2 x 20% = 40%.
+      // A noisy incumbent (per-run ratios 0.3 and 0.45) widens the margin, capped at 10%, so a
+      // cold-cache outlier run cannot hide a 20% regression (0.25 -> 0.3).
       const noisy = compareToIncumbent(
         compareArms({ perry: [measurement(0.3)], v8: [measurement()] }),
         await loadIncumbent(await incumbentDir("noisy", 0.25, 2)),
       );
-      expect(noisy.rows[0]?.margin).toBeCloseTo(0.4, 5);
-      expect(noisy.rows[0]?.verdict).toBe("SAME");
+      expect(noisy.rows[0]?.margin).toBeCloseTo(0.1, 5);
+      expect(noisy.rows[0]?.verdict).toBe("REGRESSED");
 
       // Fail closed: a missing incumbent throws, and the bench measures nothing.
       await expect(loadIncumbent(path.join(temp, "missing"))).rejects.toThrow(

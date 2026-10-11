@@ -273,7 +273,8 @@ export async function loadIncumbent(dir: string): Promise<IIncumbent> {
 
 /**
  * Regression = candidate ratio > incumbent ratio * (1 + margin); margin = max(3%, 2x the largest
- * relative deviation of the incumbent's per-run Perry/V8 ratios from their median; 3% for one run).
+ * relative deviation of the incumbent's per-run Perry/V8 ratios from their median; 3% for one run),
+ * capped at 10% so one cold-cache outlier run cannot widen it past a real regression.
  */
 export function compareToIncumbent(
   candidate: ReturnType<typeof compareArms>,
@@ -290,7 +291,7 @@ export function compareToIncumbent(
     ).filter((ratio) => Number.isFinite(ratio) && ratio > 0);
     const center = perRun.length > 1 ? median(perRun) : 0;
     const spread = perRun.length > 1 ? Math.max(...perRun.map((r) => Math.abs(r / center - 1))) : 0;
-    const margin = Math.max(0.03, 2 * spread);
+    const margin = Math.min(0.1, Math.max(0.03, 2 * spread));
     const verdict =
       row.ratio > before * (1 + margin)
         ? "REGRESSED"
