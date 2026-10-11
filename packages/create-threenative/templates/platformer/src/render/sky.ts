@@ -32,7 +32,12 @@ export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
 /** The look this fog replaced: FogExp2 at 0.003, measured at 150 m from 2 m up. */
 const EYE_LEVEL = { density: 0.003, distance: 150, cameraHeight: 2 };
 
-/** Lower distance density so distance + height fog preserve the kit's old eye-level haze. */
+/**
+ * The distance term's density that, with the height term, keeps the old eye-level haze: at
+ * `EYE_LEVEL.distance` along the horizon from `EYE_LEVEL.cameraHeight` the two together transmit what
+ * FogExp2 at `EYE_LEVEL.density` did. The distance term is lowered, never removed, so the ground
+ * still ends in fog at a kilometre.
+ */
 function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
   const { distance, density, cameraHeight } = EYE_LEVEL;
   const old = (density * distance) ** 2;
@@ -124,17 +129,30 @@ export function setupSky(scene: Scene, sky: Texture, environment: Texture = sky)
   // The measured fill lights faces the sun misses and supplies reflections as roughness drops.
   scene.environment = environment;
   scene.environmentIntensity = 1;
-  // Thin distance fog retains the far cutoff; fogNode adds the height term.
+  // The route runs to x=97 with the backdrop cliffs another 60 m behind them, so this is thin on
+  // purpose: at this density it is under 2% inside the playfield and only reads past the castle.
+  // `scene.fog` stays the distance term; `scene.fogNode` is what three applies and adds the height term.
   const distanceFog = new FogExp2(palette.horizon, distanceDensity());
   scene.fog = distanceFog;
   scene.fogNode = heightFogNode(distanceFog, HEIGHT_FOG, SUN_DIRECTION);
 }
 
-/** Inside the camera's far plane by the diagonal of the mesh's bounding box (1.73 R). */
+/**
+ * Inside the camera's far plane by a bounding box's diagonal: the playtest's `cameraClearsScene`
+ * measures a mesh by its box, and a box of half-width R reaches 1.73 R.
+ */
 const FLOOR_RADIUS = 480;
+
 /** Radians the floor climbs above the horizon before it has faded out. */
 const RISE = 0.35;
-/** Lower sky fades into horizon haze 20° above the route; unfogged, with no depth writes. */
+
+/**
+ * What the world floats in. The route has no ground; this is the lower
+ * hemisphere, from the fog colour at the horizon to a deeper sky blue straight down, so distant
+ * rock fades into it exactly as it fades into the fog. It climbs 20 degrees past the horizon and
+ * fades out there, so the gradient melts into the haze instead of meeting it at a hard line.
+ * It is not fogged and never writes depth.
+ */
 export function skyFloor(): Mesh {
   const geometry = new SphereGeometry(
     FLOOR_RADIUS,
@@ -171,7 +189,17 @@ export function skyFloor(): Mesh {
   return floor;
 }
 
-/** Static cloud lobes for the scene to instance as one draw; only the airship and fox move. */
+/**
+ * The cloud bank, as a list of lobes to instance.
+ *
+ * Eighteen clouds of five to nine squashed lobes is 130-odd separate spheres, and the gradient sky
+ * is static — so the scene builds one `InstancedBatch` of a unit sphere from this and never
+ * touches it again. The motion in the sky is the airship in `scenery.ts`, which crosses the frame
+ * in twenty seconds, and the parallax of a fox covering ninety-seven metres.
+ *
+ * This is data, not objects, so the batching stays the scene's decision: `src/render/` is ordinary
+ * Three.js and never reaches back into the framework.
+ */
 export function cloudLobes(
   rng: () => number,
 ): { position: [number, number, number]; scale: [number, number, number] }[] {
