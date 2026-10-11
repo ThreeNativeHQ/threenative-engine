@@ -684,7 +684,8 @@ export function defineBrowserClasses(
       `TN_BROWSER_ARGUMENT_UNSUPPORTED: ${describe(value)} cannot cross to the engine`,
     );
   };
-  const fromEngine = (value: EngineValue): unknown => {
+  // Perry loses a later arrow binding in fastGetter's nested closure; a declaration is hoisted.
+  function fromEngine(value: EngineValue): unknown {
     if (isRef(value)) return wrap(value);
     // A numbers result is a fresh plain array already; mapping it tested every element for a ref.
     if (Array.isArray(value)) return allNumbers(value) ? value : value.map(fromEngine);
@@ -693,7 +694,7 @@ export function defineBrowserClasses(
         Object.entries(value).map(([key, item]) => [key, fromEngine(item)]),
       );
     return value;
-  };
+  }
 
   // Perry refreshes loop-created class captures across iterations; a factory owns each capture.
   const makeEngineClass = (name: string, binding: IRegistryClass, adopts: boolean) => {
