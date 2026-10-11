@@ -183,6 +183,17 @@ function writeAdapterManifest(packageDir, libDirs, libs) {
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`);
 }
 
+/** The web overlay's native dependencies, selected from the engine that actually links. */
+export function stagePlayerUiLink(packageDir, engineBuild) {
+  if (process.platform !== "linux") return;
+  const cache = fs.readFileSync(path.join(engineBuild, "CMakeCache.txt"), "utf8");
+  if (!/^TN_ENABLE_UI_OVERLAY:BOOL=(?:ON|TRUE|YES|1)$/imu.test(cache)) return;
+  const file = path.join(packageDir, "package.json");
+  const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+  manifest.perry.nativeLibrary.targets.linux.pkgConfig = ["webkit2gtk-4.1"];
+  fs.writeFileSync(file, `${JSON.stringify(manifest, undefined, 2)}\n`);
+}
+
 /**
  * Builds `<outDir>/<name>` from `entry` (and the relative modules it imports, `modules`), linked
  * with the three facade, its shim and hooks, and the engine archives in `engineBuild`.
@@ -320,6 +331,7 @@ export function buildStrict({
   if (sharedFacade) {
     stageWorkspaceSources(outDir, workspace);
     stageSharedFacade(outDir, sharedBridge);
+    stagePlayerUiLink(adapterDir, engineBuild);
     if (errors.length > 0 || stageOnly) return {exe,ran,errors};
     run(compiler.binaryPath, ["compile",stagedEntry,"-o",exe,...STRICT_FLAGS,"--debug-symbols",...triple],{cwd:outDir});
     if (manifest && errors.length === 0) {

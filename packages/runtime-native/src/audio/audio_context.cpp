@@ -497,7 +497,7 @@ void AudioBufferSourceNode::start(double when, double offset, double duration) {
     startTime_ = when > now ? when : now;
     offsetTime_ = offset;
     durationTime_ = duration;
-    playbackPosition_ = static_cast<size_t>(offset * buffer_->sampleRate());
+    playbackPosition_ = offset * buffer_->sampleRate();
     stopTime_.store(-1, std::memory_order_release);
     endedPending_.store(false, std::memory_order_release);
     isPlaying_.store(true, std::memory_order_release);
@@ -533,20 +533,25 @@ void AudioBufferSourceNode::process(float* output, size_t numFrames, int numChan
     int bufferChannels = buffer_->numberOfChannels();
     size_t bufferLength = buffer_->length();
 
+    if (bufferLength == 0) {
+        isPlaying_.store(false, std::memory_order_release);
+        endedPending_.store(true, std::memory_order_release);
+        return;
+    }
+    const size_t loopStart = std::min(bufferLength - 1, size_t(std::clamp(loopStart_ * buffer_->sampleRate(), 0.0, double(bufferLength - 1))));
+    const size_t loopEnd = loopEnd_ > loopStart_ && loopEnd_ > 0
+        ? size_t(std::clamp(loopEnd_ * buffer_->sampleRate(), double(loopStart + 1), double(bufferLength))) : bufferLength;
+    const bool constantRate = playbackRate_.isConstantOver(currentTime, currentTime + double(numFrames) / context_->sampleRate());
+    const double blockRate = playbackRate_.valueAtTime(currentTime);
     for (size_t frame = 0; frame < numFrames; frame++) {
-        if (playbackPosition_ >= bufferLength) {
-            if (loop_) {
-                size_t loopStartSample = static_cast<size_t>(loopStart_ * buffer_->sampleRate());
-                size_t loopEndSample = loopEnd_ > 0
-                    ? static_cast<size_t>(loopEnd_ * buffer_->sampleRate())
-                    : bufferLength;
-                playbackPosition_ = loopStartSample;
-            } else {
-                // End of buffer
-                isPlaying_.store(false, std::memory_order_release);
-                endedPending_.store(true, std::memory_order_release);
-                break;
-            }
+        const double rate = constantRate ? blockRate : playbackRate_.valueAtTime(currentTime + double(frame) / context_->sampleRate());
+        // shortcut: reverse playback is rejected by Perry; add reverse resampling when a game requests it.
+        if (loop_ && playbackPosition_ >= loopEnd)
+            playbackPosition_ = loopStart + std::fmod(playbackPosition_ - loopStart, double(loopEnd - loopStart));
+        if (playbackPosition_ >= bufferLength || playbackPosition_ < 0) {
+            isPlaying_.store(false, std::memory_order_release);
+            endedPending_.store(true, std::memory_order_release);
+            break;
         }
 
         // Check duration limit
@@ -564,11 +569,14 @@ void AudioBufferSourceNode::process(float* output, size_t numFrames, int numChan
             int srcChannel = ch % bufferChannels;
             const float* channelData = buffer_->getChannelData(srcChannel);
             if (channelData) {
-                output[frame * numChannels + ch] += channelData[playbackPosition_];
+                const size_t at = size_t(playbackPosition_);
+                const size_t next = loop_ && at + 1 >= loopEnd ? loopStart : std::min(at + 1, bufferLength - 1);
+                const float fraction = float(playbackPosition_ - at);
+                output[frame * numChannels + ch] += channelData[at] + (channelData[next] - channelData[at]) * fraction;
             }
         }
 
-        playbackPosition_++;
+        playbackPosition_ += std::max(0.0, rate) * buffer_->sampleRate() / context_->sampleRate();
     }
     AudioNode::process(output, numFrames, numChannels);
 }
@@ -930,13 +938,8 @@ namespace {
 /**
  * Linear resample of interleaved float frames.
  *
- * `AudioBufferSourceNode::process` advances the read head one buffer frame per output frame, with
- * no rate conversion anywhere in the graph. So a buffer that keeps its own sample rate plays at
- * `bufferRate / contextRate` speed — a 22 050 Hz asset an octave high and half as long, on a
- * 44 100 Hz context. Web Audio says `decodeAudioData` resamples to the context rate, which is
- * exactly what `decodeAudioFile`'s `targetSampleRate` parameter was for; it was accepted and never
- * read. WAV hid it because the fixtures and most game audio already matched, and Vorbis will not:
- * 48 000 Hz is the common Ogg rate and would play about 9% sharp.
+ * Decode into the context's sample rate so a neutral playbackRate preserves the asset's pitch and
+ * duration; sources also account for explicitly created buffers with a different sample rate.
  */
 std::vector<float> resampleInterleaved(const std::vector<float>& source, int channels,
                                        double sourceRate, double targetRate) {

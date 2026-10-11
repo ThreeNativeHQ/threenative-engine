@@ -70,7 +70,7 @@ export function createPerryAudioHost() {
       call(13, this.context.handle, this.node, [
         this.kind,
         method,
-        finite(value, "AudioParam.value"),
+        finite(value, "AudioParam.value", this.kind === 8 ? 0 : Number.NEGATIVE_INFINITY),
         finite(time, "AudioParam.time", 0),
         finite(constant, "AudioParam.timeConstant", 0),
       ]);
@@ -90,8 +90,7 @@ export function createPerryAudioHost() {
     }
   }
 
-  // The shipped mixer has no pitch resampler. Accept three's neutral defaults, refuse a pitch
-  // change by name, and keep cancellation absent so AudioBus reports its existing detune fallback.
+  // Detune remains unsupported; keep cancellation absent so AudioBus reports its detune fallback.
   const fixedParam = (member: string, initial: number) => {
     const set = (value: number) => {
       if (value !== initial) unsupported(member);
@@ -145,7 +144,7 @@ export function createPerryAudioHost() {
     private started = false;
     onended: (() => void) | null = null;
     detune = fixedParam("AudioBufferSourceNode.detune", 0);
-    playbackRate = fixedParam("AudioBufferSourceNode.playbackRate", 1);
+    playbackRate = new AudioParam(this.context, this.handle, 8, 1);
     get buffer(): AudioBuffer | null {
       return this.clip;
     }

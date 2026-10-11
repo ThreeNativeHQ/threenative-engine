@@ -2501,6 +2501,20 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         return h;
     };
 
+    // Refresh every view before selecting groups: a later upload invalidates groups of earlier draws.
+    for (const Planned& p : plan) {
+        if (p.item->normalMap) materialTexture(*p.item->normalMap);
+        for (const Texture* texture : p.item->pbrMaps) if (texture) materialTexture(*texture);
+        if (p.item->map) {
+            if (p.item->background) backgroundCube(*p.item->map);
+            else materialTexture(*p.item->map);
+        }
+        if (p.item->envMap) environment(*p.item->envMap);
+        if (p.item->pmremMap) environment(*p.item->pmremMap);
+        if (p.item->nodeTextures)
+            for (const auto& [label, texture] : *p.item->nodeTextures) if (texture) materialTexture(*texture);
+    }
+
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {

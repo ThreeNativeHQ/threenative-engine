@@ -4,6 +4,8 @@
 #include "engine/player/run.h"
 #include "engine/player/mailbox.h"
 #include "engine/renderer/render_database.h"
+#include "mystral/platform/ui_overlay.h"
+#include <filesystem>
 #include <SDL3/SDL.h>
 #include <chrono>
 #include <cstdlib>
@@ -20,8 +22,9 @@ using namespace tn::engine;
 std::unique_ptr<player::Session, decltype(&player::close)> session(nullptr, player::close);
 inspect::Endpoint* endpoint = nullptr;
 std::set<std::string> held;
-std::string codes, failure;
+std::string codes, failure, uiMessage;
 std::string adapterInfo;
+int uiWidth = 1280, uiHeight = 720;
 uint32_t drawCalls = 0;
 uint64_t triangles = 0;
 std::shared_ptr<Object3D> scene, camera;
@@ -37,10 +40,54 @@ extern "C" int32_t js_tnp_player_open() try {
     player::Game game;
     game.name = "perry-game";
     game.gameRuntime = "perry";
+    // SDL names the executable's directory, the same ui/ layout as the V8 packaged player.
+    const auto uiRoot = std::filesystem::path(SDL_GetBasePath()) / "ui";
+    if (std::filesystem::is_directory(uiRoot)) {
+        const char* renderer = std::getenv("TN_UI_RENDERER");
+        const bool cssUi = renderer && std::string(renderer) == "native-css";
+#if defined(__linux__) && !defined(__ANDROID__)
+        if (!cssUi) {
+            SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "x11", SDL_HINT_OVERRIDE);
+            setenv("GDK_BACKEND", "x11", 1);
+        }
+#endif
+        game.uiAttach = [root = uiRoot.string(), cssUi](SDL_Window* window) {
+            mystral::platform::setUiOverlayWindow(window);
+            if (window) SDL_GetWindowSizeInPixels(window, &uiWidth, &uiHeight);
+            const bool attached = cssUi ? mystral::platform::attachDesktopCssUi(root)
+                                        : mystral::platform::attachDesktopUiOverlay(root);
+            if (!attached) std::fprintf(stderr, "TN_UI_LOAD_FAILED: %s in %s\n",
+                cssUi ? "native-css" : "web", root.c_str());
+            return attached;
+        };
+        game.uiFrame = [] { mystral::platform::pumpUiOverlay(); };
+        game.uiDraw = [](Renderer& renderer) {
+            mystral::platform::UiOverlayFrame ui;
+            if (mystral::platform::uiOverlayFrame(ui))
+                renderer.setOverlay(ui.pixels, ui.width, ui.height, ui.counter, ui.stride, !ui.isRgba);
+        };
+        game.uiPointer = [](const char* type, float x, float y, int buttons) {
+            return mystral::platform::uiOverlayAttached() &&
+                mystral::platform::uiOverlayRoutePointer(type, x, y, buttons, 1);
+        };
+        game.uiResize = [](int width, int height) {
+            uiWidth = width; uiHeight = height;
+            mystral::platform::uiOverlaySetSize(width, height);
+        };
+        game.uiDetach = [] {
+            mystral::platform::detachDesktopUiOverlay();
+            mystral::platform::setUiOverlayWindow(nullptr);
+        };
+    }
     game.bridgeCalls = [] { return tn::abi::crossings(); };
     game.attach = [](inspect::Endpoint& attached) { endpoint = &attached; };
     game.update = [](double dt) {
         for (const auto& event : endpoint->takeInput()) {
+            if (event.type.starts_with("pointer") && mystral::platform::uiOverlayAttached() &&
+                mystral::platform::uiOverlayRoutePointer(event.type.c_str(), float(event.x / uiWidth), float(event.y / uiHeight),
+                    event.buttons, event.pointerId)) continue;
+            if ((event.type == "keydown" || event.type == "keyup") && mystral::platform::uiOverlayAttached() &&
+                mystral::platform::uiOverlayRouteKey(event.key.c_str(), event.type == "keydown", held.count("ShiftLeft") || held.count("ShiftRight"))) continue;
             if (event.type == "keydown") held.insert(event.code);
             else if (event.type == "keyup") held.erase(event.code);
         }
@@ -120,13 +167,24 @@ extern "C" int32_t js_tnp_player_step() {
     catch (const std::exception& error) { std::fprintf(stderr, "TN_PERRY_PLAYER_FAILED:%s\n", error.what()); return -1; }
 }
 extern "C" void js_tnp_player_close() {
-    session.reset(); endpoint = nullptr; scene.reset(); camera.reset(); held.clear(); codes.clear();
+    session.reset(); endpoint = nullptr; scene.reset(); camera.reset(); held.clear(); codes.clear(); uiMessage.clear();
     drawCalls = 0; triangles = 0; adapterInfo.clear();
     js_tnp_set_post(0, 0);
 }
 extern "C" int32_t js_tnp_player_running() { return session ? 1 : 0; }
 extern "C" int32_t js_tnp_player_runner() { return !player::Mailbox::rootFromEnvironment().empty(); }
 extern "C" int64_t js_tnp_player_codes() { return reinterpret_cast<int64_t>(codes.c_str()); }
+extern "C" int32_t js_tnp_player_ui_attached() { return mystral::platform::uiOverlayAttached(); }
+extern "C" int32_t js_tnp_player_ui_post(int64_t text) {
+    return text && mystral::platform::postUiMessage(reinterpret_cast<const char*>(text));
+}
+extern "C" int64_t js_tnp_player_ui_take() {
+    while (mystral::platform::takeUiMessage(uiMessage)) {
+        if (!mystral::platform::applyUiHitRegionsFrame(uiMessage))
+            return reinterpret_cast<int64_t>(uiMessage.c_str());
+    }
+    return 0;
+}
 extern "C" double js_tnp_player_render_info(int32_t field) {
     if (field == 0) return drawCalls;
     if (field == 1) return static_cast<double>(triangles);

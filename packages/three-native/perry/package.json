@@ -115,6 +115,21 @@
           "returns": "i32"
         },
         {
+          "name": "js_tnp_player_ui_attached",
+          "params": [],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tnp_player_ui_take",
+          "params": [],
+          "returns": "i64"
+        },
+        {
+          "name": "js_tnp_player_ui_post",
+          "params": ["i64"],
+          "returns": "i32"
+        },
+        {
           "name": "js_tnp_physics_version",
           "params": [],
           "returns": "i64"

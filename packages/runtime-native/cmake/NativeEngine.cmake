@@ -49,11 +49,12 @@ endif()
 if(NOT MYSTRAL_PLATFORM STREQUAL "android" AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     tn_native_engine_test(tn-native-engine-audio-abi-test tests/native-engine/audio_abi_test.cpp
         native_engine_audio_abi_decode_graph=decode_graph
-        native_engine_audio_abi_rejects=rejects)
+        native_engine_audio_abi_rejects=rejects
+        native_engine_audio_playback_rate=playback_rate)
     target_link_libraries(tn-native-engine-audio-abi-test PRIVATE tn_native_audio)
     target_compile_definitions(tn-native-engine-audio-abi-test PRIVATE
         TN_AUDIO_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/pickup.ogg")
-    set_tests_properties(native_engine_audio_abi_decode_graph native_engine_audio_abi_rejects
+    set_tests_properties(native_engine_audio_abi_decode_graph native_engine_audio_abi_rejects native_engine_audio_playback_rate
         PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 15)
 endif()
 
@@ -480,7 +481,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(tn-native-engine-player src/engine/player/main.cpp)
     tn_native_engine_test(tn-native-engine-perry-player-abi-test tests/native-engine/perry_player_abi_test.cpp
         native_engine_perry_player_render_info=render_info
-        native_engine_player_frame_metrics=frame_metrics)
+        native_engine_player_frame_metrics=frame_metrics
+        native_engine_perry_ui_messages=ui_messages)
     target_sources(tn-native-engine-perry-player-abi-test PRIVATE src/engine/abi/perry_player.cpp)
     target_link_libraries(tn-native-engine-perry-player-abi-test PRIVATE tn_engine_player tn_engine_abi)
     target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player tn_native_audio)
@@ -523,6 +525,27 @@ if(ANDROID)
     tn_native_engine_target(tn-native-engine-player)
     target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player tn_native_audio android log)
     target_link_options(tn-native-engine-player PRIVATE "-Wl,-z,max-page-size=16384")
+endif()
+
+if(TARGET tn_engine_player)
+    # PRD-554: a game's UI (src/ui/) on the player, through the legacy host's own overlay seam (one
+    # source, linked by both): the web view (TN_ENABLE_UI_OVERLAY) or the CSS backend (TN_ENABLE_CSS_UI).
+    target_sources(tn_engine_player PRIVATE src/platform/ui_overlay.cpp)
+    target_compile_definitions(tn_engine_player PRIVATE
+        TN_ENABLE_UI_OVERLAY=$<BOOL:${TN_ENABLE_UI_OVERLAY}> TN_ENABLE_CSS_UI=$<BOOL:${TN_ENABLE_CSS_UI}>)
+    if(TN_ENABLE_UI_OVERLAY)
+        target_link_libraries(tn_engine_player PUBLIC threenative-ui-overlay)
+        if(UNIX AND NOT APPLE AND NOT ANDROID)
+            find_package(PkgConfig REQUIRED)
+            if(NOT TARGET PkgConfig::TN_WEBKITGTK)
+                pkg_check_modules(TN_WEBKITGTK REQUIRED IMPORTED_TARGET webkit2gtk-4.1)
+            endif()
+            target_link_libraries(tn_engine_player PUBLIC PkgConfig::TN_WEBKITGTK)
+        endif()
+    endif()
+    if(TN_ENABLE_CSS_UI)
+        target_link_libraries(tn_engine_player PUBLIC threenative-css-ui)
+    endif()
 endif()
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")

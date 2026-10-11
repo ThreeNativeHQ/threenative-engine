@@ -729,6 +729,68 @@ if(MYSTRAL_USE_DAWN)
     endif()
 endif()
 
+if(TN_ENABLE_UI_OVERLAY)
+    if(NOT THREENATIVE_UI_OVERLAY_LIBRARY)
+        # MSVC names a static library `.lib`; every other desktop toolchain we build with names it
+        # `lib*.a`. Guessing `.a` on Windows is the check that never matches the artifact the
+        # build script just produced.
+        if(WIN32)
+            set(_tn_ui_overlay_name "threenative_ui_overlay.lib")
+        else()
+            set(_tn_ui_overlay_name "libthreenative_ui_overlay.a")
+        endif()
+        set(THREENATIVE_UI_OVERLAY_LIBRARY
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/${_tn_ui_overlay_name}"
+        )
+    endif()
+    if(NOT EXISTS "${THREENATIVE_UI_OVERLAY_LIBRARY}")
+        message(FATAL_ERROR
+            "UI overlay artifact is missing: ${THREENATIVE_UI_OVERLAY_LIBRARY}. "
+            "Run node scripts/build-native-ui-overlay.mjs, or supply -DTHREENATIVE_UI_OVERLAY_LIBRARY."
+        )
+    endif()
+    add_library(threenative-ui-overlay STATIC IMPORTED)
+    set_target_properties(threenative-ui-overlay PROPERTIES
+        IMPORTED_LOCATION "${THREENATIVE_UI_OVERLAY_LIBRARY}"
+    )
+endif()
+
+if(TN_ENABLE_CSS_UI)
+    if(NOT THREENATIVE_CSS_UI_LIBRARY)
+        # The same naming rule as the overlay above: MSVC writes `.lib`, every other desktop
+        # toolchain this host is built with writes `lib*.a`.
+        if(WIN32)
+            set(_tn_css_ui_name "threenative_css_ui.lib")
+        else()
+            set(_tn_css_ui_name "libthreenative_css_ui.a")
+        endif()
+        # Android cross-builds land in cargo's per-triple directory, one per ABI
+        # (`scripts/build-native-css-ui.mjs --target <triple>`), like native physics.
+        if(ANDROID_ABI STREQUAL "arm64-v8a")
+            set(_tn_css_ui_dir "aarch64-linux-android/release")
+        elseif(ANDROID_ABI STREQUAL "x86_64")
+            set(_tn_css_ui_dir "x86_64-linux-android/release")
+        elseif(ANDROID)
+            message(FATAL_ERROR "The CSS UI has no Android target for ABI ${ANDROID_ABI}")
+        else()
+            set(_tn_css_ui_dir "release")
+        endif()
+        set(THREENATIVE_CSS_UI_LIBRARY
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/css-ui/target/${_tn_css_ui_dir}/${_tn_css_ui_name}"
+        )
+    endif()
+    if(NOT EXISTS "${THREENATIVE_CSS_UI_LIBRARY}")
+        message(FATAL_ERROR
+            "CSS UI artifact is missing: ${THREENATIVE_CSS_UI_LIBRARY}. "
+            "Run node scripts/build-native-css-ui.mjs, or supply -DTHREENATIVE_CSS_UI_LIBRARY."
+        )
+    endif()
+    add_library(threenative-css-ui STATIC IMPORTED)
+    set_target_properties(threenative-css-ui PROPERTIES
+        IMPORTED_LOCATION "${THREENATIVE_CSS_UI_LIBRARY}"
+    )
+endif()
+
 option(TN_ENGINE_ONLY "Configure only the JS-free native engine targets" OFF)
 include(cmake/NativeEngine.cmake)
 if(TN_ENGINE_ONLY)
@@ -1632,68 +1694,6 @@ if(TN_ENABLE_METAHUMAN)
         "${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/cpp")
     target_link_libraries(threenative-native-metahuman PUBLIC riglogic4)
     list(APPEND MYSTRAL_SOURCES src/metahuman/native_bindings.cpp)
-endif()
-
-if(TN_ENABLE_UI_OVERLAY)
-    if(NOT THREENATIVE_UI_OVERLAY_LIBRARY)
-        # MSVC names a static library `.lib`; every other desktop toolchain we build with names it
-        # `lib*.a`. Guessing `.a` on Windows is the check that never matches the artifact the
-        # build script just produced.
-        if(WIN32)
-            set(_tn_ui_overlay_name "threenative_ui_overlay.lib")
-        else()
-            set(_tn_ui_overlay_name "libthreenative_ui_overlay.a")
-        endif()
-        set(THREENATIVE_UI_OVERLAY_LIBRARY
-            "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/${_tn_ui_overlay_name}"
-        )
-    endif()
-    if(NOT EXISTS "${THREENATIVE_UI_OVERLAY_LIBRARY}")
-        message(FATAL_ERROR
-            "UI overlay artifact is missing: ${THREENATIVE_UI_OVERLAY_LIBRARY}. "
-            "Run node scripts/build-native-ui-overlay.mjs, or supply -DTHREENATIVE_UI_OVERLAY_LIBRARY."
-        )
-    endif()
-    add_library(threenative-ui-overlay STATIC IMPORTED)
-    set_target_properties(threenative-ui-overlay PROPERTIES
-        IMPORTED_LOCATION "${THREENATIVE_UI_OVERLAY_LIBRARY}"
-    )
-endif()
-
-if(TN_ENABLE_CSS_UI)
-    if(NOT THREENATIVE_CSS_UI_LIBRARY)
-        # The same naming rule as the overlay above: MSVC writes `.lib`, every other desktop
-        # toolchain this host is built with writes `lib*.a`.
-        if(WIN32)
-            set(_tn_css_ui_name "threenative_css_ui.lib")
-        else()
-            set(_tn_css_ui_name "libthreenative_css_ui.a")
-        endif()
-        # Android cross-builds land in cargo's per-triple directory, one per ABI
-        # (`scripts/build-native-css-ui.mjs --target <triple>`), like native physics.
-        if(ANDROID_ABI STREQUAL "arm64-v8a")
-            set(_tn_css_ui_dir "aarch64-linux-android/release")
-        elseif(ANDROID_ABI STREQUAL "x86_64")
-            set(_tn_css_ui_dir "x86_64-linux-android/release")
-        elseif(ANDROID)
-            message(FATAL_ERROR "The CSS UI has no Android target for ABI ${ANDROID_ABI}")
-        else()
-            set(_tn_css_ui_dir "release")
-        endif()
-        set(THREENATIVE_CSS_UI_LIBRARY
-            "${CMAKE_CURRENT_SOURCE_DIR}/native/css-ui/target/${_tn_css_ui_dir}/${_tn_css_ui_name}"
-        )
-    endif()
-    if(NOT EXISTS "${THREENATIVE_CSS_UI_LIBRARY}")
-        message(FATAL_ERROR
-            "CSS UI artifact is missing: ${THREENATIVE_CSS_UI_LIBRARY}. "
-            "Run node scripts/build-native-css-ui.mjs, or supply -DTHREENATIVE_CSS_UI_LIBRARY."
-        )
-    endif()
-    add_library(threenative-css-ui STATIC IMPORTED)
-    set_target_properties(threenative-css-ui PROPERTIES
-        IMPORTED_LOCATION "${THREENATIVE_CSS_UI_LIBRARY}"
-    )
 endif()
 
 # Canvas2D sources provide no-Skia stubs when MYSTRAL_HAS_SKIA is absent.

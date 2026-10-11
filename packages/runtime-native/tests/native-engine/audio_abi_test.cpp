@@ -1,5 +1,6 @@
 #include "check.h"
 #include "threenative/abi/tn_audio.h"
+#include "mystral/audio/audio_context.h"
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -87,6 +88,31 @@ void decode_graph() {
     CHECK(call(TNP_AUDIO_INFO, context, 0, p) == 0 && p[2] == 0);
     p = {}; CHECK(call(TNP_AUDIO_CLOSE, context, 0, p) == 0);
 }
+void playback_rate() {
+    const auto context = create();
+    const auto source = node(context, 1);
+    Packet p{8, 2, 0.5, 0}; CHECK(call(TNP_AUDIO_PARAM, context, source, p) == 0);
+    p = {8, 0}; CHECK(call(TNP_AUDIO_PARAM, context, source, p) == 0 && p[0] == 0.5);
+    p = {8, 4, 1.25, 0, 0.2}; CHECK(call(TNP_AUDIO_PARAM, context, source, p) == 0);
+    p = {8, 0}; CHECK(call(TNP_AUDIO_PARAM, context, source, p) == 0 && p[0] == 1.25);
+    p = {8, 1, -1}; CHECK(call(TNP_AUDIO_PARAM, context, source, p) != 0);
+    p = {}; CHECK(call(TNP_AUDIO_CLOSE, context, 0, p) == 0);
+    mystral::audio::AudioContext mixer;
+    auto buffer = mixer.createBuffer(1, 8, 44100);
+    for (int i = 0; i < 8; ++i) buffer->getChannelData(0)[i] = float(i) / 8;
+    for (const float rate : {0.5f, 2.0f}) {
+        auto voice = mixer.createBufferSource();
+        voice->setBuffer(buffer); voice->playbackRate().setValue(rate); voice->start();
+        float samples[4]{}; voice->process(samples, 4, 1);
+        for (int i = 0; i < 4; ++i) CHECK(std::abs(samples[i] - float(i) * rate / 8) < 0.0001f);
+    }
+    auto voice = mixer.createBufferSource();
+    voice->setBuffer(buffer); voice->setLoop(true);
+    voice->setLoopStart(2.0 / 44100); voice->setLoopEnd(4.0 / 44100);
+    voice->playbackRate().setValue(1.5f); voice->start();
+    float samples[4]{}; voice->process(samples, 4, 1);
+    CHECK(std::abs(samples[3] - 2.5f / 8) < 0.0001f);
+}
 void rejects() {
     auto context = create();
     Packet p{};
@@ -117,4 +143,4 @@ void rejects() {
     CHECK(error && std::strstr(reinterpret_cast<const char*>(error), "TN_AUDIO_HANDLE: AudioContext"));
 }
 }
-TN_TEST_MAIN({"decode_graph", decode_graph}, {"rejects", rejects})
+TN_TEST_MAIN({"decode_graph", decode_graph}, {"rejects", rejects}, {"playback_rate", playback_rate})

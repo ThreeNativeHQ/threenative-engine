@@ -1,6 +1,7 @@
 #include "check.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/player/run.h"
+#include "mystral/platform/ui_overlay.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/geometries.h"
 #include "engine/scene/material.h"
@@ -11,6 +12,9 @@ extern "C" int32_t js_tnp_player_open();
 extern "C" int32_t js_tnp_player_step();
 extern "C" void js_tnp_player_close();
 extern "C" double js_tnp_player_render_info(int32_t);
+extern "C" int32_t js_tnp_player_ui_attached();
+extern "C" int64_t js_tnp_player_ui_take();
+extern "C" int32_t js_tnp_player_ui_post(int64_t);
 extern "C" int64_t js_tnp_player_adapter_info();
 extern "C" int64_t js_tnp_player_publish(int64_t, int64_t, double, double, int32_t, int64_t);
 extern "C" void tnp_player_update(double) {}
@@ -19,6 +23,19 @@ extern "C" double tnp_player_observe(double, double) { return 0; }
 
 namespace {
 using namespace tn::engine;
+void uiMessages() {
+    using namespace mystral::platform;
+    setUiOverlayAttached(false);
+    CHECK(js_tnp_player_ui_attached() == 0);
+    CHECK(js_tnp_player_ui_post(0) == 0);
+    CHECK(js_tnp_player_ui_take() == 0);
+    queueUiMessage(R"({"type":"tn:hit-regions","regions":[]})");
+    queueUiMessage(R"({"type":"tn:intent","intent":"start"})");
+    const auto pointer = js_tnp_player_ui_take();
+    CHECK(pointer != 0);
+    if (pointer) CHECK(std::string(reinterpret_cast<const char*>(pointer)) == R"({"type":"tn:intent","intent":"start"})");
+    CHECK(js_tnp_player_ui_take() == 0);
+}
 void frameMetrics() {
     const auto sample = tn::engine::player::frameTiming(0.5, 0.6, 1.1, 28.5, 42);
     CHECK(sample.find("gameJsMs")->number() == 0.5);
@@ -79,4 +96,4 @@ void renderInfo() {
     CHECK(tn_context_destroy(context, nullptr) == TN_OK);
 }
 }
-TN_TEST_MAIN({"render_info", renderInfo}, {"frame_metrics", frameMetrics})
+TN_TEST_MAIN({"render_info", renderInfo}, {"frame_metrics", frameMetrics}, {"ui_messages", uiMessages})

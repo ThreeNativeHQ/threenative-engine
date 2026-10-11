@@ -781,7 +781,13 @@ void mipmapsShareOneSubmit() {
         }
         const uint64_t before = renderer.gpu().submittedSerial();
         renderer.render(items, wideOrtho(), LightState{}, {0.1, 0.1, 0.1, 1});
-        return renderer.gpu().submittedSerial() - before;
+        const uint64_t submits = renderer.gpu().submittedSerial() - before;
+        // Replacing a later draw's map must preserve the earlier draw's selected bind group.
+        textures.back()->needsUpdate();
+        renderer.render(items, wideOrtho(), LightState{}, {0.1, 0.1, 0.1, 1});
+        CHECK(renderer.lastFrame().draws == uint32_t(textureCount) + 1);
+        renderer.render(items, wideOrtho(), LightState{}, {0.1, 0.1, 0.1, 1});
+        return submits;
     };
     const uint64_t one = firstFrameSubmits(1), five = firstFrameSubmits(5);
     std::printf("first-frame submits: 1 texture %llu, 5 textures %llu\n", (unsigned long long)one,

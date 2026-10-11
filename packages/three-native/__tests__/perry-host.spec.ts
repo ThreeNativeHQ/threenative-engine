@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import { expect, it, vi } from "vitest";
+import { connectUiBridge } from "../../core/src/ui-bridge.js";
+import { onUiIntent } from "../../core/src/ui-state.js";
 
 it("reads native frame counters and adapter JSON through the numeric Perry ABI", () => {
   const renderInfo = vi.fn((field: number) => (field === 0 ? 9 : 123456789));
@@ -33,11 +35,62 @@ it("reads native frame counters and adapter JSON through the numeric Perry ABI",
   expect(readString).toHaveBeenCalledExactlyOnceWith(42, -1);
 });
 
+it("transports UI strings over the numeric ABI and frees outbound buffers on failure", () => {
+  const strings = new Map([[42, "intent"]]);
+  let inbound = 42;
+  let attached = 1;
+  let writeFailed = false;
+  const post = vi.fn(() => attached);
+  const free = vi.fn();
+  const sandbox = {
+    exports: {} as {
+      playerUiAttached(): boolean;
+      playerUiTake(): string | undefined;
+      playerUiPost(text: string): boolean;
+    },
+    js_tnp_player_ui_attached: () => attached,
+    js_tnp_player_ui_take: () => inbound,
+    js_tnp_player_ui_post: post,
+    js_tnp_alloc: vi.fn(() => 7),
+    js_tnp_free: free,
+    js_tnp_read_string: (at: number) => strings.get(at),
+    js_tnp_string_bytes: (text: string) => Buffer.byteLength(text),
+    js_tnp_write_string: (text: string, at: number) => {
+      strings.set(at, text);
+      return writeFailed ? 1 : 0;
+    },
+  };
+  runInNewContext(
+    transpileModule(readFileSync(new URL("../perry/src/index.ts", import.meta.url), "utf8"), {
+      compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
+    }).outputText,
+    sandbox,
+  );
+  expect(sandbox.exports.playerUiAttached()).toBe(true);
+  expect(sandbox.exports.playerUiTake()).toBe("intent");
+  inbound = 0;
+  expect(sandbox.exports.playerUiTake()).toBeUndefined();
+  expect(sandbox.exports.playerUiPost("état")).toBe(true);
+  expect(sandbox.js_tnp_alloc).toHaveBeenCalledWith(6);
+  expect(post).toHaveBeenCalledWith(7);
+  expect(strings.get(7)).toBe("état");
+  expect(free).toHaveBeenCalledExactlyOnceWith(7);
+  attached = 0;
+  expect(sandbox.exports.playerUiAttached()).toBe(false);
+  expect(sandbox.exports.playerUiPost("state")).toBe(false);
+  writeFailed = true;
+  expect(() => sandbox.exports.playerUiPost("state")).toThrow("TN_PERRY_UI_STRING");
+  expect(free).toHaveBeenCalledTimes(3);
+  expect(post).toHaveBeenCalledTimes(2);
+});
+
 it("drives core frames, input, timers and async mailbox observations through player callbacks", async () => {
   let update!: (dt: number) => void;
   let frame!: (ms: number) => void;
   let observe!: (method: number, argument: number) => number;
   let codes = "";
+  const uiFrames: string[] = [];
+  let attached = true;
   let nextPointer = 3;
   const strings = new Map<number, string>([
     [1, "sample"],
@@ -56,6 +109,9 @@ it("drives core frames, input, timers and async mailbox observations through pla
     playerRunner: () => 1,
     playerStep: () => 0,
     playerCodes: () => codes,
+    playerUiAttached: () => attached,
+    playerUiTake: () => uiFrames.shift(),
+    playerUiPost: vi.fn(() => attached),
     readString: (at: number) => strings.get(at),
     stringBytes: (value: string) => Buffer.byteLength(value),
     alloc: () => nextPointer++,
@@ -115,6 +171,7 @@ it("drives core frames, input, timers and async mailbox observations through pla
     __THREENATIVE_NATIVE__: { platform: { runtime: string }; physics: { version: string } };
     __THREENATIVE_PLAYTEST_BRIDGE__?: Record<string, (...args: unknown[]) => unknown>;
     audioUpdates?: number;
+    __tnUiGameReceive?: (frame: string) => void;
     requestAnimationFrame(callback: (time: number) => void): number;
     setTimeout(callback: () => void, delay: number): number;
   };
@@ -126,6 +183,40 @@ it("drives core frames, input, timers and async mailbox observations through pla
   );
   expect(sandbox.__THREENATIVE_NATIVE__.platform.runtime).toBe("native");
   expect(sandbox.__THREENATIVE_NATIVE__.physics.version).toBe("0.30.0");
+  // Use core's real bridge: host state out, queued intents back while simulation is held.
+  const ui = connectUiBridge({ end: "game", scope: sandbox });
+  expect(ui.transport).toBe("host");
+  expect(ui.hasPeer()).toBe(true);
+  ui.post({ type: "tn:state", state: { ui: { screens: { flight: false } } } });
+  expect(native.playerUiPost).toHaveBeenCalledWith(
+    JSON.stringify({ type: "tn:state", state: { ui: { screens: { flight: false } } } }),
+  );
+  const intents = vi.fn();
+  onUiIntent(ui, intents);
+  uiFrames.push(
+    '{"type":"tn:intent","intent":"start","payload":{"airborne":false}}',
+    '{"type":"tn:intent","intent":"cockpit"}',
+  );
+  frame(0);
+  expect(intents.mock.calls).toEqual([
+    ["start", { airborne: false }],
+    ["cockpit", undefined],
+  ]);
+  attached = false;
+  expect(ui.hasPeer()).toBe(false);
+  attached = true;
+  uiFrames.push("invalid JSON", '{"type":"tn:intent","intent":"after-error"}');
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  frame(0);
+  expect(errors).toHaveBeenCalledWith(expect.stringContaining("TN_UI_RECEIVE_FAILED"));
+  expect(intents).toHaveBeenLastCalledWith("after-error", undefined);
+  errors.mockRestore();
+  ui.close();
+  const dropped = vi.spyOn(console, "log").mockImplementation(() => {});
+  uiFrames.push('{"type":"tn:intent"}');
+  frame(0);
+  expect(dropped).toHaveBeenCalledWith('TN_UI_BRIDGE:{"dropped":"no __tnUiGameReceive"}');
+  dropped.mockRestore();
   const canvas = sandbox.exports.platform.inputTarget;
   const keyDown = vi.fn();
   const keyUp = vi.fn();

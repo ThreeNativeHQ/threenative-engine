@@ -114,6 +114,28 @@ export function playerCapture(on: boolean): number {
   return js_tnp_player_capture(on ? 1 : 0);
 }
 
+declare function js_tnp_player_ui_attached(): number;
+declare function js_tnp_player_ui_take(): number;
+declare function js_tnp_player_ui_post(text: number): number;
+export function playerUiAttached(): boolean {
+  return js_tnp_player_ui_attached() !== 0;
+}
+export function playerUiTake(): string | undefined {
+  const pointer = js_tnp_player_ui_take();
+  return pointer ? readString(pointer) : undefined;
+}
+export function playerUiPost(text: string): boolean {
+  const size = stringBytes(text) + 1;
+  const pointer = alloc(size);
+  if (!pointer) throw new Error("TN_PERRY_OUT_OF_MEMORY");
+  try {
+    if (writeString(text, pointer, size)) throw new Error("TN_PERRY_UI_STRING");
+    return js_tnp_player_ui_post(pointer) !== 0;
+  } finally {
+    free(pointer);
+  }
+}
+
 declare function js_tnp_physics_version(): number;
 declare function js_tnp_physics_call(
   op: number,

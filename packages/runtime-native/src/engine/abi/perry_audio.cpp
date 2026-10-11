@@ -1,4 +1,5 @@
 // Numeric handles over the shipped SDL WebAudio and its async decoder; no VM state here.
+#include <limits>
 #include "threenative/abi/tn_audio.h"
 #include "mystral/audio/audio_context.h"
 #include "mystral/audio/async_audio_decode.h"
@@ -49,6 +50,7 @@ AudioParam& parameter(Session& s, int64_t id, int kind) {
         case 5: return s.as<DynamicsCompressorNode>(id, "DynamicsCompressorNode.ratio")->ratio();
         case 6: return s.as<DynamicsCompressorNode>(id, "DynamicsCompressorNode.attack")->attack();
         case 7: return s.as<DynamicsCompressorNode>(id, "DynamicsCompressorNode.release")->release();
+        case 8: return s.as<AudioBufferSourceNode>(id, "AudioBufferSourceNode.playbackRate")->playbackRate();
         default: throw std::runtime_error("TN_AUDIO_MEMBER: AudioParam");
     }
 }
@@ -111,6 +113,8 @@ extern "C" int64_t js_tnp_audio_call(int32_t op, int64_t context, int64_t object
                 s.as<AudioBufferSourceNode>(object, "AudioBufferSourceNode.stop")->stop(p[0]); break;
             case TNP_AUDIO_ENDED: p[0] = s.as<AudioBufferSourceNode>(object, "AudioBufferSourceNode.onended")->takeEndedEvent(); break;
             case TNP_AUDIO_PARAM: {
+                if (int(p[0]) == 8 && p[1] >= 1 && p[1] <= 4 && (p[2] < 0 || p[2] > std::numeric_limits<float>::max()))
+                    throw std::runtime_error("TN_AUDIO_ARGUMENT: AudioBufferSourceNode.playbackRate");
                 auto& param = parameter(s, object, int(p[0]));
                 switch (int(p[1])) {
                     case 0: p[0] = param.value(); break;

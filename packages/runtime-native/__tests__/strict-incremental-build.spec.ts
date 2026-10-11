@@ -17,6 +17,7 @@ import { provision } from "../../../tools/native-typescript/provision.mjs";
 import {
   ENGINE_LIBS,
   buildStrict,
+  stagePlayerUiLink,
   stageWorkspaceSources,
   summarizeCompilerOutput,
   workspaceSources,
@@ -133,6 +134,28 @@ describe("strict workspace sources", () => {
     expect(() => workspaceSources(entry)).toThrow(/TN_STRICT_WORKSPACE_EXPORT/u);
   });
 });
+
+it.runIf(process.platform === "linux")(
+  "stages WebKit linker dependencies only for an engine with the web UI backend",
+  () => {
+    const dir = makeTempDirSync("tn-player-ui-link-");
+    const file = join(dir, "package.json");
+    const cache = join(dir, "CMakeCache.txt");
+    const manifest = {
+      perry: { nativeLibrary: { targets: { linux: { libs: ["tn_engine_player"] } } } },
+    };
+    writeFileSync(file, JSON.stringify(manifest));
+    writeFileSync(cache, "TN_ENABLE_UI_OVERLAY:BOOL=OFF\nTN_ENABLE_CSS_UI:BOOL=ON\n");
+    stagePlayerUiLink(dir, dir);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(manifest);
+    writeFileSync(cache, "TN_ENABLE_UI_OVERLAY:BOOL=ON\n");
+    stagePlayerUiLink(dir, dir);
+    expect(JSON.parse(readFileSync(file, "utf8")).perry.nativeLibrary.targets.linux).toEqual({
+      libs: ["tn_engine_player"],
+      pkgConfig: ["webkit2gtk-4.1"],
+    });
+  },
+);
 
 describe("strict builds are incremental", () => {
   it("builds every step once, then nothing while nothing changed", () => {

@@ -12,6 +12,9 @@ import {
   playerOpen,
   playerRunner,
   playerStep,
+  playerUiAttached,
+  playerUiPost,
+  playerUiTake,
   readString,
   stringBytes,
   writeString,
@@ -78,6 +81,8 @@ globals.__THREENATIVE_NATIVE__ = {
   platform: { runtime: "native", os: "linux", formFactor: "desktop", maxTouchPoints: 0 },
 };
 if (runner) globals.TN_PLAYTEST_ENDPOINT = {};
+globals.__tnUiOverlayAttached = playerUiAttached;
+globals.__tnUiPost = playerUiPost;
 globals.performance = { now: () => time };
 globals.requestAnimationFrame = (callback: (now: number) => void) => {
   frames.set(++nextId, callback);
@@ -247,6 +252,18 @@ const status = playerBind(
     // Decodes settle on the host's frames, not on simulation ticks: a game held by a runner
     // (no ticks yet) still finishes loading its audio before its first describe().
     audioHost.update();
+    for (let message = playerUiTake(); message !== undefined; message = playerUiTake()) {
+      const receive = globals.__tnUiGameReceive;
+      if (typeof receive !== "function") {
+        console.log('TN_UI_BRIDGE:{"dropped":"no __tnUiGameReceive"}');
+        continue;
+      }
+      try {
+        receive(message);
+      } catch (error) {
+        console.error(`TN_UI_RECEIVE_FAILED: ${String(error)}`);
+      }
+    }
     if (!runner) return;
     // A game held by a runner has no ticks, yet its loading timers (setTimeout 0 between warm-up
     // slices) must fire: until the first tick they follow the host's frame clock, as the V8

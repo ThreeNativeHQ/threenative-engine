@@ -283,9 +283,13 @@ it("loads packaged audio through the Perry host, retains native PCM and drains s
     expect(() => context.createOscillator()).toThrow(
       "TN_AUDIO_UNSUPPORTED: AudioContext.createOscillator",
     );
-    expect(() => bufferSource.playbackRate.setValueAtTime(2, 0)).toThrow(
-      "TN_AUDIO_UNSUPPORTED: AudioBufferSourceNode.playbackRate",
-    );
+    bufferSource.playbackRate.setValueAtTime(0.5, 0);
+    expect(calls.at(-1)?.[3].slice(0, 4)).toEqual([8, 2, 0.5, 0]);
+    bufferSource.playbackRate.setTargetAtTime(1.25, 1, 0.2);
+    expect(calls.at(-1)?.[3].slice(0, 5)).toEqual([8, 4, 1.25, 1, 0.2]);
+    expect(() => {
+      bufferSource.playbackRate.value = -1;
+    }).toThrow("TN_AUDIO_ARGUMENT");
     expect(() => {
       voice.panner.coneInnerAngle = 90;
     }).toThrow("TN_AUDIO_UNSUPPORTED: PannerNode.coneInnerAngle");

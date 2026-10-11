@@ -313,6 +313,8 @@ public:
     double loopEnd() const { return loopEnd_; }
     void setLoopEnd(double time) { loopEnd_ = time; }
 
+    AudioParam& playbackRate() { return playbackRate_; }
+
     // Playback control
     void start(double when = 0, double offset = 0, double duration = -1);
     void stop(double when = 0);
@@ -329,7 +331,8 @@ private:
     double loopEnd_ = 0;
     std::atomic<bool> isPlaying_{false};
     std::atomic<bool> endedPending_{false};
-    size_t playbackPosition_ = 0;
+    AudioParam playbackRate_{1.0f};
+    double playbackPosition_ = 0;
     double startTime_ = 0;
     std::atomic<double> stopTime_{-1};
     double offsetTime_ = 0;
