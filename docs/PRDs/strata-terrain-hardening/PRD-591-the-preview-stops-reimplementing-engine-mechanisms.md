@@ -78,6 +78,26 @@ both material paths.
     also passed (other nine tests skipped). Terrain typecheck and direct preview `tsc --noEmit`
     passed. Scoped Biome and `git diff --check` passed. The web playtest, all-kit runtime captures
     and caller full native-matrix proof remain unverified; this box stays open.
+    A subsequent `test:terrain:web` attempt exited 1: framework startup reached ready, but the
+    headed WebGPU recipe selected SwiftShader, then reported device loss and a blank forest
+    capture. Eleven assertions failed; this is not render or performance evidence. The captured
+    adapter was read from that attempt's `capture.json`; the retained run log is
+    `591-preview-web.out` in the coordinator cache.
+    Environment diagnosis found loaded NVIDIA kernel driver 615.71.09 against NVML userspace
+    615.78.08 (`nvidia-smi` exit 18). The laptop refused offload at 99°C. Hardware qualification
+    was restored with process-local matching cached libraries: `nvidia-smi` reports
+    RTX 2080 / 615.71.09. A fresh headed `world-terrain-inline-hash` selected case passed
+    in 4.8 s on NVIDIA/Turing, with no page or GPU validation errors and a nonuniform capture
+    (`packages/runtime-native/artifacts/strata591-matching-driver-web/report.json`).
+    The harness exited 2 because 102 unselected cases are blocked; this proves only the selected
+    case. No system driver change, assertion change or budget change was needed. Full preview
+    and all-kit qualification remain open.
+    The matching-driver full preview rerun reached visible forest, coastal and alpine captures,
+    then hit the external 720 s deadline (exit 124 / SIGTERM) before a final assertion report.
+    It does not prove runtime budgets or all-kit success. The fresh forest smoke screenshot is
+    [attached to the EPIC PR](https://github.com/ThreeNativeHQ/threenative-engine/pull/483#issuecomment-6106317255),
+    labelled with performance and visual comparison still pending. Documentation checks passed:
+    3,057 links across 1,360 Markdown files, plus all 252 tests across the six prose-lane specs.
   - Native availability corrected: the linked checkout has no `third_party/` or `build/` of its own,
     and the primary owning checkout already ships
     `packages/runtime-native/build/tn-linux-wgpu/mystral` (also `tn-linux-jsprofile` and
