@@ -71,7 +71,7 @@ a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's 
 is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
-`src/render/sky.ts` makes `assets/sky.jpg` (Poly Haven, CC0) background, environment light and fog
+WebGPU reports `TN_GPU_CLASS` once per launch. Automatic `render.resolutionScale` starts at 0.85 for `mobile-low`, otherwise 1; a numeric value pins it. `TN_FRAME_BUDGET` reports the actual scale under both policies. `src/render/sky.ts` makes `assets/sky.jpg` (Poly Haven, CC0) background, environment light and fog
 colour (re-aim `SUN_DIRECTION` when you swap it, and re-tune the fog density: it is set for a 224 m
 map); WebGPU adds a `VirtualShadowNode`. The sky is the light, not the backdrop: the rig is wider than
 the map at its widest zoom, so `terrain.ts` draws a plain under it (grow it with `ZOOM_RANGE.far` or
