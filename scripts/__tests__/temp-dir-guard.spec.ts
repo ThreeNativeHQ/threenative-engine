@@ -47,6 +47,7 @@ const allowedProductionCreators = new Map<string, string>([
     "The host-config sync round-trips each template through a scratch copy removed in finally.",
   ],
   ["scripts/template-baseline.ts", "The production baseline gate removes its root in finally."],
+  ["scripts/verify-forest-playtest.ts", "The forest proof gate removes its root in finally."],
   ["scripts/verify-golden-path.ts", "The production golden-path gate removes roots in finally."],
   ["scripts/verify-one-template.ts", "The production template gate owns its cleanup."],
   [

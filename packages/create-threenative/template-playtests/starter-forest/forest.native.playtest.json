@@ -1,0 +1,38 @@
+{
+  "name": "native-starter-forest-walk",
+  "target": "desktop",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 60,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "forest-loads",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk-forward",
+      "press": "ArrowUp",
+      "holdTicks": 300,
+      "release": true
+    }
+  ],
+  "assert": {
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": {
+        "axis": "-z",
+        "min": 0.5
+      }
+    },
+    "performance": {
+      "maxFrameMsP95": 16.7
+    }
+  }
+}
