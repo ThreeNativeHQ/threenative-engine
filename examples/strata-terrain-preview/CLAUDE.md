@@ -136,11 +136,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/fixtures/handoff-game/game.ts`: standalone ThreeNative entrypoint testing handoff consumption.
   - `scripts/fixtures/handoff-game/handoffEnvironment.ts`: lighting and environment setup for handoff fixture.
   - `scripts/fixtures/handoff-game/state.ts`: reactive state management for handoff fixture game.
-  - `scripts/fixtures/kit-game/Alpine.ts`: starter kit fixture scene for the alpine biome.
-  - `scripts/fixtures/kit-game/Coastal.ts`: starter kit fixture scene for the coastal biome.
-  - `scripts/fixtures/kit-game/Desert.ts`: starter kit fixture scene for the desert biome.
-  - `scripts/fixtures/kit-game/Forest.ts`: starter kit fixture scene for the forest biome.
-  - `scripts/fixtures/kit-game/Tundra.ts`: starter kit fixture scene for the tundra biome.
+  - `scripts/fixtures/kit-game/KitScene.ts`: shared starter kit fixture scene parameterised by biome.
   - `scripts/fixtures/kit-game/game.ts`: standalone multi-world game harness testing starter kit scenes.
   - `scripts/fixtures/kit-game/state.ts`: shared state for starter kit game fixture.
   - `scripts/fixtures/kit-game/playtests/alpine.playtest.json`: playtest scenario for starter kit alpine world.
