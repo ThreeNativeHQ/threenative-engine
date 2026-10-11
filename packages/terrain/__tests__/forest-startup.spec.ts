@@ -9,7 +9,7 @@ import * as loading from "../../../examples/strata-terrain-preview/src/render/lo
 // Execute the shipped fixture itself; only renderer/physics/assets are replaced at their seams.
 const source = readFileSync(
   new URL(
-    "../../../examples/strata-terrain-preview/scripts/fixtures/kit-game/Forest.ts",
+    "../../../examples/strata-terrain-preview/scripts/fixtures/kit-game/KitScene.ts",
     import.meta.url,
   ),
   "utf8",
@@ -22,6 +22,7 @@ const stand = { fir: { x: 0, z: 0 }, spawn: { x: 4, z: 0 }, edge: { x: 24, z: 10
 function harness() {
   vi.useFakeTimers();
   let covered = false;
+  let admit = () => {};
   const body = {
     velocity: new three.Vector3(),
     moveAndSlide: vi.fn(),
@@ -32,6 +33,11 @@ function harness() {
     world: Object.assign(new three.Group(), {
       dispose: vi.fn(),
       stats: () => ({ pendingPrewarm: 0 }),
+      whenSpawnReady: () =>
+        new Promise<void>((resolve) => {
+          admit = resolve;
+        }),
+      prewarmed: Promise.resolve(),
       readinessAt: () => ({
         ready: covered,
         requiredCells: 1,
@@ -42,7 +48,7 @@ function harness() {
       }),
     }),
     ground: { dispose: vi.fn() },
-    water: { lakes: 1, rivers: 1 },
+    water: { lakes: 1, rivers: 1, dispose: vi.fn() },
     colliders: { active: 198, detach: vi.fn() },
   };
   const addForest = vi.fn(async () => forest);
@@ -59,9 +65,12 @@ function harness() {
       },
       CollisionShape3D: { capsule: () => ({}) },
     },
-    "world.js": { addForest },
-    "sky.js": { forestDaylight: () => new three.Group() },
-    "stand.js": { stand },
+    "kit.js": {
+      addKit: addForest,
+      kitDaylight: () => new three.Group(),
+      forestStand: stand,
+      KIT: "Forest",
+    },
     "state.js": { initialState },
     "loading.js": loading,
   };
@@ -70,6 +79,8 @@ function harness() {
     setTimeout,
     clearTimeout,
     console,
+    performance,
+    Error,
     require(name: string) {
       const dependency = imports[name] ?? imports[name.split("/").at(-1) ?? ""];
       if (dependency) return dependency;
@@ -116,7 +127,7 @@ function harness() {
     update(context: typeof ctx, dt: number): void;
     exit(): void;
   };
-  const Forest = exports.Forest as new () => Fixture;
+  const Forest = exports.KitScene as new () => Fixture;
   return {
     scene: new Forest(),
     ctx,
@@ -125,6 +136,7 @@ function harness() {
     addForest,
     setCovered: (value = true) => {
       covered = value;
+      if (value) admit();
     },
     draw: () => {
       for (const callback of callbacks) callback();
@@ -149,6 +161,7 @@ it("keeps actual Forest controls held for coverage, then permits play after spaw
     expect(h.body.velocity.x).toBe(0);
     h.setCovered();
     h.draw();
+    await h.ctx.startup.hold.mock.calls[0]?.[1];
     await Promise.resolve();
     await Promise.resolve();
     h.ctx.startup.phase = "ready";

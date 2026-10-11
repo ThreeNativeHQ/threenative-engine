@@ -39,7 +39,6 @@ const FIXTURES = join(import.meta.dirname, "fixtures/kit-game");
  */
 const KITS = {
   forest: {
-    scene: "Forest.ts",
     playtest: "kit.playtest.json",
     generatedStand: true,
     water: true,
@@ -49,7 +48,6 @@ const KITS = {
     views: ["edge", "ground", "lake", "overview"],
   },
   alpine: {
-    scene: "Alpine.ts",
     playtest: "alpine.playtest.json",
     generatedStand: false,
     water: false,
@@ -59,7 +57,6 @@ const KITS = {
     views: ["boulders", "edge", "ground", "overview"],
   },
   desert: {
-    scene: "Desert.ts",
     playtest: "desert.playtest.json",
     generatedStand: false,
     water: false,
@@ -69,7 +66,6 @@ const KITS = {
     views: ["boulders", "edge", "ground", "overview"],
   },
   tundra: {
-    scene: "Tundra.ts",
     playtest: "tundra.playtest.json",
     generatedStand: false,
     water: true,
@@ -79,7 +75,6 @@ const KITS = {
     views: ["boulders", "edge", "ground", "overview"],
   },
   coastal: {
-    scene: "Coastal.ts",
     playtest: "coastal.playtest.json",
     generatedStand: false,
     water: true,
@@ -402,11 +397,26 @@ export const stand = {
   cpSync(join(FIXTURES, "playtests", CONFIG.playtest), join(game, "playtests/kit.playtest.json"));
   if (process.env.KIT_BEFORE === "1") stripWaterRows(join(game, "playtests/kit.playtest.json"));
   mkdirSync(join(game, "src/scenes"), { recursive: true });
-  cpSync(join(FIXTURES, CONFIG.scene), join(game, "src/scenes", CONFIG.scene));
-  // game.ts imports the kit's scene through this one re-export, so the game itself is the same for each kit.
+  cpSync(join(FIXTURES, "KitScene.ts"), join(game, "src/scenes/KitScene.ts"));
+  const title = KIT[0].toUpperCase() + KIT.slice(1);
   writeFileSync(
-    join(game, "src/scenes/KitScene.ts"),
-    `export { ${CONFIG.scene.replace(/\.ts$/u, "")} as KitScene, noteFrameBudget } from "./${CONFIG.scene.replace(/\.ts$/u, ".js")}";\n`,
+    join(game, "src/terrain/kit.ts"),
+    `
+import { add${title}, COLLIDERS } from "./${KIT}/world.js";
+import { ${KIT}Daylight as kitDaylight } from "./${KIT}/sky.js";
+import type { IStarterWorld } from "@threenative/terrain/starter";
+${CONFIG.generatedStand ? 'import { stand } from "./forest/stand.js";' : ""}
+export { COLLIDERS, kitDaylight };
+export const KIT: string = "${title}";
+export const forestStand: { fir: { x: number; z: number }; spawn: { x: number; z: number }; edge: { x: number; z: number }; groundY: number } | undefined = ${CONFIG.generatedStand ? "stand" : "undefined"};
+export interface IKitWorld extends IStarterWorld {
+  readonly lakes?: readonly { at: readonly [number, number]; radius: number }[];
+  readonly seaLevel?: number;
+  readonly water?: { lakes: number; rivers: number; dispose(): void };
+  readonly sea?: { dispose(): void };
+}
+export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWorld> = add${title};
+`,
   );
   cpSync(
     join(import.meta.dirname, "../src/render/loading.ts"),

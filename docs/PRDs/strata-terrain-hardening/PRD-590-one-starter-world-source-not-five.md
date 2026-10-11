@@ -53,7 +53,7 @@ the example, or the code they test moves into the package (PRD-591).
 - [x] Shared starter-world mechanism with game-owned look. proof: terrain runtime specs, terrain build and scaffolder terrain-kit spec — 2026-10-11: all 70 runtime tests and 27 scaffold tests passed; build including declarations and publint exited 0. Public `@threenative/terrain/starter` keeps Node-only bake imports out of browser games.
 
 #### Phase 2: fixtures and specs
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `scripts/fixtures/kit-game/*`, `packages/terrain/__tests__/*-runtime.spec.ts`, `*-kit.spec.ts`
 - [ ] Kit playtests on one fixture. proof: `test:kit`
 - [ ] Table-driven spec. proof: `pnpm --filter @threenative/terrain test`
@@ -63,3 +63,5 @@ the example, or the code they test moves into the package (PRD-591).
 ## Execution scope (2026-10-11)
 
 Parts A–D run only in this checkout, one local commit each, no push. Reuse WorldCells, loadWorldHeightmap, Heightfield and existing physics; keep per-kit dress/water/sky choices in copied source. Preserve all assertions and five bake hashes. Baseline before Part A: 17 337 lines across 86 authored kit, fixture and package-test files (.ts/.mjs/.mts/.json); 36 package spec files. Final census also includes extracted package helpers and moved example specs, so moving files earns no LOC reduction.
+
+Part B (2026-10-11): five scenes replaced by one parameterised KitScene; four runtime files become one 56-test table (same 14 tests per kit), four bake specs become one 8-test table. Differences are columns: runtime asset, water response/request and missing-model filename; bake scatter count, water identities, river point count and compared files. Focused 56 runtime + 8 bake + 31 loading + 3 forest startup tests pass. The startup VM now supplies performance/Error and the actual spawn-admission promise; assertions are unchanged. Scoped Biome exits 0 (3 complexity warnings). Full terrain proof is pending the Part C separation; the first run exposes the example’s missing generated horizon.json, now prepared by the existing example bake (five worlds + horizon, exit 0).

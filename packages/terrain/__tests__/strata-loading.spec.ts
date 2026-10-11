@@ -585,11 +585,11 @@ interface IKitGate {
 /** Run a starter-kit fixture's real gate class in a fresh context, with its spawn rejecting as `reason`. */
 function kitGate(kit: string, reason: string): IKitGate {
   const url = new URL(
-    `../../../examples/strata-terrain-preview/scripts/fixtures/kit-game/${kit}.ts`,
+    "../../../examples/strata-terrain-preview/scripts/fixtures/kit-game/KitScene.ts",
     import.meta.url,
   );
   const source = ts.createSourceFile(
-    `${kit}.ts`,
+    "KitScene.ts",
     readFileSync(url, "utf8"),
     ts.ScriptTarget.Latest,
     true,
@@ -597,7 +597,7 @@ function kitGate(kit: string, reason: string): IKitGate {
   const constants: string[] = [];
   let gate = "";
   function visit(node: ts.Node): void {
-    if (ts.isClassDeclaration(node) && node.name?.text === kit) gate = node.getText(source);
+    if (ts.isClassDeclaration(node) && node.name?.text === "KitScene") gate = node.getText(source);
     else if (ts.isVariableDeclaration(node) && KIT_CONSTANTS.has(node.name.getText(source)))
       constants.push(node.parent.parent.getText(source));
     ts.forEachChild(node, visit);
@@ -629,10 +629,12 @@ function kitGate(kit: string, reason: string): IKitGate {
     clearTimeout: () => undefined,
     performance: { now: () => 0 },
     createLoadingScreen: () => ({ update: () => undefined, finish: () => undefined }),
-    [`add${kit}`]: () => Promise.reject(new Error(reason)),
+    KIT: kit,
+    forestStand: undefined,
+    addKit: () => Promise.reject(new Error(reason)),
   };
   runInNewContext(compiled, scope);
-  const Gate = scope.exports[kit];
+  const Gate = scope.exports.KitScene;
   if (Gate === undefined) throw new Error(`Kit gate ${kit} did not load`);
   return new Gate();
 }

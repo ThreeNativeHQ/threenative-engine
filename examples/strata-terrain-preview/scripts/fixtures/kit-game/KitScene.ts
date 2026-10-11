@@ -1,19 +1,20 @@
-// An ordinary game scene standing in the alpine starter kit. The kit streams the world, textures its
-// ground and gives the boulders their collision; this file owns the daylight, the camera, the player
-// and every number the playtest reads. Nothing here imports the authoring package: the kit was copied
-// into `src/terrain/alpine/` and its bake is a build step. The spawn and the views are read from the
-// loaded heightfield and placements, so the scene keeps no coordinate the recipe does not make.
 import { type ICtx, type IFrameBudgetWindow, Scene } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { Object3D, type PerspectiveCamera, Vector3 } from "three";
+import { type InstancedMesh, Object3D, type PerspectiveCamera, Vector3 } from "three";
 import { createLoadingScreen } from "../render/loading.js";
 import { type GameState, initialState } from "../state.js";
-import { alpineDaylight } from "../terrain/alpine/sky.js";
-import { COLLIDERS, type IAlpineWorld, addAlpine } from "../terrain/alpine/world.js";
+import {
+  COLLIDERS,
+  type IKitWorld,
+  KIT,
+  addKit,
+  forestStand,
+  kitDaylight,
+} from "../terrain/kit.js";
 
 type Ctx = ICtx<GameState, IPhysicsContext>;
-type Field = IAlpineWorld["field"];
-type Extent = IAlpineWorld["extent"];
+type Field = IKitWorld["field"];
+type Extent = IKitWorld["extent"];
 
 /** A 1.8 m figure: 0.55 m of half-height plus the 0.35 m radius a boulder's clearance is read against. */
 const HALF_HEIGHT = 0.55;
@@ -27,10 +28,13 @@ const SPAWN_RING = 5;
 /** The steepest rise over run, per metre, that the spawn or the walk to the anchor may use. */
 const SPAWN_SLOPE = 0.25;
 const WALK_SLOPE = 0.35;
-/** The alpine daylight's sun (`sky.ts`). Its azimuth picks the side the edge camera stands on. */
+/** The kit daylight's sun (`sky.ts`). Its azimuth picks the side the edge camera stands on. */
 const SUN_AZIMUTH = Math.atan2(0.56, 0.55);
-const VIEW_NAMES = ["boulders", "edge", "ground", "overview"] as const;
-type ViewName = (typeof VIEW_NAMES)[number];
+const VIEW_NAMES =
+  KIT === "Forest"
+    ? ["ground", "edge", "overview", "lake"]
+    : ["boulders", "edge", "ground", "overview"];
+type ViewName = string;
 
 interface IPoint {
   readonly x: number;
@@ -53,7 +57,7 @@ interface IStand {
   readonly anchor: IProp;
   readonly spawn: IPoint;
   readonly groundY: number;
-  readonly views: Readonly<Record<ViewName, IView>>;
+  readonly views: Readonly<Record<ViewName, IView>> & { readonly ground: IView };
 }
 
 /** One view's closed frame-budget windows, read by {@link noteFrameBudget}. */
@@ -79,8 +83,9 @@ function median(values: readonly number[]): number {
 
 /** Every placed boulder. The kit's only asset is the boulder, so every record is one. */
 function readProps(placements: Float32Array): IProp[] {
-  const boulder = COLLIDERS.boulder;
-  if (!boulder) throw new Error("Alpine kit: the boulder has no collider in COLLIDERS.");
+  const boulder = KIT === "Coastal" ? COLLIDERS.fir : COLLIDERS.boulder;
+  if (!boulder || !("sphere" in boulder))
+    throw new Error(`${KIT} kit: the boulder has no collider in COLLIDERS.`);
   const props: IProp[] = [];
   for (let index = 0; index + 8 <= placements.length; index += 8)
     props.push({
@@ -148,6 +153,7 @@ function walkable(
   props: readonly IProp[],
   anchor: IProp,
   spawn: IPoint,
+  wet: (point: IPoint, margin: number) => boolean,
 ): boolean {
   const length = distance(anchor, spawn);
   for (let along = 0; along <= length - 1.5; along += 0.25) {
@@ -156,6 +162,7 @@ function walkable(
       z: spawn.z + ((anchor.z - spawn.z) * along) / length,
     };
     if (slopeAt(field, extent, point.x, point.z) > WALK_SLOPE) return false;
+    if (wet(point, 1)) return false;
     for (const other of props)
       if (other !== anchor && distance(other, point) < other.radius + RADIUS + 0.3) return false;
   }
@@ -168,6 +175,7 @@ function spawnFor(
   extent: Extent,
   props: readonly IProp[],
   anchor: IProp,
+  wet: (point: IPoint, margin: number) => boolean,
 ): IPoint | undefined {
   let best: IPoint | undefined;
   let bestClear = RADIUS + 0.5;
@@ -177,9 +185,10 @@ function spawnFor(
       x: anchor.x + SPAWN_RING * Math.cos(angle),
       z: anchor.z + SPAWN_RING * Math.sin(angle),
     };
+    if (wet(spawn, KIT === "Tundra" ? 5 : 1)) continue;
     if (
       slopeAt(field, extent, spawn.x, spawn.z) > SPAWN_SLOPE ||
-      !walkable(field, extent, props, anchor, spawn)
+      !walkable(field, extent, props, anchor, spawn, wet)
     )
       continue;
     const clear = clearance(props, spawn, anchor);
@@ -192,7 +201,12 @@ function spawnFor(
 }
 
 /** The clearest point 25 to 40 m from the anchor, on the sun's side and inside the world. */
-function edgeFor(props: readonly IProp[], anchor: IProp, extent: Extent): IPoint {
+function edgeFor(
+  props: readonly IProp[],
+  anchor: IProp,
+  extent: Extent,
+  wet: (point: IPoint, margin: number) => boolean,
+): IPoint {
   let best: IPoint | undefined;
   let bestClear = Number.NEGATIVE_INFINITY;
   for (let step = 0; step < 24; step += 1)
@@ -207,6 +221,7 @@ function edgeFor(props: readonly IProp[], anchor: IProp, extent: Extent): IPoint
         z: anchor.z + reach * Math.sin(angle),
       };
       if (!inside(extent, point, 5)) continue;
+      if (wet(point, KIT === "Tundra" ? 5 : 1)) continue;
       const clear = Math.min(...props.map((prop) => distance(prop, point)));
       if (clear > bestClear) {
         bestClear = clear;
@@ -214,7 +229,7 @@ function edgeFor(props: readonly IProp[], anchor: IProp, extent: Extent): IPoint
       }
     }
   if (best === undefined)
-    throw new Error("Alpine kit: no edge camera point on the sun's side of the anchor.");
+    throw new Error(`${KIT} kit: no edge camera point on the sun's side of the anchor.`);
   return best;
 }
 
@@ -227,11 +242,12 @@ function viewsFor(
   anchor: IProp,
   spawn: IPoint,
   away: IPoint,
+  wet: (point: IPoint, margin: number) => boolean,
 ): IStand["views"] {
   const anchorGround = field.heightAt(anchor.x, anchor.z);
   const target = new Vector3(anchor.x, anchorGround + 0.9, anchor.z);
   const eyeGround = field.heightAt(spawn.x, spawn.z);
-  const edge = edgeFor(props, anchor, extent);
+  const edge = edgeFor(props, anchor, extent, wet);
   // Beside the centre's side of the anchor, so the camera stays inside the world however the anchor lies.
   const overviewX = anchor.x + (anchor.x > centre.x ? -160 : 160);
   const overviewZ = anchor.z + (anchor.z > centre.z ? -160 : 160);
@@ -241,7 +257,7 @@ function viewsFor(
   const behind = { x: anchor.x - away.x * 9 * sign, z: anchor.z - away.z * 9 * sign };
   const boulderGround = groundAt(field, extent, behind.x, behind.z);
   if (boulderGround === undefined)
-    throw new Error("Alpine kit: the boulder view has no ground inside the world.");
+    throw new Error(`${KIT} kit: the boulder view has no ground inside the world.`);
   return {
     ground: {
       at: new Vector3(spawn.x, eyeGround + EYE, spawn.z),
@@ -267,33 +283,88 @@ function viewsFor(
 }
 
 /** The stand the scene is written around: the nearest boulder to the centre with a walkable spawn. */
-function chooseStand(alpine: IAlpineWorld): IStand {
-  const { field, extent } = alpine;
-  const props = readProps(alpine.placements);
+function chooseStand(kit: IKitWorld): IStand {
+  if (forestStand) return forestViews();
+  const wet = (point: IPoint, margin: number): boolean => {
+    if (kit.seaLevel !== undefined) {
+      const ground = groundAt(kit.field, kit.extent, point.x, point.z);
+      return ground === undefined || ground < kit.seaLevel + margin;
+    }
+    return (kit.lakes ?? []).some(
+      (lake) => distance(point, { x: lake.at[0], z: lake.at[1] }) < lake.radius + margin,
+    );
+  };
+  const { field, extent } = kit;
+  const props = readProps(kit.placements);
   const centre = { x: extent.minX + extent.sizeX / 2, z: extent.minZ + extent.sizeZ / 2 };
   // Every boulder may anchor the stand. The nearest one to the centre with a walkable spawn wins.
   const candidates = props.sort((a, b) => distance(a, centre) - distance(b, centre));
   for (const anchor of candidates) {
-    const spawn = spawnFor(field, extent, props, anchor);
+    if (wet(anchor, 3)) continue;
+    const spawn = spawnFor(field, extent, props, anchor, wet);
     if (spawn === undefined) continue;
     const away = { x: (spawn.x - anchor.x) / SPAWN_RING, z: (spawn.z - anchor.z) / SPAWN_RING };
     return {
       anchor,
       spawn,
       groundY: field.heightAt(spawn.x, spawn.z),
-      views: viewsFor(field, props, extent, centre, anchor, spawn, away),
+      views: viewsFor(field, props, extent, centre, anchor, spawn, away, wet),
     };
   }
-  throw new Error("Alpine kit: no boulder in the world has a walkable spawn.");
+  throw new Error(`${KIT} kit: no boulder in the world has a walkable spawn.`);
 }
 
-function disposeAlpine(alpine: IAlpineWorld): void {
-  alpine.world.dispose();
-  alpine.colliders.detach();
-  alpine.ground.dispose();
+function forestViews(): IStand {
+  const stand = forestStand;
+  if (!stand) throw new Error("Forest kit: missing generated stand.");
+  const TRUNK = new Vector3(stand.fir.x, stand.groundY + 6, stand.fir.z);
+  /** From the fir towards the player's start; the open side of the stand. */
+  const AWAY = new Vector3(stand.spawn.x - stand.fir.x, 0, stand.spawn.z - stand.fir.z).normalize();
+
+  /** The recipe's lake centre, on the water's level: the lake view looks at it from above the terrain. */
+  const LAKE = new Vector3(-70, 13.3, 25);
+  /** The fixed views the scenario captures. */
+  // Eye-height cameras inside a 4.5 m stand sit inside crowns, whose one-sided cards vanish from
+  // behind; so the close view looks out of the clearing and the edge view stands back from the stand.
+  const views = {
+    ground: {
+      at: new Vector3(stand.spawn.x, stand.groundY + EYE, stand.spawn.z),
+      look: new Vector3(stand.spawn.x, stand.groundY + EYE, stand.spawn.z).addScaledVector(
+        AWAY,
+        20,
+      ),
+    },
+    edge: {
+      at: new Vector3(stand.edge.x, stand.groundY + 6, stand.edge.z),
+      look: TRUNK,
+    },
+    overview: {
+      at: new Vector3(stand.fir.x + 160, stand.groundY + 220, stand.fir.z + 160),
+      look: TRUNK,
+    },
+    // Above the tallest ground (about 38 m) and back far enough to frame the whole basin and its shore.
+    lake: {
+      at: new Vector3(20, 84, 115),
+      look: LAKE,
+    },
+  };
+  return {
+    anchor: { ...stand.fir, y: stand.groundY, radius: 0.35 },
+    spawn: stand.spawn,
+    groundY: stand.groundY,
+    views,
+  };
 }
 
-export class Alpine extends Scene<GameState, IPhysicsContext> {
+function disposeKit(kit: IKitWorld): void {
+  kit.world.dispose();
+  kit.colliders.detach();
+  kit.ground.dispose();
+  kit.water?.dispose();
+  kit.sea?.dispose();
+}
+
+export class KitScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = initialState;
 
   #player: Object3D | undefined;
@@ -305,7 +376,7 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
   #driven = 0;
   #closest = Number.POSITIVE_INFINITY;
   #settled = false;
-  #alpine: IAlpineWorld | undefined;
+  #kit: IKitWorld | undefined;
   #stand: IStand | undefined;
   #released = false;
   #ready = false;
@@ -317,6 +388,11 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
   /** The kit's world streams while the scene loads, so `ready` waits for the cells the spawn needs. */
   override async load(ctx: Ctx): Promise<void> {
     for (const view of VIEW_NAMES) viewWindows.set(view, { frameP95: [], gpuP50: [], gpuP95: [] });
+    if (forestStand) {
+      this.#stand = forestViews();
+      ctx.camera.position.copy(this.#stand.views.ground.at);
+      ctx.camera.lookAt(this.#stand.views.ground.look);
+    }
     const deadlineAt = performance.now() + 120_000;
     let settled = false;
     const spawn = new Promise<void>((done, fail) => {
@@ -331,22 +407,23 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
       };
     });
     this.#timer = setTimeout(
-      () => this.#fail(ctx, "Alpine spawn admission exceeded 120000 ms"),
+      () => this.#fail(ctx, `${KIT} spawn admission exceeded 120000 ms`),
       120_000,
     );
     void spawn.catch((error: unknown) => {
       this.#fail(ctx, error instanceof Error ? error.message : String(error));
     });
-    if (ctx.startup.phase !== "ready") ctx.startup.hold("alpine-spawn", spawn, 120_000);
-    let alpine: IAlpineWorld | undefined;
+    if (ctx.startup.phase !== "ready")
+      ctx.startup.hold(`${KIT.toLowerCase()}-spawn`, spawn, 120_000);
+    let kit: IKitWorld | undefined;
     // A holder rather than a `let`: the progress getter reads it, and the spawn is set once it is known.
-    const spawnView: { at?: Vector3 } = {};
+    const spawnView: { at?: Vector3 } = { at: this.#stand?.views.ground?.at };
     this.#loading = createLoadingScreen({
       ...ctx,
       startup: {
         get progress() {
           // The spawn is unknown until the world resolves, so the bar reads the startup alone until then.
-          const region = spawnView.at && alpine?.world.readinessAt(spawnView.at, 60);
+          const region = spawnView.at && kit?.world.readinessAt(spawnView.at, 60);
           const required = (region?.requiredCells ?? 0) + (region?.requiredTerrainTiles ?? 0);
           const loaded = (region?.loadedCells ?? 0) + (region?.loadedTerrainTiles ?? 0);
           return Math.min(
@@ -358,19 +435,19 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
       },
     });
     try {
-      alpine = await addAlpine(ctx, ctx.camera, undefined, () => !this.#released);
+      kit = await addKit(ctx, ctx.camera, undefined, () => !this.#released);
     } catch (error) {
       this.#fail(ctx, error instanceof Error ? error.message : String(error));
       return;
     }
-    this.#alpine = alpine;
+    this.#kit = kit;
     if (this.#released) {
-      disposeAlpine(alpine);
+      disposeKit(kit);
       return;
     }
     let stand: IStand;
     try {
-      stand = chooseStand(alpine);
+      stand = chooseStand(kit);
     } catch (error) {
       this.#fail(ctx, error instanceof Error ? error.message : String(error));
       return;
@@ -382,10 +459,10 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
     void (
       remaining > 0
         ? Promise.all([
-            alpine.world.whenSpawnReady(stand.views.ground.at, 60, remaining),
-            alpine.world.prewarmed,
+            kit.world.whenSpawnReady(stand.views.ground.at, 60, remaining),
+            kit.world.prewarmed,
           ])
-        : Promise.reject(new Error("Alpine spawn admission exceeded 120000 ms"))
+        : Promise.reject(new Error(`${KIT} spawn admission exceeded 120000 ms`))
     ).then(
       () => this.#settle?.(),
       (error: unknown) => this.#fail(ctx, error instanceof Error ? error.message : String(error)),
@@ -396,12 +473,17 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
     // The camera moves to the spawn before the world finishes streaming, so the cells it needs load first.
     ctx.camera.position.copy(stand.views.ground.at);
     ctx.camera.lookAt(stand.views.ground.look);
-    ctx.state.set({ propColliders: alpine.colliders.active, worldReady: 0 });
+    ctx.state.set({
+      propColliders: kit.colliders.active,
+      worldReady: 0,
+      ...(kit.water ? { waterLakes: kit.water.lakes, waterRivers: kit.water.rivers } : {}),
+      ...(kit.sea ? { waterLakes: 1 } : {}),
+    });
   }
 
   override enter(ctx: Ctx): void {
-    ctx.add(alpineDaylight(ctx.camera));
-    if (!this.#alpine || !this.#stand) {
+    ctx.add(kitDaylight(ctx.camera));
+    if (!this.#kit || !this.#stand) {
       ctx.beforeRender(() => this.#loading?.update());
       return;
     }
@@ -420,10 +502,10 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
     this.#viewNow(ctx);
     ctx.beforeRender(() => {
       this.#loading?.update();
-      const alpine = this.#alpine;
+      const kit = this.#kit;
       const stand = this.#stand;
-      if (!alpine || !stand) return;
-      const region = alpine.world.readinessAt(stand.views.ground.at, 60);
+      if (!kit || !stand) return;
+      const region = kit.world.readinessAt(stand.views.ground.at, 60);
       if (!region) return;
       ctx.state.set({
         spawnCellsLoaded: region.loadedCells,
@@ -441,7 +523,7 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
 
   #fail(ctx: Ctx, message: string): void {
     if (this.#released || this.#error || this.#ready) return;
-    const error = message || "Alpine spawn failed";
+    const error = message || `${KIT} spawn failed`;
     this.#error = error;
     this.#settle?.(new Error(error));
     ctx.state.set({ loadingError: error, worldReady: 0 });
@@ -449,10 +531,10 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
 
   override exit(): void {
     this.#released = true;
-    this.#settle?.(new Error("Alpine spawn cancelled"));
+    this.#settle?.(new Error(`${KIT} spawn cancelled`));
     this.#loading?.finish();
     this.#body?.dispose();
-    if (this.#alpine) disposeAlpine(this.#alpine);
+    if (this.#kit) disposeKit(this.#kit);
   }
 
   override update(ctx: Ctx, dt: number): void {
@@ -477,8 +559,13 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
     this.#placeCamera();
     if (this.#frames % 60 === 0)
       ctx.state.set({
-        boulderInstances: this.#alpine?.world.stats().instances ?? -1,
-        propColliders: this.#alpine?.colliders.active ?? -1,
+        [KIT === "Forest"
+          ? "firInstancesDrawn"
+          : KIT === "Coastal"
+            ? "treeInstances"
+            : "boulderInstances"]:
+          KIT === "Forest" ? this.#firInstances(ctx) : (this.#kit?.world.stats().instances ?? -1),
+        propColliders: this.#kit?.colliders.active ?? -1,
       });
     ctx.state.set({
       driveMetres: this.#driven,
@@ -518,7 +605,15 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
       this.#closest,
       Math.hypot(player.position.x - stand.anchor.x, player.position.z - stand.anchor.z),
     );
-    if (this.#driveLeft <= 0) ctx.state.set({ closestToBoulder: this.#closest, driveDone: 1 });
+    if (this.#driveLeft <= 0)
+      ctx.state.set({
+        [KIT === "Forest"
+          ? "closestToTrunk"
+          : KIT === "Coastal"
+            ? "closestToTree"
+            : "closestToBoulder"]: this.#closest,
+        driveDone: 1,
+      });
   }
 
   #setView(ctx: Ctx, view: ViewName): void {
@@ -569,6 +664,20 @@ export class Alpine extends Scene<GameState, IPhysicsContext> {
     ctx.state.set({
       groundError: Math.abs(player.position.y - HALF_HEIGHT - RADIUS - sum / 4),
     });
+  }
+
+  /** Instances the renderer draws in the fir batches, its own visibility and every ancestor's. */
+  #firInstances(ctx: Ctx): number {
+    let drawn = 0;
+    ctx.scene.traverse((object) => {
+      if (!(object as InstancedMesh).isInstancedMesh) return;
+      const mesh = object as InstancedMesh;
+      if (!mesh.name.includes("fir") || mesh.count < 1) return;
+      for (let node: Object3D | null = object; node !== null; node = node.parent)
+        if (node.visible === false) return;
+      drawn += mesh.count;
+    });
+    return drawn;
   }
 
   #costs(key: "frameP95" | "gpuP50" | "gpuP95"): Record<string, number> {
