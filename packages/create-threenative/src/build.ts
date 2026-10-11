@@ -25,6 +25,15 @@ import {
   traceSegment,
 } from "@jridgewell/trace-mapping";
 import { compileAssets } from "@threenative/assets";
+import {
+  KHR_DF_MODEL_ASTC,
+  KHR_DF_TRANSFER_LINEAR,
+  KHR_DF_TRANSFER_SRGB,
+  KHR_SUPERCOMPRESSION_NONE,
+  VK_FORMAT_ASTC_4x4_SRGB_BLOCK,
+  VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
+  read as readKTX2,
+} from "ktx-parse";
 import { BUILD_REPORT_SUFFIX, measureTreeBytes, writeBuildReport } from "./buildReport.js";
 import { writeCompressionSidecars } from "./compress.js";
 import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
@@ -178,6 +187,117 @@ export function assetRoot(cwd: string, config: IResolvedThreeNativeConfig): stri
   return path.resolve(cwd, config.assets?.output ?? "public");
 }
 
+/** Structural package admission only; the cook owns decoded quality and the host checks GPU support. */
+function isMobileRawAstc(bytes: Uint8Array): boolean {
+  try {
+    if (bytes.byteLength < 80) return false;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const width = view.getUint32(20, true);
+    const height = view.getUint32(24, true);
+    const count = view.getUint32(40, true);
+    const indexEnd = 80 + count * 24;
+    if (
+      width === 0 ||
+      height === 0 ||
+      count !== Math.floor(Math.log2(Math.max(width, height))) + 1 ||
+      indexEnd > bytes.byteLength
+    )
+      return false;
+    // Bound descriptor parsing before handing untrusted bytes to the installed parser.
+    const dfd = view.getUint32(48, true);
+    const dfdLength = view.getUint32(52, true);
+    if (
+      dfd < indexEnd ||
+      dfd % 4 !== 0 ||
+      dfdLength !== 44 ||
+      dfd + dfdLength > bytes.byteLength ||
+      view.getUint32(dfd, true) !== dfdLength ||
+      view.getUint16(dfd + 10, true) !== 40 ||
+      view.getBigUint64(64, true) !== 0n ||
+      view.getBigUint64(72, true) !== 0n
+    )
+      return false;
+    const regions: [number, number][] = [
+      [0, indexEnd],
+      [dfd, dfd + dfdLength],
+    ];
+    const kvd = view.getUint32(56, true);
+    const kvdLength = view.getUint32(60, true);
+    if (kvdLength > 0) {
+      if (kvd < indexEnd || kvd % 4 !== 0 || kvd + kvdLength > bytes.byteLength) return false;
+      regions.push([kvd, kvd + kvdLength]);
+    }
+    for (let mip = 0; mip < count; mip += 1) {
+      const offset = view.getBigUint64(80 + mip * 24, true);
+      const expected =
+        Math.ceil(Math.max(1, Math.floor(width / 2 ** mip)) / 4) *
+        Math.ceil(Math.max(1, Math.floor(height / 2 ** mip)) / 4) *
+        16;
+      if (
+        !Number.isSafeInteger(expected) ||
+        view.getBigUint64(88 + mip * 24, true) !== BigInt(expected) ||
+        view.getBigUint64(96 + mip * 24, true) !== BigInt(expected) ||
+        offset % 16n !== 0n ||
+        offset + BigInt(expected) > BigInt(bytes.byteLength)
+      )
+        return false;
+      regions.push([Number(offset), Number(offset) + expected]);
+    }
+    regions.sort((a, b) => a[0] - b[0]);
+    if (regions.some(([start], i) => i > 0 && start < (regions[i - 1]?.[1] ?? 0))) return false;
+    const container = readKTX2(bytes);
+    const descriptor = container.dataFormatDescriptor[0];
+    const sample = descriptor?.samples[0];
+    return (
+      [VK_FORMAT_ASTC_4x4_UNORM_BLOCK, VK_FORMAT_ASTC_4x4_SRGB_BLOCK].includes(
+        container.vkFormat,
+      ) &&
+      container.typeSize === 1 &&
+      container.pixelDepth === 0 &&
+      container.layerCount === 0 &&
+      container.faceCount === 1 &&
+      container.supercompressionScheme === KHR_SUPERCOMPRESSION_NONE &&
+      container.globalData === null &&
+      container.levelCount === count &&
+      container.levels.length === count &&
+      container.dataFormatDescriptor.length === 1 &&
+      descriptor?.vendorId === 0 &&
+      descriptor.descriptorType === 0 &&
+      descriptor.versionNumber === 2 &&
+      descriptor.colorModel === KHR_DF_MODEL_ASTC &&
+      (descriptor.flags === 0 || descriptor.flags === 1) &&
+      descriptor.transferFunction ===
+        (container.vkFormat === VK_FORMAT_ASTC_4x4_SRGB_BLOCK
+          ? KHR_DF_TRANSFER_SRGB
+          : KHR_DF_TRANSFER_LINEAR) &&
+      descriptor.texelBlockDimension.join() === "3,3,0,0" &&
+      descriptor.bytesPlane.join() === "16,0,0,0,0,0,0,0" &&
+      descriptor.samples.length === 1 &&
+      sample?.bitOffset === 0 &&
+      sample.bitLength === 127 &&
+      sample.channelType === 0 &&
+      sample.samplePosition.join() === "0,0,0,0" &&
+      sample.sampleLower === 0 &&
+      sample.sampleUpper === 0xffffffff
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Only files in the compiled root can qualify for the mobile raw-ASTC exception. */
+async function isCompiledMobileAstc(outputRoot: string, output: string): Promise<boolean> {
+  const resolved = path.resolve(outputRoot, output);
+  const relative = path.relative(outputRoot, resolved);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+    return false;
+  try {
+    return isMobileRawAstc(await readFile(resolved));
+  } catch {
+    return false;
+  }
+}
+
 /** Refuse compiled codecs the selected runtime/bundle cannot decode before packaging starts. */
 export async function assertNativeAssetsCompatible(
   cwd: string,
@@ -210,21 +330,51 @@ export async function assertNativeAssetsCompatible(
   const rows = Object.entries(entries as Record<string, unknown>).map(
     ([logical, entry]) => [logical, (entry ?? {}) as Record<string, unknown>] as const,
   );
-  const ktx2 = rows
-    .filter(
-      ([, entry]) =>
-        (typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)) ||
-        (Array.isArray(entry.extensions) && entry.extensions.includes("KHR_texture_basisu")) ||
-        (Array.isArray(entry.sharedImages) &&
-          entry.sharedImages.some(
-            (image) =>
+  const ktx2Rows = rows.filter(
+    ([, entry]) =>
+      (typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)) ||
+      (Array.isArray(entry.extensions) && entry.extensions.includes("KHR_texture_basisu")) ||
+      (Array.isArray(entry.sharedImages) &&
+        entry.sharedImages.some(
+          (image) =>
+            image !== null &&
+            typeof image === "object" &&
+            typeof image.output === "string" &&
+            /\.ktx2$/iu.test(image.output),
+        )),
+  );
+  const ktx2: string[] = [];
+  for (const [logical, entry] of ktx2Rows) {
+    if (
+      !capabilities.decoders.ktx2 &&
+      (target === "android" || target === "ios") &&
+      !(Array.isArray(entry.extensions) && entry.extensions.includes("KHR_texture_basisu"))
+    ) {
+      const outputs = [
+        ...(typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)
+          ? [entry.output]
+          : []),
+        ...(Array.isArray(entry.sharedImages)
+          ? entry.sharedImages.flatMap((image) =>
               image !== null &&
               typeof image === "object" &&
               typeof image.output === "string" &&
-              /\.ktx2$/iu.test(image.output),
-          )),
-    )
-    .map(([logical]) => logical);
+              /\.ktx2$/iu.test(image.output)
+                ? [image.output as string]
+                : [],
+            )
+          : []),
+      ];
+      if (
+        outputs.length > 0 &&
+        (
+          await Promise.all(outputs.map((output) => isCompiledMobileAstc(outputRoot, output)))
+        ).every(Boolean)
+      )
+        continue;
+    }
+    ktx2.push(logical);
+  }
   if (!capabilities.decoders.ktx2 && ktx2.length > 0) {
     throw new Error(
       `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). Selected artifact ${capabilities.artifact} (${capabilities.engine}) has no admitted Basis/KTX2 decoder in its bundle. Replace or transcode the authored KTX2 source for ${target === "desktop" ? "this runtime" : "mobile"}, or exclude it from ${target === "desktop" ? "this runtime's" : "mobile"} builds; keep compressed textures on the web target.`,

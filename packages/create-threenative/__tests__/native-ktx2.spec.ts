@@ -119,7 +119,163 @@ async function writeManifest(
   );
 }
 
+// Captured from the installed encodeToKTX2 + transcodeKtx2ToAstc at e49bb087f:
+// separate UNORM/sRGB UASTC cooks of 8x8 RGBA [240,20,40,128], with all four mip levels.
+const CAPTURED_ASTC = {
+  linear:
+    "q0tUWCAyMLsNChoKnQAAAAEAAAAIAAAACAAAAAAAAAAAAAAAAQAAAAQAAAAAAAAAsAAAACwAAADcAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAwAQAAAAAAAEAAAAAAAAAAQAAAAAAAAAAgAQAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAQAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAQAAAAAAABAAAAAAAAAAEAAAAAAAAAAsAAAAAAAAAAIAKACiAQEAAwMAABAAAAAAAAAAAAB/AAAAAAAAAAAA/////xsAAABLVFh3cml0ZXIAS1RYLVBhcnNlIHYxLjEuMAAAAAAAAPz9////////8PAUFCgogID8/f////////DwFBQoKICA/P3////////w8BQUKCiAgPz9////////8PAUFCgogID8/f////////DwFBQoKICA/P3////////w8BQUKCiAgPz9////////8PAUFCgogIA=",
+  srgb: "q0tUWCAyMLsNChoKngAAAAEAAAAIAAAACAAAAAAAAAAAAAAAAQAAAAQAAAAAAAAAsAAAACwAAADcAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAwAQAAAAAAAEAAAAAAAAAAQAAAAAAAAAAgAQAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAQAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAQAAAAAAABAAAAAAAAAAEAAAAAAAAAAsAAAAAAAAAAIAKACiAQIAAwMAABAAAAAAAAAAAAB/AAAAAAAAAAAA/////xsAAABLVFh3cml0ZXIAS1RYLVBhcnNlIHYxLjEuMAAAAAAAAPz9////////8PAUFCgogID8/f////////DwFBQoKICA/P3////////w8BQUKCiAgPz9////////8PAUFCgogID8/f////////DwFBQoKICA/P3////////w8BQUKCiAgPz9////////8PAUFCgogIA=",
+} as const;
+
+async function mobileAstcFixture(srgb = true): Promise<{ basis: Uint8Array; astc: Uint8Array }> {
+  const data = new Uint8Array(8 * 8 * 4);
+  for (let i = 0; i < data.length; i += 4) data.set([240, 20, 40, 128], i);
+  const basis = await encodeToKTX2(new Uint8Array([0]), {
+    generateMipmap: true,
+    imageDecoder: async () => ({ data, height: 8, width: 8 }),
+    isSetKTX2SRGBTransferFunc: srgb,
+    isUASTC: true,
+  });
+  return {
+    basis,
+    astc: Uint8Array.from(Buffer.from(srgb ? CAPTURED_ASTC.srgb : CAPTURED_ASTC.linear, "base64")),
+  };
+}
+
 describe("compressed assets on native targets", () => {
+  it.each([
+    ["android", false],
+    ["android", true],
+    ["ios", false],
+    ["ios", true],
+  ] as const)("admits actual raw ASTC but refuses Basis on %s (sRGB=%s)", async (target, srgb) => {
+    const project = await gameProject("threenative-raw-astc-admission-");
+    const config = await loadConfig(project);
+    const capabilities =
+      target === "android" ? androidQuickJs() : resolveRuntimeAssetCapabilities("ios");
+    const { basis, astc } = await mobileAstcFixture(srgb);
+    await mkdir(path.join(project, "public/textures"), { recursive: true });
+    const output = "textures/colour.ktx2";
+    for (const shared of [false, true]) {
+      await writeManifest(project, {
+        fixture: shared
+          ? { kind: "model", output: "model.glb", sharedImages: [{ output }] }
+          : { kind: "texture", output },
+      });
+      await writeFile(path.join(project, "public", output), astc);
+      await expect(
+        assertNativeAssetsCompatible(project, target, config, capabilities),
+      ).resolves.toBeUndefined();
+      await writeFile(path.join(project, "public", output), basis);
+      await expect(
+        assertNativeAssetsCompatible(project, target, config, capabilities),
+      ).rejects.toThrow(/TN_NATIVE_KTX2_UNSUPPORTED/);
+    }
+  });
+
+  it.each(["android", "ios"] as const)(
+    "rejects invalid raw ASTC and mixed shared outputs on %s",
+    async (target) => {
+      const project = await gameProject("threenative-raw-astc-invalid-");
+      const config = await loadConfig(project);
+      const capabilities =
+        target === "android" ? androidQuickJs() : resolveRuntimeAssetCapabilities("ios");
+      const { basis, astc } = await mobileAstcFixture();
+      await writeManifest(project, { colour: { kind: "texture", output: "colour.ktx2" } });
+      const output = path.join(project, "public/colour.ktx2");
+      await expect(
+        assertNativeAssetsCompatible(project, target, config, capabilities),
+      ).rejects.toThrow(/TN_NATIVE_KTX2_UNSUPPORTED/);
+      const corruptions = [
+        (bytes: Uint8Array) => bytes.subarray(0, 79),
+        (bytes: Uint8Array) => bytes.subarray(0, bytes.length - 1),
+        ...[
+          [12, 145],
+          [12, 165],
+          [16, 2],
+          [20, 0],
+          [28, 1],
+          [32, 1],
+          [36, 6],
+          [40, 1],
+          [44, 2],
+        ].map(([offset, value]) => (bytes: Uint8Array) => {
+          new DataView(bytes.buffer).setUint32(offset ?? 0, value ?? 0, true);
+          return bytes;
+        }),
+        ...[80, 88, 96].map((offset) => (bytes: Uint8Array) => {
+          new DataView(bytes.buffer).setBigUint64(offset, 1n, true);
+          return bytes;
+        }),
+        (bytes: Uint8Array) => {
+          const v = new DataView(bytes.buffer);
+          v.setBigUint64(104, v.getBigUint64(80, true), true);
+          return bytes;
+        },
+        (bytes: Uint8Array) => {
+          const v = new DataView(bytes.buffer);
+          v.setUint8(v.getUint32(48, true) + 14, 1);
+          return bytes;
+        },
+      ];
+      for (const corrupt of corruptions) {
+        await writeFile(output, corrupt(astc.slice()));
+        await expect(
+          assertNativeAssetsCompatible(project, target, config, capabilities),
+        ).rejects.toThrow(/TN_NATIVE_KTX2_UNSUPPORTED/);
+      }
+      await writeFile(output, astc);
+      await writeFile(path.join(project, "public/basis.ktx2"), basis);
+      await writeManifest(project, {
+        colour: {
+          kind: "texture",
+          output: "colour.ktx2",
+          sharedImages: [{ output: "basis.ktx2" }],
+        },
+      });
+      await expect(
+        assertNativeAssetsCompatible(project, target, config, capabilities),
+      ).rejects.toThrow(/TN_NATIVE_KTX2_UNSUPPORTED/);
+      await writeManifest(project, {
+        colour: {
+          kind: "model",
+          output: "model.glb",
+          extensions: ["KHR_texture_basisu"],
+          sharedImages: [{ output: "colour.ktx2" }],
+        },
+      });
+      await expect(
+        assertNativeAssetsCompatible(project, target, config, capabilities),
+      ).rejects.toThrow(/TN_NATIVE_KTX2_UNSUPPORTED/);
+      await writeManifest(project, {
+        colour: { kind: "model", output: "model.glb", extensions: ["KHR_texture_basisu"] },
+      });
+      await expect(
+        assertNativeAssetsCompatible(project, target, config, capabilities),
+      ).rejects.toThrow(/TN_NATIVE_KTX2_UNSUPPORTED/);
+      await writeManifest(project, {
+        colour: { kind: "texture", output: "colour.ktx2", extensions: ["EXT_meshopt_compression"] },
+      });
+      await expect(
+        assertNativeAssetsCompatible(project, target, config, capabilities),
+      ).rejects.toThrow(/TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED/);
+    },
+  );
+
+  it("keeps the mobile raw ASTC exception out of decoder-free desktop", async () => {
+    const project = await gameProject("threenative-raw-astc-desktop-");
+    const { astc } = await mobileAstcFixture();
+    await writeManifest(project, { colour: { kind: "texture", output: "colour.ktx2" } });
+    await writeFile(path.join(project, "public/colour.ktx2"), astc);
+    const capabilities = resolveRuntimeAssetCapabilities("desktop", undefined, (() => ({
+      status: 0,
+      stdout: "+ quickjs build",
+    })) as never);
+    await expect(
+      assertNativeAssetsCompatible(project, "desktop", await loadConfig(project), capabilities),
+    ).rejects.toThrow(/TN_NATIVE_KTX2_UNSUPPORTED/);
+  });
+
   it("bundles a game that ships no compressed asset for mobile without WASM", async () => {
     const project = await gameProject("threenative-ktx2-mobile-");
 
