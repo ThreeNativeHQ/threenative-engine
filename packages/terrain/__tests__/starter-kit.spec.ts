@@ -4,6 +4,7 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSy
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type IWorldPackage, validateWorldPackage } from "@threenative/core/world";
+import { Terrain, decodeRAW16 } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
@@ -15,7 +16,7 @@ const GOLDEN_HASHES: Record<string, Record<string, string>> = {
     "heightmap.u16": "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
     "placements.bin": "36ab2fd57e76b4b0bd998c5398f983e5f030968b83d5326c0cb98df1b67e4019",
     "splat.rgba": "f5e45e3740eea9e751e94570abe785854670d060fda6fe4b5518ccd4a562c7ec",
-    "world.json": "1bcd3d2c9f056d78b30fbc68b68d5e1a7c31176f0f79471ae473f3bc526b11e9",
+    "world.json": "3ffa8c08ede40639373e4bff8bf3c707c65df72da6f28f98794fb17119051010",
   },
   alpine: {
     "heightmap.u16": "bd84cb6c52a1142303dfb0f304190a981f29d77d118d3880e3eb246549838ae1",
@@ -43,6 +44,30 @@ const GOLDEN_HASHES: Record<string, Record<string, string>> = {
   },
 };
 
+/** SHA256 of each kit's inline heights and evaluated height grid at e12a5d578, as Float32 bytes. */
+const BASELINE_HEIGHTS: Record<string, { values: string; evaluated: string }> = {
+  forest: {
+    values: "46e9bdddaae82a29f770358e51f282486b41d0cab268a25bd58ba885c70a5ed8",
+    evaluated: "16db2efbc4f44fa016a69f8240ae5bf9ce92f15070ea67d436e575cea02ad55f",
+  },
+  alpine: {
+    values: "72995391d8244365e32f8d8c38f80c04e6ec948b819918876d1f5d6eeed66c81",
+    evaluated: "5000eea008516889508c4efc0074bb8a36c41a0c5e0f1484c3c667d60644fc1c",
+  },
+  coastal: {
+    values: "726595506d7dda30da88401b74c878375bcb40d88cef0debb4a10f27f47a2d17",
+    evaluated: "020ce3ba6dadb740886941287303c7ab37e53da2143cfcea3072eb197c934feb",
+  },
+  desert: {
+    values: "b0f471e65576313f26f98e456323c4c6eb6c4e688c931e4cafc2c66663abce85",
+    evaluated: "86740e21dad3412d21524d1c85e85d5106d05eccc6e66f010ffd8168d1cdda54",
+  },
+  tundra: {
+    values: "3fbcbc21b23e03a1c89d8ce0ccc2c8b93380973304e4be7662bc23185a706b58",
+    evaluated: "3c8e91abeacbd4469974513812c1ffc1703064808ba9facd1dbfb63a59fbdc62",
+  },
+};
+
 interface ITable {
   readonly base: { id: string };
   readonly layers: readonly { id: string }[];
@@ -56,14 +81,20 @@ interface IKitWater {
   readonly rivers: readonly { id: string; width: number; points: number[][] }[];
 }
 
-/** Copies the named kit into a temp directory whose node_modules resolves the workspace package. */
+/** Copies the named kit into a temp directory whose node_modules resolves the workspace packages. */
 function kitInTempDir(kitName = "forest"): string {
   const dir = makeTempDirSync(`terrain-starter-kit-${kitName}-`);
   const kit = join(packageRoot, "starter", kitName);
-  for (const name of ["bake.mjs", "recipe.json", "assets.json", "surface.json"])
+  for (const name of ["bake.mjs", "recipe.json", "assets.json", "surface.json", "heightmap.r16"])
     copyFileSync(join(kit, name), join(dir, name));
   mkdirSync(join(dir, "node_modules", "@threenative"), { recursive: true });
   symlinkSync(packageRoot, join(dir, "node_modules", "@threenative", "terrain"), "dir");
+  // forest/bake.mjs imports the cook from @threenative/assets, so the fixture links this checkout's.
+  symlinkSync(
+    join(packageRoot, "..", "assets"),
+    join(dir, "node_modules", "@threenative", "assets"),
+    "dir",
+  );
   return dir;
 }
 
@@ -105,7 +136,10 @@ describe("forest starter kit", () => {
     expect(perAsset.fir).toBeGreaterThanOrEqual(2000);
     expect(perAsset.boulder).toBe(320);
     expect(Object.keys(perAsset).sort()).toEqual(["boulder", "fir", "fir-c"]);
-    expect(total).toBeLessThanOrEqual(25 * 1024 * 1024);
+    // The combined and streamed representations are alternatives, not additive.
+    const combinedBytes = statSync(join(out, "world.glb")).size;
+    expect(combinedBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
+    expect(total - combinedBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
 
     // Pinned golden hashes for starter-kit forest bake (PRD-592 AC-1)
     expect(files.get("heightmap.u16")).toBe(
@@ -118,7 +152,7 @@ describe("forest starter kit", () => {
       "f5e45e3740eea9e751e94570abe785854670d060fda6fe4b5518ccd4a562c7ec",
     );
     expect(files.get("world.json")).toBe(
-      "1bcd3d2c9f056d78b30fbc68b68d5e1a7c31176f0f79471ae473f3bc526b11e9",
+      "3ffa8c08ede40639373e4bff8bf3c707c65df72da6f28f98794fb17119051010",
     );
 
     // One recipe and seed, one package: a second bake is byte-identical.
@@ -136,6 +170,33 @@ describe("forest starter kit", () => {
       for (const [file, hash] of Object.entries(expected)) {
         expect(files.get(file), `${kitName} ${file} hash mismatch`).toBe(hash);
       }
+    },
+  );
+
+  it.each(["forest", "alpine", "coastal", "desert", "tundra"] as const)(
+    "hydrates the %s RAW16 sidecar to the original inline heights, bit for bit (PRD-589 AC-2)",
+    (kitName) => {
+      const kit = join(packageRoot, "starter", kitName);
+      expect(statSync(join(kit, "recipe.json")).size).toBeLessThan(200_000);
+      const current = JSON.parse(readFileSync(join(kit, "recipe.json"), "utf8"));
+      const data = current.recipe.layers[0].params.data;
+      // Decode the sidecar exactly as bake.mjs does, from the path the recipe names.
+      const sidecar = readFileSync(join(kit, data.raw16));
+      expect(sidecar.byteLength).toBe(132098);
+      // The same rounding as the bake loader: each decoded float returns to the 0.1 m lattice.
+      data.values = Array.from(
+        decodeRAW16(sidecar, data).values,
+        (value) => Math.round(value * 10) / 10,
+      );
+
+      // Equal Float32 bytes mean no height moved, not even by one unit in the last place.
+      const digest = (heights: ArrayLike<number>) =>
+        createHash("sha256")
+          .update(new Uint8Array(Float32Array.from(heights).buffer))
+          .digest("hex");
+      const pinned = BASELINE_HEIGHTS[kitName];
+      expect(digest(data.values)).toBe(pinned?.values);
+      expect(digest(Terrain.fromJSON(current.recipe).evaluate().height)).toBe(pinned?.evaluated);
     },
   );
 
@@ -236,6 +297,9 @@ describe("forest starter kit", () => {
       "starter/coastal/sky.ts",
       "starter/coastal/sea.ts",
       "starter-assets/fir_tree_01/fir-b-lod2.glb",
+      ...["forest", "alpine", "desert", "tundra", "coastal"].map(
+        (kit) => `starter/${kit}/heightmap.r16`,
+      ),
     ])
       expect(files.has(path), `packed tarball is missing ${path}`).toBe(true);
     const kitBytes = packedFiles

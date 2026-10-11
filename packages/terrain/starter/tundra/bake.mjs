@@ -6,7 +6,12 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Terrain, applyPlacementOverrides, bakeWorldPackage } from "@threenative/terrain";
+import {
+  Terrain,
+  applyPlacementOverrides,
+  bakeWorldPackage,
+  decodeRAW16,
+} from "@threenative/terrain";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -28,6 +33,13 @@ const assetsDir = flag("assets", join(installed, "starter-assets"));
 const outDir = flag("out", join(here, "world"));
 
 const recipe = JSON.parse(await readFile(join(here, "recipe.json"), "utf8"));
+// shortcut: starter heights use a 0.1 m lattice; revise decoding if their precision changes.
+for (const layer of recipe.recipe.layers) {
+  const data = layer.params?.data;
+  if (data?.raw16 === undefined) continue;
+  const raw = await readFile(join(here, data.raw16));
+  data.values = Array.from(decodeRAW16(raw, data).values, (value) => Math.round(value * 10) / 10);
+}
 const assetTable = JSON.parse(await readFile(join(here, "assets.json"), "utf8"));
 const surface = JSON.parse(await readFile(join(here, "surface.json"), "utf8"));
 

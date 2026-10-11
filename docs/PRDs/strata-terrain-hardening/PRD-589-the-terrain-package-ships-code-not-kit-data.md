@@ -1,6 +1,6 @@
 # PRD-589 — `@threenative/terrain` ships code, not 33 MB of kit data
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P2 — Every `npm i @threenative/terrain` downloads 32.6 MB of kit data and four 1.3 MB recipes, whether or not the game uses a kit (AC-1, AC-2).
 **Complexity:** 4 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
@@ -35,7 +35,7 @@ example. Fix the generator string, the peer-range sync and the CHARTER row.
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The packed tarball is under 2 MB, enforced by a cap in `pnpm budgets`. proof: `pnpm budgets` — Evidence: pending.
-- [ ] AC-2 [local]: Every `recipe.json` is under 200 KB, and each kit bake's output bytes are unchanged by the sidecar move. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` with a golden hash — Evidence: pending.
+- [x] AC-2 [local]: Every `recipe.json` is under 200 KB, and each kit bake's output bytes are unchanged by the sidecar move. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` with a golden hash — Evidence: 27 tests pass across five kit specs (parent run, 20.55 s); all 79 old/new bake files are byte-identical (7 s).
 - [ ] AC-3 [local]: A scaffolded game that asks for the forest kit gets its recipe and assets, and the kit playtest passes. proof: `KIT=forest pnpm --filter strata-terrain-preview test:kit` — Evidence: pending.
 - [ ] AC-4 [local]: No asset directory without a reference remains. proof: an asset-reference spec — Evidence: pending.
 - [ ] AC-5 [local]: `prepare-release` syncs terrain's peer ranges, and the CHARTER closed-list row names the terrain allowance. proof: `pnpm check:docs` and the package-lists drift spec — Evidence: pending.
@@ -43,9 +43,14 @@ example. Fix the generator string, the peer-range sync and the CHARTER row.
 ## Execution Phases
 
 #### Phase 1: recipes shrink, bytes hold
-**Status:** NOT STARTED
-**Files:** `packages/terrain/starter/*/recipe.json`, sidecar `.r16` files, `starter-kit.spec.ts`
-- [ ] Recipes under 200 KB, same bake bytes. proof: `starter-kit.spec.ts`
+**Status:** COMPLETE
+**Files:** `packages/terrain/starter/*/recipe.json`, sidecar `.r16` files, kit specs and bake loaders
+- [x] Recipes under 200 KB, same bake bytes. proof: `starter-kit.spec.ts`
+  - All five recipe JSON files are 2,253–5,359 B; each little-endian RAW16 sidecar is 132,098 B. Existing `decodeRAW16` hydrates values in the Node bake loaders; pure `Terrain` owns no file I/O. The authored 0.1 m precision limit is explicit in each loader.
+  - Self-contained pinned SHA256 tests prove decoded Float32 heights and evaluated height grids equal the original inline recipes. Parent full focused run: all 27 tests pass across `starter-kit`, `alpine-kit`, `coastal-kit`, `desert-kit` and `tundra-kit` (20.55 s).
+  - Parent complete bake comparison against `e12a5d578`: all ten bakes exit 0; every emitted file matches by path and full-byte SHA256 (79 files: alpine 15, coastal 12, desert 15, forest 22, tundra 15; 7 s). No bake arithmetic, seed or placement changed.
+  - Fixture copy lists include the sidecars; alpine first reproduced `ENOENT heightmap.r16`, then all four biome specs passed. The game harness already copies kit directories recursively.
+  - Two stale forest assertions were aligned with cooker commit `4cf0664e7`: historical comparison proves only six model path aliases changed in the manifest. The combined GLB (24,641,592 B) and streamed package (24,073,955 B) each retain the 25 MiB cap. All other golden hashes remain unchanged. Scoped Biome and diff checks pass.
 
 #### Phase 2: kits leave the tarball
 **Status:** NOT STARTED

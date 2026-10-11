@@ -13,7 +13,7 @@ const starterAssets = join(packageRoot, "starter-assets");
 /** Copies the tundra kit into a temp directory whose node_modules resolves the workspace package. */
 function kitInTempDir(): string {
   const dir = makeTempDirSync("terrain-tundra-kit-");
-  for (const name of ["bake.mjs", "recipe.json", "assets.json", "surface.json"])
+  for (const name of ["bake.mjs", "recipe.json", "assets.json", "surface.json", "heightmap.r16"])
     copyFileSync(join(kit, name), join(dir, name));
   mkdirSync(join(dir, "node_modules", "@threenative"), { recursive: true });
   symlinkSync(packageRoot, join(dir, "node_modules", "@threenative", "terrain"), "dir");
