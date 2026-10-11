@@ -232,6 +232,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // strata branch: measured through createProject on the merged tree.
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
+  // PRD-560 (2026-10-10): the eleven FogExp2 kits carry height fog (heightFog.ts, sky.ts, AGENTS.md);
+  // rain and tower-defense had no height-fog change in that merge. Seven kits at the 150 m scale then
+  // took density 0.0018 so ridges read clearer than low ground (AC-1b).
   // Recomputed through all thirteen actual createProject trees after merging develop 2d2124792
   // into PRD-571; these fingerprints cover both the exposure and landed base changes.
   // Recomputed 2026-10-11 after merging develop b4e74627f into PRD-563: measured through
@@ -241,19 +244,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // render-chain scenario names the GPU families. Measured by the same actual-tree test; snow moves not.
   // Recomputed 2026-10-11 for the PRD-563 grade table upload as half floats: only starter's grade.ts
   // and postprocessing.ts changed, and the actual-tree test moved only starter.
-  "action-rpg": "a8181c6ded553b6e6c5806d1b012a1d8402368db8b8f87227db865f764ac4410",
-  minimal: "fab4fe473ea958ff51b1aad63bd2282c9c110bacb72d46a347f4c391b1dcb406",
-  platformer: "e0be69b862ffa1af8f36f10d7c9fb66bbab116c807173acc1539bace1fae7626",
-  puzzle: "b8433ef07d59bdc4fb792b45e9232e7c9b02b6367afecf895a7a82a9948896c5",
-  racing: "7b51da4f5e718111824cf3cef3b6b6ac43f4b7a8f1a3812edd46b6fe92149187",
+  // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
+  // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
+  // createProject on the merged tree.
+  "action-rpg": "4d5a63a46e54a55c3627e4af13e76f1daf61a876d1749eea792468544ca206db",
+  minimal: "e8a827e16f87afa56667e8b12a584f7a5f2083b8e9d82142385358752e4b19f4",
+  platformer: "0c3673893ec837b0533b551cbd9710cd8bfa977a313dfaced40f42cfeaa14c89",
+  puzzle: "4124596ec64a73485ce5acef4a6dc1db1251e92a4f2a89cdd59509d0513931b7",
+  racing: "d0e70ed2a9df91beb884196c8bd0e286ab64201a16b4b44791819b658352029b",
   rain: "5b8757de2613465e97e987c92c7e4028f2d3b7a16ebebc89227b370820e6ddce",
-  rts: "c68c44b2c6771426d233d6b8e94d80274c29e261473c626834dc0843ca4de074",
-  runner: "4d119fb918ffa0a3df3f4f27b75448d305f3878268f3e00a7017e7d5f10f02a1",
+  rts: "6a3fcc2d49d170c1f6e1f8cad668dcc73047bdac9f60afb7ad8445004551ac11",
+  runner: "bc33a05cceeba56ce1aa75dfc89fd5a2dcf15a6ec560fb0c17d963e8e2e89506",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "f6d5e41ae7f2836e5a814ed084dfb677e81ea00d71f748d7bb9cb21d17b0df51",
-  shooter: "853db95e8b1f21bf1c63be80844b0bc6a1a92c95a67ee11d6cc28768d3e9e0e6",
-  snow: "fc9c353994584c6a7633cf523cb7427b1dcfdb69d8157c670f2a9de0c1aab84f",
-  starter: "dec29cf3f878c0e30a476b9f5c7c6afc5750a5782e4aa5872a5eedae5e5e570e",
+  sailing: "6ee5ba72a44a6fc4efaeaaa02a7fffbfbdb1602c0cef6aa7f91897e17a9c2408",
+  shooter: "9e4f800dceb5b210cb5dc8378c2923fc5aefab783dd3c9a514d7fac5d78b2ed4",
+  snow: "068fbc2149537f112ae53b2589115cc3f7fd9843fc1a603a3255dac98a76bba4",
+  starter: "475a69769ce6f2cc9f1db49441f6b4c6aedc7a527cb39342feaeccf91b5565e3",
   "tower-defense": "53d467a902a3c883b73b283cbc83c3d4c66169f8b5175eed8719515a7f6f465e",
 };
 
