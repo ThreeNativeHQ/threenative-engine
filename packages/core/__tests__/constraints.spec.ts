@@ -78,6 +78,11 @@ describe("core constraints", () => {
           // `render/foliage-alpha.ts`'s, and a cutoff a part names is the part's own. The word
           // "light" the generic filter trips on is inside `loadsInFlight`.
           file !== "world-cells.ts" &&
+          // The bundle-safety seam moved out of `world-cells.ts` unchanged. It reads a material's
+          // version, transparency, visibility, transmission and node graph to decide whether a draw
+          // can be recorded. It constructs, sets and colours none of them. The generic filter
+          // matches "material" in its names; the appearance checks below apply to this file.
+          file !== "world-bundle-safety.ts" &&
           // The load limiter queues model loads and bounds how many run at once. It constructs no
           // material, light, colour or shader and reads no appearance property. The generic filter
           // matches "light" inside "flight", as in "in flight" and "inFlight".
@@ -410,10 +415,16 @@ describe("core constraints", () => {
     );
     expect(clusteredBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
-    // `world-cells.ts`, `world-load-limiter.ts` and `world-cell-batches.ts` are exempted on the same
-    // terms as `instanced-batch.ts`: none constructs a material, light or colour, and none reads a
-    // property that describes how anything looks. The assertions below are what keep that true.
-    for (const file of ["world-cells.ts", "world-load-limiter.ts", "world-cell-batches.ts"]) {
+    // `world-cells.ts`, `world-bundle-safety.ts`, `world-load-limiter.ts` and
+    // `world-cell-batches.ts` are exempted on the same terms as `instanced-batch.ts`: none
+    // constructs a material, light or colour, and none reads a property that describes how
+    // anything looks. The assertions below are what keep that true.
+    for (const file of [
+      "world-cells.ts",
+      "world-bundle-safety.ts",
+      "world-load-limiter.ts",
+      "world-cell-batches.ts",
+    ]) {
       const cellSource = readFileSync(path.join(sourceDirectory, file), "utf8");
       expect(cellSource).not.toMatch(
         /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
