@@ -4,6 +4,7 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { starterAssetsDir } from "../../terrain/dist/kit.js";
 
 const KITS = ["alpine", "coastal", "desert", "forest", "tundra"];
 const INPUTS = ["assets.json", "bake.mjs", "heightmap.r16", "recipe.json", "surface.json"];
@@ -110,7 +111,7 @@ async function writeKit(kit, credit) {
 }
 
 const credits = JSON.parse(
-  await readFile(path.join(terrainRoot, "starter-assets", "credits.json"), "utf8"),
+  await readFile(path.join(await starterAssetsDir(), "credits.json"), "utf8"),
 );
 const plans = [];
 for (const kit of KITS) plans.push(await planKit(kit, credits));

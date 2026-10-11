@@ -15,13 +15,12 @@ import {
 } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { starterAssetsDir } from "@threenative/terrain/kit";
 
 const here = dirname(dirname(fileURLToPath(import.meta.url)));
 const out = join(here, "assets");
 // vite.config.ts publicDir, served at the root.
-const roots = [
-  { dir: join(here, "../../packages/terrain/starter-assets"), mount: "", required: true },
-];
+const roots = [{ dir: await starterAssetsDir(), mount: "", required: true }];
 
 let linked = 0;
 function mirror(source, target) {

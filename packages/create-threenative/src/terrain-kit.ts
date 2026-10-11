@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 // The five starter kits. The allowlist also blocks path escape: a name reaches the disk only when it matches.
 const KITS = ["alpine", "coastal", "desert", "forest", "tundra"];
-// Only these six files leave a packaged kit. World code, sky code and asset binaries stay behind.
+// These six files are game source. bake.mjs uses @threenative/terrain/kit to resolve pinned assets on demand.
 const COPIED = [
   "assets.json",
   "bake.mjs",

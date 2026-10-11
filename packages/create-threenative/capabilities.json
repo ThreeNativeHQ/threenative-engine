@@ -87,7 +87,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "await cookTerrainWorld({ state, species, out: \"assets/world\" });",
       "importPath": "@threenative/assets",
       "kind": "function",
       "overrides": [],
@@ -7719,6 +7719,23 @@
       "summary": "Bake a copied kit, optionally using the caller's installed world cook.",
       "supersedes": [],
       "symbol": "bakeKit"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "Node authoring only; verifies archive size and SHA256 before atomic extraction"
+      ],
+      "example": "const assets = await starterAssetsDir();",
+      "importPath": "@threenative/terrain/kit",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function starterAssetsDir(): Promise<string> { … }",
+      "situations": ["resolve terrain kit models and textures for offline baking"],
+      "summary": "Resolve shared starter assets locally, or download the package's pinned archive on demand.",
+      "supersedes": [],
+      "symbol": "starterAssetsDir"
     },
     {
       "aliases": [],

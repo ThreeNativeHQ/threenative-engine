@@ -80,6 +80,10 @@ export async function cookTerrainWorld( options: ICookTerrainWorldOptions, ): Pr
 
 - **Use when:** bake a terrain world headlessly into a GLB with instanced trees and rocks
 
+```ts
+await cookTerrainWorld({ state, species, out: "assets/world" });
+```
+
 ### `dedupeMaterials`
 
 `function` — Collapse materials that became identical once their textures shared an atlas page, and count the buckets a merge would find — before and after — so the promise can be checked rather than made.
@@ -6451,6 +6455,22 @@ export async function bakeKit( url: string, { … }
 
 ```ts
 await bakeKit(import.meta.url, { sky: "hdri/game-sky.hdr" });
+```
+
+### `starterAssetsDir`
+
+`function` — Resolve shared starter assets locally, or download the package's pinned archive on demand.
+
+```ts
+export async function starterAssetsDir(): Promise<string> { … }
+```
+
+- **Use when:** resolve terrain kit models and textures for offline baking
+- **Constraints:** Node authoring only; verifies archive size and SHA256 before atomic extraction
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const assets = await starterAssetsDir();
 ```
 
 ## `@threenative/terrain/starter`

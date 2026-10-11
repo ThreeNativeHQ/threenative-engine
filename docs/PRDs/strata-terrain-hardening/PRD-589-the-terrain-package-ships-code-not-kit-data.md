@@ -1,7 +1,7 @@
 # PRD-589 — `@threenative/terrain` ships code, not 33 MB of kit data
 
 **Status:** PARTIAL
-**Priority:** P2 — Every `npm i @threenative/terrain` downloads 32.6 MB of kit data and four 1.3 MB recipes, whether or not the game uses a kit (AC-1, AC-2).
+**Priority:** P2 — On-request kit delivery needs the published archive and GPU playtest qualification (AC-3).
 **Complexity:** 4 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
@@ -27,17 +27,17 @@ Package and core audits of `2d2124792` (2026-10-10):
 ## Solution
 
 Move kit binaries out of the runtime tarball: the scaffolder copies a kit into the game on
-request (the same path PRD-584's MCP tool uses), and species GLBs come through the asset MCP
-download path. Store inline heightmaps as RAW16 sidecars that `decodeRAW16` already reads, with
+request, and the shared terrain resolver supplies models and textures from a SHA256-pinned
+release archive when the package has no local starter assets. Store inline heightmaps as RAW16 sidecars that `decodeRAW16` already reads, with
 the recipe naming the file. Delete unreferenced assets and move example-only ones into the
 example. Fix the generator string, the peer-range sync and the CHARTER row.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: The packed tarball is under 2 MB, enforced by a cap in `pnpm budgets`. proof: `pnpm budgets` — Evidence: pending.
+- [x] AC-1 [local]: The packed tarball is under 2 MB, enforced by a cap in `pnpm budgets`. proof: `pnpm budgets` — Evidence: 2026-10-11 PASS (exit 0), 600,908 B packed; strict cap < 2,000,000 B.
 - [x] AC-2 [local]: Every `recipe.json` is under 200 KB, and each kit bake's output bytes are unchanged by the sidecar move. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` with a golden hash — Evidence: 27 tests pass across five kit specs (parent run, 20.55 s); all 79 old/new bake files are byte-identical (7 s).
 - [ ] AC-3 [local]: A scaffolded game that asks for the forest kit gets its recipe and assets, and the kit playtest passes. proof: `KIT=forest pnpm --filter strata-terrain-preview test:kit` — Evidence: pending.
-- [ ] AC-4 [local]: No asset directory without a reference remains. proof: an asset-reference spec — Evidence: pending.
+- [x] AC-4 [local]: No asset directory without a reference remains. proof: `pnpm exec vitest run packages/terrain/__tests__/kit-assets.spec.ts` — Evidence: 2026-10-11, asset-reference spec passes; removed `forest_leaves_02` and `grass_medium_02` (6 files). All 15 remaining directories have a kit or example source reference.
 - [x] AC-5 [local]: `prepare-release` syncs terrain's peer ranges, and the CHARTER closed-list row names the terrain allowance. proof: `pnpm check:docs` and the package-lists drift spec — Evidence: `prepare-release.spec.ts` 12/12 PASS (4 new terrain fixtures, 3 RED before the fix). `package-list-drift.spec.ts` 7/7 PASS. `terrain-consumer.spec.ts` 18/18 PASS. `check:docs` from the parent run (3057 links). Core-independent strict typecheck of `io.ts` and `prepare-release.ts` passes. CHARTER row in `a9a997baf`.
 
 ## Execution Phases
@@ -55,9 +55,9 @@ example. Fix the generator string, the peer-range sync and the CHARTER row.
 #### Phase 2: kits leave the tarball
 **Status:** PARTIAL
 **Files:** `packages/terrain/package.json` `files`, `packages/create-threenative/src/` kit copy, `starter-assets/` moves
-- [ ] Tarball under 2 MB. proof: `pnpm budgets`
+- [x] Tarball under 2 MB. proof: `pnpm budgets` — 2026-10-11 PASS (exit 0), 600,908 B packed.
 - [ ] Kit still scaffolds and plays. proof: `test:kit`
-- [ ] No unreferenced assets. proof: asset-reference spec
+- [x] No unreferenced assets. proof: `kit-assets.spec.ts` — 2026-10-11 PASS; 15 referenced directories, 2 unreferenced directories removed.
 
 2026-10-11 integration check: rebuilt terrain (JavaScript, declarations and publint pass), then all 37 release/drift/consumer tests pass (4.35 s). The wider five-kit suite passes 26/27 tests (45.64 s), including every pinned bake hash and RAW16 height comparison. Its packaging test fails because included kit files total 83,718,967 B, above the unchanged 40 MiB content cap; this measures included file bytes, not compressed tarball size. Phase 2 must exclude generated cook outputs and complete on-request delivery. The 2 MB runtime tarball target remains unverified.
 
@@ -72,3 +72,12 @@ example. Fix the generator string, the peer-range sync and the CHARTER row.
 2026-10-11 release synchronization follow-up: actual terrain peers stay unchanged when absent from the selected versions map; a selected cohort peer uses the existing range synchronizer. Terrain generator versions now use `requiredVersion` and the existing source-update table. Three new fixtures fail before the source fix; all 37 release/drift/consumer tests pass afterward (2.30 s). The focused core-independent strict typecheck passes; package-wide missing physics output and horizon fixture are not repaired by this phase. Documentation proof for the charter and mirrors remains the parent’s accepted 252-test run.
 
 2026-10-11 current kit delivery component evidence: the earlier full run passed 27 of 27 terrain-kit tests in 8.78 s. Prerequisite builds passed in order (BlenderMCP, physics, playtest, then create-threenative tsup, DTS and publint), and the full create-threenative typecheck and Biome passed. With the root rule `/packages/create-threenative/template-assets/terrain/`, the packed-tarball case passed: 1 test passed, 26 skipped, in 5.71 s. The packed tarball holds 5 kits and 30 source files, including HDR provenance records but no HDR, texture or model binaries. An external import of `create-threenative/terrain-kit` from the extracted tarball copied 6 files for one kit. Phase 2 stays PARTIAL, and Phase 2, AC-1, AC-3 and AC-4 stay open until the under-2 MB tarball, scaffolded asset delivery and playtest proof pass.
+
+2026-10-11 Phase 2 package delivery: owner decision fixes one versioned archive in `ThreeNativeHQ/threenative-engine`: tag `terrain-starter-assets-v0.1.0`, asset `terrain-starter-assets-0.1.0.tar.gz`. `starterAssetsDir` is shared by copied-kit baking, MCP cooking, scaffolder staging, preview serving and golden-path staging. `--assets` remains an explicit override. Packed kit source includes RAW16 sidecars, per-asset provenance in `starter-credits.json` and `THIRD_PARTY_NOTICES.md`; it excludes binary `starter-assets/` and generated `starter/*/world/` outputs. Referenced example-only directories remain in the shared archive; no directories moved.
+
+- Archive: `/tmp/terrain-starter-assets-0.1.0.tar.gz`, 31,598,641 B, SHA256 `38191c06a778d06fd79061ea25365e35da0c7c81e7c173ba752e706f9e2a1391`. Deterministic repeated packing and manifest drift pass. The manifest version and release URL match the terrain package version.
+- Package: initial pre-build `npm pack --dry-run --json` measured 32,667,416 B; built candidate measures 600,908 B packed / 1,801,637 B unpacked (74 files). The cap spec proves missing builds fail and compressed packages at or above 2,000,000 B fail.
+- Verification: terrain build, strict publint and package typecheck PASS. Terrain suite: 270/271 PASS initially; the one editor-assets failure was an unreachable local editor URL, and its isolated retry passes. All 19 starter-kit tests pass, including unchanged pinned bake hashes. Archive/reference specs: 11/11 PASS; an additional scaffolded forest bake against the local archive passes (12 total). `create-threenative` build/publint and terrain-kit specs: 27/27 PASS. Budget specs: 38/38 PASS plus the new cap spec PASS. Scoped Biome PASS (8 complexity warnings); `pnpm check:docs` PASS (3,057 links). Capability and API surface drift regenerated. The first `pnpm budgets` run stopped on the existing missing `cookTerrainWorld` example tag; its actual invocation is now documented.
+- AC-3 and the kit-playtest box stay open: the coordinator must upload the release and run `THREENATIVE_TERRAIN_ASSETS_URL=file:///tmp/terrain-starter-assets-0.1.0.tar.gz KIT=forest pnpm --filter strata-terrain-preview test:kit`. Local scaffold/bake delivery passes; GPU playtest and published-release download remain unverified. No browser/Xvfb runs, tags, releases or pushes were performed in this lane.
+
+2026-10-11 final budgets: `pnpm budgets` PASS (exit 0), terrain compressed tarball 600,908 B against a strict 2,000,000 B ceiling. Nonfatal workspace LOC triggers and existing native census drift remain reported by the existing gate. The only new package mechanism is one shared Node archive resolver: no runtime appearance code, wrapper system or dependency added; deterministic packing remains a repository authoring script. This replaces the repeated installed-directory assumptions and keeps the tarball free of generated cook output. All acceptance criteria except AC-3 are now verified; Phase 2 remains PARTIAL pending the coordinator's release/playtest proof.

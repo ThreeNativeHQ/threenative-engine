@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { TerrainEditorController } from "@threenative/terrain/editor";
 import { terrainEditor } from "@threenative/terrain/editor/server";
+import { starterAssetsDir } from "@threenative/terrain/kit";
 import { createServer } from "vite";
 import {
   advanceFixedStep,
@@ -34,7 +35,7 @@ const plugin = terrainEditor({ documentPath: path });
 const server = await createServer({
   root,
   configFile: false,
-  publicDir: resolve("../../packages/terrain/starter-assets"),
+  publicDir: await starterAssetsDir(),
   server: { host: "127.0.0.1", port: Number(process.env.EDITOR_PORT ?? 5184), strictPort: true },
   plugins: [plugin],
   optimizeDeps: { exclude: ["@threenative/terrain/editor"] },

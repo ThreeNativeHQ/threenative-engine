@@ -2,6 +2,8 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { starterAssetsDir } from "./kit-assets.js";
+export { starterAssetsDir } from "./kit-assets.js";
 import type { ITerrainState } from "./core/types.js";
 import type { IWorldPackageAsset, IWorldPackageManifest } from "./core/world-package.js";
 import { Terrain, applyPlacementOverrides, bakeWorldPackage, decodeRAW16 } from "./index.js";
@@ -75,12 +77,9 @@ export async function bakeKit(
   { sky, cookTerrainWorld }: IBakeKitOptions,
 ): Promise<void> {
   const here = dirname(fileURLToPath(url));
-  // The installed kit ships its models and textures beside the package manifest, so a copied kit
-  // finds them without asking the game for a path. `--assets` overrides that for a local checkout.
-  const installed = dirname(
-    fileURLToPath(import.meta.resolve("@threenative/terrain/package.json")),
-  );
-  const assetsDir = flag("assets", join(installed, "starter-assets"));
+  const assetsDir = process.argv.includes("--assets")
+    ? flag("assets", "")
+    : await starterAssetsDir();
   const outDir = flag("out", join(here, "world"));
 
   const recipe = JSON.parse(await readFile(join(here, "recipe.json"), "utf8"));

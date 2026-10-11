@@ -1222,9 +1222,21 @@ export async function verifyPackedMutationControl(
       path.join(root, "packages/terrain/starter"),
       { recursive: true },
     );
+    await mkdir(path.join(root, "packages/terrain/dist"), { recursive: true });
+    await cp(
+      path.join(REPO_ROOT, "packages/terrain/dist/kit.js"),
+      path.join(root, "packages/terrain/dist/kit.js"),
+    );
+    await cp(
+      path.join(REPO_ROOT, "packages/terrain/package.json"),
+      path.join(root, "packages/terrain/package.json"),
+    );
     await mkdir(path.join(root, "packages/terrain/starter-assets"), { recursive: true });
     await cp(
-      path.join(REPO_ROOT, "packages/terrain/starter-assets/credits.json"),
+      path.join(
+        await (await import("../packages/terrain/dist/kit.js")).starterAssetsDir(),
+        "credits.json",
+      ),
       path.join(root, "packages/terrain/starter-assets/credits.json"),
     );
     await materializeTemporaryPackageVersions(mutatedPackage);

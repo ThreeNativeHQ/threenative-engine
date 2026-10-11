@@ -16,8 +16,13 @@
   "type": "module",
   "files": [
     "dist",
-    "starter",
-    "starter-assets",
+    "starter/*/*.json",
+    "starter/*/*.r16",
+    "starter/*/*.mjs",
+    "starter/*/*.ts",
+    "starter/*/*.md",
+    "starter-assets.json",
+    "starter-credits.json",
     "README.md",
     "AGENT_GUIDE.md",
     "THIRD_PARTY_NOTICES.md"

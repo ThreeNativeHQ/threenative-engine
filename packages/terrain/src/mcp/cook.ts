@@ -6,6 +6,7 @@ import { decodeRAW16 } from "../core/io.js";
 import { applyPlacementOverrides } from "../core/placements.js";
 import { Terrain } from "../core/terrain.js";
 import { bakeWorldPackage } from "../core/world-package.js";
+import { starterAssetsDir } from "../kit-assets.js";
 import { measureGlb } from "./glb-stats.js";
 import { TERRAIN_KITS, resolveAssetSource } from "./tools.js";
 
@@ -122,10 +123,10 @@ export async function cookKit(request: ICookRequest): Promise<string> {
     );
   }
   const cooker = await loadCooker(request.projectRoot);
-  // The starter kits and their species models ship beside this file in the package.
+  // Kit source ships in the package; binary assets resolve locally or from the pinned release.
   const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
   const kitDir = join(packageRoot, "starter", request.kit);
-  const assetsDir = join(packageRoot, "starter-assets");
+  const assetsDir = await starterAssetsDir();
 
   // Fail closed before any evaluation: a non-recursive mkdir claims `out` atomically, so two cooks cannot share it.
   await mkdir(dirname(request.out), { recursive: true });

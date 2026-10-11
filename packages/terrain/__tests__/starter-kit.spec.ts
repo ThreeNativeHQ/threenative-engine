@@ -253,14 +253,14 @@ describe("forest starter kit", () => {
     expect(water.rivers[0]?.width).toBeGreaterThan(0);
   });
 
-  it("ships the kit and its shared starter assets in the package", () => {
+  it("ships kit source and pinned asset metadata without binaries or generated worlds", () => {
     const packed = JSON.parse(
       execFileSync("npm", ["pack", "--dry-run", "--json"], {
         cwd: packageRoot,
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
       }),
-    ) as { files: { path: string; size: number }[] }[];
+    ) as { size: number; files: { path: string; size: number }[] }[];
     const packedFiles = packed[0]?.files ?? [];
     const files = new Map(packedFiles.map((file) => [file.path, file.size]));
     for (const path of [
@@ -297,20 +297,24 @@ describe("forest starter kit", () => {
       "starter/coastal/world.ts",
       "starter/coastal/sky.ts",
       "starter/coastal/sea.ts",
-      "starter-assets/fir_tree_01/fir-b-lod2.glb",
+      "starter-assets.json",
+      "starter-credits.json",
+      "THIRD_PARTY_NOTICES.md",
       ...["forest", "alpine", "desert", "tundra", "coastal"].map(
         (kit) => `starter/${kit}/heightmap.r16`,
       ),
     ])
       expect(files.has(path), `packed tarball is missing ${path}`).toBe(true);
-    const kitBytes = packedFiles
-      .filter(
-        (file) =>
-          file.path.startsWith("starter/forest/") || file.path.startsWith("starter-assets/"),
-      )
-      .reduce((total, file) => total + file.size, 0);
-    // The 25 MiB budget is per baked world (asserted above); this only catches package bloat.
-    expect(kitBytes).toBeLessThanOrEqual(40 * 1024 * 1024);
+    expect(packedFiles.some((file) => file.path.startsWith("starter-assets/"))).toBe(false);
+    expect(packedFiles.some((file) => /^starter\/[^/]+\/world\//u.test(file.path))).toBe(false);
+    expect(packed[0]?.size).toBeLessThan(2_000_000);
+    const archive = JSON.parse(readFileSync(join(packageRoot, "starter-assets.json"), "utf8"));
+    expect(archive.bytes).toBeGreaterThan(0);
+    expect(archive.sha256).toMatch(/^[a-f0-9]{64}$/u);
+    console.log(`starter asset archive: ${archive.bytes} B; ${archive.sha256}`);
+    expect(readFileSync(join(packageRoot, "starter-credits.json"))).toEqual(
+      readFileSync(join(starterAssets, "credits.json")),
+    );
   });
 
   it.each(["forest", "alpine", "coastal", "desert", "tundra"] as const)(

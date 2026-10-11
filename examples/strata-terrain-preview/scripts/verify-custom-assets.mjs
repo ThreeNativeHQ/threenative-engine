@@ -28,6 +28,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { deflateSync } from "node:zlib";
+import { starterAssetsDir } from "@threenative/terrain/kit";
 import { createServer } from "vite";
 import {
   advanceFixedStep,
@@ -393,7 +394,7 @@ try {
     const server = await createServer({
       root,
       configFile: false,
-      publicDir: stock ? resolve(root, "../../packages/terrain/starter-assets") : false,
+      publicDir: stock ? await starterAssetsDir() : false,
       plugins: stock ? [] : [customArt()],
       server: { host: "127.0.0.1", port: PORT },
       optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
