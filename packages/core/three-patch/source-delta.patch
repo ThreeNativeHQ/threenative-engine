@@ -960,7 +960,7 @@ index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a8
  		//
  
 diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
-index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..b1293bfbe2ccf0583711813c625ddd5c5ba78620 100644
+index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..730ce0ccd0f56d70c4a7abe7c514c5077d544d1e 100644
 --- a/src/renderers/common/Renderer.js
 +++ b/src/renderers/common/Renderer.js
 @@ -1937,6 +1937,18 @@ class Renderer {
@@ -982,22 +982,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..b1293bfbe2ccf0583711813c625ddd5c
  	/**
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
-@@ -2930,6 +2942,14 @@ class Renderer {
- 
- 	}
- 
-+	// Explicit cold compressed-texture gate; ordinary initTexture keeps its synchronous path.
-+	async prepareTextureAsync( texture, options = {} ) {
-+
-+		if ( this._initialized === false ) throw new Error( 'Renderer must be initialized before texture preparation.' );
-+		await this._textures.updateTextureAsync( texture, options );
-+
-+	}
-+
- 	/**
- 	 * Initializes the given render target.
- 	 *
-@@ -3550,6 +3570,7 @@ class Renderer {
+@@ -3550,6 +3562,7 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -1005,7 +990,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..b1293bfbe2ccf0583711813c625ddd5c
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -3575,6 +3596,7 @@ class Renderer {
+@@ -3575,6 +3588,7 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -1013,7 +998,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..b1293bfbe2ccf0583711813c625ddd5c
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -3582,7 +3604,15 @@ class Renderer {
+@@ -3582,7 +3596,15 @@ class Renderer {
  
  			}
  
@@ -1030,7 +1015,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..b1293bfbe2ccf0583711813c625ddd5c
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -3644,6 +3674,7 @@ class Renderer {
+@@ -3644,6 +3666,7 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -1038,7 +1023,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..b1293bfbe2ccf0583711813c625ddd5c
  
  		}
  
-@@ -3705,18 +3736,17 @@ class Renderer {
+@@ -3705,18 +3728,17 @@ class Renderer {
  
  		//
  
@@ -1067,7 +1052,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..b1293bfbe2ccf0583711813c625ddd5c
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -3726,7 +3756,7 @@ class Renderer {
+@@ -3726,7 +3748,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -1077,38 +1062,10 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..b1293bfbe2ccf0583711813c625ddd5c
  		}
  
 diff --git a/src/renderers/common/Textures.js b/src/renderers/common/Textures.js
-index f42b90eac69ca042c39e7999773d6b8303fc3dd0..5b305173fa4a2814ec74563d2ae5cdc70e7505e1 100644
+index f42b90eac69ca042c39e7999773d6b8303fc3dd0..be47645f5662a2be8002c23de8ff4092bf561049 100644
 --- a/src/renderers/common/Textures.js
 +++ b/src/renderers/common/Textures.js
-@@ -54,6 +54,10 @@ class Textures extends DataMap {
- 		 * @type {Set<HTMLTexture>}
- 		 */
- 		this._htmlTextures = new Set();
-+		this._pendingUploads = new Map();
-+		this._uploadTail = Promise.resolve();
-+		this._uploadSlice = { started: null };
-+		this._uploadDisposed = false;
- 
- 	}
- 
-@@ -203,7 +207,16 @@ class Textures extends DataMap {
- 	 */
- 	updateTexture( texture, options = {} ) {
- 
-+		if ( this._pendingUploads.has( texture ) ) throw new Error( 'Compressed texture preparation is pending.' );
-+		if ( this.has( texture ) && this.get( texture ).uploadError ) throw this.get( texture ).uploadError;
-+		return this._updateTexture( texture, options );
-+
-+	}
-+
-+	_updateTexture( texture, options = {}, upload = null ) {
-+
- 		const textureData = this.get( texture );
-+		let uploadPromise;
- 		if ( textureData.initialized === true && textureData.version === texture.version ) return;
- 
- 		const isRenderTarget = texture.isRenderTargetTexture || texture.isDepthTexture || texture.isFramebufferTexture;
-@@ -215,6 +228,21 @@ class Textures extends DataMap {
+@@ -215,6 +215,21 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -1130,197 +1087,6 @@ index f42b90eac69ca042c39e7999773d6b8303fc3dd0..5b305173fa4a2814ec74563d2ae5cdc7
  		}
  
  		//
-@@ -352,7 +380,16 @@ class Textures extends DataMap {
- 
- 					}
- 
--					if ( texture.source.dataReady === true ) backend.updateTexture( texture, options );
-+					if ( texture.source.dataReady === true ) {
-+
-+						if ( upload ) {
-+
-+							this._initializeTexture( texture, textureData );
-+							uploadPromise = upload( texture, options );
-+
-+						} else backend.updateTexture( texture, options );
-+
-+					}
- 
- 					const skipAutoGeneration = texture.isStorageTexture === true && texture.mipmapsAutoUpdate === false;
- 
-@@ -362,7 +399,7 @@ class Textures extends DataMap {
- 
- 					}
- 
--					if ( texture.onUpdate ) texture.onUpdate( texture );
-+					if ( ! upload && texture.onUpdate ) texture.onUpdate( texture );
- 
- 				}
- 
-@@ -379,6 +416,17 @@ class Textures extends DataMap {
- 
- 		}
- 
-+		this._initializeTexture( texture, textureData );
-+		if ( upload ) return uploadPromise;
-+
-+		//
-+
-+		textureData.version = texture.version;
-+
-+	}
-+
-+	_initializeTexture( texture, textureData ) {
-+
- 		// dispose handler
- 
- 		if ( textureData.initialized !== true ) {
-@@ -411,9 +459,134 @@ class Textures extends DataMap {
- 
- 		}
- 
--		//
- 
--		textureData.version = texture.version;
-+	}
-+
-+	// A single preparation lane, keyed by Texture identity; Source clones own distinct GPU data.
-+	updateTextureAsync( texture, options = {} ) {
-+
-+		if ( this._uploadDisposed ) return Promise.reject( new Error( 'Texture manager disposed.' ) );
-+		if ( this._uploadDeviceLost ) return Promise.reject( this._uploadDeviceLost );
-+		if ( ! this._uploadLossSubscribed && this.backend.device?.lost ) {
-+
-+			this._uploadLossSubscribed = true;
-+			const lost = error => {
-+
-+				this._uploadDeviceLost = error instanceof Error ? error : new Error( 'Device lost during texture preparation.' );
-+				for ( const job of this._pendingUploads.values() ) job.controller.abort( this._uploadDeviceLost );
-+
-+			};
-+			this.backend.device.lost.then( lost, lost );
-+
-+		}
-+		if ( options.signal?.aborted ) return Promise.reject( options.signal.reason );
-+		const pending = this._pendingUploads.get( texture );
-+		if ( pending ) {
-+
-+			if ( pending.version !== texture.version ) return Promise.reject( new Error( 'Texture changed during preparation.' ) );
-+			return this._waitForUpload( pending, options.signal );
-+
-+		}
-+		const data = this.get( texture );
-+		if ( data.uploadError ) return Promise.reject( data.uploadError );
-+		if ( ! ( texture.isCompressedTexture || texture.isCompressedArrayTexture ) || texture.isCubeTexture || texture.version <= 0 || texture.source.dataReady !== true || texture.mipmaps.length === 0 || typeof this.backend.updateTextureAsync !== 'function' ) return Promise.reject( new Error( 'Bounded texture preparation requires ready compressed mip data.' ) );
-+		if ( data.initialized === true && data.version === texture.version ) {
-+
-+			if ( data.isDefaultTexture !== true && this.backend.has( texture ) && this.backend.get( texture ).texture && this.backend.get( texture ).version === texture.version ) return Promise.resolve();
-+			return Promise.reject( new Error( 'Compressed texture content has not completed an upload.' ) );
-+
-+		}
-+		if ( data.version !== undefined && data.isDefaultTexture !== true ) return Promise.reject( new Error( 'Bounded texture preparation requires a cold texture.' ) );
-+		const controller = new AbortController();
-+		const source = texture.source;
-+		const mipmaps = texture.mipmaps;
-+		const captured = mipmaps.map( mip => ( { mip, data: mip.data, width: mip.width, height: mip.height } ) );
-+		const image = texture.image;
-+		const size = { width: image?.width, height: image?.height, depth: image?.depth };
-+		const layers = texture.isCompressedArrayTexture ? [ ...texture.layerUpdates ] : [];
-+		const device = this.backend.device;
-+		const job = { texture, data, version: texture.version, controller, users: 0, promise: null };
-+		const checkQueued = () => {
-+
-+			if ( controller.signal.aborted ) throw controller.signal.reason;
-+			if ( ! this.has( texture ) || this.get( texture ) !== data || texture.version !== job.version || texture.source !== source || source.dataReady !== true || texture.image !== image || image?.complete === false || image?.width !== size.width || image?.height !== size.height || image?.depth !== size.depth || texture.mipmaps !== mipmaps || mipmaps.length !== captured.length || captured.some( ( c, i ) => mipmaps[ i ] !== c.mip || c.mip.data !== c.data || c.mip.width !== c.width || c.mip.height !== c.height ) || this.backend.device !== device ) throw new Error( 'Compressed texture changed or invalidated before preparation.' );
-+			if ( texture.isCompressedArrayTexture && ( texture.layerUpdates.size !== layers.length || layers.some( layer => ! texture.layerUpdates.has( layer ) ) ) ) throw new Error( 'Compressed texture layers changed before preparation.' );
-+
-+		};
-+		let backendData, gpuTexture;
-+		const onQueuedDispose = () => controller.abort( new Error( 'Texture disposed during preparation.' ) );
-+		texture.addEventListener( 'dispose', onQueuedDispose );
-+		this._pendingUploads.set( texture, job );
-+		const cancelled = new Promise( ( resolve, reject ) => controller.signal.addEventListener( 'abort', () => reject( controller.signal.reason ), { once: true } ) );
-+		const work = this._uploadTail.then( () => {
-+
-+			checkQueued();
-+			const result = this._updateTexture( texture, {}, ( value, uploadOptions ) => this.backend.updateTextureAsync( value, { ...uploadOptions, budgetMs: options.budgetMs, maxBytesPerWrite: options.maxBytesPerWrite, signal: controller.signal, uploadSlice: this._uploadSlice } ) );
-+			if ( ! result || typeof result.then !== 'function' || ! this.backend.has( texture ) ) throw new Error( 'Compressed texture upload did not start.' );
-+			backendData = this.backend.get( texture );
-+			gpuTexture = backendData.texture;
-+			return result;
-+
-+		} );
-+		job.promise = Promise.race( [ work, cancelled ] ).then( () => {
-+
-+			if ( controller.signal.aborted || ! this.has( texture ) || this.get( texture ) !== data || texture.version !== job.version || source.dataReady !== true || this.backend.device !== device || ! this.backend.has( texture ) || this.backend.get( texture ) !== backendData || backendData.texture !== gpuTexture || backendData.version !== job.version ) throw new Error( 'Texture preparation invalidated.' );
-+			data.version = job.version;
-+			delete data.uploadError;
-+			if ( texture.onUpdate ) texture.onUpdate( texture );
-+
-+		} ).catch( error => {
-+
-+			if ( this.has( texture ) && this.get( texture ) === data ) data.uploadError = error;
-+			throw error;
-+
-+		} ).finally( () => {
-+
-+			texture.removeEventListener( 'dispose', onQueuedDispose );
-+			if ( this._pendingUploads.get( texture ) === job ) this._pendingUploads.delete( texture );
-+
-+		} );
-+		// Caller cancellation is prompt; the backend lane stays owned until validation drains.
-+		this._uploadTail = Promise.allSettled( [ work, job.promise ] ).then( () => {} );
-+		return this._waitForUpload( job, options.signal );
-+
-+	}
-+
-+	_waitForUpload( job, signal ) {
-+
-+		job.users ++;
-+		return new Promise( ( resolve, reject ) => {
-+
-+			let settled = false;
-+			const finish = ( error ) => {
-+
-+				if ( settled ) return;
-+				settled = true;
-+				signal?.removeEventListener( 'abort', abort );
-+				job.users --;
-+				if ( error ) reject( error ); else resolve();
-+				if ( job.users === 0 && ! job.controller.signal.aborted ) job.controller.abort( new Error( 'Texture preparation has no remaining caller.' ) );
-+
-+			};
-+			const abort = () => finish( signal.reason || new Error( 'Texture preparation cancelled.' ) );
-+			signal?.addEventListener( 'abort', abort, { once: true } );
-+			job.promise.then( () => finish(), finish );
-+
-+		} );
-+
-+	}
-+
-+	dispose() {
-+
-+		this._uploadDisposed = true;
-+		for ( const job of this._pendingUploads.values() ) {
-+
-+			job.controller.abort( new Error( 'Texture manager disposed.' ) );
-+			if ( this.has( job.texture ) && this.get( job.texture ).initialized === true ) this._destroyTexture( job.texture );
-+
-+		}
-+		this._pendingUploads.clear();
-+		super.dispose();
- 
- 	}
- 
-@@ -591,6 +764,8 @@ class Textures extends DataMap {
- 	 */
- 	_destroyTexture( texture ) {
- 
-+		this._pendingUploads.get( texture )?.controller.abort( new Error( 'Texture disposed during preparation.' ) );
-+
- 		if ( this.has( texture ) === true ) {
- 
- 			const textureData = this.get( texture );
 diff --git a/src/renderers/common/nodes/NodeManager.js b/src/renderers/common/nodes/NodeManager.js
 index f6d4f0b54e848b172c2c7e138a26e42b98c01978..033128c396c2cad5c5d1d362f2d261e9adbd6bdc 100644
 --- a/src/renderers/common/nodes/NodeManager.js
@@ -1412,7 +1178,7 @@ index f6d4f0b54e848b172c2c7e138a26e42b98c01978..033128c396c2cad5c5d1d362f2d261e9
  
  		}
 diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
-index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..5636b40e6708a490e926e5f590675834d23bf326 100644
+index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..616084abf4a0f3a342348c279ffc98f59313e6d0 100644
 --- a/src/renderers/webgpu/WebGPUBackend.js
 +++ b/src/renderers/webgpu/WebGPUBackend.js
 @@ -102,6 +102,27 @@ class WebGPUBackend extends Backend {
@@ -1536,19 +1302,6 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..5636b40e6708a490e926e5f590675834
  			utils.getCurrentColorSpace( renderContext ), utils.getCurrentColorFormat( renderContext ), utils.getCurrentDepthStencilFormat( renderContext ),
  			utils.getPrimitiveTopology( object, material ),
  			renderObject.getGeometryCacheKey(),
-@@ -2204,6 +2238,12 @@ class WebGPUBackend extends Backend {
- 
- 	}
- 
-+	updateTextureAsync( texture, options ) {
-+
-+		return this.textureUtils.updateTextureAsync( texture, options );
-+
-+	}
-+
- 	/**
- 	 * Generates mipmaps for the given texture.
- 	 *
 diff --git a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
 index be07536301cd47ef2544e4a54f6abe17407f52af..1cbc9b3e02c9832d69a8aadb3a6003392b443c8d 100644
 --- a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
@@ -1831,7 +1584,7 @@ index 764267c51628af3b8340888a1fa62ee9f00f435c..3480fea1e86f1f237cb6ee2ea87b5826
  					if ( errorScope !== null || asyncError !== null ) {
  
 diff --git a/src/renderers/webgpu/utils/WebGPUTextureUtils.js b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
-index ff8ee2dbace2816105aa7152891c04f2333f33e8..57c1eb62f1e0de063f22e08ec879e31d2a3240b6 100644
+index ff8ee2dbace2816105aa7152891c04f2333f33e8..03998e6e9067462c50bd402ffda5b29d24634be8 100644
 --- a/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 +++ b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 @@ -41,6 +41,7 @@ import {
@@ -2002,151 +1755,7 @@ index ff8ee2dbace2816105aa7152891c04f2333f33e8..57c1eb62f1e0de063f22e08ec879e31d
  	/**
  	 * Uploads the updated texture data to the GPU.
  	 *
-@@ -733,6 +753,143 @@ class WebGPUTextureUtils {
- 
- 	}
- 
-+	// Opt-in preparation for cold compressed textures. The caller owns the visibility gate.
-+	async updateTextureAsync( texture, options = {} ) {
-+
-+		const { budgetMs = 2, maxBytesPerWrite = 65536, signal } = options;
-+		if ( ! Number.isFinite( budgetMs ) || budgetMs <= 0 || ! Number.isSafeInteger( maxBytesPerWrite ) ) throw new Error( 'Invalid compressed upload budget.' );
-+		const backend = this.backend;
-+		const device = backend.device;
-+		if ( ! backend.has( texture ) ) throw new Error( 'Compressed texture allocation invalidated.' );
-+		const textureData = backend.get( texture );
-+		const gpuTexture = textureData.texture;
-+		const descriptor = textureData.textureDescriptorGPU;
-+		const block = descriptor && this._getBlockData( descriptor.format );
-+		if ( ! block || ! gpuTexture || maxBytesPerWrite < block.byteLength ) throw new Error( 'Compressed texture allocation or block budget is unsupported.' );
-+		const version = texture.version;
-+		const source = texture.source;
-+		const mipmaps = texture.mipmaps;
-+		const captured = mipmaps.map( mip => ( { mip, data: mip.data, width: mip.width, height: mip.height } ) );
-+		const updates = texture.isCompressedArrayTexture ? [ ...texture.layerUpdates ] : [];
-+		const layers = updates.length > 0 ? updates : Array.from( { length: descriptor.size.depthOrArrayLayers }, ( _, i ) => i );
-+		const check = () => {
-+
-+			if ( signal?.aborted ) throw signal.reason || new Error( 'Compressed texture upload cancelled.' );
-+			if ( backend.device !== device || ! backend.has( texture ) || backend.get( texture ) !== textureData || textureData.texture !== gpuTexture || textureData.textureDescriptorGPU !== descriptor ) throw new Error( 'Compressed texture allocation invalidated.' );
-+			if ( source.dataReady !== true || texture.version !== version || texture.source !== source || texture.mipmaps !== mipmaps || mipmaps.length !== captured.length || captured.some( ( c, i ) => mipmaps[ i ] !== c.mip || c.mip.data !== c.data || c.mip.width !== c.width || c.mip.height !== c.height ) ) throw new Error( 'Compressed texture changed during preparation.' );
-+			if ( texture.isCompressedArrayTexture && ( texture.layerUpdates.size !== updates.length || updates.some( layer => ! texture.layerUpdates.has( layer ) ) ) ) throw new Error( 'Compressed texture layers changed during preparation.' );
-+
-+		};
-+		function* tiles() {
-+
-+			for ( let mipLevel = 0; mipLevel < captured.length; mipLevel ++ ) {
-+
-+				const mip = captured[ mipLevel ];
-+				const columns = Math.ceil( mip.width / block.width );
-+				const rows = Math.ceil( mip.height / block.height );
-+				const stride = columns * block.byteLength;
-+				const imageBytes = stride * rows;
-+				const bytes = new Uint8Array( mip.data.buffer, mip.data.byteOffset, mip.data.byteLength );
-+				const tileColumns = Math.min( columns, Math.floor( maxBytesPerWrite / block.byteLength ) );
-+				const tileRows = stride <= maxBytesPerWrite ? Math.max( 1, Math.floor( maxBytesPerWrite / stride ) ) : 1;
-+				for ( const layer of layers ) {
-+
-+					if ( ! Number.isInteger( layer ) || layer < 0 || layer >= descriptor.size.depthOrArrayLayers || ( layer + 1 ) * imageBytes > bytes.byteLength ) throw new Error( 'Invalid compressed texture layer data.' );
-+					for ( let y = 0; y < rows; y += tileRows ) {
-+
-+						for ( let x = 0; x < columns; x += tileColumns ) {
-+
-+							const width = Math.min( tileColumns, columns - x );
-+							const height = Math.min( tileRows, rows - y );
-+							const offset = layer * imageBytes + y * stride + x * block.byteLength;
-+							const length = ( height - 1 ) * stride + width * block.byteLength;
-+							yield { destination: { texture: gpuTexture, mipLevel, origin: { x: x * block.width, y: y * block.height, z: layer } }, data: bytes.subarray( offset, offset + length ), layout: { offset: 0, bytesPerRow: stride, rowsPerImage: rows }, extent: { width: width * block.width, height: height * block.height, depthOrArrayLayers: 1 } };
-+
-+						}
-+
-+					}
-+
-+				}
-+
-+			}
-+
-+		}
-+		const slice = options.uploadSlice || { started: null };
-+		const yieldHost = async () => {
-+
-+			await new Promise( resolve => setTimeout( resolve, 0 ) );
-+			slice.started = performance.now();
-+			check();
-+
-+		};
-+		const iterator = tiles();
-+		const validations = [];
-+		const failures = [];
-+		let next = iterator.next();
-+		let uploadFailed = false;
-+		let uploadError;
-+		try {
-+
-+			while ( ! next.done && failures.length === 0 ) {
-+
-+				check();
-+				if ( slice.started === null ) slice.started = performance.now();
-+				if ( performance.now() - slice.started >= budgetMs ) await yieldHost();
-+				if ( failures.length > 0 ) break;
-+				const scoped = typeof device.pushErrorScope === 'function' && typeof device.popErrorScope === 'function';
-+				if ( scoped ) { device.pushErrorScope( 'out-of-memory' ); device.pushErrorScope( 'validation' ); }
-+				try {
-+
-+					do {
-+
-+						check();
-+						const tile = next.value;
-+						device.queue.writeTexture( tile.destination, tile.data, tile.layout, tile.extent );
-+						next = iterator.next();
-+
-+					} while ( ! next.done && performance.now() - slice.started < budgetMs );
-+
-+				} finally {
-+
-+					// Pop synchronously: a loading-screen render must not enter our error scopes.
-+					if ( scoped ) validations.push( Promise.allSettled( [ device.popErrorScope(), device.popErrorScope() ] ).then( results => {
-+
-+						for ( const result of results ) {
-+
-+							if ( result.status === 'rejected' ) failures.push( result.reason );
-+							else if ( result.value !== null ) failures.push( new Error( result.value.message ) );
-+
-+						}
-+
-+					} ) );
-+
-+				}
-+				// Bound validation latency without changing the host slice or byte budgets.
-+				if ( validations.length === 4 ) await validations.shift();
-+				check();
-+				if ( ! next.done && failures.length === 0 ) await yieldHost();
-+
-+			}
-+
-+		} catch ( error ) {
-+
-+			uploadFailed = true;
-+			uploadError = error;
-+
-+		} finally {
-+
-+			// Observe every issued scope, including after cancellation or a write failure.
-+			await Promise.all( validations );
-+
-+		}
-+		if ( uploadFailed ) throw uploadError;
-+		if ( failures.length > 0 ) throw new AggregateError( failures, 'Compressed texture upload failed: ' + failures.map( error => error?.message || String( error ) ).join( '; ' ) );
-+		check();
-+		textureData.version = version;
-+		if ( updates.length > 0 ) texture.clearLayerUpdates();
-+
-+	}
-+
- 	/**
- 	 * Returns texture data as a typed array.
- 	 *
-@@ -806,6 +963,8 @@ class WebGPUTextureUtils {
+@@ -806,6 +826,8 @@ class WebGPUTextureUtils {
  	 */
  	dispose() {
  

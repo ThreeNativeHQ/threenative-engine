@@ -177,7 +177,7 @@ describe("the versioned JSON upgrade patch", () => {
       const predecessor = await legacyPredecessor(pair.path, pair.oldHash);
       await writeFile(join(threeRoot, pair.path), predecessor, "utf8");
       await expect(applyThreePatch({ packageRoot, threeRoot }), pair.oldHash).resolves.toBe(
-        "patched",
+        pair.oldHash === UPGRADE.generatedFinalHashes[pair.path] ? "unchanged" : "patched",
       );
       expect(
         blobHash(await readFile(join(threeRoot, pair.path), "utf8")),

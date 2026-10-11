@@ -463,10 +463,6 @@ type RendererInstance = IStorageBufferSource & {
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
-  prepareTextureAsync?: (
-    texture: Texture,
-    options: { budgetMs: number; maxBytesPerWrite: number; signal: AbortSignal },
-  ) => Promise<void>;
   compute?: (node: unknown) => void;
   getArrayBufferAsync?: (
     attribute: unknown,

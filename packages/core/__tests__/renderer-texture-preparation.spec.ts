@@ -123,10 +123,8 @@ function reassemble(writes: IWrite[], mipLevel: number): Uint8Array {
 
 it("prepares the real compressed fixture and republishes every transcoded mip byte-for-byte", async () => {
   const { device, writes, created } = mockDevice();
-  const privatePrepare = vi.fn();
   const renderer = await webgpuRenderer({
     backend: { device },
-    prepareTextureAsync: privatePrepare,
   });
   try {
     const { texture, mipmaps } = await realCompressed();
@@ -168,8 +166,6 @@ it("prepares the real compressed fixture and republishes every transcoded mip by
     for (let mip = 0; mip < mipmaps.length; mip++)
       expect(reassemble(writes, mip)).toEqual(mipmaps[mip]?.data);
     expect(writes.every((write) => write.bytes <= 65_536)).toBe(true);
-    // The retained private patch is never entered.
-    expect(privatePrepare).not.toHaveBeenCalled();
   } finally {
     renderer.dispose();
   }
@@ -187,7 +183,7 @@ it("keeps the numeric contract and leaves the caller map empty without a replace
 });
 
 it("fails closed when no public GPU device is reachable", async () => {
-  const renderer = await webgpuRenderer({ prepareTextureAsync: vi.fn() });
+  const renderer = await webgpuRenderer();
   try {
     await expect(renderer.prepareTextures?.([compressed()])).rejects.toThrow(
       /bounded|unsupported|preparation/i,
