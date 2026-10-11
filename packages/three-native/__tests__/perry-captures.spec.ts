@@ -70,3 +70,61 @@ console.log("TN_PERRY_CAPTURE:" + getter.call(owner) + ":" + getter.call(owner))
   },
   45_000,
 );
+
+it.runIf(process.env.TN_NATIVE_TS_CACHE)(
+  "settles every parser callback while Perry collects parallel model results",
+  () => {
+    const compiler = spawnSync(
+      process.execPath,
+      ["tools/native-typescript/provision.mjs", "--check"],
+      { encoding: "utf8", timeout: 10_000 },
+    );
+    expect(compiler.status, compiler.stderr).toBe(0);
+    const dir = makeTempDirSync("tn-perry-parse-gc-");
+    const source = readFileSync(new URL("../src/addons/perry-loaders.ts", import.meta.url), "utf8");
+    const loader = source
+      .slice(source.indexOf("export class GLTFLoader"), source.indexOf("\nexport class HDRLoader"))
+      .replace("export class", "class");
+    writeFileSync(
+      path.join(dir, "main.ts"),
+      `
+      type IGltfResult = { scene: object; scenes: object[]; animations: object[]; cameras: object[]; asset: object; parser: unknown; userData: object };
+      async function source(url: string): Promise<string> { return url; }
+      function load(kind: number, data: string | Uint8Array): object[] {
+        const nodes: object[] = [];
+        for (let i = 0; i < 50000; i++) nodes.push({ index: i, name: "node" + i });
+        return [{ nodes }];
+      }
+      ${loader}
+      const loader = new GLTFLoader();
+      async function model(id: number): Promise<IGltfResult> {
+        await Promise.all([Promise.resolve(id), Promise.resolve("loader")]);
+        return await new Promise<IGltfResult>((resolve, reject) => loader.parse(new ArrayBuffer(1), "", resolve, reject));
+      }
+      Promise.all(Array.from({length: 25}, (_, i) => model(i))).then((results) => {
+        console.log("TN_PERRY_PARSE_GC:" + results.length); process.exit(0);
+      }, (error) => { console.error(String(error)); process.exit(1); });
+    `,
+    );
+    const binary = path.join(dir, "probe");
+    const built = spawnSync(
+      compiler.stdout.trim(),
+      [
+        "compile",
+        path.join(dir, "main.ts"),
+        "-o",
+        binary,
+        "--strict-eval",
+        "--strict-dynamic-import",
+        "--strict-unimplemented",
+        "--no-auto-optimize",
+      ],
+      { cwd: dir, encoding: "utf8", timeout: 30_000 },
+    );
+    expect(built.status, built.stderr).toBe(0);
+    const run = spawnSync(binary, [], { encoding: "utf8", timeout: 20_000 });
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stdout.trim()).toBe("TN_PERRY_PARSE_GC:25");
+  },
+  60_000,
+);
