@@ -11,10 +11,7 @@ import {
   Vector3,
 } from "three";
 import { expect, it, vi } from "vitest";
-import {
-  createSpawnReadiness,
-  spawnReadinessSnapshot,
-} from "../../../examples/strata-terrain-preview/src/render/loading.js";
+import { spawnReadinessSnapshot } from "../../../examples/strata-terrain-preview/src/render/loading.js";
 import {
   type IPropPreparationProgress,
   createStreamedProps,
@@ -77,35 +74,23 @@ it("reports an outstanding world load before the factory returns or attaches it"
     expect(progress?.phase).toBe("world-load");
     expect(progress?.bucket).toBe("horizon:true");
     expect(progress?.worlds).toHaveLength(0);
-    vi.useFakeTimers();
-    let receipt: ReturnType<typeof spawnReadinessSnapshot> | undefined;
-    const spawn = createSpawnReadiness("Controlled spawn", 100, (reason) => {
-      receipt = spawnReadinessSnapshot({
-        reason,
-        atMs: performance.now(),
-        world: "forest",
-        sceneUuid: "controlled-scene",
-        released: false,
-        gate: spawn,
-        stage: "streaming",
-        propsSettled: false,
-        preparation: progress,
-        assets: assets.progress,
-        startup: { phase: "collapsing", progress: 0.95, compileSettled: true, timeline: {} },
-      });
+    const receipt = spawnReadinessSnapshot({
+      reason: "world load still outstanding before the factory returns or attaches",
+      atMs: performance.now(),
+      world: "forest",
+      sceneUuid: "controlled-scene",
+      released: false,
+      gate: { ready: false, error: "" },
+      stage: "streaming",
+      propsSettled: false,
+      preparation: progress,
+      assets: assets.progress,
+      startup: { phase: "collapsing", progress: 0.95, compileSettled: true, timeline: {} },
     });
-    const rejection = expect(spawn.promise).rejects.toThrow("admission exceeded 100 ms");
-    try {
-      await vi.advanceTimersByTimeAsync(100);
-      await rejection;
-      expect(receipt?.gate).toEqual({ ready: false, error: "" });
-      expect(receipt?.preparation.phase).toBe("world-load");
-      expect(receipt?.preparation.worldCount).toBe(0);
-      expect(receipt?.released).toBe(false);
-    } finally {
-      spawn.cancel();
-      vi.useRealTimers();
-    }
+    expect(receipt.gate).toEqual({ ready: false, error: "" });
+    expect(receipt.preparation.phase).toBe("world-load");
+    expect(receipt.preparation.worldCount).toBe(0);
+    expect(receipt.released).toBe(false);
     release();
     streamed = await work;
     expect(progress?.phase).toBe("complete");
@@ -113,7 +98,7 @@ it("reports an outstanding world load before the factory returns or attaches it"
     expect(streamed?.worlds[0]?.parent).toBeNull();
     expect(streamed?.worlds[0]?.released).toBe(false);
     expect(progress?.prewarmedWorlds).toBe(0);
-    expect(receipt?.preparation.worldCount).toBe(0);
+    expect(receipt.preparation.worldCount).toBe(0);
   } finally {
     release();
     streamed ??= await work;

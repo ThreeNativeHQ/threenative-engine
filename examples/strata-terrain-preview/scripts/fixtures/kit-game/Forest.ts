@@ -5,7 +5,7 @@
 import { type ICtx, type IFrameBudgetWindow, Scene } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { type InstancedMesh, Object3D, type PerspectiveCamera, Vector3 } from "three";
-import { createLoadingScreen, createSpawnReadiness } from "../render/loading.js";
+import { createLoadingScreen } from "../render/loading.js";
 import { type GameState, initialState } from "../state.js";
 import { forestDaylight } from "../terrain/forest/sky.js";
 import { stand } from "../terrain/forest/stand.js";
@@ -92,7 +92,10 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
   #settled = false;
   #forest: Awaited<ReturnType<typeof addForest>> | undefined;
   #released = false;
-  #admission: ReturnType<typeof createSpawnReadiness> | undefined;
+  #ready = false;
+  #error = "";
+  #settle: ((error?: Error) => void) | undefined;
+  #timer: ReturnType<typeof setTimeout> | undefined;
   #loading: ReturnType<typeof createLoadingScreen> | undefined;
 
   /** The kit's world streams while the scene loads, so `ready` waits for real streamed cells. */
@@ -105,12 +108,27 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
     this.#player = player;
     ctx.camera.position.copy(VIEWS.ground.at);
     ctx.camera.lookAt(VIEWS.ground.look);
-    const admission = createSpawnReadiness("Forest spawn");
-    this.#admission = admission;
-    void admission.promise.catch((error: unknown) => {
+    const deadlineAt = performance.now() + 120_000;
+    let settled = false;
+    const spawn = new Promise<void>((done, fail) => {
+      this.#settle = (error) => {
+        if (settled) return;
+        settled = true;
+        if (this.#timer !== undefined) clearTimeout(this.#timer);
+        if (error === undefined) {
+          if (!this.#released && !this.#error) this.#ready = true;
+          done();
+        } else fail(error);
+      };
+    });
+    this.#timer = setTimeout(
+      () => this.#fail(ctx, "Forest spawn admission exceeded 120000 ms"),
+      120_000,
+    );
+    void spawn.catch((error: unknown) => {
       this.#fail(ctx, error instanceof Error ? error.message : String(error));
     });
-    if (ctx.startup.phase !== "ready") ctx.startup.hold("forest-spawn", admission.promise, 120_000);
+    if (ctx.startup.phase !== "ready") ctx.startup.hold("forest-spawn", spawn, 120_000);
     let forest: Awaited<ReturnType<typeof addForest>> | undefined;
     this.#loading = createLoadingScreen({
       ...ctx,
@@ -124,8 +142,7 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
             (ctx.startup.progress + (required > 0 ? loaded / required : 0)) / 2,
           );
         },
-        whenReady: () =>
-          Promise.all([ctx.startup.whenReady(), admission.promise]).then(() => undefined),
+        whenReady: () => Promise.all([ctx.startup.whenReady(), spawn]).then(() => undefined),
       },
     });
     try {
@@ -142,6 +159,19 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
     }
     this.#forest = forest;
     this.#player = player;
+    // Arm once, after the world is attached: the engine owns readiness, its prewarm owns the draw.
+    const remaining = deadlineAt - performance.now();
+    void (
+      remaining > 0
+        ? Promise.all([
+            forest.world.whenSpawnReady(VIEWS.ground.at, 60, remaining),
+            forest.world.prewarmed,
+          ])
+        : Promise.reject(new Error("Forest spawn admission exceeded 120000 ms"))
+    ).then(
+      () => this.#settle?.(),
+      (error: unknown) => this.#fail(ctx, error instanceof Error ? error.message : String(error)),
+    );
     ctx.state.set({
       propColliders: forest.colliders.active,
       waterLakes: forest.water.lakes,
@@ -180,29 +210,24 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
         spawnTerrainRequired: region.requiredTerrainTiles,
       });
       if (this.#released) return;
-      this.#admission?.observe(
-        region.ready && this.#forest?.world.stats().pendingPrewarm === 0,
-        region.failures,
-      );
       ctx.state.set({
-        worldReady: this.#admission?.ready ? 1 : 0,
-        loadingError: this.#admission?.error ?? "",
+        worldReady: this.#ready ? 1 : 0,
+        loadingError: this.#error,
       });
     });
   }
 
   #fail(ctx: Ctx, message: string): void {
-    if (this.#released || ctx.state.getState().loadingError) return;
-    this.#admission?.fail(message);
-    ctx.state.set({
-      loadingError: this.#admission?.error ?? message,
-      worldReady: this.#admission?.ready ? 1 : 0,
-    });
+    if (this.#released || this.#error || this.#ready) return;
+    const error = message || "Forest spawn failed";
+    this.#error = error;
+    this.#settle?.(new Error(error));
+    ctx.state.set({ loadingError: error, worldReady: 0 });
   }
 
   override exit(): void {
     this.#released = true;
-    this.#admission?.cancel();
+    this.#settle?.(new Error("Forest spawn cancelled"));
     this.#loading?.finish();
     this.#body?.dispose();
     this.#forest?.world.dispose();
@@ -214,11 +239,7 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
     const body = this.#body;
     const player = this.#player;
     if (body === undefined || player === undefined) return;
-    if (
-      !this.#admission?.ready ||
-      ctx.startup.phase !== "ready" ||
-      ctx.state.getState().loadingError
-    ) {
+    if (!this.#ready || ctx.startup.phase !== "ready" || ctx.state.getState().loadingError) {
       body.velocity.x = 0;
       body.velocity.z = 0;
       body.moveAndSlide(dt);

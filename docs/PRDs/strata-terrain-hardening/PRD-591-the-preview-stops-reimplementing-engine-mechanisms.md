@@ -67,11 +67,17 @@ both material paths.
     Node timer overflow, then passed with the supported `(0, 2147483647]` ms bound.
     Disposal clears the timer; unsettled test polling fails closed. Earlier core typecheck/build
     (publint) passed; the parent core typecheck after the bound correction also passed (exit 0).
-  - Open, not ticked: caller migration (`examples/strata-terrain-preview/src/render/loading.ts`,
-    `game.ts`, five kit fixtures), `pnpm --filter strata-terrain-preview test:terrain:web`, and the
-    caller's full native-matrix proof. This migration must keep the current pre-props failure
-    capture, cancellation and all five fixtures plus the `propStreaming` warmed/prewarmed
-    aggregation; remove none now.
+  - Caller migration implemented, runtime acceptance still open: the preview and five kit fixtures
+    join `WorldCells.whenSpawnReady` with every stream's `prewarmed` promise. One entry deadline
+    covers preparation and admission; cancellation, late settlement and pre-props failure capture
+    remain guarded. The old `createSpawnReadiness` helper is deleted; loading UI and bounded failure
+    receipts remain. Timeout failures update UI state immediately. Empty kit failures receive a
+    nonempty kit label and cannot be overwritten by late success or another failure.
+    Parent reproduced the empty-error defect in four kits, corrected Forest's VM setup, then ran
+    the actual-source loading tests: 31/31 passed (1.08 s); the focused outstanding-world-load test
+    also passed (other nine tests skipped). Terrain typecheck and direct preview `tsc --noEmit`
+    passed. Scoped Biome and `git diff --check` passed. The web playtest, all-kit runtime captures
+    and caller full native-matrix proof remain unverified; this box stays open.
   - Native availability corrected: the linked checkout has no `third_party/` or `build/` of its own,
     and the primary owning checkout already ships
     `packages/runtime-native/build/tn-linux-wgpu/mystral` (also `tn-linux-jsprofile` and
@@ -99,8 +105,8 @@ both material paths.
       `TN_WORLD_SPAWN_READINESS pending=resolve dispose=reject timeout=25ms` beside
       `TN_TERRAIN_INLINE_HASH hash=d138e335 ... expected=d138e335`
       (`artifacts/strata591-cleanup-desktop/direct-native.log`).
-    - Still open under this box: the caller migration, its web playtest and the full native-matrix
-      claim. No caller migration is attempted here.
+    - Still open under this box: caller runtime verification, its web playtest and the full
+      native-matrix claim. The selected native row proves the engine gate component only.
 - [ ] Scatter off the `enter` path. proof: web playtest long-task assertion
 
 #### Phase 3: ground and look check

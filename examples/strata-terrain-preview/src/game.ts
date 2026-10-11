@@ -17,11 +17,7 @@ import {
   Vector3,
 } from "three";
 import { BIOMES, type WorldName } from "./render/biomes.js";
-import {
-  createLoadingScreen,
-  createSpawnReadiness,
-  spawnReadinessSnapshot,
-} from "./render/loading.js";
+import { createLoadingScreen, spawnReadinessSnapshot } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { type ICanopyComparison, loadPack, loadSkyLight } from "./render/pack.js";
 import { loadPreparedProps } from "./render/prepared.js";
@@ -309,7 +305,50 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       let propsSettled = false;
       let preparation: IPropPreparationProgress | undefined;
       let completedPropsWork = 0;
-      const admission = createSpawnReadiness("Strata spawn", 120_000, captureSpawnFailure);
+      // One scene-local spawn gate: a single deadline taken here, settled once by the world readiness
+      // join, a failure or teardown. `WorldCells.whenSpawnReady` is the data authority and each
+      // streamed world's `prewarmed` is the draw gate; no frame polls either.
+      const deadlineAt = performance.now() + 120_000;
+      let spawnReady = false;
+      let spawnError = "";
+      let spawnSettled = false;
+      let capturingSpawnFailure = false;
+      let resolveSpawn: () => void = () => undefined;
+      let rejectSpawn: (reason: Error) => void = () => undefined;
+      const spawnPromise = new Promise<void>((done, failed) => {
+        resolveSpawn = done;
+        rejectSpawn = failed;
+      });
+      function settleSpawn(reason?: Error): void {
+        if (spawnSettled || capturingSpawnFailure) return;
+        spawnSettled = true;
+        clearTimeout(spawnTimer);
+        if (reason === undefined) {
+          spawnReady = true;
+          resolveSpawn();
+        } else {
+          rejectSpawn(reason);
+        }
+      }
+      function failSpawn(reason: unknown): void {
+        if (spawnSettled || capturingSpawnFailure) return;
+        const message =
+          (reason instanceof Error ? reason.message : String(reason)) || "Strata spawn failed";
+        capturingSpawnFailure = true;
+        try {
+          captureSpawnFailure(message);
+        } catch {
+          // A diagnostic must never replace the admission failure or leave its promise pending.
+        }
+        capturingSpawnFailure = false;
+        spawnError = message;
+        settleSpawn(new Error(message));
+        ctx.state.set({ worldReady: spawnReady, loadingError: spawnError });
+      }
+      const spawnTimer: ReturnType<typeof setTimeout> = setTimeout(
+        () => failSpawn("Strata spawn admission exceeded 120000 ms"),
+        120_000,
+      );
       function captureSpawnFailure(reason: string): void {
         console.error(
           `TN_STRATA_SPAWN_FAILURE ${JSON.stringify(
@@ -319,7 +358,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
               world,
               sceneUuid: ctx.scene.uuid,
               released,
-              gate: admission,
+              gate: { ready: spawnReady, error: spawnError },
               stage: propsStage,
               propsSettled,
               ...(preparation === undefined ? {} : { preparation }),
@@ -330,20 +369,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           )}`,
         );
       }
-      const failSpawn = (reason: unknown): void => {
-        admission.fail(reason);
-        ctx.state.set({ worldReady: admission.ready, loadingError: admission.error });
-      };
       if (ctx.startup.phase !== "ready")
         ctx.startup.hold(
           "strata-spawn",
-          // Core polls this once per rendered frame, so the gate settles under a playtest's
-          // deterministic clock, which advances no fixed step while startup is held.
-          () => {
-            const region = props?.readinessAt(spawn);
-            admission.observe(region?.ready === true, region?.failures ?? 0);
-            return admission.ready || admission.error !== "";
-          },
+          spawnPromise,
           120_000,
           () =>
             completedPropsWork +
@@ -361,7 +390,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
             return Math.min(0.99, (ctx.startup.progress + coverage) / 2);
           },
           whenReady: () =>
-            Promise.all([ctx.startup.whenReady(), admission.promise]).then(() => undefined),
+            Promise.all([ctx.startup.whenReady(), spawnPromise]).then(() => undefined),
         },
       });
       ctx.afterPhysics(() => loading.update());
@@ -612,7 +641,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         dispose: () => {
           released = true;
           textureUploads.abort(new Error("Strata scene released during texture preparation."));
-          admission.cancel();
+          settleSpawn(new Error("Strata spawn cancelled"));
           loading.finish();
           surfacesDispose?.();
           flat.dispose();
@@ -770,6 +799,21 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         // preparation have no attached stream to prewarm and keep the opaque curtain's draw gate.
         ctx.canvasLayer.keepWorldRendering = true;
         propsStage = "attached";
+        // Armed once, after the streams attach: the fixed spawn data join plus each draw join,
+        // bounded by the deadline taken at scene entry. `WorldCells.whenSpawnReady` owns the data
+        // authority and each streamed world's `prewarmed` owns the draw.
+        const remaining = deadlineAt - performance.now();
+        if (remaining <= 0) {
+          failSpawn("Strata spawn admission exceeded 120000 ms");
+        } else {
+          void Promise.all([
+            ...props.worlds.map((stream) => stream.whenSpawnReady(spawn, 60, remaining)),
+            ...props.worlds.map((stream) => stream.prewarmed),
+          ]).then(
+            () => settleSpawn(),
+            (reason) => failSpawn(reason),
+          );
+        }
 
         const alpineCrags =
           world === "alpine"
@@ -942,7 +986,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
             },
             (error) => {
               propsSettled = true;
-              if (!released) failSpawn(error);
+              if (!released) {
+                failSpawn(error);
+                ctx.state.set({ worldReady: spawnReady, loadingError: spawnError });
+              }
             },
           );
         }
@@ -962,11 +1009,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         }
         const streaming = props?.stats();
         const region = props?.readinessAt(spawn);
-        admission.observe(region?.ready === true, region?.failures ?? 0);
-        const worldReady = admission.ready;
+        const worldReady = spawnReady;
         if (region)
           ctx.state.set({ spawnCellsRequired: region.required, spawnCellsLoaded: region.loaded });
-        if (admission.error) ctx.state.set({ loadingError: admission.error });
+        if (spawnError) ctx.state.set({ loadingError: spawnError });
         if (
           worldReady &&
           !released &&

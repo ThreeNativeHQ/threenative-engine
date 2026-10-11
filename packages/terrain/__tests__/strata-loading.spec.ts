@@ -4,17 +4,111 @@ import {
   type CanvasTexture,
   type Mesh,
   type MeshBasicMaterial,
+  Object3D,
   OrthographicCamera,
   PerspectiveCamera,
   Scene,
+  Vector3,
 } from "three";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
 import {
   createLoadingScreen,
-  createSpawnReadiness,
   spawnReadinessSnapshot,
 } from "../../../examples/strata-terrain-preview/src/render/loading.js";
+
+const GAME_URL = new URL("../../../examples/strata-terrain-preview/src/game.ts", import.meta.url);
+const GATE_NAMES = [
+  "deadlineAt",
+  "spawnReady",
+  "spawnError",
+  "spawnSettled",
+  "capturingSpawnFailure",
+  "resolveSpawn",
+  "rejectSpawn",
+  "spawnPromise",
+  "settleSpawn",
+  "failSpawn",
+  "spawnTimer",
+] as const;
+
+/** Pull named declarations straight out of the production `enter()` so the tests drive real code. */
+function gameDeclarations(names: readonly string[]): string {
+  const source = ts.createSourceFile(
+    "game.ts",
+    readFileSync(GAME_URL, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const wanted = new Set(names);
+  const found = new Map<string, string>();
+  function visit(node: ts.Node): void {
+    if (ts.isVariableDeclaration(node)) {
+      const name = node.name.getText(source);
+      if (wanted.has(name)) found.set(name, node.parent.parent.getText(source));
+    } else if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
+      const name = node.name.getText(source);
+      if (wanted.has(name)) found.set(name, node.getText(source));
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  return names
+    .map((name) => {
+      const text = found.get(name);
+      if (text === undefined) throw new Error(`Missing production declaration ${name}`);
+      return text;
+    })
+    .join("\n");
+}
+
+interface ISpawnGate {
+  readonly spawn: Promise<void>;
+  readonly state: { worldReady: boolean; loadingError: string };
+  error(): string;
+  fail(reason: unknown): void;
+  ready(): boolean;
+  settle(error?: Error): void;
+}
+
+/** Run the production spawn gate in a fresh context; `capture` receives each failure receipt. */
+function spawnGate(capture: (reason: string) => void = () => undefined): ISpawnGate {
+  vi.useFakeTimers();
+  const state = { worldReady: false, loadingError: "" };
+  const scope = {
+    setTimeout,
+    clearTimeout,
+    performance,
+    Error,
+    captureSpawnFailure: capture,
+    spawnState: state,
+    ctx: {
+      state: {
+        set: (value: { worldReady: boolean; loadingError: string }) => Object.assign(state, value),
+      },
+    },
+    exports: {} as { Gate?: new () => ISpawnGate },
+  };
+  runInNewContext(
+    ts.transpileModule(
+      `export class Gate {
+        constructor() {
+          ${gameDeclarations(GATE_NAMES)}
+          this.settle = settleSpawn;
+          this.fail = failSpawn;
+          this.spawn = spawnPromise;
+          this.ready = () => spawnReady;
+          this.error = () => spawnError;
+          this.state = spawnState;
+        }
+      }`,
+      { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
+    ).outputText,
+    scope,
+  );
+  if (scope.exports.Gate === undefined) throw new Error("Production spawn gate did not load");
+  return new scope.exports.Gate();
+}
 
 function host(ready: Promise<void>) {
   return {
@@ -35,27 +129,15 @@ function host(ready: Promise<void>) {
 it.each(["attached", "cancelled", "released"] as const)(
   "defers hidden world draws until prepared streams attach: %s",
   async (outcome) => {
-    const source = ts.createSourceFile(
-      "game.ts",
-      readFileSync(
-        new URL("../../../examples/strata-terrain-preview/src/game.ts", import.meta.url),
-        "utf8",
-      ),
-      ts.ScriptTarget.Latest,
-      true,
-    );
-    let declaration = "";
-    function visit(node: ts.Node): void {
-      if (ts.isVariableDeclaration(node) && node.name.getText(source) === "buildProps")
-        declaration = node.getText(source);
-      ts.forEachChild(node, visit);
-    }
-    visit(source);
-    if (!declaration) throw new Error("Missing production Strata preparation controller");
+    const declarations = gameDeclarations(["buildProps"]);
     const controllerHost = host(new Promise<void>(() => undefined));
     controllerHost.canvasLayer.opaque = true;
     controllerHost.canvasLayer.renderWorldDuringStartup = false;
-    const world = new Scene();
+    const world = {
+      prewarmed: Promise.resolve(),
+      update: () => undefined,
+      whenSpawnReady: () => Promise.resolve({}),
+    };
     const attachments: boolean[] = [];
     let entered: () => void = () => undefined;
     const preparing = new Promise<void>((resolve) => {
@@ -69,6 +151,10 @@ it.each(["attached", "cancelled", "released"] as const)(
     const parts = new Map();
     const scope = {
       exports: {} as { Controller?: new () => { run(): Promise<void> } },
+      performance,
+      deadlineAt: performance.now() + 120_000,
+      settleSpawn: () => undefined,
+      failSpawn: () => undefined,
       ctx: {
         ...controllerHost,
         assets: undefined,
@@ -90,6 +176,7 @@ it.each(["attached", "cancelled", "released"] as const)(
       propParts: parts,
       world: "forest",
       data: { size: 512 },
+      spawn: { x: 0, y: 0, z: 0 },
       biome: {},
       fallbackSaplingHeight: undefined,
       scatter: { placements: [], counts: {} },
@@ -135,7 +222,7 @@ it.each(["attached", "cancelled", "released"] as const)(
     };
     runInNewContext(
       ts.transpileModule(
-        `export class Controller { #surfaces; async run() { const ${declaration}; await buildProps(); } }`,
+        `export class Controller { #surfaces; async run() { ${declarations}; await buildProps(); } }`,
         { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
       ).outputText,
       scope,
@@ -143,7 +230,12 @@ it.each(["attached", "cancelled", "released"] as const)(
     if (!scope.exports.Controller)
       throw new Error("Production preparation controller did not load");
     const work = new scope.exports.Controller().run();
-    await preparing;
+    await Promise.race([
+      preparing,
+      work.then(() => {
+        throw Error("preparation did not enter");
+      }),
+    ]);
     try {
       expect(scope.completedPropsWork).toBe(55);
       expect(controllerHost.canvasLayer.keepWorldRendering).toBe(false);
@@ -359,108 +451,222 @@ it("releases its layer only after the combined spawn and startup promise resolve
 });
 
 it("latches playable coverage so later spawn eviction never disables controls", async () => {
-  const spawn = createSpawnReadiness("Strata spawn");
-  expect(spawn.ready).toBe(false);
-  spawn.observe(false);
-  expect(spawn.ready).toBe(false);
-  spawn.observe(true);
-  await spawn.promise;
-  spawn.observe(false, 1);
-  expect(spawn.ready).toBe(true);
-  expect(spawn.error).toBe("");
-  spawn.cancel();
+  const gate = spawnGate();
+  let settled = false;
+  void gate.spawn.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  expect(gate.ready()).toBe(false);
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  gate.settle();
+  await gate.spawn;
+  gate.fail("late failure");
+  expect(gate.ready()).toBe(true);
+  expect(gate.error()).toBe("");
+  gate.settle(new Error("Strata spawn cancelled"));
+  vi.useRealTimers();
 });
 
 it("rejects a timed out spawn and never treats later coverage as playable", async () => {
-  vi.useFakeTimers();
-  const spawn = createSpawnReadiness("Forest spawn", 100);
-  const rejection = expect(spawn.promise).rejects.toThrow("Forest spawn admission exceeded 100 ms");
-  await vi.advanceTimersByTimeAsync(100);
+  const gate = spawnGate();
+  const rejection = expect(gate.spawn).rejects.toThrow("Strata spawn admission exceeded 120000 ms");
+  await vi.advanceTimersByTimeAsync(120_000);
   await rejection;
-  spawn.observe(true);
-  expect(spawn.ready).toBe(false);
-  expect(spawn.error).toContain("exceeded");
-  spawn.cancel();
+  gate.settle();
+  expect(gate.ready()).toBe(false);
+  expect(gate.error()).toContain("exceeded");
   vi.useRealTimers();
 });
 
 it("captures the pending gate before timeout latches or rejects, once per failure", async () => {
-  vi.useFakeTimers();
   const events: string[] = [];
-  const spawn = createSpawnReadiness("Forest spawn", 100, (reason) => {
-    events.push(`capture:${spawn.ready}:${spawn.error}:${reason}`);
+  const gate = spawnGate((reason) => {
+    events.push(`capture:${gate.ready()}:${gate.error()}:${reason}`);
   });
-  const rejection = spawn.promise.catch((error: Error) => events.push(`rejected:${error.message}`));
-  try {
-    await vi.advanceTimersByTimeAsync(100);
-    await rejection;
-    spawn.observe(true);
-    spawn.fail("late failure");
-    spawn.cancel();
-    expect(events).toEqual([
-      "capture:false::Forest spawn admission exceeded 100 ms",
-      "rejected:Forest spawn admission exceeded 100 ms",
-    ]);
-    expect(spawn.ready).toBe(false);
-    expect(vi.getTimerCount()).toBe(0);
-  } finally {
-    spawn.cancel();
-    vi.useRealTimers();
-  }
+  const rejection = gate.spawn.catch((error: Error) => events.push(`rejected:${error.message}`));
+  await vi.advanceTimersByTimeAsync(120_000);
+  await rejection;
+  gate.settle();
+  gate.fail("late failure");
+  gate.settle(new Error("Strata spawn cancelled"));
+  expect(events).toEqual([
+    "capture:false::Strata spawn admission exceeded 120000 ms",
+    "rejected:Strata spawn admission exceeded 120000 ms",
+  ]);
+  expect(gate.ready()).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+  vi.useRealTimers();
 });
 
 it("keeps the original admission failure when its diagnostic capture throws", async () => {
-  vi.useFakeTimers();
   const capture = vi.fn(() => {
     throw new Error("diagnostic observer failed");
   });
-  const spawn = createSpawnReadiness("Forest spawn", 100, capture);
-  const rejection = expect(spawn.promise).rejects.toThrow("Forest spawn assets failed to load");
-  try {
-    spawn.observe(false, 1);
-    await rejection;
-    expect(capture).toHaveBeenCalledOnce();
-    expect(spawn.error).toBe("Forest spawn assets failed to load");
-    expect(vi.getTimerCount()).toBe(0);
-  } finally {
-    spawn.cancel();
-    vi.useRealTimers();
-  }
+  const gate = spawnGate(capture);
+  const rejection = expect(gate.spawn).rejects.toThrow("Strata spawn assets failed to load");
+  gate.fail(new Error("Strata spawn assets failed to load"));
+  await rejection;
+  expect(capture).toHaveBeenCalledOnce();
+  expect(gate.error()).toBe("Strata spawn assets failed to load");
+  expect(vi.getTimerCount()).toBe(0);
+  vi.useRealTimers();
 });
 
 it.each(["observe", "cancel"])(
   "keeps capture reentry through %s from changing failure settlement",
   async (action) => {
-    const spawn = createSpawnReadiness("Controlled spawn", 100, () => {
-      if (action === "observe") spawn.observe(true);
-      else spawn.cancel();
+    const gate = spawnGate(() => {
+      if (action === "observe") gate.settle();
+      else gate.settle(new Error("Strata spawn cancelled"));
     });
-    const rejection = expect(spawn.promise).rejects.toThrow("original admission failure");
-    spawn.fail("original admission failure");
+    const rejection = expect(gate.spawn).rejects.toThrow("original admission failure");
+    gate.fail("original admission failure");
     await rejection;
-    expect(spawn.ready).toBe(false);
-    expect(spawn.error).toBe("original admission failure");
-    spawn.cancel();
+    expect(gate.ready()).toBe(false);
+    expect(gate.error()).toBe("original admission failure");
+    vi.useRealTimers();
   },
 );
 
 it("cancels a pending scene without leaving its readiness promise or timer behind", async () => {
-  vi.useFakeTimers();
-  const spawn = createSpawnReadiness("Forest spawn");
-  const rejection = expect(spawn.promise).rejects.toThrow("Forest spawn cancelled");
-  spawn.cancel();
+  const gate = spawnGate();
+  const rejection = expect(gate.spawn).rejects.toThrow("Strata spawn cancelled");
+  gate.settle(new Error("Strata spawn cancelled"));
   await rejection;
   expect(vi.getTimerCount()).toBe(0);
-  expect(spawn.ready).toBe(false);
+  expect(gate.ready()).toBe(false);
   vi.useRealTimers();
 });
 
 it("keeps even an empty-message rejection failed after late coverage", async () => {
-  const spawn = createSpawnReadiness("Strata spawn");
-  const rejection = expect(spawn.promise).rejects.toThrow("Strata spawn failed");
-  spawn.fail(new Error());
+  const gate = spawnGate();
+  const rejection = expect(gate.spawn).rejects.toThrow("Strata spawn failed");
+  gate.fail(new Error());
   await rejection;
-  spawn.observe(true);
-  expect(spawn.ready).toBe(false);
-  spawn.cancel();
+  gate.settle();
+  expect(gate.ready()).toBe(false);
+  vi.useRealTimers();
+});
+
+it("updates ctx state immediately when the spawn times out before any render frame", async () => {
+  const gate = spawnGate();
+  const rejection = gate.spawn.catch(() => undefined);
+  expect(gate.state.loadingError).toBe("");
+  expect(gate.state.worldReady).toBe(false);
+  await vi.advanceTimersByTimeAsync(120_000);
+  await rejection;
+  expect(gate.state.loadingError).toBe("Strata spawn admission exceeded 120000 ms");
+  expect(gate.state.worldReady).toBe(false);
+  vi.useRealTimers();
+});
+
+const KIT_GATES = ["Alpine", "Coastal", "Desert", "Forest", "Tundra"] as const;
+/** Module constants a kit gate reads while it loads; the rest of each fixture stays out of the VM. */
+const KIT_CONSTANTS = new Set(["DRIVE_SECONDS", "viewWindows"]);
+
+interface IKitProbe {
+  ready(): boolean;
+  error(): string;
+  settle(error?: Error): void;
+  fail(ctx: unknown, message: string): void;
+}
+
+interface IKitGate {
+  load(ctx: unknown): Promise<void>;
+  testProbe(): IKitProbe;
+}
+
+/** Run a starter-kit fixture's real gate class in a fresh context, with its spawn rejecting as `reason`. */
+function kitGate(kit: string, reason: string): IKitGate {
+  const url = new URL(
+    `../../../examples/strata-terrain-preview/scripts/fixtures/kit-game/${kit}.ts`,
+    import.meta.url,
+  );
+  const source = ts.createSourceFile(
+    `${kit}.ts`,
+    readFileSync(url, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const constants: string[] = [];
+  let gate = "";
+  function visit(node: ts.Node): void {
+    if (ts.isClassDeclaration(node) && node.name?.text === kit) gate = node.getText(source);
+    else if (ts.isVariableDeclaration(node) && KIT_CONSTANTS.has(node.name.getText(source)))
+      constants.push(node.parent.parent.getText(source));
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  if (gate === "") throw new Error(`Missing ${kit} kit gate class`);
+  // The probe sits inside the class to reach private gate state; the gate code itself is untouched.
+  const probe =
+    "testProbe() { return { ready: () => this.#ready, error: () => this.#error, settle: (error) => this.#settle?.(error), fail: (ctx, message) => this.#fail(ctx, message) }; }";
+  const withProbe = `${gate.slice(0, gate.lastIndexOf("}"))}${probe}\n}`;
+  const compiled = ts.transpileModule([...constants, withProbe].join("\n"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const scope = {
+    exports: {} as Record<string, new () => IKitGate>,
+    Scene: class {},
+    // Each kit's static `initialState` field reads this global; the gate under test never uses it.
+    initialState: {},
+    VIEWS: { ground: { at: new Vector3(), look: new Vector3() } },
+    VIEW_NAMES: [],
+    stand: { spawn: new Vector3(), groundY: 0 },
+    HALF_HEIGHT: 0,
+    RADIUS: 0,
+    Object3D,
+    Vector3,
+    // The host Error keeps `error instanceof Error` true for the rejection the spawn raises.
+    Error,
+    setTimeout: () => 1,
+    clearTimeout: () => undefined,
+    performance: { now: () => 0 },
+    createLoadingScreen: () => ({ update: () => undefined, finish: () => undefined }),
+    [`add${kit}`]: () => Promise.reject(new Error(reason)),
+  };
+  runInNewContext(compiled, scope);
+  const Gate = scope.exports[kit];
+  if (Gate === undefined) throw new Error(`Kit gate ${kit} did not load`);
+  return new Gate();
+}
+
+function kitContext() {
+  return {
+    startup: { phase: "loading", progress: 0, hold: vi.fn(), whenReady: () => Promise.resolve() },
+    state: { set: vi.fn(), getState: () => ({ loadingError: "" }) },
+    camera: new PerspectiveCamera(),
+  };
+}
+
+it.each(KIT_GATES)("%s normalizes an empty spawn failure to its kit label", async (kit) => {
+  const ctx = kitContext();
+  const gate = kitGate(kit, "");
+  await gate.load(ctx);
+  expect(gate.testProbe().error()).toBe(`${kit} spawn failed`);
+  expect(ctx.state.set).toHaveBeenLastCalledWith({
+    loadingError: `${kit} spawn failed`,
+    worldReady: 0,
+  });
+});
+
+it.each(KIT_GATES)("%s keeps an empty spawn failure latched through late success", async (kit) => {
+  const ctx = kitContext();
+  const gate = kitGate(kit, "");
+  await gate.load(ctx);
+  const probe = gate.testProbe();
+  probe.settle();
+  expect(probe.ready()).toBe(false);
+  probe.fail(ctx, "A later failure");
+  expect(probe.error()).toBe(`${kit} spawn failed`);
+  expect(ctx.state.set).toHaveBeenLastCalledWith({
+    loadingError: `${kit} spawn failed`,
+    worldReady: 0,
+  });
 });
