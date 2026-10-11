@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — AC-1 to AC-3 are open: `Atmosphere.aerialPerspective` mixes every pixel toward one zenith colour, and no template uses the atmosphere at all.
 **Complexity:** 4 (MEDIUM) — 1–5 implementation files (1), a new GPU resource with per-frame view-space state (+2), template adoption (+1); risk override: none
 **Owner:** João
-**Depends on:** None. Builds on the LUT stack that [PRD-248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. Composes with [PRD-560](./PRD-560-height-fog-follows-the-ground.md) height fog: this PRD is kilometre-scale air, and PRD-560 is ground mist.
+**Depends on:** None. Builds on the LUT stack that [PRD-248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. Composes with [PRD-560](../done/PRD-560-height-fog-follows-the-ground.md) height fog: this PRD is kilometre-scale air, and PRD-560 is ground mist.
 
 ## Context
 
