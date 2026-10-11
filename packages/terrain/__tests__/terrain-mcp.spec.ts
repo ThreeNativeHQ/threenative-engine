@@ -1,11 +1,12 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { decodeRAW16 } from "../src/core/io.js";
 import type { ITerrainDocument } from "../src/core/types.js";
 import { IsolatedKillError, runIsolated } from "../src/mcp/child.js";
-import { loadCooker, parseBounds } from "../src/mcp/cook.js";
+import { cookKit, loadCooker, parseBounds } from "../src/mcp/cook.js";
+import { measureGlb } from "../src/mcp/glb-stats.js";
 import {
   TERRAIN_KITS,
   TERRAIN_TOOLS,
@@ -301,4 +302,122 @@ describe("terrain_patch recipe edits", () => {
     const recipe = await forestRecipe();
     expect(() => patchRecipe(recipe, [{ op: "remove", id: "no-such-layer" }] as never)).toThrow();
   });
+});
+
+// A GLB with only a JSON chunk: the counts live in accessor headers, so no buffer data is needed.
+function glbOf(json: unknown): Uint8Array {
+  const text = new TextEncoder().encode(JSON.stringify(json));
+  const padded = new Uint8Array(Math.ceil(text.length / 4) * 4).fill(0x20);
+  padded.set(text);
+  const bytes = new Uint8Array(20 + padded.length);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 0x46546c67, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, bytes.length, true);
+  view.setUint32(12, padded.length, true);
+  view.setUint32(16, 0x4e4f534a, true);
+  bytes.set(padded, 20);
+  return bytes;
+}
+
+describe("measureGlb", () => {
+  const accessors = [{ count: 3 }, { count: 6 }, { count: 4 }, { count: 10 }];
+  const meshes = [
+    { primitives: [{ attributes: { POSITION: 0 } }, { attributes: { POSITION: 0 }, indices: 1 }] },
+    {
+      primitives: [
+        { attributes: { POSITION: 2 }, mode: 5 },
+        { attributes: { POSITION: 0 }, mode: 1 },
+      ],
+    },
+  ];
+
+  it("counts triangles per instance and draws per primitive, instanced or not", () => {
+    const stats = measureGlb(
+      glbOf({
+        asset: { version: "2.0" },
+        accessors,
+        meshes,
+        nodes: [
+          { children: [1, 2] },
+          { mesh: 0 },
+          { mesh: 1, extensions: { EXT_mesh_gpu_instancing: { attributes: { TRANSLATION: 3 } } } },
+        ],
+        scene: 0,
+        scenes: [{ nodes: [0] }],
+      }),
+    );
+    // mesh 0 once: 1 + 2 triangles. mesh 1 ten times: a 4-vertex strip is 2 triangles, the line list none.
+    expect(stats).toEqual({ draws: 4, instances: 10, triangles: 3 + 2 * 10 });
+  });
+
+  it("ignores the alternate scenes a cook writes beside the default one", () => {
+    const stats = measureGlb(
+      glbOf({
+        asset: { version: "2.0" },
+        accessors,
+        meshes,
+        nodes: [{ mesh: 0 }, { mesh: 0 }],
+        scene: 1,
+        scenes: [{ nodes: [0] }, { nodes: [1] }],
+      }),
+    );
+    expect(stats).toEqual({ draws: 2, instances: 0, triangles: 3 });
+  });
+
+  it("fails closed on bytes that are not a GLB and on a dangling accessor", () => {
+    expect(() => measureGlb(new Uint8Array(32))).toThrow(/not a GLB/);
+    expect(() =>
+      measureGlb(
+        glbOf({
+          asset: { version: "2.0" },
+          meshes: [{ primitives: [{ attributes: { POSITION: 7 } }] }],
+          nodes: [{ mesh: 0 }],
+          scenes: [{ nodes: [0] }],
+        }),
+      ),
+    ).toThrow(/accessor 7 is missing/);
+  });
+});
+
+describe("terrain_generate result", () => {
+  it("returns the recipe, paths, counts measured from the GLB and a load snippet for the forest", async () => {
+    const project = await realpath(await mkdtemp(join(tmpdir(), "tn-terrain-result-")));
+    try {
+      await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+      await symlink(
+        new URL("../../assets/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "assets"),
+      );
+      const out = join(project, "public", "worlds", "forest");
+      const result = JSON.parse(await cookKit({ kit: "forest", out, projectRoot: project }));
+      expect(result).toMatchObject({
+        recipe: "forest",
+        out: "public/worlds/forest",
+        worldGlb: "public/worlds/forest/world.glb",
+        recipeJson: "public/worlds/forest/recipe.json",
+        worldPackage: "public/worlds/forest/world.json",
+      });
+      for (const file of [result.worldGlb, result.recipeJson, result.worldPackage]) {
+        expect((await stat(join(project, file))).size, file).toBeGreaterThan(0);
+      }
+      // The counts are the file's own: measuring the written GLB again gives the same numbers.
+      const written = new Uint8Array(await readFile(join(project, result.worldGlb)));
+      expect(measureGlb(written)).toEqual({
+        draws: result.draws,
+        instances: result.instances,
+        triangles: result.triangles,
+      });
+      expect(result.instances).toBeGreaterThan(0);
+      expect(result.draws).toBeGreaterThan(0);
+      expect(result.triangles).toBeGreaterThan(result.instances);
+      expect(result.load.split("\n")).toHaveLength(3);
+      expect(result.load).toContain('ctx.assets.model("worlds/forest/world.glb")');
+      // recipe.json is a document `terrain_patch` accepts as is.
+      const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
+      expect(patchRecipe(recipe, []).layers).toHaveLength(recipe.layers.length);
+    } finally {
+      await rm(project, { recursive: true, force: true });
+    }
+  }, 120_000);
 });

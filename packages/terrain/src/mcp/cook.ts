@@ -1,11 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { copyFile, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { decodeRAW16 } from "../core/io.js";
 import { applyPlacementOverrides } from "../core/placements.js";
 import { Terrain } from "../core/terrain.js";
 import { bakeWorldPackage } from "../core/world-package.js";
+import { measureGlb } from "./glb-stats.js";
 import { TERRAIN_KITS } from "./tools.js";
 
 /** One cook request, passed as the child's only argument. The parent validates every field first. */
@@ -251,10 +252,28 @@ async function cookInto(
     join(request.out, "sky.hdr"),
   );
 
+  // The editable recipe, with the heightmap inlined, is what `terrain_patch` takes back.
+  await writeFile(join(request.out, "recipe.json"), JSON.stringify(recipe.recipe));
+
+  const shown = relative(await realpath(request.projectRoot), request.out)
+    .split(sep)
+    .join("/");
+  // `public/` is the web root, so a file under it loads without that prefix.
+  const url = shown.replace(/^public\//u, "");
   return JSON.stringify({
-    out: request.out,
+    recipe: request.kit,
+    out: shown,
+    worldGlb: `${shown}/world.glb`,
+    recipeJson: `${shown}/recipe.json`,
+    worldPackage: `${shown}/world.json`,
+    ...measureGlb(cooked.worldGlb),
     placementCounts: cooked.placementCounts,
     worldGlbBytes: cooked.worldGlb.length,
     ms: Math.round(performance.now() - started),
+    load: [
+      `const world = await ctx.assets.model("${url}/world.glb");`,
+      "ctx.scene.add(world.scene);",
+      `// recipe: ${shown}/recipe.json (pass it to terrain_patch to edit)`,
+    ].join("\n"),
   });
 }
