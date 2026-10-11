@@ -1,8 +1,9 @@
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { OPERATION_TYPES } from "../core/operations.js";
 import { Terrain } from "../core/terrain.js";
-import type { PatchCommand } from "../core/terrain.js";
-import type { ITerrainDocument } from "../core/types.js";
+import type { LayerPatch, PatchCommand } from "../core/terrain.js";
+import type { ITerrainDocument, Layer } from "../core/types.js";
 
 /** The starter kits, one folder each under the package's `starter/`. */
 export const TERRAIN_KITS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;
@@ -153,32 +154,73 @@ export async function assertOutputFree(dir: string): Promise<void> {
   }
 }
 
+function isTerrainDocument(input: unknown): input is ITerrainDocument {
+  Terrain.fromJSON(JSON.stringify(input));
+  return true;
+}
+
+function isLayer(input: unknown): input is Layer {
+  isTerrainDocument({ version: 1, config: new Terrain().config, layers: [input] });
+  return true;
+}
+
+function isLayerPatch(
+  patch: Record<string, unknown>,
+): patch is Record<string, unknown> & LayerPatch {
+  if (patch.mask !== undefined && patch.mask !== null) {
+    isLayer({ id: "validation", type: "noise", params: {}, mask: patch.mask });
+  }
+  return (
+    (patch.type === undefined || OPERATION_TYPES.some((type) => type === patch.type)) &&
+    (patch.name === undefined || typeof patch.name === "string") &&
+    (patch.enabled === undefined || typeof patch.enabled === "boolean") &&
+    (patch.opacity === undefined ||
+      (typeof patch.opacity === "number" && Number.isFinite(patch.opacity))) &&
+    (patch.params === undefined || isRecord(patch.params))
+  );
+}
+
 function parseCommand(command: unknown, index: number): PatchCommand {
   if (!isRecord(command) || !PATCH_OPS.includes(command.op as string)) {
     throw new TypeError(
       `terrain_patch: command ${index} op must be one of ${PATCH_OPS.join(", ")}.`,
     );
   }
-  if (command.op !== "upsert" && typeof command.id !== "string") {
+  if (command.op === "upsert") {
+    if (!isRecord(command.layer)) {
+      throw new TypeError(`terrain_patch: command ${index} needs a layer object.`);
+    }
+    if (!isLayer(command.layer)) {
+      throw new TypeError(`terrain_patch: command ${index} needs a valid layer.`);
+    }
+    return { ...command, op: "upsert", layer: command.layer };
+  }
+  if (typeof command.id !== "string") {
     throw new TypeError(`terrain_patch: command ${index} needs a layer id.`);
   }
-  if (command.op === "upsert" && !isRecord(command.layer)) {
-    throw new TypeError(`terrain_patch: command ${index} needs a layer object.`);
+  const id = command.id;
+  switch (command.op) {
+    case "update": {
+      if (!isRecord(command.patch) || !isLayerPatch(command.patch)) {
+        throw new TypeError(`terrain_patch: command ${index} needs a valid patch object.`);
+      }
+      return { ...command, op: "update", id, patch: command.patch };
+    }
+    case "move":
+      if (typeof command.index !== "number" || !Number.isInteger(command.index)) {
+        throw new TypeError(`terrain_patch: command ${index} needs an integer index.`);
+      }
+      return { ...command, op: "move", id, index: command.index };
+    case "toggle":
+      if (command.enabled !== undefined && typeof command.enabled !== "boolean") {
+        throw new TypeError(`terrain_patch: command ${index} enabled must be a boolean.`);
+      }
+      return { ...command, op: "toggle", id };
+    case "remove":
+      return { ...command, op: "remove", id };
+    default:
+      throw new TypeError(`terrain_patch: command ${index} has an unknown op.`);
   }
-  if (command.op === "update" && !isRecord(command.patch)) {
-    throw new TypeError(`terrain_patch: command ${index} needs a patch object.`);
-  }
-  if (command.op === "move" && !Number.isInteger(command.index)) {
-    throw new TypeError(`terrain_patch: command ${index} needs an integer index.`);
-  }
-  if (
-    command.op === "toggle" &&
-    command.enabled !== undefined &&
-    typeof command.enabled !== "boolean"
-  ) {
-    throw new TypeError(`terrain_patch: command ${index} enabled must be a boolean.`);
-  }
-  return command as unknown as PatchCommand;
 }
 
 export function parsePatchInput(input: unknown): {
@@ -192,10 +234,12 @@ export function parsePatchInput(input: unknown): {
   if (!Array.isArray(args.commands)) {
     throw new TypeError("terrain_patch: commands must be an array.");
   }
-  return {
-    recipe: args.recipe as unknown as ITerrainDocument,
-    commands: args.commands.map(parseCommand),
-  };
+  if (!isTerrainDocument(args.recipe)) {
+    throw new TypeError("terrain_patch: recipe must be a valid terrain document.");
+  }
+  const commands = args.commands.map(parseCommand);
+  patchRecipe(args.recipe, commands);
+  return { recipe: args.recipe, commands };
 }
 
 /** Applies commands in one editor transaction and returns the edited recipe document. */

@@ -117,7 +117,12 @@ function applyToRecipe(recipe: ISaveRecipe, commands: readonly PatchCommand[]): 
   if (commands.length === 0) return structuredClone(recipe);
   const terrain = Terrain.fromJSON(recipe as never);
   terrain.applyPatch(commands as never);
-  return terrain.toJSON() as unknown as ISaveRecipe;
+  const document = terrain.toJSON();
+  return {
+    ...document,
+    config: { ...document.config },
+    layers: document.layers.map((layer) => ({ ...layer, params: { ...layer.params } })),
+  };
 }
 
 /**

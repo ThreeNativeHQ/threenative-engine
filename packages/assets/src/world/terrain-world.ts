@@ -3,6 +3,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   Document,
+  Extension,
   type Buffer as GltfBuffer,
   type Mesh,
   type Node,
@@ -204,6 +205,10 @@ async function authoredSiblingLods(glbPath: string): Promise<{ distance: number;
   return [];
 }
 
+function isExtensionConstructor(ctor: unknown): ctor is new (doc: Document) => Extension {
+  return typeof ctor === "function" && ctor.prototype instanceof Extension;
+}
+
 /**
  * One `EXT_mesh_gpu_instancing` node for one species-and-LOD pair, holding every logical
  * placement. Source meshes, materials, textures and each source node's world transform are
@@ -242,9 +247,14 @@ function addInstancedSpeciesNode(
     .setAttribute("SCALE", doc.createAccessor().setType("VEC3").setArray(scales).setBuffer(buffer));
 
   // Any extension the source uses must exist on the target document before its properties copy.
-  type ExtensionCtor = Parameters<Document["createExtension"]>[0];
   for (const sourceExtension of speciesDoc.getRoot().listExtensionsUsed()) {
-    doc.createExtension(sourceExtension.constructor as unknown as ExtensionCtor);
+    const ctor = sourceExtension.constructor;
+    if (!isExtensionConstructor(ctor)) {
+      throw new TypeError(
+        `Invalid species extension constructor: ${sourceExtension.extensionName}`,
+      );
+    }
+    doc.createExtension(ctor);
   }
 
   const combined = doc.createMesh(`${nodeName}_mesh`);

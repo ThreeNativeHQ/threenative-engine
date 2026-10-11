@@ -298,6 +298,40 @@ describe("terrain_patch recipe edits", () => {
     );
   });
 
+  it("rejects malformed recipes and command payloads at the input boundary", () => {
+    const recipe = {
+      version: 1,
+      config: { size: 512, resolution: 17, seed: 73 },
+      layers: [{ id: "hills", type: "noise", params: { amplitude: 16 } }],
+    };
+    for (const invalid of [{}, { ...recipe, config: {} }, { ...recipe, layers: [{}] }]) {
+      expect(() => parsePatchInput({ recipe: invalid, commands: [] })).toThrow();
+    }
+    for (const command of [
+      { op: "upsert", layer: { id: "bad", type: "noise", params: { amplitude: "high" } } },
+      { op: "update", id: "hills", patch: { params: { amplitude: "high" } } },
+      { op: "update", id: "hills", patch: { mask: { type: "unknown" } } },
+      { op: "update", id: "hills", patch: { params: [] } },
+      { op: "move", id: "hills", index: "0" },
+      { op: "toggle", id: "hills", enabled: "false" },
+    ]) {
+      expect(() => parsePatchInput({ recipe, commands: [command] })).toThrow();
+    }
+  });
+
+  it("preserves valid payloads and validates commands in transaction order", () => {
+    const recipe = { version: 1, config: { size: 512, resolution: 17, seed: 73 }, layers: [] };
+    const commands = [
+      { op: "upsert", layer: { id: "hills", type: "noise", params: { amplitude: 16 } } },
+      { op: "update", id: "hills", patch: { params: { amplitude: 20 } } },
+      { op: "toggle", id: "hills", enabled: false },
+      { op: "move", id: "hills", index: 0 },
+      { op: "remove", id: "hills" },
+    ];
+    expect(parsePatchInput({ recipe, commands })).toEqual({ recipe, commands });
+    expect(recipe.layers).toEqual([]);
+  });
+
   it("rejects a command that names a layer the recipe does not have", async () => {
     const recipe = await forestRecipe();
     expect(() => patchRecipe(recipe, [{ op: "remove", id: "no-such-layer" }] as never)).toThrow();
