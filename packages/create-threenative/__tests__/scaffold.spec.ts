@@ -239,7 +239,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
   "action-rpg": "c022de28097aa344b891be25c55b29d2d3053a050f8bfb3c263d782690d7c245",
   minimal: "3b5aa727964b59028d2b9f4850835a91857d9bb979430ace026b19505444efe1",
-  platformer: "2f53a214e863a18fe9d6c438a6d32609cf0c7e223f7308499b85c55c66604912",
+  platformer: "d2bab21c86ccc461e6186bd1c9fe96c97c6184d3f8d421ba2c4d2b3891da8185",
   puzzle: "edd2e8eb7e1602e23e42634afe2fc768ae8a2c4b8e9e1006c208aa9bab343ec3",
   racing: "33900c8a4b715f9bc8eb5c0c22456b48b9b8f1987fcdbcf32965f0880c442367",
   rain: "93f8227373687566e46cc8d7f03586cb346b05bb5a5589c97a3e0ee83be76d91",
@@ -535,6 +535,9 @@ describe("create-threenative", () => {
         );
         expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
         actual[template] = await scaffoldTreeHash(target);
+        if (template === "platformer") {
+          await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
+        }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
     } finally {

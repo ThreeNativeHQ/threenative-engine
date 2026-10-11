@@ -1,6 +1,16 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import {
+  Color,
+  EquirectangularReflectionMapping,
+  FloatType,
+  LinearSRGBColorSpace,
+  Scene,
+} from "three";
 import { describe, expect, it } from "vitest";
+import { flat } from "../templates/platformer/src/render/materials.js";
+import { palette } from "../templates/platformer/src/render/palette.js";
+import { setupSky, skyTexture } from "../templates/platformer/src/render/sky.js";
 import { qualityPreset } from "../templates/starter/src/render/quality.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
@@ -459,3 +469,38 @@ function cssDeclaration(rule: string | undefined, property: string): string | un
     .exec(rule)?.[1]
     ?.trim();
 }
+
+describe("platformer translucent surfaces and gradient sky", () => {
+  it("enables transparency only below full opacity and preserves material caching", () => {
+    expect(flat(0xffffff, { opacity: 0.55 }).transparent).toBe(true);
+    expect(flat(0xffffff, { opacity: 1 }).transparent).toBe(false);
+    expect(flat(0xffffff).transparent).toBe(false);
+    expect(flat(0xffffff, { opacity: 0.55 })).toBe(flat(0xffffff, { opacity: 0.55 }));
+  });
+
+  it("uses linear sky radiance for background and environment with a coloured lower hemisphere", () => {
+    const sky = skyTexture();
+    const { data, width, height } = sky.image;
+    const colorAt = (row: number) => Array.from(data.slice(row * width * 4, row * width * 4 + 3));
+    const closeTo = (actual: number[], color: Color) => {
+      for (const [index, value] of color.toArray().entries()) {
+        expect(actual[index]).toBeCloseTo(value, 6);
+      }
+    };
+    expect(sky.mapping).toBe(EquirectangularReflectionMapping);
+    expect(sky.colorSpace).toBe(LinearSRGBColorSpace);
+    expect(sky.type).toBe(FloatType);
+    closeTo(colorAt(height - 1), new Color(palette.skyHigh));
+    closeTo(colorAt((height - 1) / 2), new Color(palette.horizon));
+    closeTo(colorAt(0), new Color(palette.skyHigh).lerp(new Color(palette.horizon), 0.45));
+    expect(Array.from(data).every((value) => Number.isFinite(value) && value > 0)).toBe(true);
+    const scene = new Scene();
+    setupSky(scene, sky);
+    expect(scene.background).toBe(sky);
+    expect(scene.environment).toBe(sky);
+    expect(scene.backgroundIntensity).toBe(1);
+    expect(scene.environmentIntensity).toBe(1);
+    expect(sky.colorSpace).toBe(LinearSRGBColorSpace);
+    sky.dispose();
+  });
+});

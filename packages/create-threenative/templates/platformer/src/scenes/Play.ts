@@ -39,7 +39,7 @@ import {
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
-import { cloudLobes, setupSky, skyFloor } from "../render/sky.js";
+import { cloudLobes, setupSky, skyFloor, skyTexture } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
@@ -106,7 +106,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #walkers: Walker[] = [];
 
   /**
-   * The sky photograph and the walkers are both built here, and the walkers are registered here
+   * The sky gradient and the walkers are both built here, and the walkers are registered here
    * too — a scenario's `setup.place` is applied between `load()` and `enter()`, so an entity that
    * only appears in `enter()` cannot be placed. That is what makes a stomp reproducible: the
    * walker is where the scenario put it, not where boot time left it.
@@ -125,7 +125,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.entities.add(`walker.${this.#walkers.length}`, walker);
       this.#walkers.push(walker);
     }
-    this.#sky = await ctx.assets.texture("sky.jpg");
+    this.#sky = skyTexture();
     setupSky(ctx.scene, this.#sky);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
@@ -146,7 +146,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       predicate: (object) => object.userData.solid === true,
     });
     collapseStage(stage.group);
-    if (this.#sky === undefined) throw new Error("Play.enter ran before load() loaded sky.jpg.");
+    if (this.#sky === undefined)
+      throw new Error("Play.enter ran before load() created the sky texture.");
     setupSky(ctx.scene, this.#sky);
     ctx.scene.add(skyFloor());
     const lighting = setupLighting(
