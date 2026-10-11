@@ -35,6 +35,28 @@ void uiMessages() {
     CHECK(pointer != 0);
     if (pointer) CHECK(std::string(reinterpret_cast<const char*>(pointer)) == R"({"type":"tn:intent","intent":"start"})");
     CHECK(js_tnp_player_ui_take() == 0);
+#if TN_ENABLE_CSS_UI
+    CHECK(attachDesktopCssUi(""));
+    CHECK(js_tnp_player_ui_attached() == 1);
+    const std::string batch = R"({"ops":[
+      {"op":"create","id":1,"tag":"button"},
+      {"op":"attr","id":1,"name":"style","value":"position:fixed;left:0;top:0;width:100px;height:100px"},
+      {"op":"append","parent":0,"child":1},
+      {"op":"listen","id":1,"event":"click"}
+    ]})";
+    CHECK(js_tnp_player_ui_post(reinterpret_cast<int64_t>(batch.c_str())) == 1);
+    UiOverlayFrame frame;
+    CHECK(uiOverlayFrame(frame));
+    CHECK(frame.isRgba && frame.length > 0);
+    CHECK(uiOverlayRoutePointer("pointerdown", 0.01f, 0.01f, 1, 1));
+    CHECK(uiOverlayRoutePointer("pointerup", 0.01f, 0.01f, 0, 1));
+    pumpUiOverlay();
+    const auto click = js_tnp_player_ui_take();
+    CHECK(click != 0);
+    if (click) CHECK(std::string(reinterpret_cast<const char*>(click)).find("\"type\":\"click\"") != std::string::npos);
+    detachDesktopUiOverlay();
+    CHECK(js_tnp_player_ui_attached() == 0);
+#endif
 }
 void frameMetrics() {
     const auto sample = tn::engine::player::frameTiming(0.5, 0.6, 1.1, 28.5, 42);

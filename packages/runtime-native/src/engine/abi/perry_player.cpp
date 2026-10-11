@@ -44,7 +44,8 @@ extern "C" int32_t js_tnp_player_open() try {
     const auto uiRoot = std::filesystem::path(SDL_GetBasePath()) / "ui";
     if (std::filesystem::is_directory(uiRoot)) {
         const char* renderer = std::getenv("TN_UI_RENDERER");
-        const bool cssUi = renderer && std::string(renderer) == "native-css";
+        const bool cssUi = renderer ? std::string(renderer) == "native-css"
+                                    : TN_ENABLE_CSS_UI && !TN_ENABLE_UI_OVERLAY;
 #if defined(__linux__) && !defined(__ANDROID__)
         if (!cssUi) {
             SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "x11", SDL_HINT_OVERRIDE);

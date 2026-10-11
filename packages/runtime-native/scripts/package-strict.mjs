@@ -183,14 +183,17 @@ function writeAdapterManifest(packageDir, libDirs, libs) {
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`);
 }
 
-/** The web overlay's native dependencies, selected from the engine that actually links. */
+/** Each UI backend's native dependencies, selected from the engine that actually links. */
 export function stagePlayerUiLink(packageDir, engineBuild) {
   if (process.platform !== "linux") return;
   const cache = fs.readFileSync(path.join(engineBuild, "CMakeCache.txt"), "utf8");
-  if (!/^TN_ENABLE_UI_OVERLAY:BOOL=(?:ON|TRUE|YES|1)$/imu.test(cache)) return;
+  const packages = [];
+  if (/^TN_ENABLE_UI_OVERLAY:BOOL=(?:ON|TRUE|YES|1)$/imu.test(cache)) packages.push("webkit2gtk-4.1");
+  if (/^TN_ENABLE_CSS_UI:BOOL=(?:ON|TRUE|YES|1)$/imu.test(cache)) packages.push("fontconfig");
+  if (packages.length === 0) return;
   const file = path.join(packageDir, "package.json");
   const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
-  manifest.perry.nativeLibrary.targets.linux.pkgConfig = ["webkit2gtk-4.1"];
+  manifest.perry.nativeLibrary.targets.linux.pkgConfig = packages;
   fs.writeFileSync(file, `${JSON.stringify(manifest, undefined, 2)}\n`);
 }
 

@@ -789,6 +789,12 @@ if(TN_ENABLE_CSS_UI)
     set_target_properties(threenative-css-ui PROPERTIES
         IMPORTED_LOCATION "${THREENATIVE_CSS_UI_LIBRARY}"
     )
+    if(UNIX AND NOT APPLE AND NOT ANDROID)
+        # Fontique's Linux system-font provider calls fontconfig from the Rust static archive.
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(TN_CSS_FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
+        target_link_libraries(threenative-css-ui INTERFACE PkgConfig::TN_CSS_FONTCONFIG)
+    endif()
 endif()
 
 option(TN_ENGINE_ONLY "Configure only the JS-free native engine targets" OFF)

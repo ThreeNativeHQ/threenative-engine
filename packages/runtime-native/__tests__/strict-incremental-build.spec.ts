@@ -136,7 +136,7 @@ describe("strict workspace sources", () => {
 });
 
 it.runIf(process.platform === "linux")(
-  "stages WebKit linker dependencies only for an engine with the web UI backend",
+  "stages each compiled UI backend's Linux linker dependencies",
   () => {
     const dir = makeTempDirSync("tn-player-ui-link-");
     const file = join(dir, "package.json");
@@ -147,13 +147,21 @@ it.runIf(process.platform === "linux")(
     writeFileSync(file, JSON.stringify(manifest));
     writeFileSync(cache, "TN_ENABLE_UI_OVERLAY:BOOL=OFF\nTN_ENABLE_CSS_UI:BOOL=ON\n");
     stagePlayerUiLink(dir, dir);
-    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(manifest);
+    expect(JSON.parse(readFileSync(file, "utf8")).perry.nativeLibrary.targets.linux).toEqual({
+      libs: ["tn_engine_player"],
+      pkgConfig: ["fontconfig"],
+    });
     writeFileSync(cache, "TN_ENABLE_UI_OVERLAY:BOOL=ON\n");
     stagePlayerUiLink(dir, dir);
     expect(JSON.parse(readFileSync(file, "utf8")).perry.nativeLibrary.targets.linux).toEqual({
       libs: ["tn_engine_player"],
       pkgConfig: ["webkit2gtk-4.1"],
     });
+    writeFileSync(cache, "TN_ENABLE_UI_OVERLAY:BOOL=ON\nTN_ENABLE_CSS_UI:BOOL=ON\n");
+    stagePlayerUiLink(dir, dir);
+    expect(
+      JSON.parse(readFileSync(file, "utf8")).perry.nativeLibrary.targets.linux.pkgConfig,
+    ).toEqual(["webkit2gtk-4.1", "fontconfig"]);
   },
 );
 
