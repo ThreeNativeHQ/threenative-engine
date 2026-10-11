@@ -1578,6 +1578,21 @@
       "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "compressed-texture-preparation",
+      "title": "compressed texture preparation",
+      "category": "materials",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/compressed-texture-preparation.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "browserRecipe": "webgpu",
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "Public bounded compressed upload and ExternalTexture material replacement on browser and native"
     }
   ],
   "generatedPlaytestProofs": [

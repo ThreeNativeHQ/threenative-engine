@@ -1,5 +1,5 @@
 import type { ICtx } from "@threenative/core";
-import { CompressedTexture, MeshStandardMaterial, RGBA_BPTC_Format } from "three";
+import { CompressedTexture, ExternalTexture, MeshStandardMaterial, RGBA_BPTC_Format } from "three";
 import { texture } from "three/tsl";
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
 import { expect, it, vi } from "vitest";
@@ -14,6 +14,10 @@ function compressed() {
   );
   value.needsUpdate = true;
   return value;
+}
+
+function replacement() {
+  return new ExternalTexture({} as never);
 }
 
 it("gates actual ordinary and TSL texture identities without taking their ownership", async () => {
@@ -58,4 +62,44 @@ it("forwards scene cancellation and preserves preparation failure", async () => 
       controller.signal,
     ),
   ).rejects.toThrow("upload failed");
+});
+
+it("snapshots a generator once and replaces every material map and TSL node", async () => {
+  const map = compressed();
+  const normal = compressed();
+  const nodeMap = compressed();
+  const ordinary = new MeshStandardMaterial({ map, normalMap: normal });
+  const nodes = new MeshPhysicalNodeMaterial({ map });
+  const tslNode = texture(nodeMap);
+  nodes.colorNode = tslNode.rgb;
+  const prepared = new Map([
+    [map, replacement()],
+    [normal, replacement()],
+    [nodeMap, replacement()],
+  ]);
+  function* materials() {
+    yield ordinary;
+    yield nodes;
+    yield ordinary;
+  }
+  const prepare = vi.fn(
+    (
+      textures: Iterable<never>,
+      _signal?: AbortSignal,
+      _onProgress?: (completed: number) => void,
+      replacements?: Map<never, never>,
+    ) => {
+      for (const value of textures) replacements?.set(value, prepared.get(value) as never);
+      return Promise.resolve(prepared.size);
+    },
+  );
+  const completed = await preparePropTextures(
+    { prepareTextures: prepare } as unknown as ICtx["renderer"],
+    materials(),
+  );
+  expect(completed).toBe(3);
+  expect(ordinary.map).toBe(prepared.get(map));
+  expect(ordinary.normalMap).toBe(prepared.get(normal));
+  expect(nodes.map).toBe(prepared.get(map));
+  expect(tslNode.value).toBe(prepared.get(nodeMap));
 });
