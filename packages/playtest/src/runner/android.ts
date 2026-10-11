@@ -815,7 +815,10 @@ function parseAndroidConsoleEntries(
         if (app.pids.size === 0) return line.trim().length > 0;
         const pid = /^[VDIWEF]\/[^\n(]+\(\s*(\d+)\)/u.exec(line)?.[1];
         return (
-          (pid !== undefined && app.pids.has(pid)) ||
+          (pid !== undefined &&
+            app.pids.has(pid) &&
+            (/Mystral|THREENATIVE|chromium/u.test(line) ||
+              /^[EF]\/(?:AndroidRuntime|libc|DEBUG)\s*\(/u.test(line))) ||
           (/^[EF]\//u.test(line) && packageRecord!.test(line))
         );
       })

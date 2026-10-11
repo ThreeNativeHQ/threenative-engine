@@ -58,6 +58,56 @@ test("Android console retains its launched pid's errors after that process exits
 });
 
 test.each([
+  "E/platform(15365): driver-specific diagnostic",
+  "F/VendorDisplay(15365): vendor-specific diagnostic",
+])(
+  "Android console preserves runtime tag selection for own-PID vendor records: %s",
+  async (vendor) => {
+    const own = "E/MystralRuntime(15365): TN_NATIVE_START_FAILED: authored startup failed";
+    const driver = new AdbAndroidDriver({
+      activity: ".MystralActivity",
+      adbPath: "/nonexistent/adb",
+      packageName: "com.threenative.vq01",
+      user: "0",
+    });
+    (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+      args,
+    ) => {
+      if (args[1] === "pidof") return "15365\n";
+      if (args[0] === "logcat" && args[1] === "-d") return `${vendor}\n${own}`;
+      return "";
+    };
+    await driver.prepare("http://127.0.0.1:41777/playtest");
+    expect(await driver.captureConsole()).toEqual([{ text: own, type: "error" }]);
+  },
+);
+
+test.each(
+  ["AndroidRuntime", "libc", "DEBUG"].flatMap((tag) =>
+    ["E", "F"].map((level) => `${level}/${tag.padEnd(8, " ")}(15365): startup crash evidence`),
+  ),
+)(
+  "Android console retains own-PID critical crash records beyond runtime tags: %s",
+  async (crash) => {
+    const driver = new AdbAndroidDriver({
+      activity: ".MystralActivity",
+      adbPath: "/nonexistent/adb",
+      packageName: "com.threenative.vq01",
+      user: "0",
+    });
+    (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+      args,
+    ) => {
+      if (args[1] === "pidof") return "15365\n";
+      if (args[0] === "logcat" && args[1] === "-d") return crash;
+      return "";
+    };
+    await driver.prepare("http://127.0.0.1:41777/playtest");
+    expect(await driver.captureConsole()).toEqual([{ text: crash, type: "error" }]);
+  },
+);
+
+test.each([
   [
     "activity launch",
     "I/ActivityManager( 575): Start proc 15365:com.threenative.vq01/u0a217 for next-top-activity",
