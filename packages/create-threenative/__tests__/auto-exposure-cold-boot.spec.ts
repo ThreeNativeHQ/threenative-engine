@@ -5,7 +5,7 @@ function report() {
   const measurement = {
     measured: true,
     applied: true,
-    luminance: 3.896103858947754,
+    luminance: 3.0578835010528564,
     exposureStops: -4.2,
     targetStops: -4.436,
     settled: true,
@@ -221,7 +221,7 @@ describe("cold-boot exposure proof", () => {
     "warmup-hold": (value) => value.observations.console.push({ text: "TN_EXPOSURE_WARMUP:{}" }),
     "wrong-meter": (value) => {
       for (const row of value.observations.console)
-        row.text = row.text.replaceAll("3.896103858947754", "99");
+        row.text = row.text.replaceAll("3.0578835010528564", "99");
     },
     unpaired: (value) => remove(value, "TN_AUTO_EXPOSURE:"),
     "device-loss": (value) =>

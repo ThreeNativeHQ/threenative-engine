@@ -10,20 +10,16 @@ interface IExposureDevice {
   createBuffer(descriptor: { size: number; usage: number }): unknown;
 }
 
-function exposurePixels(width: number, height: number) {
+export function exposurePixels(width: number, height: number) {
   const pixels = new Float32Array(width * height * 4);
-  let weighted = 0;
-  let weightSum = 0;
   for (let y = 0; y < height; y++) {
-    const weight = 1 + (y + 0.5) / height;
     for (let x = 0; x < width; x++) {
       const value = y === height - 1 ? 4 : x === width - 1 ? 1 : 2;
       pixels.set([value, value, value, 1], (y * width + x) * 4);
-      weighted += value * weight;
-      weightSum += weight;
     }
   }
-  return { pixels, expectedLuminance: weighted / weightSum };
+  // At 65x33, the 10/90 clip removes both aligned edge tails; only luminance 2 remains.
+  return { pixels, expectedLuminance: 2 };
 }
 
 async function run() {
