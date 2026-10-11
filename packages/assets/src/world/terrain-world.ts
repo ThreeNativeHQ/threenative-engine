@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -22,6 +23,8 @@ import {
 import { bakeTerrain, bakeWorldPackage, decodeRAW16, sampleHeight } from "@threenative/terrain";
 import type { IPlacement, ITerrainState } from "@threenative/terrain";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
+import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../lod/extension.js";
+import { generateDiscreteLod } from "../lod/generate.js";
 import { modelPass } from "../passes/model.js";
 
 /** The world.json contract, taken from the shared baker rather than restated here. */
@@ -248,7 +251,20 @@ function addInstancedSpeciesNode(
   for (const { node, mesh } of meshNodesOf(speciesDoc)) {
     const resolve = createDefaultPropertyResolver(doc, speciesDoc);
     const targetMesh = copyToDocument(doc, speciesDoc, [mesh], resolve).get(mesh) as Mesh;
-    transformMesh(targetMesh, node.getWorldMatrix());
+    const matrix = node.getWorldMatrix();
+    transformMesh(targetMesh, matrix);
+    // Index-only levels share the transformed vertices; their local errors must follow them.
+    const scale = Math.max(
+      Math.hypot(matrix[0], matrix[1], matrix[2]),
+      Math.hypot(matrix[4], matrix[5], matrix[6]),
+      Math.hypot(matrix[8], matrix[9], matrix[10]),
+    );
+    for (const primitive of targetMesh.listPrimitives()) {
+      const chain = primitive.getExtension<DiscreteLod>(TN_DISCRETE_LOD);
+      chain
+        ?.setErrorScale(chain.getErrorScale() * scale)
+        .setAbsoluteErrors(chain.getAbsoluteErrors().map((error) => error * scale));
+    }
     for (const primitive of targetMesh.listPrimitives()) {
       targetMesh.removePrimitive(primitive);
       combined.addPrimitive(primitive);
@@ -344,6 +360,17 @@ export async function cookTerrainWorld(
     }
 
     speciesFiles.push({ speciesId, lod0, nearDoc, lods });
+
+    // The combined world's near meshes need their own index-only chain; streamed files stay authored.
+    await generateDiscreteLod(
+      nearDoc,
+      { cutout: false },
+      `${speciesId}.glb`,
+      createHash("sha256").update(lod0).digest("hex"),
+      {},
+      undefined,
+      { preserveVertices: true },
+    );
 
     assets[speciesId] = {
       glb: `models/${speciesId}.glb`,
@@ -521,7 +548,7 @@ export async function cookTerrainWorld(
   // Store byte-identical textures once. Each material keeps its own sampler and UV transform.
   await doc.transform(dedup({ propertyTypes: [PropertyType.TEXTURE] }));
 
-  const writer = new NodeIO().registerExtensions([...ALL_EXTENSIONS]);
+  const writer = new NodeIO().registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod]);
   const worldGlb = await writer.writeBinary(doc);
 
   // Write files to out directory

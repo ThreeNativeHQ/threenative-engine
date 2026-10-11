@@ -1367,10 +1367,13 @@ export async function generateDiscreteLod(
   sourceDigest: string,
   legacy: ILodLegacyFlags = {},
   now: () => number = () => Date.now(),
+  constraints: { readonly preserveVertices?: boolean } = {},
 ): Promise<IModelLodSummary> {
   const started = now();
   const policy = resolveLodPolicy(lod, logicalPath, legacy);
-  const fingerprint = policy.fingerprint.generation;
+  const fingerprint = constraints.preserveVertices
+    ? lodFingerprint({ generation: policy.fingerprint.generation, preserveVertices: true })
+    : policy.fingerprint.generation;
   // Before every early return: a `BLEND` needle card is refused a chain by rule, so the conversion
   // is what makes one possible at all — and an asset can opt into it with `enabled: false`.
   const cutout = policy.cutout
@@ -1440,7 +1443,7 @@ export async function generateDiscreteLod(
         policy.generation.minSaving,
       );
       const thinned =
-        chain === null
+        chain === null && !constraints.preserveVertices
           ? generateCardsChain(primitive, policy.generation.maxLevels, policy.generation.minSaving)
           : null;
       chain ??= thinned;

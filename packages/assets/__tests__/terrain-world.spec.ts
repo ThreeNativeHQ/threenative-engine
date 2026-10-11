@@ -1,27 +1,62 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  type Accessor,
   Document,
   type GLTF,
   type Buffer as GltfBuffer,
+  type Mesh as GltfMesh,
   type Material,
   NodeIO,
 } from "@gltf-transform/core";
-import { ALL_EXTENSIONS, KHRTextureTransform, type Transform } from "@gltf-transform/extensions";
+import {
+  ALL_EXTENSIONS,
+  type InstancedMesh as GltfInstancedMesh,
+  KHRTextureTransform,
+  type Transform,
+} from "@gltf-transform/extensions";
+import {
+  copyToDocument,
+  createDefaultPropertyResolver,
+  transformMesh,
+} from "@gltf-transform/functions";
 import {
   type ITerrainState,
   Terrain,
+  applyPlacementOverrides,
   bakeTerrain,
   bakeWorldPackage,
+  decodeRAW16,
   sampleHeight,
 } from "@threenative/terrain";
 import { PNG } from "pngjs";
-import { type Group, InstancedMesh, Mesh } from "three";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  type Group,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  PerspectiveCamera,
+  Quaternion,
+  Sphere,
+  Vector3,
+} from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { INSTANCED_LOD_MAX_PIXEL_ERROR } from "../../core/src/instanced-batch-lod.js";
+import {
+  DISCRETE_LOD_DEFAULT_HYSTERESIS,
+  conservativeViewDepth,
+  selectLodLevel,
+} from "../../core/src/model-lod.js";
 import { type IWorldPackage, validateWorldPackage } from "../../core/src/world-package.js";
+import { createGltfReader, readGltfDocument } from "../src/gltf-io.js";
+import { primitiveTriangleCount } from "../src/lod/eligibility.js";
+import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
 import { cookTerrainWorld } from "../src/world/terrain-world.js";
 
 // GLTFLoader reads the global `self` while it parses. Node has none.
@@ -235,6 +270,207 @@ describe("cookTerrainWorld", () => {
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
   });
+
+  it("cooks the real forest with index-only species chains and measures projected-error submission", async () => {
+    const kit = path.resolve("packages/terrain/starter/forest");
+    const assets = path.resolve("packages/terrain/starter-assets");
+    const recipe = JSON.parse(await readFile(path.join(kit, "recipe.json"), "utf8"));
+    for (const layer of recipe.recipe.layers) {
+      const data = layer.params?.data;
+      if (data?.raw16 === undefined) continue;
+      data.values = Array.from(
+        decodeRAW16(await readFile(path.join(kit, data.raw16)), data).values,
+        (value) => Math.round(value * 10) / 10,
+      );
+    }
+    const table = JSON.parse(await readFile(path.join(kit, "assets.json"), "utf8")) as Record<
+      string,
+      {
+        near: string;
+        mid: string;
+        midDistance: number;
+        bounds: { min: [number, number, number]; max: [number, number, number] };
+        maxDistance: number;
+      }
+    >;
+    const species = Object.fromEntries(
+      Object.entries(table).map(([id, spec]) => [
+        id,
+        {
+          glb: path.join(assets, spec.near),
+          bounds: spec.bounds,
+          maxDistance: spec.maxDistance,
+          lods: [{ glb: path.join(assets, spec.mid), distance: spec.midDistance }],
+        },
+      ]),
+    );
+    const state = applyPlacementOverrides(
+      Terrain.fromJSON(recipe.recipe).evaluate(),
+      recipe.placementOverrides ?? {},
+    );
+    const surface = JSON.parse(await readFile(path.join(kit, "surface.json"), "utf8"));
+    const cooked = await cookTerrainWorld({
+      state,
+      species,
+      out: dir,
+      materials: {
+        layers: [
+          {
+            id: surface.base.id,
+            diff: path.join(assets, surface.sources[surface.base.id].diff),
+            nrm: path.join(assets, surface.sources[surface.base.id].nrm),
+            diffMimeType: "image/jpeg",
+            nrmMimeType: "image/jpeg",
+          },
+        ],
+      },
+      extraLayers: { table: "terrain-table.json" },
+    });
+    const document = await new NodeIO()
+      .registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod])
+      .readBinary(cooked.worldGlb);
+    const camera = new PerspectiveCamera(60, 16 / 9, 0.1, 2000);
+    camera.position.set(256, 40, 600);
+    camera.lookAt(256, 10, 256);
+    camera.updateMatrixWorld(true);
+    let base = 0;
+    let submitted = 0;
+    let terrain = 0;
+    const rows: Record<string, unknown> = {};
+    for (const node of document.getRoot().getDefaultScene()?.listChildren() ?? []) {
+      const mesh = node.getMesh();
+      if (mesh === null) continue;
+      const id = node.getName().replace(/_instances$/, "");
+      const spec = species[id];
+      if (spec === undefined) {
+        terrain += mesh.listPrimitives().reduce((sum, p) => sum + primitiveTriangleCount(p), 0);
+        continue;
+      }
+      const bytes = Buffer.from(await readFile(spec.glb));
+      const source = await readGltfDocument(await createGltfReader(bytes), bytes);
+      const expected = new Document();
+      const originals: ReturnType<Document["createPrimitive"]>[] = [];
+      source
+        .getRoot()
+        .getDefaultScene()
+        ?.traverse((node) => {
+          const mesh = node.getMesh();
+          if (mesh === null) return;
+          const copied = copyToDocument(
+            expected,
+            source,
+            [mesh],
+            createDefaultPropertyResolver(expected, source),
+          ).get(mesh) as GltfMesh | undefined;
+          assert.ok(copied);
+          transformMesh(copied, node.getWorldMatrix());
+          originals.push(...copied.listPrimitives());
+        });
+      const decodedHash = (attribute: Accessor | null): string => {
+        assert.ok(attribute);
+        const values = new Float32Array(attribute.getCount() * attribute.getElementSize());
+        for (let i = 0; i < attribute.getCount(); i++)
+          values.set(attribute.getElement(i, []), i * attribute.getElementSize());
+        return createHash("sha256").update(new Uint8Array(values.buffer)).digest("hex");
+      };
+      const placements = state.instances.filter((item) => item.asset === id);
+      const batch = node.getExtension<GltfInstancedMesh>("EXT_mesh_gpu_instancing");
+      assert.ok(batch);
+      const translations = batch.getAttribute("TRANSLATION");
+      const rotations = batch.getAttribute("ROTATION");
+      const scales = batch.getAttribute("SCALE");
+      assert.ok(translations && rotations && scales);
+      expect(translations.getCount()).toBe(placements.length);
+      const levels: number[][] = [];
+      let speciesBase = 0;
+      let speciesSubmitted = 0;
+      for (const [index, primitive] of mesh.listPrimitives().entries()) {
+        const original = originals[index];
+        assert.ok(original);
+        for (const semantic of original.listSemantics()) {
+          expect(decodedHash(primitive.getAttribute(semantic)), `${id} decoded ${semantic}`).toBe(
+            decodedHash(original.getAttribute(semantic)),
+          );
+        }
+        expect(primitive.getIndices()?.getArray()).toEqual(original.getIndices()?.getArray());
+        expect(primitive.getMaterial()?.getAlphaMode()).toBe(
+          original.getMaterial()?.getAlphaMode(),
+        );
+        expect(primitive.getMaterial()?.getBaseColorFactor()).toEqual(
+          original.getMaterial()?.getBaseColorFactor(),
+        );
+        const chain = primitive.getExtension<DiscreteLod>(TN_DISCRETE_LOD);
+        const counts = [primitiveTriangleCount(primitive), ...(chain?.getCounts() ?? [])];
+        levels.push(counts);
+        const geometry = new BufferGeometry().setAttribute(
+          "position",
+          new BufferAttribute(primitive.getAttribute("POSITION")?.getArray() as Float32Array, 3),
+        );
+        geometry.computeBoundingBox();
+        assert.ok(geometry.boundingBox);
+        const size = geometry.boundingBox.getSize(new Vector3());
+        // The simplifier's scale is the largest decoded extent, including the source node scale.
+        expect(chain?.getErrorScale(), `${id} transformed error scale`).toBeCloseTo(
+          Math.max(size.x, size.y, size.z),
+          4,
+        );
+        expect(chain?.getSharedVertexBuffers()).toBe(true);
+        geometry.computeBoundingSphere();
+        assert.ok(geometry.boundingSphere);
+        for (let i = 0; i < translations.getCount(); i++) {
+          const matrix = new Matrix4().compose(
+            new Vector3().fromArray(translations.getElement(i, [])),
+            new Quaternion().fromArray(rotations.getElement(i, [])),
+            new Vector3().fromArray(scales.getElement(i, [])),
+          );
+          const sphere = new Sphere().copy(geometry.boundingSphere).applyMatrix4(matrix);
+          const view = conservativeViewDepth(camera, sphere.center, sphere.radius, camera.near);
+          const level = selectLodLevel(
+            [0, ...(chain?.getAbsoluteErrors() ?? [])],
+            0,
+            INSTANCED_LOD_MAX_PIXEL_ERROR / Math.max(matrix.getMaxScaleOnAxis(), Number.EPSILON),
+            DISCRETE_LOD_DEFAULT_HYSTERESIS,
+            [{ camera, viewportHeight: 1080, ...view }],
+          );
+          speciesSubmitted += counts[level] ?? counts[0] ?? 0;
+          speciesBase += counts[0] ?? 0;
+        }
+        geometry.dispose();
+      }
+      rows[id] = {
+        instances: placements.length,
+        levels,
+        base: speciesBase,
+        submitted: speciesSubmitted,
+      };
+      base += speciesBase;
+      submitted += speciesSubmitted;
+    }
+    console.log(
+      "FOREST_LOD_CENSUS",
+      JSON.stringify({
+        pose: [256, 40, 600],
+        lookAt: [256, 10, 256],
+        viewport: [1920, 1080],
+        terrain,
+        base: base + terrain,
+        submitted: submitted + terrain,
+        species: rows,
+      }),
+    );
+    expect(Object.keys(rows).sort()).toEqual(["boulder", "fir", "fir-c"]);
+    for (const node of document.getRoot().getDefaultScene()?.listChildren() ?? []) {
+      if (!node.getName().endsWith("_instances")) continue;
+      expect(
+        node
+          .getMesh()
+          ?.listPrimitives()
+          .every((p) => p.getExtension(TN_DISCRETE_LOD) !== null),
+      ).toBe(true);
+    }
+    expect(base + terrain).toBe(505_387_464);
+    expect(submitted).toBeLessThan(base);
+  }, 120_000);
 
   it("writes the real terrain chunks and one instancing node for the species", async () => {
     const state = evaluatedTerrain();
