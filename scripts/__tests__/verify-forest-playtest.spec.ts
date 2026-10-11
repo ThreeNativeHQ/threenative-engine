@@ -32,6 +32,12 @@ describe("forest playtest setup", () => {
     expect(patched).toMatch(
       /override async load\(ctx: GameCtx\): Promise<void> \{\n {4}ctx\.scene\.add\(a\);\n/u,
     );
+    const imported = insertWorldLoad(readFileSync(STARTER_PLAY, "utf8"), [
+      'import { a } from "b";',
+      "ctx.scene.add(a);",
+    ]);
+    expect(imported.startsWith('import { a } from "b";\n')).toBe(true);
+    expect(imported).toMatch(/Promise<void> \{\n {4}ctx\.scene\.add\(a\);\n/u);
     expect(() => insertWorldLoad("class X {}", ["a;"])).toThrow("TN_FOREST_ANCHOR");
     expect(() => insertWorldLoad("x", [])).toThrow("TN_FOREST_LOAD_EMPTY");
   });

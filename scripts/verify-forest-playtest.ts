@@ -35,15 +35,18 @@ interface IToolResult {
   readonly isError?: boolean;
 }
 
-/** Adds the printed load to the start of the starter's `Play.load`; a moved anchor fails closed. */
+/** Adds the printed imports to the file top and the rest to the start of `Play.load`; a moved anchor fails closed. */
 export function insertWorldLoad(source: string, lines: readonly string[]): string {
   if (lines.length === 0) throw new Error("TN_FOREST_LOAD_EMPTY: the tool printed no load lines.");
   if (source.split(LOAD_ANCHOR).length !== 2)
     throw new Error("TN_FOREST_ANCHOR: Play.load not found exactly once in the starter.");
-  return source.replace(
+  const imports = lines.filter((line) => line.startsWith("import "));
+  const body = lines.filter((line) => !line.startsWith("import "));
+  const loaded = source.replace(
     LOAD_ANCHOR,
-    `${LOAD_ANCHOR}${lines.map((line) => `    ${line}\n`).join("")}`,
+    `${LOAD_ANCHOR}${body.map((line) => `    ${line}\n`).join("")}`,
   );
+  return `${imports.map((line) => `${line}\n`).join("")}${loaded}`;
 }
 
 function run(command: string, args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv) {
