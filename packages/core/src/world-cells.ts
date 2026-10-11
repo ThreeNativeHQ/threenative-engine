@@ -78,6 +78,7 @@ import {
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 import { AdmissionBudget } from "./world-load-limiter.js";
 import {
+  type IWorldAsset,
   type IWorldCell,
   type IWorldPackage,
   type IWorldRun,
