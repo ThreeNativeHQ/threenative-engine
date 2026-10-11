@@ -3224,7 +3224,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * it does not — so this loop only restores edges, collects what each bridge is made of, and swaps
    * in the arrays that come back. An inline host resolves inside the call and the pass closes before
    * `follow` returns, exactly as it did before the jobs moved; an off-thread host closes the pass in
-   * the reply, and a frame that arrives first finds `#seamPending` and waits.
+   * the reply. Frames keep validating CPU edges canonical while it is pending; a reply whose ring
+   * changed is discarded and reconciled anew, never recorded as settled.
    */
   #reconcileNeighbors(): void {
     const pairs = collectNeighborPairs(this.#resident, this.#pairScratch);
@@ -3258,14 +3259,32 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     // The scratch array is reused by the next pass, so a reply that lands a frame later reads its
     // own copy of the pairs and not whatever the next pass left there.
     const snapshot = [...pairs];
+    const epoch = this.#ringEpoch;
+    const state: number[] = [];
     this.#seamPending = true;
     const result = timedSpan(SPANS.terrainSeam, () => this.#jobs.seam(job));
+    if (result instanceof Promise) this.#ringStateInto(state);
     settleJob(result, (settled) => {
       if (this.#released) return;
+      if (result instanceof Promise) {
+        const current: number[] = [];
+        this.#ringStateInto(current);
+        if (epoch !== this.#ringEpoch || !sameState(state, current)) {
+          // A non-finite current signature is corruption, not a legitimate superseded request.
+          if (this.#validate && current.some(Number.isNaN)) this.#recordSeamDiagnostics();
+          // Nothing from this reply describes the current ring; leave it unsettled and request it anew.
+          this.#seamPending = false;
+          this.#seamPass();
+          return;
+        }
+      }
       timedSpan(SPANS.terrainSeam, () => {
+        if (settled.kind !== "seam" || settled.bridges.length !== requests.length)
+          throw new Error("TerrainTiles seam job returned an invalid bridge count.");
         for (const [index, pending] of requests.entries()) {
           const data = settled.bridges[index];
-          if (data === undefined) continue;
+          if (data === undefined)
+            throw new Error("TerrainTiles seam job returned an invalid bridge count.");
           this.#applyStitch(pending.key, pending.previousBytes, pending.request, data);
         }
         this.#settleSeamPass(snapshot, reconciled, active);
@@ -3386,6 +3405,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    */
   #seamPass(): void {
     if (this.#seamPending) {
+      // CPU blends move every vertex; shared edges must remain canonical even before a reply arrives.
+      if (this.#validate)
+        for (const [a, b] of collectNeighborPairs(this.#resident, this.#pairScratch)) {
+          const [aSide, bSide] = opposingEdge(a, b);
+          const aLevel = renderedLevel(a);
+          const bLevel = renderedLevel(b);
+          if (aLevel === undefined || bLevel === undefined)
+            throw new Error("TerrainTiles cannot reconcile a neighbor with no rendered LOD level.");
+          restoreLevelEdge(a, aLevel, aSide);
+          restoreLevelEdge(b, bLevel, bSide);
+        }
       this.#stitchedEdges += this.#stitches.size;
       return;
     }

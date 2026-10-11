@@ -1,4 +1,4 @@
-import { type BufferGeometry, Mesh, MeshBasicMaterial } from "three";
+import { type BufferGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SpanRecorder, setSpanRecorder } from "../src/profiling/Spans.js";
 import {
@@ -341,6 +341,177 @@ describe("terrain jobs", () => {
       tiles.dispose();
     }
   });
+
+  it.each(["inline", "held-worker"])(
+    "keeps full-vertex morph parity and valid seam reconciliation with %s replies",
+    async (host) => {
+      vi.stubGlobal("Worker", host === "held-worker" ? FakeWorker : undefined);
+      const options = {
+        mergeTiles: false,
+        residentByteBudget: 2_000_000,
+        residentTileBudget: 9,
+        streamRadius: 1,
+        tileResolution: 17,
+        tileSize: 16,
+        lodDistances: [8, 16],
+      };
+      const gpu = terrain({ ...options, validate: false });
+      const gpuWorker = host === "held-worker" ? FakeWorker.latest() : undefined;
+      const cpu = terrain({ ...options, validate: true });
+      const cpuWorker = host === "held-worker" ? FakeWorker.latest() : undefined;
+      const onUnhandled = vi.fn();
+      process.on("unhandledRejection", onUnhandled);
+      try {
+        gpu.follow({ x: 0, z: 0 });
+        cpu.follow({ x: 0, z: 0 });
+        await gpuWorker?.answer();
+        await cpuWorker?.answer();
+        gpu.follow({ x: 12, z: 0 });
+        cpu.follow({ x: 12, z: 0 });
+        expect(gpu.getTile("0:-1")).toBeDefined();
+        expect(cpu.getTile("0:-1")).toBeDefined();
+        for (let frame = 1; frame <= 3; frame++) {
+          gpu.process();
+          cpu.process();
+          const rendered = gpu
+            .getTile("0:0")
+            ?.lod.levels.find(({ object }) => object.visible)?.object;
+          const reference = cpu
+            .getTile("0:0")
+            ?.lod.levels.find(({ object }) => object.visible)?.object;
+          if (!(rendered instanceof Mesh) || !(reference instanceof Mesh))
+            throw new Error("Expected matching visible transition meshes.");
+          const position = reference.geometry.getAttribute("position");
+          const normals = reference.geometry.getAttribute("normal");
+          const actual = new Vector3();
+          const expected = new Vector3();
+          const normal = new Vector3();
+          const delta = new Vector3();
+          let maxPositionError = 0;
+          let maxNormalError = 0;
+          let edgeError = 0;
+          let interiorError = 0;
+          expect(rendered.geometry.getAttribute("position").count).toBe(position.count);
+          for (let vertex = 0; vertex < position.count; vertex++) {
+            rendered.getVertexPosition(vertex, actual);
+            const error = actual.distanceTo(expected.fromBufferAttribute(position, vertex));
+            maxPositionError = Math.max(maxPositionError, error);
+            if (vertex === 1) edgeError = error;
+            if (vertex === 4 * 17 + 5) interiorError = error;
+            normal.fromBufferAttribute(rendered.geometry.getAttribute("normal"), vertex);
+            for (const [target, weight] of (rendered.morphTargetInfluences ?? []).entries()) {
+              const attribute = rendered.geometry.morphAttributes.normal?.[target];
+              if (attribute !== undefined)
+                normal.addScaledVector(delta.fromBufferAttribute(attribute, vertex), weight);
+            }
+            maxNormalError = Math.max(
+              maxNormalError,
+              normal
+                .normalize()
+                .distanceTo(expected.fromBufferAttribute(normals, vertex).normalize()),
+            );
+          }
+          console.info("PRD566 held seam parity", {
+            host,
+            frame,
+            edgeError,
+            interiorError,
+            maxPositionError,
+            maxNormalError,
+            gpuBaseEdgeY: rendered.geometry.getAttribute("position").getY(1),
+            gpuMorphedEdgeY: rendered.getVertexPosition(1, actual).y,
+            cpuEdgeY: position.getY(1),
+            gpuEdgeMorphDeltas: rendered.geometry.morphAttributes.position?.map(
+              (attribute: ReturnType<BufferGeometry["getAttribute"]>) => attribute.getY(1),
+            ),
+            influences: rendered.morphTargetInfluences,
+            gpuPendingJobs: gpuWorker?.received.map(({ job }) => job.kind),
+            cpuPendingJobs: cpuWorker?.received.map(({ job }) => job.kind),
+            gpuDecisions: gpu.debug().lodDecisions,
+            cpuDecisions: cpu.debug().lodDecisions,
+          });
+          expect
+            .soft(maxPositionError, `${host} frame ${frame}: every position`)
+            .toBeLessThan(0.001);
+          expect.soft(maxNormalError, `${host} frame ${frame}: every normal`).toBeLessThan(0.001);
+          if (frame === 2) {
+            if (host === "held-worker") {
+              expect(gpuWorker?.has("seam")).toBe(true);
+              expect(cpuWorker?.has("seam")).toBe(true);
+            }
+            await expect(Promise.all([gpuWorker?.answer(), cpuWorker?.answer()])).resolves.toEqual([
+              undefined,
+              undefined,
+            ]);
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect
+              .soft(onUnhandled, "valid asynchronous seam reconciliation")
+              .not.toHaveBeenCalled();
+          }
+        }
+        if (host === "held-worker") {
+          // The old topology reply was invalidated, and the current topology still owes reconciliation.
+          expect(gpuWorker?.has("seam")).toBe(true);
+          expect(cpuWorker?.has("seam")).toBe(true);
+          await gpuWorker?.answer();
+          await cpuWorker?.answer();
+          // Completing frame three changed the rendered level after frame two's replacement request.
+          expect(gpuWorker?.has("seam")).toBe(true);
+          expect(cpuWorker?.has("seam")).toBe(true);
+          await gpuWorker?.answer();
+          await cpuWorker?.answer();
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          expect(onUnhandled).not.toHaveBeenCalled();
+          expect(gpuWorker?.has("seam")).toBe(false);
+          expect(cpuWorker?.has("seam")).toBe(false);
+        }
+        expect(gpu.lodTransitions).toBeGreaterThan(0);
+        expect(cpu.lodTransitions).toBe(gpu.lodTransitions);
+        expect(() => cpu.process()).not.toThrow();
+      } finally {
+        process.off("unhandledRejection", onUnhandled);
+        gpu.dispose();
+        cpu.dispose();
+      }
+    },
+  );
+
+  it.each(["index", "count"])(
+    "fails closed on malformed seam %s for the current topology",
+    async (fault) => {
+      vi.stubGlobal("Worker", FakeWorker);
+      const tiles = terrain({ ...TWO_TIERS, mergeTiles: false, validate: true });
+      const onUnhandled = vi.fn();
+      process.on("unhandledRejection", onUnhandled);
+      try {
+        tiles.follow(ISLAND);
+        const worker = FakeWorker.latest();
+        const request = worker.received.splice(0).find(({ job }) => job.kind === "seam");
+        if (request === undefined || request.job.kind !== "seam")
+          throw new Error("Expected a current seam request.");
+        const result = runTerrainJob(request.job);
+        const bridge = result.bridges[0];
+        if (bridge === undefined) throw new Error("Expected a bridge to corrupt.");
+        bridge.indices[0] = bridge.positions.length;
+        worker.onmessage?.({
+          data: { id: request.id, result: fault === "count" ? { ...result, bridges: [] } : result },
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(onUnhandled).toHaveBeenCalledOnce();
+        expect(onUnhandled.mock.calls[0]?.[0]).toEqual(
+          new Error(
+            fault === "count"
+              ? "TerrainTiles seam job returned an invalid bridge count."
+              : "TerrainTiles seam diagnostic bridge topology has invalid index data.",
+          ),
+        );
+        expect(worker.has("seam")).toBe(false);
+      } finally {
+        process.off("unhandledRejection", onUnhandled);
+        tiles.dispose();
+      }
+    },
+  );
 
   it("settles the block bytes the inline path settles, from the worker's own result", async () => {
     const inline = inlineSettlement();
