@@ -6,12 +6,14 @@ import {
   type Mesh,
   type Node,
   NodeIO,
+  PropertyType,
   type Scene,
 } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, EXTMeshGPUInstancing } from "@gltf-transform/extensions";
 import {
   copyToDocument,
   createDefaultPropertyResolver,
+  dedup,
   getBounds,
   prune,
   transformMesh,
@@ -516,6 +518,8 @@ export async function cookTerrainWorld(
   await doc.transform(unpartition());
   // Keep solid-texture removal off: species materials are authored, and a flat image is not ours to drop.
   await doc.transform(prune({ keepSolidTextures: true }));
+  // Store byte-identical textures once. Each material keeps its own sampler and UV transform.
+  await doc.transform(dedup({ propertyTypes: [PropertyType.TEXTURE] }));
 
   const writer = new NodeIO().registerExtensions([...ALL_EXTENSIONS]);
   const worldGlb = await writer.writeBinary(doc);

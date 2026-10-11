@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Document, type Buffer as GltfBuffer, type Material, NodeIO } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import {
+  Document,
+  type GLTF,
+  type Buffer as GltfBuffer,
+  type Material,
+  NodeIO,
+} from "@gltf-transform/core";
+import { ALL_EXTENSIONS, KHRTextureTransform, type Transform } from "@gltf-transform/extensions";
 import {
   type ITerrainState,
   Terrain,
@@ -133,6 +139,30 @@ async function sharedMeshSpecies(): Promise<{ glb: Uint8Array; png: Uint8Array }
   const mesh = doc.createMesh("shared").addPrimitive(triangle(doc, buffer, material));
   scene.addChild(doc.createNode("node0").setMesh(mesh).setTranslation([0, 0, 0]));
   scene.addChild(doc.createNode("node1").setMesh(mesh).setTranslation([5, 0, 0]));
+  return { glb: await io().writeBinary(doc), png };
+}
+
+// glTF wrap modes for the samplers that each material keeps.
+const REPEAT: GLTF.TextureWrapMode = 10497;
+const CLAMP_TO_EDGE: GLTF.TextureWrapMode = 33071;
+
+/** A static species whose one textured mesh samples with its own wrap mode and UV offset. */
+async function texturedSpecies(
+  wrapS: GLTF.TextureWrapMode,
+  offset: [number, number],
+): Promise<{ glb: Uint8Array; png: Uint8Array }> {
+  const doc = new Document();
+  const buffer = doc.createBuffer();
+  const scene = doc.createScene("Scene");
+  const png = PNG.sync.write(new PNG({ width: 2, height: 2 }));
+  const texture = doc.createTexture("bark").setImage(png).setMimeType("image/png");
+  const bark = doc.createMaterial("bark").setBaseColorTexture(texture);
+  const transform = doc.createExtension(KHRTextureTransform).createTransform().setOffset(offset);
+  const info = bark.getBaseColorTextureInfo();
+  assert.ok(info);
+  info.setWrapS(wrapS).setExtension("KHR_texture_transform", transform);
+  const mesh = doc.createMesh("bark").addPrimitive(triangle(doc, buffer, bark));
+  scene.addChild(doc.createNode("barkNode").setMesh(mesh));
   return { glb: await io().writeBinary(doc), png };
 }
 
@@ -318,6 +348,64 @@ describe("cookTerrainWorld", () => {
     expect(primitive.getAttribute("NORMAL")).not.toBeNull();
     expect(primitive.getAttribute("TEXCOORD_0")).not.toBeNull();
     expect(primitive.getMode()).toBe(4); // TRIANGLES
+  });
+
+  it("stores identical species textures once and keeps each material's sampler and UV offset", async () => {
+    const repeat = await texturedSpecies(REPEAT, [0.25, 0]);
+    const clamp = await texturedSpecies(CLAMP_TO_EDGE, [0, 0.5]);
+    const state = evaluatedTerrain(["fir", "pine"]);
+    const result = await cookTerrainWorld({
+      state,
+      species: {
+        fir: { glb: repeat.glb, lods: [{ distance: 45, glb: repeat.glb }] },
+        pine: { glb: clamp.glb },
+      },
+      out: dir,
+    });
+
+    const doc = await io().readBinary(result.worldGlb);
+    const images = doc.getRoot().listTextures();
+    expect(images).toHaveLength(1);
+    const textured = doc
+      .getRoot()
+      .listMaterials()
+      .filter((m) => m.getBaseColorTexture() !== null);
+    expect(textured).toHaveLength(3);
+    for (const material of textured) {
+      const texture = material.getBaseColorTexture();
+      assert.ok(texture);
+      expect(texture).toBe(images[0]);
+      expect(texture.getMimeType()).toBe("image/png");
+      const image = texture.getImage();
+      assert.ok(image);
+      expect(new Uint8Array(image)).toEqual(new Uint8Array(repeat.png));
+    }
+
+    // The image is shared, but each material keeps its own wrap mode and UV offset.
+    const samplers = textured.map((material) => {
+      const info = material.getBaseColorTextureInfo();
+      assert.ok(info);
+      const transform = info.getExtension<Transform>("KHR_texture_transform");
+      return JSON.stringify([info.getWrapS(), transform?.getOffset()]);
+    });
+    expect(samplers.sort()).toEqual(
+      [
+        JSON.stringify([REPEAT, [0.25, 0]]),
+        JSON.stringify([REPEAT, [0.25, 0]]),
+        JSON.stringify([CLAMP_TO_EDGE, [0, 0.5]]),
+      ].sort(),
+    );
+
+    const count = (asset: string) => state.instances.filter((item) => item.asset === asset).length;
+    expect(result.placementCounts).toEqual({ fir: count("fir"), pine: count("pine") });
+    const scene = await loadWorld(result.worldGlb);
+    const instanceCounts: number[] = [];
+    scene.traverse((object) => {
+      if (object instanceof InstancedMesh) instanceCounts.push(object.count);
+    });
+    expect(instanceCounts.sort((a, b) => a - b)).toEqual(
+      [count("fir"), count("pine")].sort((a, b) => a - b),
+    );
   });
 
   it("flattens one shared mesh at each node's own transform", async () => {
