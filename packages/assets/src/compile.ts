@@ -1619,9 +1619,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   };
   const runtimeDecoderAvailable =
     runtimeDecoderCapabilities.ktx2 && runtimeDecoderCapabilities.meshopt;
-  const mobileAstc =
-    (options.platform === "android" || options.platform === "ios") &&
-    !runtimeDecoderCapabilities.ktx2;
+  const mobileAstc = options.platform === "android" || options.platform === "ios";
   const audio = parseAudioConfig(config.audio);
   const configuredTextures = parseTexturesConfig(config.textures);
   const configuredModels = parseModelsConfig(config.models);

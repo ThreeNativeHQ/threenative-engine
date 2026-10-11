@@ -268,16 +268,21 @@ describe("compileAssets", () => {
     expect(webManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
   });
 
-  it.each(["android", "ios"] as const)(
-    "cooks embedded ASTC on %s while retaining Meshopt",
-    async (platform) => {
+  it.each([
+    ["android", false],
+    ["android", true],
+    ["ios", false],
+    ["ios", true],
+  ] as const)(
+    "cooks embedded ASTC on %s with ktx2=%s while retaining Meshopt",
+    async (platform, ktx2) => {
       const root = await makeTempDir("threenative-embedded-astc-");
       await mkdir(path.join(root, "assets"));
       await writeFile(path.join(root, "assets", "character.glb"), await singleImageFixtureGlb());
       const result = await compileAssets({
         cwd: root,
         platform,
-        runtimeDecoders: { ktx2: false, meshopt: true },
+        runtimeDecoders: { ktx2, meshopt: true },
         config: {
           budget: "none",
           textures: "none",
@@ -319,7 +324,7 @@ describe("compileAssets", () => {
       await compileAssets({
         cwd: root,
         platform,
-        runtimeDecoders: { ktx2: false, meshopt: true },
+        runtimeDecoders: { ktx2, meshopt: true },
         config: {
           budget: "none",
           textures: "none",
@@ -378,14 +383,25 @@ describe("compileAssets", () => {
       ) as { entries: Record<string, { output: string; format: string }> };
       const entry = manifest.entries["rock.png"];
       if (entry === undefined) throw new Error("fixture texture is missing from the manifest");
-      const container = readKtx2(await readFile(path.join(root, "public", entry.output)));
-      expect(container.vkFormat).toBe(ktx2 ? 0 : 158);
-      expect(entry.format).toBe(ktx2 ? "etc1s" : "astc4x4");
+      const mobile = platform === "android" || platform === "ios";
+      const bytes = await readFile(path.join(root, "public", entry.output));
+      const container = readKtx2(bytes);
+      expect(container.vkFormat).toBe(mobile ? 158 : 0);
+      expect(entry.format).toBe(mobile ? "astc4x4" : "etc1s");
       expect(container.levelCount).toBeGreaterThan(1);
+      if (mobile) {
+        expect(container.supercompressionScheme).toBe(0);
+        expect(container.levelCount).toBe(
+          Math.floor(Math.log2(Math.max(container.pixelWidth, container.pixelHeight))) + 1,
+        );
+        await expect(
+          decodeAstcKtx2(bytes, container.pixelWidth, container.pixelHeight),
+        ).resolves.toHaveLength(container.pixelWidth * container.pixelHeight * 4);
+      }
       expect(result.skippedCompression.filter((row) => row.kind === "texture")).toEqual([]);
       for (const name of ["basis_transcoder.js", "basis_transcoder.wasm"]) {
         const output = path.join(root, "public", "basis", name);
-        if (ktx2) expect((await stat(output)).size).toBeGreaterThan(0);
+        if (ktx2 && !mobile) expect((await stat(output)).size).toBeGreaterThan(0);
         else await expect(stat(output)).rejects.toMatchObject({ code: "ENOENT" });
       }
     },
@@ -1207,9 +1223,14 @@ describe("compileAssets", () => {
     expect(json.meshes[0].primitives[0].attributes.TEXCOORD_1).toEqual(expect.any(Number));
   });
 
-  it.each(["android", "ios"] as const)(
-    "cooks linear lightmaps on %s without decoders across workers and cache changes",
-    async (platform) => {
+  it.each([
+    ["android", false],
+    ["android", true],
+    ["ios", false],
+    ["ios", true],
+  ] as const)(
+    "cooks linear lightmaps on %s with decoder capabilities=%s across workers and cache changes",
+    async (platform, decoders) => {
       const root = await makeTempDir("threenative-mobile-lightmap-");
       await mkdir(path.join(root, "assets"));
       const input = await lightmapFixtureGlb();
@@ -1232,7 +1253,7 @@ describe("compileAssets", () => {
         config,
         cwd: root,
         platform,
-        runtimeDecoders: { ktx2: false, meshopt: false },
+        runtimeDecoders: { ktx2: decoders, meshopt: decoders },
       };
       const worker = await compileAssets({ ...options, concurrency: 2 });
       expect(worker.concurrencyUsed).toBe(2);
