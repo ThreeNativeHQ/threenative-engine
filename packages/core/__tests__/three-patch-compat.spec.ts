@@ -31,7 +31,11 @@ const FIXTURE = JSON.parse(
   brotliDecompressSync(
     readFileSync(join(testDir, "fixtures", "legacy-three-patch.json.br")),
   ).toString("utf8"),
-) as { originalUpgradePatch: string; targetTexts: Record<string, string> };
+) as {
+  originalBasePatch: string;
+  originalUpgradePatch: string;
+  targetTexts: Record<string, string>;
+};
 
 const run = promisify(execFile);
 const roots: string[] = [];
@@ -92,12 +96,26 @@ async function legacyPredecessor(path: string, oldHash: string): Promise<string>
     const hash = /^index ([a-f0-9]{40})\.\./mu.exec(section)?.[1];
     return candidate === path && hash === oldHash;
   });
-  expect(block, `no frozen hunk for ${path} ${oldHash}`).toBeDefined();
   const patchFile = join(root, "one.patch");
-  await writeFile(patchFile, block ?? "", "utf8");
+  const baseBlock = FIXTURE.originalBasePatch
+    .split(/(?=^diff --git )/mu)
+    .find((section) => section.startsWith(`diff --git a/${path} `));
+  expect(block ?? baseBlock, `no frozen hunk for ${path} ${oldHash}`).toBeDefined();
+  await writeFile(patchFile, block ?? baseBlock ?? "", "utf8");
   await run("patch", ["--reverse", "--batch", "--fuzz=0", "--silent", "-p1", "-i", patchFile], {
     cwd: root,
   });
+  if (block === undefined) {
+    const generatedPatch = brotliDecompressSync(
+      readFileSync(join(testDir, "fixtures", "generated-three-patch.patch.br")),
+    ).toString("utf8");
+    const generatedBlock = generatedPatch
+      .split(/(?=^diff --git )/mu)
+      .find((section) => section.startsWith(`diff --git a/${path} `));
+    expect(generatedBlock).toBeDefined();
+    await writeFile(patchFile, generatedBlock ?? "");
+    await run("patch", ["--batch", "--fuzz=0", "--silent", "-p1", "-i", patchFile], { cwd: root });
+  }
   const contents = await readFile(file, "utf8");
   expect(blobHash(contents), `predecessor ${path} ${oldHash}`).toBe(oldHash);
   return contents;
@@ -171,7 +189,7 @@ describe("the versioned JSON upgrade patch", () => {
     }
   });
 
-  it("recognises all 31 legacy compat predecessors and lands on the generated target", async () => {
+  it("recognises every registered compat predecessor and lands on the generated target", async () => {
     const { packageRoot, threeRoot } = await installedTree();
     for (const pair of UPGRADE.acceptedLegacyCompatPairs) {
       const predecessor = await legacyPredecessor(pair.path, pair.oldHash);

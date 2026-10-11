@@ -559,7 +559,13 @@ function classifyFile(lines, hunks) {
   for (const hunk of hunks) {
     const oldLines = hunkLines(hunk, "old");
     const newLines = hunkLines(hunk, "new");
-    if (locate(lines, newLines, hunk.newStart - 1) !== undefined) states.push("patched");
+    // A deletion's remaining context also occurs in stock; its full old text wins.
+    if (
+      !hunk.lines.some((line) => line[0] === "+") &&
+      locate(lines, oldLines, hunk.oldStart - 1 + offset) !== undefined
+    )
+      states.push("stock");
+    else if (locate(lines, newLines, hunk.newStart - 1) !== undefined) states.push("patched");
     else if (locate(lines, oldLines, hunk.oldStart - 1 + offset) !== undefined)
       states.push("stock");
     else states.push("unknown");

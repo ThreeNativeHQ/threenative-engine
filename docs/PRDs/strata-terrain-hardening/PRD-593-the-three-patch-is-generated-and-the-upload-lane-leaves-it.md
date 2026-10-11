@@ -107,8 +107,20 @@ Core audit of `2d2124792` (2026-10-10):
   dependencies without changing the lockfile sha256 (`2a680c32…dc4`). All 42 focused tests passed
   again after installation. Generated unified-diff payloads retain upstream whitespace.
 
-2026-10-10 EPIC integration: parent reviewed the generator, bounded upgrade reader, frozen predecessor fixture and CI wiring. The lockfile delta is exactly 56 substitutions of the patch hash, with no other changes. Parent frozen install passed with the merged lock unchanged; the three focused patch specs passed 42 tests in 7.50 s, including all 31 legacy predecessors and all 30 previously shipped finals. A fresh default `pnpm --filter @threenative/core patch:generate --check` downloaded and built the pinned upstream and reported `matched`. CI structure/needs contracts passed 213 tests in 8.68 s. Actual CI, hand-edit rejection, upload migration, runtime/visual proof and wrapper cost remain open.
-
-Scaffold drift closure: the first parent pre-push gate passed 331 tests but rejected the stale thirteen-tree fingerprints. Restoring only the previous shared Three patch and capability manifest/reference bytes recovered every old fingerprint in the actual `createProject` test. The observed current fingerprints were then recorded, and the unchanged full-tree assertion passed for all thirteen templates (1 selected test, 67 unselected; 1.63 s). No template source or hash exclusion changed.
-
-2026-10-10 hand-edit rejection proof: parent copied the committed pin, source delta and patch artifacts to an ignored isolated directory, appended a hand-edited line to its base patch, and ran the real generator with `check: true`. A fresh pinned upstream download/build rejected the altered artifact with `check failed, generated patch drifts from the committed patch`. The checkout patch remained byte-identical. This closes the local negative case; AC-2 remains open for actual CI execution.
+- **2026-10-11 — installer predecessor and deletion classification repaired.** The frozen Phase 1
+  generated patch at `9d917a551` hashes to `ac74287d…e170`; `develop` and `2d2124792` hash to
+  `f3c6b1fc…227f`, so these are different artifacts. The existing legacy finals retain the develop
+  state; the pin's compat registry now also accepts the two Phase 1 generated bundle target hashes.
+  Regeneration carries those acceptances into the upgrade JSON. Exact version/commit, path-set and
+  target-payload hash checks are unchanged. Deletion-only hunks now prefer a matching complete old
+  text over their new context, which can already occur in stock `src/nodes/accessors/Batch.js`.
+  Two new regression specs observed red 2 failed/0 passed before the fix and green 2 passed/0 failed
+  afterward; the complete compat/upgrade specs pass 33/33. A frozen compressed patch fixture
+  reconstructs the pinned stock and old generated state, checking each old and new target hash.
+  End-to-end commands: `git show 9d917a551:packages/core/patches/three@0.185.1.patch` saved to
+  `/tmp/prd593-old.patch`; save the current patch to `/tmp/prd593-new.patch`; in the resolved installed
+  Three.js root run `patch --reverse --batch --fuzz=0 --silent -p1 -i /tmp/prd593-new.patch` then
+  `patch --batch --fuzz=0 --silent -p1 -i /tmp/prd593-old.patch`; from this checkout run
+  `node packages/core/scripts/apply-three-patch.mjs`. All 30 old target hashes matched before apply,
+  the script reported `patched`, and all 30 new target hashes matched afterward. Core typecheck
+  exits 0. No lockfile, dependency, browser, GPU or native changes/runs; no push.

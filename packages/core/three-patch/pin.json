@@ -160,6 +160,16 @@
       "path": "src/renderers/webgpu/utils/WebGPUTextureUtils.js",
       "oldHash": "c46f6ab0e06d93f124c9fc62ece8859529461d5e",
       "newHash": "57c1eb62f1e0de063f22e08ec879e31d2a3240b6"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "e594543d1e604de1ac9f45c6260e213ad0e2d7b5",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "6581a8b0e69dea0ce5bfdc644f75a40f6aaac963",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
     }
   ],
   "baseFinalHashes": {

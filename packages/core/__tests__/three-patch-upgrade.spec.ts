@@ -290,3 +290,50 @@ describe.each([
     expect(after).toEqual(before);
   });
 });
+
+async function stockInstalledPackage() {
+  const { packageRoot, threeRoot } = await previousInstalledPackage({});
+  const inverse = join(await tempRoot(), "stock.patch");
+  await writeFile(inverse, FIXTURE.originalBasePatch);
+  await promisify(execFile)(
+    "patch",
+    ["--reverse", "--batch", "--fuzz=0", "--silent", "-p1", "-i", inverse],
+    { cwd: threeRoot },
+  );
+  return { packageRoot, threeRoot };
+}
+
+describe("generated patch installer regressions", () => {
+  it("upgrades the frozen Phase 1 generated patch to every current target hash", async () => {
+    const { packageRoot, threeRoot } = await stockInstalledPackage();
+    const oldPatch = brotliDecompressSync(
+      readFileSync(join(testDir, "fixtures", "generated-three-patch.patch.br")),
+    ).toString("utf8");
+    const patchFile = join(await tempRoot(), "old.patch");
+    await writeFile(patchFile, oldPatch);
+    await promisify(execFile)(
+      "patch",
+      ["--batch", "--fuzz=0", "--silent", "-p1", "-i", patchFile],
+      { cwd: threeRoot },
+    );
+    for (const block of oldPatch.split(/(?=^diff --git )/mu)) {
+      const rel = /^diff --git a\/(\S+) /mu.exec(block)?.[1];
+      const hash = /^index [a-f0-9]{40}\.\.([a-f0-9]{40}) /mu.exec(block)?.[1];
+      if (rel !== undefined && hash !== undefined)
+        expect(blobHash(await readFile(join(threeRoot, rel), "utf8")), rel).toBe(hash);
+    }
+    await expect(applyThreePatch({ packageRoot, threeRoot })).resolves.toBe("patched");
+    for (const [rel, hash] of Object.entries(GENERATED_FINAL_HASHES))
+      expect(blobHash(await readFile(join(threeRoot, rel), "utf8")), rel).toBe(hash);
+    await expect(applyThreePatch({ packageRoot, threeRoot })).resolves.toBe("unchanged");
+  });
+
+  it("classifies stock Batch.js as stock despite its deletion-only trailing blank hunk", async () => {
+    const { packageRoot, threeRoot } = await stockInstalledPackage();
+    await expect(applyThreePatch({ packageRoot, threeRoot })).resolves.toBe("patched");
+    const rel = "src/nodes/accessors/Batch.js";
+    expect(blobHash(await readFile(join(threeRoot, rel), "utf8"))).toBe(
+      GENERATED_FINAL_HASHES[rel],
+    );
+  });
+});
