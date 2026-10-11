@@ -1098,6 +1098,12 @@ describe("threenative doctor edge coverage", () => {
       version: string;
     };
     for (const spec of MCP_SERVER_SPECS) {
+      // Terrain is an optional addon the shim resolves from the project, never a core dependency
+      // (core -> assets -> terrain -> core would be a cycle), so its pin follows its own package.
+      if (spec.packageName === "@threenative/terrain") {
+        expect(spec.version, spec.packageName).toBe(await workspaceVersion(spec.packageName));
+        continue;
+      }
       const declared =
         spec.packageName === "@threenative/core"
           ? core.version

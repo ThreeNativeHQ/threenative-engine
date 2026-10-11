@@ -1,6 +1,6 @@
 # PRD-584 — An agent asks for a forest over MCP and gets a 60 fps GLB
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — The epic's headline outcome: no MCP tool generates terrain today, and no measured number shows a handed-over Strata world holding 60 fps (AC-1 to AC-5).
 **Complexity:** 7 (HIGH); risk override: closed-list boundary — a request-to-world tool sits next to the closed "preset/genre system" item
 **Owner:** ThreeNative maintainers
@@ -92,11 +92,16 @@ sequenceDiagram
 ## Execution Phases
 
 #### Phase 1: the tool generates a GLB
-**Status:** NOT STARTED
-**Files:** `packages/terrain/src/mcp/server.ts` (new), `packages/core/mcp/terrain.mjs` (new), `packages/core/mcp/servers.mjs`, `packages/core/scripts/bundle-terrain-mcp.mjs` (new), `docs/architecture/CHARTER.md`
+**Status:** PARTIAL
+**Files:** `packages/terrain/src/mcp/server.ts` (new), `packages/core/mcp/terrain.mjs` (new), `packages/core/mcp/servers.mjs`, `docs/architecture/CHARTER.md`
 **Implementation:** stdio MCP server; request → starter recipe by keyword with the choice returned; child process with timeout; CC0 species fetched through the asset MCP download path and cached.
 - [ ] Shim lists both tools. proof: stdio `tools/list` spec
 - [ ] A forest request writes a loadable GLB inside 60 s. proof: `terrain-mcp.spec.ts`
+  Note 2026-10-11 (no box ticked). Decisions: D1 the server is hand-written stdio JSON-RPC, because the existing engine and blender servers are hand-written JSON-RPC with no SDK and their loops are bundled, not importable. D2 the server is a tsup entry of `packages/terrain` (`dist/mcp/server.js`, package `bin`), not a bundle in core, because bundling terrain into core closes the cycle core -> assets -> terrain -> core. Core gets only the shim `packages/core/mcp/terrain.mjs`, the `threenative-terrain` row in `MCP_SERVERS` and a `MCP_PACKAGES.terrain` pin; core gains no dependency on terrain. D3 terrain does not depend on `@threenative/assets`: the cook child loads it from the game project at run time and fails closed with `npm i -D @threenative/assets` when absent. D4 `packages/terrain/dist` stays under 2 MB.
+  Changed: all five kits are accepted and each cooked through the built server (forest 5.6 s wall, 18,515,644 B `world.glb`; coastal, alpine, desert and tundra about 1.2 s each). `bounds` is narrowed by `parseBounds` with no cast. A pre-aborted signal never spawns. A timeout or cancel kills the whole process group and removes the partial output. `out` is rejected when it or any ancestor is a symlink leaving the project (realpath containment, dangling links included). `pnpm sync:mcp` rewrote the template MCP configs for the fifth server. `AGENT-INTERFACE.md` names it.
+  Checks: `terrain-mcp.spec.ts` 23 of 23 pass. Red against the previous `child.ts` and `tools.ts`: 6 of the new cases fail. `mcp-install.spec.ts` 33 of 33 pass. Core typecheck 0 errors. Terrain `tsc --noEmit` has 165 errors in `starter/`, other specs and `examples/strata-terrain-preview`, 0 in `src/mcp` or `terrain-mcp.spec.ts`. Terrain build exits 0, `du -sb packages/terrain/dist` = 860,387. Stdio smoke through `node packages/core/mcp/terrain.mjs` lists `terrain_generate` and `terrain_patch` (`SMOKE PASS`). Scoped Biome exits 0 with one existing complexity warning in `servers.mjs`. Doctor pin test, primary-docs and release candidate cases pass with `-t "MCP|bundled"`.
+  Open: `@threenative/terrain` is unpublished (npm 404), so the shim's npx fallback fails in a project that does not install it. `scripts/verify-golden-path.ts` (`MCP_SURFACES`, needs a recorded `terrain-mcp-tools.json`) and `scripts/verify-registry-install.ts` (safe tool, spec fixtures) still list four servers, so their specs fail until updated. The full runs of `doctor.spec.ts` and `verify-registry-install.spec.ts` have other failures not triaged. Species are the tracked starter GLBs, not the asset MCP download path. The result has no `ctx.load` snippet, triangle count or draw count. The cook reads data files from `starter/<kit>/`, which AGENTS.md says package code never imports. Input uses a `kit` enum, not `request`. The 60 s check is a timeout only, with no timing spec.
+  Owner lane: /root/prd587_lifecycle. Checkout `.worktrees/strata-terrain-mcp`, branch `epic/strata-terrain-mcp`, base `f8c41d61070b967bc35351a2efd5573ccfe1d92d`. Lane retained until full584 integration.
 
 #### Phase 2: agents find it
 **Status:** NOT STARTED

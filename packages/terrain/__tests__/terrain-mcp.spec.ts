@@ -1,16 +1,19 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { decodeRAW16 } from "../src/core/io.js";
 import type { ITerrainDocument } from "../src/core/types.js";
-import { runIsolated } from "../src/mcp/child.js";
+import { IsolatedKillError, runIsolated } from "../src/mcp/child.js";
+import { loadCooker, parseBounds } from "../src/mcp/cook.js";
 import {
+  TERRAIN_KITS,
   TERRAIN_TOOLS,
   assertOutputFree,
   parseGenerateInput,
   parsePatchInput,
   patchRecipe,
+  resolveOutput,
 } from "../src/mcp/tools.js";
 
 // The starter forest document as the forest bake evaluates it: `recipe.json` wraps it in `recipe`,
@@ -44,9 +47,10 @@ describe("terrain_generate input", () => {
     expect(parseGenerateInput({ kit: "forest" })).toEqual({ kit: "forest" });
   });
 
-  it("fails closed on kits that are not ready yet", () => {
-    for (const kit of ["coastal", "alpine", "desert", "tundra"]) {
-      expect(() => parseGenerateInput({ kit })).toThrow(/not supported yet/);
+  it("accepts all five starter kits", () => {
+    expect([...TERRAIN_KITS].sort()).toEqual(["alpine", "coastal", "desert", "forest", "tundra"]);
+    for (const kit of TERRAIN_KITS) {
+      expect(parseGenerateInput({ kit })).toEqual({ kit });
     }
   });
 
@@ -93,7 +97,139 @@ describe("terrain_generate output guard", () => {
   });
 });
 
+describe("terrain_generate output containment", () => {
+  let root: string;
+  let outside: string;
+
+  beforeEach(async () => {
+    root = await realpath(await mkdtemp(join(tmpdir(), "tn-terrain-root-")));
+    outside = await realpath(await mkdtemp(join(tmpdir(), "tn-terrain-outside-")));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  it("returns the real path of a new directory under the root", async () => {
+    expect(await resolveOutput(root, "public/worlds/forest")).toBe(
+      join(root, "public", "worlds", "forest"),
+    );
+  });
+
+  it("rejects an output that is itself a symlink leaving the root", async () => {
+    await symlink(outside, join(root, "link"));
+    await expect(resolveOutput(root, "link")).rejects.toThrow();
+  });
+
+  it("rejects an output under an ancestor symlink leaving the root", async () => {
+    await symlink(outside, join(root, "public"));
+    await expect(resolveOutput(root, "public/worlds/forest")).rejects.toThrow(
+      /outside the project/,
+    );
+  });
+
+  it("rejects an output under a dangling symlink", async () => {
+    await symlink(join(outside, "missing"), join(root, "public"));
+    await expect(resolveOutput(root, "public/forest")).rejects.toThrow(/dangling symlink/);
+  });
+
+  it("allows a symlinked ancestor that stays inside the root", async () => {
+    await mkdir(join(root, "real"));
+    await symlink(join(root, "real"), join(root, "alias"));
+    expect(await resolveOutput(root, "alias/forest")).toBe(join(root, "real", "forest"));
+  });
+});
+
+describe("species bounds", () => {
+  it("narrows a well-formed box", () => {
+    expect(parseBounds({ min: [-1, 0, -1], max: [1, 2, 1] }, "fir")).toEqual({
+      min: [-1, 0, -1],
+      max: [1, 2, 1],
+    });
+  });
+
+  it("fails closed on a missing, malformed or inverted box", () => {
+    const bad: unknown[] = [
+      undefined,
+      null,
+      {},
+      { min: [0, 0, 0] },
+      { min: [0, 0], max: [1, 1, 1] },
+      { min: [0, 0, 0], max: [1, "1", 1] },
+      { min: [0, 0, 0], max: [1, Number.NaN, 1] },
+      { min: [2, 0, 0], max: [1, 1, 1] },
+    ];
+    for (const value of bad) {
+      expect(() => parseBounds(value, "fir")).toThrow(/species 'fir' bounds/);
+    }
+  });
+});
+
+describe("cooker resolution", () => {
+  it("names the install command when the game project has no @threenative/assets", async () => {
+    const project = await mkdtemp(join(tmpdir(), "tn-terrain-noassets-"));
+    try {
+      await expect(loadCooker(project)).rejects.toThrow(/npm i -D @threenative\/assets/);
+    } finally {
+      await rm(project, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("isolated generation child", () => {
+  it("never spawns when the signal is already aborted", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tn-terrain-preabort-"));
+    const marker = join(dir, "spawned");
+    try {
+      const controller = new AbortController();
+      controller.abort();
+      await expect(
+        runIsolated({
+          command: process.execPath,
+          args: ["-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'x')`],
+          timeoutMs: 10_000,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow(IsolatedKillError);
+      await new Promise((done) => setTimeout(done, 300));
+      await expect(readFile(marker)).rejects.toThrow(/ENOENT/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("kills the whole process group on timeout, grandchildren included", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tn-terrain-group-"));
+    const pidFile = join(dir, "grandchild.pid");
+    const script = `
+      const { spawn } = require('node:child_process');
+      const grandchild = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
+      require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(grandchild.pid));
+      setTimeout(() => {}, 60000);
+    `;
+    try {
+      await expect(
+        runIsolated({ command: process.execPath, args: ["-e", script], timeoutMs: 1_000 }),
+      ).rejects.toThrow(/timed out/);
+      const pid = Number(await readFile(pidFile, "utf8"));
+      const alive = () => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      for (let wait = 0; wait < 50 && alive(); wait += 1) {
+        await new Promise((done) => setTimeout(done, 50));
+      }
+      expect(alive()).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("resolves with the child stdout on a clean exit", async () => {
     const result = await runIsolated({
       command: process.execPath,

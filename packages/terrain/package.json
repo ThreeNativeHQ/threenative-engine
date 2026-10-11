@@ -22,6 +22,7 @@
     "AGENT_GUIDE.md",
     "THIRD_PARTY_NOTICES.md"
   ],
+  "bin": "./dist/mcp/server.js",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

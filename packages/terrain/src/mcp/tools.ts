@@ -1,12 +1,11 @@
-import { readdir } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { lstat, readdir, realpath } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Terrain } from "../core/terrain.js";
 import type { PatchCommand } from "../core/terrain.js";
 import type { ITerrainDocument } from "../core/types.js";
 
-/** The starter kits. Only `forest` cooks today; the other kits fail closed until they are ready. */
+/** The starter kits, one folder each under the package's `starter/`. */
 export const TERRAIN_KITS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;
-export const SUPPORTED_KITS: readonly string[] = ["forest"];
 
 export type TerrainKit = (typeof TERRAIN_KITS)[number];
 
@@ -23,7 +22,7 @@ export const TERRAIN_TOOLS = [
   {
     name: "terrain_generate",
     description:
-      "Cook one editable starter terrain kit into a world.glb. Only the forest kit is supported.",
+      "Cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb.",
     inputSchema: {
       type: "object",
       properties: {
@@ -89,9 +88,6 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
   if (typeof kit !== "string" || !(TERRAIN_KITS as readonly string[]).includes(kit)) {
     throw new TypeError(`terrain_generate: kit must be one of ${TERRAIN_KITS.join(", ")}.`);
   }
-  if (!SUPPORTED_KITS.includes(kit)) {
-    throw new Error(`terrain_generate: kit '${kit}' is not supported yet; only 'forest' is.`);
-  }
   const parsed: IGenerateInput = { kit: kit as TerrainKit };
   if (sizeMeters !== undefined) {
     if (typeof sizeMeters !== "number" || !Number.isFinite(sizeMeters) || sizeMeters <= 0) {
@@ -107,6 +103,43 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
   }
   if (out !== undefined) parsed.out = relativeDirectory(out);
   return parsed;
+}
+
+/**
+ * Resolves `out` under `root` and fails closed unless the real path stays inside the real root.
+ * The deepest existing ancestor is resolved through `realpath`, so a symlinked `out` or a symlinked
+ * ancestor that leaves the root is rejected, as is a dangling link. Returns the verified real path.
+ */
+export async function resolveOutput(root: string, out: string): Promise<string> {
+  const realRoot = await realpath(root);
+  let existing = resolve(realRoot, out);
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      existing = await realpath(existing);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      // ENOENT on a path that lstat finds is a dangling symlink, which a mkdir would follow.
+      if (
+        await lstat(existing).then(
+          () => true,
+          () => false,
+        )
+      ) {
+        throw new Error(`terrain_generate: out '${out}' passes through a dangling symlink.`);
+      }
+      tail.unshift(basename(existing));
+      existing = dirname(existing);
+    }
+  }
+  const real = join(existing, ...tail);
+  const inside = relative(realRoot, real);
+  if (inside === "" || inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
+    throw new Error(`terrain_generate: out '${out}' resolves outside the project.`);
+  }
+  await assertOutputFree(real);
+  return real;
 }
 
 /** Fails closed when the output directory already exists, so a cook never replaces files. */

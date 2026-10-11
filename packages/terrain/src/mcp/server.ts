@@ -1,13 +1,16 @@
+#!/usr/bin/env node
+import { realpathSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { runIsolated } from "./child.js";
+import { IsolatedKillError, runIsolated } from "./child.js";
 import {
   TERRAIN_TOOLS,
-  assertOutputFree,
   parseGenerateInput,
   parsePatchInput,
   patchRecipe,
+  resolveOutput,
 } from "./tools.js";
 
 const SERVER_NAME = "threenative-terrain";
@@ -15,7 +18,7 @@ const SERVER_VERSION = "0.1.0";
 // The cook must finish inside the 60 s cold budget (PRD-584 AC-2). The child is killed past it.
 const COOK_TIMEOUT_MS = 60_000;
 const DEFAULT_OUT = "public/worlds/forest";
-const COOK_CHILD = fileURLToPath(new URL("./cook-child.ts", import.meta.url));
+const COOK_CHILD = fileURLToPath(new URL("./cook-child.js", import.meta.url));
 
 interface IRpcRequest {
   id?: number | string | null;
@@ -40,13 +43,17 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
   try {
     if (name === "terrain_generate") {
       const input = parseGenerateInput(args);
-      const out = resolve(process.cwd(), input.out ?? DEFAULT_OUT);
-      await assertOutputFree(out);
+      const projectRoot = process.cwd();
+      const out = await resolveOutput(projectRoot, input.out ?? DEFAULT_OUT);
       const child = await runIsolated({
         command: process.execPath,
         // Inherits the parent's loader flags, so the same TypeScript runtime starts the child.
-        args: [...process.execArgv, COOK_CHILD, JSON.stringify({ ...input, out })],
+        args: [...process.execArgv, COOK_CHILD, JSON.stringify({ ...input, out, projectRoot })],
         timeoutMs: COOK_TIMEOUT_MS,
+      }).catch(async (error: unknown) => {
+        // A killed cook cannot clean up after itself; `resolveOutput` proved `out` was new, so it is ours.
+        if (error instanceof IsolatedKillError) await rm(out, { recursive: true, force: true });
+        throw error;
       });
       // The cook library also prints progress lines; the child's summary is always its last line.
       return toolResult(child.stdout.trim().split("\n").at(-1) ?? "");
@@ -57,7 +64,9 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
     }
     throw new TypeError(`Unknown tool '${name}'.`);
   } catch (error) {
-    return toolResult(error instanceof Error ? error.message : String(error), true);
+    const message = error instanceof Error ? error.message : String(error);
+    // A child's uncaught error arrives with a stack; the `Error: ...` line is what the agent can act on.
+    return toolResult(message.match(/^\w*Error: .*$/m)?.[0] ?? message, true);
   }
 }
 
@@ -98,4 +107,13 @@ export function runServer(): void {
       if (response !== undefined) process.stdout.write(`${response}\n`);
     });
   });
+}
+
+// Started by the `bin`, or by the core shim, which sets argv[1] to this file before importing it.
+const entry = process.argv[1];
+if (
+  entry !== undefined &&
+  realpathSync(resolve(entry)) === realpathSync(fileURLToPath(import.meta.url))
+) {
+  runServer();
 }

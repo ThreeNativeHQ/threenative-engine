@@ -10,6 +10,8 @@ export default defineConfig({
     "editor/server": "src/editor/server.ts",
     "editor/index": "src/editor/index.ts",
     "editor/worker": "src/editor/worker.js",
+    "mcp/server": "src/mcp/server.ts",
+    "mcp/cook-child": "src/mcp/cook-child.ts",
   },
   format: ["esm"],
   target: "node20",

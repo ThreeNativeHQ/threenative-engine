@@ -27,6 +27,12 @@
       "args": [
         "./node_modules/@threenative/core/mcp/blender.mjs"
       ]
+    },
+    "threenative-terrain": {
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/terrain.mjs"
+      ]
     }
   }
 }

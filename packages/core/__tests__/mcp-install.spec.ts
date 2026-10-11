@@ -34,6 +34,7 @@ describe("mergeMcpServers", () => {
       "threenative-sculpt",
       "threenative-engine",
       "threenative-blender",
+      "threenative-terrain",
     ]);
   });
 
@@ -107,16 +108,40 @@ describe("MCP_SERVERS", () => {
     expect(MCP_PACKAGES.blender?.version).toBe(blender.version);
   });
 
-  // The four are ordered, not merely present: a host renders the table in declaration order and
+  // The five are ordered, not merely present: a host renders the table in declaration order and
   // the golden-path snapshot probes them by index. A server appended in the wrong place is the
   // kind of change that passes every set-shaped assertion and moves what a user sees.
-  it("should declare four ThreeNative servers", () => {
+  it("should declare five ThreeNative servers", () => {
     expect(Object.keys(MCP_SERVERS)).toEqual([
       "threenative-assets",
       "threenative-sculpt",
       "threenative-engine",
       "threenative-blender",
+      "threenative-terrain",
     ]);
+  });
+
+  // Terrain is not bundled and not a core dependency: bundling it would close a cycle
+  // (core -> assets -> terrain -> core). The shim resolves the project's `@threenative/terrain`
+  // bin, so the npx pin must name that package at its current version.
+  it("launches terrain from @threenative/terrain without depending on it", () => {
+    const manifest = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    for (const table of [
+      manifest.dependencies,
+      manifest.devDependencies,
+      manifest.peerDependencies,
+    ]) {
+      expect(table?.["@threenative/terrain"]).toBeUndefined();
+    }
+    const terrain = JSON.parse(
+      readFileSync(path.resolve("packages/terrain/package.json"), "utf8"),
+    ) as { bin: string; name: string; version: string };
+    expect(MCP_PACKAGES.terrain).toEqual({ name: terrain.name, version: terrain.version });
+    expect(terrain.bin).toBe("./dist/mcp/server.js");
   });
 
   // The npx fallback in `launch.mjs` names the package `MCP_PACKAGES` declares, so a shim whose
