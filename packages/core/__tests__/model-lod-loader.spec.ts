@@ -1,7 +1,19 @@
-import { type Box3, Mesh, type Object3D, PerspectiveCamera, Scene, type Sphere } from "three";
+import {
+  type Box3,
+  type BufferGeometry,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  type Object3D,
+  PerspectiveCamera,
+  Raycaster,
+  Scene,
+  type Sphere,
+  Vector3,
+} from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
-import { TN_DISCRETE_LOD, baseGeometryOf, updateModelLods } from "../src/model-lod.js";
+import { TN_DISCRETE_LOD, baseGeometryOf, lodChainOf, updateModelLods } from "../src/model-lod.js";
 
 // PRD-377 §5/§6 — the real front door. A GLB carrying `TN_discrete_lod` is loaded through
 // `createAssetLoader` (which fetches the bytes, decides the decoder set from `extensionsUsed`,
@@ -17,6 +29,9 @@ function padTo4(buffer: Buffer, fill: number): Buffer {
 const QUADS = 32;
 const LOD0_TRIANGLES = QUADS * 2;
 const COARSE_TRIANGLES = QUADS / 2;
+// The two instanced placements: index 0 sits near the camera, index 1 far from it.
+const NEAR_Z = 95;
+const FAR_Z = 0;
 
 /** A grid strip of `QUADS` quads: `2 * QUADS` LOD0 triangles, half of them in the derived level. */
 function gridIndices(triangles: number): number[] {
@@ -33,7 +48,7 @@ function gridIndices(triangles: number): number[] {
  * `TN_discrete_lod` extension on the primitive. Written by hand so the loader — not the asset
  * package the pipeline owns — is what this test exercises.
  */
-function cookedGlb(options: { copies?: boolean } = {}): Buffer {
+function cookedGlb(options: { copies?: boolean; instances?: boolean } = {}): Buffer {
   const lod0Vertices = (QUADS + 1) * 2;
   let positions = new Float32Array(lod0Vertices * 3);
   for (let vertex = 0; vertex <= QUADS; vertex += 1) {
@@ -58,11 +73,17 @@ function cookedGlb(options: { copies?: boolean } = {}): Buffer {
     positions = grown;
     levelIndices = levelIndices.map((vertex) => lod0Vertices + source.indexOf(vertex));
   }
+  // Two placements: index 0 near the camera, index 1 far from it. Their z is the fixture's identity.
+  const instanced = options.instances === true;
+  const translations = new Float32Array([0, 0, NEAR_Z, 0, 0, FAR_Z]);
   const binPadded = padTo4(
     Buffer.concat([
       Buffer.from(positions.buffer, positions.byteOffset, positions.byteLength),
       Buffer.from(baseIndices.buffer, baseIndices.byteOffset, baseIndices.byteLength),
       Buffer.from(levelIndices.buffer, levelIndices.byteOffset, levelIndices.byteLength),
+      ...(instanced
+        ? [Buffer.from(translations.buffer, translations.byteOffset, translations.byteLength)]
+        : []),
     ]),
     0,
   );
@@ -80,6 +101,7 @@ function cookedGlb(options: { copies?: boolean } = {}): Buffer {
       },
       { bufferView: 1, componentType: 5125, count: baseIndices.length, type: "SCALAR" },
       { bufferView: 2, componentType: 5125, count: levelIndices.length, type: "SCALAR" },
+      ...(instanced ? [{ bufferView: 3, componentType: 5126, count: 2, type: "VEC3" }] : []),
     ],
     asset: { version: "2.0" },
     bufferViews: [
@@ -91,9 +113,18 @@ function cookedGlb(options: { copies?: boolean } = {}): Buffer {
         byteOffset: positionBytes + baseBytes,
         target: 34963,
       },
+      ...(instanced
+        ? [
+            {
+              buffer: 0,
+              byteLength: translations.byteLength,
+              byteOffset: positionBytes + baseBytes + levelIndices.byteLength,
+            },
+          ]
+        : []),
     ],
     buffers: [{ byteLength: binPadded.length }],
-    extensionsUsed: [TN_DISCRETE_LOD],
+    extensionsUsed: instanced ? [TN_DISCRETE_LOD, "EXT_mesh_gpu_instancing"] : [TN_DISCRETE_LOD],
     meshes: [
       {
         primitives: [
@@ -117,7 +148,9 @@ function cookedGlb(options: { copies?: boolean } = {}): Buffer {
         ],
       },
     ],
-    nodes: [{ mesh: 0 }],
+    nodes: instanced
+      ? [{ extensions: { EXT_mesh_gpu_instancing: { attributes: { TRANSLATION: 3 } } }, mesh: 0 }]
+      : [{ mesh: 0 }],
     scene: 0,
     scenes: [{ nodes: [0] }],
   };
@@ -166,6 +199,73 @@ function firstMesh(root: Object3D): Mesh {
   });
   if (found === undefined) throw new Error("the loaded scene holds no mesh");
   return found;
+}
+
+function firstInstancedMesh(root: Object3D): InstancedMesh {
+  let found: InstancedMesh | undefined;
+  root.traverse((object) => {
+    if (found === undefined && object instanceof InstancedMesh) found = object;
+  });
+  if (found === undefined) throw new Error("the loaded scene holds no instanced mesh");
+  return found;
+}
+
+/** The geometry each placement draws this frame, keyed by its z translation (the fixture's identity). */
+function rungsByZ(mesh: InstancedMesh): Map<number, BufferGeometry> {
+  const rungs = new Map<number, BufferGeometry>();
+  const matrix = new Matrix4();
+  const partitions = mesh.children.filter(
+    (child): child is InstancedMesh => child instanceof InstancedMesh,
+  );
+  if (partitions.length === 0) {
+    for (let index = 0; index < mesh.count; index += 1) {
+      mesh.getMatrixAt(index, matrix);
+      rungs.set(matrix.elements[14] as number, mesh.geometry);
+    }
+    return rungs;
+  }
+  for (const partition of partitions) {
+    for (let index = 0; index < partition.count; index += 1) {
+      partition.getMatrixAt(index, matrix);
+      rungs.set(matrix.elements[14] as number, partition.geometry);
+    }
+  }
+  return rungs;
+}
+
+/** A manifest entry carrying the runtime budget a cook resolves, as `assets.manifest.json` holds it. */
+function manifestFor(runtime: { hysteresis: number; maxPixelError: number }): unknown {
+  return {
+    entries: {
+      "forest.glb": {
+        kind: "model",
+        lod: { generated: 1, preset: "quality", runtime },
+        output: "forest.abc123.glb",
+      },
+    },
+    version: 1,
+  };
+}
+
+/** Loads the instanced fixture through the real loader and runs one selection from a far camera. */
+async function selectInstanced(manifest?: unknown): Promise<{
+  base: BufferGeometry;
+  drawn: Map<number, BufferGeometry>;
+  instanced: InstancedMesh;
+  scene: Scene;
+}> {
+  stubFetch(cookedGlb({ instances: true }), manifest);
+  const loader = createAssetLoader({ basePath: "" });
+  const value = await loader.model<{ scene: Object3D }>("forest.glb");
+  const instanced = firstInstancedMesh(value.scene);
+  const base = baseGeometryOf(instanced);
+  const scene = new Scene();
+  scene.add(value.scene);
+  const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+  camera.position.set(0, 0, 100);
+  camera.updateMatrixWorld(true);
+  updateModelLods(scene, camera, 1080);
+  return { base, drawn: rungsByZ(instanced), instanced, scene };
 }
 
 afterEach(() => {
@@ -299,5 +399,53 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
     // 0.05 * ~9.5 = ~0.47 px: inside the default 1-pixel budget, outside the manifest's 0.1.
     expect(updateModelLods(scene, camera, 1080)).toBe(LOD0_TRIANGLES);
     expect(mesh.geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
+  }, 120_000);
+
+  it("gives each imported instance the rung its own distance selects", async () => {
+    const { base, drawn } = await selectInstanced();
+    // The near placement keeps LOD0 while the far one takes the coarse level: two placements, two rungs.
+    expect(drawn.size).toBe(2);
+    expect(drawn.get(NEAR_Z)).toBe(base);
+    expect(drawn.get(FAR_Z)).not.toBe(base);
+    expect(drawn.get(FAR_Z)?.index?.count).toBe(COARSE_TRIANGLES * 3);
+  }, 120_000);
+
+  it("keeps the authored instance slots, count, ray hits and geometry ownership", async () => {
+    const { base, instanced, scene } = await selectInstanced();
+    const levels = lodChainOf(base)?.levels ?? [];
+    expect(levels.length).toBe(2);
+    expect(instanced.count).toBe(2);
+    const matrix = new Matrix4();
+    instanced.getMatrixAt(0, matrix);
+    expect(matrix.elements[14]).toBe(NEAR_Z);
+    instanced.getMatrixAt(1, matrix);
+    expect(matrix.elements[14]).toBe(FAR_Z);
+    // A ray down the z axis crosses both placements; the hits report their public ids, nearest first.
+    scene.updateMatrixWorld(true);
+    const raycaster = new Raycaster(new Vector3(0.25, 0, 200), new Vector3(0, 0, -1));
+    expect(raycaster.intersectObject(instanced).map((hit) => hit.instanceId)).toEqual([0, 1]);
+    // Disposal releases the partitions; the chain's geometries stay owned by the loader.
+    const disposals = levels.map((geometry) => vi.spyOn(geometry, "dispose"));
+    instanced.dispatchEvent({ type: "dispose" });
+    for (const spy of disposals) expect(spy).not.toHaveBeenCalled();
+    expect(instanced.geometry).toBe(base);
+    expect(instanced.children.some((child) => child instanceof InstancedMesh)).toBe(false);
+  }, 120_000);
+
+  it("honours the manifest's pixel budget for each imported instance", async () => {
+    // A 0.1 px budget refines the far placement, which the default 1 px budget coarsens.
+    const { base, drawn } = await selectInstanced(
+      manifestFor({ hysteresis: 0.15, maxPixelError: 0.1 }),
+    );
+    expect(drawn.get(NEAR_Z)).toBe(base);
+    expect(drawn.get(FAR_Z)).toBe(base);
+  }, 120_000);
+
+  it("honours the manifest's hysteresis for each imported instance", async () => {
+    // Coarsening needs the error under (1 - hysteresis) * budget: 10% of 1 px keeps the far placement at LOD0.
+    const { base, drawn } = await selectInstanced(
+      manifestFor({ hysteresis: 0.9, maxPixelError: 1 }),
+    );
+    expect(drawn.get(FAR_Z)).toBe(base);
   }, 120_000);
 });
