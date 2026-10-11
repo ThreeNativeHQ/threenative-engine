@@ -327,3 +327,6 @@ export async function mountTerrainEditor(options: {
     },
   };
 }
+
+export { landformPose, transformedLandform } from "./landforms.js";
+export { pickEditorSurface, editorSurfaceHeight } from "./picking.js";

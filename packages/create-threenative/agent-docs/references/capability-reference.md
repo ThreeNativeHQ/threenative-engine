@@ -5866,7 +5866,7 @@ const gradient = gradientAt(new Terrain({ resolution: 17 }).evaluate(), 0, 0);
 `function` — Recovered numerical/project exports; GLB/runtime outputs contain terrain only.
 
 ```ts
-export async function makeExport( state: ITerrainState, recipe: ITerrainDocument, kind: ExportKind, ): Promise<IExportArchive> { … }
+export function makeExport( state: ITerrainState | null, recipe: ITerrainDocument, kind: "project", ): Promise<IExportArchive>;
 ```
 
 - **Use when:** export a terrain recipe and its numerical runtime data
@@ -6027,6 +6027,22 @@ export function checkEnvironmentAssets( environment: IEnvironment, assets: reado
 checkEnvironmentAssets({ sky: { image: "dusk" } }, document.assets ?? []);
 ```
 
+### `editorSurfaceHeight`
+
+`function` — Query the rendered heightfield, including its triangulation rather than an interpolated bake.
+
+```ts
+export function editorSurfaceHeight( ctx: { … }
+```
+
+- **Use when:** query terrain-editor surface elevation at world X/Z coordinates
+- **Constraints:** the supplied mesh and raycast determine the surface; missing intersections return undefined
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const height = editorSurfaceHeight(ctx, terrainMesh, x, z);
+```
+
 ### `focusCamera`
 
 `function` — Frame a point, prop, landmark or region for the live viewport and projection. @summary Frame a focus target with an editor observation camera
@@ -6078,6 +6094,22 @@ export function inspectSpatial( state: ITerrainState, revision: string, query: I
 const observation = inspectSpatial(state, revision, { kind: "point", at: [0, 0] });
 ```
 
+### `landformPose`
+
+`function` — Recipe footprints are heights over X/Z, never independently transformed solids.
+
+```ts
+export function landformPose(layer: Layer, worldSize: number, defaultSize: number) { … }
+```
+
+- **Use when:** derive a terrain-editor gizmo pose from a landform layer
+- **Constraints:** the caller supplies world and default footprint sizes; unsupported layers return undefined
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const pose = landformPose(layer, terrain.size, footprintSize);
+```
+
 ### `mountTerrainEditor`
 
 `function` — Mount recovered terrain controls around the project-owned ThreeNative view.
@@ -6093,6 +6125,22 @@ export async function mountTerrainEditor(options: { … }
 
 ```ts
 await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });
+```
+
+### `pickEditorSurface`
+
+`function` — Convert viewport client coordinates once; the installed picker owns ray intersection.
+
+```ts
+export function pickEditorSurface( ctx: { … }
+```
+
+- **Use when:** pick a terrain-editor surface from viewport client coordinates
+- **Constraints:** the caller supplies the raycast implementation and ordered targets
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const hit = pickEditorSurface(ctx, [terrainMesh], event.clientX, event.clientY);
 ```
 
 ### `probeTerrain`
@@ -6195,6 +6243,22 @@ export class TerrainEditorController { … }
 
 ```ts
 const controller = new TerrainEditorController(editorUrl); const snapshot = await controller.snapshot();
+```
+
+### `transformedLandform`
+
+`function` — transformedLandform
+
+```ts
+export function transformedLandform( layer: Layer, position: Vector3, quaternion: Quaternion, scale: Vector3, anchor: number, ): Layer { … }
+```
+
+- **Use when:** apply a terrain-editor gizmo transform to a landform layer
+- **Constraints:** finite coordinates and positive scales are required; X/Z rotations that overhang throw
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const next = transformedLandform(layer, position, quaternion, scale, surfaceHeight);
 ```
 
 ### `validateAsset`

@@ -41,7 +41,7 @@ cook covers its contract. React is not required by this PRD; decide it after the
 - [x] AC-1 [local]: `src/editor/` has no `.js` source and passes `tsc` strict. proof: `pnpm --filter @threenative/terrain typecheck` — Evidence: exit 0 after dependency builds; source spec 3/3 passed (2026-10-11).
 - [x] AC-2 [local]: No `innerHTML` assignment remains in `src/editor/`. proof: `editor-source.spec.ts` greps the source — Evidence: 3/3 passed, including no JS and no HTML sinks (2026-10-11).
 - [ ] AC-3 [local]: Every tool is reachable and usable by keyboard, and errors are announced through an `aria-live` region. proof: `editor.playtest.json` keyboard steps — Evidence: pending.
-- [ ] AC-4 [local]: Picking, gizmo and brush mechanics live in the package; the example keeps only appearance. proof: `pnpm tsx scripts/count-loc.ts` before/after plus `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending.
+- [ ] AC-4 [local]: Picking, gizmo and brush mechanics live in the package; the example keeps only appearance. proof: `pnpm tsx scripts/count-loc.ts` before/after plus `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: picking and landform transform math moved; brush stamping/falloff already use package operations. Mechanics spec 5/5 passed; example strict typecheck exit 0. Browser editor proof remains assigned to the coordinator (2026-10-11).
 - [ ] AC-5 [local]: Small routes reject a 10 MiB body with 413, and error responses carry no document snapshot. proof: `editor-document.spec.ts` cases — Evidence: pending.
 - [ ] AC-6 [local]: The editor's export uses `cookTerrainWorld`, and `exportWorldGLB` is deleted or names its remaining caller. proof: `pnpm --filter strata-terrain-preview test:terrain:export` — Evidence: pending.
 
@@ -54,9 +54,9 @@ cook covers its contract. React is not required by this PRD; decide it after the
 - [x] No `innerHTML`. proof: `editor-source.spec.ts` — 3/3 passed; shell and panels use DOM construction (2026-10-11).
 
 #### Phase 2: mechanics move, server hygiene
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `editorView.ts`, `selection.ts` (example) → `packages/terrain/src/editor/`; `server.ts`
-- [ ] Mechanics in package. proof: count-loc + editor script
+- [ ] Mechanics in package. proof: count-loc + editor script — Package mechanics spec 5/5 passed; affected example files raw LOC 1804 → 1725. `pnpm tsx scripts/count-loc.ts` on HEAD archive and working tree both exit 0, unchanged benchmark totals (platformer 6349, touch 1361, HUD 60, cloth 46 vs 760); this instrument does not count Strata. Browser editor script remains unrun here (2026-10-11).
 - [ ] Route limits and slim errors. proof: `editor-document.spec.ts`
 
 #### Phase 3: keyboard, one encoder

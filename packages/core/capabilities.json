@@ -7105,7 +7105,7 @@
       "overrides": [],
       "package": "@threenative/terrain",
       "requires": ["npm i @threenative/terrain"],
-      "signature": "export async function makeExport( state: ITerrainState, recipe: ITerrainDocument, kind: ExportKind, ): Promise<IExportArchive> { … }",
+      "signature": "export function makeExport( state: ITerrainState | null, recipe: ITerrainDocument, kind: \"project\", ): Promise<IExportArchive>;",
       "situations": ["export a terrain recipe and its numerical runtime data"],
       "summary": "Recovered numerical/project exports; GLB/runtime outputs contain terrain only.",
       "supersedes": [],
@@ -7270,6 +7270,23 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the supplied mesh and raycast determine the surface; missing intersections return undefined"
+      ],
+      "example": "const height = editorSurfaceHeight(ctx, terrainMesh, x, z);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function editorSurfaceHeight( ctx: { … }",
+      "situations": ["query terrain-editor surface elevation at world X/Z coordinates"],
+      "summary": "Query the rendered heightfield, including its triangulation rather than an interpolated bake.",
+      "supersedes": [],
+      "symbol": "editorSurfaceHeight"
+    },
+    {
+      "aliases": [],
       "constraints": ["framing only; an unknown target returns a named diagnostic and no camera"],
       "example": "const outcome = focusCamera(camera, { target: { kind: \"prop\", id: \"pine-3\" }, aspect: 16 / 9 }, resolve);",
       "importPath": "@threenative/terrain/editor",
@@ -7328,6 +7345,23 @@
     {
       "aliases": [],
       "constraints": [
+        "the caller supplies world and default footprint sizes; unsupported layers return undefined"
+      ],
+      "example": "const pose = landformPose(layer, terrain.size, footprintSize);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function landformPose(layer: Layer, worldSize: number, defaultSize: number) { … }",
+      "situations": ["derive a terrain-editor gizmo pose from a landform layer"],
+      "summary": "Recipe footprints are heights over X/Z, never independently transformed solids.",
+      "supersedes": [],
+      "symbol": "landformPose"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "browser authoring only; createView and materialColours are required game choices"
       ],
       "example": "await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });",
@@ -7341,6 +7375,21 @@
       "summary": "Mount recovered terrain controls around the project-owned ThreeNative view.",
       "supersedes": [],
       "symbol": "mountTerrainEditor"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the caller supplies the raycast implementation and ordered targets"],
+      "example": "const hit = pickEditorSurface(ctx, [terrainMesh], event.clientX, event.clientY);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function pickEditorSurface( ctx: { … }",
+      "situations": ["pick a terrain-editor surface from viewport client coordinates"],
+      "summary": "Convert viewport client coordinates once; the installed picker owns ray intersection.",
+      "supersedes": [],
+      "symbol": "pickEditorSurface"
     },
     {
       "aliases": [],
@@ -7447,6 +7496,23 @@
       "summary": "HTTP controller for the project-local terrain editor.",
       "supersedes": [],
       "symbol": "TerrainEditorController"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "finite coordinates and positive scales are required; X/Z rotations that overhang throw"
+      ],
+      "example": "const next = transformedLandform(layer, position, quaternion, scale, surfaceHeight);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function transformedLandform( layer: Layer, position: Vector3, quaternion: Quaternion, scale: Vector3, anchor: number, ): Layer { … }",
+      "situations": ["apply a terrain-editor gizmo transform to a landform layer"],
+      "summary": "transformedLandform",
+      "supersedes": [],
+      "symbol": "transformedLandform"
     },
     {
       "aliases": [],

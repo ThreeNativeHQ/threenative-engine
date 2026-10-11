@@ -18,7 +18,10 @@ import {
   type IViewEnvironment,
   type IViewerPose,
   type TerrainEditorController,
+  editorSurfaceHeight,
   focusCamera,
+  landformPose,
+  pickEditorSurface,
 } from "@threenative/terrain/editor";
 import type { IAuthoringDocument } from "@threenative/terrain/editor/server";
 import { type IWorldGLBExport, exportWorldGLB } from "@threenative/terrain/export";
@@ -46,7 +49,6 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createEnvironmentImages } from "./environmentImages.js";
 import { createImportedModels } from "./imports.js";
-import { landformPose } from "./landforms.js";
 import { OCEAN_LOOK, createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
 import { createPortableGround, createPortableProps } from "./portable.js";
@@ -290,7 +292,7 @@ export async function createEditorView(
       );
       if (!placed.length) {
         const layer = authoring?.recipe.layers.find((entry) => entry.id === id);
-        const pose = layer ? landformPose(layer, terrain.size) : undefined;
+        const pose = layer ? landformPose(layer, terrain.size, 120) : undefined;
         if (!pose) return undefined;
         const size = new Vector3(...pose.scale);
         const centre = new Vector3(...pose.position);
@@ -649,25 +651,14 @@ export async function createEditorView(
     () => groundAt,
     (x, y) => {
       if (!props || !mesh) return undefined;
-      const box = ctx.renderer.domElement.getBoundingClientRect();
-      const hit = ctx.raycast({
-        screen: new Vector2(x - box.left, y - box.top),
-        targets: [mesh, ...props.meshes],
-      });
+      const hit = pickEditorSurface(ctx, [mesh, ...props.meshes], x, y);
       if (hit?.instanceId === undefined) return undefined;
       const id = hit.object.userData.placementIds?.[hit.instanceId];
       return typeof id === "string" ? id : undefined;
     },
     (x, z) => {
       if (!mesh) return undefined;
-      mesh.geometry.computeBoundingBox();
-      const top = mesh.geometry.boundingBox?.max.y;
-      if (top === undefined) return undefined;
-      return ctx.raycast({
-        origin: new Vector3(x, top + 1, z),
-        direction: new Vector3(0, -1, 0),
-        targets: [mesh],
-      })?.point.y;
+      return editorSurfaceHeight(ctx, mesh, x, z);
     },
     (target) => cameras.focus({ target }),
   );
@@ -751,14 +742,10 @@ export async function createEditorView(
       try {
         const nextGround: PropGroundQuery = (placement, at) => {
           const [x, , z] = at;
-          const hit = ctx.raycast({
-            origin: new Vector3(x, top + 1, z),
-            direction: new Vector3(0, -1, 0),
-            targets: [next],
-          });
+          const height = editorSurfaceHeight(ctx, next, x, z, top + 1);
           const [originalX, originalY, originalZ] = placement.position;
           return {
-            height: hit?.point.y ?? null,
+            height: height ?? null,
             offset: originalY - sampleHeight(state, originalX, originalZ),
           };
         };
@@ -828,11 +815,7 @@ export async function createEditorView(
     },
     pick(clientX, clientY) {
       if (!mesh) return null;
-      const box = ctx.renderer.domElement.getBoundingClientRect();
-      const hit = ctx.raycast({
-        screen: new Vector2(clientX - box.left, clientY - box.top),
-        targets: [mesh],
-      });
+      const hit = pickEditorSurface(ctx, [mesh], clientX, clientY);
       return hit ? [hit.point.x, hit.point.y, hit.point.z] : null;
     },
     setMode(value): void {
@@ -842,16 +825,14 @@ export async function createEditorView(
     setBrush(value): void {
       brush.visible = !!value && !!terrain;
       if (!value || !terrain) return;
-      const hit = ctx.raycast({
-        origin: new Vector3(value.at[0], 10000, value.at[1]),
-        direction: new Vector3(0, -1, 0),
-        targets: mesh ? [mesh] : [],
-      });
-      if (!hit) {
+      const height = mesh
+        ? editorSurfaceHeight(ctx, mesh, value.at[0], value.at[1], 10000)
+        : undefined;
+      if (height === undefined) {
         brush.visible = false; // engine-override: no terrain target exists; prewarm handles meshes, not this Line. // engine-override: this target-dependent Line is not a mesh handled by prewarm.
         return;
       }
-      brush.position.set(value.at[0], hit.point.y + 0.2, value.at[1]);
+      brush.position.set(value.at[0], height + 0.2, value.at[1]);
       brush.scale.setScalar(value.radius);
     },
     showSpline(points): void {

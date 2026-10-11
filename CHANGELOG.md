@@ -30,6 +30,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `@threenative/terrain`'s `makeExport` declaration adds a `"project"` overload accepting
+  a null terrain state, so recipes can be exported before the first evaluation. Existing
+  calls remain valid; non-project exports still require an evaluated state.
+
 - The unreleased terrain editor's `mountTerrainEditor` view factory receives
   `(host, controller)`. Its `IEditorView` implements `setDocument(document, revision)`
   so metadata edits can update the scene without dispatching terrain evaluation;

@@ -4,7 +4,11 @@ import {
   type Layer,
   validatePlacementOverrides,
 } from "@threenative/terrain";
-import type { TerrainEditorController } from "@threenative/terrain/editor";
+import {
+  type TerrainEditorController,
+  landformPose,
+  transformedLandform,
+} from "@threenative/terrain/editor";
 import type { IEditorSnapshot } from "@threenative/terrain/editor/server";
 import {
   BufferGeometry,
@@ -20,7 +24,6 @@ import {
 } from "three";
 import type { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
-import { landformPose, transformedLandform } from "./landforms.js";
 import {
   type IPropInstance,
   type PropGroundQuery,
@@ -128,7 +131,7 @@ export function createPropSelection(
     status.textContent = text;
   }
   function drawFootprint(layer: Layer): void {
-    const pose = landformPose(layer, snapshot?.document.recipe.config.size ?? 0);
+    const pose = landformPose(layer, snapshot?.document.recipe.config.size ?? 0, 120);
     if (!pose) return;
     const vertices = pose.rectangular
       ? [
@@ -160,7 +163,7 @@ export function createPropSelection(
   function refreshPose(): void {
     const layer = snapshot?.document.recipe.layers.find((l) => l.id === selectedLayer);
     const landformTransform = layer
-      ? landformPose(layer, snapshot?.document.recipe.config.size ?? 0)
+      ? landformPose(layer, snapshot?.document.recipe.config.size ?? 0, 120)
       : undefined;
     const landform = !!landformTransform && !!layer;
     title.textContent = landform ? "Recipe landform" : "Individual placement";
@@ -583,7 +586,7 @@ export function createPropSelection(
   return {
     selectLayer(id: string): void {
       const layer = snapshot?.document.recipe.layers.find((entry) => entry.id === id);
-      if (active && layer && landformPose(layer, snapshot?.document.recipe.config.size ?? 0))
+      if (active && layer && landformPose(layer, snapshot?.document.recipe.config.size ?? 0, 120))
         select(id, true);
     },
     setActive(enabled: boolean): void {

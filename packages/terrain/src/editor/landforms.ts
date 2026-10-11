@@ -1,12 +1,18 @@
-import type { Layer } from "@threenative/terrain";
 import { Quaternion, Vector3 } from "three";
+import type { Layer } from "../core/types.js";
 
-/** Recipe footprints are heights over X/Z, never independently transformed solids. */
-export function landformPose(layer: Layer, worldSize: number) {
+/**
+ * Recipe footprints are heights over X/Z, never independently transformed solids.
+ * @requires npm i -D @threenative/terrain
+ * @situation derive a terrain-editor gizmo pose from a landform layer
+ * @constraint the caller supplies world and default footprint sizes; unsupported layers return undefined
+ * @example const pose = landformPose(layer, terrain.size, footprintSize);
+ */
+export function landformPose(layer: Layer, worldSize: number, defaultSize: number) {
   if (layer.type !== "stamp" && layer.type !== "paste" && layer.type !== "heightmap")
     return undefined;
   const p = layer.params;
-  const size = p.size ?? (layer.type === "heightmap" ? worldSize : 120);
+  const size = p.size ?? (layer.type === "heightmap" ? worldSize : defaultSize);
   const radius =
     "radius" in p && p.radius !== undefined
       ? p.radius
@@ -26,6 +32,12 @@ export function landformPose(layer: Layer, worldSize: number) {
   };
 }
 
+/**
+ * @requires npm i -D @threenative/terrain
+ * @situation apply a terrain-editor gizmo transform to a landform layer
+ * @constraint finite coordinates and positive scales are required; X/Z rotations that overhang throw
+ * @example const next = transformedLandform(layer, position, quaternion, scale, surfaceHeight);
+ */
 export function transformedLandform(
   layer: Layer,
   position: Vector3,
