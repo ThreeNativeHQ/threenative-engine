@@ -211,17 +211,22 @@ node packages/playtest/dist/runner/cli.js examples/vfx-gallery/playtests/emitter
 
 - The existing browser-only `vfx-gallery.playtest.json` also **passed** on the corrected source with the documented Vulkan flags and its fixed-step clock (`artifacts/prd569-review-motion/`): positive frame difference, all nine nonblank regions, compute-updated/coverage signals and diagnostics passed. This preserves the animation witness without claiming an independent visual judgment. `pnpm check:docs` **passed**; progress remains `prd:0%`.
 
+### Unit red-green — 2026-10-11
+
+- Sonnet 5.5 high, CPU-only pass on HEAD `e98194222`. This worktree's ignored `node_modules` was missing, so `CI=true pnpm install --offline --frozen-lockfile --ignore-scripts` restored it from the pnpm store (8.7 s, no tracked file changed). `pnpm exec vitest run` on `particles.spec.ts`, `particle-significance.spec.ts` and `compute-driven.spec.ts`: **42/42** passed. Ten single-mutation controls and the pre-PRD baseline ran against committed source, each restored with `git checkout --` and a clean-tree check. The script and log stay in the ignored `artifacts/prd569-sonnet-supervisor/20261011T165505Z/`.
+- Three unit boxes are ticked below. The other four phase boxes and both acceptance boxes need a WebGPU browser, the native desktop host or the action-rpg template gate, so they stay open. The next GPU job waits on `gpu-grant.json`; no browser or device job ran in this pass.
+
 #### Phase 1: An emitter out of view stops simulating and drawing
-**Status:** PARTIAL — runtime grace control corrected; phase proofs remain open.
+**Status:** PARTIAL — unit red-green boxes verified 2026-10-11; browser and native proofs remain open.
 **Files:** `packages/core/src/particles.ts`, `packages/core/src/render-camera-cull.ts`, `packages/core/__tests__/particles.spec.ts`, `examples/vfx-gallery/src/scenes/Gallery.ts`, `examples/vfx-gallery/playtests/emitter-cull.playtest.json` (new)
-- [ ] [local] The reduction measures a known particle cloud inside one sample's bounds, and an emitter with no landed sample is never culled. proof: red-green cases in `pnpm exec vitest run packages/core/__tests__/particles.spec.ts`.
-- [ ] [local] An emitter culled past the grace time skips its dispatch, `"pause"` resumes with its buffers intact, and `"clear"` restarts. proof: red-green cases in the same spec, counting `renderer.compute` calls on a stub renderer.
+- [x] [local] The reduction measures a known particle cloud inside one sample's bounds, and an emitter with no landed sample is never culled. proof: red-green cases in `pnpm exec vitest run packages/core/__tests__/particles.spec.ts`. Verified 2026-10-11: **19/19** passed (exit 0). Red: the pre-PRD `particles.ts` (merge-base `1a5314a1d`) fails **17/19**, and single mutations fail their own cases — max-lane offset (2), non-finite sample accepted (1), unmeasured emitter culled (1); log `artifacts/prd569-sonnet-supervisor/20261011T165505Z/redgreen.log`. The TSL reduction kernel needs a GPU, so AC-1's browser playtest still proves it on hardware.
+- [x] [local] An emitter culled past the grace time skips its dispatch, `"pause"` resumes with its buffers intact, and `"clear"` restarts. proof: red-green cases in the same spec, counting `renderer.compute` calls on a stub renderer. Verified 2026-10-11: same spec **19/19**. Red: a culled emitter that still dispatches fails **5** cases, `clear` without a restart fails the clear case, and `pause` that restarts fails the pause case (same log).
 - [ ] [local] `vfx-gallery` drops its hand-written `emitting = visible` gate and AC-1 passes. proof: AC-1's playtest.
 - [ ] [local] The native desktop host runs the same pan with the cull active. proof: `node packages/playtest/dist/runner/cli.js examples/vfx-gallery/playtests/emitter-cull.playtest.json --target desktop`.
 
 #### Phase 2: Effects yield to the measured budget by significance
-**Status:** NOT STARTED
+**Status:** PARTIAL — ranking, decay and grace verified in unit specs 2026-10-11; web and template proofs remain open.
 **Files:** `packages/core/src/particles.ts` (or a sibling `particle-significance.ts`), `packages/core/__tests__/particle-significance.spec.ts`, `examples/vfx-gallery/playtests/emitter-cull.playtest.json`
-- [ ] [local] Ranking by projected size, usage decay, and the grace time hold under a scripted budget trace: the smallest projected emitter goes first, and no emitter flips inside the grace time. proof: red-green cases in `pnpm exec vitest run packages/core/__tests__/particle-significance.spec.ts`.
+- [x] [local] Ranking by projected size, usage decay, and the grace time hold under a scripted budget trace: the smallest projected emitter goes first, and no emitter flips inside the grace time. proof: red-green cases in `pnpm exec vitest run packages/core/__tests__/particle-significance.spec.ts`. Verified 2026-10-11: **13/13** passed (exit 0). Red: largest-first ranking fails **1**, no decay fails **2**, no grace time fails **1**, and an inverted projected size in `GPUParticles3D.budget.significance` fails the particles-spec ranking case (same log).
 - [ ] [local] AC-2 passes on the web lane. proof: AC-2's over-budget arm.
 - [ ] [local] One template that ships emitters (action-rpg) sets `onCull` in its `src/render/` source and its existing combat playtest stays green. proof: `pnpm test:templates` for action-rpg.
