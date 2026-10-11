@@ -47,6 +47,7 @@ import {
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { createAssetLoader } from "../../core/src/assets.js";
 import { INSTANCED_LOD_MAX_PIXEL_ERROR } from "../../core/src/instanced-batch-lod.js";
 import {
   DISCRETE_LOD_DEFAULT_HYSTERESIS,
@@ -269,6 +270,7 @@ describe("cookTerrainWorld", () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -384,6 +386,24 @@ describe("cookTerrainWorld", () => {
     expect(unpackGlb(Buffer.from(cooked.worldGlb)).json.asset.extras).toEqual({
       tnTerrainWorld: 1,
     });
+    // The production ctx.assets.model entry must attach chains in a multi-scene cooked world.
+    const fetchImage = globalThis.fetch;
+    vi.stubGlobal("createImageBitmap", async () => ({ width: 1, height: 1, close() {} }));
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("blob:")) return fetchImage(input, init);
+      if (url.endsWith("assets.manifest.json")) return new Response(null, { status: 404 });
+      return new Response(await readFile(path.join(dir, "world.glb")));
+    });
+    const loader = createAssetLoader({ basePath: "" });
+    const loaded = await loader.model<{ scene: Group }>("worlds/forest/world.glb");
+    const partitions: InstancedMesh[] = [];
+    loaded.scene.traverse((object) => {
+      if (object instanceof InstancedMesh && object.parent instanceof InstancedMesh)
+        partitions.push(object);
+    });
+    expect(partitions.length).toBeGreaterThan(0);
+    loader.clear();
     const document = await new NodeIO()
       .registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod])
       .readBinary(cooked.worldGlb);

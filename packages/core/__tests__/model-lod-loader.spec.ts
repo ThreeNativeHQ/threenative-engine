@@ -49,7 +49,12 @@ function gridIndices(triangles: number): number[] {
  * package the pipeline owns — is what this test exercises.
  */
 function cookedGlb(
-  options: { copies?: boolean; instances?: boolean; mixedParts?: boolean } = {},
+  options: {
+    copies?: boolean;
+    instances?: boolean;
+    mixedParts?: boolean;
+    alternateScene?: boolean;
+  } = {},
 ): Buffer {
   const lod0Vertices = (QUADS + 1) * 2;
   let positions = new Float32Array(lod0Vertices * 3);
@@ -157,6 +162,10 @@ function cookedGlb(
     scenes: [{ nodes: [0] }],
   };
   const primitives = json.meshes[0]?.primitives;
+  if (options.alternateScene === true) {
+    json.nodes.push({ mesh: 0 });
+    json.scenes.push({ nodes: [1] });
+  }
   if (options.mixedParts === true && primitives?.[0] !== undefined)
     primitives.push({ ...primitives[0], extensions: {} });
   const jsonPadded = padTo4(Buffer.from(JSON.stringify(json)), 0x20);
@@ -278,6 +287,14 @@ afterEach(() => {
 });
 
 describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
+  it("attaches instanced partitions when the cooked model has alternate LOD scenes", async () => {
+    stubFetch(cookedGlb({ instances: true, alternateScene: true }));
+    const loader = createAssetLoader({ basePath: "" });
+    const value = await loader.model<{ scene: Object3D }>("forest.glb");
+    const mesh = firstInstancedMesh(value.scene);
+    expect(mesh.children.filter((child) => child instanceof InstancedMesh)).toHaveLength(2);
+    loader.clear();
+  });
   it("attaches the chain and selects by camera through the normal load path", async () => {
     stubFetch(cookedGlb());
     const loader = createAssetLoader({ basePath: "" });

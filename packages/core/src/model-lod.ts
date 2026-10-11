@@ -859,6 +859,7 @@ function controllerFor(mesh: Mesh): IModelLodController | undefined {
 export class DiscreteLodPlugin {
   readonly name = TN_DISCRETE_LOD;
   #parser: IParserLike | undefined;
+  #associations: IParserLike["associations"] | undefined;
   readonly #pending = new Map<Mesh, IPendingLevels>();
   readonly #rungs: { readonly def: IJoinedRungDef; readonly prototype: Object3D }[] = [];
   /** A temporary holder for far-mesh prototypes, so widening reaches their joined geometry. */
@@ -868,11 +869,22 @@ export class DiscreteLodPlugin {
     this.#parser = parser;
   }
 
+  async beforeRoot(): Promise<void> {
+    const parser = this.#parser;
+    if (parser === undefined) return;
+    // Each glTF scene prunes parser.associations; retain the complete node map before that.
+    await Promise.all(
+      (parser.json.nodes ?? []).map((_, index) => parser.getDependency("node", index)),
+    );
+    this.#associations = parser.associations;
+  }
+
   async afterRoot(result: { scene?: Object3D }): Promise<void> {
     const parser = this.#parser;
     if (parser === undefined) return;
+    const associations = this.#associations ?? parser.associations;
     // GLTFLoader's instancing extension replaces the primitive meshes without copying associations.
-    for (const [object, association] of parser.associations) {
+    for (const [object, association] of associations) {
       if (association?.primitives !== undefined) continue;
       const node = parser.json.nodes?.[association?.nodes ?? -1];
       if (node?.mesh === undefined || node.extensions?.EXT_mesh_gpu_instancing === undefined)
@@ -880,10 +892,10 @@ export class DiscreteLodPlugin {
       const parts = object instanceof InstancedMesh ? [object] : (object as Object3D).children;
       for (const [primitives, mesh] of parts.entries()) {
         if (!(mesh instanceof InstancedMesh)) continue;
-        parser.associations.set(mesh, { ...association, meshes: node.mesh, primitives });
+        associations.set(mesh, { ...association, meshes: node.mesh, primitives });
       }
     }
-    for (const [object, association] of parser.associations) {
+    for (const [object, association] of associations) {
       const mesh = object as Mesh;
       if (mesh.isMesh !== true) continue;
       const { meshes, primitives } = association;
