@@ -38,7 +38,7 @@ example. Fix the generator string, the peer-range sync and the CHARTER row.
 - [x] AC-2 [local]: Every `recipe.json` is under 200 KB, and each kit bake's output bytes are unchanged by the sidecar move. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` with a golden hash — Evidence: 27 tests pass across five kit specs (parent run, 20.55 s); all 79 old/new bake files are byte-identical (7 s).
 - [ ] AC-3 [local]: A scaffolded game that asks for the forest kit gets its recipe and assets, and the kit playtest passes. proof: `KIT=forest pnpm --filter strata-terrain-preview test:kit` — Evidence: pending.
 - [ ] AC-4 [local]: No asset directory without a reference remains. proof: an asset-reference spec — Evidence: pending.
-- [ ] AC-5 [local]: `prepare-release` syncs terrain's peer ranges, and the CHARTER closed-list row names the terrain allowance. proof: `pnpm check:docs` and the package-lists drift spec — Evidence: pending.
+- [x] AC-5 [local]: `prepare-release` syncs terrain's peer ranges, and the CHARTER closed-list row names the terrain allowance. proof: `pnpm check:docs` and the package-lists drift spec — Evidence: `prepare-release.spec.ts` 12/12 PASS (4 new terrain fixtures, 3 RED before the fix). `package-list-drift.spec.ts` 7/7 PASS. `terrain-consumer.spec.ts` 18/18 PASS. `check:docs` from the parent run (3057 links). Core-independent strict typecheck of `io.ts` and `prepare-release.ts` passes. CHARTER row in `a9a997baf`.
 
 ## Execution Phases
 
@@ -60,8 +60,11 @@ example. Fix the generator string, the peer-range sync and the CHARTER row.
 - [ ] No unreferenced assets. proof: asset-reference spec
 
 #### Phase 3: registration and charter
-**Status:** PARTIAL
+**Status:** COMPLETE
 **Files:** `scripts/prepare-release.ts`, `docs/architecture/CHARTER.md`, `AGENTS.md`, `src/core/io.ts`
-- [ ] Peer sync and charter row. proof: `pnpm check:docs` + drift spec
+- [x] Peer sync and charter row. proof: `pnpm check:docs` + drift spec
+  - Evidence: `prepare-release.spec.ts` 12/12 PASS. `package-list-drift.spec.ts` 7/7 PASS. `terrain-consumer.spec.ts` 18/18 PASS. `check:docs` from the parent run. Core-independent strict typecheck passes for `io.ts` and `prepare-release.ts` (`tsc --ignoreConfig --noEmit --strict --skipLibCheck --types node --target ES2022 --module NodeNext --moduleResolution NodeNext`). Package-wide terrain `typecheck` remains blocked by 19 errors outside changed files. Causes: `@threenative/physics` has no built `dist`, and `examples/strata-terrain-preview/src/world/horizon.json` is absent.
 
-2026-10-11 charter clarification: the closed-list row now names the existing narrow terrain-only authoring allowance, and root `AGENTS.md` places those optional companions in `packages/terrain/` while preserving game-owned appearance. `pnpm sync:agents` updated one generated mirror. Parent documentation checks pass: 3,057 links across 1,360 Markdown files and all 252 tests in the six required documentation specs (8.40 s). Peer synchronization, generator-version synchronization and package-list drift proof remain open; this phase and AC-5 are not accepted.
+2026-10-11 charter clarification: the closed-list row now names the existing narrow terrain-only authoring allowance, and root `AGENTS.md` places those optional companions in `packages/terrain/` while preserving game-owned appearance. `pnpm sync:agents` updated one generated mirror. Parent documentation checks pass: 3,057 links across 1,360 Markdown files and all 252 tests in the six required documentation specs (8.40 s). Release synchronization and package-list drift proof are recorded below.
+
+2026-10-11 release synchronization follow-up: actual terrain peers stay unchanged when absent from the selected versions map; a selected cohort peer uses the existing range synchronizer. Terrain generator versions now use `requiredVersion` and the existing source-update table. Three new fixtures fail before the source fix; all 37 release/drift/consumer tests pass afterward (2.30 s). The focused core-independent strict typecheck passes; package-wide missing physics output and horizon fixture are not repaired by this phase. Documentation proof for the charter and mirrors remains the parent’s accepted 252-test run.

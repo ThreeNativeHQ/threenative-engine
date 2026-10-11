@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   Mask,
   Terrain,
@@ -257,6 +258,13 @@ describe("public terrain consumer", () => {
     mesh.positions[0] = Number.NaN;
     expect(() => encodeGLB(mesh)).toThrow();
     expect(() => toGeometry(mesh)).toThrow();
+  });
+  it("names the shipped package as the GLB generator", () => {
+    const glb = encodeGLB(bakeMesh(new Terrain({ resolution: 17 }).evaluate()));
+    const jsonLength = new DataView(glb.buffer, glb.byteOffset).getUint32(12, true);
+    const json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLength)));
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    expect(json.asset.generator).toBe(`@threenative/terrain ${pkg.version}`);
   });
 });
 it("rejects a scatter layer without asset", () => {
