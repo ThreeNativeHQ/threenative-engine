@@ -8,16 +8,16 @@ import {
   DataTexture,
   EquirectangularReflectionMapping,
   Float32BufferAttribute,
-  FloatType,
   FogExp2,
   LinearFilter,
-  LinearSRGBColorSpace,
   Mesh,
   MeshBasicMaterial,
   RGBAFormat,
+  SRGBColorSpace,
   type Scene,
   SphereGeometry,
   type Texture,
+  UnsignedByteType,
   Vector3,
 } from "three";
 import { HEIGHT_FOG, type HeightFogParams, heightFogDepth, heightFogNode } from "./heightFog.js";
@@ -42,11 +42,12 @@ function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
   return Math.sqrt(Math.max(0, old - height)) / distance;
 }
 
-/** Linear equirectangular radiance, from the lower haze through the horizon to the zenith. */
+/** sRGB equirectangular radiance, from the lower haze through the horizon to the zenith. */
 export function skyTexture(): DataTexture {
-  const width = 8;
-  const height = 65;
-  const data = new Float32Array(width * height * 4);
+  // three's PMREM sizes its cube from width / 4, needing at least 16: keep width >= 64.
+  const width = 256;
+  const height = 128;
+  const data = new Uint8Array(width * height * 4);
   const high = new Color(palette.skyHigh);
   const mid = new Color(palette.skyLow);
   const horizon = new Color(palette.horizon);
@@ -60,13 +61,22 @@ export function skyTexture(): DataTexture {
         : elevation < 0.5
           ? horizon.clone().lerp(mid, elevation * 2)
           : mid.clone().lerp(high, (elevation - 0.5) * 2);
+    const encoded = color.clone().convertLinearToSRGB();
     for (let column = 0; column < width; column += 1) {
-      data.set([color.r, color.g, color.b, 1], (row * width + column) * 4);
+      data.set(
+        [
+          Math.round(encoded.r * 255),
+          Math.round(encoded.g * 255),
+          Math.round(encoded.b * 255),
+          255,
+        ],
+        (row * width + column) * 4,
+      );
     }
   }
-  const sky = new DataTexture(data, width, height, RGBAFormat, FloatType);
+  const sky = new DataTexture(data, width, height, RGBAFormat, UnsignedByteType);
   sky.mapping = EquirectangularReflectionMapping;
-  sky.colorSpace = LinearSRGBColorSpace;
+  sky.colorSpace = SRGBColorSpace;
   sky.magFilter = LinearFilter;
   sky.minFilter = LinearFilter;
   sky.needsUpdate = true;
@@ -75,7 +85,6 @@ export function skyTexture(): DataTexture {
 
 export function setupSky(scene: Scene, sky: Texture): void {
   sky.mapping = EquirectangularReflectionMapping;
-  sky.colorSpace = LinearSRGBColorSpace;
   scene.background = sky;
   scene.backgroundIntensity = 1;
   // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.

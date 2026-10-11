@@ -3,9 +3,9 @@ import path from "node:path";
 import {
   Color,
   EquirectangularReflectionMapping,
-  FloatType,
-  LinearSRGBColorSpace,
+  SRGBColorSpace,
   Scene,
+  UnsignedByteType,
 } from "three";
 import { describe, expect, it } from "vitest";
 import { flat } from "../templates/platformer/src/render/materials.js";
@@ -478,20 +478,23 @@ describe("platformer translucent surfaces and gradient sky", () => {
     expect(flat(0xffffff, { opacity: 0.55 })).toBe(flat(0xffffff, { opacity: 0.55 }));
   });
 
-  it("uses linear sky radiance for background and environment with a coloured lower hemisphere", () => {
+  it("uses filterable sRGB sky radiance for background and environment with a coloured lower hemisphere", () => {
     const sky = skyTexture();
     const { data, width, height } = sky.image;
+    if (!(data instanceof Uint8Array)) throw new Error("Sky texture must contain byte data.");
     const colorAt = (row: number) => Array.from(data.slice(row * width * 4, row * width * 4 + 3));
     const closeTo = (actual: number[], color: Color) => {
-      for (const [index, value] of color.toArray().entries()) {
-        expect(actual[index]).toBeCloseTo(value, 6);
+      for (const [index, value] of color.clone().convertLinearToSRGB().toArray().entries()) {
+        expect(Math.abs((actual[index] ?? 0) - Math.round(value * 255))).toBeLessThanOrEqual(1);
       }
     };
     expect(sky.mapping).toBe(EquirectangularReflectionMapping);
-    expect(sky.colorSpace).toBe(LinearSRGBColorSpace);
-    expect(sky.type).toBe(FloatType);
+    expect(sky.colorSpace).toBe(SRGBColorSpace);
+    expect(sky.type).toBe(UnsignedByteType);
+    expect(width).toBeGreaterThanOrEqual(64);
+    expect(width / 4).toBeGreaterThanOrEqual(16);
     closeTo(colorAt(height - 1), new Color(palette.skyHigh));
-    closeTo(colorAt((height - 1) / 2), new Color(palette.horizon));
+    closeTo(colorAt(Math.floor((height - 1) / 2)), new Color(palette.horizon));
     closeTo(colorAt(0), new Color(palette.skyHigh).lerp(new Color(palette.horizon), 0.45));
     expect(Array.from(data).every((value) => Number.isFinite(value) && value > 0)).toBe(true);
     const scene = new Scene();
@@ -500,7 +503,7 @@ describe("platformer translucent surfaces and gradient sky", () => {
     expect(scene.environment).toBe(sky);
     expect(scene.backgroundIntensity).toBe(1);
     expect(scene.environmentIntensity).toBe(1);
-    expect(sky.colorSpace).toBe(LinearSRGBColorSpace);
+    expect(sky.colorSpace).toBe(SRGBColorSpace);
     sky.dispose();
   });
 });
