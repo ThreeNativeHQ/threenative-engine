@@ -126,6 +126,8 @@ const high: IWorldEnvironmentOptions = {
  * the water material is where the frame actually goes.
  */
 const medium: IWorldEnvironmentOptions = {
+  // The chain's own quality tier: without it the renderer keeps its `high` default at this tier.
+  renderChainTier: "medium",
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
   // to be.

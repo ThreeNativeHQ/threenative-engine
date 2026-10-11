@@ -32,6 +32,35 @@ async function load(template: string): Promise<IQualityModule> {
   )) as IQualityModule;
 }
 
+interface IRenderChain {
+  readonly perAdapter?: Record<string, { tier?: string }>;
+  readonly tier?: string;
+}
+
+/** The `renderChain` block of every scenario a template ships, wherever the template keeps it. */
+async function renderChains(template: string): Promise<{ chain: IRenderChain; label: string }[]> {
+  const found: { chain: IRenderChain; label: string }[] = [];
+  for (const dir of [
+    path.join(templatesDir, template),
+    path.join(templatesDir, "..", "template-playtests", template),
+  ]) {
+    for (const file of await readdir(dir, { recursive: true }).catch(() => [])) {
+      if (!file.endsWith(".playtest.json")) continue;
+      const scenario = JSON.parse(await readFile(path.join(dir, file), "utf8")) as {
+        assert?: { renderChain?: IRenderChain };
+      };
+      const chain = scenario.assert?.renderChain;
+      if (chain !== undefined) found.push({ chain, label: `${template}/${file}` });
+    }
+  }
+  return found;
+}
+
+function scenarioTier(chain: IRenderChain, adapter: string): string | undefined {
+  const generic = adapter === "software" ? "software" : "hardware";
+  return (chain.perAdapter?.[adapter] ?? chain.perAdapter?.[generic])?.tier ?? chain.tier;
+}
+
 describe("template quality tiers", () => {
   it("should find the eight shipped templates rather than an empty list", () => {
     expect(names.length).toBeGreaterThanOrEqual(8);
@@ -249,20 +278,56 @@ describe("template quality tiers", () => {
     }
   });
 
+  // A scenario's flat `renderChain.tier` is held by every adapter its `perAdapter` rows do not name.
+  // A template that starts a GPU family on another tier than that flat one fails the scenario on
+  // that machine unless the family has a row, and a row that disagrees with the game fails it the
+  // other way. Both are read off the template's own table, never typed twice by hand, and every
+  // scenario that asserts a chain is read — web, native and look, with or without `perAdapter`.
+  it("should name the start tier of every adapter a template scenario would otherwise miss", async () => {
+    const adapters: [string, { gpuClass?: string; software?: boolean }][] = [
+      ["discrete", { gpuClass: "discrete" }],
+      ["integrated", { gpuClass: "integrated" }],
+      ["mobile-high", { gpuClass: "mobile-high" }],
+      ["mobile-low", { gpuClass: "mobile-low" }],
+      ["mobile-mid", { gpuClass: "mobile-mid" }],
+      ["software", { software: true }],
+    ];
+    const read: string[] = [];
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      for (const { chain, label } of await renderChains(name)) {
+        read.push(label);
+        for (const [adapter, request] of adapters) {
+          const asserted = scenarioTier(chain, adapter);
+          if (asserted === undefined) continue;
+          expect(asserted, `${label}: ${adapter} row`).toBe(resolveQualityTier(request));
+        }
+      }
+    }
+    expect(read, "no template scenario asserted a render chain to check").not.toHaveLength(0);
+    expect(read, "the scan missed a native scenario").toContain(
+      "rain/native-playtests/boot.playtest.json",
+    );
+  });
+
   // The tier the game picks and the tier the renderer's chain runs at are two separate settings, and
   // a preset that names only the first leaves the chain at its own `high` default. Found by a real
   // forced-SwiftShader run on `minimal`: TN_QUALITY_TIER said `low`, and the run still reported
   // `renderChain.tier: "high"`, because no template but `starter` set `renderChainTier` — so the low
   // preset paid for the high chain's denoise and slice counts. Every fixture asserting
   // `perAdapter.software: {tier: "low"}` was green anyway, because those are read off the tier the
-  // game chose rather than off the chain that ran.
-  it("should carry the chain's own tier in every template's low preset", async () => {
+  // game chose rather than off the chain that ran. The same gap sat in `medium` for ten kits: the
+  // game resolved `medium` for an integrated or mobile-high GPU while the chain stayed on `high`.
+  it("should request the chain tier it names in every template's preset", async () => {
     for (const name of names) {
       const { qualityPreset } = await load(name);
-      expect(
-        qualityPreset("low").renderChainTier,
-        `${name}: low preset leaves the render chain on its high default`,
-      ).toBe("low");
+      for (const tier of QUALITY_TIERS) {
+        // The chain falls back to `high` when a preset names no `renderChainTier`.
+        expect(
+          qualityPreset(tier).renderChainTier ?? "high",
+          `${name}: ${tier} preset leaves the render chain on another tier`,
+        ).toBe(tier);
+      }
     }
   });
 

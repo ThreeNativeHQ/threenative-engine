@@ -236,20 +236,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // into PRD-571; these fingerprints cover both the exposure and landed base changes.
   // Recomputed 2026-10-11 after merging develop b4e74627f into PRD-563: measured through
   // createProject on the merged tree, including the GPU-class start tier in every kit.
-  "action-rpg": "2d82986b98b144d4a34e4ca2a0d94af7bffc7f25939565f19f96179c022e31ba",
-  minimal: "5d36a7b7e9e6e2aa9fa65fa65ed5966bc0ef3e8a860cfbf9ded379fdba885bab",
-  platformer: "93a65b35c6c865c40f8a85a688c5e0c56cf4c0bb5e0b58d9846f504d7d9982a3",
-  puzzle: "ef5e6d4de1ae7506e4bc997a768662684d8a6e7cbd6ac311d7112c6eda30fde8",
-  racing: "938969e972262888f819c4b2dba8d36208c26422d7fe38e1a7b7393d7646c864",
-  rain: "e299fd6d351c31e09f7fef11b69544b7cc06ae662bed1446ad02a0b5e86332d0",
-  rts: "d7741a83a7c9fa333c29f2dcb328754fd0244be56f2d826df9c193f106808741",
-  runner: "f9c3cf7f5c029bc97f0bbea8460b31352bb45c92f36f7505a615d2c33bb7fbfe",
+  // Recomputed 2026-10-11 for the PRD-563 render-chain tier fix: ten kits' medium presets now request
+  // the medium chain, the four flat-high scenarios gained family and software rows, and every
+  // render-chain scenario names the GPU families. Measured by the same actual-tree test; snow moves not.
+  "action-rpg": "a8181c6ded553b6e6c5806d1b012a1d8402368db8b8f87227db865f764ac4410",
+  minimal: "fab4fe473ea958ff51b1aad63bd2282c9c110bacb72d46a347f4c391b1dcb406",
+  platformer: "e0be69b862ffa1af8f36f10d7c9fb66bbab116c807173acc1539bace1fae7626",
+  puzzle: "b8433ef07d59bdc4fb792b45e9232e7c9b02b6367afecf895a7a82a9948896c5",
+  racing: "7b51da4f5e718111824cf3cef3b6b6ac43f4b7a8f1a3812edd46b6fe92149187",
+  rain: "5b8757de2613465e97e987c92c7e4028f2d3b7a16ebebc89227b370820e6ddce",
+  rts: "c68c44b2c6771426d233d6b8e94d80274c29e261473c626834dc0843ca4de074",
+  runner: "4d119fb918ffa0a3df3f4f27b75448d305f3878268f3e00a7017e7d5f10f02a1",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "4e2bb9df78409ff4ceca7654ae460a9edad8dc05c7ed9ad8837377810442aefc",
-  shooter: "0480cbf26aef8d0bf7331242f891565898d451967c5a9417ead2fcffbab98d45",
+  sailing: "f6d5e41ae7f2836e5a814ed084dfb677e81ea00d71f748d7bb9cb21d17b0df51",
+  shooter: "853db95e8b1f21bf1c63be80844b0bc6a1a92c95a67ee11d6cc28768d3e9e0e6",
   snow: "fc9c353994584c6a7633cf523cb7427b1dcfdb69d8157c670f2a9de0c1aab84f",
-  starter: "45a6ca57a6a00ed328ebd9f269ad9b18208995046a931e9e9dd0b5a9ab6af9fa",
-  "tower-defense": "5434144c4b4074aaef89b3c8575ab3ac00e508a82af03b25dd800b392ceb5ed9",
+  starter: "b83d40c519a7b76c92b73bd2dfa7576617d86c3a876542e17f53e7b3bb073a13",
+  "tower-defense": "53d467a902a3c883b73b283cbc83c3d4c66169f8b5175eed8719515a7f6f465e",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

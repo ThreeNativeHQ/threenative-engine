@@ -135,7 +135,7 @@ const high: IWorldEnvironmentOptions = {
 };
 
 /** The rung in between: the same occlusion at half the directions. Saving unmeasured. */
-const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8 };
+const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8, renderChainTier: "medium" };
 
 /** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
 const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };

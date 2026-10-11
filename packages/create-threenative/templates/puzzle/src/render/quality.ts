@@ -139,6 +139,8 @@ const high: IWorldEnvironmentOptions = {
 /** A machine between the two: the same look with a cheaper occlusion gather. */
 const medium: IWorldEnvironmentOptions = {
   ...shared,
+  // The chain's own quality tier: without it the renderer keeps its `high` default at this tier.
+  renderChainTier: "medium",
   bloomRadius: 0.38,
   bloomStrength: 0.56,
   bloomThreshold: 0.84,
