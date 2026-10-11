@@ -4,6 +4,7 @@ import {
   BufferGeometry,
   type Camera,
   Group,
+  InstancedMesh,
   Matrix4,
   type Mesh,
   Object3D,
@@ -11,6 +12,7 @@ import {
   Vector3,
 } from "three";
 import { pixelsPerUnit } from "./clustered-mesh.js";
+import type { attachInstancedLod } from "./instanced-batch-lod.js";
 
 /**
  * Engine-owned detail selection for automatic discrete LOD (`TN_discrete_lod`).
@@ -228,6 +230,7 @@ interface IParserLike {
     animations?: { channels?: { target?: { node?: number } }[] }[];
     extensions?: Record<string, unknown>;
     meshes?: { name?: string; primitives?: { extensions?: Record<string, unknown> }[] }[];
+    nodes?: { mesh?: number; extensions?: Record<string, unknown> }[];
   };
 }
 
@@ -868,6 +871,18 @@ export class DiscreteLodPlugin {
   async afterRoot(result: { scene?: Object3D }): Promise<void> {
     const parser = this.#parser;
     if (parser === undefined) return;
+    // GLTFLoader's instancing extension replaces the primitive meshes without copying associations.
+    for (const [object, association] of parser.associations) {
+      if (association?.primitives !== undefined) continue;
+      const node = parser.json.nodes?.[association?.nodes ?? -1];
+      if (node?.mesh === undefined || node.extensions?.EXT_mesh_gpu_instancing === undefined)
+        continue;
+      const parts = object instanceof InstancedMesh ? [object] : (object as Object3D).children;
+      for (const [primitives, mesh] of parts.entries()) {
+        if (!(mesh instanceof InstancedMesh)) continue;
+        parser.associations.set(mesh, { ...association, meshes: node.mesh, primitives });
+      }
+    }
     for (const [object, association] of parser.associations) {
       const mesh = object as Mesh;
       if (mesh.isMesh !== true) continue;
@@ -931,7 +946,11 @@ export class DiscreteLodPlugin {
   }
 
   /** Builds the derived geometries against the mesh's final (widened) attributes and registers. */
-  attach(_root: Object3D, policy: IModelLodPolicy | undefined): number {
+  attach(
+    _root: Object3D,
+    policy: IModelLodPolicy | undefined,
+    instancedLod?: typeof attachInstancedLod,
+  ): number {
     const applied: IAppliedLod = {
       hysteresis: policy?.hysteresis ?? DISCRETE_LOD_DEFAULT_HYSTERESIS,
       maxPixelError: policy?.maxPixelError ?? DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
@@ -983,7 +1002,15 @@ export class DiscreteLodPlugin {
       // a coarser level carries that derived geometry, and must still resolve to this chain.
       for (const geometry of levels) chains.set(geometry, registered);
       preserveChainClones(registered);
-      controllers.set(mesh, new ModelLod(mesh, registered.chain, applied));
+      if (mesh instanceof InstancedMesh) {
+        if (instancedLod === undefined)
+          throw new Error(
+            "TN_discrete_lod requires the instanced LOD attachment for InstancedMesh.",
+          );
+        instancedLod(mesh, { autoLod: policy });
+      } else {
+        controllers.set(mesh, new ModelLod(mesh, registered.chain, applied));
+      }
       appliedCount += 1;
     }
     this.#registerJoinedRungs(applied);

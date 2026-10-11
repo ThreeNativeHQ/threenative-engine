@@ -38,7 +38,7 @@ function gridIndices(triangles: number): number[] {
   const indices: number[] = [];
   for (let quad = 0; quad < triangles / 2; quad += 1) {
     const a = quad * 2;
-    indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
   }
   return indices;
 }
@@ -48,7 +48,9 @@ function gridIndices(triangles: number): number[] {
  * `TN_discrete_lod` extension on the primitive. Written by hand so the loader — not the asset
  * package the pipeline owns — is what this test exercises.
  */
-function cookedGlb(options: { copies?: boolean; instances?: boolean } = {}): Buffer {
+function cookedGlb(
+  options: { copies?: boolean; instances?: boolean; mixedParts?: boolean } = {},
+): Buffer {
   const lod0Vertices = (QUADS + 1) * 2;
   let positions = new Float32Array(lod0Vertices * 3);
   for (let vertex = 0; vertex <= QUADS; vertex += 1) {
@@ -154,6 +156,9 @@ function cookedGlb(options: { copies?: boolean; instances?: boolean } = {}): Buf
     scene: 0,
     scenes: [{ nodes: [0] }],
   };
+  const primitives = json.meshes[0]?.primitives;
+  if (options.mixedParts === true && primitives?.[0] !== undefined)
+    primitives.push({ ...primitives[0], extensions: {} });
   const jsonPadded = padTo4(Buffer.from(JSON.stringify(json)), 0x20);
   const total = 12 + 8 + jsonPadded.length + 8 + binPadded.length;
   const out = Buffer.alloc(total);
@@ -422,7 +427,7 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
     expect(matrix.elements[14]).toBe(FAR_Z);
     // A ray down the z axis crosses both placements; the hits report their public ids, nearest first.
     scene.updateMatrixWorld(true);
-    const raycaster = new Raycaster(new Vector3(0.25, 0, 200), new Vector3(0, 0, -1));
+    const raycaster = new Raycaster(new Vector3(0.23, 0, 200), new Vector3(0, 0, -1));
     expect(raycaster.intersectObject(instanced).map((hit) => hit.instanceId)).toEqual([0, 1]);
     // Disposal releases the partitions; the chain's geometries stay owned by the loader.
     const disposals = levels.map((geometry) => vi.spyOn(geometry, "dispose"));
@@ -433,7 +438,7 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
   }, 120_000);
 
   it("honours the manifest's pixel budget for each imported instance", async () => {
-    // A 0.1 px budget refines the far placement, which the default 1 px budget coarsens.
+    // A 0.1 px budget refines the far placement, which the default 4 px budget coarsens.
     const { base, drawn } = await selectInstanced(
       manifestFor({ hysteresis: 0.15, maxPixelError: 0.1 }),
     );
@@ -447,5 +452,29 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
       manifestFor({ hysteresis: 0.9, maxPixelError: 1 }),
     );
     expect(drawn.get(FAR_Z)).toBe(base);
+  }, 120_000);
+
+  it("recovers each imported primitive's own extension in a multi-part instanced node", async () => {
+    stubFetch(cookedGlb({ instances: true, mixedParts: true }));
+    const value = await createAssetLoader({ basePath: "" }).model<{ scene: Object3D }>(
+      "forest.glb",
+    );
+    const parts: InstancedMesh[] = [];
+    value.scene.traverse((object) => {
+      if (object instanceof InstancedMesh && !(object.parent instanceof InstancedMesh))
+        parts.push(object);
+    });
+    expect(parts).toHaveLength(2);
+    const scene = new Scene();
+    scene.add(value.scene);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.z = 100;
+    camera.updateMatrixWorld(true);
+    updateModelLods(scene, camera, 1080);
+    const chained = parts[0] as InstancedMesh;
+    const unchained = parts[1] as InstancedMesh;
+    expect(rungsByZ(chained).get(FAR_Z)?.index?.count).toBe(COARSE_TRIANGLES * 3);
+    expect(unchained.children).toHaveLength(0);
+    expect(rungsByZ(unchained).get(FAR_Z)?.index?.count).toBe(LOD0_TRIANGLES * 3);
   }, 120_000);
 });
