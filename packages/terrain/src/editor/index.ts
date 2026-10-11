@@ -12,7 +12,7 @@ import type {
 } from "./cameras.js";
 import type { IEnvironment, IEnvironmentOperation, IEnvironmentResult } from "./environment.js";
 import type { IAuthoringDocument, IEditorActivation, IEditorSnapshot } from "./server.js";
-import { editorShell } from "./shell.js";
+import { createEditorShell } from "./shell.js";
 import type { ISpatialObservation, ISpatialQuery } from "./spatialInspector.js";
 
 export {
@@ -283,7 +283,7 @@ export async function mountTerrainEditor(options: {
   materialColours: readonly (readonly [number, number, number])[];
   onEvaluated?(event: { revision: string; state: ITerrainState; ms: number }): void;
 }): Promise<{ controller: TerrainEditorController; dispose(): void }> {
-  document.body.innerHTML = editorShell;
+  document.body.replaceChildren(createEditorShell());
   const lock = document.createElement("style");
   lock.textContent =
     'body[data-saving="true"] button,body[data-saving="true"] input,body[data-saving="true"] select,body[data-saving="true"] textarea{pointer-events:none}';

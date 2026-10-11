@@ -1,5 +1,6 @@
 import { Terrain } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
+import { makeExport } from "../src/core/export.js";
 import { decodeHeightPNG, encodeHeightPNG } from "../src/core/io.js";
 
 const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, initial) => {
@@ -78,4 +79,10 @@ describe("decodeHeightPNG error handling", () => {
     if (byte !== undefined) corrupted[16] = byte ^ 0xff;
     await expect(decodeHeightPNG(corrupted)).rejects.toThrow(/PNG CRC mismatch/);
   });
+});
+
+it("exports a project recipe before the first terrain evaluation", async () => {
+  const recipe = new Terrain({ resolution: 17 }).toJSON();
+  const archive = await makeExport(null, recipe, "project");
+  expect(JSON.parse(new TextDecoder().decode(archive.bytes))).toEqual(recipe);
 });

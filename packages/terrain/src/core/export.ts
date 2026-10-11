@@ -101,8 +101,18 @@ const json = (name: string, data: unknown): IExportFile => ({
  * @constraint authoring data only; the game owns appearance, physics and rendering
  * @example const terrain = new Terrain({ resolution: 17 }); const file = await makeExport(terrain.evaluate(), terrain.toJSON(), "project");
  */
-export async function makeExport(
+export function makeExport(
+  state: ITerrainState | null,
+  recipe: ITerrainDocument,
+  kind: "project",
+): Promise<IExportArchive>;
+export function makeExport(
   state: ITerrainState,
+  recipe: ITerrainDocument,
+  kind: ExportKind,
+): Promise<IExportArchive>;
+export async function makeExport(
+  state: ITerrainState | null,
   recipe: ITerrainDocument,
   kind: ExportKind,
 ): Promise<IExportArchive> {
@@ -113,6 +123,7 @@ export async function makeExport(
   });
   if (kind === "project")
     return result("terrain-recipe.json", "application/json", json("", recipe).bytes);
+  if (!state) throw new Error("Wait for initial build");
   if (kind === "png")
     return result("terrain-height16.png", "image/png", await encodeHeightPNG(state));
   if (kind === "glb") return result("terrain.glb", "model/gltf-binary", encodeGLB(bakeMesh(state)));

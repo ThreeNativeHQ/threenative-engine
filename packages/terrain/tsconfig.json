@@ -1,8 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"],
-    "allowJs": true
+    "types": ["node"]
   },
-  "include": ["src/**/*.ts", "src/editor/**/*.js", "__tests__/**/*.ts"]
+  "include": ["src/**/*.ts", "__tests__/**/*.ts"]
 }

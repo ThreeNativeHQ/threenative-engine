@@ -28,7 +28,7 @@ export const PRESETS = [
 export function createPreset(id = "alpine", { resolution = 257, seed = 73, size = 512 } = {}) {
   const t = new Terrain({ size, resolution, seed });
   const q = size / 512;
-  const pt = (x, y, z) => [x * q, y * q, z * q];
+  const pt = (x: number, y: number, z: number): [number, number, number] => [x * q, y * q, z * q];
   if (id === "blank") return t;
   t.transaction(() => {
     if (id === "alpine") {
@@ -41,7 +41,7 @@ export function createPreset(id = "alpine", { resolution = 257, seed = 73, size 
         warp: 35 * q,
         octaves: 5,
       });
-      const peaks = [
+      const peaks: [number, number, number, number, number][] = [
         [-137, -105, 135, 155, 133],
         [-10, -150, 136, 130, 156],
         [110, -115, 135, 147, 137],
@@ -271,7 +271,7 @@ export function createPreset(id = "alpine", { resolution = 257, seed = 73, size 
         [1, -140, -110],
         [2, 83, -86],
         [3, 150, 140],
-      ])
+      ] as const)
         t.stamp({
           id: `mesa-${i}`,
           label: `Mesa ${i}`,

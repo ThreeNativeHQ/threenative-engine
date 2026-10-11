@@ -1,4 +1,4 @@
-const paths = {
+const paths: Record<string, string> = {
   sculpt: "M3 19 9 7l4 7 3-5 5 10H3Z M9 3v5M6 5h6",
   smooth: "M2 15c4 0 3-6 7-6s3 6 7 6 4-4 6-4 M3 20h18",
   flatten: "M2 17h5l3-8h7l5 8 M9 5h9",
@@ -35,9 +35,24 @@ const paths = {
   clear: "m3 15 9-12 10 8-8 10H9l-6-6Zm5-6 10 8M14 21h8",
   terrace: "M2 20h5v-5h5v-5h5V5h5",
 };
-export function icon(name) {
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] ?? paths.layers}"/></svg>`;
+export function icon(name: string): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [key, value] of Object.entries({
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "1.55",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  }))
+    svg.setAttribute(key, value);
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", paths[name] ?? paths.layers ?? "");
+  svg.append(path);
+  return svg;
 }
-export function fillIcons(root = document) {
-  for (const el of root.querySelectorAll("[data-icon]")) el.innerHTML = icon(el.dataset.icon);
+export function fillIcons(root: ParentNode = document): void {
+  for (const el of root.querySelectorAll<HTMLElement>("[data-icon]"))
+    el.replaceChildren(icon(el.dataset.icon ?? "layers"));
 }

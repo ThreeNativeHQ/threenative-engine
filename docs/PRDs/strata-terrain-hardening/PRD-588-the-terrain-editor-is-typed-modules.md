@@ -1,6 +1,6 @@
 # PRD-588 — The terrain editor is typed modules, not one 1481-line closure
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P2 — `app.js` stays untyped, string-built and mouse-only until AC-1 to AC-5 land; it slows every editor fix after PRD-587.
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
@@ -38,8 +38,8 @@ cook covers its contract. React is not required by this PRD; decide it after the
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `src/editor/` has no `.js` source and passes `tsc` strict. proof: `pnpm --filter @threenative/terrain typecheck` — Evidence: pending.
-- [ ] AC-2 [local]: No `innerHTML` assignment remains in `src/editor/`. proof: a spec that greps the source — Evidence: pending.
+- [x] AC-1 [local]: `src/editor/` has no `.js` source and passes `tsc` strict. proof: `pnpm --filter @threenative/terrain typecheck` — Evidence: exit 0 after dependency builds; source spec 3/3 passed (2026-10-11).
+- [x] AC-2 [local]: No `innerHTML` assignment remains in `src/editor/`. proof: `editor-source.spec.ts` greps the source — Evidence: 3/3 passed, including no JS and no HTML sinks (2026-10-11).
 - [ ] AC-3 [local]: Every tool is reachable and usable by keyboard, and errors are announced through an `aria-live` region. proof: `editor.playtest.json` keyboard steps — Evidence: pending.
 - [ ] AC-4 [local]: Picking, gizmo and brush mechanics live in the package; the example keeps only appearance. proof: `pnpm tsx scripts/count-loc.ts` before/after plus `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending.
 - [ ] AC-5 [local]: Small routes reject a 10 MiB body with 413, and error responses carry no document snapshot. proof: `editor-document.spec.ts` cases — Evidence: pending.
@@ -48,10 +48,10 @@ cook covers its contract. React is not required by this PRD; decide it after the
 ## Execution Phases
 
 #### Phase 1: typed and split
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/terrain/src/editor/app.js` → `app/*.ts`
-- [ ] Strict TS, no JS. proof: typecheck
-- [ ] No `innerHTML`. proof: grep spec
+- [x] Strict TS, no JS. proof: `pnpm --filter @threenative/terrain typecheck` — exit 0; 12 responsibility modules, largest 319 lines; presets/icons/worker are TypeScript (2026-10-11).
+- [x] No `innerHTML`. proof: `editor-source.spec.ts` — 3/3 passed; shell and panels use DOM construction (2026-10-11).
 
 #### Phase 2: mechanics move, server hygiene
 **Status:** NOT STARTED

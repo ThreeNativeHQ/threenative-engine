@@ -11,7 +11,7 @@ export default defineConfig({
     export: "src/export.ts",
     "editor/server": "src/editor/server.ts",
     "editor/index": "src/editor/index.ts",
-    "editor/worker": "src/editor/worker.js",
+    "editor/worker": "src/editor/worker.ts",
     "mcp/server": "src/mcp/server.ts",
     "mcp/cook-child": "src/mcp/cook-child.ts",
   },
