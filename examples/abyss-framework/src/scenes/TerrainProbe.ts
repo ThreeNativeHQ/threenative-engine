@@ -17,12 +17,33 @@ import {
   RigidBody3D,
 } from "@threenative/physics";
 import * as THREE from "three";
+import { positionWorld, vec4 } from "three/tsl";
+import { MeshBasicNodeMaterial } from "three/webgpu";
 import { terrainMaterial } from "../render/terrain.js";
 import { TERRAIN_SEED, terrainHeight } from "../world/terrainSampler.js";
 
 const TILE_SIZE = 64;
 const TILE_RESOLUTION = 65;
 const PLAYER_SPEED = 150;
+// 128 RGBA32F texels are 2,048 bytes a row, so the readback needs no row padding.
+const GPU_SURFACE_SIZE = 128;
+const GPU_SURFACE_OBSERVATIONS = 8;
+
+interface IGpuRenderer {
+  getClearAlpha(): number;
+  getClearColor(target: THREE.Color): THREE.Color;
+  getRenderTarget(): THREE.RenderTarget | null;
+  readRenderTargetPixelsAsync(
+    target: THREE.RenderTarget,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): Promise<Float32Array>;
+  render(scene: THREE.Scene, camera: THREE.Camera): void;
+  setClearColor(color: THREE.ColorRepresentation, alpha?: number): void;
+  setRenderTarget(target: THREE.RenderTarget | null): void;
+}
 
 const initialState = {
   chunks: 0,
@@ -91,6 +112,13 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
   #lodEligibilityTrace: Record<string, unknown>[] = [];
   #lodEligibilityOverflow = 0;
   #sceneUpdateTick = 0;
+  #gpuSurfaceMaterial: MeshBasicNodeMaterial | undefined;
+  #gpuSurfaceStarted = 0;
+  #gpuSurfaceFrames = 0;
+  #gpuSurfaceSamples = 0;
+  #gpuSurfaceMaxError = 0;
+  #gpuSurfaceFailure: Error | undefined;
+  #gpuSurfaceEpoch = 0;
 
   override enter(ctx: TerrainCtx): void {
     this.#player = new TerrainPlayer(ctx);
@@ -176,6 +204,10 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
       this.#checkParity();
     };
     ctx.beforeRender(() => {
+      const failure = this.#gpuSurfaceFailure;
+      this.#gpuSurfaceFailure = undefined;
+      if (failure !== undefined) throw failure;
+      this.#observeGpuSurface(ctx);
       // One entry per world draw; join the steady tail to runtime.performance's 1,024-frame tail.
       this.#blendFrames.push(this.#frameBlendingTiles);
       if (this.#blendFrames.length > 1_024) this.#blendFrames.shift();
@@ -223,7 +255,9 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
         lodEligibilityTrace: {
           sampling: "beforeRender; sceneUpdateTick is a scene-local update ordinal",
           overflow: this.#lodEligibilityOverflow,
-          samples: [...this.#lodEligibilityTrace],
+          // The bridge rejects snapshots over 1 MB; each entry is ~3 KB, so expose the newest 64.
+          retained: this.#lodEligibilityTrace.length,
+          samples: this.#lodEligibilityTrace.slice(-64),
         },
         cpuFallbackIterations: this.#capabilities?.cpuFallbackIterations ?? 0,
         generation: this.#capabilities?.generation ?? "unsupported",
@@ -234,6 +268,9 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
         activeMorphFrames: this.#activeMorphFrames,
         maxPositionError: this.#maxPositionError,
         maxNormalError: this.#maxNormalError,
+        gpuSurfaceFrames: this.#gpuSurfaceFrames,
+        gpuSurfaceSamples: this.#gpuSurfaceSamples,
+        gpuSurfaceMaxError: this.#gpuSurfaceMaxError,
       }),
       dispose: () => this.#tiles?.dispose(),
       object: this.#tiles,
@@ -282,6 +319,14 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
     this.#lodEligibilityTrace = [];
     this.#lodEligibilityOverflow = 0;
     this.#sceneUpdateTick = 0;
+    this.#gpuSurfaceEpoch++;
+    this.#gpuSurfaceMaterial?.dispose();
+    this.#gpuSurfaceMaterial = undefined;
+    this.#gpuSurfaceStarted = 0;
+    this.#gpuSurfaceFrames = 0;
+    this.#gpuSurfaceSamples = 0;
+    this.#gpuSurfaceMaxError = 0;
+    this.#gpuSurfaceFailure = undefined;
   }
 
   #view(ctx: TerrainCtx) {
@@ -356,6 +401,139 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
     }
     if (active) this.#activeMorphFrames++;
     this.#parityFrames++;
+  }
+
+  // AC-1: draws a blending tile's morphed source mesh as world positions into a float target,
+  // then checks the readback against a ray cast on a same-frame copy of the CPU reference.
+  #observeGpuSurface(ctx: TerrainCtx): void {
+    const gpu = this.#tiles;
+    const cpu = this.#reference;
+    if (ctx.renderer.kind !== "webgpu" || gpu === undefined || cpu === undefined) return;
+    if (this.#gpuSurfaceStarted >= GPU_SURFACE_OBSERVATIONS) return;
+    for (const key of gpu.residentKeys) {
+      const tile = gpu.getTile(key);
+      const index = tile?.lod.levels.findIndex(({ object }) => object.visible) ?? -1;
+      const mesh = tile?.lod.levels[index]?.object;
+      const oracle = cpu.getTile(key)?.lod.levels[index]?.object;
+      if (!(mesh instanceof THREE.Mesh) || !(oracle instanceof THREE.Mesh)) continue;
+      if (!(mesh.morphTargetInfluences ?? []).some((weight) => weight > 0 && weight < 1)) continue;
+      this.#gpuSurfaceStarted++;
+      const epoch = this.#gpuSurfaceEpoch;
+      void this.#observeSurface(ctx.renderer.raw as IGpuRenderer, mesh, oracle).then(
+        ({ maxError, samples }) => {
+          if (epoch !== this.#gpuSurfaceEpoch) return;
+          this.#gpuSurfaceFrames++;
+          this.#gpuSurfaceSamples += samples;
+          this.#gpuSurfaceMaxError = Math.max(this.#gpuSurfaceMaxError, maxError);
+        },
+        (error: unknown) => {
+          if (epoch === this.#gpuSurfaceEpoch)
+            this.#gpuSurfaceFailure = error instanceof Error ? error : new Error(String(error));
+        },
+      );
+      return;
+    }
+  }
+
+  async #observeSurface(
+    raw: IGpuRenderer,
+    mesh: THREE.Mesh,
+    oracle: THREE.Mesh,
+  ): Promise<{ maxError: number; samples: number }> {
+    // Copy everything now: the next blend frame rewrites the reference positions.
+    const positions = oracle.geometry.getAttribute("position");
+    const reference = new THREE.Mesh(
+      new THREE.BufferGeometry()
+        .setAttribute("position", new THREE.BufferAttribute(Float32Array.from(positions.array), 3))
+        .setIndex(oracle.geometry.index),
+      new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+    );
+    const target = new THREE.RenderTarget(GPU_SURFACE_SIZE, GPU_SURFACE_SIZE, {
+      depthBuffer: true,
+      format: THREE.RGBAFormat,
+      type: THREE.FloatType,
+    });
+    try {
+      mesh.updateWorldMatrix(true, false);
+      reference.matrixAutoUpdate = false;
+      reference.matrix.copy(mesh.matrixWorld);
+      reference.updateMatrixWorld(true);
+      // fragmentNode, not colorNode: colorNode output clamps to >= 0, zeroing negative y and z.
+      this.#gpuSurfaceMaterial ??= new MeshBasicNodeMaterial({
+        fragmentNode: vec4(positionWorld, 1),
+        fog: false,
+        side: THREE.DoubleSide,
+        toneMapped: false,
+      });
+      // The same geometry shares the tile's morph texture; the copied weights are the drawn blend.
+      const probe = new THREE.Mesh(mesh.geometry, this.#gpuSurfaceMaterial);
+      probe.matrixAutoUpdate = false;
+      probe.matrix.copy(mesh.matrixWorld);
+      probe.frustumCulled = false;
+      probe.morphTargetInfluences = [...(mesh.morphTargetInfluences ?? [])];
+      const scene = new THREE.Scene();
+      scene.add(probe);
+      scene.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromBufferAttribute(positions as THREE.BufferAttribute);
+      const center = bounds.getCenter(new THREE.Vector3()).applyMatrix4(mesh.matrixWorld);
+      const half = Math.max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z) * 0.55;
+      const camera = new THREE.OrthographicCamera(-half, half, half, -half, 1, 8192);
+      camera.up.set(0, 0, -1);
+      camera.position.set(center.x, 4096, center.z);
+      camera.lookAt(center.x, 0, center.z);
+      camera.updateMatrixWorld(true);
+      const previousTarget = raw.getRenderTarget();
+      const previousColor = raw.getClearColor(new THREE.Color());
+      const previousAlpha = raw.getClearAlpha();
+      try {
+        raw.setRenderTarget(target);
+        raw.setClearColor(0x000000, 0);
+        raw.render(scene, camera);
+      } finally {
+        // Restore before awaiting: the main frame must not draw into the probe target.
+        raw.setRenderTarget(previousTarget);
+        raw.setClearColor(previousColor, previousAlpha);
+      }
+      const pixels = await raw.readRenderTargetPixelsAsync(
+        target,
+        0,
+        0,
+        GPU_SURFACE_SIZE,
+        GPU_SURFACE_SIZE,
+      );
+      const raycaster = new THREE.Raycaster();
+      const origin = new THREE.Vector3();
+      const down = new THREE.Vector3(0, -1, 0);
+      let maxError = 0;
+      let samples = 0;
+      // Interior texels only: the frame is 10% wider than the footprint, so every one is covered.
+      for (let row = 16; row < GPU_SURFACE_SIZE - 16; row += 8) {
+        for (let column = 16; column < GPU_SURFACE_SIZE - 16; column += 8) {
+          const offset = (row * GPU_SURFACE_SIZE + column) * 4;
+          const x = pixels[offset] ?? Number.NaN;
+          const y = pixels[offset + 1] ?? Number.NaN;
+          const z = pixels[offset + 2] ?? Number.NaN;
+          if (!((pixels[offset + 3] ?? 0) > 0.5))
+            throw new Error(`GPU surface texel (${column}, ${row}) is not covered.`);
+          raycaster.set(origin.set(x, 4096, z), down);
+          const hit = raycaster.intersectObject(reference)[0];
+          if (hit === undefined)
+            throw new Error(`CPU reference has no surface under GPU texel (${x}, ${z}).`);
+          const error = Math.abs(y - hit.point.y);
+          if (!Number.isFinite(error) || error > 0.001)
+            throw new Error(
+              `GPU surface is ${error} m from the CPU blend at (${x}, ${z}): texel=${column},${row} rgba=${pixels[offset]},${pixels[offset + 1]},${pixels[offset + 2]},${pixels[offset + 3]} hit=${hit.point.toArray()} center=${center.toArray()} half=${half} boundsMin=${bounds.min.toArray()} boundsMax=${bounds.max.toArray()} world=${mesh.matrixWorld.elements.join(",")}`,
+            );
+          maxError = Math.max(maxError, error);
+          samples++;
+        }
+      }
+      return { maxError, samples };
+    } finally {
+      reference.geometry.dispose();
+      (reference.material as THREE.Material).dispose();
+      target.dispose();
+    }
   }
 
   #publish(ctx: TerrainCtx): void {

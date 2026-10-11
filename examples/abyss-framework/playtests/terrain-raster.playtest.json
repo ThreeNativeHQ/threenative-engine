@@ -114,6 +114,18 @@
         "component": "maxNormalError",
         "lte": 0.001,
         "allowTrivial": "Every observed normalized morph normal is compared with the independent CPU reference; mismatches throw."
+      },
+      {
+        "entity": "terrain",
+        "component": "gpuSurfaceSamples",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "terrain",
+        "component": "gpuSurfaceMaxError",
+        "lte": 0.001,
+        "allowTrivial": "Every sampled GPU-rendered world position is compared with a ray cast on a same-frame copy of the CPU reference; an uncovered texel, missed ray, failed readback or error above 1 mm throws."
       }
     ],
     "visibility": [
