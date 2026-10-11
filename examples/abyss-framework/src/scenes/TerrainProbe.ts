@@ -88,6 +88,9 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
   #maxBlendingTiles = 0;
   #frameBlendingTiles = 0;
   #blendFrames: number[] = [];
+  #lodEligibilityTrace: Record<string, unknown>[] = [];
+  #lodEligibilityOverflow = 0;
+  #sceneUpdateTick = 0;
 
   override enter(ctx: TerrainCtx): void {
     this.#player = new TerrainPlayer(ctx);
@@ -176,6 +179,34 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
       // One entry per world draw; join the steady tail to runtime.performance's 1,024-frame tail.
       this.#blendFrames.push(this.#frameBlendingTiles);
       if (this.#blendFrames.length > 1_024) this.#blendFrames.shift();
+      if (this.#lodEligibilityTrace.length >= 1_024) {
+        this.#lodEligibilityOverflow++;
+      } else {
+        const snapshot = tiles.debug();
+        const fields = [
+          "lodPolicy",
+          "residentKeys",
+          "pendingConstruction",
+          "ringEpoch",
+          "lodTransitions",
+          "terrainTiles",
+          "lodDecisions",
+        ];
+        this.#lodEligibilityTrace.push({
+          renderSample: this.#lodEligibilityTrace.length,
+          sceneUpdateTick: this.#sceneUpdateTick,
+          parityFrame: this.#parityFrames,
+          playerPosition: this.#player?.mesh.position.toArray() ?? null,
+          lodPolicy: snapshot.lodPolicy ?? null,
+          residentKeys: snapshot.residentKeys ?? null,
+          pendingConstruction: snapshot.pendingConstruction ?? null,
+          ringEpoch: snapshot.ringEpoch ?? null,
+          lodTransitions: snapshot.lodTransitions ?? null,
+          terrainTiles: snapshot.terrainTiles ?? null,
+          lodDecisions: snapshot.lodDecisions ?? null,
+          missingFields: fields.filter((field) => snapshot[field] === undefined),
+        });
+      }
     });
     ctx.entities.add("terrain", {
       debug: () => ({
@@ -189,6 +220,11 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
         },
         maxBlendingTiles: this.#maxBlendingTiles,
         blendFrames: [...this.#blendFrames],
+        lodEligibilityTrace: {
+          sampling: "beforeRender; sceneUpdateTick is a scene-local update ordinal",
+          overflow: this.#lodEligibilityOverflow,
+          samples: [...this.#lodEligibilityTrace],
+        },
         cpuFallbackIterations: this.#capabilities?.cpuFallbackIterations ?? 0,
         generation: this.#capabilities?.generation ?? "unsupported",
         gpu: this.#capabilities?.gpu ?? false,
@@ -216,6 +252,7 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
   }
 
   override update(ctx: TerrainCtx, dt: number): void {
+    this.#sceneUpdateTick++;
     const player = this.#player;
     const tiles = this.#tiles;
     if (player === undefined || tiles === undefined) return;
@@ -242,6 +279,9 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
     this.#maxBlendingTiles = 0;
     this.#frameBlendingTiles = 0;
     this.#blendFrames = [];
+    this.#lodEligibilityTrace = [];
+    this.#lodEligibilityOverflow = 0;
+    this.#sceneUpdateTick = 0;
   }
 
   #view(ctx: TerrainCtx) {
