@@ -7638,6 +7638,38 @@
     },
     {
       "aliases": [],
+      "constraints": ["Runtime subpath; the game supplies every appearance and collision choice"],
+      "example": "await addStarterWorld(ctx, follow, spec);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function addStarterWorld<Extra extends { … }",
+      "situations": [
+        "attach a baked starter world with game-owned surfaces, prop dressing and water"
+      ],
+      "summary": "Load caller-authored starter data with one scene lifetime; all appearance comes from spec.",
+      "supersedes": [],
+      "symbol": "addStarterWorld"
+    },
+    {
+      "aliases": [],
+      "constraints": ["Shapes and reach are supplied by the game; detach releases every body"],
+      "example": "new PropColliders(ctx, follow, manifest, records, shapes, reach, name);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export class PropColliders extends Object3D implements IComputeDriven { … }",
+      "situations": ["attach nearby prop collision bodies from baked placement records"],
+      "summary": "Stream caller-specified fixed collision shapes around a moving follow object.",
+      "supersedes": [],
+      "symbol": "PropColliders"
+    },
+    {
+      "aliases": [],
       "constraints": ["creates only geometry; the caller owns its material, scene and disposal"],
       "example": "const geometry = toGeometry(bakeMesh(new Terrain({ resolution: 17 }).evaluate()));",
       "importPath": "@threenative/terrain/three",

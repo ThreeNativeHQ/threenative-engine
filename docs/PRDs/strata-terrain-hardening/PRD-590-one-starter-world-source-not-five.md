@@ -44,11 +44,13 @@ the example, or the code they test moves into the package (PRD-591).
 ## Execution Phases
 
 #### Phase 1: bake and world source
-**Status:** PARTIAL — bake dedup verified; optional starter-world loader dedup deferred.
+**Status:** DONE
 **Files:** `packages/terrain/src/kit.ts` (new), `packages/terrain/tsup.config.ts`, `packages/terrain/package.json`, `starter/*/bake.mjs`, `packages/create-threenative/scripts/stage-terrain-kits.mjs`
 - [x] Same bytes from one bake helper. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` — 2026-10-11: 19/19 before and after, including all-five golden hashes and invalid flags. `pnpm exec vitest run packages/create-threenative/__tests__/terrain-kit.spec.ts`: 27/27 after preparing its missing dist with `pnpm exec tsup --config tsup.config.ts` in that package (first run 26/27). `pnpm --filter @threenative/terrain build`: exit 0, including publint.
 
 `pnpm exec tsc -p packages/terrain --noEmit`: exit 1, six errors from the existing example import of missing generated `examples/strata-terrain-preview/src/world/horizon.json`; no kit/helper diagnostics. No assertions or goldens changed. World source and later phases remain open.
+
+- [x] Shared starter-world mechanism with game-owned look. proof: terrain runtime specs, terrain build and scaffolder terrain-kit spec — 2026-10-11: all 70 runtime tests and 27 scaffold tests passed; build including declarations and publint exited 0. Public `@threenative/terrain/starter` keeps Node-only bake imports out of browser games.
 
 #### Phase 2: fixtures and specs
 **Status:** NOT STARTED
@@ -57,3 +59,7 @@ the example, or the code they test moves into the package (PRD-591).
 - [ ] Table-driven spec. proof: `pnpm --filter @threenative/terrain test`
 - [ ] No package spec imports the example. proof: grep spec
 - [ ] Line count drops by 4 000+. proof: `count-loc.ts`
+
+## Execution scope (2026-10-11)
+
+Parts A–D run only in this checkout, one local commit each, no push. Reuse WorldCells, loadWorldHeightmap, Heightfield and existing physics; keep per-kit dress/water/sky choices in copied source. Preserve all assertions and five bake hashes. Baseline before Part A: 17 337 lines across 86 authored kit, fixture and package-test files (.ts/.mjs/.mts/.json); 36 package spec files. Final census also includes extracted package helpers and moved example specs, so moving files earns no LOC reduction.

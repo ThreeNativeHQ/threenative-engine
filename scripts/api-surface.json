@@ -414,6 +414,7 @@
         "./export",
         "./kit",
         "./package.json",
+        "./starter",
         "./three"
       ],
       "symbols": {
@@ -439,6 +440,8 @@
         "@threenative/terrain/editor#validateSurfaces": "export function validateSurfaces( input: unknown, assets: readonly IProjectAsset[], ): ISurfaceMappings { … }",
         "@threenative/terrain/export#exportWorldGLB": "export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }",
         "@threenative/terrain/kit#bakeKit": "export async function bakeKit( url: string, { … }",
+        "@threenative/terrain/starter#addStarterWorld": "export async function addStarterWorld<Extra extends { … }",
+        "@threenative/terrain/starter#PropColliders": "export class PropColliders extends Object3D implements IComputeDriven { … }",
         "@threenative/terrain/three#toGeometry": "export function toGeometry(mesh: IBakedMesh): BufferGeometry { … }",
         "@threenative/terrain#applyPlacementOverrides": "export function applyPlacementOverrides(state: ITerrainState, value: unknown): ITerrainState { … }",
         "@threenative/terrain#bakeMesh": "export function bakeMesh( state: ITerrainState, { … }",

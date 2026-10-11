@@ -6373,6 +6373,40 @@ export async function bakeKit( url: string, { … }
 await bakeKit(import.meta.url, { sky: "hdri/game-sky.hdr" });
 ```
 
+## `@threenative/terrain/starter`
+
+### `addStarterWorld`
+
+`function` — Load caller-authored starter data with one scene lifetime; all appearance comes from spec.
+
+```ts
+export async function addStarterWorld<Extra extends { … }
+```
+
+- **Use when:** attach a baked starter world with game-owned surfaces, prop dressing and water
+- **Constraints:** Runtime subpath; the game supplies every appearance and collision choice
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+await addStarterWorld(ctx, follow, spec);
+```
+
+### `PropColliders`
+
+`class` — Stream caller-specified fixed collision shapes around a moving follow object.
+
+```ts
+export class PropColliders extends Object3D implements IComputeDriven { … }
+```
+
+- **Use when:** attach nearby prop collision bodies from baked placement records
+- **Constraints:** Shapes and reach are supplied by the game; detach releases every body
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+new PropColliders(ctx, follow, manifest, records, shapes, reach, name);
+```
+
 ## `@threenative/terrain/three`
 
 ### `toGeometry`

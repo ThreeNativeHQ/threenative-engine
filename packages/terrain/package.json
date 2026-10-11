@@ -51,6 +51,10 @@
     "./editor": {
       "types": "./dist/editor/index.d.ts",
       "import": "./dist/editor/index.js"
+    },
+    "./starter": {
+      "types": "./dist/starter.d.ts",
+      "import": "./dist/starter.js"
     }
   },
   "publishConfig": {

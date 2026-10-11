@@ -6,6 +6,7 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     kit: "src/kit.ts",
+    starter: "src/starter.ts",
     three: "src/three.ts",
     export: "src/export.ts",
     "editor/server": "src/editor/server.ts",
@@ -19,7 +20,7 @@ export default defineConfig({
   dts: true,
   sourcemap: false,
   clean: true,
-  external: ["three"],
+  external: ["three", "@threenative/core", "@threenative/physics"],
   splitting: false,
   treeshake: true,
 });
