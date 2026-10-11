@@ -69,7 +69,7 @@ Core audit of `2d2124792` (2026-10-10):
   - After hunk removal (2026-10-11, `1b6b0f593`): the selected conformance row `compressed-texture-preparation` passed on web (headed, adapter `nvidia`/`turing`, 3.4 s, no page or GPU validation errors) and on the desktop Dawn host (30.2 s, `native.completed` true, no GPU validation errors). The two screenshots match: green upper half, red lower half. The other 103 rows report `blocked`.
   - Strata preview WebGPU playtest after hunk removal (2026-10-11): `terrain.playtest.json`, headed, `--browser-recipe webgpu`, adapter `nvidia`/`turing`, ran to completion in 16 min 23 s with `--server-timeout 600000 --timeout 120000` (the default 15 s limits expired during the cold bake and the first Vite transform). Result: 59 of 62 assertions pass and the scenario fails. The three failures are the runtime budgets that PRD-585 already records as failing on this host: `afterFirstFrameTaskMs` up to 9 685 ms (limit 250), `timeToReadyMs` (limit 15 000) and `maxViewGpuMs` up to 62.09 ms (limit 12). The console, network and runtime-diagnostic policies pass. Captures of all five kits show textured bark, foliage, grass, rock and sand. AC-3 stays open until the preview passes as a whole.
 - [x] AC-4 [local]: Each remaining hunk (depth cache, 3D guard, bind-group invalidation) has a spec that fails without it. proof: `three-patch-retained.spec.ts` on 2026-10-11 — depth cache red 1 failed/green 1 passed; 3D attachment guard red 1 failed/green 1 passed; bind-group invalidation red 1 failed/green 1 passed. Stock source hashes verified; requested suite passes 106/106.
-- [ ] AC-5 [local]: The `updateTexture` wrapper costs under 0.05 ms per frame on machinefall. proof: `TN_FRAME_SPANS` A/B, two runs per arm — Evidence: pending.
+- [x] AC-5 [local]: The `updateTexture` wrapper costs under 0.05 ms per frame on machinefall. proof: `TN_FRAME_SPANS` A/B, two runs per arm — Evidence (2026-10-11): the wrapper no longer exists, so it costs 0 ms per frame by construction and there is nothing left to A/B. `1b6b0f593` deleted it with the upload lane, because only that lane wrote `_pendingUploads` and `uploadError`. `three-compressed-upload.spec.ts` fails if `updateTextureAsync`, `_uploadTail`, `_pendingUploads` or `uploadError` reappear in the generated patches or the installed three build (106 of 106 core patch and upload specs pass at `c92f8c98a`). No `TN_FRAME_SPANS` run was made.
 
 ## Execution Phases
 
@@ -87,7 +87,7 @@ Core audit of `2d2124792` (2026-10-10):
 #### Phase 3: remaining hunks proven
 **Status:** NOT STARTED
 - [x] One failing-without spec per hunk. proof: `three-patch-retained.spec.ts`, 2026-10-11: stock red 3 failed/0 passed (depth, 3D guard, bind-group invalidation each 1 failed); patched green 3 passed/0 failed (each 1 passed).
-- [ ] Wrapper cost measured. proof: `TN_FRAME_SPANS` A/B
+- [x] Wrapper cost measured. proof: `TN_FRAME_SPANS` A/B — 2026-10-11: the wrapper was deleted in `1b6b0f593`, so the cost is 0 ms by construction; the absence guard in `three-compressed-upload.spec.ts` keeps it out. No A/B run was needed.
 
 ## Decisions
 
