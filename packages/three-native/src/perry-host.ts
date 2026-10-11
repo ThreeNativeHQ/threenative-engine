@@ -207,8 +207,20 @@ function observe(methodPointer: number, argumentPointer: number): number {
   observations.delete(key);
   return pointer;
 }
+function runDueTimers(): void {
+  for (const [id, timer] of timers) {
+    if (timer.due > time) continue;
+    if (timer.interval === undefined) timers.delete(id);
+    else timer.due += timer.interval;
+    timer.callback();
+  }
+}
+// The first simulation tick ends the hold: until then a runner has not started the clock.
+let ticked = false;
+let lastFrameMs: number | undefined;
 const status = playerBind(
   (dt: number) => {
+    ticked = true;
     audioHost.update();
     time += dt * 1000;
     const codes = playerCodes();
@@ -225,12 +237,7 @@ const status = playerBind(
         held.delete(code);
         keyEvent("keyup", code);
       }
-    for (const [id, timer] of timers) {
-      if (timer.due > time) continue;
-      if (timer.interval === undefined) timers.delete(id);
-      else timer.due += timer.interval;
-      timer.callback();
-    }
+    runDueTimers();
     if (runner) {
       const bridge = globals.__THREENATIVE_PLAYTEST_BRIDGE__ as IBridge | undefined;
       if (typeof bridge?.advance === "function") void bridge.advance(1);
@@ -240,7 +247,16 @@ const status = playerBind(
     // Decodes settle on the host's frames, not on simulation ticks: a game held by a runner
     // (no ticks yet) still finishes loading its audio before its first describe().
     audioHost.update();
-    if (runner) flushFrames(frameMs);
+    if (!runner) return;
+    // A game held by a runner has no ticks, yet its loading timers (setTimeout 0 between warm-up
+    // slices) must fire: until the first tick they follow the host's frame clock, as the V8
+    // host's page timers follow real time.
+    if (!ticked) {
+      if (lastFrameMs !== undefined) time += frameMs - lastFrameMs;
+      lastFrameMs = frameMs;
+      runDueTimers();
+    }
+    flushFrames(frameMs);
   },
   observe,
 );

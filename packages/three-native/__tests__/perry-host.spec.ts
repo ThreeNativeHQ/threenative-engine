@@ -131,6 +131,15 @@ it("drives core frames, input, timers and async mailbox observations through pla
   const keyUp = vi.fn();
   canvas.addEventListener("keydown", keyDown);
   canvas.addEventListener("keyup", keyUp);
+  // Before the runner's first tick the game is held, and its loading timers follow the host's
+  // frame clock, as the V8 host's page timers follow real time.
+  const held = vi.fn();
+  sandbox.setTimeout(held, 10);
+  frame(0);
+  frame(8);
+  expect(held).not.toHaveBeenCalled();
+  frame(20);
+  expect(held).toHaveBeenCalledTimes(1);
   codes = "KeyW";
   update(1 / 60);
   expect(keyDown).toHaveBeenCalledWith({ code: "KeyW", key: "w" });
