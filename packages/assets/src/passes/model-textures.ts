@@ -11,6 +11,7 @@ import {
   type ITextureQuality,
   imageQuality,
   measureKtx2,
+  transcodeKtx2ToAstc,
 } from "../image-quality.js";
 import { encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
@@ -442,6 +443,7 @@ export async function encodeTextureLadder(
   width: number,
   height: number,
   options: IImageQualityOptions & {
+    readonly astc?: boolean;
     readonly forced?: TextureCodec;
     /** Automatic source retention: candidates that cannot save bytes need no quality score. */
     readonly maxBytes?: number;
@@ -466,7 +468,7 @@ export async function encodeTextureLadder(
         : candidate.rdoLambda === undefined
           ? candidate.codec
           : `uastc+rdo λ${candidate.rdoLambda} +zstd`;
-    const encoded =
+    const basis =
       candidate.codec === "none"
         ? undefined
         : await encodeToKTX2(new Uint8Array([0]), {
@@ -480,6 +482,8 @@ export async function encodeTextureLadder(
             needSupercompression: true,
             ...(candidate.rdoLambda === undefined ? {} : { rdoLambda: candidate.rdoLambda }),
           });
+    const encoded =
+      options.astc === true && basis !== undefined ? await transcodeKtx2ToAstc(basis) : basis;
     if (encoded !== undefined && options.maxBytes !== undefined) {
       if (encoded.byteLength >= options.maxBytes) {
         // ponytail: ETC1S is the ladder's lowest bitrate, so on a large image the UASTC rungs it
@@ -498,10 +502,11 @@ export async function encodeTextureLadder(
       encoded.byteLength >= smallest.encoded.byteLength
     )
       continue;
+    // Byte admission uses the emitted buffer; shipped ASTC quality still needs its own decoder.
     const score =
-      encoded === undefined
+      basis === undefined
         ? imageQuality(data, data, width, height, options)
-        : await measureKtx2(data, encoded, width, height, options);
+        : await measureKtx2(data, basis, width, height, options);
     if (
       score.status !== "below-floor" &&
       ((options.alphaThresholds?.length ?? 0) > 0 || score.alpha.meanAbsoluteError === 0)

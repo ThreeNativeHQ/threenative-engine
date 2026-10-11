@@ -1644,7 +1644,9 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
               }),
           ...embeddedTexturesFor(configuredModels.textures, runtimeDecoderCapabilities.ktx2),
         };
-  const mobileAstc = options.platform === "android" || options.platform === "ios";
+  const mobileAstc =
+    (options.platform === "android" || options.platform === "ios") &&
+    !runtimeDecoderCapabilities.ktx2;
   const textures =
     configuredTextures === undefined
       ? undefined
@@ -1660,7 +1662,11 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const builtinPasses: IAssetPass[] = [];
   const passSpecs: PassSpec[] = [];
   const registerBuiltin = (pass: IAssetPass, spec: PassSpec): void => {
-    if (spec.needsRuntimeDecoder === true && !runtimeDecoderAvailable) return;
+    if (
+      spec.needsRuntimeDecoder === true &&
+      !(spec.kind === "texture" ? runtimeDecoderCapabilities.ktx2 : runtimeDecoderAvailable)
+    )
+      return;
     builtinPasses.push(pass);
     passSpecs.push(spec);
   };
@@ -1793,7 +1799,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     texturesActive:
       textures !== undefined &&
       options.passes === undefined &&
-      runtimeDecoderAvailable &&
+      runtimeDecoderCapabilities.ktx2 &&
       !mobileAstc,
   };
 }

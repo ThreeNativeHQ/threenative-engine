@@ -7,7 +7,6 @@ import {
   IMAGE_QUALITY_IDENTITY,
   imageQuality,
   resolveImageQualityFloor,
-  transcodeKtx2ToAstc,
 } from "../image-quality.js";
 import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
@@ -112,7 +111,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
     appliesTo: ["texture"],
     configuration: {
       encoder: KTX2_ENCODER_VERSION,
-      ...(options.astc === true ? { gpuFormat: "astc4x4-v1" } : {}),
+      ...(options.astc === true ? { gpuFormat: "astc4x4-v2" } : {}),
       instrument: IMAGE_QUALITY_IDENTITY,
       floor: resolveImageQualityFloor(options.floor),
       keepSmallerSource: true,
@@ -169,6 +168,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
         floor: options.floor,
         srgb: !choice.normalMap,
         quality: choice.quality,
+        ...(options.astc === true ? { astc: true } : {}),
         ...(!resized && !choice.explicit ? { maxBytes: input.byteLength } : {}),
         ...(choice.explicit ? { forced: choice.codec } : {}),
       });
@@ -215,7 +215,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
         );
       }
       return {
-        buffer: Buffer.from(options.astc === true ? await transcodeKtx2ToAstc(encoded) : encoded),
+        buffer: Buffer.from(encoded),
         entry: {
           ...(options.astc === true
             ? { format: "astc4x4" }

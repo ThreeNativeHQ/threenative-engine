@@ -243,6 +243,113 @@ describe("compileAssets", () => {
     expect(webManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
   });
 
+  it.each([
+    ["android", true, true],
+    ["android", true, false],
+    ["android", false, true],
+    ["android", false, false],
+    ["ios", true, true],
+    ["ios", true, false],
+    ["ios", false, true],
+    ["ios", false, false],
+    ["web", true, false],
+    ["desktop", true, false],
+  ] as const)(
+    "honours standalone decoder capabilities on %s with ktx2=%s meshopt=%s",
+    async (platform, ktx2, meshopt) => {
+      const root = await makeTempDir("threenative-texture-decoder-map-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ width: 16, height: 16 }));
+      const result = await compileAssets({
+        cwd: root,
+        platform,
+        runtimeDecoders: { ktx2, meshopt },
+        transcoder: TRANSCODER,
+        config: {
+          models: "none",
+          textures: {
+            floor: { ssim: 0, meanDeltaE00: 100 },
+            overrides: [{ glob: "rock.png", codec: "etc1s" }],
+          },
+        },
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { output: string; format: string }> };
+      const entry = manifest.entries["rock.png"];
+      if (entry === undefined) throw new Error("fixture texture is missing from the manifest");
+      const container = readKtx2(await readFile(path.join(root, "public", entry.output)));
+      expect(container.vkFormat).toBe(ktx2 ? 0 : 158);
+      expect(entry.format).toBe(ktx2 ? "etc1s" : "astc4x4");
+      expect(container.levelCount).toBeGreaterThan(1);
+      expect(result.skippedCompression.filter((row) => row.kind === "texture")).toEqual([]);
+      for (const name of ["basis_transcoder.js", "basis_transcoder.wasm"]) {
+        const output = path.join(root, "public", "basis", name);
+        if (ktx2) expect((await stat(output)).size).toBeGreaterThan(0);
+        else await expect(stat(output)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    },
+  );
+
+  it.each([
+    [true, true],
+    [true, false],
+    [false, true],
+    [false, false],
+  ] as const)(
+    "retains the custom decoder contract with ktx2=%s meshopt=%s",
+    async (ktx2, meshopt) => {
+      const root = await makeTempDir("threenative-custom-decoder-map-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "rock.txt"), "asset");
+      const apply = vi.fn((input: Buffer) => input);
+      const result = await compileAssets({
+        cwd: root,
+        platform: "android",
+        runtimeDecoders: { ktx2, meshopt },
+        passes: [{ name: "decoder-dependent", needsRuntimeDecoder: true, apply }],
+      });
+      expect(apply).toHaveBeenCalledTimes(ktx2 && meshopt ? 1 : 0);
+      expect(result.skippedCompression).toEqual(
+        ktx2 && meshopt ? [] : [{ kind: "pass", pass: "decoder-dependent", reason: "platform" }],
+      );
+    },
+  );
+
+  it.each([
+    ["android", "codec"],
+    ["android", "textures"],
+    ["ios", "codec"],
+    ["ios", "textures"],
+  ] as const)("keeps the mobile %s %s-none kill switch", async (platform, disabled) => {
+    const root = await makeTempDir("threenative-mobile-texture-none-");
+    await mkdir(path.join(root, "assets"));
+    const source = rgbaPng({ width: 16, height: 16 });
+    await writeFile(path.join(root, "assets", "rock.png"), source);
+    for (const runtimeDecoders of [undefined, { ktx2: true, meshopt: false }]) {
+      await compileAssets({
+        cwd: root,
+        platform,
+        runtimeDecoders,
+        transcoder: TRANSCODER,
+        config: {
+          models: "none",
+          textures:
+            disabled === "textures"
+              ? "none"
+              : { maxSize: 4, overrides: [{ glob: "rock.png", codec: "none" }] },
+        },
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { output: string }> };
+      const entry = manifest.entries["rock.png"];
+      if (entry === undefined) throw new Error("fixture texture is missing from the manifest");
+      expect(entry.output).toMatch(/\.png$/u);
+      expect(await readFile(path.join(root, "public", entry.output))).toEqual(source);
+    }
+  });
+
   it("should let a caller that probed the runtime drop decoders on desktop too", async () => {
     // A desktop host is V8 except on the Linux arm64 lane, which builds QuickJS over wgpu-native.
     // `platform: "desktop"` alone would keep meshopt/KTX2 and ship an asset the runtime cannot

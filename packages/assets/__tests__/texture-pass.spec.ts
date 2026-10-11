@@ -6,8 +6,10 @@ import { describe, expect, it, vi } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
+import { transcodeKtx2ToAstc } from "../src/image-quality.js";
 import { type IAssetSourceConfig, compileAssets, texturePass } from "../src/index.js";
 import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../src/ktx2-encoder.js";
+import { encodeTextureLadder } from "../src/passes/model-textures.js";
 import { parsePng } from "../src/png.js";
 
 const TRANSCODER = basisTranscoderPaths();
@@ -59,6 +61,52 @@ function compressiblePng(alpha?: (x: number, y: number) => number): Buffer {
 }
 
 describe("the ktx2 texture pass", () => {
+  it("retains the source when Basis saves bytes but emitted ASTC would grow it", async () => {
+    const input = compressiblePng();
+    const floor = { ssim: 0, meanDeltaE00: 100 };
+    const basis = await texturePass({
+      floor,
+      overrides: [{ glob: "colour.png", codec: "etc1s" }],
+    }).apply(input, "colour.png");
+    if (Buffer.isBuffer(basis)) throw new Error("fixture was not encoded");
+    const astc = await transcodeKtx2ToAstc(basis.buffer);
+    expect(basis.buffer.byteLength).toBeLessThan(input.byteLength);
+    expect(astc.byteLength).toBeGreaterThan(input.byteLength);
+
+    const result = await texturePass({ astc: true, floor }).apply(input, "colour.png");
+    if (Buffer.isBuffer(result)) throw new Error("fixture has no pass metadata");
+    expect(result.buffer).toEqual(input);
+    expect(result.entry).toMatchObject({ format: "none", compressionSkipped: "not-smaller" });
+  });
+
+  it("rejects ladder candidates whose emitted ASTC exceeds maxBytes", async () => {
+    const source = PNG.sync.read(compressiblePng());
+    const options = { floor: { ssim: 0, meanDeltaE00: 100 }, srgb: true, quality: 150 };
+    const basis = await encodeTextureLadder(source.data, source.width, source.height, options);
+    if (basis.encoded === undefined) throw new Error("fixture was not encoded");
+    const astc = await transcodeKtx2ToAstc(basis.encoded);
+    const maxBytes = Math.floor((basis.encoded.byteLength + astc.byteLength) / 2);
+    expect(basis.encoded.byteLength).toBeLessThan(maxBytes);
+    expect(astc.byteLength).toBeGreaterThan(maxBytes);
+
+    const admitted = await encodeTextureLadder(source.data, source.width, source.height, {
+      ...options,
+      astc: true,
+      maxBytes: astc.byteLength + 1,
+    });
+    expect(admitted.encoded?.byteLength).toBe(astc.byteLength);
+    expect(admitted.codec).toBe("etc1s");
+    expect(readKTX2(admitted.encoded as Uint8Array).vkFormat).toBe(158);
+
+    const result = await encodeTextureLadder(source.data, source.width, source.height, {
+      ...options,
+      astc: true,
+      maxBytes,
+    });
+    expect(result.encoded).toBeUndefined();
+    expect(result.quality.compressionSkipped).toBe("not-smaller");
+  });
+
   it.each(["android", "ios"] as const)(
     "cooks raw ASTC on %s without admitting decoder-backed custom passes",
     async (platform) => {
