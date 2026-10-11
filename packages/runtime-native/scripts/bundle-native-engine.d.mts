@@ -9,4 +9,6 @@ export function bundleNativeEngine(options: {
 export function cookNativeEngineAssets(options: {
   project: string;
   outfile: string;
+  /** Asset source dir; defaults to the project's `assets` config `source`. */
+  source?: string;
 }): Promise<string>;

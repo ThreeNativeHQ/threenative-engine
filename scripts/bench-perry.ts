@@ -46,6 +46,8 @@ interface ICommandResult {
 }
 type Command = (command: string, args: string[], cwd: string) => Promise<ICommandResult>;
 const exec = promisify(execFile);
+// Both arms read the template assets in place: a bare template has no `assets/` of its own.
+const assetRoot = path.join(root, "packages/create-threenative/template-assets");
 const command: Command = async (file, args, cwd) => {
   try {
     const running = exec(file, args, {
@@ -55,7 +57,7 @@ const command: Command = async (file, args, cwd) => {
         TN_PLAYTEST_HOST_DISPLAY: "1",
         SDL_VIDEODRIVER: "x11",
         WAYLAND_DISPLAY: "",
-        TN_ASSET_ROOT: path.join(root, "packages/create-threenative/template-assets"),
+        TN_ASSET_ROOT: assetRoot,
       },
       timeout: 180_000,
       maxBuffer: 64 * 1024 * 1024,
@@ -973,6 +975,8 @@ export async function runBench(
           bundle,
           "--assets",
           args.project,
+          "--asset-source",
+          path.join(assetRoot, "assets"),
         ],
         args.project,
       );

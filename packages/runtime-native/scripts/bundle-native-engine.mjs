@@ -205,9 +205,9 @@ export async function bundleNativeEngine({ entry, outfile, boot = true }) {
 /**
  * Cooks a project's assets for the native engine beside the game bundle: its own `assets` config,
  * decoder-free (the engine's loaders decode no meshopt or KTX2), with the native package on, which
- * the player reads from `<bundle dir>/native/assets.tnpk`.
+ * the player reads from `<bundle dir>/native/assets.tnpk`. `source` overrides the config's source dir.
  */
-export async function cookNativeEngineAssets({ project, outfile }) {
+export async function cookNativeEngineAssets({ project, outfile, source }) {
   project = resolve(project);
   const config = resolve(project, "threenative.config.ts");
   let assets = {};
@@ -218,7 +218,7 @@ export async function cookNativeEngineAssets({ project, outfile }) {
     assets = module.default?.assets ?? {};
   }
   const { compileAssets } = await import(resolve(repo, "packages/assets/dist/index.js"));
-  await compileAssets({ cwd: project, config: { ...assets, nativePackage: true }, platform: "desktop",
+  await compileAssets({ cwd: project, config: { ...assets, ...(source && { source: resolve(source) }), nativePackage: true }, platform: "desktop",
     runtimeDecoders: { ktx2: false, meshopt: false } });
   const output = resolve(project, assets.output ?? "public", "native/assets.tnpk");
   const target = resolve(dirname(resolve(outfile)), "native/assets.tnpk");
@@ -231,16 +231,17 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const args = process.argv.slice(2);
   const flags = new Map();
   for (let i = 0; i < args.length; i += 2) {
-    if (!["--entry", "--out", "--engine", "--game-runtime", "--assets"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
+    if (!["--entry", "--out", "--engine", "--game-runtime", "--assets", "--asset-source"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
       throw new Error(`TN_NATIVE_ENGINE_ARGS: invalid or repeated option ${args[i]}`);
     flags.set(args[i], args[i + 1]);
   }
   if (flags.get("--engine") !== "native" || flags.get("--game-runtime") !== "v8" || !flags.get("--entry") || !flags.get("--out"))
-    throw new Error("Usage: bundle-native-engine.mjs --engine native --game-runtime v8 --entry <src/game.ts> --out <game.js> [--assets <project dir>]");
+    throw new Error("Usage: bundle-native-engine.mjs --engine native --game-runtime v8 --entry <src/game.ts> --out <game.js> [--assets <project dir> [--asset-source <dir>]]");
   try {
     console.log(JSON.stringify(await bundleNativeEngine({ entry: flags.get("--entry"), outfile: flags.get("--out") })));
     if (flags.has("--assets"))
-      console.log(JSON.stringify({ assets: await cookNativeEngineAssets({ project: flags.get("--assets"), outfile: flags.get("--out") }) }));
+      console.log(JSON.stringify({ assets: await cookNativeEngineAssets({ project: flags.get("--assets"), outfile: flags.get("--out"),
+        source: flags.get("--asset-source") }) }));
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

@@ -29,4 +29,26 @@ describe("cookNativeEngineAssets", () => {
       ["tile.png", NativeEntryKind.Texture],
     ]);
   });
+
+  it("cooks an explicit asset source when the project keeps none of its own", async () => {
+    // A bare template gets its assets only when scaffolded; the Perry bench reads them in place.
+    const project = await makeTempDir("tn-native-engine-assets-");
+    const shared = await makeTempDir("tn-native-engine-shared-");
+    const image = new PNG({ height: 2, width: 2 });
+    image.data.fill(255);
+    await writeFile(path.join(shared, "tile.png"), PNG.sync.write(image));
+    await writeFile(
+      path.join(project, "threenative.config.ts"),
+      'export default { assets: { models: "none", textures: "none" } };\n',
+    );
+
+    const written = await cookNativeEngineAssets({
+      outfile: path.join(project, "out", "game.js"),
+      project,
+      source: shared,
+    });
+
+    const manifest = readNativePackageManifest(await readFile(written));
+    expect(manifest.entries.map((entry) => entry.name)).toEqual(["tile.png"]);
+  });
 });
