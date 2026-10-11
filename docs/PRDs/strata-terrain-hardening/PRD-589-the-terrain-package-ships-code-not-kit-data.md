@@ -59,6 +59,8 @@ example. Fix the generator string, the peer-range sync and the CHARTER row.
 - [ ] Kit still scaffolds and plays. proof: `test:kit`
 - [ ] No unreferenced assets. proof: asset-reference spec
 
+2026-10-11 integration check: rebuilt terrain (JavaScript, declarations and publint pass), then all 37 release/drift/consumer tests pass (4.35 s). The wider five-kit suite passes 26/27 tests (45.64 s), including every pinned bake hash and RAW16 height comparison. Its packaging test fails because included kit files total 83,718,967 B, above the unchanged 40 MiB content cap; this measures included file bytes, not compressed tarball size. Phase 2 must exclude generated cook outputs and complete on-request delivery. The 2 MB runtime tarball target remains unverified.
+
 #### Phase 3: registration and charter
 **Status:** COMPLETE
 **Files:** `scripts/prepare-release.ts`, `docs/architecture/CHARTER.md`, `AGENTS.md`, `src/core/io.ts`
