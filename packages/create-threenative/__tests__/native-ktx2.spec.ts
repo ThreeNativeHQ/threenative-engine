@@ -1,9 +1,13 @@
+import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { Document, GLB_BUFFER, NodeIO } from "@gltf-transform/core";
 import { compileAssets, modelPass } from "@threenative/assets";
+import { read as readKTX2, write as writeKTX2 } from "ktx-parse";
 import { encodeToKTX2 } from "ktx2-encoder";
+import { PNG } from "pngjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -142,7 +146,290 @@ async function mobileAstcFixture(srgb = true): Promise<{ basis: Uint8Array; astc
   };
 }
 
+async function packagedAstcModel(project: string, srgb = true): Promise<string> {
+  const astc = Uint8Array.from(
+    Buffer.from(srgb ? CAPTURED_ASTC.srgb : CAPTURED_ASTC.linear, "base64"),
+  );
+  const container = readKTX2(astc);
+  const descriptor = container.dataFormatDescriptor[0];
+  assert(descriptor);
+  descriptor.colorPrimaries = srgb ? 1 : 0;
+  const document = new Document();
+  document.createBuffer();
+  const texture = document.createTexture().setImage(writeKTX2(container)).setMimeType("image/ktx2");
+  const material = document.createMaterial();
+  if (srgb) material.setBaseColorTexture(texture);
+  else material.setNormalTexture(texture);
+  const io = new (class extends NodeIO {
+    override async writeJSON(
+      ...args: Parameters<NodeIO["writeJSON"]>
+    ): ReturnType<NodeIO["writeJSON"]> {
+      const output = await super.writeJSON(...args);
+      output.json.extensionsUsed = ["EXT_texture_astc"];
+      output.json.extensionsRequired = ["EXT_texture_astc"];
+      output.json.textures = [{ extensions: { EXT_texture_astc: { source: 0 } } }];
+      return output;
+    }
+  })();
+  await mkdir(path.join(project, "public"), { recursive: true });
+  await writeFile(path.join(project, "public/model.glb"), await io.writeBinary(document));
+  await writeManifest(project, { model: { kind: "model", output: "model.glb" } });
+  return path.join(project, "public/model.glb");
+}
+
 describe("compressed assets on native targets", () => {
+  it.each([
+    ["android", false],
+    ["ios", true],
+  ] as const)(
+    "admits actual compiled ASTC models on %s (shared=%s)",
+    async (target, sharedImages) => {
+      const project = await gameProject("threenative-cooked-model-admission-");
+      const document = await new NodeIO().readBinary(await buildFixtureGlb());
+      const base = document.getRoot().listTextures()[0];
+      const sourceImage = base?.getImage();
+      assert(base && sourceImage);
+      base.setImage(PNG.sync.write(PNG.sync.read(Buffer.from(sourceImage)), { deflateLevel: 0 }));
+      await mkdir(path.join(project, "assets"), { recursive: true });
+      await writeFile(
+        path.join(project, "assets/model.glb"),
+        await new NodeIO().writeBinary(document),
+      );
+      const decoders = { ktx2: false, meshopt: true, draco: false };
+      await compileAssets({
+        cwd: project,
+        platform: target,
+        runtimeDecoders: decoders,
+        config: {
+          budget: "none",
+          models: {
+            compact: false,
+            virtual: "none",
+            sharedImages,
+            textures: {
+              overrides: [
+                { slot: "baseColorTexture", codec: "etc1s" },
+                { slot: "normalTexture", codec: "none" },
+              ],
+            },
+          },
+        },
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(project, "public/assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { output: string; sharedImages?: { output: string }[] }> };
+      const entry = manifest.entries["model.glb"];
+      assert(entry);
+      if (sharedImages) expect(entry.sharedImages?.length).toBeGreaterThan(0);
+      else expect(entry.sharedImages ?? []).toHaveLength(0);
+      const { json, resources } = await new NodeIO().readAsJSON(
+        path.join(project, "public", entry.output),
+      );
+      expect(json.extensionsUsed).toContain("EXT_texture_astc");
+      expect(json.extensionsRequired).toContain("EXT_texture_astc");
+      expect(json.extensionsUsed).not.toContain("KHR_texture_basisu");
+      const owner = json.textures?.find((texture) => texture.extensions?.EXT_texture_astc);
+      assert(owner);
+      const source = (owner.extensions?.EXT_texture_astc as { source: number }).source;
+      const image = json.images?.[source];
+      assert(image);
+      expect(image.mimeType).toBe("image/ktx2");
+      const view = json.bufferViews?.[image.bufferView ?? -1];
+      const resource = image.uri ? resources[image.uri] : resources[GLB_BUFFER];
+      assert(resource);
+      const bytes = image.uri
+        ? resource
+        : resource.subarray(
+            view?.byteOffset ?? 0,
+            (view?.byteOffset ?? 0) + (view?.byteLength ?? 0),
+          );
+      const container = readKTX2(bytes);
+      expect(container.vkFormat).toBe(158);
+      expect(container.supercompressionScheme).toBe(0);
+      expect(container.levels).toHaveLength(
+        Math.floor(Math.log2(Math.max(container.pixelWidth, container.pixelHeight))) + 1,
+      );
+      const capabilities =
+        target === "android" ? androidQuickJs() : resolveRuntimeAssetCapabilities("ios");
+      await expect(
+        assertNativeAssetsCompatible(project, target, await loadConfig(project), {
+          ...capabilities,
+          decoders,
+        }),
+      ).resolves.toBeUndefined();
+    },
+    60_000,
+  );
+
+  it("rejects standalone ASTC symlinks outside the compiled root", async () => {
+    const project = await gameProject("threenative-standalone-astc-symlink-");
+    await writeManifest(project, { texture: { kind: "texture", output: "escape.ktx2" } });
+    await writeFile(path.join(project, "outside.ktx2"), Buffer.from(CAPTURED_ASTC.srgb, "base64"));
+    await symlink(path.join(project, "outside.ktx2"), path.join(project, "public/escape.ktx2"));
+    await expect(
+      assertNativeAssetsCompatible(project, "android", await loadConfig(project), androidQuickJs()),
+    ).rejects.toThrow(/TN_NATIVE_KTX2_UNSUPPORTED/u);
+  });
+
+  it.each([true, false])(
+    "inspects embedded glTF ASTC bytes and primaries (sRGB=%s)",
+    async (srgb) => {
+      const project = await gameProject("threenative-embedded-astc-");
+      const file = await packagedAstcModel(project, srgb);
+      const config = await loadConfig(project);
+      for (const target of ["android", "ios"] as const) {
+        const caps =
+          target === "android" ? androidQuickJs() : resolveRuntimeAssetCapabilities("ios");
+        await expect(
+          assertNativeAssetsCompatible(project, target, config, caps),
+        ).resolves.toBeUndefined();
+        const original = await readFile(file);
+        await writeFile(file, original.subarray(0, original.length - 32));
+        await expect(assertNativeAssetsCompatible(project, target, config, caps)).rejects.toThrow(
+          /TN_NATIVE_KTX2_UNSUPPORTED/u,
+        );
+        await writeFile(file, original);
+      }
+    },
+  );
+
+  it("rejects false ASTC ownership, missing payloads, mixed Basis and independent geometry", async () => {
+    const project = await gameProject("threenative-astc-ownership-");
+    const file = await packagedAstcModel(project);
+    const config = await loadConfig(project);
+    const original = await new NodeIO().readAsJSON(file);
+    const image = original.json.images?.[0];
+    assert(image?.bufferView !== undefined);
+    const bufferView = original.json.bufferViews?.[image.bufferView];
+    const resource = original.resources[GLB_BUFFER];
+    assert(bufferView && resource);
+    const bytes = resource.subarray(
+      bufferView.byteOffset ?? 0,
+      (bufferView.byteOffset ?? 0) + bufferView.byteLength,
+    );
+    const { basis } = await mobileAstcFixture();
+    for (const defect of [
+      "source",
+      "required",
+      "ordinary",
+      "basis-owner",
+      "missing",
+      "used",
+      "basis",
+      "mixed",
+      "mime",
+      "primaries",
+      "alpha",
+      "orientation",
+      "mip",
+      "bounds",
+    ]) {
+      const json = structuredClone(original.json);
+      json.buffers = [];
+      json.bufferViews = [];
+      const image = {
+        mimeType: "image/ktx2",
+        uri: `data:image/ktx2;base64,${Buffer.from(bytes).toString("base64")}`,
+      };
+      json.images = [image];
+      const texture = json.textures?.[0];
+      assert(texture?.extensions);
+      if (defect === "source") texture.extensions.EXT_texture_astc = { source: 20 };
+      if (defect === "required") json.extensionsRequired = [];
+      if (defect === "ordinary") {
+        texture.source = 0;
+        texture.extensions.EXT_texture_astc = undefined;
+      }
+      if (defect === "basis-owner") texture.extensions.KHR_texture_basisu = { source: 0 };
+      if (defect === "missing") image.uri = "missing.ktx2";
+      if (defect === "used") json.extensionsUsed = [];
+      if (defect === "basis")
+        image.uri = `data:image/ktx2;base64,${Buffer.from(basis).toString("base64")}`;
+      if (defect === "mixed")
+        json.images.push({
+          mimeType: "image/ktx2",
+          uri: `data:image/ktx2;base64,${Buffer.from(basis).toString("base64")}`,
+        });
+      if (defect === "mime") image.mimeType = "image/png";
+      if (defect === "bounds") {
+        json.images = [{ mimeType: "image/ktx2", bufferView: 0 }];
+        json.buffers = [
+          {
+            byteLength: resource.byteLength,
+            uri: `data:application/octet-stream;base64,${Buffer.from(resource).toString("base64")}`,
+          },
+        ];
+        json.bufferViews = [{ buffer: 0, byteOffset: Number.MAX_SAFE_INTEGER, byteLength: 16 }];
+      }
+      if (["primaries", "alpha", "orientation", "mip"].includes(defect)) {
+        const container = readKTX2(bytes);
+        const descriptor = container.dataFormatDescriptor[0];
+        const mip = container.levels[1];
+        assert(descriptor && mip);
+        if (defect === "primaries") descriptor.colorPrimaries = 0;
+        if (defect === "alpha") descriptor.flags = 1;
+        if (defect === "orientation") container.keyValue.KTXorientation = "ru";
+        if (defect === "mip") mip.levelData = new Uint8Array(1);
+        image.uri = `data:image/ktx2;base64,${Buffer.from(writeKTX2(container)).toString("base64")}`;
+      }
+      await writeFile(path.join(project, "public/model.gltf"), JSON.stringify(json));
+      await writeManifest(project, {
+        model: { kind: "model", output: "model.gltf", extensions: ["EXT_texture_astc"] },
+      });
+      await expect(
+        assertNativeAssetsCompatible(project, "android", config, androidQuickJs()),
+      ).rejects.toThrow(/TN_NATIVE_KTX2_UNSUPPORTED/u);
+    }
+    for (const extension of ["EXT_meshopt_compression", "KHR_draco_mesh_compression"] as const) {
+      const json = structuredClone(original.json);
+      const buffer = json.buffers?.[0];
+      assert(buffer && json.extensionsUsed);
+      json.extensionsUsed.push(extension);
+      buffer.uri = `data:application/octet-stream;base64,${Buffer.from(resource).toString("base64")}`;
+      await writeFile(path.join(project, "public/model.gltf"), JSON.stringify(json));
+      await expect(
+        assertNativeAssetsCompatible(project, "android", config, androidQuickJs()),
+      ).rejects.toThrow(/TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED/u);
+      await expect(
+        assertNativeAssetsCompatible(project, "android", config, {
+          ...androidQuickJs(),
+          decoders: { ktx2: false, meshopt: true, draco: true },
+        }),
+      ).resolves.toBeUndefined();
+    }
+  });
+
+  it("confines shared glTF resources lexically and through symlinks", async () => {
+    const project = await gameProject("threenative-shared-astc-");
+    const file = await packagedAstcModel(project);
+    const original = await new NodeIO().readAsJSON(file);
+    const image = original.json.images?.[0];
+    assert(image?.bufferView !== undefined);
+    const view = original.json.bufferViews?.[image.bufferView];
+    const resource = original.resources[GLB_BUFFER];
+    assert(view && resource);
+    const bytes = resource.subarray(view.byteOffset ?? 0, (view.byteOffset ?? 0) + view.byteLength);
+    const json = original.json;
+    json.buffers = [];
+    json.bufferViews = [];
+    await writeFile(path.join(project, "outside.ktx2"), bytes);
+    await writeFile(path.join(project, "public/inside.ktx2"), bytes);
+    await symlink(path.join(project, "outside.ktx2"), path.join(project, "public/escape.ktx2"));
+    await writeManifest(project, { model: { kind: "model", output: "model.gltf" } });
+    for (const uri of [
+      "inside.ktx2",
+      "../outside.ktx2",
+      "escape.ktx2",
+      "https://example.invalid/a.ktx2",
+    ]) {
+      json.images = [{ mimeType: "image/ktx2", uri }];
+      await writeFile(path.join(project, "public/model.gltf"), JSON.stringify(json));
+      const check = assertNativeAssetsCompatible(project, "ios", await loadConfig(project));
+      if (uri === "inside.ktx2") await expect(check).resolves.toBeUndefined();
+      else await expect(check).rejects.toThrow(/TN_NATIVE_KTX2_UNSUPPORTED/u);
+    }
+  });
+
   it.each([
     ["android", false],
     ["android", true],
@@ -156,6 +443,10 @@ describe("compressed assets on native targets", () => {
     const { basis, astc } = await mobileAstcFixture(srgb);
     await mkdir(path.join(project, "public/textures"), { recursive: true });
     const output = "textures/colour.ktx2";
+    await writeFile(
+      path.join(project, "public/model.glb"),
+      await buildFixtureGlb({ textured: false }),
+    );
     for (const shared of [false, true]) {
       await writeManifest(project, {
         fixture: shared

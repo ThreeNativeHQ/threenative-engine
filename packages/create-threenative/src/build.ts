@@ -16,6 +16,7 @@ import {
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { GLB_BUFFER, NodeIO } from "@gltf-transform/core";
 import {
   TraceMap,
   decodedMappings,
@@ -188,7 +189,7 @@ export function assetRoot(cwd: string, config: IResolvedThreeNativeConfig): stri
 }
 
 /** Structural package admission only; the cook owns decoded quality and the host checks GPU support. */
-function isMobileRawAstc(bytes: Uint8Array): boolean {
+function isMobileRawAstc(bytes: Uint8Array, gltf = false): boolean {
   try {
     if (bytes.byteLength < 80) return false;
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -266,6 +267,12 @@ function isMobileRawAstc(bytes: Uint8Array): boolean {
       descriptor.versionNumber === 2 &&
       descriptor.colorModel === KHR_DF_MODEL_ASTC &&
       (descriptor.flags === 0 || descriptor.flags === 1) &&
+      (!gltf ||
+        (descriptor.flags === 0 &&
+          descriptor.colorPrimaries ===
+            (container.vkFormat === VK_FORMAT_ASTC_4x4_SRGB_BLOCK ? 1 : 0) &&
+          (container.keyValue.KTXorientation === undefined ||
+            container.keyValue.KTXorientation === "rd"))) &&
       descriptor.transferFunction ===
         (container.vkFormat === VK_FORMAT_ASTC_4x4_SRGB_BLOCK
           ? KHR_DF_TRANSFER_SRGB
@@ -285,6 +292,118 @@ function isMobileRawAstc(bytes: Uint8Array): boolean {
   }
 }
 
+/** NodeIO resolves GLB, external and data resources; every filesystem read stays in the cook root. */
+class CompiledModelIO extends NodeIO {
+  constructor(
+    private readonly outputRoot: string,
+    private readonly canonicalRoot: string,
+  ) {
+    super();
+    this.setAllowNetwork(false);
+  }
+  protected override readURI(uri: string, type: "view"): Promise<Uint8Array<ArrayBuffer>>;
+  protected override readURI(uri: string, type: "text"): Promise<string>;
+  protected override async readURI(
+    uri: string,
+    type: "view" | "text",
+  ): Promise<Uint8Array<ArrayBuffer> | string> {
+    if (/^[a-z][a-z0-9+.-]*:/iu.test(uri))
+      throw new Error("External resource protocols are forbidden.");
+    const resolved = path.resolve(uri);
+    const relative = path.relative(this.outputRoot, resolved);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+      throw new Error("Model resource escapes the compiled root.");
+    const canonical = await realpath(resolved);
+    const realRelative = path.relative(this.canonicalRoot, canonical);
+    if (
+      realRelative === ".." ||
+      realRelative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(realRelative)
+    )
+      throw new Error("Model resource escapes the compiled root through a symlink.");
+    return type === "text" ? readFile(canonical, "utf8") : readFile(canonical);
+  }
+}
+
+/** Inspect actual model images and extension ownership without loading a decoder or scene graph. */
+async function inspectMobileModel(outputRoot: string, output: string): Promise<string[]> {
+  const io = new CompiledModelIO(outputRoot, await realpath(outputRoot));
+  const { json, resources } = await io.readAsJSON(path.resolve(outputRoot, output));
+  const extensions = new Set([...(json.extensionsUsed ?? []), ...(json.extensionsRequired ?? [])]);
+  for (const view of json.bufferViews ?? [])
+    for (const name of Object.keys(view.extensions ?? {})) extensions.add(name);
+  for (const mesh of json.meshes ?? [])
+    for (const primitive of mesh.primitives)
+      for (const name of Object.keys(primitive.extensions ?? {})) extensions.add(name);
+  if (extensions.has("KHR_texture_basisu"))
+    throw new Error("Basis model textures require a decoder.");
+  const astcImages = new Set<number>();
+  for (const texture of json.textures ?? []) {
+    if (texture.extensions?.KHR_texture_basisu !== undefined)
+      throw new Error("Basis texture ownership is forbidden.");
+    const astc = texture.extensions?.EXT_texture_astc as { source?: number } | undefined;
+    if (astc === undefined) continue;
+    if (
+      !Number.isSafeInteger(astc.source) ||
+      !json.images?.[astc.source ?? -1] ||
+      texture.source !== undefined
+    )
+      throw new Error("Invalid ASTC source or unsupported paired fallback.");
+    astcImages.add(astc.source as number);
+  }
+  const hasAstcImages = astcImages.size > 0;
+  if (
+    extensions.has("EXT_texture_astc") !== hasAstcImages ||
+    (hasAstcImages &&
+      (!(json.extensionsUsed ?? []).includes("EXT_texture_astc") ||
+        !(json.extensionsRequired ?? []).includes("EXT_texture_astc")))
+  )
+    throw new Error("ASTC model extension membership is inconsistent.");
+  for (const [index, image] of (json.images ?? []).entries()) {
+    let bytes: Uint8Array | undefined;
+    if (typeof image.uri === "string") bytes = resources[image.uri];
+    else {
+      if (!Number.isSafeInteger(image.bufferView) || (image.bufferView ?? -1) < 0)
+        throw new Error("Invalid model image bufferView index.");
+      const view = json.bufferViews?.[image.bufferView ?? -1];
+      const buffer = json.buffers?.[view?.buffer ?? -1];
+      const resource = buffer === undefined ? undefined : resources[buffer.uri ?? GLB_BUFFER];
+      const offset = view?.byteOffset ?? 0;
+      const length = view?.byteLength;
+      if (
+        !view ||
+        !buffer ||
+        !resource ||
+        !Number.isSafeInteger(view.buffer) ||
+        (buffer.uri === undefined && view.buffer !== 0) ||
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(length) ||
+        (length ?? 0) <= 0 ||
+        !Number.isSafeInteger(buffer.byteLength) ||
+        offset + (length ?? 0) > buffer.byteLength ||
+        offset + (length ?? 0) > resource.byteLength
+      )
+        throw new Error("Invalid model image buffer bounds.");
+      bytes = resource.subarray(offset, offset + (length as number));
+    }
+    if (!bytes || bytes.byteLength === 0) throw new Error("Missing model image payload.");
+    const isKtx =
+      image.mimeType === "image/ktx2" ||
+      Buffer.from(bytes.subarray(0, 12)).equals(Buffer.from("ab4b5458203230bb0d0a1a0a", "hex"));
+    if (astcImages.has(index) || isKtx) {
+      if (
+        !astcImages.has(index) ||
+        image.mimeType !== "image/ktx2" ||
+        !isMobileRawAstc(bytes, true) ||
+        (json.textures ?? []).some((texture) => texture.source === index)
+      )
+        throw new Error("Model KTX2 must be valid raw ASTC owned by EXT_texture_astc.");
+    }
+  }
+  return [...extensions];
+}
+
 /** Only files in the compiled root can qualify for the mobile raw-ASTC exception. */
 async function isCompiledMobileAstc(outputRoot: string, output: string): Promise<boolean> {
   const resolved = path.resolve(outputRoot, output);
@@ -292,7 +411,16 @@ async function isCompiledMobileAstc(outputRoot: string, output: string): Promise
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
     return false;
   try {
-    return isMobileRawAstc(await readFile(resolved));
+    const canonicalRoot = await realpath(outputRoot);
+    const canonical = await realpath(resolved);
+    const realRelative = path.relative(canonicalRoot, canonical);
+    if (
+      realRelative === ".." ||
+      realRelative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(realRelative)
+    )
+      return false;
+    return isMobileRawAstc(await readFile(canonical));
   } catch {
     return false;
   }
@@ -330,6 +458,25 @@ export async function assertNativeAssetsCompatible(
   const rows = Object.entries(entries as Record<string, unknown>).map(
     ([logical, entry]) => [logical, (entry ?? {}) as Record<string, unknown>] as const,
   );
+  if (!capabilities.decoders.ktx2 && (target === "android" || target === "ios")) {
+    for (const [logical, entry] of rows) {
+      if (
+        typeof entry.output !== "string" ||
+        !(entry.kind === "model" || /\.gl(?:b|tf)$/iu.test(entry.output))
+      )
+        continue;
+      try {
+        const actual = await inspectMobileModel(outputRoot, entry.output);
+        entry.extensions = [
+          ...new Set([...(Array.isArray(entry.extensions) ? entry.extensions : []), ...actual]),
+        ];
+      } catch (error) {
+        throw new Error(
+          `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot admit model '${logical}': ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
   const ktx2Rows = rows.filter(
     ([, entry]) =>
       (typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)) ||
