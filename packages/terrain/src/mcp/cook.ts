@@ -191,24 +191,16 @@ async function cookInto(
     ]),
   );
 
-  const baseSource = surface.sources[surface.base.id];
-  if (baseSource === undefined) {
-    throw new Error(`cook: no source for base layer '${surface.base.id}'.`);
-  }
   const cooked = await cooker.cookTerrainWorld({
     state,
     species,
-    // The cook embeds the ground's base albedo and normal in `world.glb`; only the base layer is handed over.
     materials: {
-      layers: [
-        {
-          id: surface.base.id,
-          diff: join(assetsDir, baseSource.diff),
-          nrm: join(assetsDir, baseSource.nrm),
-          diffMimeType: "image/jpeg",
-          nrmMimeType: "image/jpeg",
-        },
-      ],
+      texturesDir: assetsDir,
+      layers: [surface.base, ...surface.layers].map((layer) => {
+        const source = surface.sources[layer.id];
+        if (source === undefined) throw new Error(`cook: no source for layer '${layer.id}'.`);
+        return { id: layer.id, ...source, diffMimeType: "image/jpeg", nrmMimeType: "image/jpeg" };
+      }),
     },
     out: request.out,
     extraLayers: { table: "terrain-table.json" },
@@ -242,19 +234,6 @@ async function cookInto(
     join(request.out, "terrain-table.json"),
     `${JSON.stringify({ ...surface, splat, textures: "textures" }, null, 2)}\n`,
   );
-  await mkdir(join(request.out, surface.textures), { recursive: true });
-  for (const layer of [surface.base, ...surface.layers]) {
-    const source = surface.sources[layer.id];
-    if (source === undefined) throw new Error(`cook: no source for layer '${layer.id}'.`);
-    await copyFile(
-      join(assetsDir, source.diff),
-      join(request.out, surface.textures, `${layer.id}_diff.jpg`),
-    );
-    await copyFile(
-      join(assetsDir, source.nrm),
-      join(request.out, surface.textures, `${layer.id}_nrm.jpg`),
-    );
-  }
   await copyFile(
     join(assetsDir, "hdri", "kloofendal_48d_partly_cloudy_1k.hdr"),
     join(request.out, "sky.hdr"),
@@ -281,9 +260,10 @@ async function cookInto(
     worldGlbBytes: cooked.worldGlb.length,
     ms: Math.round(performance.now() - started),
     load: [
+      'import { applyTerrainSurface } from "@threenative/core/world";',
       `const world = await ctx.assets.model("${url}/world.glb");`,
       "ctx.scene.add(world.scene);",
-      `// recipe: ${shown}/recipe.json (pass it to terrain_patch to edit)`,
+      `await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "${url}/world.glb" });`,
     ].join("\n"),
   });
 }

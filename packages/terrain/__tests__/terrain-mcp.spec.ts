@@ -502,8 +502,14 @@ describe("terrain_generate result", () => {
         expect(result.instances).toBeGreaterThan(0);
         expect(result.draws).toBeGreaterThan(0);
         expect(result.triangles).toBeGreaterThan(result.instances);
-        expect(result.load.split("\n")).toHaveLength(3);
         expect(result.load).toContain('ctx.assets.model("worlds/forest/world.glb")');
+        expect(result.load).toContain(
+          'import { applyTerrainSurface } from "@threenative/core/world";',
+        );
+        expect(result.load).toContain(
+          'await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "worlds/forest/world.glb" });',
+        );
+        expect(result.load.split("\n")).toHaveLength(4);
         // recipe.json is a document `terrain_patch` accepts as is.
         const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
         expect(patchRecipe(recipe, []).layers).toHaveLength(recipe.layers.length);
