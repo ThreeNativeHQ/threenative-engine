@@ -304,8 +304,9 @@ describe("discoverCases", () => {
     expect(names).toContain("dynamic-tsl-unsupported");
     expect(names).toContain("import-identity");
     expect(names).toContain("three-native-minimal");
+    expect(names).toContain("three-native-merge-parts");
     expect(names).toContain("three-native-midway-assets");
-    expect(names).toHaveLength(21);
+    expect(names).toHaveLength(22);
   });
 
   it("turns a top-level .ts with no .expected into a named failure, not a skip", () => {

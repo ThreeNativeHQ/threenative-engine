@@ -45,6 +45,26 @@ describe("defineObjectSurface", () => {
     ).toBe(true);
   });
 
+  it("lists the attribute names on every geometry class, not only BufferGeometry", () => {
+    // The registry gives each class its own dotted getters (`attributes.position.array`), which
+    // read as junk keys unless the view replaces them.
+    class BoxGeometry extends BufferGeometry {
+      get attributes() {
+        return { "position.array": 1 };
+      }
+    }
+    defineObjectSurface({
+      bufferGeometry: BufferGeometry,
+      geometries: [BoxGeometry],
+      materials: [],
+    });
+    const box = new BoxGeometry();
+    box.setAttribute("position", "p");
+    expect(Object.keys((box as unknown as { attributes: object }).attributes)).toEqual([
+      "position",
+    ]);
+  });
+
   it("reads geometry.attributes.position with one engine call", () => {
     class CountedGeometry extends BufferGeometry {
       calls = 0;

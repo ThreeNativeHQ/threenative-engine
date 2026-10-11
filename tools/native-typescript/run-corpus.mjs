@@ -202,6 +202,13 @@ export function parseExpected(buffer) {
   return { exit, stdout: Buffer.from(text.slice(0, stripAt), "utf8") };
 }
 
+// Cases that run through the three-native facade and the shared engine, not the older VM bridge.
+const SHARED_CASES = new Set([
+  "three-native-minimal",
+  "three-native-midway-assets",
+  "three-native-merge-parts",
+]);
+
 function expectedPath(name, corpusDir = CORPUS) {
   return path.join(corpusDir, `${name}.expected`);
 }
@@ -273,7 +280,7 @@ async function runReference(name, plan = {}) {
   const expected = parseExpected(fs.readFileSync(expectedPath(name)));
   if (expected.compileError !== undefined || expected.nativeOnly)
     return { ok: true, notApplicable: true };
-  if (name === "three-native-minimal" || name === "three-native-midway-assets") {
+  if (SHARED_CASES.has(name)) {
     const { runWasmReference } = await import("./shared-reference.mjs");
     const result = await runWasmReference(file, expected);
     if (!result.ok || !plan.render) return result;
@@ -466,7 +473,7 @@ async function runNative(name, info, target, plan = {}) {
 }
 
 async function runNativeIn(tmp, name, info, target, plan) {
-  const shared = name === "three-native-minimal" || name === "three-native-midway-assets";
+  const shared = SHARED_CASES.has(name);
   const entry = path.join(CORPUS, `${name}.ts`);
   const modules = collectModules(entry);
   const three = importsThree(entry);

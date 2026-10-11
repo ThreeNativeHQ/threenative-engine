@@ -82,51 +82,52 @@ function defineGeometrySurface(
           ).map(({ start, count, materialIndex }) => ({ start, count, materialIndex }));
         },
       });
-  }
-  Object.defineProperty(BufferGeometry.prototype, "attributes", {
-    configurable: true,
-    get(this: IGeometry) {
-      const cached = attributeViews.get(this);
-      if (cached !== undefined) return cached;
-      const names = () => {
-        const listed = this.__attributeNames === "" ? [] : this.__attributeNames.split("\n");
-        return [...new Set([...STANDARD_ATTRIBUTES, ...listed])].filter((name) =>
-          listed.includes(name),
+    // Each geometry class carries its own `attributes` accessor, so every one gets the view.
+    Object.defineProperty(prototype, "attributes", {
+      configurable: true,
+      get(this: IGeometry) {
+        const cached = attributeViews.get(this);
+        if (cached !== undefined) return cached;
+        const names = () => {
+          const listed = this.__attributeNames === "" ? [] : this.__attributeNames.split("\n");
+          return [...new Set([...STANDARD_ATTRIBUTES, ...listed])].filter((name) =>
+            listed.includes(name),
+          );
+        };
+        const view = new Proxy(
+          {},
+          {
+            // getAttribute answers null for a missing name: one engine call, not two.
+            get: (_, name) =>
+              typeof name === "string" ? (this.getAttribute(name) ?? undefined) : undefined,
+            has: (_, name) => typeof name === "string" && this.hasAttribute(name),
+            set: (_, name, attribute) => {
+              this.setAttribute(String(name), attribute);
+              return true;
+            },
+            deleteProperty: (_, name) => {
+              this.deleteAttribute(String(name));
+              return true;
+            },
+            ownKeys: () => names(),
+            // Object.keys asks for every name's descriptor: answer from the name list and read the
+            // attribute only if the descriptor's getter runs.
+            getOwnPropertyDescriptor: (_, name) =>
+              typeof name === "string" && names().includes(name)
+                ? {
+                    get: () => this.getAttribute(name),
+                    set: (attribute: unknown) => this.setAttribute(name, attribute),
+                    enumerable: true,
+                    configurable: true,
+                  }
+                : undefined,
+          },
         );
-      };
-      const view = new Proxy(
-        {},
-        {
-          // getAttribute answers null for a missing name: one engine call, not two.
-          get: (_, name) =>
-            typeof name === "string" ? (this.getAttribute(name) ?? undefined) : undefined,
-          has: (_, name) => typeof name === "string" && this.hasAttribute(name),
-          set: (_, name, attribute) => {
-            this.setAttribute(String(name), attribute);
-            return true;
-          },
-          deleteProperty: (_, name) => {
-            this.deleteAttribute(String(name));
-            return true;
-          },
-          ownKeys: () => names(),
-          // Object.keys asks for every name's descriptor: answer from the name list and read the
-          // attribute only if the descriptor's getter runs.
-          getOwnPropertyDescriptor: (_, name) =>
-            typeof name === "string" && names().includes(name)
-              ? {
-                  get: () => this.getAttribute(name),
-                  set: (attribute: unknown) => this.setAttribute(name, attribute),
-                  enumerable: true,
-                  configurable: true,
-                }
-              : undefined,
-        },
-      );
-      attributeViews.set(this, view);
-      return view;
-    },
-  });
+        attributeViews.set(this, view);
+        return view;
+      },
+    });
+  }
 }
 
 // three's `shape.holes` is the plain array a game pushes paths into: each change writes the whole
