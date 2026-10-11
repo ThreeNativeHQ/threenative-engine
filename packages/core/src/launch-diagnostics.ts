@@ -1,11 +1,9 @@
 /**
  * Why a launch stopped, said where the player can read it.
  *
- * A launch has exactly two ways to go wrong quietly, and both were measured on a real game:
- * progress stops moving (a decode that never returns, an asset that never settles) and the GPU
- * device is lost (another process had taken 94% of VRAM). In both the loop keeps iterating, the
- * loading layer keeps painting, and the only account of what happened is a line on stdout — which
- * a player does not have, and which a bug report therefore never carries.
+ * A launch can fail when a scene load rejects, progress stops moving, or the GPU device is
+ * lost. Without a report, the player sees a loading layer while the actionable error stays
+ * on stdout or in a discarded scene-transition promise.
  *
  * So the failure is reported as text, once, through `onLaunchFailure` — and core stops there. Core
  * cannot draw it: on the native host `document` is a Three.js compatibility stub whose
@@ -14,8 +12,8 @@
  * asked for when they report a launch that hung); this owns the noticing and the wording.
  */
 
-/** What failed. `stalled` is "no progress for a while"; `device-lost` is the GPU going away. */
-export type LaunchFailureKind = "stalled" | "device-lost";
+/** What failed: stalled progress, a rejected scene load, or a lost GPU device. */
+export type LaunchFailureKind = "stalled" | "device-lost" | "load-failed";
 
 export interface ILaunchFailure {
   readonly kind: LaunchFailureKind;
@@ -47,7 +45,12 @@ export function resetLaunchFailures(): void {
 export function reportLaunchFailure(failure: ILaunchFailure): void {
   if (reported.has(failure.kind)) return;
   reported.add(failure.kind);
-  const marker = failure.kind === "stalled" ? "TN_STARTUP_STALLED" : "TN_DEVICE_LOST";
+  const marker =
+    failure.kind === "stalled"
+      ? "TN_STARTUP_STALLED"
+      : failure.kind === "load-failed"
+        ? "TN_STARTUP_FAILED"
+        : "TN_DEVICE_LOST";
   console.error(`${marker}: ${failure.message}`);
   for (const listener of listeners) listener(failure);
 }
@@ -141,5 +144,13 @@ export function watchDeviceLoss(
       kind: "device-lost",
       message: `The GPU device was lost${named}: ${info?.message ?? "no reason given"}\n${cause}`,
     });
+  });
+}
+
+/** Preserve the actual loader error for the shell and playtest console diagnostics. */
+export function reportSceneLoadFailure(error: unknown): void {
+  reportLaunchFailure({
+    kind: "load-failed",
+    message: error instanceof Error ? error.message : String(error),
   });
 }
