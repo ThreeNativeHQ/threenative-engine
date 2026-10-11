@@ -78,6 +78,15 @@ describe("core constraints", () => {
           // `render/foliage-alpha.ts`'s, and a cutoff a part names is the part's own. The word
           // "light" the generic filter trips on is inside `loadsInFlight`.
           file !== "world-cells.ts" &&
+          // The load limiter queues model loads and bounds how many run at once. It constructs no
+          // material, light, colour or shader and reads no appearance property. The generic filter
+          // matches "light" inside "flight", as in "in flight" and "inFlight".
+          file !== "world-load-limiter.ts" &&
+          // The shared batch merges many cells into one InstancedMesh. It transports game-owned
+          // material identity: a batch draws the material its caller hands it, by reference. It
+          // constructs no material and reads no appearance property. The generic filter matches
+          // "material" for that identity, not for a look the module chooses.
+          file !== "world-cell-batches.ts" &&
           // The cell proxy decides whether a baked HLOD stand-in may replace a cell's source draws.
           // It reads a material's identity and whether it is opaque, standard and untransformed to
           // make that call, and constructs, configures and colours none. The assertions below keep
@@ -401,19 +410,20 @@ describe("core constraints", () => {
     );
     expect(clusteredBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
-    // `world-cells.ts` is exempted on the same terms as `instanced-batch.ts`: streaming a package
-    // means naming the geometry and surface its GLBs carry and handing both to `InstancedBatch` by
-    // reference. It constructs no material, light or colour and reads no property that describes
-    // how anything looks. The assertions below are what keep that true.
-    const worldCells = readFileSync(path.join(sourceDirectory, "world-cells.ts"), "utf8");
-    expect(worldCells).not.toMatch(
-      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
-    );
-    // A property read, not the `Array.prototype.map` call the package's bookkeeping uses.
-    expect(worldCells).not.toMatch(
-      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b(?!\s*\()/iu,
-    );
-    expect(worldCells.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+    // `world-cells.ts`, `world-load-limiter.ts` and `world-cell-batches.ts` are exempted on the same
+    // terms as `instanced-batch.ts`: none constructs a material, light or colour, and none reads a
+    // property that describes how anything looks. The assertions below are what keep that true.
+    for (const file of ["world-cells.ts", "world-load-limiter.ts", "world-cell-batches.ts"]) {
+      const cellSource = readFileSync(path.join(sourceDirectory, file), "utf8");
+      expect(cellSource).not.toMatch(
+        /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+      );
+      // A property read, not the `Array.prototype.map` call the package's bookkeeping uses.
+      expect(cellSource).not.toMatch(
+        /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b(?!\s*\()/iu,
+      );
+      expect(cellSource.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+    }
 
     // `world-cell-proxy.ts` is exempted on the same terms as `world-cells.ts`: it reads whether a
     // surface is safe to replace and builds nothing that describes how anything looks.
