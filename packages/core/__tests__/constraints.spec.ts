@@ -85,6 +85,7 @@ describe("core constraints", () => {
           file !== "world-cell-chunks.ts" &&
           file !== "world-cell-impostors.ts" &&
           file !== "world-cell-models.ts" &&
+          file !== "world-cell-render.ts" &&
           // The bundle-safety seam moved out of `world-cells.ts` unchanged. It reads a material's
           // version, transparency, visibility, transmission and node graph to decide whether a draw
           // can be recorded. It constructs, sets and colours none of them. The generic filter
@@ -438,6 +439,7 @@ describe("core constraints", () => {
       "world-cell-chunks.ts",
       "world-cell-impostors.ts",
       "world-cell-models.ts",
+      "world-cell-render.ts",
       "world-bundle-safety.ts",
       "world-load-limiter.ts",
       "world-cell-batches.ts",
