@@ -871,7 +871,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         options.textures === "none"
           ? "none"
           : {
-              ...(options.textures?.astc === true ? { astc: "raw4x4-gltf-primaries-v1" } : {}),
+              ...(options.textures?.astc === true ? { astc: "raw4x4-gltf-authored-basis-v2" } : {}),
               decoderFree: options.textures?.decoderFree ?? false,
               encoder: KTX2_ENCODER_VERSION,
               instrument: IMAGE_QUALITY_IDENTITY,
@@ -1155,7 +1155,7 @@ function sharedSettings(
       textureOptions === undefined
         ? "none"
         : {
-            ...(textureOptions.astc === true ? { astc: "raw4x4-gltf-primaries-v1" } : {}),
+            ...(textureOptions.astc === true ? { astc: "raw4x4-gltf-authored-basis-v2" } : {}),
             decoderFree: textureOptions.decoderFree ?? false,
             encoder: KTX2_ENCODER_VERSION,
             instrument: IMAGE_QUALITY_IDENTITY,

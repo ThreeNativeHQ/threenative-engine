@@ -1,7 +1,7 @@
 import type { Document, Texture } from "@gltf-transform/core";
 import { EXTTextureWebP, KHRTextureBasisu } from "@gltf-transform/extensions";
 import { getTextureColorSpace, listTextureInfo, listTextureSlots } from "@gltf-transform/functions";
-import { read as readKTX2 } from "ktx-parse";
+import { KHR_DF_MODEL_UASTC, read as readKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
 import { EXTTextureAstc, isRawAstc } from "../gltf-io.js";
 import { textureStats } from "../health.js";
@@ -10,6 +10,7 @@ import {
   type IImageQualityFloor,
   type IImageQualityOptions,
   type ITextureQuality,
+  decodeBasisKtx2,
   imageQuality,
   measureKtx2,
   transcodeKtx2ToAstc,
@@ -615,9 +616,26 @@ export async function compressEmbeddedTextures(
       if (fromStore.codec !== "none") compressed += 1;
       continue;
     }
+    const slots = listTextureSlots(texture);
+    const forced = options.overrides?.find((override) => slots.includes(override.slot))?.codec;
+    let authoredBasis = false;
+    if (
+      texture.getMimeType() === "image/ktx2" &&
+      options.astc === true &&
+      !decoderFree &&
+      forced !== "none"
+    ) {
+      try {
+        authoredBasis = readKTX2(image).vkFormat === 0;
+      } catch (error) {
+        throw new Error(
+          `TN_ASSETS_MODEL_BASIS_ASTC: invalid authored KTX2 '${key}': ${messageOf(error)}`,
+        );
+      }
+    }
     // Already compressed upstream: left exactly as authored, and still counted so the
     // reported GPU total is the whole model rather than only the part this stage touched.
-    if (texture.getMimeType() === "image/ktx2") {
+    if (texture.getMimeType() === "image/ktx2" && !authoredBasis) {
       const shape = imageShape(image, "image/ktx2");
       bytesBefore += image.byteLength;
       bytesAfter += image.byteLength;
@@ -627,24 +645,35 @@ export async function compressEmbeddedTextures(
       continue;
     }
 
-    const slots = listTextureSlots(texture);
+    const authoredCodec =
+      authoredBasis && readKTX2(image).dataFormatDescriptor[0]?.colorModel === KHR_DF_MODEL_UASTC
+        ? "uastc"
+        : "etc1s";
     const maxSize = resolveTextureMaxSize(options.maxSize, slots);
     let decoded: { data: Uint8Array; height: number; width: number };
     try {
-      decoded = await decodeImageBytes(
-        Buffer.from(image.buffer, image.byteOffset, image.byteLength),
-        `${logicalPath}#${key}`,
-      );
+      if (authoredBasis) {
+        const shape = imageShape(image, "image/ktx2");
+        decoded = { ...shape, data: await decodeBasisKtx2(image, shape.width, shape.height, true) };
+      } else {
+        decoded = await decodeImageBytes(
+          Buffer.from(image.buffer, image.byteOffset, image.byteLength),
+          `${logicalPath}#${key}`,
+        );
+      }
     } catch (error) {
       throw new Error(
-        `TN_ASSETS_MODEL_TEXTURE_UNDECODABLE: could not decode embedded texture '${key}' of '${logicalPath}': ${messageOf(error)}`,
+        `TN_ASSETS_MODEL_TEXTURE_UNDECODABLE: ${authoredBasis ? "TN_ASSETS_MODEL_BASIS_ASTC: " : ""}could not decode embedded texture '${key}' of '${logicalPath}': ${messageOf(error)}`,
       );
     }
     const explicit = (options.overrides ?? []).some((override) => slots.includes(override.slot));
-    const forced = options.overrides?.find((override) => slots.includes(override.slot))?.codec;
     const codec = codecLadder(slots, forced)[0]?.codec ?? "none";
     bytesBefore += image.byteLength;
-    gpuBytesBefore += gpuBytes(decoded.width, decoded.height, "none");
+    gpuBytesBefore += gpuBytes(
+      decoded.width,
+      decoded.height,
+      authoredBasis ? authoredCodec : "none",
+    );
     if (codec === "none") {
       bytesAfter += image.byteLength;
       gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
@@ -710,7 +739,7 @@ export async function compressEmbeddedTextures(
       );
       resized += 1;
     }
-    if (target.width % BLOCK_SIZE !== 0 || target.height % BLOCK_SIZE !== 0) {
+    if (!authoredBasis && (target.width % BLOCK_SIZE !== 0 || target.height % BLOCK_SIZE !== 0)) {
       // Same split as the standalone pass: a codec named per slot is a request no block format
       // can satisfy, while an automatic choice retains the image untouched. `cappedSize` only
       // ever returns multiples of four, so an unaligned target means nothing was resampled and
@@ -739,22 +768,58 @@ export async function compressEmbeddedTextures(
       continue;
     }
 
-    const selected = await encodeTextureLadder(data, target.width, target.height, {
-      ...textureQualitySemantics(texture),
-      floor: options.floor,
-      srgb,
-      quality,
-      ...(options.astc === true
-        ? { astc: true, gltfColorPrimaries: srgb ? (1 as const) : (0 as const) }
-        : {}),
-      ...(!explicit &&
-      target.width === decoded.width &&
-      target.height === decoded.height &&
-      UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType())
-        ? { maxBytes: image.byteLength }
-        : {}),
-      ...(forced === undefined ? {} : { forced }),
-    });
+    let selected: Awaited<ReturnType<typeof encodeTextureLadder>>;
+    try {
+      if (authoredBasis && target.width === decoded.width && target.height === decoded.height) {
+        const encoded = await transcodeKtx2ToAstc(image, srgb ? 1 : 0);
+        const score = await measureKtx2(data, encoded, target.width, target.height, {
+          ...textureQualitySemantics(texture),
+          floor: options.floor,
+        });
+        if (
+          score.status === "below-floor" ||
+          ((textureQualitySemantics(texture).alphaThresholds?.length ?? 0) === 0 &&
+            score.alpha.meanAbsoluteError !== 0)
+        )
+          throw new Error(
+            "TN_ASSETS_TEXTURE_FLOOR: authored Basis to ASTC fails its configured floor.",
+          );
+        selected = {
+          encoded,
+          codec: authoredCodec,
+          quality: {
+            ...score,
+            codec: authoredCodec,
+            sourceWidth: decoded.width,
+            sourceHeight: decoded.height,
+          },
+        };
+      } else {
+        selected = await encodeTextureLadder(data, target.width, target.height, {
+          ...textureQualitySemantics(texture),
+          floor: options.floor,
+          srgb,
+          quality,
+          ...(options.astc === true
+            ? { astc: true, gltfColorPrimaries: srgb ? (1 as const) : (0 as const) }
+            : {}),
+          ...(!explicit &&
+          target.width === decoded.width &&
+          target.height === decoded.height &&
+          UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType())
+            ? { maxBytes: image.byteLength }
+            : {}),
+          ...(forced === undefined ? {} : { forced }),
+        });
+      }
+      if (authoredBasis && selected.encoded === undefined)
+        throw new Error(
+          "TN_ASSETS_TEXTURE_FLOOR: authored Basis cannot retain a decoder-dependent fallback.",
+        );
+    } catch (error) {
+      if (!authoredBasis) throw error;
+      throw new Error(`TN_ASSETS_MODEL_BASIS_ASTC: '${logicalPath}#${key}': ${messageOf(error)}`);
+    }
     const encoded = selected.encoded;
     // A tiny source can cost less than the KTX2 container alone. Keep its exact bytes when
     // encoding cannot save download bytes *and* the authored container needs no extension to be
@@ -797,7 +862,7 @@ export async function compressEmbeddedTextures(
       continue;
     }
     const container = readKTX2(encoded);
-    if (container.levelCount < 2) {
+    if (container.levelCount < 2 && !authoredBasis) {
       throw new Error(
         `TN_ASSETS_MIP_CHAIN_INCOMPLETE: embedded texture '${key}' of '${logicalPath}' encoded without a mip chain (${String(container.levelCount)} level(s)).`,
       );

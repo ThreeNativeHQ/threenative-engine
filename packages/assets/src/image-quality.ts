@@ -441,6 +441,32 @@ export async function measureKtx2(
       height,
       options,
     );
+  return imageQuality(
+    source,
+    await decodeBasisKtx2(encoded, width, height),
+    width,
+    height,
+    options,
+  );
+}
+
+/** Internal authored-Basis baseline; the pre-Basis source pixels are unavailable. */
+export async function decodeBasisKtx2(
+  encoded: Uint8Array,
+  width: number,
+  height: number,
+  fullMipChain = false,
+): Promise<Uint8Array> {
+  const container = readKTX2(encoded);
+  if (
+    fullMipChain &&
+    (container.vkFormat !== 0 ||
+      container.pixelDepth !== 0 ||
+      container.layerCount !== 0 ||
+      container.faceCount !== 1 ||
+      container.levelCount !== Math.floor(Math.log2(Math.max(width, height))) + 1)
+  )
+    throw new Error("TN_ASSETS_QUALITY_DECODE: expected full-mip 2D Basis KTX2.");
   const basis = await basisModule();
   const file = new basis.KTX2File(encoded);
   try {
@@ -448,15 +474,28 @@ export async function measureKtx2(
       !file.isValid() ||
       file.getWidth() !== width ||
       file.getHeight() !== height ||
-      !file.startTranscoding()
+      !file.startTranscoding() ||
+      (fullMipChain && file.getLevels() !== container.levelCount)
     ) {
       throw new Error("TN_ASSETS_QUALITY_DECODE: invalid KTX2 or comparison dimensions.");
     }
     const format = basis.transcoder_texture_format.cTFRGBA32.value;
-    const decoded = new Uint8Array(file.getImageTranscodedSizeInBytes(0, 0, 0, format));
+    if (file.getImageTranscodedSizeInBytes(0, 0, 0, format) !== width * height * 4)
+      throw new Error("TN_ASSETS_QUALITY_DECODE: invalid RGBA32 byte length.");
+    const decoded = new Uint8Array(width * height * 4);
     if (!file.transcodeImage(decoded, 0, 0, 0, format, 0, -1, -1))
       throw new Error("TN_ASSETS_QUALITY_DECODE: mip zero RGBA32 transcode failed.");
-    return imageQuality(source, decoded, width, height, options);
+    if (fullMipChain) {
+      for (let mip = 1; mip < file.getLevels(); mip += 1) {
+        const bytes = Math.max(1, width >> mip) * Math.max(1, height >> mip) * 4;
+        if (
+          file.getImageTranscodedSizeInBytes(mip, 0, 0, format) !== bytes ||
+          !file.transcodeImage(new Uint8Array(bytes), mip, 0, 0, format, 0, -1, -1)
+        )
+          throw new Error("TN_ASSETS_QUALITY_DECODE: authored Basis mip RGBA32 transcode failed.");
+      }
+    }
+    return decoded;
   } finally {
     file.close();
     file.delete();

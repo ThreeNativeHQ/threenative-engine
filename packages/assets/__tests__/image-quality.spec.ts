@@ -225,6 +225,20 @@ describe("image quality instrument", () => {
     await expect(decodeAstcKtx2(corrupt, 5, 3)).rejects.toThrow(/TN_ASSETS_QUALITY_DECODE/);
   });
 
+  it("measures legacy one-level Basis without requiring a full pyramid", async () => {
+    const data = new Uint8Array(8 * 8 * 4).fill(128);
+    for (let i = 3; i < data.length; i += 4) data[i] = 255;
+    const encoded = await encodeToKTX2(data, {
+      imageDecoder: async () => ({ data, width: 8, height: 8 }),
+      isUASTC: true,
+      generateMipmap: false,
+      isSetKTX2SRGBTransferFunc: true,
+    });
+    expect(readKTX2(encoded).levelCount).toBe(1);
+    expect((await measureKtx2(data, encoded, 8, 8)).status).toBe("pass");
+    await expect(transcodeKtx2ToAstc(encoded, 1)).rejects.toThrow("TN_ASSETS_ASTC_INPUT");
+  });
+
   it("rejects invalid or incomplete Basis input for the mobile cook", async () => {
     await expect(transcodeKtx2ToAstc(new Uint8Array([0]))).rejects.toThrow();
     const data = new Uint8Array(8 * 8 * 4).fill(128);

@@ -661,6 +661,179 @@ describe("embedded model textures", () => {
     },
   );
 
+  it.each([false, true])(
+    "serializes the complete 1x1 authored Basis ASTC pyramid (UASTC=%s)",
+    async (isUASTC) => {
+      const document = buildFixtureDocument();
+      const base = document.getRoot().listTextures()[0];
+      if (!base) throw new Error("fixture base missing");
+      const data = new Uint8Array([200, 130, 40, 255]);
+      const basis = await encoder.encodeToKTX2(data, {
+        imageDecoder: async () => ({ data, width: 1, height: 1 }),
+        isUASTC,
+        generateMipmap: true,
+        isSetKTX2SRGBTransferFunc: true,
+      });
+      expect(readKTX2(basis).levelCount).toBe(1);
+      base.setImage(basis).setMimeType("image/ktx2");
+      document.createExtension(KHRTextureBasisu).setRequired(true);
+      await compressEmbeddedTextures(document, "one-pixel.glb", {
+        astc: true,
+        overrides: [{ slot: "normalTexture", codec: "none" }],
+      });
+      const io = new NodeIO().registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc]);
+      const output = await io.writeBinary(document);
+      const json = (await io.binaryToJSON(output)).json;
+      expect(json.extensionsRequired).toContain("EXT_texture_astc");
+      expect(json.extensionsUsed).not.toContain("KHR_texture_basisu");
+      const reread = await readOutput(Buffer.from(output));
+      const raw = readKTX2(reread.getRoot().listTextures()[0]?.getImage() ?? new Uint8Array());
+      expect([raw.pixelWidth, raw.pixelHeight, raw.levelCount, raw.vkFormat]).toEqual([
+        1, 1, 1, 158,
+      ]);
+      expect(raw.levels.map((level) => level.levelData.byteLength)).toEqual([16]);
+    },
+  );
+
+  it.each([false, true])("converts authored Basis to final ASTC (UASTC=%s)", async (isUASTC) => {
+    const document = buildFixtureDocument();
+    for (const [index, texture] of document.getRoot().listTextures().entries()) {
+      texture
+        .setImage(
+          await encoder.encodeToKTX2(texture.getImage() ?? new Uint8Array(), {
+            generateMipmap: true,
+            imageDecoder: async (bytes) => PNG.sync.read(Buffer.from(bytes)),
+            isUASTC,
+            isPerceptual: index === 0,
+            isSetKTX2SRGBTransferFunc: index === 0,
+          }),
+        )
+        .setMimeType("image/ktx2");
+    }
+    document.createExtension(KHRTextureBasisu).setRequired(true);
+    const summary = await compressEmbeddedTextures(document, "authored.glb", { astc: true });
+    const containers = document
+      .getRoot()
+      .listTextures()
+      .map((t) => readKTX2(t.getImage() ?? new Uint8Array()));
+    expect(containers.map((c) => c.vkFormat)).toEqual([158, 157]);
+    expect(containers.map((c) => c.dataFormatDescriptor[0]?.colorPrimaries)).toEqual([1, 0]);
+    expect(
+      containers.every(
+        (c) => c.levelCount === Math.floor(Math.log2(Math.max(c.pixelWidth, c.pixelHeight))) + 1,
+      ),
+    ).toBe(true);
+    expect(Object.values(summary?.formats ?? {})).toEqual(["astc4x4", "astc4x4"]);
+    expect(summary?.quality["cloth-normal"]?.status).toBe("unvalidated-slots");
+    const io = new NodeIO().registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc]);
+    const json = (await io.binaryToJSON(await io.writeBinary(document))).json;
+    expect(json.extensionsRequired).toContain("EXT_texture_astc");
+    expect(json.extensionsUsed).not.toContain("KHR_texture_basisu");
+  });
+
+  it.each([
+    "resize",
+    "none",
+    "nonASTC",
+    "decoderFree",
+    "missing-mip",
+    "bad-upper",
+    "quality-refusal",
+    "warm",
+  ])("authored Basis conversion preserves policy: %s", async (policy) => {
+    const document = await readOutput(await fixtureWithTextures({ width: 32 }));
+    const base = document.getRoot().listTextures()[0];
+    if (!base) throw new Error("fixture base missing");
+    const basis = await encoder.encodeToKTX2(base.getImage() ?? new Uint8Array(), {
+      generateMipmap: true,
+      imageDecoder: async (bytes) => PNG.sync.read(Buffer.from(bytes)),
+      isUASTC: true,
+      isSetKTX2SRGBTransferFunc: true,
+    });
+    base.setImage(basis).setMimeType("image/ktx2");
+    document.createExtension(KHRTextureBasisu).setRequired(true);
+    const overrides = [
+      { slot: "normalTexture", codec: "none" as const },
+      ...(policy === "none" ? [{ slot: "baseColorTexture", codec: "none" as const }] : []),
+    ];
+    const options = {
+      astc: policy !== "nonASTC",
+      decoderFree: policy === "decoderFree",
+      overrides,
+      ...(policy === "resize" ? { maxSize: 16 } : {}),
+    };
+    if (policy === "missing-mip" || policy === "bad-upper") {
+      const malformed = basis.slice();
+      const header = new DataView(malformed.buffer, malformed.byteOffset);
+      if (policy === "missing-mip") header.setUint32(40, 1, true);
+      else header.setBigUint64(104, BigInt(malformed.byteLength + 8), true);
+      base.setImage(malformed);
+      await expect(compressEmbeddedTextures(document, "bad.glb", options)).rejects.toThrow(
+        "TN_ASSETS_MODEL_BASIS_ASTC",
+      );
+      return;
+    }
+    if (policy === "quality-refusal") {
+      const wrong = await encoder.encodeToKTX2(new Uint8Array([0]), {
+        generateMipmap: true,
+        isUASTC: true,
+        isSetKTX2SRGBTransferFunc: true,
+        imageDecoder: async () => ({
+          data: new Uint8Array(32 * 32 * 4).fill(255),
+          width: 32,
+          height: 32,
+        }),
+      });
+      const raw = await qualityInstrument.transcodeKtx2ToAstc(wrong, 1);
+      const transcode = vi.spyOn(qualityInstrument, "transcodeKtx2ToAstc").mockResolvedValue(raw);
+      try {
+        await expect(
+          compressEmbeddedTextures(document, "bad-quality.glb", options),
+        ).rejects.toThrow("TN_ASSETS_TEXTURE_FLOOR");
+      } finally {
+        transcode.mockRestore();
+      }
+      expect(base.getImage()).toEqual(basis);
+      return;
+    }
+    if (policy === "warm") {
+      const io = new NodeIO().registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc]);
+      const input = Buffer.from(await io.writeBinary(document));
+      const root = await makeTempDir("threenative-authored-shared-");
+      const priorBasis = await compiled(input, {
+        sharedImages: createSharedImageStore(root),
+        textures: { ...options, astc: false },
+      });
+      const cold = await compiled(input, {
+        sharedImages: createSharedImageStore(root),
+        textures: options,
+      });
+      expect(cold.buffer).not.toEqual(priorBasis.buffer);
+      const decode = vi.spyOn(qualityInstrument, "decodeBasisKtx2");
+      try {
+        const warm = await compiled(input, {
+          sharedImages: createSharedImageStore(root),
+          textures: options,
+        });
+        expect(warm.buffer).toEqual(cold.buffer);
+        expect(warm.entry.extensions).toContain("EXT_texture_astc");
+        expect(warm.entry.extensions).not.toContain("KHR_texture_basisu");
+        expect(decode).not.toHaveBeenCalled();
+      } finally {
+        decode.mockRestore();
+      }
+      return;
+    }
+    await compressEmbeddedTextures(document, "policy.glb", options);
+    if (["none", "nonASTC", "decoderFree"].includes(policy)) expect(base.getImage()).toEqual(basis);
+    else {
+      const raw = readKTX2(base.getImage() ?? new Uint8Array());
+      expect(raw.vkFormat).toBe(158);
+      expect(raw.pixelWidth).toBe(16);
+      expect(raw.levelCount).toBe(5);
+    }
+  });
+
   it("round-trips mixed Basis and ASTC without either writer stealing an image", async () => {
     const document = buildFixtureDocument();
     const normal = document.getRoot().listTextures()[1];
@@ -676,7 +849,10 @@ describe("embedded model textures", () => {
     document.createExtension(KHRTextureBasisu).setRequired(true);
     await compressEmbeddedTextures(document, "mixed.glb", {
       astc: true,
-      overrides: [{ slot: "baseColorTexture", codec: "etc1s" }],
+      overrides: [
+        { slot: "baseColorTexture", codec: "etc1s" },
+        { slot: "normalTexture", codec: "none" },
+      ],
     });
     const io = new NodeIO().registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc]);
     const output = Buffer.from(await io.writeBinary(document));
