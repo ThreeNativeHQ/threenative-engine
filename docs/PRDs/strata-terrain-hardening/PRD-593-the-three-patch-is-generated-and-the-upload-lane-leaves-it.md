@@ -68,7 +68,7 @@ Core audit of `2d2124792` (2026-10-10):
     Reapplication exposed two installer limitations: the Phase 1 generated bundle hashes are not registered predecessors, and stock `Batch.js` is misclassified because its deletion-only trailing-blank hunk's new text already occurs in stock. Verified every installed Phase 1 hash, reversed that exact patch to stock, applied the new generated patch with standard `patch` at zero fuzz, and verified all target hashes; the repository apply script then reported unchanged. These installer limitations remain open. No browser, GPU, native, visual, or performance run was performed here; the coordinator owns those runs. AC-3 and Phase 2 stay unticked.
   - After hunk removal (2026-10-11, `1b6b0f593`): the selected conformance row `compressed-texture-preparation` passed on web (headed, adapter `nvidia`/`turing`, 3.4 s, no page or GPU validation errors) and on the desktop Dawn host (30.2 s, `native.completed` true, no GPU validation errors). The two screenshots match: green upper half, red lower half. The other 103 rows report `blocked`.
   - Strata preview WebGPU playtest after hunk removal (2026-10-11): `terrain.playtest.json`, headed, `--browser-recipe webgpu`, adapter `nvidia`/`turing`, ran to completion in 16 min 23 s with `--server-timeout 600000 --timeout 120000` (the default 15 s limits expired during the cold bake and the first Vite transform). Result: 59 of 62 assertions pass and the scenario fails. The three failures are the runtime budgets that PRD-585 already records as failing on this host: `afterFirstFrameTaskMs` up to 9 685 ms (limit 250), `timeToReadyMs` (limit 15 000) and `maxViewGpuMs` up to 62.09 ms (limit 12). The console, network and runtime-diagnostic policies pass. Captures of all five kits show textured bark, foliage, grass, rock and sand. AC-3 stays open until the preview passes as a whole.
-- [ ] AC-4 [local]: Each remaining hunk (depth cache, 3D guard, bind-group invalidation) has a spec that fails without it. proof: `pnpm exec vitest run packages/core/__tests__/three-patch-*.spec.ts` — Evidence: pending.
+- [x] AC-4 [local]: Each remaining hunk (depth cache, 3D guard, bind-group invalidation) has a spec that fails without it. proof: `three-patch-retained.spec.ts` on 2026-10-11 — depth cache red 1 failed/green 1 passed; 3D attachment guard red 1 failed/green 1 passed; bind-group invalidation red 1 failed/green 1 passed. Stock source hashes verified; requested suite passes 106/106.
 - [ ] AC-5 [local]: The `updateTexture` wrapper costs under 0.05 ms per frame on machinefall. proof: `TN_FRAME_SPANS` A/B, two runs per arm — Evidence: pending.
 
 ## Execution Phases
@@ -86,7 +86,7 @@ Core audit of `2d2124792` (2026-10-10):
 
 #### Phase 3: remaining hunks proven
 **Status:** NOT STARTED
-- [ ] One failing-without spec per hunk. proof: `three-patch-*.spec.ts`
+- [x] One failing-without spec per hunk. proof: `three-patch-retained.spec.ts`, 2026-10-11: stock red 3 failed/0 passed (depth, 3D guard, bind-group invalidation each 1 failed); patched green 3 passed/0 failed (each 1 passed).
 - [ ] Wrapper cost measured. proof: `TN_FRAME_SPANS` A/B
 
 ## Decisions
@@ -124,3 +124,20 @@ Core audit of `2d2124792` (2026-10-10):
   `node packages/core/scripts/apply-three-patch.mjs`. All 30 old target hashes matched before apply,
   the script reported `patched`, and all 30 new target hashes matched afterward. Core typecheck
   exits 0. No lockfile, dependency, browser, GPU or native changes/runs; no push.
+
+- **2026-10-11 — AC-4 retained hunk proofs.** `three-patch-retained.spec.ts` loads the actual
+  installed source for `WebGPUTextureUtils.js` and `Textures.js` into an isolated temp tree.
+  `TN_THREE_PATCH_STOCK=1 pnpm exec vitest run packages/core/__tests__/three-patch-retained.spec.ts`
+  reverses those files' complete patch sections at zero fuzz and verifies both pinned stock Git
+  blob hashes before loading them. Observed red: depth cache 1 failed (4 -> 1 -> 4 reallocates),
+  3D guard 1 failed (usage 23 instead of 7), bind-group invalidation 1 failed (stale groups and
+  versions still present at recreation). Observed patched green: each 1 passed, total 3/3.
+  The depth test also verifies both buffers are destroyed on resize; the 3D test preserves the
+  mipmap attachment override; invalidation retains unrelated data and covers two bind groups.
+  The committed patch was not edited for negative controls. The first combined run timed out
+  copying the complete src tree; copying only the two observed files removed that setup cost.
+  Final requested five-spec suite: 106 passed/0 failed (24 upgrade, 9 compat, 3 retained,
+  1 compressed-upload removal, 69 public preparation). Generator `--check` prints `matched`.
+  Core typecheck exits 0. Scoped Biome exits 0 with two existing installer complexity warnings
+  (`parseUpgradeJson` 64 and `planPatch` 20). Only AC-4 and its Phase 3 hunk-proof box are ticked;
+  all other pending criteria remain open. No browser, GPU, native or push run.
