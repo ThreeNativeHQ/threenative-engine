@@ -2,7 +2,7 @@ import type { IAssetLoader } from "@threenative/core";
 import { DataTexture, type Texture } from "three";
 import type { MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it } from "vitest";
-import { createPropSurfaces } from "../../../examples/strata-terrain-preview/src/render/propMaterials.js";
+import { createPropSurfaces } from "../src/render/propMaterials.js";
 
 /** Every texture a TSL node tree samples, so a test can see whether a map survived. */
 function sampledTextures(node: unknown): Set<Texture> {

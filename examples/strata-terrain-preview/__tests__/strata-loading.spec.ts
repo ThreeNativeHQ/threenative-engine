@@ -12,12 +12,9 @@ import {
 } from "three";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
-import {
-  createLoadingScreen,
-  spawnReadinessSnapshot,
-} from "../../../examples/strata-terrain-preview/src/render/loading.js";
+import { createLoadingScreen, spawnReadinessSnapshot } from "../src/render/loading.js";
 
-const GAME_URL = new URL("../../../examples/strata-terrain-preview/src/game.ts", import.meta.url);
+const GAME_URL = new URL("../src/game.ts", import.meta.url);
 const GATE_NAMES = [
   "deadlineAt",
   "spawnReady",
@@ -584,10 +581,7 @@ interface IKitGate {
 
 /** Run a starter-kit fixture's real gate class in a fresh context, with its spawn rejecting as `reason`. */
 function kitGate(kit: string, reason: string): IKitGate {
-  const url = new URL(
-    "../../../examples/strata-terrain-preview/scripts/fixtures/kit-game/KitScene.ts",
-    import.meta.url,
-  );
+  const url = new URL("../scripts/fixtures/kit-game/KitScene.ts", import.meta.url);
   const source = ts.createSourceFile(
     "KitScene.ts",
     readFileSync(url, "utf8"),

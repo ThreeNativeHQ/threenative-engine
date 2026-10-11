@@ -3,7 +3,7 @@ import { CompressedTexture, ExternalTexture, MeshStandardMaterial, RGBA_BPTC_For
 import { texture } from "three/tsl";
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
 import { expect, it, vi } from "vitest";
-import { preparePropTextures } from "../../../examples/strata-terrain-preview/src/render/texturePreparation.js";
+import { preparePropTextures } from "../src/render/texturePreparation.js";
 
 function compressed() {
   const value = new CompressedTexture(

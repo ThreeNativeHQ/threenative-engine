@@ -3,15 +3,12 @@ import { runInNewContext } from "node:vm";
 import * as three from "three";
 import ts from "typescript";
 import { afterEach, expect, it, vi } from "vitest";
-import { initialState } from "../../../examples/strata-terrain-preview/scripts/fixtures/kit-game/state.js";
-import * as loading from "../../../examples/strata-terrain-preview/src/render/loading.js";
+import { initialState } from "../scripts/fixtures/kit-game/state.js";
+import * as loading from "../src/render/loading.js";
 
 // Execute the shipped fixture itself; only renderer/physics/assets are replaced at their seams.
 const source = readFileSync(
-  new URL(
-    "../../../examples/strata-terrain-preview/scripts/fixtures/kit-game/KitScene.ts",
-    import.meta.url,
-  ),
+  new URL("../scripts/fixtures/kit-game/KitScene.ts", import.meta.url),
   "utf8",
 );
 const code = ts.transpileModule(source, {

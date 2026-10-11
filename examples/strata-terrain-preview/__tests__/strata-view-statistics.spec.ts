@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { medianOfGrowingSamples } from "../../../examples/strata-terrain-preview/src/viewStatistics.js";
+import { medianOfGrowingSamples } from "../src/viewStatistics.js";
 
 afterEach(() => vi.restoreAllMocks());
 

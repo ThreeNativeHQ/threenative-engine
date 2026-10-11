@@ -1,5 +1,6 @@
 import { createAssetLoader } from "@threenative/core";
 import { WorldCells } from "@threenative/core/world";
+import type { IPlacement } from "@threenative/terrain";
 import {
   Box3,
   BoxGeometry,
@@ -11,17 +12,13 @@ import {
   Vector3,
 } from "three";
 import { expect, it, vi } from "vitest";
-import { spawnReadinessSnapshot } from "../../../examples/strata-terrain-preview/src/render/loading.js";
+import { spawnReadinessSnapshot } from "../src/render/loading.js";
 import {
   type IPropPreparationProgress,
   createStreamedProps,
   invalidatePropShadows,
-} from "../../../examples/strata-terrain-preview/src/render/propStreaming.js";
-import {
-  createProps,
-  variantFor,
-} from "../../../examples/strata-terrain-preview/src/render/props.js";
-import type { IPlacement } from "../src/index.js";
+} from "../src/render/propStreaming.js";
+import { createProps, variantFor } from "../src/render/props.js";
 
 it("reports an outstanding world load before the factory returns or attaches it", async () => {
   const placement = {

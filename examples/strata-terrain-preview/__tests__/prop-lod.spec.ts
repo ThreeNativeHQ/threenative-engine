@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import type { IAssetLoader } from "@threenative/core";
+import type { IPlacement } from "@threenative/terrain";
 import {
   BoxGeometry,
   type BufferAttribute,
@@ -15,27 +16,16 @@ import {
 import type { MeshPhysicalNodeMaterial } from "three/webgpu";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
-import type { WorldName } from "../../../examples/strata-terrain-preview/src/render/biomes.js";
-import {
-  type ICanopyComparison,
-  loadPack,
-} from "../../../examples/strata-terrain-preview/src/render/pack.js";
-import {
-  createProps,
-  createPropsInSlices,
-  variantFor,
-} from "../../../examples/strata-terrain-preview/src/render/props.js";
-import { defineGame } from "../../core/src/game.js";
-import { Scene, type SceneConstructor } from "../../core/src/scene.js";
-import type { IPlacement } from "../src/index.js";
+import { defineGame } from "../../../packages/core/src/game.js";
+import { Scene, type SceneConstructor } from "../../../packages/core/src/scene.js";
+import type { WorldName } from "../src/render/biomes.js";
+import { type ICanopyComparison, loadPack } from "../src/render/pack.js";
+import { createProps, createPropsInSlices, variantFor } from "../src/render/props.js";
 
 describe("canopy comparison scene lifetime", () => {
   const source = ts.createSourceFile(
     "game.ts",
-    readFileSync(
-      new URL("../../../examples/strata-terrain-preview/src/game.ts", import.meta.url),
-      "utf8",
-    ),
+    readFileSync(new URL("../src/game.ts", import.meta.url), "utf8"),
     ts.ScriptTarget.Latest,
     true,
   );
@@ -115,10 +105,7 @@ describe("canopy comparison scene lifetime", () => {
 
 describe("canopy comparison startup", () => {
   const code = ts.transpileModule(
-    readFileSync(
-      new URL("../../../examples/strata-terrain-preview/src/main.ts", import.meta.url),
-      "utf8",
-    ),
+    readFileSync(new URL("../src/main.ts", import.meta.url), "utf8"),
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
   ).outputText;
   async function boot(search: string) {
@@ -137,7 +124,7 @@ describe("canopy comparison startup", () => {
       resumeScene: vi.fn(),
       start,
     };
-    const pack = await import("../../../examples/strata-terrain-preview/src/render/pack.js");
+    const pack = await import("../src/render/pack.js");
     const imports: Record<string, unknown> = {
       "./game.js": { __esModule: true, default: game },
       "./render/biomes.js": { BIOMES: { forest: {}, coastal: {} } },

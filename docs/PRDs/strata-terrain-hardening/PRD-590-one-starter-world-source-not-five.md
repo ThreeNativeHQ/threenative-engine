@@ -38,7 +38,7 @@ the example, or the code they test moves into the package (PRD-591).
 - [x] AC-1 [local]: Each kit `bake.mjs` is at most 10 lines, and all five kits bake the same bytes as before. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` with golden hashes — Evidence: 2026-10-11, 19/19 tests passed before and after; alpine/coastal/desert/tundra wrappers are 6 lines each, forest is 8; all five pinned hashes unchanged.
 - [ ] AC-2 [local]: Five kit playtests pass on one `KitScene` fixture. proof: `pnpm --filter strata-terrain-preview test:kit` for each `KIT` — Evidence: pending.
 - [ ] AC-3 [local]: One table-driven runtime spec replaces the four per-kit runtime specs with the same assertions. proof: `pnpm --filter @threenative/terrain test` — Evidence: pending.
-- [ ] AC-4 [local]: No file under `packages/terrain/__tests__` imports from `examples/`. proof: a grep spec — Evidence: pending.
+- [x] AC-4 [local]: No file under `packages/terrain/__tests__` imports from `examples/`. proof: `example-imports.spec.ts` — Evidence: 2026-10-11: import scan passed; seven relocated example specs retain all 83 tests; 84/84 including the guard passed.
 - [ ] AC-5 [local]: Net line count of kits, fixtures and specs drops by at least 4 000. proof: `pnpm tsx scripts/count-loc.ts` before/after — Evidence: pending.
 
 ## Execution Phases
@@ -57,7 +57,7 @@ the example, or the code they test moves into the package (PRD-591).
 **Files:** `scripts/fixtures/kit-game/*`, `packages/terrain/__tests__/*-runtime.spec.ts`, `*-kit.spec.ts`
 - [ ] Kit playtests on one fixture. proof: `test:kit`
 - [ ] Table-driven spec. proof: `pnpm --filter @threenative/terrain test`
-- [ ] No package spec imports the example. proof: grep spec
+- [x] No package spec imports the example. proof: grep spec — 2026-10-11: 1/1 guard test passed; 83/83 relocated example tests passed, discovered by root Vitest and the example test command.
 - [ ] Line count drops by 4 000+. proof: `count-loc.ts`
 
 ## Execution scope (2026-10-11)
@@ -65,3 +65,5 @@ the example, or the code they test moves into the package (PRD-591).
 Parts A–D run only in this checkout, one local commit each, no push. Reuse WorldCells, loadWorldHeightmap, Heightfield and existing physics; keep per-kit dress/water/sky choices in copied source. Preserve all assertions and five bake hashes. Baseline before Part A: 17 337 lines across 86 authored kit, fixture and package-test files (.ts/.mjs/.mts/.json); 36 package spec files. Final census also includes extracted package helpers and moved example specs, so moving files earns no LOC reduction.
 
 Part B (2026-10-11): five scenes replaced by one parameterised KitScene; four runtime files become one 56-test table (same 14 tests per kit), four bake specs become one 8-test table. Differences are columns: runtime asset, water response/request and missing-model filename; bake scatter count, water identities, river point count and compared files. Focused 56 runtime + 8 bake + 31 loading + 3 forest startup tests pass. The startup VM now supplies performance/Error and the actual spawn-admission promise; assertions are unchanged. Scoped Biome exits 0 (3 complexity warnings). Full terrain proof is pending the Part C separation; the first run exposes the example’s missing generated horizon.json, now prepared by the existing example bake (five worlds + horizon, exit 0).
+
+Part C (2026-10-11): seven example-owned specs moved to `examples/strata-terrain-preview/__tests__`; root Vitest discovers them and the example test command bakes its inputs first. No implementation code moved; engine ownership decisions remain PRD-591. Existing canopy-admission assertions pass unchanged in the focused example lane; the earlier contended full-suite run left 3 admission jobs pending. Scoped Biome exits 0 (one existing complexity warning).
