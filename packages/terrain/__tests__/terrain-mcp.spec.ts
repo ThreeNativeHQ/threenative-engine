@@ -44,6 +44,36 @@ describe("terrain MCP tool contract", () => {
 });
 
 describe("terrain_generate input", () => {
+  it.each([
+    ["forest", "pine forest woods"],
+    ["coastal", "beach coast sea"],
+    ["alpine", "mountain alpine snowy peaks"],
+    ["desert", "dunes desert sand"],
+    ["tundra", "tundra arctic ice"],
+  ])("selects %s from its name and synonyms", (kit, words) => {
+    for (const request of words.split(" ")) {
+      expect(parseGenerateInput({ request: `Generate ${request.toUpperCase()} for me` })).toEqual({
+        kit,
+      });
+    }
+  });
+
+  it("keeps kit as an explicit override and breaks ties in starter order", () => {
+    expect(parseGenerateInput({ request: "forest beach", kit: "desert" })).toEqual({
+      kit: "desert",
+    });
+    expect(parseGenerateInput({ request: "beach forest" })).toEqual({ kit: "forest" });
+  });
+
+  it("rejects unmatched requests with the available recipes", () => {
+    expect(() => parseGenerateInput({ request: "castle" })).toThrow(
+      /forest, coastal, alpine, desert, tundra/,
+    );
+    for (const request of [null, 1, "", "   "]) {
+      expect(() => parseGenerateInput({ request, kit: "forest" })).toThrow(/request/);
+    }
+  });
+
   it("accepts the forest kit and leaves size, seed and out to the recipe", () => {
     expect(parseGenerateInput({ kit: "forest" })).toEqual({ kit: "forest" });
   });

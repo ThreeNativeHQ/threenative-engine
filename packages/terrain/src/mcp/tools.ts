@@ -23,16 +23,17 @@ export const TERRAIN_TOOLS = [
   {
     name: "terrain_generate",
     description:
-      "Cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb. Returns the kit as recipe, the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
+      "Choose from a request or explicit kit and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb. Returns the kit as recipe, the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
     inputSchema: {
       type: "object",
       properties: {
         kit: { type: "string", enum: [...TERRAIN_KITS] },
+        request: { type: "string", minLength: 1 },
         sizeMeters: { type: "number", exclusiveMinimum: 0 },
         seed: { type: "integer" },
         out: { type: "string", description: "Relative directory that must not exist yet." },
       },
-      required: ["kit"],
+      anyOf: [{ required: ["request"] }, { required: ["kit"] }],
       additionalProperties: false,
     },
   },
@@ -81,11 +82,26 @@ function relativeDirectory(out: unknown): string {
   return out;
 }
 
-const GENERATE_FIELDS = ["kit", "sizeMeters", "seed", "out"];
+const GENERATE_FIELDS = ["request", "kit", "sizeMeters", "seed", "out"];
 
 export function parseGenerateInput(input: unknown): IGenerateInput {
   const args = closedRecord(input, "terrain_generate", GENERATE_FIELDS);
-  const { kit, sizeMeters, seed, out } = args;
+  const { request, sizeMeters, seed, out } = args;
+  if (request !== undefined && (typeof request !== "string" || request.trim() === "")) {
+    throw new TypeError("terrain_generate: request must be a non-empty string.");
+  }
+  const words = typeof request === "string" ? request.toLowerCase().split(/[^a-z]+/u) : [];
+  const synonyms = [
+    ["forest", "pine", "pines", "woods", "woodland"],
+    ["coastal", "beach", "coast", "sea", "ocean"],
+    ["alpine", "mountain", "mountains", "snowy", "peaks"],
+    ["desert", "dune", "dunes", "sand"],
+    ["tundra", "arctic", "ice"],
+  ];
+  const kit =
+    args.kit !== undefined
+      ? args.kit
+      : TERRAIN_KITS[synonyms.findIndex((names) => names.some((name) => words.includes(name)))];
   if (typeof kit !== "string" || !(TERRAIN_KITS as readonly string[]).includes(kit)) {
     throw new TypeError(`terrain_generate: kit must be one of ${TERRAIN_KITS.join(", ")}.`);
   }
