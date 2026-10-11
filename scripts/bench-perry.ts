@@ -29,6 +29,7 @@ export interface IBenchArgs {
   open: boolean;
   incumbent?: string;
   maxLoad: number;
+  maxCpuPressure: number;
 }
 export interface IMeasurement {
   firstFrameMs: number;
@@ -73,24 +74,59 @@ const command: Command = async (file, args, cwd) => {
 };
 
 const DEFAULT_MAX_LOAD = 0.75;
+const DEFAULT_MAX_CPU_PRESSURE = 10;
 const LOAD_WAIT_MS = 300_000;
 const LOAD_POLL_MS = 15_000;
 export interface IHostLoad {
   load1: number;
   cores: number;
+  cpuPressure?: number | null;
+  cpuPressureSource?: string;
 }
 /** Injectable so the spec can fake an overloaded host and skip the waits. */
 export interface IHost {
-  load: () => IHostLoad;
+  load: () => IHostLoad | Promise<IHostLoad>;
   sleep: (ms: number) => Promise<void>;
 }
+export async function readHostLoad(
+  readText: (file: string) => Promise<string> = (file) => readFile(file, "utf8"),
+): Promise<IHostLoad> {
+  const files = ["/proc/pressure/cpu"];
+  try {
+    const cgroup = /^0::(\/.*)$/m.exec(await readText("/proc/self/cgroup"))?.[1];
+    if (cgroup) files.unshift(path.join("/sys/fs/cgroup", cgroup, "cpu.pressure"));
+  } catch {
+    // A missing unified cgroup falls back to system PSI.
+  }
+  const reading = { load1: loadavg()[0] ?? 0, cores: availableParallelism(), cpuPressure: null };
+  for (const file of files) {
+    try {
+      const match = /^some[ \t]+[^\r\n]*\bavg10=(\d+(?:\.\d+)?)(?:\s|$)/m.exec(
+        await readText(file),
+      );
+      const pressure = match ? Number(match[1]) : Number.NaN;
+      if (Number.isFinite(pressure) && pressure >= 0 && pressure <= 100)
+        return { ...reading, cpuPressure: pressure, cpuPressureSource: file };
+    } catch {
+      // PSI can be unavailable or unreadable; keep the load fallback.
+    }
+  }
+  return reading;
+}
 const realHost: IHost = {
-  load: () => ({ load1: loadavg()[0] ?? 0, cores: availableParallelism() }),
+  load: readHostLoad,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
-const overloaded = (reading: IHostLoad, maxLoad: number) => reading.load1 > maxLoad * reading.cores;
+const overloaded = (reading: IHostLoad, args: IBenchArgs) =>
+  reading.cpuPressure != null
+    ? reading.cpuPressure > args.maxCpuPressure
+    : reading.load1 > args.maxLoad * reading.cores;
 const overloadError = (reading: IHostLoad) =>
-  new Error(`host overloaded: load ${reading.load1.toFixed(2)} on ${reading.cores} cores`);
+  new Error(
+    reading.cpuPressure != null
+      ? `host overloaded: CPU pressure ${reading.cpuPressure.toFixed(2)}% (${reading.cpuPressureSource}); load ${reading.load1.toFixed(2)} on ${reading.cores} cores`
+      : `host overloaded: load ${reading.load1.toFixed(2)} on ${reading.cores} cores`,
+  );
 
 export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
   const values = new Map<string, string>();
@@ -117,6 +153,7 @@ export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
         "--runs",
         "--incumbent",
         "--max-load",
+        "--max-cpu-pressure",
       ].includes(flag)
     )
       throw new Error(`Unknown argument: ${flag}`);
@@ -133,6 +170,9 @@ export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
   if (!Number.isSafeInteger(runs) || runs < 1) throw new Error("--runs must be a positive integer");
   const maxLoad = Number(values.get("--max-load") ?? DEFAULT_MAX_LOAD);
   if (!Number.isFinite(maxLoad) || maxLoad <= 0) throw new Error("--max-load must be a number > 0");
+  const maxCpuPressure = Number(values.get("--max-cpu-pressure") ?? DEFAULT_MAX_CPU_PRESSURE);
+  if (!Number.isFinite(maxCpuPressure) || maxCpuPressure < 0 || maxCpuPressure > 100)
+    throw new Error("--max-cpu-pressure must be a percentage from 0 to 100");
   return {
     project,
     perry: path.resolve(perry),
@@ -140,6 +180,7 @@ export function parseBenchArgs(argv: readonly string[]): IBenchArgs {
     perf,
     open,
     maxLoad,
+    maxCpuPressure,
     incumbent: values.has("--incumbent")
       ? path.resolve(values.get("--incumbent") ?? "")
       : undefined,
@@ -345,6 +386,7 @@ export function parsePerfSelf(text: string): Array<{ symbol: string; percent: nu
 export function reportMarkdown(result: {
   time: string;
   load: number[];
+  hostLoad?: { start?: IHostLoad; end?: IHostLoad };
   comparison?: ReturnType<typeof compareArms>;
   error?: string;
   arms?: Record<Arm, IMeasurement[]>;
@@ -354,6 +396,14 @@ export function reportMarkdown(result: {
   const lines = [
     `# Perry vs V8 — ${result.time}`,
     `Host load (1/5/15 min): ${result.load.join(" / ")}`,
+    ...(["start", "end"] as const).flatMap((phase) => {
+      const reading = result.hostLoad?.[phase];
+      return reading
+        ? [
+            `Host ${phase}: CPU pressure some avg10: ${reading.cpuPressure != null ? `${reading.cpuPressure.toFixed(2)}% (${reading.cpuPressureSource})` : "unavailable (load fallback)"}; load ${reading.load1.toFixed(2)} on ${reading.cores} cores.`,
+          ]
+        : [];
+    }),
     "CPU excludes acquisition/present; first frame includes it. Steady p50 discards the first rendered frame.",
     "Ratios use the median of each run's p50; ranges are across runs. Slower Perry is always MISS.",
     "",
@@ -899,7 +949,12 @@ export async function runBench(
     perrySha256: string;
     args?: IBenchArgs;
     regression?: IRegression;
-    hostLoad?: { maxLoadPerCore: number; start?: IHostLoad; end?: IHostLoad };
+    hostLoad?: {
+      maxLoadPerCore: number;
+      maxCpuPressure: number;
+      start?: IHostLoad;
+      end?: IHostLoad;
+    };
     arms: typeof arms;
     comparison?: ReturnType<typeof compareArms>;
     error?: string;
@@ -909,23 +964,21 @@ export async function runBench(
     const args = parseBenchArgs(argv);
     result.args = args;
     // Fail before any measurement when the accepted run cannot be read.
-    // A loaded host skews the arms unevenly (V8 startup more than Perry), so wait, then refuse.
-    let start = host.load();
-    if (overloaded(start, args.maxLoad)) {
-      process.stdout.write(
-        `host load ${start.load1.toFixed(2)} on ${start.cores} cores is above ${args.maxLoad} x cores; waiting up to 5 minutes\n`,
-      );
+    // CPU stalls skew the arms unevenly; prefer the bench's own cgroup over host-wide load.
+    let start = await host.load();
+    if (overloaded(start, args)) {
+      process.stdout.write(`${overloadError(start).message}; waiting up to 5 minutes\n`);
       for (
         let waited = 0;
-        waited < LOAD_WAIT_MS && overloaded(start, args.maxLoad);
+        waited < LOAD_WAIT_MS && overloaded(start, args);
         waited += LOAD_POLL_MS
       ) {
         await host.sleep(LOAD_POLL_MS);
-        start = host.load();
+        start = await host.load();
       }
     }
-    result.hostLoad = { maxLoadPerCore: args.maxLoad, start };
-    if (overloaded(start, args.maxLoad)) throw overloadError(start);
+    result.hostLoad = { maxLoadPerCore: args.maxLoad, maxCpuPressure: args.maxCpuPressure, start };
+    if (overloaded(start, args)) throw overloadError(start);
     const incumbent = args.incumbent ? await loadIncumbent(args.incumbent) : undefined;
     const head = await execute("git", ["rev-parse", "HEAD"], root);
     if (head.code !== 0) throw new Error("Cannot read git HEAD");
@@ -1076,9 +1129,9 @@ export async function runBench(
       await measure("perry", i + 1, false);
       await measure("v8", i + 1, false);
     }
-    const end = host.load();
+    const end = await host.load();
     result.hostLoad.end = end;
-    if (overloaded(end, args.maxLoad)) throw overloadError(end);
+    if (overloaded(end, args)) throw overloadError(end);
     result.comparison = compareArms(arms);
     if (incumbent) result.regression = compareToIncumbent(result.comparison, incumbent);
     if (args.perf) {

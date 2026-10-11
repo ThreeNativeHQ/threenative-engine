@@ -11,6 +11,7 @@ import {
   parseLedger,
   parsePerfSelf,
   parsePlayerMetrics,
+  readHostLoad,
   reportHtml,
   reportMarkdown,
   runBench,
@@ -36,6 +37,63 @@ const measurement = (scale = 1) => parsePlayerMetrics(markers(scale));
 const fixturePath = path.join(import.meta.dirname, "fixtures/perry-bench/journey-r13.json");
 
 describe("Perry native benchmark", () => {
+  it.each([
+    {
+      name: "cgroup PSI before system PSI",
+      cgroup: "some avg10=0.00 avg60=1.00 avg300=2.00 total=10",
+      system: "some avg10=90.00 avg60=90.00 avg300=90.00 total=20",
+      pressure: 0,
+      source: "/sys/fs/cgroup/bench.scope/cpu.pressure",
+    },
+    {
+      name: "system PSI when cgroup PSI is missing",
+      cgroup: undefined,
+      system: "some avg10=3.25 avg60=2.00 avg300=1.00 total=10",
+      pressure: 3.25,
+      source: "/proc/pressure/cpu",
+    },
+    {
+      name: "system PSI when cgroup PSI is malformed",
+      cgroup: "some avg10=NaN avg60=0.00\nfull avg10=0.00",
+      system: "full avg10=0.00\nsome avg10=7.50 avg60=1.00",
+      pressure: 7.5,
+      source: "/proc/pressure/cpu",
+    },
+    {
+      name: "load when neither PSI file exists",
+      cgroup: undefined,
+      system: undefined,
+      pressure: null,
+      source: undefined,
+    },
+    {
+      name: "load when PSI has no valid some avg10",
+      cgroup: "some\nfull avg10=0.00",
+      system: "some avg10=101.00 avg60=1.00",
+      pressure: null,
+      source: undefined,
+    },
+  ])("reads $name", async ({ cgroup, system, pressure, source }) => {
+    const files: Record<string, string | undefined> = {
+      "/proc/self/cgroup": "0::/bench.scope\n",
+      "/sys/fs/cgroup/bench.scope/cpu.pressure": cgroup,
+      "/proc/pressure/cpu": system,
+    };
+    const reads: string[] = [];
+    const reading = await readHostLoad(async (file) => {
+      reads.push(file);
+      const text = files[file];
+      if (text === undefined) throw new Error("unavailable");
+      return text;
+    });
+    expect(reading.cpuPressure).toBe(pressure);
+    expect(reading.cpuPressureSource).toBe(source);
+    expect(reads).toEqual([
+      "/proc/self/cgroup",
+      "/sys/fs/cgroup/bench.scope/cpu.pressure",
+      ...(source === "/sys/fs/cgroup/bench.scope/cpu.pressure" ? [] : ["/proc/pressure/cpu"]),
+    ]);
+  });
   it("fails closed on real r13 output: fixed-step ready is not wall time and CPU splits are missing", async () => {
     const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
     expect(fixture.startup.timeline.readyMs).toBeCloseTo(16.666667);
@@ -131,8 +189,10 @@ describe("Perry native benchmark", () => {
       perf: true,
       open: true,
       maxLoad: 0.75,
+      maxCpuPressure: 10,
     });
     expect(parseBenchArgs(["--perry", "x", "--max-load", "2"]).maxLoad).toBe(2);
+    expect(parseBenchArgs(["--perry", "x", "--max-cpu-pressure", "25"]).maxCpuPressure).toBe(25);
     for (const argv of [
       [],
       ["--perry"],
@@ -142,6 +202,9 @@ describe("Perry native benchmark", () => {
       ["--perry", "x", "--perry", "y"],
       ["--perry", "x", "--max-load", "0"],
       ["--perry", "x", "--max-load", "abc"],
+      ["--perry", "x", "--max-cpu-pressure", "-1"],
+      ["--perry", "x", "--max-cpu-pressure", "101"],
+      ["--perry", "x", "--max-cpu-pressure", "abc"],
     ])
       expect(() => parseBenchArgs(argv)).toThrow();
   });
@@ -342,12 +405,24 @@ describe("Perry native benchmark", () => {
     ];
     const out = path.join(temp, "artifacts");
     // Readings come from a script; the last one repeats.
-    const hostOf = (loads: number[]) => {
+    const hostOf = (loads: number[], pressures?: number[]) => {
       const calls = { sleeps: 0, reads: 0 };
       return {
         calls,
         host: {
-          load: () => ({ load1: loads[Math.min(calls.reads++, loads.length - 1)] ?? 0, cores: 12 }),
+          load: () => {
+            const index = calls.reads++;
+            return {
+              load1: loads[Math.min(index, loads.length - 1)] ?? 0,
+              cores: 12,
+              ...(pressures
+                ? {
+                    cpuPressure: pressures[Math.min(index, pressures.length - 1)],
+                    cpuPressureSource: "/sys/fs/cgroup/bench.scope/cpu.pressure",
+                  }
+                : {}),
+            };
+          },
           sleep: async () => {
             calls.sleeps++;
           },
@@ -388,6 +463,38 @@ describe("Perry native benchmark", () => {
       expect(await readFile(path.join(out, "index.html"), "utf8")).toBe(measured);
 
       expect(await runBench(argv("--max-load", "2"), execute, out, hostOf([20]).host)).toBe(0);
+
+      const pressureStuck = hostOf([1], [20]);
+      const beforePressure = launches;
+      expect(await runBench(argv(), execute, out, pressureStuck.host)).toBe(2);
+      expect(launches).toBe(beforePressure);
+      expect(pressureStuck.calls.sleeps).toBe(20);
+      expect((await latest()).error).toContain("CPU pressure 20.00%");
+
+      const pressureLow = hostOf([50], [0, 10]);
+      expect(await runBench(argv(), execute, out, pressureLow.host)).toBe(0);
+      expect(pressureLow.calls.sleeps).toBe(0);
+      expect((await latest()).hostLoad).toMatchObject({
+        maxLoadPerCore: 0.75,
+        maxCpuPressure: 10,
+        start: { load1: 50, cores: 12, cpuPressure: 0 },
+        end: { load1: 50, cores: 12, cpuPressure: 10 },
+      });
+      const report = await readFile(path.join(out, (await latest()).time, "report.md"), "utf8");
+      expect(report).toContain("CPU pressure some avg10: 0.00%");
+      expect(report).toContain("CPU pressure some avg10: 10.00%");
+      expect(report).toContain("load 50.00 on 12 cores");
+      expect(report).toContain("/sys/fs/cgroup/bench.scope/cpu.pressure");
+
+      const pressureSettles = hostOf([50], [20, 5]);
+      expect(await runBench(argv(), execute, out, pressureSettles.host)).toBe(0);
+      expect(pressureSettles.calls.sleeps).toBe(1);
+      expect(await runBench(argv(), execute, out, hostOf([1], [5, 20]).host)).toBe(2);
+      expect((await latest()).hostLoad.end.cpuPressure).toBe(20);
+      expect((await latest()).error).toContain("CPU pressure 20.00%");
+      expect(
+        await runBench(argv("--max-cpu-pressure", "25"), execute, out, hostOf([50], [20]).host),
+      ).toBe(0);
     } finally {
       await rm(temp, { recursive: true, force: true });
     }
