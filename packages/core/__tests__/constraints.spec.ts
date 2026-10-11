@@ -78,6 +78,13 @@ describe("core constraints", () => {
           // `render/foliage-alpha.ts`'s, and a cutoff a part names is the part's own. The word
           // "light" the generic filter trips on is inside `loadsInFlight`.
           file !== "world-cells.ts" &&
+          // These exact seams carry the formerly allowed WorldCells code: package surface identity,
+          // load flight counts and numeric contracts. The same appearance checks below cover each.
+          file !== "world-cell-data.ts" &&
+          file !== "world-cell-prewarm.ts" &&
+          file !== "world-cell-chunks.ts" &&
+          file !== "world-cell-impostors.ts" &&
+          file !== "world-cell-models.ts" &&
           // The bundle-safety seam moved out of `world-cells.ts` unchanged. It reads a material's
           // version, transparency, visibility, transmission and node graph to decide whether a draw
           // can be recorded. It constructs, sets and colours none of them. The generic filter
@@ -426,6 +433,11 @@ describe("core constraints", () => {
     // anything looks. The assertions below are what keep that true.
     for (const file of [
       "world-cells.ts",
+      "world-cell-data.ts",
+      "world-cell-prewarm.ts",
+      "world-cell-chunks.ts",
+      "world-cell-impostors.ts",
+      "world-cell-models.ts",
       "world-bundle-safety.ts",
       "world-load-limiter.ts",
       "world-cell-batches.ts",
