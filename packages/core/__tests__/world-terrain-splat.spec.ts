@@ -1,7 +1,15 @@
-import { CompressedArrayTexture, CompressedTexture, DataArrayTexture, Texture } from "three";
+import {
+  CompressedArrayTexture,
+  CompressedTexture,
+  DataArrayTexture,
+  Mesh,
+  type MeshStandardMaterial,
+  Texture,
+} from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadTerrainSplat, stackLayers } from "../src/world-terrain-splat.js";
+import { applyTerrainSurface, loadTerrainSplat, stackLayers } from "../src/world-terrain-splat.js";
 
 /** Every layer states how it responds to light: an `orm` map, or the two numbers themselves. */
 const table = {
@@ -179,6 +187,81 @@ function sampledTextures(material: MeshStandardNodeMaterial): Set<Texture> {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("applyTerrainSurface", () => {
+  it("replaces marked terrain only, shares the layered surface and disposes the fallback once without DOM", async () => {
+    const { assets, requested } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": table,
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    vi.stubGlobal("document", undefined);
+    vi.stubGlobal("window", undefined);
+    vi.stubGlobal("self", globalThis);
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    const json = JSON.stringify({
+      asset: { version: "2.0" },
+      scene: 0,
+      scenes: [{ nodes: [0, 1, 3] }],
+      buffers: [{ byteLength: 36 }],
+      bufferViews: [{ buffer: 0, byteLength: 36 }],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: 5126,
+          count: 3,
+          type: "VEC3",
+          min: [0, 0, 0],
+          max: [1, 0, 1],
+        },
+      ],
+      materials: [{ name: "fallback" }, { name: "prop" }],
+      meshes: [0, 1].map((material) => ({
+        primitives: [{ attributes: { POSITION: 0 }, material }],
+      })),
+      nodes: [
+        { name: "terrain", mesh: 0, extras: { tnTerrainSurface: "world.json" } },
+        { name: "group", children: [2], extras: { tnTerrainSurface: "world.json" } },
+        { name: "child", mesh: 0 },
+        { name: "prop", mesh: 1 },
+      ],
+    });
+    const chunk = new TextEncoder().encode(json.padEnd(Math.ceil(json.length / 4) * 4, " "));
+    const glb = new Uint8Array(20 + chunk.length + 8 + positions.byteLength);
+    const header = new DataView(glb.buffer);
+    [0x46546c67, 2, glb.length, chunk.length, 0x4e4f534a].forEach((value, index) =>
+      header.setUint32(index * 4, value, true),
+    );
+    glb.set(chunk, 20);
+    header.setUint32(20 + chunk.length, positions.byteLength, true);
+    header.setUint32(24 + chunk.length, 0x004e4942, true);
+    glb.set(new Uint8Array(positions.buffer), 28 + chunk.length);
+    const root = (await new GLTFLoader().parseAsync(glb.buffer, "")).scene;
+    const terrain = root.getObjectByName("terrain") as Mesh;
+    const child = root.getObjectByName("child") as Mesh;
+    const prop = root.getObjectByName("prop") as Mesh;
+    const fallback = terrain.material as MeshStandardMaterial;
+    const dispose = vi.spyOn(fallback, "dispose");
+    const propMaterial = prop.material;
+    await applyTerrainSurface(root, { assets, url: "world/world.glb" });
+    expect(terrain.material).toBeInstanceOf(MeshStandardNodeMaterial);
+    expect(child.material).toBe(terrain.material);
+    expect(prop.material).toBe(propMaterial);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(requested).toContain("world/terrain/tex/grass_diff.jpg");
+  });
+
+  it("rejects malformed surface pointers before loading or replacing materials", async () => {
+    const { assets } = served({});
+    const root = new Mesh();
+    const material = root.material;
+    root.userData.tnTerrainSurface = "../world.json";
+    await expect(applyTerrainSurface(root, { assets, url: "world/world.glb" })).rejects.toThrow(
+      /pointer/u,
+    );
+    expect(root.material).toBe(material);
+  });
 });
 
 describe("loadTerrainSplat", () => {

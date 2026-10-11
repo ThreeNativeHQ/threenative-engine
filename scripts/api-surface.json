@@ -63,6 +63,7 @@
         "@threenative/core/ui-layer#publishUiState": "export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }",
         "@threenative/core/ui-layer#sendUiIntent": "export function sendUiIntent(bridge: IUiBridge, intent: string, payload?: unknown): void { … }",
         "@threenative/core/ui-layer#subscribeUiState": "export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> { … }",
+        "@threenative/core/world#applyTerrainSurface": "export async function applyTerrainSurface( root: Object3D, options: ILoadTerrainSplatOptions, ): Promise<void> { … }",
         "@threenative/core/world#cellPlacements": "export function cellPlacements(placements: ArrayBuffer, run: IWorldRun): Float32Array { … }",
         "@threenative/core/world#getWorldCapabilities": "export function getWorldCapabilities(options: IWorldCapabilitiesOptions = { … }",
         "@threenative/core/world#Heightfield": "export class Heightfield extends Group implements IComputeDriven { … }",

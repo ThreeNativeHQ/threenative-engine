@@ -3796,6 +3796,24 @@
     {
       "aliases": [],
       "constraints": [
+        "url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON"
+      ],
+      "example": "await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: \"world/world.glb\" });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [
+        "every appearance input comes from the package table or loadTerrainSplat options"
+      ],
+      "package": "@threenative/core",
+      "signature": "export async function applyTerrainSurface( root: Object3D, options: ILoadTerrainSplatOptions, ): Promise<void> { … }",
+      "situations": ["apply the authored layered terrain surface after loading a cooked world GLB"],
+      "summary": "Apply a cooked GLB's package-authored layered surface to its marked terrain meshes. `url` is the loaded GLB URL; extras pointers are relative to it. Uses the same asset/fetch path as loadTerrainSplat on web and native. The caller owns the assigned materials' lifetime.",
+      "supersedes": [],
+      "symbol": "applyTerrainSurface"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the returned view aliases the caller's buffer; writing to it mutates the source"
       ],
       "example": "const records = cellPlacements(buffer, { asset: \"tree\", offset: 0, count: 120 });",

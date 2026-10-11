@@ -5,7 +5,9 @@ import {
   LinearFilter,
   LinearMipmapLinearFilter,
   type Material,
+  Mesh,
   NoColorSpace,
+  type Object3D,
   RGBAFormat,
   RepeatWrapping,
   type Texture,
@@ -561,4 +563,55 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
   material.userData.TN_TERRAIN_SPLAT = `layers=${String(all.length)} samplers=${String(samplers)} stacked=${String(stackedSets)}`;
   console.info(`TN_TERRAIN_SPLAT ${material.userData.TN_TERRAIN_SPLAT as string}`);
   return material;
+}
+
+/**
+ * Apply a cooked GLB's package-authored layered surface to its marked terrain meshes.
+ * `url` is the loaded GLB URL; extras pointers are relative to it. Uses the same asset/fetch
+ * path as loadTerrainSplat on web and native. The caller owns the assigned materials' lifetime.
+ * @situation apply the authored layered terrain surface after loading a cooked world GLB
+ * @constraint url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON
+ * @override every appearance input comes from the package table or loadTerrainSplat options
+ * @example
+ * await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "world/world.glb" });
+ */
+export async function applyTerrainSurface(
+  root: Object3D,
+  options: ILoadTerrainSplatOptions,
+): Promise<void> {
+  const targets = new Map<Mesh, string>();
+  const retained = new Set<Material>();
+  root.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    let owner: Object3D | null = object;
+    while (owner !== null && owner.userData.tnTerrainSurface === undefined && owner !== root)
+      owner = owner.parent;
+    const pointer: unknown = owner?.userData.tnTerrainSurface;
+    if (pointer === undefined) {
+      for (const material of Array.isArray(object.material) ? object.material : [object.material])
+        retained.add(material);
+      return;
+    }
+    if (
+      typeof pointer !== "string" ||
+      !/^(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_.-]+\.json$/u.test(pointer)
+    )
+      throw new Error(`applyTerrainSurface: invalid terrain surface pointer '${String(pointer)}'.`);
+    targets.set(object, packageDir(options.url) + pointer);
+  });
+  const surfaces = new Map<string, Material>();
+  try {
+    for (const url of new Set(targets.values()))
+      surfaces.set(url, await loadTerrainSplat({ ...options, url }));
+  } catch (error) {
+    for (const surface of surfaces.values()) surface.dispose();
+    throw error;
+  }
+  const replaced = new Set<Material>();
+  for (const [mesh, url] of targets) {
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+      replaced.add(material);
+    mesh.material = surfaces.get(url) as Material;
+  }
+  for (const material of replaced) if (!retained.has(material)) material.dispose();
 }

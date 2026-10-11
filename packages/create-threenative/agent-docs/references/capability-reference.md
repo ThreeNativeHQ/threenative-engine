@@ -2959,6 +2959,22 @@ const mirror = subscribeUiState(bridge);
 
 ## `@threenative/core/world`
 
+### `applyTerrainSurface`
+
+`function` — Apply a cooked GLB's package-authored layered surface to its marked terrain meshes. `url` is the loaded GLB URL; extras pointers are relative to it. Uses the same asset/fetch path as loadTerrainSplat on web and native. The caller owns the assigned materials' lifetime.
+
+```ts
+export async function applyTerrainSurface( root: Object3D, options: ILoadTerrainSplatOptions, ): Promise<void> { … }
+```
+
+- **Use when:** apply the authored layered terrain surface after loading a cooked world GLB
+- **Constraints:** url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON
+- **Overrides:** every appearance input comes from the package table or loadTerrainSplat options
+
+```ts
+await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "world/world.glb" });
+```
+
 ### `cellPlacements`
 
 `function` — Borrow the run's placement records as a live view over the placement buffer.
