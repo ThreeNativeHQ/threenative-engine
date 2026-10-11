@@ -2505,13 +2505,24 @@ export async function compileAssets(
    * source path, so a shared output would silently serve it the canonical member's policy.
    */
   const modelSources = logicals.filter((logical) => classify(logical) === "model");
+  const cookedWorlds = new Set<string>();
+  for (const logical of modelSources) {
+    if (path.extname(logical).toLowerCase() !== ".glb") continue;
+    try {
+      if (unpackGlb(await readSource(logical)).json.asset.extras?.tnTerrainWorld === 1) {
+        cookedWorlds.add(logical);
+      }
+    } catch (error) {
+      throw new Error(`TN_ASSETS_MODEL_UNREADABLE: '${logical}': ${messageOf(error)}`);
+    }
+  }
   const perAssetLod =
     typeof layout.lod === "object" && layout.lod !== null && layout.lod.overrides !== undefined
       ? new Set(Object.keys(layout.lod.overrides))
       : new Set<string>();
   const canonicalOf = await groupModelSources(
     layout.sourceRoot,
-    modelSources.filter((logical) => !perAssetLod.has(logical)),
+    modelSources.filter((logical) => !perAssetLod.has(logical) && !cookedWorlds.has(logical)),
     readSource,
   );
 
@@ -2716,9 +2727,10 @@ export async function compileAssets(
   /** One cooked source, published as itself. */
   const cookOne = async (logical: string): Promise<ICookedModel> => {
     const input = await readSource(logical);
+    const terrainWorld = cookedWorlds.has(logical);
     const digest = createHash("sha256")
       .update(input)
-      .update(passConfigurations[classify(logical)], "utf8")
+      .update(terrainWorld ? "terrain-world-v1" : passConfigurations[classify(logical)], "utf8")
       .digest("hex");
     // The output name carries the digest of the input bytes and the whole pass configuration,
     // so a previous entry under that exact name, with every file it declares still on disk, is
@@ -2739,7 +2751,7 @@ export async function compileAssets(
         ? await readFile(path.join(layout.outputRoot, previousEntry.output))
         : input;
       bookkeep(logical, measured, reused, reusable, undefined);
-      recordCachedInputs(costInputs, passNames);
+      recordCachedInputs(costInputs, terrainWorld ? [] : passNames);
       skipped += 1;
       return {
         auxiliary: reusable,
@@ -2748,8 +2760,9 @@ export async function compileAssets(
         measured,
       };
     }
-    const applied =
-      pool === undefined
+    const applied = terrainWorld
+      ? await applyPasses([], input, logical)
+      : pool === undefined
         ? await applyPasses(activePasses, input, logical)
         : await pool.run(logical, input);
     recordRanTimings(costInputs, logical, applied.timings);
@@ -2762,7 +2775,7 @@ export async function compileAssets(
       bytes: applied.buffer.length,
       kind: classify(logical),
       output: outputNameFor(logical, digest.slice(0, 8), applied.extension),
-      passes: [...passNames],
+      passes: terrainWorld ? [] : [...passNames],
       ...auxiliaryFields,
       ...(extensions === undefined ? {} : { extensions }),
       ...(applied.entry === undefined
@@ -2968,7 +2981,7 @@ export async function compileAssets(
 
   // The report runs unconditionally — it is the one place a user learns why their game is
   // slow. Only declared targets can fail it.
-  assertCompletePassCosts(costInputs, logicals.length);
+  assertCompletePassCosts(costInputs, logicals.length - cookedWorlds.size);
   const passCosts = buildPassCostRows(costInputs);
   const report = await runHealthReport(healthInputs, layout.targets);
   for (const line of formatHealthReport(report)) console.log(line);

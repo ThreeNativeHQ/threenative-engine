@@ -90,6 +90,33 @@ async function singleImageFixtureGlb(gridDepth = 3): Promise<Buffer> {
 }
 
 describe("compileAssets", () => {
+  it("lists a cooked terrain GLB byte-identically without invoking model passes", async () => {
+    const root = await makeTempDir("threenative-cooked-world-");
+    await mkdir(path.join(root, "assets/worlds/forest"), { recursive: true });
+    const doc = await buildFixtureDocument();
+    doc.getRoot().getAsset().extras = { tnTerrainWorld: 1 };
+    const cooked = Buffer.from(await new NodeIO().writeBinary(doc));
+    await writeFile(path.join(root, "assets/worlds/forest/world.glb"), cooked);
+    await writeFile(path.join(root, "assets/ordinary.glb"), await buildFixtureGlb());
+    const apply = vi.fn((input: Buffer) => input);
+    await compileAssets({
+      cwd: root,
+      passes: [{ name: "encode-probe", appliesTo: ["model"], apply }],
+    });
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+    );
+    const entry = manifest.entries["worlds/forest/world.glb"];
+    expect(entry).toMatchObject({ kind: "model", bytes: cooked.length, passes: [] });
+    expect(await readFile(path.join(root, "public", entry.output))).toEqual(cooked);
+    expect(apply.mock.calls).toHaveLength(1);
+    expect(manifest.entries["ordinary.glb"].passes).toEqual(["encode-probe"]);
+    const malformed = Buffer.from(cooked);
+    malformed.writeUInt32LE(cooked.length + 4, 8);
+    await writeFile(path.join(root, "assets/worlds/forest/world.glb"), malformed);
+    await expect(compileAssets({ cwd: root, passes: [] })).rejects.toThrow(/GLB/);
+  });
+
   it("should omit an excluded model from the manifest and report saved bytes", async () => {
     const root = await makeTempDir("threenative-exclude-");
     await mkdir(path.join(root, "assets/unused"), { recursive: true });

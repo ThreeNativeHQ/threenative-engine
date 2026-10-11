@@ -437,6 +437,7 @@ export async function cookTerrainWorld(
   // Setup glTF document. The default scene holds only the near LOD of every species; each
   // alternate LOD gets its own named scene, so no two LODs render at once.
   const doc = new Document();
+  doc.getRoot().getAsset().extras = { tnTerrainWorld: 1 };
   const scene = doc.createScene("TerrainWorld");
   const buffer = doc.createBuffer();
   const instancingExt = doc.createExtension(EXTMeshGPUInstancing);

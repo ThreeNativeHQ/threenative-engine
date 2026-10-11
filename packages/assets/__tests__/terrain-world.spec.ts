@@ -57,6 +57,7 @@ import { type IWorldPackage, validateWorldPackage } from "../../core/src/world-p
 import { createGltfReader, readGltfDocument } from "../src/gltf-io.js";
 import { primitiveTriangleCount } from "../src/lod/eligibility.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
+import { unpackGlb } from "../src/passes/shared-images.js";
 import { cookTerrainWorld } from "../src/world/terrain-world.js";
 
 // GLTFLoader reads the global `self` while it parses. Node has none.
@@ -325,6 +326,9 @@ describe("cookTerrainWorld", () => {
         ],
       },
       extraLayers: { table: "terrain-table.json" },
+    });
+    expect(unpackGlb(Buffer.from(cooked.worldGlb)).json.asset.extras).toEqual({
+      tnTerrainWorld: 1,
     });
     const document = await new NodeIO()
       .registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod])
