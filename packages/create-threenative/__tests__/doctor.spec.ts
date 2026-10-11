@@ -335,6 +335,20 @@ describe("threenative doctor", () => {
     expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-engine/);
   });
 
+  it("tells a project without the optional terrain addon exactly what to install", () => {
+    const report = diagnoseProject(
+      snapshot({
+        readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
+        resolvePackageDirectory: () => undefined,
+      }),
+    );
+    const terrain = check(report, "capability search: @threenative/terrain");
+    expect(terrain.status).toBe("warn");
+    expect(terrain.detail).toContain("optional");
+    expect(terrain.fix).toBe("Run: npm i -D @threenative/terrain");
+    expect(terrain.fix).not.toContain("@0.");
+  });
+
   it("fails a resolved MCP server whose transport does not initialize", () => {
     const report = diagnoseProject(
       snapshot({
