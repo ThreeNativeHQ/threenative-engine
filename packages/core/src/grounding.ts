@@ -51,7 +51,12 @@ export class GroundSnap {
     const desired = surfaceY - before.min[1];
     const correction =
       this.maxRate === undefined ? desired : clamp(desired, -this.maxRate * dt, this.maxRate * dt);
-    if (this.enabled) this.applyWorldCorrection(group, correction);
+    if (!this.enabled || correction === 0) {
+      // Nothing moved, so the first measurement is still the posed truth.
+      this.clearance = before.min[1] - surfaceY;
+      return;
+    }
+    this.applyWorldCorrection(group, correction);
 
     // Re-read after the move. The group may be under a scaled or rotated parent, so the local
     // correction is not always one world metre for one local metre. posedBounds forces its own

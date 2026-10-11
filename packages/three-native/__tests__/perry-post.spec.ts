@@ -76,6 +76,48 @@ it("transports a post id and null through the Perry C entry and preserves named 
   refusal = true;
   expect(() => tsl.setPost(999)).toThrow("TN_PERRY_POST: not a TSL node of this context");
 });
+
+it("reads a multi-lane field in one bulk copy, as a plain array", () => {
+  const heap = new Float64Array(32).map((_, i) => i * 0.5);
+  const memory = vi.fn((_kind: number, at: number) => heap[at / 8] ?? 0);
+  const physicsCopy = vi.fn((out: Float64Array, at: number, count: number, kind: number) => {
+    if (kind !== 7) return 1;
+    out.set(heap.subarray(at / 8, at / 8 + count));
+    return 0;
+  });
+  const transport = {
+    layout: (f: number) => [8, 12, 56, 32, 32, 40, 48, 64][f],
+    alloc: () => 4096,
+    free: vi.fn(),
+    call: () => 0,
+    memory,
+    physicsCopy,
+  };
+  const source = readFileSync(new URL("../src/perry-transport.ts", import.meta.url), "utf8")
+    .replace(/import\s*\{([^}]+)\}\s*from "tn-native-transport";/u, "const {$1} = native;")
+    .replace("alloc as malloc", "alloc: malloc");
+  const sandbox = { native: transport, exports: {} as { createPerryRuntime(): IPerryRuntime } };
+  runInNewContext(
+    transpileModule(source, {
+      compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
+    }).outputText,
+    sandbox,
+  );
+  const runtime = sandbox.exports.createPerryRuntime();
+  memory.mockClear();
+
+  const elements = runtime.readDoubles?.(16, 16);
+
+  expect(Array.isArray(elements)).toBe(true);
+  expect(elements).toEqual(Array.from(heap.subarray(2, 18)));
+  expect(memory).not.toHaveBeenCalled();
+  expect(physicsCopy).toHaveBeenCalledOnce();
+
+  // The next read reuses the same scratch and leaves the earlier result intact.
+  expect(runtime.readDoubles?.(8, 3)).toEqual([0.5, 1, 1.5]);
+  expect(physicsCopy.mock.calls[1]?.[0]).toBe(physicsCopy.mock.calls[0]?.[0]);
+  expect(elements).toEqual(Array.from(heap.subarray(2, 18)));
+});
 vi.mock("../src/perry-transport.js", () => ({ createPerryRuntime: () => native }));
 vi.mock("tn-native-transport", () => ({
   playerRenderInfo: (field: number) => (field === 0 ? 3 : 36),

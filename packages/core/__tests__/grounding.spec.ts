@@ -1,6 +1,7 @@
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GroundSnap } from "../src/index.js";
+import { posedBounds } from "../src/pose-measure.js";
 
 function model(): { root: Group; mesh: Mesh } {
   const root = new Group();
@@ -32,6 +33,22 @@ describe("GroundSnap", () => {
 
     expect(root.position.y).toBeCloseTo(0.75, 6);
     expect(snap.clearance).toBeGreaterThan(0.5);
+  });
+
+  it("measures the pose once when nothing moved", () => {
+    const { root, mesh } = model();
+    root.position.y = 0.75;
+    const snap = new GroundSnap(root, { enabled: false, meshes: [mesh] });
+    posedBounds(root, [mesh]); // builds the cached envelope
+    const passes = vi.spyOn(root, "updateWorldMatrix");
+
+    snap.apply(root, 0, 1 / 60);
+
+    const applyPasses = passes.mock.calls.length;
+    passes.mockClear();
+    posedBounds(root, [mesh]);
+    expect(applyPasses).toBe(passes.mock.calls.length);
+    expect(snap.clearance).toBeCloseTo(1.25, 6);
   });
 
   it("does not exceed maxRate when damping", () => {

@@ -151,9 +151,14 @@ export function createPerryRuntime(): IPerryRuntime {
     args.forEach((arg, i) => writeValue(at + i * valueSize, arg));
     return at;
   };
+  // One bulk copy into a reused scratch, not one memory() crossing per lane or a typed array per call.
+  let lanes = new Float64Array(16);
   const readNumbers = (at: number, count: number): number[] => {
-    const list: number[] = [];
-    for (let i = 0; i < count; i++) list.push(read(at + i * 8, 4));
+    if (count > lanes.length) lanes = new Float64Array(count);
+    if (physicsCopy(lanes, at, count, 7, false))
+      throw new TypeError("TN_PERRY_NUMBERS_COPY: invalid numeric list");
+    const list = new Array<number>(count);
+    for (let i = 0; i < count; i++) list[i] = lanes[i] as number;
     return list;
   };
   const readValue = (at: number): EngineValue => {
