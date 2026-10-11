@@ -968,6 +968,12 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  * @situation falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard
  * @situation kick up a spray of powder snow or dust where a foot or a ball lands
  * @constraint geometry, color, and timing remain supplied by the game
+ * @constraint the emitter measures its own bounds and stops computing and drawing after graceSeconds outside the camera view
+ * @constraint a game needs no emitting = visible gate, and an emitter with no measured bounds is never culled for leaving the view
+ * @constraint when measured GPU cost passes the frame budget, the smallest projected emitters pause first, and cull.reason reads outside-view or over-budget
+ * @override onCull: "clear" restarts a returning effect, the default "pause" resumes it with buffers intact
+ * @override bounds supplies a fixed local Box3 and skips GPU measurement, padding enlarges the world box, boundsEveryFrames sets the measurement cadence
+ * @override graceSeconds sets the seconds outside the view before culling, and Infinity disables view culling
  * @example const particles = new GPUParticles3D(particleOptions);
  */
 export { GPUParticles3D } from "./particles.js";
