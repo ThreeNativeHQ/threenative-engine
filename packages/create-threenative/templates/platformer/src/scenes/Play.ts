@@ -39,7 +39,7 @@ import {
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
-import { cloudLobes, setupSky, skyFloor, skyTexture } from "../render/sky.js";
+import { cloudLobes, setupSky, skyEnvironment, skyFloor, skyTexture } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
@@ -103,6 +103,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   };
 
   #sky: Texture | undefined;
+  #skyEnvironment: Texture | undefined;
   #walkers: Walker[] = [];
 
   /**
@@ -126,7 +127,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       this.#walkers.push(walker);
     }
     this.#sky = skyTexture();
-    setupSky(ctx.scene, this.#sky);
+    this.#skyEnvironment = skyEnvironment();
+    setupSky(ctx.scene, this.#sky, this.#skyEnvironment);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
       rendererKind: ctx.renderer.kind,
@@ -146,9 +148,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       predicate: (object) => object.userData.solid === true,
     });
     collapseStage(stage.group);
-    if (this.#sky === undefined)
+    if (this.#sky === undefined || this.#skyEnvironment === undefined)
       throw new Error("Play.enter ran before load() created the sky texture.");
-    setupSky(ctx.scene, this.#sky);
+    setupSky(ctx.scene, this.#sky, this.#skyEnvironment);
     ctx.scene.add(skyFloor());
     const lighting = setupLighting(
       ctx.scene,

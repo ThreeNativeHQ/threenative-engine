@@ -1,15 +1,18 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
-// A vertical blue gradient supplies both the background and the environment light.
-// Its lower hemisphere matches skyFloor, so reflections see the same haze as the floating route.
+// A vertical blue gradient supplies the background; a measured environment supplies the light.
+// The background's lower hemisphere matches skyFloor around the floating route.
 import {
   BackSide,
   Color,
   DataTexture,
+  DataUtils,
   EquirectangularReflectionMapping,
   Float32BufferAttribute,
   FogExp2,
+  HalfFloatType,
   LinearFilter,
+  LinearSRGBColorSpace,
   Mesh,
   MeshBasicMaterial,
   RGBAFormat,
@@ -29,17 +32,26 @@ export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
 /** The look this fog replaced: FogExp2 at 0.003, measured at 150 m from 2 m up. */
 const EYE_LEVEL = { density: 0.003, distance: 150, cameraHeight: 2 };
 
-/**
- * The distance term's density that, with the height term, keeps the old eye-level haze: at
- * `EYE_LEVEL.distance` along the horizon from `EYE_LEVEL.cameraHeight` the two together transmit what
- * FogExp2 at `EYE_LEVEL.density` did. The distance term is lowered, never removed, so the ground
- * still ends in fog at a kilometre.
- */
+/** Lower distance density so distance + height fog preserve the kit's old eye-level haze. */
 function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
   const { distance, density, cameraHeight } = EYE_LEVEL;
   const old = (density * distance) ** 2;
   const height = heightFogDepth(p, cameraHeight, cameraHeight, distance) * Math.LN2;
   return Math.sqrt(Math.max(0, old - height)) / distance;
+}
+
+function gradientColor(row: number, height: number): Color {
+  const high = new Color(palette.skyHigh);
+  const mid = new Color(palette.skyLow);
+  const horizon = new Color(palette.horizon);
+  const deep = high.clone().lerp(horizon, 0.45);
+  // DataTexture rows start at v=0 (nadir); equirectangular v=0.5 is the horizon.
+  const elevation = Math.sin((row / (height - 1) - 0.5) * Math.PI);
+  return elevation < 0
+    ? horizon.clone().lerp(deep, Math.min(1, -elevation / 0.6))
+    : elevation < 0.5
+      ? horizon.clone().lerp(mid, elevation * 2)
+      : mid.clone().lerp(high, (elevation - 0.5) * 2);
 }
 
 /** sRGB equirectangular radiance, from the lower haze through the horizon to the zenith. */
@@ -48,28 +60,11 @@ export function skyTexture(): DataTexture {
   const width = 256;
   const height = 128;
   const data = new Uint8Array(width * height * 4);
-  const high = new Color(palette.skyHigh);
-  const mid = new Color(palette.skyLow);
-  const horizon = new Color(palette.horizon);
-  const deep = high.clone().lerp(horizon, 0.45);
   for (let row = 0; row < height; row += 1) {
-    // DataTexture rows start at v=0 (nadir); equirectangular v=0.5 is the horizon.
-    const elevation = Math.sin((row / (height - 1) - 0.5) * Math.PI);
-    const color =
-      elevation < 0
-        ? horizon.clone().lerp(deep, Math.min(1, -elevation / 0.6))
-        : elevation < 0.5
-          ? horizon.clone().lerp(mid, elevation * 2)
-          : mid.clone().lerp(high, (elevation - 0.5) * 2);
-    const encoded = color.clone().convertLinearToSRGB();
+    const encoded = gradientColor(row, height).convertLinearToSRGB();
     for (let column = 0; column < width; column += 1) {
       data.set(
-        [
-          Math.round(encoded.r * 255),
-          Math.round(encoded.g * 255),
-          Math.round(encoded.b * 255),
-          255,
-        ],
+        [...encoded.toArray().map((value) => Math.round(value * 255)), 255],
         (row * width + column) * 4,
       );
     }
@@ -83,39 +78,63 @@ export function skyTexture(): DataTexture {
   return sky;
 }
 
-export function setupSky(scene: Scene, sky: Texture): void {
+// Measured from the photographed sky this kit used to light with, preserving its tuned lighting
+// when the background became a stylized gradient; edit these fills to relight.
+const UPPER_FILL = new Color(0.355, 0.423, 0.627);
+const LOWER_FILL = new Color(0.68, 0.67, 0.633);
+export function skyEnvironment(): DataTexture {
+  const width = 256;
+  const height = 128;
+  const data = new Uint16Array(width * height * 4);
+  const upperMean = new Color(0, 0, 0);
+  let weights = 0;
+  for (let row = height / 2; row < height; row += 1) {
+    const elevation = (row / (height - 1) - 0.5) * Math.PI;
+    const weight = Math.abs(Math.cos(elevation));
+    upperMean.add(gradientColor(row, height).multiplyScalar(weight));
+    weights += weight;
+  }
+  upperMean.multiplyScalar(1 / weights);
+  const scale = new Color(
+    UPPER_FILL.r / upperMean.r,
+    UPPER_FILL.g / upperMean.g,
+    UPPER_FILL.b / upperMean.b,
+  );
+  for (let row = 0; row < height; row += 1) {
+    const color = row < height / 2 ? LOWER_FILL : gradientColor(row, height).multiply(scale);
+    const rgba = [color.r, color.g, color.b, 1].map(DataUtils.toHalfFloat);
+    for (let column = 0; column < width; column += 1) {
+      data.set(rgba, (row * width + column) * 4);
+    }
+  }
+  const environment = new DataTexture(data, width, height, RGBAFormat, HalfFloatType);
+  environment.colorSpace = LinearSRGBColorSpace;
+  environment.mapping = EquirectangularReflectionMapping;
+  environment.minFilter = LinearFilter;
+  environment.magFilter = LinearFilter;
+  environment.needsUpdate = true;
+  return environment;
+}
+
+export function setupSky(scene: Scene, sky: Texture, environment: Texture = sky): void {
   sky.mapping = EquirectangularReflectionMapping;
   scene.background = sky;
   scene.backgroundIntensity = 1;
   // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
-  // It is what makes a standard material read as a material: sky-blue fill on faces the sun
-  // misses, and a sky to reflect, sharper as roughness drops.
-  scene.environment = sky;
+  // The measured fill lights faces the sun misses and supplies reflections as roughness drops.
+  scene.environment = environment;
   scene.environmentIntensity = 1;
-  // The route runs to x=97 with the backdrop cliffs another 60 m behind them, so this is thin on
-  // purpose: at this density it is under 2% inside the playfield and only reads past the castle.
-  // `scene.fog` stays the distance term; `scene.fogNode` is what three applies and adds the height term.
+  // Thin distance fog retains the far cutoff; fogNode adds the height term.
   const distanceFog = new FogExp2(palette.horizon, distanceDensity());
   scene.fog = distanceFog;
   scene.fogNode = heightFogNode(distanceFog, HEIGHT_FOG, SUN_DIRECTION);
 }
 
-/**
- * Inside the camera's far plane by a bounding box's diagonal: the playtest's `cameraClearsScene`
- * measures a mesh by its box, and a box of half-width R reaches 1.73 R.
- */
+/** Inside the camera's far plane by the diagonal of the mesh's bounding box (1.73 R). */
 const FLOOR_RADIUS = 480;
-
 /** Radians the floor climbs above the horizon before it has faded out. */
 const RISE = 0.35;
-
-/**
- * What the world floats in. The route has no ground; this is the lower
- * hemisphere, from the fog colour at the horizon to a deeper sky blue straight down, so distant
- * rock fades into it exactly as it fades into the fog. It climbs 20 degrees past the horizon and
- * fades out there, so the gradient melts into the haze instead of meeting it at a hard line.
- * It is not fogged and never writes depth.
- */
+/** Lower sky fades into horizon haze 20° above the route; unfogged, with no depth writes. */
 export function skyFloor(): Mesh {
   const geometry = new SphereGeometry(
     FLOOR_RADIUS,
@@ -152,17 +171,7 @@ export function skyFloor(): Mesh {
   return floor;
 }
 
-/**
- * The cloud bank, as a list of lobes to instance.
- *
- * Eighteen clouds of five to nine squashed lobes is 130-odd separate spheres, and the gradient sky
- * is static — so the scene builds one `InstancedBatch` of a unit sphere from this and never
- * touches it again. The motion in the sky is the airship in `scenery.ts`, which crosses the frame
- * in twenty seconds, and the parallax of a fox covering ninety-seven metres.
- *
- * This is data, not objects, so the batching stays the scene's decision: `src/render/` is ordinary
- * Three.js and never reaches back into the framework.
- */
+/** Static cloud lobes for the scene to instance as one draw; only the airship and fox move. */
 export function cloudLobes(
   rng: () => number,
 ): { position: [number, number, number]; scale: [number, number, number] }[] {

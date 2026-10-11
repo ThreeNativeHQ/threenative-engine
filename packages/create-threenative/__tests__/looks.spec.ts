@@ -2,7 +2,11 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
   Color,
+  DataUtils,
   EquirectangularReflectionMapping,
+  HalfFloatType,
+  LinearFilter,
+  LinearSRGBColorSpace,
   SRGBColorSpace,
   Scene,
   UnsignedByteType,
@@ -10,7 +14,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { flat } from "../templates/platformer/src/render/materials.js";
 import { palette } from "../templates/platformer/src/render/palette.js";
-import { setupSky, skyTexture } from "../templates/platformer/src/render/sky.js";
+import { setupSky, skyEnvironment, skyTexture } from "../templates/platformer/src/render/sky.js";
 import { qualityPreset } from "../templates/starter/src/render/quality.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
@@ -478,7 +482,7 @@ describe("platformer translucent surfaces and gradient sky", () => {
     expect(flat(0xffffff, { opacity: 0.55 })).toBe(flat(0xffffff, { opacity: 0.55 }));
   });
 
-  it("uses filterable sRGB sky radiance for background and environment with a coloured lower hemisphere", () => {
+  it("uses a filterable gradient background and a separately measured linear sky environment", () => {
     const sky = skyTexture();
     const { data, width, height } = sky.image;
     if (!(data instanceof Uint8Array)) throw new Error("Sky texture must contain byte data.");
@@ -497,13 +501,47 @@ describe("platformer translucent surfaces and gradient sky", () => {
     closeTo(colorAt(Math.floor((height - 1) / 2)), new Color(palette.horizon));
     closeTo(colorAt(0), new Color(palette.skyHigh).lerp(new Color(palette.horizon), 0.45));
     expect(Array.from(data).every((value) => Number.isFinite(value) && value > 0)).toBe(true);
+    const environment = skyEnvironment();
+    expect(environment.type).toBe(HalfFloatType);
+    expect(environment.colorSpace).toBe(LinearSRGBColorSpace);
+    expect(environment.mapping).toBe(EquirectangularReflectionMapping);
+    expect(environment.minFilter).toBe(LinearFilter);
+    expect(environment.magFilter).toBe(LinearFilter);
+    const image = environment.image;
+    expect(image.width).toBeGreaterThanOrEqual(64);
+    if (!(image.data instanceof Uint16Array))
+      throw new Error("Environment must contain half floats.");
+    for (const [upper, fill] of [
+      [true, [0.355, 0.423, 0.627]],
+      [false, [0.68, 0.67, 0.633]],
+    ] as const) {
+      const sums = [0, 0, 0];
+      let weights = 0;
+      for (let row = 0; row < image.height; row += 1) {
+        const elevation = (row / (image.height - 1) - 0.5) * Math.PI;
+        if (elevation >= 0 !== upper) continue;
+        const weight = Math.abs(Math.cos(elevation));
+        for (let column = 0; column < image.width; column += 1) {
+          weights += weight;
+          for (let channel = 0; channel < 3; channel += 1) {
+            const half = image.data[(row * image.width + column) * 4 + channel];
+            if (half === undefined) throw new Error("Missing environment sample.");
+            sums[channel] = (sums[channel] ?? 0) + DataUtils.fromHalfFloat(half) * weight;
+          }
+        }
+      }
+      for (const [channel, expected] of fill.entries()) {
+        expect(Math.abs((sums[channel] ?? 0) / weights - expected) / expected).toBeLessThan(0.02);
+      }
+    }
     const scene = new Scene();
-    setupSky(scene, sky);
+    setupSky(scene, sky, environment);
     expect(scene.background).toBe(sky);
-    expect(scene.environment).toBe(sky);
+    expect(scene.environment).toBe(environment);
     expect(scene.backgroundIntensity).toBe(1);
     expect(scene.environmentIntensity).toBe(1);
     expect(sky.colorSpace).toBe(SRGBColorSpace);
     sky.dispose();
+    environment.dispose();
   });
 });
