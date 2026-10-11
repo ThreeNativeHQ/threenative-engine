@@ -190,6 +190,54 @@ describe("project terrain editor document", () => {
     expect(readFileSync(path, "utf8")).toBe(disk);
     expect(() => new TerrainEditorDocument("relative.json")).toThrow("absolute");
   });
+  it.each(["cameras", "environment", "inspect", "reload", "restore"])(
+    "rejects a 10 MiB %s body before parsing or changing the document",
+    async (route) => {
+      const { base, path } = await api();
+      const disk = readFileSync(path, "utf8");
+      const response = await fetch(`${base}${route}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{".repeat(10 * 1024 * 1024),
+      });
+      expect(response.status).toBe(413);
+      expect(await response.json()).toEqual({ code: 413, error: "Request exceeds 1 MiB" });
+      expect(readFileSync(path, "utf8")).toBe(disk);
+    },
+  );
+  it("bounds chunked small-route bodies without relying on content-length", async () => {
+    const { base } = await api();
+    expect(
+      await status(
+        `${base}inspect`,
+        { "content-type": "application/json", "transfer-encoding": "chunked" },
+        "POST",
+        "{".repeat(10 * 1024 * 1024),
+      ),
+    ).toBe(413);
+  });
+  it("returns only a status code and compatible error message for rejected edits", async () => {
+    const { post, get } = await api();
+    const before = await get();
+    const response = await post({ baseRevision: "stale", document: before.document });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ code: 409, error: "Stale base revision" });
+    expect(await get()).toEqual(before);
+  });
+  it("keeps the larger request allowance for documents and asset uploads", async () => {
+    const { base } = await api();
+    for (const route of ["document", "assets"]) {
+      const response = await fetch(`${base}${route}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: `${" ".repeat(10 * 1024 * 1024)}{broken`,
+      });
+      expect(response.status).toBe(400);
+      const result = await response.json();
+      expect(Object.keys(result).sort()).toEqual(["code", "error"]);
+      expect(result.error).not.toContain("Request exceeds");
+    }
+  });
   it("streams accepted revisions and observes complete external file saves", async () => {
     const { path, base, get, post } = await api();
     const before = await get();

@@ -1,7 +1,7 @@
 # PRD-588 — The terrain editor is typed modules, not one 1481-line closure
 
 **Status:** PARTIAL
-**Priority:** P2 — `app.js` stays untyped, string-built and mouse-only until AC-1 to AC-5 land; it slows every editor fix after PRD-587.
+**Priority:** P2 — Browser proof of the mechanics move, keyboard access and a single export encoder remain open in AC-3, AC-4 and AC-6.
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** [PRD-587](PRD-587-the-terrain-editor-never-drops-an-edit.md) (lands its save model first, so the port moves settled code)
@@ -42,7 +42,7 @@ cook covers its contract. React is not required by this PRD; decide it after the
 - [x] AC-2 [local]: No `innerHTML` assignment remains in `src/editor/`. proof: `editor-source.spec.ts` greps the source — Evidence: 3/3 passed, including no JS and no HTML sinks (2026-10-11).
 - [ ] AC-3 [local]: Every tool is reachable and usable by keyboard, and errors are announced through an `aria-live` region. proof: `editor.playtest.json` keyboard steps — Evidence: pending.
 - [ ] AC-4 [local]: Picking, gizmo and brush mechanics live in the package; the example keeps only appearance. proof: `pnpm tsx scripts/count-loc.ts` before/after plus `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: picking and landform transform math moved; brush stamping/falloff already use package operations. Mechanics spec 5/5 passed; example strict typecheck exit 0. Browser editor proof remains assigned to the coordinator (2026-10-11).
-- [ ] AC-5 [local]: Small routes reject a 10 MiB body with 413, and error responses carry no document snapshot. proof: `editor-document.spec.ts` cases — Evidence: pending.
+- [x] AC-5 [local]: Small routes reject a 10 MiB body with 413, and error responses carry no document snapshot. proof: `editor-document.spec.ts` cases — Evidence: 17/17 passed, including five 10 MiB route bodies, chunked uploads and slim 409 responses; rejected uploads drain without parsing (2026-10-11).
 - [ ] AC-6 [local]: The editor's export uses `cookTerrainWorld`, and `exportWorldGLB` is deleted or names its remaining caller. proof: `pnpm --filter strata-terrain-preview test:terrain:export` — Evidence: pending.
 
 ## Execution Phases
@@ -57,7 +57,7 @@ cook covers its contract. React is not required by this PRD; decide it after the
 **Status:** PARTIAL
 **Files:** `editorView.ts`, `selection.ts` (example) → `packages/terrain/src/editor/`; `server.ts`
 - [ ] Mechanics in package. proof: count-loc + editor script — Package mechanics spec 5/5 passed; affected example files raw LOC 1804 → 1725. `pnpm tsx scripts/count-loc.ts` on HEAD archive and working tree both exit 0, unchanged benchmark totals (platformer 6349, touch 1361, HUD 60, cloth 46 vs 760); this instrument does not count Strata. Browser editor script remains unrun here (2026-10-11).
-- [ ] Route limits and slim errors. proof: `editor-document.spec.ts`
+- [x] Route limits and slim errors. proof: `editor-document.spec.ts` — 17/17 passed; `pnpm --filter @threenative/terrain test` exit 0, 277/277 tests across 26 files, build and strict publint green; terrain typecheck exit 0, scoped Biome exit 0 (24 warnings), example `pnpm exec tsc --noEmit -p examples/strata-terrain-preview/tsconfig.json` exit 0 (2026-10-11).
 
 #### Phase 3: keyboard, one encoder
 **Status:** NOT STARTED

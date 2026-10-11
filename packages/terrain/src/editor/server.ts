@@ -41,6 +41,7 @@ import {
 
 const PREFIX = "/terrain-editor/";
 const MAX_BYTES = 64 * 1024 * 1024;
+const MAX_SMALL_BYTES = 1024 * 1024;
 const MAX_REFERENCES = 16;
 
 export interface IAuthoringDocument {
@@ -278,20 +279,29 @@ export class TerrainEditorDocument {
   }
 }
 
-async function body(request: IncomingMessage): Promise<unknown> {
-  if (request.headers["content-type"]?.split(";")[0] !== "application/json")
+async function body(
+  request: IncomingMessage,
+  maxBytes = MAX_SMALL_BYTES,
+  parse = true,
+): Promise<unknown> {
+  if (Number(request.headers["content-length"]) > maxBytes) {
+    request.resume();
+    throw new EditorError(413, `Request exceeds ${maxBytes / (1024 * 1024)} MiB`);
+  }
+  if (parse && request.headers["content-type"]?.split(";")[0] !== "application/json")
     throw new EditorError(415, "Expected application/json");
-  if (Number(request.headers["content-length"]) > MAX_BYTES)
-    throw new EditorError(413, "Request exceeds 64 MiB");
   const chunks: Buffer[] = [];
   let bytes = 0;
-  for await (const chunk of request) {
+  for await (const chunk of request.iterator({ destroyOnReturn: false })) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     bytes += buffer.length;
-    if (bytes > MAX_BYTES) throw new EditorError(413, "Request exceeds 64 MiB");
-    chunks.push(buffer);
+    if (bytes > maxBytes) {
+      request.resume();
+      throw new EditorError(413, `Request exceeds ${maxBytes / (1024 * 1024)} MiB`);
+    }
+    if (parse) chunks.push(buffer);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return parse ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : undefined;
 }
 function json(response: ServerResponse, status: number, value: unknown): void {
   response.writeHead(status, {
@@ -430,11 +440,13 @@ export function terrainEditor(options: {
               return;
             }
             if (request.method === "POST" && path === `${PREFIX}api/reload`) {
+              await body(request, MAX_SMALL_BYTES, false);
               document.refresh();
               json(response, 200, document.snapshot());
               return;
             }
             if (request.method === "POST" && path === `${PREFIX}api/restore`) {
+              await body(request, MAX_SMALL_BYTES, false);
               json(response, 200, document.restoreLastValid());
               return;
             }
@@ -450,7 +462,7 @@ export function terrainEditor(options: {
               return;
             }
             if (request.method === "POST" && path === `${PREFIX}api/document`) {
-              json(response, 200, document.commit(await body(request)));
+              json(response, 200, document.commit(await body(request, MAX_BYTES)));
               return;
             }
             if (request.method === "POST" && path === `${PREFIX}api/cameras`) {
@@ -507,7 +519,7 @@ export function terrainEditor(options: {
               return;
             }
             if (request.method === "POST" && path === `${PREFIX}api/assets`) {
-              const transaction = await body(request);
+              const transaction = await body(request, MAX_BYTES);
               if (
                 !transaction ||
                 typeof transaction !== "object" ||
@@ -683,9 +695,10 @@ export function terrainEditor(options: {
             }
             throw new EditorError(405, "Unsupported terrain editor route/method");
           } catch (error) {
-            json(response, error instanceof EditorError ? error.status : 400, {
+            const status = error instanceof EditorError ? error.status : 400;
+            json(response, status, {
+              code: status,
               error: error instanceof Error ? error.message : String(error),
-              snapshot: document.snapshot(),
             });
           }
         })();
