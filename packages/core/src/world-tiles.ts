@@ -3595,11 +3595,52 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       x: blockX * TERRAIN_MERGE_BLOCK * this.tileSize,
       z: blockZ * TERRAIN_MERGE_BLOCK * this.tileSize,
     };
+    const captured = parts.map(({ geometry, origin }) => ({
+      geometry,
+      originX: origin.x,
+      originZ: origin.z,
+      attributes: [
+        geometry.getAttribute("position") as BufferAttribute,
+        geometry.getAttribute("normal") as BufferAttribute,
+        geometry.getIndex(),
+      ].map((attribute) => ({ attribute, version: attribute?.version })),
+    }));
     this.#mergingBlocks.add(blockKey);
     const job = timedSpan(SPANS.terrainBlock, () => this.#jobs.merge(mergeJob(parts, blockOrigin)));
     const apply = (result: ITerrainMergeResult): void => {
       this.#mergingBlocks.delete(blockKey);
       if (this.#released) return;
+      if (job instanceof Promise) {
+        const current = this.#blockMembers(blockKey, lod);
+        const superseded =
+          this.#dirtyBlocks.has(blockKey) ||
+          current.members.size !== members.size ||
+          [...members].some((key) => !current.members.has(key)) ||
+          current.parts.length !== captured.length ||
+          current.parts.some(({ geometry, origin }, partIndex) => {
+            const previous = captured[partIndex];
+            const attributes = [
+              geometry.getAttribute("position") as BufferAttribute,
+              geometry.getAttribute("normal") as BufferAttribute,
+              geometry.getIndex(),
+            ];
+            return (
+              previous === undefined ||
+              previous.geometry !== geometry ||
+              previous.originX !== origin.x ||
+              previous.originZ !== origin.z ||
+              previous.attributes.some(
+                ({ attribute, version }, attributeIndex) =>
+                  attribute !== attributes[attributeIndex] ||
+                  version !== attributes[attributeIndex]?.version,
+              )
+            );
+          });
+        if (superseded) {
+          this.#dirtyBlocks.add(blockKey);
+          return;
+        }
+      }
       timedSpan(SPANS.terrainBlock, () =>
         this.#applyBlock({ blockKey, blockOrigin, lod, members }, result),
       );

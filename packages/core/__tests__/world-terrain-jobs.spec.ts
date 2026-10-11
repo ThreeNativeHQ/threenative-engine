@@ -1,4 +1,4 @@
-import { type BufferGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
+import { type BufferAttribute, type BufferGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SpanRecorder, setSpanRecorder } from "../src/profiling/Spans.js";
 import {
@@ -328,6 +328,119 @@ describe("terrain jobs", () => {
       tiles.dispose();
     }
   });
+
+  it.each(["control", "held"])(
+    "keeps stale merge geometry out after captured members are evicted (%s)",
+    async (arm) => {
+      vi.stubGlobal("Worker", FakeWorker);
+      const tiles = terrain({ residentTileBudget: 9 });
+      const worker = FakeWorker.latest();
+      try {
+        tiles.follow(ISLAND);
+        const captured = worker.received.find(({ job }) => job.kind === "merge");
+        if (captured === undefined || captured.job.kind !== "merge")
+          throw new Error("Expected an initial captured merge.");
+        const initialResidentKeys = [...tiles.residentKeys];
+        const result = runTerrainJob(captured.job);
+        const release = async (): Promise<void> => {
+          worker.received.splice(worker.received.indexOf(captured), 1);
+          worker.onmessage?.({ data: { id: captured.id, result } });
+          await Promise.resolve();
+        };
+        const initialCensus = tiles.terrainTiles;
+        if (arm === "control") await release();
+        const destination = { x: ISLAND.x + 8 * 16, z: ISLAND.z };
+        tiles.follow(destination);
+        const currentResidentKeys = [...tiles.residentKeys];
+        expect(currentResidentKeys.filter((key) => initialResidentKeys.includes(key))).toEqual([]);
+        expect(tiles.blendingTiles).toBe(0);
+        if (arm === "held") await release();
+        const staleMesh = blockMeshes(tiles).find(
+          (mesh) =>
+            firstDifference(
+              bytes(mesh.geometry, "position"),
+              new Uint8Array(
+                result.positions.buffer,
+                result.positions.byteOffset,
+                result.positions.byteLength,
+              ),
+            ) === -1,
+        );
+        const visibleCurrentKeys = currentResidentKeys.filter((key) =>
+          tiles.getTile(key)?.lod.levels.some(({ object }) => object.visible),
+        );
+        const census = tiles.terrainTiles;
+        console.info("PRD566 evicted merge membership", {
+          arm,
+          capturedParts: captured.job.parts.length,
+          capturedVertices: result.positions.length / 3,
+          initialResidentKeys,
+          currentResidentKeys,
+          visibleCurrentKeys,
+          initialCensus,
+          census,
+          stalePayloadApplied: staleMesh !== undefined,
+          staleMeshName: staleMesh?.name,
+          residentTiles: tiles.residentTileCount,
+          blendingTiles: tiles.blendingTiles,
+        });
+        expect(visibleCurrentKeys, "eligible current individual tiles remain visible").toEqual(
+          currentResidentKeys,
+        );
+        expect.soft(staleMesh, "evicted merge payload cannot be resurrected").toBeUndefined();
+        expect
+          .soft(census.tiles, "settled uniform-ring membership matches resident membership")
+          .toBe(tiles.residentTileCount);
+        // The existing settled-ring scheduler also proves current valid work is eventually applied.
+        for (let frame = 0; frame < 12; frame++) {
+          tiles.follow(destination);
+          await worker.answer();
+        }
+        console.info("PRD566 current replacement settled", { arm, census: tiles.terrainTiles });
+        expect(tiles.terrainTiles.blocks).toBeGreaterThan(0);
+        expect(tiles.terrainTiles.rebuilds).toBeGreaterThan(census.rebuilds);
+        expect(tiles.terrainTiles.tiles).toBe(tiles.residentTileCount);
+      } finally {
+        tiles.dispose();
+      }
+    },
+  );
+
+  it.each(["position", "normal", "index"] as const)(
+    "reconciles a merge superseded by its %s attribute identity or version",
+    async (attribute) => {
+      vi.stubGlobal("Worker", FakeWorker);
+      const tiles = terrain();
+      try {
+        tiles.follow(ISLAND);
+        const worker = FakeWorker.latest();
+        const captured = worker.received.find(({ job }) => job.kind === "merge");
+        if (captured === undefined || captured.job.kind !== "merge")
+          throw new Error("Expected an initial captured merge.");
+        const part = captured.job.parts[0];
+        if (part === undefined) throw new Error("Expected a captured tile part.");
+        const key = `${part.origin.x / tiles.tileSize}:${part.origin.z / tiles.tileSize}`;
+        const mesh = tiles.getTile(key)?.lod.levels.find(({ object }) => object.visible)?.object;
+        if (!(mesh instanceof Mesh)) throw new Error("Expected the captured resident mesh.");
+        const buffer = (
+          attribute === "index" ? mesh.geometry.getIndex() : mesh.geometry.getAttribute(attribute)
+        ) as BufferAttribute | null;
+        if (buffer === null) throw new Error("Expected a captured input attribute.");
+        if (attribute === "position") mesh.geometry.setAttribute(attribute, buffer.clone());
+        else buffer.needsUpdate = true;
+        worker.received.splice(worker.received.indexOf(captured), 1);
+        worker.onmessage?.({ data: { id: captured.id, result: runTerrainJob(captured.job) } });
+        await Promise.resolve();
+        expect(tiles.terrainTiles.blocks, "superseded input cannot create a block").toBe(0);
+        expect(tiles.terrainTiles.rebuilds, "superseded input is not recorded as applied").toBe(0);
+        await settleWith(tiles);
+        expect(tiles.terrainTiles.blocks).toBeGreaterThan(0);
+        expect(tiles.terrainTiles.tiles).toBe(tiles.residentTileCount);
+      } finally {
+        tiles.dispose();
+      }
+    },
+  );
 
   it("writes no bridge while the seam job that builds its strips is owed", () => {
     vi.stubGlobal("Worker", FakeWorker);
