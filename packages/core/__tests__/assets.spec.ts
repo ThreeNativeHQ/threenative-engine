@@ -3,7 +3,7 @@ import {
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
-  type CompressedTexture,
+  CompressedTexture,
   Group,
   ImageBitmapLoader,
   InterleavedBuffer,
@@ -14,6 +14,7 @@ import {
   MirroredRepeatWrapping,
   NoColorSpace,
   RGBA_ASTC_4x4_Format,
+  RGBA_S3TC_DXT1_Format,
   RepeatWrapping,
   SRGBColorSpace,
   Texture,
@@ -810,7 +811,7 @@ describe("IAssetLoader compressed textures", () => {
 
   // Actual encoder/emitter capture at e49bb087f, shared with native-ktx2.spec.ts:
   // separate UNORM/sRGB 8x8 RGBA [240,20,40,128] UASTC cooks, all four mip levels.
-  it.each([
+  const rawAstcFixtures = [
     {
       vkFormat: 157,
       base64:
@@ -821,7 +822,8 @@ describe("IAssetLoader compressed textures", () => {
       base64:
         "q0tUWCAyMLsNChoKngAAAAEAAAAIAAAACAAAAAAAAAAAAAAAAQAAAAQAAAAAAAAAsAAAACwAAADcAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAwAQAAAAAAAEAAAAAAAAAAQAAAAAAAAAAgAQAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAQAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAQAAAAAAABAAAAAAAAAAEAAAAAAAAAAsAAAAAAAAAAIAKACiAQIAAwMAABAAAAAAAAAAAAB/AAAAAAAAAAAA/////xsAAABLVFh3cml0ZXIAS1RYLVBhcnNlIHYxLjEuMAAAAAAAAPz9////////8PAUFCgogID8/f////////DwFBQoKICA/P3////////w8BQUKCiAgPz9////////8PAUFCgogID8/f////////DwFBQoKICA/P3////////w8BQUKCiAgPz9////////8PAUFCgogIA=",
     },
-  ])(
+  ];
+  it.each(rawAstcFixtures)(
     "EXT_texture_astc raw vkFormat $vkFormat parses without transcoder init",
     async ({ vkFormat, base64 }) => {
       const bytes = Uint8Array.from(Buffer.from(base64, "base64"));
@@ -855,6 +857,109 @@ describe("IAssetLoader compressed textures", () => {
       loader.dispose();
     },
   );
+
+  it.each(
+    rawAstcFixtures.flatMap((fixture) =>
+      [false, true].flatMap((webgpu) =>
+        ["bc", "etc2", "astc"].map((format) => ({ ...fixture, webgpu, format })),
+      ),
+    ),
+  )(
+    "standalone raw ASTC vk$vkFormat requires ASTC support ($webgpu/$format)",
+    async ({ base64, webgpu, format }) => {
+      const bytes = Uint8Array.from(Buffer.from(base64, "base64"));
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          manifestResponse({ version: 1, entries: { "raw.png": { output: "raw.ktx2" } } }),
+        ),
+      );
+      const renderer = webgpu
+        ? {
+            isWebGPURenderer: true,
+            hasFeature: (name: string) => name === `texture-compression-${format}`,
+          }
+        : {
+            extensions: {
+              has: (name: string) =>
+                name ===
+                {
+                  bc: "WEBGL_compressed_texture_s3tc",
+                  etc2: "WEBGL_compressed_texture_etc",
+                  astc: "WEBGL_compressed_texture_astc",
+                }[format],
+              get: () => ({ getSupportedProfiles: () => ["ldr"] }),
+            },
+          };
+      const disposed = vi.fn();
+      let parsed: CompressedTexture | undefined;
+      vi.spyOn(KTX2Loader.prototype, "load").mockImplementation(
+        function (_url, onLoad, _onProgress, onError) {
+          this.parse(
+            bytes.buffer,
+            (texture) => {
+              parsed = texture;
+              texture.addEventListener("dispose", disposed);
+              onLoad?.(texture);
+            },
+            onError,
+          );
+          return undefined;
+        },
+      );
+      const init = vi.spyOn(KTX2Loader.prototype, "init").mockImplementation(() => {
+        throw new Error("unexpected transcoder init");
+      });
+      const detect = vi.spyOn(KTX2Loader.prototype, "detectSupport");
+      const assets = createAssetLoader({ basePath: "/assets", renderer });
+      await expect(assets.compressedTextures?.ready).resolves.toBeUndefined();
+      const request = assets.texture("raw.png");
+      if (format === "astc") {
+        const texture = await request;
+        expect(texture).toBe(parsed);
+        expect(parsed?.mipmaps.map((mip) => [mip.width, mip.height, mip.data.byteLength])).toEqual([
+          [8, 8, 64],
+          [4, 4, 16],
+          [2, 2, 16],
+          [1, 1, 16],
+        ]);
+        expect(disposed).not.toHaveBeenCalled();
+        assets.release("texture", "raw.png");
+      } else {
+        await expect(request).rejects.toThrow(/TN_ASSETS_ASTC_UNSUPPORTED:.*raw\.ktx2/u);
+        expect(disposed).toHaveBeenCalledOnce();
+      }
+      expect(parsed?.format).toBe(RGBA_ASTC_4x4_Format);
+      expect(init).not.toHaveBeenCalled();
+      expect(detect).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("keeps BC-format decoded KTX2 results admissible without ASTC support", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({ version: 1, entries: { "basis.png": { output: "basis.ktx2" } } }),
+      ),
+    );
+    const texture = new CompressedTexture(
+      [{ width: 4, height: 4, data: new Uint8Array(8) }],
+      4,
+      4,
+      RGBA_S3TC_DXT1_Format,
+    );
+    const disposed = vi.fn();
+    texture.addEventListener("dispose", disposed);
+    vi.spyOn(KTX2Loader.prototype, "load").mockImplementation((_url, onLoad) => {
+      onLoad?.(texture);
+      return undefined;
+    });
+    const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer(S3TC) });
+    await expect(assets.texture("basis.png")).resolves.toBe(texture);
+    expect(disposed).not.toHaveBeenCalled();
+    assets.release("texture", "basis.png");
+    expect(disposed).toHaveBeenCalledOnce();
+  });
 
   function astcFixture(required: boolean, fallback = true): string {
     return JSON.stringify({

@@ -7,6 +7,7 @@ import {
   Mesh,
   NoColorSpace,
   Object3D,
+  RGBA_ASTC_4x4_Format,
   SRGBColorSpace,
   Texture,
   type TextureLoader,
@@ -507,6 +508,13 @@ export async function createKtx2Loader(options: {
   return loader as unknown as IKTX2LoaderLike;
 }
 
+function hasAstcSupport(loader: IKTX2LoaderLike | undefined): boolean {
+  return (
+    (loader as (IKTX2LoaderLike & { workerConfig?: { astcSupported?: boolean } }) | undefined)
+      ?.workerConfig?.astcSupported === true
+  );
+}
+
 /**
  * Widen every quantized `POSITION` a loaded model carries back to float32.
  *
@@ -714,7 +722,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         `TN_ASSETS_KTX2_UNPROBED: '${url}' is compiled compressed output but the provided renderer exposes no support-detection surface (neither WebGPU features nor WebGL extensions).`,
       );
     }
-    return loadWith(shared, url);
+    const texture = await loadWith(shared, url);
+    if (texture.format === RGBA_ASTC_4x4_Format && !hasAstcSupport(shared)) {
+      texture.dispose();
+      throw new Error(
+        `TN_ASSETS_ASTC_UNSUPPORTED: '${url}' contains raw ASTC 4x4 but the renderer lacks ASTC texture-compression support.`,
+      );
+    }
+    return texture;
   };
 
   const attachCompiledLightmaps = async (logicalPath: string, value: unknown): Promise<void> => {
@@ -971,14 +986,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         }
         if (hasAstc) {
           const astcLoader = shared;
-          const astcSupported =
-            (
-              astcLoader as
-                | (IKTX2LoaderLike & {
-                    workerConfig?: { astcSupported?: boolean };
-                  })
-                | undefined
-            )?.workerConfig?.astcSupported === true;
+          const astcSupported = hasAstcSupport(astcLoader);
           // EXT_texture_astc is an official vendor draft. Borrow Three's Basis plugin handoff,
           // but raw ASTC cannot use Basis's format fallback and needs this explicit GPU guard.
           loader.register((parser) => {
