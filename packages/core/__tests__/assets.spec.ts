@@ -711,9 +711,17 @@ describe("IAssetLoader through the asset manifest", () => {
   });
 
   it("should throw when the manifest is present but the path is absent", async () => {
+    // The manifest lists another file: an empty one is the asset-free fallback, not authority.
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => manifestResponse({ version: 1, entries: {} })),
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "tree.png": { output: "tree.a1b2c3.png", kind: "texture", bytes: 1024, passes: [] },
+          },
+        }),
+      ),
     );
     const assets = createAssetLoader({ basePath: "/assets", model: async () => ({}) });
 
