@@ -207,6 +207,7 @@ export function createPerryRuntime(): IPerryRuntime {
     return pointer(out);
   });
   const handlers = new Map<number, (args: readonly EngineValue[]) => void>();
+  const deferred = new Map<number, () => TypedArray>();
   let nextHandler = 1;
   let bound = false;
   const bindCallbacks = () => {
@@ -214,6 +215,22 @@ export function createPerryRuntime(): IPerryRuntime {
     if (
       bind(
         (id: number, args: number, count: number, packet: number) => {
+          if (id === 0) {
+            const key = pointer(packet);
+            const take = deferred.get(key);
+            deferred.delete(key);
+            const scalar = pointer(packet + pointerBytes);
+            if (args === 0 || take === undefined || scalarKinds[scalar] === undefined) return 0;
+            const array = take();
+            const written = Math.min(count, array.length);
+            for (let i = 0; i < written; i++)
+              write(
+                args + i * (scalarBytes[scalar] as number),
+                array[i] as number,
+                scalarKinds[scalar],
+              );
+            return written;
+          }
           const handler = handlers.get(id);
           if (handler === undefined) return 0;
           try {
@@ -329,14 +346,14 @@ export function createPerryRuntime(): IPerryRuntime {
   const scalarBytes = [4, 8, 1, 1, 2, 2, 4, 4];
   const attribute = <T>(
     ref: IEngineRef,
-    use: (at: number, count: number, scalar: number) => T,
+    use: (at: number, count: number, scalar: number, writes: number) => T,
   ): T =>
     scoped(() => {
-      const out = alloc(24);
+      const out = alloc(32);
       const lease = call(17, handle(ref), out);
       if (lease === 0) throw new TypeError("TN_NATIVE_UNSUPPORTED array: not an attribute");
       try {
-        return use(read(out, 3), read(out + 8, 3), read(out + 16, 3));
+        return use(read(out, 3), read(out + 8, 3), read(out + 16, 3), read(out + 24, 3));
       } finally {
         call(18, lease);
       }
@@ -448,15 +465,14 @@ export function createPerryRuntime(): IPerryRuntime {
           result[i] = read(at + i * (scalarBytes[scalar] as number), scalarKinds[scalar]);
         return result;
       }),
-    attributeWrite: (self, array: TypedArray) =>
-      attribute(self, (at, count, scalar) => {
-        if (array.length !== count)
-          throw new RangeError("TN_NATIVE_ATTRIBUTE_LENGTH: attribute.array length differs");
-        if (scalarKinds[scalar] === undefined)
-          throw new TypeError(`TN_NATIVE_UNSUPPORTED array: scalar ${scalar}`);
-        for (let i = 0; i < count; i++)
-          write(at + i * (scalarBytes[scalar] as number), array[i] as number, scalarKinds[scalar]);
+    attributeDefer: (self, take) =>
+      scoped(() => {
+        bindCallbacks();
+        const key = call(21, handle(self));
+        if (key === 0) throw new TypeError("TN_NATIVE_UNSUPPORTED array: not an attribute");
+        deferred.set(key, take);
       }),
+    attributeWrites: (self) => attribute(self, (_at, _count, _scalar, writes) => writes),
     setCallback: (self, name, handler) =>
       scoped(() => {
         const diag = alloc(diagnosticSize);

@@ -10,6 +10,67 @@ import type { IPerryRuntime } from "../src/perry-transport.js";
 
 type Tsl = typeof import("three/tsl");
 
+it("defers an attribute copy until the engine pulls it and forgets disposed stores", () => {
+  const values = new Map<number, number>();
+  const allocations = new Map<number, number>();
+  let next = 64;
+  let dispatch: ((id: number, data: number, count: number, packet: number) => number) | undefined;
+  const transport = {
+    layout: (field: number) => [8, 12, 56, 32, 32, 40, 48, 64][field],
+    alloc: (bytes: number) => {
+      const at = next;
+      next += bytes;
+      allocations.set(at, bytes);
+      return at;
+    },
+    free() {},
+    memory: (kind: number, at: number, value: number) => {
+      if (kind >= 16) values.set(at, value);
+      return values.get(at) ?? 0;
+    },
+    bind: (invoke: typeof dispatch) => {
+      dispatch = invoke;
+      return 0;
+    },
+    call: (op: number, _handle: number, out: number) => {
+      if (op === 21) return 9000;
+      if (op === 17) {
+        expect(allocations.get(out)).toBe(32);
+        [8000, 3, 0, 7].forEach((value, i) => values.set(out + i * 8, value));
+        return 1;
+      }
+      return 0;
+    },
+  };
+  const source = readFileSync(new URL("../src/perry-transport.ts", import.meta.url), "utf8")
+    .replace(/import\s*\{([^}]+)\}\s*from "tn-native-transport";/u, "const {$1} = native;")
+    .replace("alloc as malloc", "alloc: malloc");
+  const sandbox = { native: transport, exports: {} as { createPerryRuntime(): IPerryRuntime } };
+  runInNewContext(
+    transpileModule(source, {
+      compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
+    }).outputText,
+    sandbox,
+  );
+  const runtime = sandbox.exports.createPerryRuntime();
+  const ref = { type: 1, key: "1:0:1:1" };
+  const array = new Float32Array([1, 2, 3]);
+  const take = vi.fn(() => array);
+  expect(runtime.attributeDefer).toBeTypeOf("function");
+  runtime.attributeDefer?.(ref, take);
+  expect(take).not.toHaveBeenCalled();
+  array[0] = 4;
+  values.set(10000, 9000);
+  values.set(10008, 0);
+  expect(dispatch?.(0, 8000, 3, 10000)).toBe(3);
+  expect([values.get(8000), values.get(8004), values.get(8008)]).toEqual([4, 2, 3]);
+  expect(runtime.attributeWrites?.(ref)).toBe(7);
+  runtime.attributeDefer?.(ref, take);
+  expect(dispatch?.(0, 0, 0, 10000)).toBe(0);
+  expect(dispatch?.(0, 8000, 3, 10000)).toBe(0);
+  expect(take).toHaveBeenCalledOnce();
+});
+
 const native = vi.hoisted(() => {
   let next = 0;
   const types = new Map<string, number>();
@@ -138,8 +199,10 @@ it("writes a returned ref back as the same handle, with or without its cached fi
     writeString: () => 0,
     call: (op: number, ...args: number[]) => {
       const out = args[4] as number;
-      if (op === 5) [3, 1, 7, 9].forEach((v, i) => values.set(out + [0, 2, 4, 8][i]!, v));
-      if (op === 6) handles.push([0, 2, 4, 8].map((o) => values.get(args[0]! + o) ?? -1));
+      if (op === 5)
+        [3, 1, 7, 9].forEach((v, i) => values.set(out + ([0, 2, 4, 8][i] as number), v));
+      if (op === 6)
+        handles.push([0, 2, 4, 8].map((o) => values.get((args[0] as number) + o) ?? -1));
       return 0;
     },
   };

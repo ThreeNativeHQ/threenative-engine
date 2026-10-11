@@ -91,3 +91,47 @@ describe.runIf(hasCc)("tn_so_runner.c", () => {
     expect(missing.stderr).toContain("TN_SO_DLOPEN");
   });
 });
+
+it.runIf(hasCc && process.platform === "linux")(
+  "Perry's native attribute callbacks carry store keys and scalar lanes",
+  () => {
+    const dir = scratch();
+    const source = path.join(dir, "attribute.c");
+    const runtime = path.resolve(ANDROID, "../../../packages/runtime-native");
+    fs.writeFileSync(
+      source,
+      `
+#include <assert.h>
+#include "${runtime}/src/engine/abi/perry_transport.c"
+static int calls;
+uint32_t tnp_dispatch(uintptr_t id, uintptr_t data, uint32_t count, uintptr_t packet) {
+    const uintptr_t *fields = (const uintptr_t *)packet;
+    assert(id == 0 && fields[0] == 9000);
+    if (calls++ == 0) {
+        assert(data == 8000 && count == 3 && fields[1] == 5);
+        return 3;
+    }
+    assert(data == 0 && count == 0 && fields[1] == 0);
+    return 0;
+}
+int main(void) {
+    assert(pull_attribute(9000, 8000, 3, 5) == 3);
+    forget_attribute(9000);
+    assert(calls == 2);
+    return 0;
+}
+`,
+    );
+    const binary = path.join(dir, "attribute");
+    cc([
+      "-ffunction-sections",
+      "-Wl,--gc-sections",
+      "-I",
+      path.join(runtime, "include"),
+      source,
+      "-o",
+      binary,
+    ]);
+    expect(spawnSync(binary, [], { encoding: "utf8" }).status).toBe(0);
+  },
+);

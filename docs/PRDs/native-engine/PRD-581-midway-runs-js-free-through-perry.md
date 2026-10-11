@@ -9,6 +9,15 @@
 
 ## Context
 
+Integration check 2026-10-10 (`lane-g/integrate-581`): root transport alias added; Perry now
+uses upstream's deferred-write ABI and four-lane attribute view (32 bytes, not 24). The missing
+deferral regression failed before the fix; transport specs 8/8 and compiled C callback specs
+6/6 pass. Required builds and generation pass; root plus 31 workspace typechecks pass; lint
+passes with 1286 warnings; requested Vitest scopes plus native-typescript pass (352 files,
+4266 tests; 1 file/5 tests skipped). Docs: 3072 links across 1325 files; 22 agent mirrors in sync.
+Plain upstream `7e7e9ec03` passes typecheck and lint after the same build prerequisites; no
+pre-existing failures remain. Native player relink and a Perry game playtest were not run.
+
 Layer: engine (`packages/three-native/`, `packages/runtime-native/`, `tools/native-typescript/`).
 Midway's own source does not change: a fix that Midway needs is a missing engine or facade API.
 

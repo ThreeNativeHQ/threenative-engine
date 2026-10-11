@@ -7,6 +7,7 @@ extern uint32_t tnp_dispatch(uintptr_t id, uintptr_t args, uint32_t count, uintp
 extern void tnp_release_callback(uintptr_t id);
 extern uintptr_t tnw_attribute_view(const tn_handle_t *attribute, uint64_t *out);
 extern void tnw_attribute_view_release(uintptr_t lease);
+extern uintptr_t tnw_attribute_defer(const tn_handle_t *attribute, uintptr_t pull, uintptr_t forget);
 extern int64_t tnp_load_asset(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t);
 
 static tn_status_t callback(void *id, const tn_value_t *args, uint32_t count,
@@ -15,6 +16,16 @@ static tn_status_t callback(void *id, const tn_value_t *args, uint32_t count,
     return tnp_dispatch((uintptr_t)id, (uintptr_t)args, count, (uintptr_t)packet);
 }
 static void release_callback(void *id) { tnp_release_callback((uintptr_t)id); }
+
+/* Callback id zero is reserved for attribute stores; ordinary callbacks start at one. */
+static uint32_t pull_attribute(uintptr_t key, uintptr_t data, uint32_t count, uint32_t scalar) {
+    const uintptr_t packet[2] = {key, scalar};
+    return tnp_dispatch(0, data, count, (uintptr_t)packet);
+}
+static void forget_attribute(uintptr_t key) {
+    const uintptr_t packet[2] = {key, 0};
+    tnp_dispatch(0, 0, 0, (uintptr_t)packet);
+}
 
 int64_t js_tnp_layout(int32_t field) {
     const size_t layout[] = {sizeof(void *), sizeof(tn_handle_t), sizeof(tn_value_t),
@@ -75,6 +86,7 @@ int64_t js_tnp_call(int32_t op, int64_t a, int64_t b, int64_t c, int64_t d,
         case 18: tnw_attribute_view_release((uintptr_t)a); return 0;
         case 19: return tnp_load_asset(a, b, c, 0, e, f, 1);
         case 20: return tnp_load_asset(a, b, c, d, e, f, 0);
+        case 21: return (int64_t)tnw_attribute_defer(P(tn_handle_t, a), (uintptr_t)pull_attribute, (uintptr_t)forget_attribute);
         default: return TN_ERROR_INVALID_ARGUMENT;
     }
 #undef H

@@ -9,7 +9,8 @@
       "@threenative/core/playtest": ["./packages/core/src/playtest.ts"],
       "@threenative/physics": ["./packages/physics/src/index.ts"],
       "@threenative/playtest": ["./packages/playtest/src/index.ts"],
-      "@threenative/ui": ["./packages/ui/src/index.ts"]
+      "@threenative/ui": ["./packages/ui/src/index.ts"],
+      "tn-native-transport": ["./packages/three-native/perry/src/index.ts"]
     }
   },
   "include": [
