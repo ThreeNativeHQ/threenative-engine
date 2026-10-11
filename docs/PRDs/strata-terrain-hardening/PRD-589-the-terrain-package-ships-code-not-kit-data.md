@@ -60,6 +60,8 @@ example. Fix the generator string, the peer-range sync and the CHARTER row.
 - [ ] No unreferenced assets. proof: asset-reference spec
 
 #### Phase 3: registration and charter
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `scripts/prepare-release.ts`, `docs/architecture/CHARTER.md`, `AGENTS.md`, `src/core/io.ts`
 - [ ] Peer sync and charter row. proof: `pnpm check:docs` + drift spec
+
+2026-10-11 charter clarification: the closed-list row now names the existing narrow terrain-only authoring allowance, and root `AGENTS.md` places those optional companions in `packages/terrain/` while preserving game-owned appearance. `pnpm sync:agents` updated one generated mirror. Parent documentation checks pass: 3,057 links across 1,360 Markdown files and all 252 tests in the six required documentation specs (8.40 s). Peer synchronization, generator-version synchronization and package-list drift proof remain open; this phase and AC-5 are not accepted.
