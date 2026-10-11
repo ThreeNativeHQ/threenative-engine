@@ -368,10 +368,13 @@ describe("Perry native benchmark", () => {
         end: { load1: 5, cores: 12 },
       });
 
+      const measured = await readFile(path.join(out, "index.html"), "utf8");
       const before = launches;
       expect(await runBench(argv(), execute, out, hostOf([5, 20]).host)).toBe(2);
       expect(launches).toBeGreaterThan(before);
       expect((await latest()).error).toBe("host overloaded: load 20.00 on 12 cores");
+      // A failed run keeps its own report; the dashboard still shows the last measured run.
+      expect(await readFile(path.join(out, "index.html"), "utf8")).toBe(measured);
 
       expect(await runBench(argv("--max-load", "2"), execute, out, hostOf([20]).host)).toBe(0);
     } finally {

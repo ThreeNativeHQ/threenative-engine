@@ -1,6 +1,7 @@
 // PRD-581: compare one authored scenario on the shared native player; present is never a gate.
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { availableParallelism, loadavg } from "node:os";
 import path from "node:path";
@@ -1071,7 +1072,9 @@ export async function runBench(
   await writeFile(path.join(directory, "report.md"), reportMarkdown(result));
   const reportPath = path.join(directory, "report.html");
   await writeFile(reportPath, html);
-  await writeFile(path.join(outputRoot, "index.html"), html);
+  // A failed run keeps its own report and ledger row; it must not replace the last measured dashboard.
+  const index = path.join(outputRoot, "index.html");
+  if (!result.error || !existsSync(index)) await writeFile(index, html);
   if (result.args?.open && !process.env.CI) openReport(reportPath);
   process.stdout.write(`${path.join(directory, "report.md")}\n`);
   if (result.error) return 2;
