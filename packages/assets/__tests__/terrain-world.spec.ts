@@ -272,6 +272,60 @@ describe("cookTerrainWorld", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("preserves every relative layer texture byte-for-byte and marks terrain nodes", async () => {
+    const image = PNG.sync.write(new PNG({ width: 2, height: 2 }));
+    await writeFile(path.join(dir, "authored.png"), image);
+    const cooked = await cookTerrainWorld({
+      state: new Terrain({ resolution: 33, size: 256 }).evaluate(),
+      species: {},
+      out: path.join(dir, "world"),
+      materials: {
+        texturesDir: dir,
+        layers: [
+          {
+            id: "base",
+            diff: "authored.png",
+            nrmBytes: image,
+            diffMimeType: "image/png",
+            nrmMimeType: "image/png",
+            ormBytes: image,
+            h: "authored.png",
+          },
+          { id: "rock", diff: "authored.png", nrm: "authored.png" },
+        ],
+      },
+      extraLayers: { table: "terrain-table.json" },
+    });
+    for (const id of ["base", "rock"])
+      for (const channel of id === "base" ? ["diff", "nrm", "orm", "h"] : ["diff", "nrm"])
+        expect(await readFile(path.join(dir, "world", "textures", `${id}_${channel}.jpg`))).toEqual(
+          Buffer.from(image),
+        );
+    const doc = await io().readBinary(cooked.worldGlb);
+    for (const node of doc.getRoot().getDefaultScene()?.listChildren() ?? []) {
+      expect(node.getExtras()).toEqual({ tnTerrainSurface: "world.json" });
+      expect(node.getMesh()?.getExtras()).toEqual({ tnTerrainSurface: "world.json" });
+    }
+  });
+
+  it("names a missing non-base texture before writing a package", async () => {
+    await expect(
+      cookTerrainWorld({
+        state: new Terrain({ resolution: 33, size: 256 }).evaluate(),
+        species: {},
+        out: path.join(dir, "world"),
+        materials: {
+          texturesDir: dir,
+          layers: [
+            { id: "base", diffBytes: PNG.sync.write(new PNG({ width: 2, height: 2 })) },
+            { id: "rock", diff: "missing-rock.jpg" },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/missing-rock\.jpg/u);
+    await expect(stat(path.join(dir, "world"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("cooks the real forest with index-only species chains and measures projected-error submission", async () => {
     const kit = path.resolve("packages/terrain/starter/forest");
     const assets = path.resolve("packages/terrain/starter-assets");

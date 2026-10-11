@@ -29,6 +29,7 @@ interface IKitCookInput {
     >
   >;
   readonly materials: {
+    texturesDir: string;
     layers: {
       id: string;
       diff: string;
@@ -133,15 +134,13 @@ export async function bakeKit(
           ]),
         ),
         materials: {
-          layers: [
-            {
-              id: surface.base.id,
-              diff: join(assetsDir, surface.sources[surface.base.id].diff),
-              nrm: join(assetsDir, surface.sources[surface.base.id].nrm),
-              diffMimeType: "image/jpeg",
-              nrmMimeType: "image/jpeg",
-            },
-          ],
+          texturesDir: assetsDir,
+          layers: [surface.base, ...surface.layers].map((layer) => ({
+            id: layer.id,
+            ...surface.sources[layer.id],
+            diffMimeType: "image/jpeg" as const,
+            nrmMimeType: "image/jpeg" as const,
+          })),
         },
         out: outDir,
         extraLayers: { table: "terrain-table.json" },
@@ -199,11 +198,13 @@ export async function bakeKit(
   }
   // The sky the props are lit by (CC0 Poly Haven Kloofendal); world.ts gives it to their materials.
   await copy(sky, "sky.hdr");
-  for (const layer of [surface.base, ...surface.layers]) {
-    const source = surface.sources[layer.id];
-    await copy(source.diff, `${surface.textures}/${layer.id}_diff.jpg`);
-    await copy(source.nrm, `${surface.textures}/${layer.id}_nrm.jpg`);
-  }
+  // The cook copies the layer maps itself when it runs.
+  if (!cooked)
+    for (const layer of [surface.base, ...surface.layers]) {
+      const source = surface.sources[layer.id];
+      await copy(source.diff, `${surface.textures}/${layer.id}_diff.jpg`);
+      await copy(source.nrm, `${surface.textures}/${layer.id}_nrm.jpg`);
+    }
   // `sources` is the bake's own lookup: the runtime reads only base/layers/splat/textures.
   await write(
     "terrain-table.json",

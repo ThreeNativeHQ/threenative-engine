@@ -52,8 +52,12 @@ export interface ICookTerrainWorldMaterialLayer {
   readonly id: string;
   readonly diff?: string | Uint8Array;
   readonly nrm?: string | Uint8Array;
+  readonly orm?: string | Uint8Array;
+  readonly h?: string | Uint8Array;
   readonly diffBytes?: Uint8Array;
   readonly nrmBytes?: Uint8Array;
+  readonly ormBytes?: Uint8Array;
+  readonly hBytes?: Uint8Array;
   readonly diffMimeType?: string;
   readonly nrmMimeType?: string;
 }
@@ -445,32 +449,38 @@ export async function cookTerrainWorld(
   // Terrain mesh chunks, always from the shared baker's LOD0.
   const chunks = bakeTerrain(state).lods[0]?.chunks ?? [];
 
-  // Material for terrain with PBR layer maps if provided
+  // Preserve authored maps separately; the GLB retains its vanilla first-layer fallback.
+  const textureFiles = new Map<string, Uint8Array>();
   const terrainMaterial = doc.createMaterial("TerrainMaterial");
-  if (options.materials?.layers && options.materials.layers.length > 0) {
-    const baseLayer = options.materials.layers[0];
-    if (baseLayer) {
-      let diffBytes = baseLayer.diffBytes;
-      if (!diffBytes && baseLayer.diff) {
-        diffBytes = await resolveBytes(baseLayer.diff);
+  for (const [index, layer] of (options.materials?.layers ?? []).entries()) {
+    if (!/^[a-zA-Z0-9_-]+$/u.test(layer.id))
+      throw new Error(`cookTerrainWorld: invalid texture layer id '${layer.id}'.`);
+    for (const channel of ["diff", "nrm", "orm", "h"] as const) {
+      let bytes = layer[`${channel}Bytes`];
+      const source = layer[channel];
+      if (bytes === undefined && source !== undefined) {
+        if (typeof source === "string" && options.materials?.texturesDir !== undefined) {
+          const dir = path.resolve(options.materials.texturesDir);
+          const filename = path.resolve(dir, source);
+          const relative = path.relative(dir, filename);
+          if (
+            relative === ".." ||
+            relative.startsWith(`..${path.sep}`) ||
+            path.isAbsolute(relative)
+          )
+            throw new Error(`cookTerrainWorld: texture '${source}' escapes texturesDir '${dir}'.`);
+          bytes = await resolveBytes(filename);
+        } else bytes = await resolveBytes(source);
       }
-      if (diffBytes) {
+      if (bytes === undefined) continue;
+      textureFiles.set(`${layer.id}_${channel}.jpg`, bytes);
+      if (index === 0 && (channel === "diff" || channel === "nrm")) {
         const texture = doc
-          .createTexture("TerrainBaseDiff")
-          .setImage(diffBytes)
-          .setMimeType(baseLayer.diffMimeType ?? "image/jpeg");
-        terrainMaterial.setBaseColorTexture(texture);
-      }
-      let nrmBytes = baseLayer.nrmBytes;
-      if (!nrmBytes && baseLayer.nrm) {
-        nrmBytes = await resolveBytes(baseLayer.nrm);
-      }
-      if (nrmBytes) {
-        const nrmTexture = doc
-          .createTexture("TerrainBaseNrm")
-          .setImage(nrmBytes)
-          .setMimeType(baseLayer.nrmMimeType ?? "image/jpeg");
-        terrainMaterial.setNormalTexture(nrmTexture);
+          .createTexture(channel === "diff" ? "TerrainBaseDiff" : "TerrainBaseNrm")
+          .setImage(bytes)
+          .setMimeType(layer[`${channel}MimeType`] ?? "image/jpeg");
+        if (channel === "diff") terrainMaterial.setBaseColorTexture(texture);
+        else terrainMaterial.setNormalTexture(texture);
       }
     }
   }
@@ -499,6 +509,11 @@ export async function cookTerrainWorld(
     );
     mesh.addPrimitive(prim);
     const node = doc.createNode(chunk.name ?? `terrain_node_${c}`).setMesh(mesh);
+    if (manifest.terrain.layers?.table !== undefined) {
+      const pointer = { tnTerrainSurface: "world.json" };
+      mesh.setExtras(pointer);
+      node.setExtras(pointer);
+    }
     scene.addChild(node);
   }
 
@@ -566,6 +581,11 @@ export async function cookTerrainWorld(
   await mkdir(out, { recursive: true });
   await mkdir(path.join(out, "models"), { recursive: true });
   await writeFile(path.join(out, "world.glb"), worldGlb);
+  if (textureFiles.size > 0) {
+    await mkdir(path.join(out, "textures"), { recursive: true });
+    for (const [name, bytes] of textureFiles)
+      await writeFile(path.join(out, "textures", name), bytes);
+  }
 
   for (const [name, bytes] of Object.entries(files)) {
     await writeFile(path.join(out, name), bytes);
