@@ -1,6 +1,6 @@
 # PRD-595 — `world-cells.ts` splits by seam and survives a load/evict race fuzz
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P2 — `world-cells.ts` is 10 228 lines and its async load/evict orderings are proven for one interleaving only (AC-1 to AC-3).
 **Complexity:** 5 (MEDIUM); risk override: complex async state
 **Owner:** ThreeNative maintainers
@@ -31,19 +31,21 @@ red then green.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: A seeded fuzz of 1 000 interleavings of load completion, eviction, `dispose()` and re-entry ends with `#bytes`, `#hlodBytes` and refcounts at 0, and each geometry disposed exactly once. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-race.spec.ts` — Evidence: pending.
+- [x] AC-1 [local]: A seeded fuzz of 1 000 interleavings of load completion, eviction, `dispose()` and re-entry ends with `#bytes`, `#hlodBytes` and refcounts at 0, and each geometry disposed exactly once. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-race.spec.ts` — Evidence: 2026-10-11 independent focused gate passes all 1 000 seeds in 2.31 s; every seed observes positive public residentBytes and then zero residentBytes, HLOD bytes and refcounts; 1 651 actual loaded geometries each dispose exactly once.
 - [ ] AC-2 [local]: After the split, no file under `packages/core/src/world-*` exceeds 3 000 lines, and all existing world specs pass unchanged. proof: `pnpm exec vitest run packages/core/__tests__/world-*.spec.ts` plus `pnpm quality` — Evidence: pending.
 - [ ] AC-3 [local]: The strata preview and machinefall walk playtests still pass after the split. proof: `pnpm --filter strata-terrain-preview test:terrain:web` and the machinefall map-walk scenario — Evidence: pending.
 
 ## Execution Phases
 
 #### Phase 1: fuzz first
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/__tests__/world-cells-race.spec.ts` (new)
-- [ ] Fuzz green on today's code, or a found race fixed red-green. proof: `world-cells-race.spec.ts`
+- [x] Fuzz green on today's code, or a found race fixed red-green. proof: `world-cells-race.spec.ts` — 2026-10-11 all 1 000 seeds pass with actual charged-byte telemetry and nonempty lifecycle observations; no lifecycle race found.
 
 #### Phase 2: extract by seam
 **Status:** NOT STARTED
 **Files:** `packages/core/src/world-cells.ts` → four new modules
 - [ ] Files under 3 000 lines, specs unchanged. proof: world specs + `pnpm quality`
 - [ ] Walk playtests pass. proof: preview + machinefall scenarios
+
+2026-10-11 Phase 1 resident-byte observation completed: added readonly `residentBytes` to existing `IWorldCellsStats`, returning actual `#bytes`; its documentation distinguishes placement residency charges from separately reported far-impostor/HLOD charges. The required red run failed all 1,000 seeds before the field existed because positive resident bytes could not be observed; after the minimal field addition every seed observes positive bytes and asserts zero bytes after draining. Independent focused gate passes in 2.31 s: 1,651 loads and actual geometries disposed exactly once, 417 pending disposals, 476 late completions, 1,428 evictions, 31 reentries, 357 seeds with positive HLOD bytes and all 1,000 with positive refcounts. Nearest unchanged `world-cells.spec.ts` and `world-cells-admission.spec.ts` pass 58 tests (14.01 s). Core typecheck passes after building this lane’s missing playtest dependency; no shared mutable dependency/build links were introduced. Scoped Biome passes with 22 existing/new nonfatal complexity warnings (one in the new scenario). The bounded Haiku arm timed out after saving its changes/logs; coordinator reviewed the diff and independently reran core typecheck and the fuzz gate. Parent review independently passes all 1,000 seeds (2.02 s), observing 1,650 loaded geometries disposed exactly once, 417 pending disposals, 476 late completions, 1,428 evictions, 31 reentries and 356 positive-HLOD seeds. Counts can vary with admission timing; each run retains the same seeded decisions and asserts every teardown invariant. No extraction, full-world suite or preview/machinefall proof is claimed; Phase 2 and AC-2/3 remain open.

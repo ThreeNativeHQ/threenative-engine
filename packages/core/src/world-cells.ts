@@ -729,6 +729,12 @@ export interface IWorldCellsGpuTally {
 
 export interface IWorldCellsStats {
   readonly residentCells: number;
+  /**
+   * Placement bytes the resident cells hold. Admission adds them. Eviction removes them.
+   * Far-impostor and HLOD bytes sit outside this figure, in `impostor.far.bytes` and `hlod.bytes`.
+   * `budgets.bytes` caps the sum of all three.
+   */
+  readonly residentBytes: number;
   /** Resident cells whose initial placement runs and chunks have completed admission. */
   readonly loadedCells: number;
   readonly residentKeys: readonly string[];
@@ -5857,6 +5863,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // the refilter pass is a bracket that was wider than any placement.
       unchanged: this.#unchanged,
       residentCells: this.#resident.size,
+      residentBytes: this.#bytes,
       loadedCells: [...this.#resident.values()].filter((cell) => this.#cellLoaded(cell)).length,
       residentKeys: [...this.#resident.keys()].sort(),
       residentTiles: this.#terrain?.residentTileCount ?? 0,
