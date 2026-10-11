@@ -87,11 +87,9 @@ export async function compilesUnderTheDefaultConfig(template: string) {
     transcoder: basisTranscoderPaths(),
   });
   if (result.written === 0) {
-    await expect(
-      readFile(path.join(target, "public", "assets.manifest.json")),
-    ).rejects.toMatchObject({
-      code: "ENOENT",
-    });
+    expect(
+      JSON.parse(await readFile(path.join(target, "public", "assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
     return;
   }
 
