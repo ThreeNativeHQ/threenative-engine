@@ -87,12 +87,23 @@ struct Game {
 
 /** The same CPU split for every host: game callbacks, database render, CPU excluding present.
  * bridgeCalls counts the shared C ABI entries since the previous rendered frame. */
-json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double frameMs, uint64_t bridgeCalls);
+json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double frameMs, uint64_t bridgeCalls,
+                        uint64_t tick = 0, uint64_t updates = 0, double gameCpuMs = -1, double cpuFrameCpuMs = -1);
+
+/** CPU time of the calling thread in ms (CLOCK_THREAD_CPUTIME_ID), or -1 off Linux/Android. One clock for
+ * every arm: unlike wall time it does not count the thread's time off-CPU under host load. frameTiming
+ * emits gameJsCpuMs/cpuFrameCpuMs only when the value is >= 0. */
+double threadCpuMs();
 
 /** Default-off TN_GAME_SPANS sink: -1 queries the flag, -2 reads monotonic ms, -3 is a no-op FFI probe.
  * Normal ids begin (action 0) or end (action 1) inside host windows 26/27; outside spans are ignored.
  * Invalid input/nesting returns -1. */
 double gameSpan(int id, int action);
+/** Real monotonic ms since process start: the clock behind performance.now on every player host.
+ * Ticks and timers keep their fixed-step time; only this clock moves inside one frame. */
+double wallMs();
+/** "fifo" (vsync, the default) or "immediate" (TN_PLAYER_VSYNC=0): the present mode this run's surface uses. */
+const char* presentModeName();
 json::Value gameSpanTiming(double gameMs);
 
 /** One owned player session; step returns 1 while running, 0 on close, a negative error on failure. */

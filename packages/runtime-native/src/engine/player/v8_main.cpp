@@ -203,6 +203,7 @@ class V8Game {
     // The last frame the player drew: three's `renderer.info.render` draw calls and triangles.
     uint32_t drawCalls_ = 0;
     uint64_t triangles_ = 0;
+    uint64_t pipelineCompiles_ = 0;  // pipelines the renderer has compiled so far, cumulative
     bool shadowMap_ = false;  // three's WebGPURenderer defaults: shadowMap off, PCFShadowMap
     int shadowMapType_ = 1;
     uint32_t samples_ = 1;
@@ -218,6 +219,7 @@ class V8Game {
     void frameDrawn(const Renderer& renderer) {
         drawCalls_ = renderer.lastFrame().draws;
         triangles_ = renderer.lastFrame().triangles;
+        pipelineCompiles_ = renderer.pipelines().compiles();
         frameClockMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStartedAt_).count();
     }
     /** The page's queued frames, on the thread that owns JavaScript (legacy runtime.cpp drainUiMessages):
@@ -439,7 +441,8 @@ v8::Local<v8::Value> V8Game::adapterValue() {
     return adapter;
 }
 
-// `tn.renderInfo()`: { drawCalls, triangles } of the last frame the player drew.
+// `tn.renderInfo()`: { drawCalls, triangles } of the last frame the player drew, and the renderer's
+// cumulative pipelineCompiles (a window's compiles are the difference between two reads).
 void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
     auto* isolate = info.GetIsolate();
@@ -447,6 +450,7 @@ void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto record = v8::Object::New(isolate);
     record->Set(ctx, v8str(isolate, "drawCalls"), v8::Number::New(isolate, game.drawCalls_)).Check();
     record->Set(ctx, v8str(isolate, "triangles"), v8::Number::New(isolate, static_cast<double>(game.triangles_))).Check();
+    record->Set(ctx, v8str(isolate, "pipelineCompiles"), v8::Number::New(isolate, static_cast<double>(game.pipelineCompiles_))).Check();
     info.GetReturnValue().Set(record);
 }
 
@@ -760,6 +764,14 @@ bool V8Game::start(const std::string& path, std::string& error) {
                                          std::pair{"__tnPointerCapture", &pointerCaptureCallback}})
         ctx->Global()->Set(ctx, v8str(isolate_, name), v8::Function::New(ctx, callback).ToLocalChecked()).Check();
 
+    ctx->Global()->Set(ctx, v8str(isolate_, "__tnWallMs"), v8::Function::New(ctx,
+        [](const v8::FunctionCallbackInfo<v8::Value>& info) { info.GetReturnValue().Set(player::wallMs()); }).ToLocalChecked()).Check();
+    // Core reads TN_FRAME_SPANS from process.env (Perry has one); this host has none, so it sets the
+    // flag core's spansRequested() also accepts and both arms emit the same render-window spans.
+    if (const char* frameSpans = std::getenv("TN_FRAME_SPANS");
+        frameSpans != nullptr && frameSpans[0] != '\0' && std::strcmp(frameSpans, "0") != 0 &&
+        std::strcmp(frameSpans, "false") != 0)
+        ctx->Global()->Set(ctx, v8str(isolate_, "__tnFrameSpans"), v8::True(isolate_)).Check();
     if (player::gameSpan(-1, 0) == 1) {
         ctx->Global()->Set(ctx, v8str(isolate_, "__tnGameSpan"), v8::Function::New(ctx,
             [](const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -817,6 +829,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "renderInfo"), v8::Function::New(ctx, &renderInfo, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "presentMode"), v8str(isolate_, player::presentModeName())).Check();
     v8::Local<v8::Script> script;
     if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());

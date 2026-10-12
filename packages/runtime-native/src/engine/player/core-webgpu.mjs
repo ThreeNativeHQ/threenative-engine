@@ -21,6 +21,9 @@ for (const material of [MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteN
 // the same `adapter.info` identity (and software-adapter verdict) it reads in a browser.
 class NativeBackend {
   gpu = { requestAdapter: () => globalThis.tn.requestAdapter() };
+  // Pipelines the player's renderer has compiled so far (three counts createRenderPipeline calls on its
+  // backend; the engine counts its own pipeline cache). A window's compiles are the difference of two reads.
+  pipelineCompiles = () => globalThis.tn.renderInfo().pipelineCompiles;
 }
 
 // `scene.fogNode` (three's per-material fog composition, e.g. a height-fog term) has no native

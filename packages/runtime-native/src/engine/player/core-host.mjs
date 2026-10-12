@@ -2,7 +2,7 @@
 // The native marker keeps assets/physics/platform selection on the native path, even without DOM.
 import { audio } from "./core-audio.mjs";
 import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
-globalThis.__THREENATIVE_NATIVE__ = { ...globalThis.__THREENATIVE_NATIVE__, platform: globalThis.tn.platform };
+globalThis.__THREENATIVE_NATIVE__ = { ...globalThis.__THREENATIVE_NATIVE__, platform: globalThis.tn.platform, presentMode: globalThis.tn.presentMode };
 let time = 0;
 let nextId = 0;
 const frames = new Map();
@@ -24,9 +24,13 @@ const pointerLock = (on) => {
   globalThis.__tnPointerCapture(on);
   for (const callback of [...(listeners.get("pointerlockchange") ?? [])]) callback({ type: "pointerlockchange" });
 };
+// The legacy host installs the drawing surface as a global too; a script entry (the load test) reads it there.
+globalThis.canvas = canvas;
 canvas.requestPointerLock = () => pointerLock(true);
 canvas.exitPointerLock = () => pointerLock(false);
-globalThis.performance = { now: () => time };
+// A real monotonic clock, as a page has: ticks and timers keep their fixed-step time, but
+// intra-frame phases and startup milestones must read real milliseconds.
+globalThis.performance = { now: typeof globalThis.__tnWallMs === "function" ? globalThis.__tnWallMs : () => time };
 globalThis.console = Object.fromEntries(["log", "info", "warn", "error"].map((name) => [name, (...args) => globalThis.tn.log(...args)]));
 globalThis.requestAnimationFrame = (callback) => {
   frames.set(++nextId, callback);
@@ -46,13 +50,16 @@ globalThis.setInterval = (callback, delay) => {
 globalThis.clearInterval = globalThis.clearTimeout;
 
 const runnerAttached = () => globalThis.TN_PLAYTEST_ENDPOINT !== undefined;
+// Frame callbacks follow the presented frame, not the 60 Hz tick, under a runner and for a script that says
+// so (`__tnFramePaced`, the load test): one callback per drawn frame, so an uncapped run measures frames.
+const framePaced = () => runnerAttached() || globalThis.__tnFramePaced === true;
 const flushFrames = (now) => {
   const pending = [...frames.values()];
   frames.clear();
   for (const callback of pending) callback(now);
 };
 globalThis.tn.onFrame((frameMs) => {
-  if (runnerAttached()) flushFrames(frameMs);
+  if (framePaced()) flushFrames(frameMs);
 });
 
 globalThis.tn.onUpdate((dt) => {
@@ -81,7 +88,7 @@ globalThis.tn.onUpdate((dt) => {
       globalThis.__tnGameSpan?.(GAME_SPANS.playtest, 0);
       try { void bridge.advance(1); } finally { globalThis.__tnGameSpan?.(GAME_SPANS.playtest, 1); }
     }
-  } else {
+  } else if (!framePaced()) {
     flushFrames(time);
   }
   audio.updateAudio();

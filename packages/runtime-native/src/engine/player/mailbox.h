@@ -30,6 +30,9 @@ class Mailbox {
     /** Publishes the ready handshake. False when the root is unusable, which is not a playtest run. */
     bool announceReady();
 
+    /** True once the runner's first request has been picked up: the game is no longer held for it. */
+    bool attached() const { return attached_; }
+
     /**
      * One frame in, one frame out. Returns false when no request is waiting or the frame could not
      * be read; the caller keeps its own frame budget either way.
@@ -52,6 +55,7 @@ class Mailbox {
     std::string screenshotRequestPath_;
     std::string screenshotPath_;
     bool announced_ = false;
+    bool attached_ = false;
     bool answered_ = true;
     // A request whose answer is still settling (a bridge promise): asked again every poll until it answers.
     std::string deferred_;

@@ -558,6 +558,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         set_tests_properties(native_engine_world_cycles_cpu native_engine_surface_lifetime_cpu PROPERTIES LABELS "native-engine"
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1;LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/lsan-dawn-null.supp;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
     endif()
+    tn_native_engine_test(tn-native-engine-frame-metrics-test tests/native-engine/world/frame_metrics_test.cpp
+        native_engine_player_frame_timing_fields=frame_timing_fields
+        native_engine_player_thread_cpu_ignores_sleep=thread_cpu_ignores_sleep
+        native_engine_player_wall_clock_moves=wall_clock_moves)
+    target_link_libraries(tn-native-engine-frame-metrics-test PRIVATE tn_engine_player)
     tn_native_engine_test(tn-native-engine-skinned-crowd-test tests/native-engine/animation/skinned_crowd_test.cpp
         native_engine_skinned_crowd_cpu=crowd_cpu)
     target_link_libraries(tn-native-engine-skinned-crowd-test PRIVATE tn_engine_player)

@@ -80,6 +80,7 @@ bool Mailbox::poll(inspect::Endpoint& endpoint) {
         if (frame.empty())
             return false;
     }
+    attached_ = true;
     // The runner waits for this id's answer before it writes another request, so holding one is safe.
     const std::string response = endpoint.handle(frame);
     if (response.empty()) {

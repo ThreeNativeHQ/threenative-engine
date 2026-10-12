@@ -92,7 +92,7 @@ function unboundDiagnostic(specifier, name) {
 }
 
 /** Bundle the portable entry against native imports; publish nothing when a binding is absent. */
-export async function bundleNativeEngine({ entry, outfile, boot = true }) {
+export async function bundleNativeEngine({ entry, outfile, boot = true, define = {}, host = boot }) {
   entry = resolve(entry);
   outfile = resolve(outfile);
   if (entry === outfile) throw new Error("TN_NATIVE_ENGINE_OUTPUT: entry and output must differ");
@@ -100,10 +100,18 @@ export async function bundleNativeEngine({ entry, outfile, boot = true }) {
   // compatibility denominator merely because the package's index reexports them.
   const game = await build({
     entryPoints: [entry], bundle: true, write: false, format: "esm", platform: "neutral",
-    target: "es2022", conditions: ["threenative-native"], define: { "import.meta.env": "{}" },
+    target: "es2022", conditions: ["threenative-native"], define: { "import.meta.env": "{}", ...define },
     external: ["three", "three/*", "three-mesh-bvh", "three-mesh-bvh/*",
       "@threenative/core", "@threenative/core/*"],
     logLevel: "silent", metafile: true,
+    // A script entry that imports core's loader by relative path (the load test's Fox) would inline the
+    // browser loader and its GLTFLoader; it reads the cooked package like core's own imports do.
+    plugins: [{ name: "native-assets", setup(builder) {
+      builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
+        if (resolve(args.resolveDir, args.path) === resolve(repo, "packages/core/src/assets.js"))
+          return { path: resolve(player, "core-assets.mjs"), external: true };
+      });
+    } }],
   });
   rejectUpstream(game.metafile);
   const code = game.outputFiles[0].text;
@@ -150,9 +158,9 @@ export async function bundleNativeEngine({ entry, outfile, boot = true }) {
   const bundled = await build({
     stdin: { contents: boot
       ? `import ${JSON.stringify(resolve(player, "core-host.mjs"))}; import game from "tn:game"; globalThis.tn.__booting = true; void game.start().then(() => { globalThis.tn.__booting = false; game.ctx.renderer.render(game.ctx.scene, game.ctx.camera); }).catch(error => { globalThis.tn.__startupError = String(error.stack ?? error); });`
-      : 'import "tn:game";', resolveDir: repo },
+      : `${host ? `import ${JSON.stringify(resolve(player, "core-host.mjs"))}; ` : ""}import "tn:game";`, resolveDir: repo },
     bundle: true, write: false, format: "iife", platform: "neutral", target: "es2022",
-    conditions: ["threenative-native"], define: { "import.meta.env": "{}" }, metafile: true,
+    conditions: ["threenative-native"], define: { "import.meta.env": "{}", ...define }, metafile: true,
     logLevel: "silent",
     plugins: [{ name: "native-engine", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
