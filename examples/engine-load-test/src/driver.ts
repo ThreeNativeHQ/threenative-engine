@@ -138,6 +138,7 @@ interface IUserAgentData {
 }
 
 const parameters = new URLSearchParams(globalThis.location.search);
+const holdFrame = parameters.has("holdFrame") ? Number(parameters.get("holdFrame")) : undefined;
 const frames = readInteger("frames", FRAMES_PER_RUNG);
 const warmup = readInteger("warmup", WARMUP_FRAMES);
 const repeats = readInteger("repeats", REPEATS);
@@ -374,6 +375,12 @@ export async function measureRung(
     await harness.render();
     const submitted = clock.now() - submittedAt;
     firstFrameMs ??= performance.now();
+    // `?holdFrame=N` keeps frame N on screen and stops: the visual judge's captures are one pose on every arm
+    // (the bench steps by frame index). A held run never reports.
+    if (frameIndex === holdFrame) {
+      (globalThis as { __TN_BENCH_HELD__?: number }).__TN_BENCH_HELD__ = frameIndex;
+      await new Promise<never>(() => {});
+    }
     const taken = phases?.take();
     if (frameIndex >= knobs.warmup) {
       submitMs += submitted;
@@ -423,9 +430,7 @@ export async function measureRung(
   hooks?.dispose();
   sampleMemory();
   const crossingTop =
-    censusAtOpen === undefined
-      ? undefined
-      : topCrossings(censusAtOpen, census(), measuredFrames);
+    censusAtOpen === undefined ? undefined : topCrossings(censusAtOpen, census(), measuredFrames);
   return {
     ...(phases === undefined
       ? {}

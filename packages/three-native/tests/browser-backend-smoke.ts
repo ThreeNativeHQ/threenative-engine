@@ -378,6 +378,57 @@ engine.collect();
   );
   abi._free?.(grown);
 }
+// The host projection report on the web back end (PRD-573 web cut 3), as v8_adapter_test's projectionReport:
+// one call a frame answers the native scene's batching, the same crossings for 1,000 and 4,000 cubes.
+{
+  type Report = {
+    projecting: boolean;
+    reasonCode: string;
+    sourceRenderables: number;
+    projectedObjects: number;
+    instancedBatches: number;
+    exactObjects: number;
+  };
+  type Reporting = { __tnProjectionReport(minMeshes: number): Report };
+  const crossed: number[] = [];
+  for (const cubes of [1000, 4000]) {
+    const scene = new Scene();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const cubeMaterial = new MeshStandardMaterial();
+    for (let i = 0; i < cubes; ++i) scene.add(new Mesh(geometry, cubeMaterial));
+    const counts = new Map<string, number>();
+    (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = counts;
+    let report: Report | undefined;
+    for (let frame = 0; frame < 3; ++frame)
+      report = (scene as unknown as Reporting).__tnProjectionReport(200);
+    (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = undefined;
+    crossed.push([...counts.values()].reduce((sum, n) => sum + n, 0));
+    const answer = [
+      report?.projecting,
+      report?.reasonCode,
+      report?.sourceRenderables,
+      report?.projectedObjects,
+      report?.instancedBatches,
+      report?.exactObjects,
+    ].join();
+    check(
+      answer === `true,projected,${cubes},${cubes},1,0`,
+      `projection report at ${cubes} cubes: ${answer}`,
+    );
+  }
+  check(
+    crossed[0] === crossed[1] && (crossed[0] ?? 99) <= 3,
+    `projection report crossings for three frames: ${crossed.join(", ")}`,
+  );
+  const small = new Scene();
+  for (let i = 0; i < 10; ++i) small.add(new Mesh(new BoxGeometry(1, 1, 1), material));
+  const declined = (small as unknown as Reporting).__tnProjectionReport(200);
+  check(
+    `${declined.projecting},${declined.reasonCode},${declined.sourceRenderables}` ===
+      "false,belowMeshFloor,10",
+    "a scene under the mesh floor is declined",
+  );
+}
 // three's InstancedMesh/BatchedMesh.dispose, which core's projection mirror calls on a retired batch: the
 // engine frees instance buffers with the object, so the call releases nothing (as core-three.mjs).
 {
