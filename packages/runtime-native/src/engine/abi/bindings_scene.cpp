@@ -254,6 +254,7 @@ double structureStamp(Object3D& root) {
 // mirrored or non-uniform rig leaves its batch). The renderer batches the root itself; this only reports it.
 struct HostProjection {
     double stamp = -1;
+    uint64_t hierarchy = ~uint64_t(0);
     int minMeshes = -1;
     int sinceDecide = 0;
     projection::Decision decision;
@@ -271,12 +272,21 @@ HostProjection& hostProjectionOf(Object3D& root) {
 Value hostProjectionReport(Object3D& root, int minMeshes) {
     constexpr int kDeclineRescanFrames = 60;  // core's DECLINE_RESCAN_FRAMES
     HostProjection& host = hostProjectionOf(root);
-    const double stamp = structureStamp(root);
-    if (stamp != host.stamp || minMeshes != host.minMeshes || ++host.sinceDecide >= kDeclineRescanFrames) {
-        host.decision = projection::decide(root, minMeshes);
-        host.stamp = stamp;
-        host.minMeshes = minMeshes;
-        host.sinceDecide = 0;
+    // Walking 4,096 cubes to hash them costs more than the rest of the call: skip it while nothing in the
+    // process was added, removed or attached, and let the cadence catch a geometry or material swap.
+    const uint64_t hierarchy = Object3D::hierarchyVersion();
+    const bool settled = hierarchy == host.hierarchy && minMeshes == host.minMeshes && host.sinceDecide + 1 < kDeclineRescanFrames;
+    if (settled) {
+        ++host.sinceDecide;
+    } else {
+        const double stamp = structureStamp(root);
+        if (stamp != host.stamp || minMeshes != host.minMeshes || ++host.sinceDecide >= kDeclineRescanFrames) {
+            host.decision = projection::decide(root, minMeshes);
+            host.stamp = stamp;
+            host.minMeshes = minMeshes;
+            host.sinceDecide = 0;
+        }
+        host.hierarchy = hierarchy;
     }
     const projection::Decision& d = host.decision;
     std::vector<std::pair<std::string, Value>> exact;
