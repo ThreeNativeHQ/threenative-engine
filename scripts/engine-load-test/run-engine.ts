@@ -52,6 +52,7 @@ export function engineDefines(
       ladder: options.ladder.split(",").map(Number),
       modes: options.modes.split(","),
       phases: process.env.TN_BENCH_PHASES === "1",
+      ...(process.env.TN_BENCH_PROJECTION === "js" ? { projection: "js" } : {}),
       refreshHz: Number(process.env.TN_BENCH_REFRESH_HZ ?? 60),
       repeats: options.repeats,
       ...(options.sourceSha === undefined ? {} : { sourceSha: options.sourceSha }),

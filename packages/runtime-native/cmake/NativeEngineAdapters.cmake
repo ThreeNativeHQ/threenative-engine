@@ -256,12 +256,18 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-batched-mesh.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_batched_mesh PROPERTIES LABELS "native-engine")
-    # PRD-573 v1.11: a settled R2 frame of 1,024 cubes costs at most 3.5 crossings per cube. It is red until
-    # steps 3 and 4 land, so it carries `tn-known-red` and not `native-engine`; move it to `native-engine` then.
+    # PRD-573 v1.11: a settled R2 frame of 1,024 cubes costs at most 3.5 crossings per cube. Red until step 3 (host
+    # projection) landed, green since: 10.26 per cube at step 0, 0.01 with the mirror gone.
     add_test(NAME native_engine_player_crossing_budget
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-crossing-budget.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
-    set_tests_properties(native_engine_player_crossing_budget PROPERTIES LABELS "tn-known-red" TIMEOUT 300)
+    set_tests_properties(native_engine_player_crossing_budget PROPERTIES LABELS "native-engine" TIMEOUT 300)
+    # PRD-573 v1.11 step 3: core's projection with the host seam against core's JS mirror (`renderer.projection: "js"`),
+    # both drawn by the player into a render target and compared pixel by pixel, and their draw lists on the player's frame.
+    add_test(NAME native_engine_player_host_projection
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-host-projection.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_host_projection PROPERTIES LABELS "native-engine" TIMEOUT 300)
 endif()
 
 # One target builds every V8 artifact: `cmake --build <dir> --target tn-native-engine-v8`.

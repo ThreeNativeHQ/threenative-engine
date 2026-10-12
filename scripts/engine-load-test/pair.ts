@@ -92,13 +92,21 @@ export function pairVerdict(
   left.forEach((run, index) => {
     const other = right[index] ?? right[right.length - 1];
     if (other === undefined) return;
-    for (const failure of checkEquivalence(run, other))
+    for (const failure of checkEquivalence(run, other)) {
+      // `TN_BENCH_WAIVE=drawCalls,triangles` names the two facets a host that batches the authored scene
+      // itself (the engine player under host projection) legitimately moves: it submits far fewer draws and
+      // culls batch members per instance. The row stays in the table, marked waived; the fox size, the
+      // placements and the probe frame's pixels still have to match.
+      const waived = (process.env.TN_BENCH_WAIVE ?? "")
+        .split(",")
+        .some((name) => name !== "" && failure.field.startsWith(name));
       shared.push({
-        facet: `${failure.rung} ${failure.field}`,
+        facet: `${failure.rung} ${failure.field}${waived ? " (waived: TN_BENCH_WAIVE)" : ""}`,
         left: failure.left,
-        pass: false,
+        pass: waived,
         right: failure.right,
       });
+    }
   });
   try {
     assertSymmetricSpans(left.flatMap(seriesFamilies), right.flatMap(seriesFamilies), labels);

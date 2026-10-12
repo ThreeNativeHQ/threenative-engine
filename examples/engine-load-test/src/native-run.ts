@@ -39,6 +39,8 @@ declare const __TN_BENCH_CONFIG__: Readonly<{
   modes: RenderMode[];
   /** Per-frame phase telemetry, which the pair bench turns on for both arms (`TN_BENCH_PHASES=1`). */
   phases?: boolean;
+  /** `renderer.projection: "js"`, the named override that forces core's mirror on the engine player (`TN_BENCH_PROJECTION=js`). */
+  projection?: "js";
   repeats: number;
   sourceSha?: string;
   warmup: number;
@@ -99,7 +101,11 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
     "native host surface",
     config.animate,
     axes,
-    (scene, options) => new SceneRenderProjection(scene, options),
+    (scene, options) =>
+      new SceneRenderProjection(
+        scene,
+        config.projection === "js" ? { ...options, projection: "js" } : options,
+      ),
     { cameraCull: new RenderCameraCull(), matrixWorld: new MatrixWorldPass() },
     characters,
     (globalThis as { tn?: { readFrame?: () => Promise<Uint8Array> } }).tn?.readFrame,
@@ -136,7 +142,10 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
             // both mean the same thing here, that the optimizer took the scene rather than handing
             // the frame back, and a rung that measured an un-optimized scene must still refuse to
             // report rather than publish L1 timings under an L3 label.
-            if (harness.collapseStatus() !== "projected")
+            if (
+              harness.collapseStatus() !== "projected" &&
+              harness.collapseStatus() !== "hostProjected"
+            )
               throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
             // Fail closed on the frozen scene: see the web entry for why a fast still picture is the
             // dangerous outcome here, not the good one.
