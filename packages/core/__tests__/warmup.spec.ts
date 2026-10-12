@@ -536,6 +536,29 @@ describe("scene warm-up", () => {
     expect(report.passes).toEqual(["main", "reflection"]);
   });
 
+  test("should walk a shared node subgraph once when it looks for a reflector", async () => {
+    // A diamond chain: every node lists the next one twice, so a walk without a visited set makes
+    // 2^20 calls. TSL graphs share nodes like this all over a terrain material.
+    let calls = 0;
+    let tail: unknown = { isNode: true, getChildren: () => (calls++, []) };
+    for (let level = 0; level < 20; level += 1) {
+      const next = tail;
+      tail = { isNode: true, getChildren: () => (calls++, [next, next]) };
+    }
+    const material = { isNodeMaterial: true, colorNode: tail };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: { shadowMap: { enabled: true } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "ground" }]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.passes).toEqual(["main"]);
+    expect(calls).toBeLessThanOrEqual(21);
+  });
+
   test("should not render passes when renderPasses is false", async () => {
     const render = vi.fn();
     const renderer = {
