@@ -231,7 +231,7 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
 async function tryReadDesktopScreenshot(path: string): Promise<unknown | undefined> {
   try {
     const png = await readFile(path);
-    assertCaptureNotBlank(png, path);
+    assertCaptureNotBlank(png, path, { target: "desktop" });
     return undefined;
   } catch (error) {
     if (error instanceof Error && error.name === "CaptureGuardError") throw error;
