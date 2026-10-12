@@ -717,7 +717,10 @@ export function createGroundMaterial(
               .sub(mx_noise_float(positionWorld.mul(0.05)).mul(0.5))
               .abs(),
           ),
-        ).mul(smoothstep(-0.1, 0.15, mx_noise_float(positionWorld.mul(0.65))));
+        )
+          .mul(smoothstep(-0.1, 0.15, mx_noise_float(positionWorld.mul(0.65))))
+          // Subpixel wrack fragments read as brown loops from the overview.
+          .mul(oneMinus(smoothstep(60, 120, positionView.length())));
     const sandColor = otherBiome
       ? blended.rgb
       : mix(blended.rgb, vec3(dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722))), 0.55).mul(
