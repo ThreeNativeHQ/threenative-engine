@@ -85,7 +85,7 @@ Layer: engine (`packages/runtime-native/src/engine/`, cited at `origin/feat/nati
 
 - 2026-10-11 (epic rewrite, from the review): the compose skip is deferred. It is filed again only
   if a profile shows `updateMatrixWorldSelf` self time above 2% of the frame. Projection reuse and
-  SIMD world matrices (the earlier Phases 2–3) move to the v4 candidates, gated on the scorecard.
+  SIMD world matrices (the earlier Phases 2–3) move to the v4 candidates in [ROADMAP.md](./ROADMAP.md), gated on the scorecard.
 - The rate rule lives in `AnimationMixer::update`, not only in `AnimationSchedule`, because games
   call `update()` directly.
 

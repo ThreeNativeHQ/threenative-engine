@@ -10,7 +10,7 @@
 
 ## Context
 
-The cycle KPIs in the [epic README](./README.md) are same-run ratios: native against legacy (v1),
+The cycle KPIs in the [epic roadmap](./ROADMAP.md) are same-run ratios: native against legacy (v1),
 native against Godot desktop (v2, v3). No single report holds them. What exists (read 2026-10-11):
 
 - `perf` (`packages/playtest/src/runner/perf.ts`, develop) reads `--file`, `--executable` or
@@ -77,7 +77,7 @@ Frame-cost goals fail on hitches, so a scorecard needs tails, not only medians.
 
 ## Decisions
 
-- 2026-10-12 (owner, cycle plan): the bar is the cycle KPI list in the epic README. It replaces the
+- 2026-10-12 (owner, cycle plan): the bar is the cycle KPI list in the epic ROADMAP. It replaces the
   earlier proposed bar ("CPU busy at most 1/3 of three.js", "no slower than `godot-desktop` on
   `heterogeneous`"); the second had no Godot workload to run on.
 - A "CPU busy" win is never reported alone: frame p50 and p99 ride in the same row (the epic opened
