@@ -105,7 +105,7 @@ describe("world-streaming view-distance recipe", () => {
     for (const [width, height] of [
       [1280, 720],
       [2560, 1440],
-    ]) {
+    ] as const) {
       const tiles = new TerrainTiles({
         surface: new MeshBasicMaterial(),
         residentByteBudget: 2_000_000,
