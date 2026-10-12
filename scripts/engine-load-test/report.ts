@@ -30,6 +30,7 @@ export const ARMS = [
   "tn-web",
   "tn-android",
   "tn-desktop",
+  "tn-engine-desktop",
   "godot-web",
   "godot-android",
   "godot-desktop",
@@ -76,6 +77,11 @@ export interface IPerformancePromotionPolicy {
 export interface IRunReportRung {
   collapseMs?: number[];
   /**
+   * CPU milliseconds the host process spent per frame inside the timed window (every thread), read by the
+   * runner from /proc at the page's window markers (`host-cpu.ts`). Absent on arms the runner cannot read.
+   */
+  cpuMsPerFrame?: number;
+  /**
    * PRD-449 §7.4's primary metric: the wall window for N completed frames over N, cadence included.
    * Optional because reports written before it existed still parse; `null` with a reason when the arm
    * could not observe finished work.
@@ -121,6 +127,8 @@ export interface IRunReportRung {
   positionHash: string;
   repeat: number;
   stepMs?: number[];
+  /** The engine player's main-thread CPU ms per drawn frame (CLOCK_THREAD_CPUTIME_ID), when the run asked for it. */
+  threadCpuMs?: number[];
   triangles: number;
   visibleObjects: number;
 }
@@ -183,6 +191,8 @@ export interface IPerformanceIdentity {
 }
 
 export interface IRungSummary {
+  /** Median across repeats of the host process's CPU ms per frame in the timed window; undefined when no repeat carried it. */
+  cpuMsPerFrame?: number;
   drawCalls: number;
   /** Frames over `HITCH_FACTOR` times the rung's own p50, median across repeats. */
   hitches: number;
@@ -195,6 +205,8 @@ export interface IRungSummary {
   pipelineCompiles?: number;
   repeats: number;
   sampleCount: number;
+  /** Median across repeats of the player's main-thread CPU p50 per frame; undefined when no repeat carried it. */
+  threadCpuP50?: number;
   triangles: number;
   visibleObjects: number;
 }
@@ -614,6 +626,28 @@ export function parseRunReport(value: unknown): IRunReport {
         );
       timingSeries[field] = samples as number[];
     }
+    const cpuMsPerFrame = rung.cpuMsPerFrame;
+    if (
+      cpuMsPerFrame !== undefined &&
+      (typeof cpuMsPerFrame !== "number" || !Number.isFinite(cpuMsPerFrame) || cpuMsPerFrame < 0)
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.cpuMsPerFrame must be a non-negative number when present`,
+      );
+    const threadCpuMs = rung.threadCpuMs;
+    if (
+      threadCpuMs !== undefined &&
+      (!Array.isArray(threadCpuMs) ||
+        threadCpuMs.length === 0 ||
+        threadCpuMs.some(
+          (sample) => typeof sample !== "number" || !Number.isFinite(sample) || sample < 0,
+        ))
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.threadCpuMs must be a non-empty array of non-negative numbers when present`,
+      );
     const initialPlacementSha256 = rung.initialPlacementSha256;
     if (
       initialPlacementSha256 !== undefined &&
@@ -724,6 +758,8 @@ export function parseRunReport(value: unknown): IRunReport {
       );
     return {
       ...parseCompletedWork(rung, path, frameMs.length),
+      ...(cpuMsPerFrame === undefined ? {} : { cpuMsPerFrame }),
+      ...(threadCpuMs === undefined ? {} : { threadCpuMs: threadCpuMs as number[] }),
       drawCalls: requireNumber(rung, "drawCalls", path),
       ...(pipelineCompiles === undefined ? {} : { pipelineCompiles }),
       frameMs: frameMs as number[],
@@ -859,7 +895,15 @@ export function summarize(report: IRunReport): IRungSummary[] {
   for (const bucket of groups.values()) {
     const first = bucket[0] as IRunReportRung;
     const compiles = bucket.map((rung) => rung.pipelineCompiles);
+    const cpu = bucket.map((rung) => rung.cpuMsPerFrame);
+    const thread = bucket.map((rung) => rung.threadCpuMs);
     summaries.push({
+      ...(cpu.every((value) => value !== undefined)
+        ? { cpuMsPerFrame: median(cpu as number[]) }
+        : {}),
+      ...(thread.every((series) => series !== undefined)
+        ? { threadCpuP50: median((thread as number[][]).map((series) => percentile(series, 0.5))) }
+        : {}),
       drawCalls: median(bucket.map((rung) => rung.drawCalls)),
       hitches: median(bucket.map((rung) => countHitches(rung.frameMs))),
       mode: first.mode,

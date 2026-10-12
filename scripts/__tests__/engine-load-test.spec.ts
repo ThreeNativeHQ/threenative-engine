@@ -50,7 +50,16 @@ import {
   assertPlainThreePilot,
   browserLaunchArgs,
 } from "../engine-load-test/browser.js";
+import { HostCpuRecorder, parseProcStat, withHostCpu } from "../engine-load-test/host-cpu.js";
 import {
+  pairRows,
+  pairVerdict,
+  renderPairMarkdown,
+  reportFacets,
+  seriesFamilies,
+} from "../engine-load-test/pair.js";
+import {
+  ARMS,
   type IRunReport,
   PERFORMANCE_BASELINES,
   PERFORMANCE_REGRESSION_TOLERANCE,
@@ -68,6 +77,7 @@ import {
 } from "../engine-load-test/report.js";
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
 import { KILL_GRACE_MS, runCapturing } from "../engine-load-test/run-desktop.js";
+import { engineDefines, engineEnvironment, playerSurface } from "../engine-load-test/run-engine.js";
 
 const BEGIN_MARKER = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END_MARKER = "ENGINE_LOAD_TEST_JSON_END";
@@ -608,7 +618,7 @@ describe("engine load test workload", () => {
     // Both entries install the projection for L4 as they do for L3; only L3 keeps the two guards
     // that refuse to publish an un-projected frame, because a decline is L4's answer, not a fault.
     // PRD-464's R1-R5 are L3's authoring, so they keep both guards too.
-    for (const entry of ["driver.ts", "native.ts"]) {
+    for (const entry of ["driver.ts", "native-run.ts"]) {
       const source = await readFile(
         path.join(process.cwd(), "examples/engine-load-test/src", entry),
         "utf8",
@@ -630,7 +640,7 @@ describe("engine load test workload", () => {
     const [cli, web, native, vite, game, driver] = await Promise.all([
       load("scripts/engine-load-test/cli.ts"),
       load("examples/engine-load-test/src/main.ts"),
-      load("examples/engine-load-test/src/native.ts"),
+      load("examples/engine-load-test/src/native-run.ts"),
       load("examples/engine-load-test/vite.config.ts"),
       load("examples/engine-load-test/src/game.ts"),
       load("examples/engine-load-test/src/driver.ts"),
@@ -3592,5 +3602,309 @@ describe("the host-load verdict", () => {
     );
     const quiet = withHostLoad(report(), readHostLoad(source(1, 12)));
     expect(checkPerformance(quiet, { "tn-web": baseline })?.regressions).toEqual([]);
+  });
+});
+
+// PRD-573 v1.10: the owned engine as a bench arm, and the guard that lets two arms be compared at all.
+describe("the tn-engine-desktop arm", () => {
+  const engineReport = (overrides: Partial<IRunReport> = {}): IRunReport =>
+    report({ arm: "tn-engine-desktop", ...overrides });
+
+  it("is a registered arm that reports as ThreeNative and cannot be filed as another engine", () => {
+    expect(ARMS).toContain("tn-engine-desktop");
+    const parsed = parseRunReport(JSON.parse(JSON.stringify(engineReport())));
+    expect(parsed.arm).toBe("tn-engine-desktop");
+    expect(() =>
+      parseRunReport({ ...engineReport(), engine: { name: "godot", version: "4.7.1" } }),
+    ).toThrow(/TN_BENCH/u);
+  });
+
+  it("is reachable from --arm and --pair, and its entry is the shared run with the engine's Fox", async () => {
+    const [cli, entry, run] = await Promise.all([
+      readFile(path.join(process.cwd(), "scripts/engine-load-test/cli.ts"), "utf8"),
+      readFile(path.join(process.cwd(), "examples/engine-load-test/src/native-engine.ts"), "utf8"),
+      readFile(path.join(process.cwd(), "examples/engine-load-test/src/native-run.ts"), "utf8"),
+    ]);
+    expect(cli).toMatch(/arm === "tn-engine-desktop"[\s\S]*runTnEngineDesktop/u);
+    expect(cli).toMatch(/PAIRABLE_ARMS = \["tn-desktop", "tn-engine-desktop"/u);
+    expect(cli).toMatch(/renderPairMarkdown\(/u);
+    expect(entry).toMatch(/runNative\(/u);
+    expect(run).toMatch(/onEngine/u);
+  });
+
+  it("builds the engine bundle from the same options as the legacy bundle", () => {
+    const options = {
+      axes: DEFAULT_AXES,
+      frames: 160,
+      height: 1080,
+      ladder: "4096",
+      modes: "R2,R5",
+      repeats: 1,
+      sourceSha: "abc123",
+      warmup: 40,
+      width: 1920,
+    };
+    const defines = engineDefines(options, "/fox.glb");
+    expect(JSON.parse(defines.__TN_PLATFORM__ as string)).toBe("engine-desktop");
+    const config = JSON.parse(defines.__TN_BENCH_CONFIG__ as string);
+    expect(config).toMatchObject({
+      frames: 160,
+      height: 1080,
+      ladder: [4096],
+      modes: ["R2", "R5"],
+      repeats: 1,
+      sourceSha: "abc123",
+      warmup: 40,
+      width: 1920,
+    });
+  });
+
+  it("opens the player at the requested surface, uncapped, and reads per-frame CPU only on request", () => {
+    const options = {
+      axes: DEFAULT_AXES,
+      frames: 1,
+      height: 1080,
+      ladder: "1",
+      modes: "R5",
+      repeats: 1,
+      warmup: 1,
+      width: 1920,
+    };
+    expect(engineEnvironment(options, {})).toMatchObject({
+      TN_PLAYER_HEIGHT: "1080",
+      TN_PLAYER_VSYNC: "0",
+      TN_PLAYER_WIDTH: "1920",
+    });
+    expect(engineEnvironment(options, {}).TN_PLAYER_METRICS).toBeUndefined();
+    expect(engineEnvironment(options, { TN_BENCH_ENGINE_METRICS: "1" }).TN_PLAYER_METRICS).toBe(
+      "1",
+    );
+    expect(engineEnvironment(options, { TN_BENCH_VSYNC: "on" }).TN_PLAYER_VSYNC).toBe("1");
+    expect(
+      playerSurface(
+        "[Playtest] threenative-native-engine ready: game x, runtime v8, 1920x1080, mailbox off",
+      ),
+    ).toEqual({ height: 1080, width: 1920 });
+    expect(playerSurface("[Playtest] No presentable surface; running headless.")).toBeUndefined();
+  });
+});
+
+describe("the runner's host CPU reading", () => {
+  const stat = (name: string, group: number, user: number, system: number): string =>
+    `4242 (${name}) S 1 ${group} ${group} 0 -1 4194560 100 0 0 0 ${user} ${system} 0 0 20 0 9 0 12345 1000 100`;
+
+  it("reads utime, stime and the group past a command name with spaces and parentheses", () => {
+    expect(parseProcStat(stat("tn native (v8) x", 777, 120, 30))).toEqual({
+      cpuTicks: 150,
+      group: 777,
+    });
+    expect(() => parseProcStat("garbage")).toThrow(/TN_BENCH_PROC_STAT/u);
+  });
+
+  const recorderFor = (readings: Array<number | undefined>): HostCpuRecorder => {
+    const queue = [...readings];
+    return new HostCpuRecorder({ read: () => queue.shift() });
+  };
+
+  it("brackets a window between its two markers and keeps the player's frame samples inside it", () => {
+    const recorder = recorderFor([1000, 1480]);
+    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":9}');
+    recorder.line("window R2@4096");
+    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":2.5}');
+    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":3.5}');
+    recorder.line("rung R2@4096 frame p50 3.00 | step p50 1.00");
+    expect(recorder.windows).toEqual([
+      { begin: 1000, cpuMs: 480, key: "R2@4096", threadFrameMs: [2.5, 3.5] },
+    ]);
+  });
+
+  it("adds cpuMsPerFrame to the matching rung and refuses windows that do not pair with rungs", () => {
+    const recorder = recorderFor([0, 160]);
+    recorder.line("window R2@4096");
+    recorder.line("rung R2@4096 frame p50 1 | step");
+    const page = { rungs: [{ frameMs: series(1, 8), mode: "R2", objectCount: 4096 }] };
+    const stamped = withHostCpu(page, recorder) as { rungs: Array<{ cpuMsPerFrame: number }> };
+    expect(stamped.rungs[0]?.cpuMsPerFrame).toBe(20);
+    expect(() => withHostCpu({ rungs: [page.rungs[0], page.rungs[0]] }, recorder)).toThrow(
+      /TN_BENCH_CPU_WINDOWS/u,
+    );
+    expect(() => withHostCpu({ rungs: [{ ...page.rungs[0], mode: "R3" }] }, recorder)).toThrow(
+      /TN_BENCH_CPU_WINDOWS/u,
+    );
+    expect(() => withHostCpu(page, recorder, true)).toThrow(/player frame samples/u);
+  });
+
+  it("fails when the host process cannot be found at a marker", () => {
+    expect(() => recorderFor([undefined]).line("window R2@4096")).toThrow(
+      /TN_BENCH_CPU_UNREADABLE/u,
+    );
+  });
+
+  it("round-trips through the report parser and rejects a negative reading", () => {
+    const withCpu = report({ rungs: [rung({ cpuMsPerFrame: 4.2, threadCpuMs: [1, 2, 3] })] });
+    const parsed = parseRunReport(JSON.parse(JSON.stringify(withCpu)));
+    expect(parsed.rungs[0]).toMatchObject({ cpuMsPerFrame: 4.2, threadCpuMs: [1, 2, 3] });
+    expect(summarize(parsed)[0]).toMatchObject({ cpuMsPerFrame: 4.2, threadCpuP50: 2 });
+    expect(() =>
+      parseRunReport({ ...withCpu, rungs: [{ ...withCpu.rungs[0], cpuMsPerFrame: -1 }] }),
+    ).toThrow(/cpuMsPerFrame/u);
+    expect(() =>
+      parseRunReport({ ...withCpu, rungs: [{ ...withCpu.rungs[0], threadCpuMs: [] }] }),
+    ).toThrow(/threadCpuMs/u);
+  });
+});
+
+describe("the same-run pair guard", () => {
+  const wobble = (base: number): number[] => [
+    base,
+    base + 1,
+    base + 2,
+    base,
+    base + 1,
+    base + 2,
+    base,
+    base + 1,
+  ];
+  const scene = {
+    pointLights: 8,
+    postPasses: 0,
+    resolution: "1280x720",
+    shadowCasters: 4096,
+    skinnedMeshes: 0,
+    tonemapping: 0,
+  };
+  const arm = (
+    name: IRunReport["arm"],
+    options: {
+      cpu?: number;
+      frame?: number;
+      ladder?: Partial<typeof scene>;
+      load?: number;
+      overrides?: Partial<IRunReport>;
+    } = {},
+  ): IRunReport =>
+    withHostLoad(
+      report({
+        arm: name,
+        rungs: [
+          rung({
+            cpuMsPerFrame: options.cpu ?? 10,
+            drawCalls: 40,
+            frameMs: wobble(options.frame ?? 10),
+            ladder: { ...scene, ...options.ladder },
+            mode: "R2",
+            pipelineCompiles: 0,
+            triangles: 49_154,
+          }),
+        ],
+        ...options.overrides,
+      }),
+      readHostLoad({ cores: () => 12, loadavg: () => [options.load ?? 1, 0, 0] }),
+    );
+  const labels = ["tn-desktop", "tn-engine-desktop"] as const;
+
+  it("prints a ratio when both arms drew the same scene, and carries the load beside it", () => {
+    const rows = pairRows(
+      [arm("tn-desktop", { cpu: 10 })],
+      [arm("tn-engine-desktop", { cpu: 4, frame: 5 })],
+      labels,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.ratio.cpu).toBeCloseTo(2.5);
+    expect(rows[0]?.ratio.p50).toBeGreaterThan(1.5);
+    const markdown = renderPairMarkdown(
+      [arm("tn-desktop", { load: 9 })],
+      [arm("tn-engine-desktop")],
+      labels,
+    );
+    expect(markdown).toContain("9.0!");
+  });
+
+  it("refuses a ratio when the engine drew fewer lights or no bloom, and names what differs", () => {
+    const fewer = pairVerdict(
+      [arm("tn-desktop")],
+      [arm("tn-engine-desktop", { ladder: { pointLights: 0 } })],
+      labels,
+    );
+    expect(fewer.problem).toContain("R2@4096 scene");
+    expect(() =>
+      pairRows(
+        [arm("tn-desktop")],
+        [arm("tn-engine-desktop", { ladder: { postPasses: 1 } })],
+        labels,
+      ),
+    ).toThrow(/TN_BENCH_PARITY/u);
+    expect(() =>
+      pairRows(
+        [arm("tn-desktop")],
+        [arm("tn-engine-desktop", { ladder: { shadowCasters: 0 } })],
+        labels,
+      ),
+    ).toThrow(/TN_BENCH_PARITY/u);
+  });
+
+  it("refuses arms whose surface, present mode, frame clock or rasteriser differ", () => {
+    const surface = pairVerdict(
+      [arm("tn-desktop")],
+      [
+        arm("tn-engine-desktop", {
+          overrides: { display: { height: 1080, refreshHz: 60, vsync: false, width: 1920 } },
+        }),
+      ],
+      labels,
+    );
+    expect(surface.problem).toContain("surface");
+    const capped = pairVerdict(
+      [arm("tn-desktop")],
+      [
+        arm("tn-engine-desktop", {
+          overrides: { display: { height: 720, refreshHz: 60, vsync: true, width: 1280 } },
+        }),
+      ],
+      labels,
+    );
+    expect(capped.problem).toContain("vsync");
+    const frozenRung = { ...arm("tn-engine-desktop").rungs[0], frameMs: series(16.667) };
+    const frozen = pairVerdict(
+      [arm("tn-desktop")],
+      [arm("tn-engine-desktop", { overrides: { rungs: [frozenRung as never] } })],
+      labels,
+    );
+    expect(frozen.problem).toContain("frame clock");
+    const software = pairVerdict(
+      [arm("tn-desktop")],
+      [
+        arm("tn-engine-desktop", {
+          overrides: { driver: { adapter: "SwiftShader", renderer: "x" } },
+        }),
+      ],
+      labels,
+    );
+    expect(software.problem).toContain("adapter class");
+  });
+
+  it("refuses when one arm carries a timing series the other lacks, and when a triangle count drifts", () => {
+    const stepped = arm("tn-engine-desktop");
+    const withStep = {
+      ...stepped,
+      rungs: [{ ...(stepped.rungs[0] as object), stepMs: wobble(1) }],
+    } as IRunReport;
+    expect(seriesFamilies(withStep)).toEqual(["frameMs", "stepMs"]);
+    expect(pairVerdict([arm("tn-desktop")], [withStep], labels).problem).toContain(
+      "series families",
+    );
+    const drift = arm("tn-engine-desktop");
+    const fewerTriangles = {
+      ...drift,
+      rungs: [{ ...(drift.rungs[0] as object), triangles: 20_000 }],
+    } as IRunReport;
+    expect(pairVerdict([arm("tn-desktop")], [fewerTriangles], labels).problem).toMatch(
+      /triangle/iu,
+    );
+  });
+
+  it("refuses to compare when an arm has no runs", () => {
+    expect(() => pairVerdict([], [arm("tn-engine-desktop")], labels)).toThrow(/TN_BENCH_PARITY/u);
+    expect(reportFacets(arm("tn-desktop"))["R2@4096 frames"]).toBe("8");
   });
 });

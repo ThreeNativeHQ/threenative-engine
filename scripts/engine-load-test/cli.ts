@@ -20,6 +20,7 @@ import {
   startProcess,
   waitForUrl,
 } from "./browser.js";
+import { renderPairMarkdown } from "./pair.js";
 import {
   BenchError,
   type IPerformanceBaseline,
@@ -41,6 +42,7 @@ import {
 } from "./report.js";
 import { runAndroidArm } from "./run-android.js";
 import { desktopTimeoutMs, runGodotDesktop, runTnDesktop } from "./run-desktop.js";
+import { runTnEngineDesktop } from "./run-engine.js";
 import { exportGodotWeb } from "./run-godot.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -299,6 +301,8 @@ async function runRequestedArm(arm: string, options: ILadderOptions): Promise<IR
     return process.argv.includes("--production") ? runTnWebProduction(options) : runTnWeb(options);
   if (arm === "godot-web") return runGodotWeb(options);
   if (arm === "tn-desktop") return parseRunReport(await runTnDesktop(repoRoot, options));
+  if (arm === "tn-engine-desktop")
+    return parseRunReport(await runTnEngineDesktop(repoRoot, options));
   if (arm === "godot-desktop") {
     const report = await runGodotDesktop(repoRoot, options);
     // Godot cannot know the tree it was measured against, so the runner stamps it the way the
@@ -503,6 +507,73 @@ async function runReportCheckCommand(file: string): Promise<void> {
   }
 }
 
+/** The arms a same-run pair may name: the two desktop ThreeNative hosts and Godot's desktop export. */
+export const PAIRABLE_ARMS = ["tn-desktop", "tn-engine-desktop", "godot-desktop"] as const;
+
+/**
+ * `--pair a,b --rounds N`: both arms run the same ladder, alternating which goes first each round, and every
+ * report is written. The table prints only when the parity guard passes on all of them; otherwise the run
+ * exits 1 with the facets that differ, and a ratio is never produced.
+ */
+async function runPairCommand(spec: string): Promise<void> {
+  const names = spec.split(",");
+  const [first, second] = names;
+  if (
+    names.length !== 2 ||
+    !PAIRABLE_ARMS.some((arm) => arm === first) ||
+    !PAIRABLE_ARMS.some((arm) => arm === second) ||
+    first === second
+  )
+    throw new BenchError(
+      "TN_BENCH_BAD_FLAG",
+      `--pair takes two different arms from ${PAIRABLE_ARMS.join(", ")}, got '${spec}'`,
+      1,
+    );
+  const rounds = positiveInteger(flag("rounds"), 3);
+  const options = ladderOptions();
+  const tag =
+    flag("tag") ?? `${options.modes.replaceAll(",", "-")}-${options.ladder.replaceAll(",", "-")}`;
+  const directory = path.join(artifactRoot, flag("dir") ?? "prd-573");
+  await mkdir(directory, { recursive: true });
+  const runs = new Map<string, IRunReport[]>([
+    [first as string, []],
+    [second as string, []],
+  ]);
+  for (let round = 1; round <= rounds; round += 1) {
+    const order = round % 2 === 1 ? [first, second] : [second, first];
+    for (const arm of order as string[]) {
+      const measured = await runRequestedArm(arm, options);
+      if (measured.arm !== arm)
+        throw new BenchError(
+          "TN_BENCH_ARM_MISMATCH",
+          `asked for ${arm}, the run reported ${measured.arm}`,
+        );
+      // Read after the run, so the load that gets recorded is the load the timed window ran under.
+      const report = withHostLoad(measured, readHostLoad());
+      scoreboardRows(report);
+      await writeFile(
+        path.join(directory, `${tag}-${arm}-r${round}.json`),
+        `${JSON.stringify(report, null, 2)}\n`,
+      );
+      runs.get(arm)?.push(report);
+    }
+  }
+  const labels = [first as string, second as string] as const;
+  try {
+    const markdown = renderPairMarkdown(
+      runs.get(labels[0]) ?? [],
+      runs.get(labels[1]) ?? [],
+      labels,
+    );
+    await writeFile(path.join(directory, `${tag}-pair.md`), `${markdown}\n`);
+    process.stdout.write(`${markdown}\n`);
+  } catch (error) {
+    if (error instanceof BenchError)
+      await writeFile(path.join(directory, `${tag}-pair-PARITY-FAILED.md`), `${error.message}\n`);
+    throw error;
+  }
+}
+
 async function runProductComparison(): Promise<void> {
   const left = await loadArm(flag("left") ?? "tn-web");
   const right = await loadArm(flag("right") ?? "godot-web");
@@ -514,7 +585,7 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n       pnpm bench:engines --cpu-setup\n       pnpm bench:engines --cpu --source <absolute checkout path> --name <result name>\n       pnpm bench:engines --cpu-compare --baseline <absolute saved-run dir> --candidate <absolute saved-run dir> [--control <name>]\n",
+    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|tn-engine-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --pair tn-desktop,tn-engine-desktop [--rounds N --tag name --dir name] (same flags as --arm; fails unless both arms drew the same scene)\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n       pnpm bench:engines --cpu-setup\n       pnpm bench:engines --cpu --source <absolute checkout path> --name <result name>\n       pnpm bench:engines --cpu-compare --baseline <absolute saved-run dir> --candidate <absolute saved-run dir> [--control <name>]\n",
   );
 }
 
@@ -530,6 +601,8 @@ async function main(): Promise<void> {
   if (checkReport !== undefined) return runReportCheckCommand(checkReport);
   const arm = flag("arm");
   if (arm !== undefined) return runArmCommand(arm, ladderOptions());
+  const pair = flag("pair");
+  if (pair !== undefined) return runPairCommand(pair);
   if (process.argv.includes("--compare")) return runProductComparison();
   printUsage();
 }

@@ -360,6 +360,9 @@ export function writeInstanceMatrices(
  */
 export function countPipelineCreates(renderer: WebGPURenderer): () => number {
   const backend = (renderer as unknown as { backend?: Record<string, unknown> }).backend;
+  // The native engine has no three backend to hook: its facade reads the player's own pipeline cache.
+  if (typeof backend?.pipelineCompiles === "function")
+    return backend.pipelineCompiles as () => number;
   let count = 0;
   for (const method of ["createRenderPipeline", "createComputePipeline"]) {
     const original = backend?.[method];
@@ -381,6 +384,7 @@ export async function createLoadTestHarness(
   createCollapse?: CollapseFactory,
   enginePasses?: ILoadTestEnginePasses,
   characters?: ICharacterCrowd,
+  readFrame?: () => Promise<Uint8Array>,
 ): Promise<ILoadTestHarness> {
   const renderer = new WebGPURenderer({ antialias: false, canvas });
   renderer.setPixelRatio(1);
@@ -822,6 +826,14 @@ export async function createLoadTestHarness(
     probeFrame: async () => {
       if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
       const size = renderer.getDrawingBufferSize(drawingBufferSize);
+      // A host whose post pass does not draw into a render target reads the frame it last drew
+      // instead (the engine player). It is the frame a player sees, post chain included.
+      if (postPipeline !== undefined && readFrame !== undefined) {
+        const pixels = await readFrame();
+        if (pixels.length !== size.x * size.y * 4)
+          throw new Error(`TN_BENCH_PROBE_SIZE:${pixels.length}!=${size.x}x${size.y}`);
+        return frameStats(pixels, size.x, size.y);
+      }
       const target = new RenderTarget(size.x, size.y);
       try {
         renderer.setRenderTarget(target);
