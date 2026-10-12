@@ -643,7 +643,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                                  (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
                                  mesh.matrixWorld.determinant() > 0;
             Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
-            r.seen = frame_;
+            markSeen(r);
             if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
                 if (compact) {
                     addBatchMesh(mesh, r, mainPass, shadowCaster);
@@ -776,9 +776,9 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             }
         }
     } else if (!lightsOnly && cached && cached->meshId == object.id()) {
-        cached->seen = frame_; // flat records also survive another camera's layer mask
+        markSeen(*cached); // flat records also survive another camera's layer mask
     } else if (const auto it = records_.find(&object); !lightsOnly && it != records_.end()) {
-        it->second.seen = frame_; // in the scene, on another camera's layer: its record stays
+        markSeen(it->second); // in the scene, on another camera's layer: its record stays
     }
     const bool ordered = !updateChildren && &object == slotRoot_;
     for (std::size_t i = 0; i < object.children.size(); ++i) {
@@ -1188,6 +1188,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     const auto start = profiling ? Clock::now() : Clock::time_point{};
     if (targetScene && targetScene != &scene && targetScene->matrixWorldAutoUpdate) targetScene->updateMatrixWorld();
     ++frame_;
+    mapSeen_ = 0;
     ++projection::detail::uniformEpoch();
     diagnostics_.clear();
     hemisphere_ = 0;
@@ -1300,8 +1301,9 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
                                " hemisphere lights; one is drawn");
     for (auto& r : flatRecords_) if (r.seen != frame_) r = Record{};
     // Objects that left the scene leave the database.
+    // When every record in the map was seen this render, there is nothing to sweep.
     bool erased = false;
-    for (auto it = records_.begin(); it != records_.end();) {
+    for (auto it = mapSeen_ == records_.size() ? records_.end() : records_.begin(); it != records_.end();) {
         if (it->second.seen != frame_) {
             it = records_.erase(it);
             erased = true;

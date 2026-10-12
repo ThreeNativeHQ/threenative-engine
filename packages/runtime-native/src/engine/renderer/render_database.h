@@ -167,6 +167,14 @@ class RenderDatabase {
     LightState lights_;
     CameraState cameraState_;
 
+    // Marks a record as projected in this render; `mapSeen_` counts the ones that live in `records_`.
+    void markSeen(Record& r) {
+        if (r.seen == frame_) return;
+        r.seen = frame_;
+        const auto at = reinterpret_cast<std::uintptr_t>(&r), first = reinterpret_cast<std::uintptr_t>(flatRecords_.data());
+        if (at < first || at >= first + flatRecords_.size() * sizeof(Record)) ++mapSeen_;
+    }
+    std::size_t mapSeen_ = 0;
     Record& record(const Mesh& mesh, bool materialize = true);
     Record& record(const Mesh& mesh, Record& cached, bool materialize = true);
     DrawItem& refresh(const Mesh& mesh, Record& record);
