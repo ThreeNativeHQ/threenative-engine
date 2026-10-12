@@ -107,6 +107,8 @@ const initialState = {
   editorAnnouncement: "",
   editorFocusVisible: false,
   editorBrushCaptured: false,
+  editorPersistedStrokes: -1,
+  editorPersistenceError: "",
 
   vertexCount: 0,
   heightSum: 0,
@@ -164,6 +166,12 @@ export async function createEditorView(
   // The loop's settling frame can tick before the surfaces exist; the view answers when it can.
   // biome-ignore lint/style/useConst: the settling frame reads this before the line that assigns it.
   let propSurfaces: Awaited<ReturnType<typeof createPropSurfaces>> | undefined;
+  const initialDisk = await controller.snapshot();
+  const initialStrokes = initialDisk.document.recipe.layers.filter(
+    (layer) => layer.name === "Sculpt stroke",
+  ).length;
+  let persistedStrokes = 0;
+  let persistenceError = "";
   let authoring: IAuthoringDocument | undefined;
   let renderedRecipe: string | undefined;
   let groundAt: PropGroundQuery | undefined;
@@ -604,6 +612,8 @@ export async function createEditorView(
         ctx.state.set({
           renderedFrames: ctx.state.getState().renderedFrames + 1,
           editorTool: document.body.dataset.terrainTool ?? "",
+          editorPersistedStrokes: persistedStrokes,
+          editorPersistenceError: persistenceError,
           editorBrushCaptured: document.getElementById("viewport")?.hasPointerCapture(1) ?? false,
           editorFocus: focused?.dataset.tool ?? focused?.id ?? "",
           editorFocusVisible:
@@ -749,6 +759,16 @@ export async function createEditorView(
         requestedRevision = revision;
       }
       authoring = next;
+      void controller
+        .snapshot()
+        .then((snapshot) => {
+          persistedStrokes =
+            snapshot.document.recipe.layers.filter((layer) => layer.name === "Sculpt stroke")
+              .length - initialStrokes;
+        })
+        .catch((error: unknown) => {
+          persistenceError = String(error);
+        });
       selection.sync({ document: next, revision, diagnostic: null }, sameRecipe);
       selection.refresh();
     },

@@ -132,7 +132,6 @@ export function finishSpline(c: EditorSession): void {
 export function installStrokes(c: EditorSession): void {
   c.host = $("viewport");
   c.host.addEventListener("pointerdown", (e) => {
-    if (c.saving) return;
     if (
       e.target !== c.host &&
       (!(e.target instanceof Element) || !e.target.classList.contains("render-canvas"))
@@ -216,7 +215,7 @@ export function installStrokes(c: EditorSession): void {
       c.view.setBrush(null);
       return;
     }
-    if (c.saving || document.querySelector("dialog[open]")) return;
+    if (document.querySelector("dialog[open]")) return;
     if (c.active === "select" && (action === "undo" || action === "redo")) return;
     e.preventDefault();
     if (action === "undo") c.terrain.undo();

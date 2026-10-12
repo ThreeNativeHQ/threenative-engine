@@ -257,7 +257,15 @@
       "label": "brush-apply",
       "press": "Enter",
       "holdTicks": 1,
-      "waitTicks": 3,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "second-stroke-50ms",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 2,
       "release": true
     },
     {
@@ -600,6 +608,22 @@
             "equals": false
           }
         ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorPersistedStrokes",
+        "atSteps": [
+          {
+            "label": "keyboard-edit-saved",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorPersistenceError",
+        "equals": "",
+        "allowTrivial": "An authoritative document GET must succeed; fetch errors are observed here."
       }
     ]
   },

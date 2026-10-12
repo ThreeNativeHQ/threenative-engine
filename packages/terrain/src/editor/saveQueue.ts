@@ -403,6 +403,7 @@ export class SaveQueue {
       }
     } finally {
       this.#saving = false;
+      this.#onChange?.();
     }
     if (this.hasPending()) void this.flush();
   }

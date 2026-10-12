@@ -3,6 +3,7 @@ import type { Terrain } from "../../index.js";
 import type { IFocusRequest } from "../cameras.js";
 import type { IEnvironment } from "../environment.js";
 import type { IEditorView, TerrainEditorController } from "../index.js";
+import type { SaveQueue } from "../saveQueue.js";
 import type { IEditorSnapshot } from "../server.js";
 
 import type { createEditorApi } from "./api.js";
@@ -109,6 +110,7 @@ export class EditorSession {
   assetSignature!: string;
   revision!: string;
   renderedRevision!: string | null;
+  saveQueue!: SaveQueue;
   saving!: boolean;
   loading!: boolean;
   saved!: IEditorSnapshot;

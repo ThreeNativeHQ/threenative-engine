@@ -284,10 +284,6 @@ export async function mountTerrainEditor(options: {
   onEvaluated?(event: { revision: string; state: ITerrainState; ms: number }): void;
 }): Promise<{ controller: TerrainEditorController; dispose(): void }> {
   document.body.replaceChildren(createEditorShell());
-  const lock = document.createElement("style");
-  lock.textContent =
-    'body[data-saving="true"] button,body[data-saving="true"] input,body[data-saving="true"] select,body[data-saving="true"] textarea{pointer-events:none}';
-  document.head.append(lock);
   const host = document.getElementById("viewport");
   if (!host) throw new Error("Recovered editor has no viewport");
   const controller = new TerrainEditorController(new URL("./", location.href).href);
@@ -323,7 +319,6 @@ export async function mountTerrainEditor(options: {
       unsubscribe();
       controls.dispose();
       view.dispose();
-      lock.remove();
     },
   };
 }
