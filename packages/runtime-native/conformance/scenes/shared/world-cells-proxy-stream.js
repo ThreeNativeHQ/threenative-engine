@@ -43,7 +43,8 @@ export async function startScene(canvas, dimensions) {
   const world = await WorldCells.load({
     url: "/world/world.json", follow, ring: 0,
     surface: new THREE.MeshBasicMaterial(),
-    budgets: { bytes: 1000000, instances: 10, residentCells: 2 },
+    // HLOD reserves up to 8 MiB for decoded source and fixed proxy copies before IO.
+    budgets: { bytes: 10000000, instances: 10, residentCells: 2 },
     terrain: false, gpuScene: false, bundles: false, adaptiveLod: false,
     data: {
       manifest: {
