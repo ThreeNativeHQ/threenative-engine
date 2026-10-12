@@ -249,7 +249,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // createProject on the merged tree.
   "action-rpg": "254697940e5805434f380528ea8b69e19613a1548f64497ee23989677b59763c",
   minimal: "0202ac5dd7ac436e474f55dd9ec2f5f43da3d67c219b2351405e960ca8f1a71e",
-  platformer: "0b7d908d20bf27e66417718186197eaabcb5428e8c03758d5d93dab58a8b09c1",
+  platformer: "edf75a6bfbb3b0ab7513b7e8fc3a8441b9aa41ff5f544ab77c201f1fcd8d8faf",
   puzzle: "c5739a462298a6b1a0c2ba27ebca8c276fa89ccd6464d8b49f43b2da0e9e9f72",
   racing: "deff5eb215f9d3be8007f2f0bc4530618035db36418c05aee292791a07ca76a9",
   rain: "643494c2812208b8db1c24e38c06053d7fe349bb25692802c8acf3511e08dd43",
@@ -447,6 +447,7 @@ const PLATFORMER_PATHS = [
   "src/render/postprocessing.ts",
   "src/render/props.ts",
   "src/render/sky.ts",
+  "src/render/skyEnvironment.ts",
   "src/render/scenery.ts",
   "src/render/walkers.ts",
   "src/render/waterfall.ts",
@@ -545,6 +546,9 @@ describe("create-threenative", () => {
         );
         expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
         actual[template] = await scaffoldTreeHash(target);
+        if (template === "platformer") {
+          await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
+        }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
     } finally {
@@ -1123,7 +1127,7 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   it("should parse the no-install and template flags", () => {
     expect(parseArgs(["my-game", "--template", "minimal", "--no-install"])).toEqual({

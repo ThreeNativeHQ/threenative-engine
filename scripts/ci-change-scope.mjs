@@ -353,8 +353,13 @@ export function validateEventPlan(value, { eventName, baseRef, forceFull = false
   const event = eventName;
   const target = (baseRef ?? "").replace(/^refs\/heads\//u, "");
   const review = event === "pull_request" && target === "develop";
-  const warm = event === "push" && target === "develop" && plan.selection === "warm";
-  if ((!review && !warm) || forceFull) {
+  // PRD-550: the queue reviews the exact tree a merge would produce on the base branch, so it earns
+  // the same narrowed plan a pull request into develop earns. A queue entry against any other target
+  // still qualifies its tree here.
+  const queue =
+    event === "merge_group" &&
+    validationProfile({ eventName: event, baseRef: baseRef ?? "" }).target === "develop";
+  if ((!review && !queue) || forceFull) {
     if (
       !plan.qualification ||
       plan.selection !== "full" ||
@@ -421,6 +426,22 @@ function treeOf(root, sha) {
   const result = git(root, ["rev-parse", "--verify", "--quiet", `${sha}^{tree}`]);
   const tree = result.stdout.trim();
   return result.status === 0 && /^[0-9a-f]{40}$/u.test(tree) ? tree : null;
+}
+
+/** A pull-request candidate must be the exact base/head merge, so a changed input needs fresh verification. */
+export function assertMergeParentCandidate(root, candidateSha, base, head) {
+  const commit = git(root, ["cat-file", "-p", candidateSha]);
+  const headers = commit.stdout?.split("\n\n", 1)[0] ?? "";
+  const parents = [...headers.matchAll(/^parent ([0-9a-f]{40})$/gmu)].map((match) => match[1]);
+  if (
+    commit.status !== 0 ||
+    !/^[0-9a-f]{40}$/u.test(base ?? "") ||
+    !/^[0-9a-f]{40}$/u.test(head ?? "") ||
+    JSON.stringify(parents) !== JSON.stringify([base, head])
+  )
+    throw new Error(
+      "CI_REQUIRED_PR_CANDIDATE_MISMATCH: expected the exact proposed base/head merge; changed inputs require fresh verification",
+    );
 }
 
 function ghApi(pathname) {
@@ -647,17 +668,16 @@ export function coverageMiss(current, source) {
  * The validation profile a run has to prove. `main` is a promotion or a main push, `develop` an
  * ordinary pull request or the merge queue on develop, `other` any run whose target the API does not
  * report — which ranks lowest, because an unproven target never stands in for a proven one. The
- * native tier follows the target: an ordinary pull request owes the reduced matrix PRD-380 gives it,
- * everything else the full one, and a run owing no lane owes none.
+ * native tier follows the target: a pull request or the merge queue on develop owes the reduced
+ * matrix PRD-380 gives it, everything else the full one, and a run owing no lane owes none.
  */
 export function validationProfile({ eventName, baseRef = "", nativeRequired = false }) {
-  const target =
-    baseRef === "main"
-      ? "main"
-      : baseRef === "develop" || eventName === "merge_group"
-        ? "develop"
-        : "other";
-  const review = target === "develop" && (eventName === "pull_request" || eventName === undefined);
+  // Only an explicit target can earn reduced validation; GitHub also reports refs/heads/<name>.
+  const ref = baseRef.replace(/^refs\/heads\//u, "");
+  const target = ref === "main" ? "main" : ref === "develop" ? "develop" : "other";
+  const review =
+    target === "develop" &&
+    (eventName === "pull_request" || eventName === "merge_group" || eventName === undefined);
   return { target, native: nativeRequired ? (review ? "reduced" : "full") : "none" };
 }
 
@@ -852,26 +872,16 @@ export function classify(input) {
       candidateSha,
     );
   if (options.full) return full("explicit full verification requested");
-  // PRD-481 phase 2. A pull request's caches are scoped to `refs/pull/N/merge`, which no other pull
-  // request reads, so only a run on the base branch publishes something every pull request into
-  // develop reads — and before this lane nothing ran on develop at all, so every pull request paid
-  // a full native rebuild. The lane exists only to publish those caches; it verifies nothing.
-  if (options.eventName === "push" && options.target === "develop") {
-    return selectionPlan(
-      "warm",
-      "a develop push publishes the base-branch caches every pull request into develop reads, and verifies nothing",
-      [],
-      candidateSha,
-      false,
-      0,
-      target,
-    );
-  }
-  // Every event except a pull request stays full, and so does every target but develop. A merge
-  // group is the queue testing the exact tree a merge would produce, so it runs the whole board
-  // before anything lands — the narrowings below are for reviewing a change, never for qualifying a
-  // tree, which is why the queue, a push, the nightly, an explicit audit and a promotion into main
-  // are all excluded here rather than narrowed further downstream.
+  // PRD-550. The exhaustive board left the queue, so a develop push is the promotion of an exact
+  // tree and qualifies that tree with every supported system, every kit and every native row. A
+  // full selection still runs `build-artifacts` and `test-native`, so the base-branch caches every
+  // pull request into develop reads keep being published here.
+  if (options.eventName === "push" && options.target === "develop")
+    return full("a develop push qualifies the exact tree with the full board");
+  // Every event except a pull request and a merge group stays full, and so does every target but
+  // develop. The narrowings below review a change on develop; the exhaustive board belongs to the
+  // tree-qualifying events — a push, the nightly, an explicit audit and a promotion into main — which
+  // are excluded here rather than narrowed further downstream.
   if (!["pull_request", "merge_group"].includes(options.eventName))
     return full(`event ${JSON.stringify(options.eventName)} requires complete verification`);
   if (options.target !== "develop")
@@ -898,8 +908,6 @@ export function classify(input) {
   }
   const parsed = changedPaths(options);
   if ("error" in parsed) return full(parsed.error);
-  if (options.eventName === "merge_group")
-    return full("merge groups qualify the complete exact candidate", parsed.paths);
   // `native-platforms.yml` is the one workflow the CI-configuration rule would otherwise narrow, and
   // it is the matrix's own definition: exempting it would waive the very lane that has to prove the
   // change. Any native path therefore keeps `full`, not merely `native: true`. Computed over the
@@ -1027,10 +1035,19 @@ function output(result, format) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const options = parseArgs(process.argv.slice(2));
-    output(
-      options.plan !== undefined ? validatePlan(JSON.parse(options.plan)) : classify(options),
-      options.format,
-    );
+    if (options.plan !== undefined) {
+      output(validatePlan(JSON.parse(options.plan)), options.format);
+    } else {
+      // Only the live GitHub projection owes the parent assertion; local and offline keep classify().
+      if (options.format === "github" && options.eventName === "pull_request" && !options.local)
+        assertMergeParentCandidate(
+          options.root,
+          options.candidateSha ?? git(options.root, ["rev-parse", "HEAD"]).stdout.trim(),
+          options.base,
+          options.head,
+        );
+      output(classify(options), options.format);
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 2;
