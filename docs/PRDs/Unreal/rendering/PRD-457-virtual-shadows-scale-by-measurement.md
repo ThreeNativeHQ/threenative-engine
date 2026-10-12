@@ -44,6 +44,7 @@ scalability—without pretending directional clipmaps solve point/spot lights.
 - **Do not optimize draw calls by multiplying them.** Page rendering must batch/limit work so “24
   tiny pages” is not automatically 24 complete scene traversals.
 - **2026-10-09 (João, via the Unreal review request): overflow degrades resolution before it switches path.** Unreal's answer to page-pool pressure (below) replaces this PRD's plain overflow fallback in Phase 2's first box. No other box changes.
+- 2026-10-12 (Unreal source review): All cited line ranges and defaults match Unreal 5.8.3, except the static-return range, now `1767-1820`. The `trackCaster` remark was stale because PRD-572 is done. Unreal also skips small instances in coarse pages by pixel footprint. Phase 2's first box now names that limit.
 - **Local lights are a measured follow-on.** This PRD may establish a common budget/update scheduler
   for one spot-light fixture, but does not claim full Unreal-style point/spot shadow virtualization
   unless the acceptance evidence actually covers it.
@@ -69,10 +70,16 @@ Paths are under `Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/`.
   pages first (`VirtualShadowMapArray.cpp:527-532`). `PhysicalPagePool` already evicts by LRU.
 - **Static and dynamic casters are sorted automatically.** Any invalidation marks an instance
   dynamic. After 100 frames with no invalidation it returns to the static cache
-  (`VirtualShadowMapCacheManager.cpp:142-147`, `:1767-1800`). Here a game must call `trackCaster`
-  for every mover (`packages/core/src/render/virtual-shadow.ts:707`), a manual call that the
-  auto-by-default rule disfavors. That is a separate change and is not in this PRD: see
-  [PRD-572](../../done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md).
+  (`VirtualShadowMapCacheManager.cpp:142-147`, `:1767-1820`). ThreeNative now does the same:
+  [PRD-572](../../done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md) shipped
+  automatic mover detection with `staticAfterFrames` (default 100). `trackCaster`
+  (`packages/core/src/render/virtual-shadow.ts:1244`) is only an override. Phase 1 counters count
+  automatic and pinned movers together.
+- **Small instances skip the coarse pages.** A dynamic non-Nanite instance under 16 pixels of
+  estimated footprint is not drawn into a coarse page. The static limit is 1 pixel. A flag removes
+  non-Nanite geometry from coarse pages entirely, and its text calls that a significant win
+  (`VirtualShadowMapArray.cpp:437-443`, `:504-517`). A forest with many tiny instances is the case
+  this PRD fears, so Phase 2 must apply a footprint limit before it counts page draws.
 - **Soft shadows by shadow-map ray marching** (7 rays of 8 samples for a directional light,
   fewer in fully lit or fully shadowed areas; `VirtualShadowMapArray.cpp:674-678`, `:728-740`)
   are a desktop look option. They are out of scope here.
@@ -93,7 +100,7 @@ Paths are under `Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/`.
 
 ### Phase 2 — Admit sparse pages only behind the measured gate
 
-- [ ] The admitted path renders only demanded dirty pages into bounded physical storage and reuses clean resident pages. Under pool pressure it first raises a resolution bias, and it falls back to the cached-level path only at the bias cap or on an unsupported case, never dropping shadows. **proof:** focused specs exercise demand, LRU eviction, invalidation, the pressure bias and overflow; a forced-small pool preserves a valid shadow through the bias and then the fallback.
+- [ ] The admitted path renders only demanded dirty pages into bounded physical storage and reuses clean resident pages. It skips instances under a pixel-footprint limit in coarse pages. Under pool pressure it first raises a resolution bias, and it falls back to the cached-level path only at the bias cap or on an unsupported case, never dropping shadows. **proof:** focused specs exercise demand, LRU eviction, invalidation, the footprint limit, the pressure bias and overflow; a forced-small pool preserves a valid shadow through the bias and then the fallback.
 - [ ] On the Phase-1 winning workload, sparse pages reduce attributable shadow GPU/render p95 without increasing total frame p95 or visible shadow error beyond the pinned threshold. **proof:** paired A/B run on the same adapter records shadow cost, total frame cost, page/level render counts and image delta; if the win gate is missed, sparse mode remains unshipped/disabled.
 
 ### Phase 3 — Establish the local-light boundary honestly

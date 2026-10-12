@@ -10,14 +10,14 @@
 
 `ResolutionScaler` (`packages/core/src/resolution-scaler.ts`) picks one of 10 rungs, from 1.0 to
 0.23. Its own comments say why the rungs are coarse: "every step reallocates render targets on
-WebGPU, and fine granularity buys smoothness with hitches" (`:20-24`), and "the resize reallocates
-every render target, which rebuilds pipelines" (`:72-73`).
+WebGPU, and fine granularity buys smoothness with hitches" (`:24-25`), and "the resize reallocates
+every render target, which rebuilds pipelines" (`:83-84`).
 
 The mechanism is `renderer.setSize()`. `setResolutionScale` stores the scale and calls the resize
-handler (`packages/core/src/renderer.ts:650-660`). The handler resizes the drawing buffer to
-`canvas × pixelRatio × scale` (`renderer.ts:1010-1031`). The swap chain shrinks, and every
+handler (`packages/core/src/renderer.ts:763-773`). The handler resizes the drawing buffer to
+`canvas × pixelRatio × scale` (`renderer.ts:1262-1273`). The swap chain shrinks, and every
 `PassNode` target in the render chain follows it. The same code defers a resize while an
-asynchronous compile holds a depth target (`renderer.ts:652-656`), because a resize then disposes
+asynchronous compile holds a depth target (`renderer.ts:765-769`), because a resize then disposes
 a texture that a pipeline build still reads.
 
 PRD-549 measured how often the scaler steps on a weak GPU: on the LAN laptop's Iris Xe it went
@@ -31,7 +31,7 @@ not change that policy. It changes what a step costs.
 
 - Scene textures are sized once for the **upper bound** of the resolution fraction, and each view
   renders into a rectangle inside them
-  (`Engine/Source/Runtime/Renderer/Private/SceneRendering.cpp:3412-3460`). A fraction change moves
+  (`Engine/Source/Runtime/Renderer/Private/SceneRendering.cpp:3412-3471`). A fraction change moves
   the rectangle and allocates nothing.
 - The allocated size rounds up to a multiple of 8, because many passes assume it
   (`Engine/Source/Runtime/RenderCore/Private/RenderUtils.cpp:1178-1192`).
@@ -48,7 +48,8 @@ not change that policy. It changes what a step costs.
 
 three r185 already has the stock seam: `PassNode.setViewport()` and `setScissor()` set a viewport
 and scissor on the pass target, scaled by its resolution scale
-(`three/src/nodes/display/PassNode.js:884-915`, `:953`).
+(`three/src/nodes/display/PassNode.js:960`, `:994`). The pass copies the rectangle into its render target only inside
+`PassNode.setSize()` (`:915-945`), so a scale change must call `setSize()` with an unchanged size again. Verify in Phase 2 that this call allocates nothing.
 
 ## Solution
 
@@ -64,7 +65,8 @@ and scissor on the pass target, scaled by its resolution scale
 3. **Every chain stage reads the sub-rectangle.** A stage receives `viewFraction` (the
    sub-rectangle size over the target size) as a uniform. It multiplies screen UVs by it and clamps
    each sample to `viewFraction − half a texel`, so a bilinear tap never reads outside the
-   rectangle. Stages that `three` owns (TRAA, GTAO, SSGI, bloom) get a thin wrapper or a stock
+   rectangle. Unreal's temporal upscaler does the same with a per-history viewport min and max in UV
+   (`UE 5.8.3: Engine/Shaders/Private/TemporalSuperResolution/TSRUpdateHistory.usf:957-960`). Stages that `three` owns (TRAA, GTAO, SSGI, bloom) get a thin wrapper or a stock
    option where one exists. A stage that cannot honour the rectangle is named in
    `TN_RESOLUTION_SUBRECT` as `refused`, and the scaler then keeps today's reallocation path for
    that game. It never draws a wrong frame silently.
@@ -93,7 +95,7 @@ Layer: mechanism only, `packages/core` and the native host. No appearance parame
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
-| Scale applied as a viewport | `game.ts` frame-budget window → `ResolutionScaler` → `renderer.setResolutionScale` (`renderer.ts:650`) | The `setSize` path stays as the fallback for a refused stage | AC-1 |
+| Scale applied as a viewport | `game.ts` frame-budget window → `ResolutionScaler` → `renderer.setResolutionScale` (`renderer.ts:763`) | The `setSize` path stays as the fallback for a refused stage | AC-1 |
 | Sub-rectangle sampling | `RenderChain` stage install (`render/chain.ts`) | Full-target sampling stays when the scale is 1.0 | AC-2 |
 
 ## Execution Phases
@@ -116,5 +118,7 @@ Layer: mechanism only, `packages/core` and the native host. No appearance parame
 - [ ] The native desktop host draws the same sub-rectangle frame as the browser. proof: `pnpm parity --target desktop --only-tests resolution-subrect`.
 
 ## Decisions
+
+- 2026-10-12 (Unreal source review): checked every Unreal claim, all correct. Fixed drifted repo and three line numbers. Added the `PassNode.setSize()` finding: the viewport and scissor reach the render target only through that call, so Phase 2 must call it on each scale change and prove it allocates nothing. The up-step default 0.9 and the 2% change threshold are the only Unreal numbers this PRD copies as constants. Unreal's own minimum fraction is 0.5 (`DynamicRenderScaling.h:35`), while this controller goes to 0.23, so the finer controller keeps PRD-384's floor rules.
 
 - 2026-10-09 (João, via the Unreal review request): filed as a new PRD, not as a box in PRD-384. PRD-384 is a narrow GPU-headroom repair with one open box; this is a new mechanism with its own measurement gate.

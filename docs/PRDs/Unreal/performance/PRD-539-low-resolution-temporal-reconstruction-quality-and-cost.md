@@ -33,29 +33,33 @@ PRD-455 already compared it. Paths are under `Engine/Source/Runtime/Renderer/Pri
 unless named otherwise. Order is by fit to the measured localization above.
 
 1. **History stored above output resolution.** `r.TSR.History.ScreenPercentage` (`:54-60`) keeps the
-   history at 100–200% of the *output* resolution. Unreal uses 200% at its two highest quality tiers.
+   history at 100–200% of the *output* resolution. The default is 100. The scalability groups set 200 at the Epic and Cinematic tiers
+   (`UE 5.8.3: Engine/Config/BaseScalability.ini:89` and `:100`).
    The stated reason is sampling-theorem headroom: details survive repeated reprojection without the
    resampling blur that each bilinear or bicubic fetch adds. A resolve pass
    (`TSRResolveHistory.usf`) filters the history down to output. This targets the `.010` drift loss
    directly. The cost is 4× history memory and bandwidth, which Unreal offsets by storing history
-   as R11G11B10 (`:63-73`).
+   as R11G11B10 (`:63-73`, default 1).
 2. **Velocity-clamped history weight.** When an output pixel moves at 1 px/frame or more, the
    history's accumulated sample count is clamped to 4 (`r.TSR.Velocity.WeightClampingSampleCount`
-   and `...PixelSpeed`, `:310-330`). The default history cap is 16 (`:45-50`). This trades a little
+   and `...PixelSpeed`, `:310-330`). The default history cap is 16 (`:45-50`). The clamp applies to history pixels, so it is less visible at lever 1's 200% history
+   (`:309-321`). Test levers 1 and 2 together. This trades a little
    stability for less successive-convolution blur during motion. That is the moving-camera edge
    check, which is worse than no-AA today.
 3. **Spatial anti-aliasing of rejected input.** Where history is rejected, TSR runs a built-in
-   spatial anti-aliaser on the low-resolution input (`r.TSR.RejectionAntiAliasingQuality`, default 3,
-   off only at the lowest tier, `:234-246`; `Engine/Shaders/Private/TemporalSuperResolution/TSRSpatialAntiAliasing.usf`).
+   spatial anti-aliaser on the low-resolution input (`r.TSR.RejectionAntiAliasingQuality`, cvar default 3, set to 0 at the lowest tier and to 1 or 2 above it by
+   `UE 5.8.3: Engine/Config/BaseScalability.ini:59-104`, `:233-246`; `Engine/Shaders/Private/TemporalSuperResolution/TSRSpatialAntiAliasing.usf`).
    This targets the low-input edge and reveal checks. The low-input arm currently loses to plain
    spatial upscale.
 4. **Flicker-aware shading rejection.** TSR measures luma flicker over a period of about 2 frames,
-   and rejects history by that, not only by colour clipping (`r.TSR.ShadingRejection.Flickering`,
-   on by default, `:138-195`; `TSRMeasureFlickeringLuma.usf`). This is not variance-clip widening,
+   and relaxes history rejection on pixels that flicker, so the history ghosts inside a luma bound instead of resetting
+   (`r.TSR.ShadingRejection.Flickering`, cvar default 1, off at the Low and Medium tiers, `:137-200`, period default 2 frames at `:188`;
+   `TSRMeasureFlickeringLuma.usf`; the moire error in `UE 5.8.3: Engine/Shaders/Private/TemporalSuperResolution/TSRRejectShading.usf:466-500`). This is not variance-clip widening,
    which is already falsified.
 5. **Not recommended as a default:** thin-geometry detection (`r.TSR.ThinGeometryDetection`, `:332`)
-   and the reprojection field (`r.TSR.ReprojectionField`, `:290`) are both **off** by default in
-   Unreal. Try them only after 1–4.
+   and the reprojection field (`r.TSR.ReprojectionField`, `:290`) are **off** in the cvar defaults.
+   The reprojection field is on at the High tier and above through scalability (`BaseScalability.ini:82`), and thin-geometry detection turns on
+   with Nanite foliage. Try them only after 1–4.
 
 Each candidate is one arm in the unchanged gate, never a threshold change.
 
@@ -83,3 +87,4 @@ One reconstructor that, at a sub-1.0 internal raster, produces a stable display-
 - Ghosting margin to keep honest: the pinned moving-edge ratios (`<=.75`, `>=1.25x`) sit against measured `.629`/`.651` and `1.485`/`1.435` (hardware/CI).
 - First step for the owner of this PRD: explain the `.010` camera-drift loss (history resampling) with a one-variable control before designing the next reconstructor.
 - 2026-10-09 (João, via the Unreal source review): that one-variable control is history resolution, 200% against 100% (Unreal TSR lever 1 above). Its box is now the first box of Phase 1. Levers 2–4 follow in the listed order as gate arms. No existing box changed.
+- 2026-10-12 (Unreal source review): corrected lever 4. Flicker detection relaxes history rejection to ghost within a luma bound, it does not add rejection. Also corrected the tier defaults for levers 1, 3 and 5. No box changed.

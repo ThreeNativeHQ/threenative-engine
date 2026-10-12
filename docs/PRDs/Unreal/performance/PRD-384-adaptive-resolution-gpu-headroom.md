@@ -73,15 +73,16 @@ Read in UE 5.8.3 for the Unreal review request (ideas only, no code copied). Pat
 `Engine/Source/Runtime/`. The policy above is the one Unreal's controller uses, so no box changes:
 
 - Unreal sizes the fraction from GPU busy time only, as `sqrt(target / GPU ms)` times the current
-  fraction (`RenderCore/Private/DynamicRenderScaling.cpp:45-55`). A frame whose game or render
-  thread is over budget never counts as GPU over budget (`Engine/Private/DynamicResolution.cpp:281-290`).
-  That is this PRD's policy 2: host delay never buys back pixels.
+  fraction (`RenderCore/Private/DynamicRenderScaling.cpp:45-55`). By default no CPU time enters the
+  decision (`r.DynamicRes.UseCPUTimeLogic` is false, `Engine/Private/DynamicResolution.cpp:110-115`).
+  The legacy CPU-bound check, when on, keeps a game or render thread over budget from counting as
+  GPU over budget (`:281-290`). Both modes match this PRD's policy 2: host delay never buys back pixels.
 - Its targets leave headroom: a 10% GPU headroom below the frame budget
   (`DynamicResolution.cpp:46-50`), a 16-frame history weighted by 0.9 per older frame (`:65-75`),
   and an immediate change when every frame scanned is over budget (`:96-99`, `:337-347`, `:406`).
 - Its own comment says the square-root model ignores a fixed cost that does not scale with pixels
-  (`DynamicResolution.cpp:314-322`), so it can drop resolution further than needed. The insensitivity
-  guard in `resolution-scaler.ts` measures that fixed cost and refunds the step; Unreal does not.
+  (`DynamicResolution.cpp:309-322`), so it can drop resolution further than needed. The insensitivity
+  guard in `resolution-scaler.ts` measures that fixed cost and refunds the step; Unreal leaves it as a TODO.
   Keep it.
 
 The differences that remain are new work, not this repair: steps that reallocate nothing, a

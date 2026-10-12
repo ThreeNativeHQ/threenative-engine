@@ -1,7 +1,21 @@
-# Batch — features borrowed from the Unreal Engine source
+# Unreal — PRDs grounded in the Unreal Engine source
 
-**Status: OPEN — filed 2026-10-09 against `origin/develop` at `6b18d913e`, from a read of
-Unreal Engine 5.8.3 (`release` tag commit `396c9f05`). All thirteen PRDs are NOT STARTED.**
+**Status: OPEN — batch filed 2026-10-09 against `origin/develop` at `6b18d913e`, from a read of
+Unreal Engine 5.8.3 (`release` tag commit `396c9f05`). On 2026-10-12 every open Unreal-related PRD
+moved here by topic, and each one was re-checked against the 5.8.3 source.**
+
+| Folder | Holds |
+| --- | --- |
+| [`rendering/`](rendering/) | Atmosphere, clouds, shadows, virtualized geometry, global illumination |
+| [`performance/`](performance/) | Resolution scale, temporal reconstruction, tile memory, texture residency |
+| [`open-world/`](open-world/) | Terrain LOD, streaming transitions, world partition |
+| [`animation/`](animation/) | Character animation and skinning cost |
+| [`vfx/`](vfx/) | GPU particles and effects |
+| [`assets/`](assets/) | Unreal ingest, imported materials, mobile texture formats |
+| [`research/`](research/) | The UE5 feature map and its repo grounding (reference, not PRDs) |
+
+A finished PRD still moves to `docs/PRDs/done/`, and a blocked-only PRD still moves to
+`docs/PRDs/BLOCKED/<reason>/` ([`../AGENTS.md`](../AGENTS.md)). This folder holds open work only.
 
 Each PRD here takes one mechanism that Unreal ships and proves in production, and rebuilds it
 inside ThreeNative's rules: WebGPU and three.js, one source for browser and native host, mechanism
@@ -61,8 +75,7 @@ citations were checked on 5.8.3 and can move in a later release.
    boxes (rule R4 in [`../AGENTS.md`](../AGENTS.md)).
 4. Follow the normal lifecycle: one draft PR per PRD, `pnpm prd:progress <file>` for the label,
    boxes ticked with their proof in the same commit as the work.
-5. A PRD that finishes ahead of its siblings moves alone to `docs/PRDs/done/` with `git mv`. When
-   the last one closes, the remaining folder moves whole to `docs/PRDs/done/unreal-source-borrowing/`.
+5. A PRD that finishes moves alone to `docs/PRDs/done/` with `git mv`. The topic folders stay.
 
 ## The PRDs, in recommended order
 
@@ -87,8 +100,9 @@ earlier wave unless the "Waits on" column says so.
 
 ## Existing PRDs amended from the same read
 
-These keep their place and their numbering. Each one gained an Unreal section, and sometimes
-reworded boxes and a dated `## Decisions` entry.
+These keep their numbering. Each one gained an Unreal section, and sometimes reworded boxes and a
+dated `## Decisions` entry. The ones with a full Unreal section moved here on 2026-10-12. PRD-345,
+PRD-459, PRD-486 and PRD-493 cite Unreal only in passing, so they stay in their own folders.
 
 | PRD | What the Unreal source added |
 | --- | --- |

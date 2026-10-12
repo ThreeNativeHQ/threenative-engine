@@ -26,16 +26,22 @@ Color/normal/roughness texture families in a representative streamed world; pres
 - **Demand comes from screen size.** For each texture, Unreal computes the largest on-screen size in
   texels over all views. It wants `ceil(1 + log2(max(1, size)))` mips, clamped to the texture's
   allowed range (`Engine/Source/Runtime/Engine/Private/Streaming/StreamingTexture.cpp:305-311`).
-  A per-group boost scales the size before the log (`StreamingTexture.h:291`).
+  A per-texture boost factor, summed from its group and other sources, is cached with the texture (`StreamingTexture.h:291`, set at `StreamingTexture.cpp:82`).
 - **Over budget, it drops from the top, lowest priority first.** The streamer walks textures from
   the lowest priority. It first drops the top mip of textures that use their full resolution, then
   the next mip, and so on, until the total fits
   (`Engine/Source/Runtime/Engine/Private/Streaming/AsyncTextureStreaming.cpp:444-465`). Each drop is
   kept as a persistent per-texture `BudgetMipBias` (`StreamingTexture.h:318-320`). It never goes
   below the minimum allowed mips, and it keeps one step of room so the bias can reset when memory
-  frees (`StreamingTexture.cpp:416-436`).
-- **The pool is a quality setting.** The texture tiers set 400, 600, 800 and 1000 MB pools, and all
-  but the highest tier cap the pool at the device's VRAM (`Engine/Config/BaseScalability.ini:740-783`).
+  frees (`StreamingTexture.cpp:411-436`). "Lowest priority" is a sum of weights: visible, not huge
+  and small textures score higher, and among hidden textures the most recently seen scores higher
+  (`StreamingTexture.cpp:395-407`).
+- **The pool is a quality setting.** The texture tiers set 400, 600, 800 and 1000 MB pools, and the
+  Cinematic tier sets 3000 MB. Only the three lowest tiers cap the pool at the device's VRAM
+  (`Engine/Config/BaseScalability.ini:740-794`).
+- **Uploads can be rationed.** The lowest tier streams at most one texture per frame
+  (`r.Streaming.AmortizeCPUToGPUCopy` with `r.Streaming.MaxNumTexturesToStreamPerFrame`,
+  `BaseScalability.ini:743-744`, cvars at `StreamingManagerTexture.cpp:1644-1656`). Both default to off.
 
 **What changes here.** Demand uses the same screen-size rule, mapped onto cooked variants instead
 of mips: a texture asks for the smallest variant whose size covers its largest on-screen footprint.
@@ -81,7 +87,7 @@ All proof paths below are **planned implementation targets**, not existing passi
 
 ## Performance and promotion
 
-Use a fixed 256 MiB test budget only for the synthetic fixture, not as a shipping default. Include overlap and fallback bytes; measure upload hitches separately. Numerical targets are proposed acceptance targets, not benchmark results. Pin the fixture, metrics and thresholds before changing the implementation; never relax a failing threshold just to mark this PRD complete. Shared abstractions must pass the repository's reuse/LOC admission rule. Appearance remains editable source.
+Use a fixed 256 MiB test budget only for the synthetic fixture, not as a shipping default. Include overlap and fallback bytes; measure upload hitches separately, and cap new uploads per frame as Unreal's lowest tier does. Numerical targets are proposed acceptance targets, not benchmark results. Pin the fixture, metrics and thresholds before changing the implementation; never relax a failing threshold just to mark this PRD complete. Shared abstractions must pass the repository's reuse/LOC admission rule. Appearance remains editable source.
 
 ## Blocked on
 
@@ -90,3 +96,7 @@ A world with an observed texture-memory bottleneck is required for admission. Mo
 ## Completion record
 
 Update the phase boxes and this PRD only after the named proof runs. Record actual results inline, including any remaining exclusions. A merged planning or implementation PR alone is not proof that every acceptance criterion passed. Archive according to the parent PRD filing rules when the work is genuinely complete.
+
+## Decisions
+
+- 2026-10-12 (Unreal source review): corrected the pool-tier claim. Only tiers 0 to 2 cap the pool at VRAM, and Cinematic is 3000 MB. Added the retention-priority weights and the per-frame upload cap from Unreal. No box changed: the per-frame upload cap is a measure under the existing "upload hitches" line, and the Phase 2 replacement box already covers it.

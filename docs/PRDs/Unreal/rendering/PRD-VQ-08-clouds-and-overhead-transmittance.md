@@ -11,7 +11,7 @@ prd_contract: v1
 
 ## Grounding and intended outcome
 
-[PR #382](https://github.com/ThreeNativeHQ/threenative/pull/382) is merged and owns rain/snow starter outcomes. [PRD-381](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/feature-mining/PRD-381-nine-mineable-seams-in-eanpa-sky.md) already identifies an overhead attenuation-field seam. The remaining target is coherent cloud rendering and moving cloud shade, not a claim that weather or atmosphere is absent.
+[PR #382](https://github.com/ThreeNativeHQ/threenative/pull/382) is merged and owns rain/snow starter outcomes. [PRD-381](../../rendering/PRD-381-nine-mineable-seams-in-eanpa-sky.md) already identifies an overhead attenuation-field seam. The remaining target is coherent cloud rendering and moving cloud shade, not a claim that weather or atmosphere is absent.
 
 **Outcome:** An authored cloud layer moves above an outdoor scene and the associated ground attenuation follows the same field and wind. A sun/coverage change does not leave stale shadow tiles or replace the sky with a detached flat overlay.
 
@@ -29,15 +29,16 @@ three numbers: the depth along the light where the cloud starts (km), the mean e
 cloud (1/m), and the maximum optical depth through it. A receiver then reconstructs its own optical
 depth as `meanExtinction × max(0, receiverDepth − frontDepth)`, clamped by the maximum, and takes
 `exp(−opticalDepth)`. One map is therefore correct for ground, props and a flying camera at any
-height, including receivers inside the slab. A strength value lerps the result toward 1.
-`UE 5.8.3: Engine/Shaders/Private/VolumetricCloudCommon.ush:15-67`.
+height, including receivers inside the slab. The caller applies a strength value that lerps the result toward 1
+(`UE 5.8.3: Engine/Shaders/Private/SkyAtmosphere.usf:739-742`).
+`UE 5.8.3: Engine/Shaders/Private/VolumetricCloudCommon.ush:50-67`.
 
 The same factor dims the sun's contribution to the sky, and a second map of the same type (sky
 AO, 10 trace samples) dims sky light under clouds.
-`UE 5.8.3: Engine/Shaders/Private/SkyAtmosphere.usf:735-742`,
+`UE 5.8.3: Engine/Shaders/Private/SkyAtmosphere.usf:734-742`,
 `Engine/Source/Runtime/Renderer/Private/VolumetricCloudRendering.cpp:139-164`.
 
-Defaults and guards (`VolumetricCloudRendering.cpp:171-224`):
+Defaults and guards (`VolumetricCloudRendering.cpp:168-224`):
 
 - The maximum resolution is 2048². A ray march takes up to 128 samples, and twice that when the sun
   nears the horizon.
@@ -45,10 +46,17 @@ Defaults and guards (`VolumetricCloudRendering.cpp:171-224`):
 - One spatial blur iteration is the default, and four is the maximum.
 - Temporal accumulation is off by default, because Unreal marks it experimental.
 - A sun rotation over 10° restarts any accumulated history.
+- The map is off unless the sun light opts in to cast cloud shadows, and the sky AO map is off unless
+  the sky light opts in (`VolumetricCloudRendering.cpp:140, 172`). The map is orthographic in light
+  space, so a receiver needs the light-to-clip matrix and the far depth in km to reconstruct its depth.
 
-For this PRD, the rain slab spans 145–815 m (`templates/rain/src/render/clouds-shader.ts:7-8`), so
+For this PRD, the rain slab spans 145–815 m (`packages/create-threenative/templates/rain/src/render/clouds-shader.ts:7`, `156`, `192-193`), so
 receivers sit both below and inside it. A plain 2D transmittance map would be wrong for one of the
 two. Phase 1 therefore adopts the three-channel encoding.
+
+`clouds-shader.ts` is generated from `tools/tempest-clouds.frag` in the same template. The density
+function for the shadow map must come from that source, so the visible cloud and the ground map share
+one field. `lighting.ts` in the rain template states that no shadow map is involved today.
 
 ## Required behavior
 
@@ -92,6 +100,7 @@ The optional shared overhead-field extraction is gated by PRD-381 reuse/admissio
 ## Decisions
 
 - 2026-10-09 (João, via the Unreal source review): the attenuation field uses Unreal's three-channel cloud-shadow encoding instead of a single transmittance value per texel, because the rain slab has receivers both below and inside it. Phase 1 box 2 and Phase 2 box 2 now name the encoding, the texel snap and the 10° history cut. No box was added or removed.
+- 2026-10-12 (Unreal source review): All cvar defaults in the reference section match Unreal 5.8.3. The shadow-map strength lerp belongs to the caller, so the first box keeps a game-owned strength. The PRD-381 link now points at the local file. The rain slab density comes from a generated shader, so the shadow-map pass shares the `.frag` source and does not copy the density by hand.
 
 ## Completion record
 

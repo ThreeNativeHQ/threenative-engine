@@ -22,9 +22,12 @@ multi-scattering 32×32 and sky-view 192×108 (`luts.ts:34-37`). Its aerial-pers
   So distant land toward the sun and away from the sun hazes to the same colour. A low sun does not
   warm the far hills, and a looking-down view hazes like a looking-up view.
 
-No template or example constructs `Atmosphere` (`rg "new Atmosphere\("` outside tests and the
-capability manifest, 2026-10-09). The starter mist disables aerial perspective while it lives
-(`templates/starter/src/render/volumetricFog.ts:54`). [PRD-VQ-07](../../done/PRD-VQ-07-volumetric-fog.md)
+No template constructs `Atmosphere`, and no game calls its `aerialPerspective` method
+(`rg "aerialPerspective"`, 2026-10-12). One example builds an `Atmosphere`:
+`examples/strata-terrain-preview/src/render/atmosphere.ts:26`. It writes its own depth-reconstructed
+haze at `atmosphere.ts:87`, because the method above gives it no direction or height term. The starter
+mist disables aerial perspective while it lives
+(`packages/create-threenative/templates/starter/src/render/volumetricFog.ts:54`). [PRD-VQ-07](../../done/PRD-VQ-07-volumetric-fog.md)
 deliberately shipped "no mandatory froxel engine" for local mist. This PRD adds one small
 view-space volume for atmosphere-scale haze only. It is not a general volumetric-fog grid.
 
@@ -33,17 +36,20 @@ view-space volume for atmosphere-scale haze only. It is not a general volumetric
 - **A camera-aligned 3D volume holds in-scattered light (RGB) and transmittance (A).** The defaults
   are 32×32 texels across the screen, 16 depth slices over 96 km, and at most 2 ray-march samples per
   slice. `UE 5.8.3: Engine/Source/Runtime/Renderer/Private/SkyAtmosphereRendering.cpp:180-196`.
+  Unreal fixes the range at 96 km. It does not follow the camera far plane. Beyond the range, it
+  reuses the last slice (cvar text at `SkyAtmosphereRendering.cpp:183-185`).
 - **The slices are spaced by the square root of distance,** so near slices are thin and far slices
   are thick. A lookup converts linear depth to a slice coordinate with `sqrt`.
-  `UE 5.8.3: Engine/Shaders/Private/SkyAtmosphereCommon.ush:66-71`.
+  `UE 5.8.3: Engine/Shaders/Private/SkyAtmosphereCommon.ush:66-72`.
 - **Near the camera, the contribution fades to zero** under the first half slice, and over a near
   fade range, so the camera's own position is never hazed.
   `UE 5.8.3: Engine/Shaders/Private/SkyAtmosphereCommon.ush:74-81`.
 - **The apply step is one trilinear 3D fetch per pixel.** Colour scales by the fade weight, and
   alpha keeps the transmittance consistent.
   `UE 5.8.3: Engine/Shaders/Private/SkyAtmosphereCommon.ush:104-108`.
-- **Scalability:** the lowest effects tier uses 8 slices and 1 sample per slice. The next tier uses
-  16 slices. `UE 5.8.3: Engine/Config/BaseScalability.ini:812-814, 841-843`.
+- **Scalability:** the lowest effects tier (`EffectsQuality@0`) uses 8 slices and 1 sample per slice. The next tier
+  uses 16 slices and 1 sample. The tier after that uses 16 slices and 2 samples.
+  `UE 5.8.3: Engine/Config/BaseScalability.ini:812-814, 841-843, 870-872`.
 
 ## Solution
 
@@ -64,10 +70,11 @@ view-space volume for atmosphere-scale haze only. It is not a general volumetric
   deleted, because no template or example consumes it. The optional `inScatteredRadiance` now
   scales the volume's in-scatter instead of replacing it. It stays the game's tint and exposure hook,
   so the package still decides no colour.
-- **First consumer: the racing template.** Its `FogExp2` density 0.0024 is the lowest of the
-  templates, so it has the longest view. The racing template keeps its photographed sky and
-  background. It adds an `Atmosphere` for the haze only, in its own `src/render/sky.ts` and
-  `postprocessing.ts`, tinted toward the photograph's horizon through `inScatteredRadiance`. Slice count
+- **First consumer: the racing template.** Its eye-level haze reference is `FogExp2` density 0.0024,
+  and its `FogExp2` density is now lowered by `distanceDensity()` in `sky.ts` because
+  [PRD-560](../../done/PRD-560-height-fog-follows-the-ground.md) added `heightFog.ts`. The racing
+  template keeps its photographed sky and background. It adds an `Atmosphere` for the haze only, in
+  its own `src/render/sky.ts` and `postprocessing.ts`, tinted toward the photograph's horizon through `inScatteredRadiance`. Slice count
   and tint per tier live in its `quality.ts`.
 
 Risks:
@@ -87,7 +94,7 @@ Risks:
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
-| Aerial-perspective volume | racing `src/render/postprocessing.ts` → `atmosphere.aerialPerspective(scenePass, depth)` → volume compute + 3D fetch | Replaces the single-zenith-sample body of `index.ts:233-253`, which no game consumes | Phase 1, AC-1 |
+| Aerial-perspective volume | racing `src/render/postprocessing.ts` → `atmosphere.aerialPerspective(scenePass, depth)` → volume compute + 3D fetch | Replaces the single-zenith-sample body of `index.ts:233-253`, which no game calls. The strata example's own composite (`atmosphere.ts:87`) is a later candidate to delete | Phase 1, AC-1 |
 
 ## Execution Phases
 
@@ -99,10 +106,16 @@ Risks:
 
 #### Phase 2: Racing adopts it
 **Status:** NOT STARTED
-**Files:** `templates/racing/src/render/sky.ts`, `templates/racing/src/render/postprocessing.ts`, `templates/racing/src/render/quality.ts`, `templates/racing/AGENTS.md` (and mirror)
+**Files:** `packages/create-threenative/templates/racing/src/render/sky.ts`, `packages/create-threenative/templates/racing/src/render/postprocessing.ts`, `packages/create-threenative/templates/racing/src/render/quality.ts`, `packages/create-threenative/templates/racing/AGENTS.md` (and mirror)
 - [ ] The racing template renders volume aerial perspective over its photographed sky, and the template gate passes. proof: `pnpm test:templates` (racing).
 
 #### Phase 3: Native
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/conformance/scenes/shared/aerial-perspective.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] The desktop native host fills the volume to match the browser reference within tolerance for a fixed camera and sun. proof: `pnpm parity --target desktop --only-tests aerial-perspective`.
+
+## Decisions
+
+- 2026-10-12 (Unreal source review): The Context claim "no example constructs `Atmosphere`" was wrong. `examples/strata-terrain-preview` builds one and hand-writes its own haze, so the method has a second, unserved caller. The plan stays the same. The strata composite is a follow-up candidate, not a box here.
+- 2026-10-12 (Unreal source review): Unreal fixes the volume range at 96 km and reuses the last slice beyond it. This PRD keeps the range at `camera.far` because a game sets no constant. The racing frame must still show haze past `far`, so the apply step clamps the slice coordinate to 1 and does not fade to clear.
+- 2026-10-12 (Unreal source review): Template paths in this PRD now name the real folder, `packages/create-threenative/templates/`.
