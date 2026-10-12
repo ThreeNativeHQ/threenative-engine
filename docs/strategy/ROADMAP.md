@@ -74,7 +74,7 @@ which is maintenance and outranks new work — item 1 below is exactly that.
 
 The UE5-class research lives in [`docs/PRDs/open-world/`](../PRDs/open-world/),
 and its ranking must be read through
-[00-REPO-GROUNDING.md](../PRDs/open-world/00-REPO-GROUNDING.md), which applies the charter
+[00-REPO-GROUNDING.md](../PRDs/Unreal/research/00-REPO-GROUNDING.md), which applies the charter
 filter and re-estimates every effort number against this tree. Two things that document settles and
 the research could not know: `packages/core/src/render/chain.ts` **already is** the tiered,
 self-reporting post spine that four of the research's top features assume must be built; and
