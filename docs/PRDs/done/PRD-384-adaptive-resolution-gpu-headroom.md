@@ -1,7 +1,7 @@
 # PRD-384 — Adaptive resolution must distinguish host delay from GPU cost
 
 **Status:** DONE
-**Priority:** P1 — Declared required by P1 PRD-539's temporal reconstruction (successor of PRD-455); one open box, native controller execution for the landed scaler.
+**Priority:** P1 — Declared required by P1 PRD-539's temporal reconstruction (successor of PRD-455); closed 2026-10-12; every box ticked.
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** Codex
 **Depends on:** PRD-228; Midway's installed PRD-382 engine branch
@@ -57,9 +57,8 @@ this repair. No claim is made to fix host scheduling or the game's overall frame
   recorded in the game's investigation; the capture rig does not establish a 60-fps target.
   Devastator: the same 90-second capture also passed, with 19 full-resolution `auto` samples,
   nine C-key presses and no browser errors; cockpit and final chase frames inspected.
-- [x] AC-4 [local; actor: agent]: Typecheck, lint and test run; native controller execution
+- [x] AC-4 [local; actor: agent]: proof: `pnpm typecheck && pnpm lint && pnpm test` plus the native fixture below. Typecheck, lint and test run; native controller execution
   and fresh independent review cover the changed behavior. Report unrelated failures explicitly.
-  proof: `pnpm typecheck && pnpm lint && pnpm test`, plus the native fixture below.
   Re-run 2026-10-12 on develop 934de90ad: `pnpm typecheck` exit 0 (after the workspace build; the
   first run failed with TS2307 only because no package was built). `pnpm lint` exit 0 (0 errors,
   1,397 existing warnings). Core Vitest: 3,187 passed; the one failure (`world-gpu-scene.spec.ts`,
