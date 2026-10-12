@@ -5,6 +5,7 @@
 #include "engine/scene/texture.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/post/traa.h"
+#include "engine/shader/graph/post_effects.h"
 #include "mystral/webgpu/context.h"
 
 #include <chrono>
@@ -163,6 +164,16 @@ void traaValidation() {
         scene.backgroundTexture.reset();
         database.render(renderer, scene, camera, {0, 0, 0, 0});
         CHECK(renderer.lastFrame().draws == 2); // sphere and output
+        // A post graph's fullscreen effect passes are draws too: three's Info counts each as one draw of
+        // one triangle, so a bloom chain is not invisible to the draw and triangle counters.
+        const auto plain = renderer.lastFrame();
+        namespace g = shader::graph;
+        const auto colour = g::texture("scene", g::uv());
+        renderer.setPostGraph(g::add(colour, g::bloom(colour, 0.7, 0.5, 0.2)));
+        database.render(renderer, scene, camera, {0, 0, 0, 0});
+        const auto post = renderer.lastFrame();
+        CHECK(post.draws > plain.draws + 1);
+        CHECK(post.draws - plain.draws == post.triangles - plain.triangles);
     }
     bool done = false;
     WGPUPopErrorScopeCallbackInfo errorInfo{};

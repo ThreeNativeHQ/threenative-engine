@@ -2818,7 +2818,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
     if (postEffects_ && postEffects_->syncScales()) releaseOutputGroup();
-    if (postEffects_) postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_);
+    if (postEffects_) {
+        // three's Info counts each fullscreen effect pass as one draw of one triangle, like the output pass below.
+        const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_);
+        lastFrame_.draws += effectPasses;
+        lastFrame_.triangles += effectPasses;
+    }
     outputPass(encoder, timed, presentTarget, presentFormat);
     if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 6, gpu_.buffer(timestampResolve_), 0);
     WGPUCommandBufferDescriptor commandDesc = {};

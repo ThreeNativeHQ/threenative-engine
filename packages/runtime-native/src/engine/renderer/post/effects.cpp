@@ -224,7 +224,7 @@ WGPUSampler PostEffects::sampler(const std::string& name) const {
         return it->second.sampler;
     return linear_;
 }
-void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
+uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
                          const CameraState& camera, uint64_t frame) {
     graph::RenderGraph graph;
     std::map<std::string, graph::ResourceId> resources;
@@ -254,6 +254,7 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
         throw std::runtime_error(plan.errors.front().code + ": " + plan.errors.front().detail);
     Matrix4 inverse;
     inverse.fromArray(camera.projectionMatrix.data()).invert();
+    uint32_t drawn = 0;
     for (const auto index : plan.order) {
         auto& pass = passes_.at(index);
         if (!pass.source.autoUpdate && pass.rendered)
@@ -337,6 +338,8 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
         wgpuRenderPassEncoderEnd(render);
         wgpuRenderPassEncoderRelease(render);
         pass.rendered = true;
+        ++drawn;
     }
+    return drawn;
 }
 } // namespace tn::engine
