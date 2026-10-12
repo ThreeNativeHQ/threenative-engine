@@ -125,6 +125,14 @@
         "TN_ENABLE_NATIVE_PHYSICS": "ON"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "wasm",
+      "displayName": "ThreeNative engine core and renderer, Wasm (browser WebGPU)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/wasm",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
   ],
   "buildPresets": [
@@ -132,7 +140,8 @@
     { "name": "tn-windows", "configurePreset": "tn-windows" },
     { "name": "tn-macos", "configurePreset": "tn-macos" },
     { "name": "tn-android", "configurePreset": "tn-android" },
-    { "name": "tn-ios", "configurePreset": "tn-ios" }
+    { "name": "tn-ios", "configurePreset": "tn-ios" },
+    { "name": "wasm", "configurePreset": "wasm", "targets": ["tn-native-engine-web"] }
   ],
   "testPresets": [
     { "name": "tn-linux", "configurePreset": "tn-linux", "output": { "outputOnFailure": true } }

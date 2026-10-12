@@ -858,6 +858,40 @@ if(EMSCRIPTEN)
         "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_attribute_defer,_tnw_fire_before_render,_tnw_tsl_dump,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
     target_include_directories(tn-native-engine-abi-module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-abi-module)
+    find_program(TN_PNPM_EXECUTABLE pnpm)
+    if(TN_PNPM_EXECUTABLE)
+        # The browser-JS back end over the real Wasm ABI, under node.
+        add_test(NAME native_engine_wasm_browser_backend
+            COMMAND ${TN_PNPM_EXECUTABLE} --filter @threenative/three-native exec tsx tests/browser-backend-smoke.ts
+                $<TARGET_FILE:tn-native-engine-abi-module>)
+        set_tests_properties(native_engine_wasm_browser_backend PROPERTIES LABELS "native-engine"
+            PASS_REGULAR_EXPRESSION "TN_BROWSER_BACKEND_OK")
+        # Wrappers keep their JS state while the engine references them; a detached subtree goes.
+        add_test(NAME native_engine_wasm_browser_gc
+            COMMAND ${TN_PNPM_EXECUTABLE} --filter @threenative/three-native exec tsx --expose-gc tests/browser-backend-gc.ts
+                $<TARGET_FILE:tn-native-engine-abi-module>)
+        set_tests_properties(native_engine_wasm_browser_gc PROPERTIES LABELS "native-engine"
+            PASS_REGULAR_EXPRESSION "TN_BROWSER_GC_OK")
+    endif()
+    # PRD-573 slice 7: the browser host a web game gets under `engine: "native"`, an ES module beside
+    # its .wasm in build/web/. Outside the default set: build it with `--target tn-native-engine-web`.
+    add_executable(tn-native-engine-web EXCLUDE_FROM_ALL src/engine/wasm/web_host.cpp)
+    target_link_libraries(tn-native-engine-web PRIVATE tn_engine_abi tn_engine_renderer)
+    if(TARGET tn_engine_gltf)
+        target_link_libraries(tn-native-engine-web PRIVATE tn_engine_gltf)
+        target_compile_definitions(tn-native-engine-web PRIVATE TN_WEB_GLTF=1)
+    endif()
+    target_include_directories(tn-native-engine-web PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    tn_native_engine_target(tn-native-engine-web)
+    set_target_properties(tn-native-engine-web PROPERTIES SUFFIX ".mjs"
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/web)
+    target_link_options(tn-native-engine-web PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
+        # The whole 32-bit address space: a game the size of Midway (161 MB of GLBs, decoded on the
+        # engine side) ran past emscripten's 2 GB default maximum and failed with std::bad_alloc.
+        -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take"
+        "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
 endif()
 
 # The math fixture cases spawn the driver, so the aggregate target has to build it too.
