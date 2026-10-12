@@ -250,6 +250,29 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
         TN_NATIVE_LIT_OUT="${CMAKE_CURRENT_BINARY_DIR}/native-lit-render.rgba")
 
+    # PRD-520 phase 2 and PRD-528 phase 1: cooked-package loads for a world (failure codes, cancel
+    # against in-flight GPU use, teardown) and render ids within one tick.
+    add_library(tn_engine_world_admission STATIC src/engine/world/admission/package_loads.cpp)
+    tn_native_engine_target(tn_engine_world_admission)
+    target_link_libraries(tn_engine_world_admission PUBLIC tn_engine_renderer tn_engine_world tn_engine_assets)
+    tn_native_engine_test(tn-native-engine-package-loads-test tests/native-engine/world/package_loads_test.cpp
+        native_engine_admission_failure=failure native_engine_admission_cancel=cancel
+        native_engine_loop_async_cancel=teardown)
+    target_link_libraries(tn-native-engine-package-loads-test PRIVATE tn_engine_world_admission tn_host_services)
+    tn_native_engine_test(tn-native-engine-render-ids-test tests/native-engine/loop/render_ids_test.cpp
+        native_engine_loop_render_ids=render_ids)
+    target_link_libraries(tn-native-engine-render-ids-test PRIVATE tn_engine_renderer tn_engine_world tn_host_services)
+
+    # PRD-517 phase 1: an animated material property reaches the next render through its version.
+    tn_native_engine_test(tn-native-engine-animation-material-revision-test tests/native-engine/animation/material_revision_test.cpp
+        native_engine_animation_material_revision=material_revision)
+    target_link_libraries(tn-native-engine-animation-material-revision-test PRIVATE tn_engine_renderer tn_engine_animation tn_host_services)
+
+    # PRD-516 phase 3: ticks, not renders, evaluate the schedule's mixers.
+    tn_native_engine_test(tn-native-engine-animation-schedule-render-test tests/native-engine/animation/schedule_render_test.cpp
+        native_engine_animation_tick_vs_render=tick_vs_render)
+    target_link_libraries(tn-native-engine-animation-schedule-render-test PRIVATE tn_engine_renderer tn_engine_animation tn_engine_world tn_host_services)
+
     tn_native_engine_test(tn-native-engine-renderer-caches-test tests/native-engine/renderer_caches_test.cpp
         native_engine_renderer_geometry_cache=geometry
         native_engine_renderer_pipeline_cache=pipelines
@@ -414,6 +437,87 @@ if(TN_PNPM_EXECUTABLE)
     set_tests_properties(native_engine_batching_eligibility_reference_current PROPERTIES LABELS "native-engine")
 else()
     message(WARNING "pnpm not found: native_engine_batching_eligibility_reference_current is not registered")
+endif()
+
+# PRD-521: the GPU-driven main pass's per-placement CPU oracle, ported from
+# packages/core/src/world-gpu-scene.ts (`cullAndSelect`, `cullAndSelectShadow`, `levelAtGates`,
+# `drawableLevel`, `liveKeyInstances`). It links the LOD bias and the foundation but owns no GPU
+# resource; `native_engine_world_gpu_scene_reference_current` keeps the committed table equal to what
+# the core module produces today.
+add_library(tn_engine_gpu_scene STATIC src/engine/world/gpu_scene/gpu_scene.cpp)
+tn_native_engine_target(tn_engine_gpu_scene)
+target_link_libraries(tn_engine_gpu_scene PUBLIC tn_engine_lod tn_engine_foundation)
+target_include_directories(tn_engine_gpu_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tn_native_engine_test(tn-native-engine-world-gpu-scene-test tests/native-engine/world/gpu_scene_test.cpp
+    native_engine_world_gpu_scene=gpu_scene)
+target_link_libraries(tn-native-engine-world-gpu-scene-test PRIVATE tn_engine_gpu_scene)
+target_include_directories(tn-native-engine-world-gpu-scene-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
+if(TN_PNPM_EXECUTABLE)
+    foreach(world_reference "world_gpu_scene:gpu-scene-reference" "world_cells:world-cells-reference")
+        string(REPLACE ":" ";" world_reference_pair "${world_reference}")
+        list(GET world_reference_pair 0 world_reference_name)
+        list(GET world_reference_pair 1 world_reference_script)
+        add_test(NAME native_engine_${world_reference_name}_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/world/${world_reference_script}.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        # Both are stale against develop's core (see NativeEngineCore.cmake): the regenerated gpu_scene
+        # table differs from the port at 1 of 38 steps (scene 1 step 21), and world-cells-reference.ts
+        # refuses a develop spec it does not account for (world-cells-admission.spec.ts, "reports
+        # completed spawn coverage separately from reserved cells and distant work").
+        set_tests_properties(native_engine_${world_reference_name}_reference_current PROPERTIES LABELS "tn-known-red")
+    endforeach()
+else()
+    message(WARNING "pnpm not found: the world gpu_scene and cells reference_current tests are not registered")
+endif()
+
+# PRD-519 phase 3: the GPU cull and LOD kernel (clear, cull, clamp), built in the shader IR from
+# world-gpu-scene.ts's kernels; the test runs it on a real device against the CPU oracle above.
+add_library(tn_engine_gpu_scene_kernel STATIC src/engine/world/gpu_scene/cull_kernel.cpp)
+tn_native_engine_target(tn_engine_gpu_scene_kernel)
+target_link_libraries(tn_engine_gpu_scene_kernel PUBLIC tn_engine_gpu_scene tn_engine_shader)
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    tn_native_engine_test(tn-native-engine-gpu-scene-kernel-test tests/native-engine/world/gpu_scene_kernel_test.cpp
+        native_engine_gpu_scene_select=gpu_scene_select)
+    target_link_libraries(tn-native-engine-gpu-scene-kernel-test PRIVATE tn_engine_gpu_scene_kernel tn_engine_renderer tn_host_services)
+    target_include_directories(tn-native-engine-gpu-scene-kernel-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
+    if(TN_ENGINE_SANITIZE)
+        # A real device's driver keeps allocations past exit (see the GPU tests above).
+        set_tests_properties(native_engine_gpu_scene_select PROPERTIES
+            ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
+endif()
+
+# PRD-528 boxes 53/54: native Rapier stepped by the engine's FixedStepClock, with every body's
+# transform written into the native scene graph. The world is the prebuilt Rust Rapier library, so
+# this target exists only where the host build has it and reaches no JS engine.
+# `native_engine_rapier_sync` replays the shared parity scenario against the TypeScript-driven
+# path's recorded transforms, and `native_engine_rapier_sync_reference_current` keeps the committed
+# table equal to what packages/physics produces today.
+if(TN_ENABLE_NATIVE_PHYSICS AND TARGET threenative-native-physics)
+    add_library(tn_engine_physics_sync STATIC src/engine/world/physics_sync.cpp)
+    tn_native_engine_target(tn_engine_physics_sync)
+    target_link_libraries(tn_engine_physics_sync PUBLIC tn_engine_world tn_engine_scene
+        threenative-native-physics)
+    target_include_directories(tn_engine_physics_sync PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    tn_native_engine_test(tn-native-engine-physics-sync-test tests/native-engine/world/physics_sync_test.cpp
+        native_engine_rapier_sync=sync native_engine_rapier_events=events)
+    target_link_libraries(tn-native-engine-physics-sync-test PRIVATE tn_engine_physics_sync)
+    target_include_directories(tn-native-engine-physics-sync-test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
+    target_compile_definitions(tn-native-engine-physics-sync-test PRIVATE
+        TN_PHYSICS_SYNC_SCENARIO="${CMAKE_CURRENT_SOURCE_DIR}/../../packages/physics/__tests__/fixtures/physics-parity.scenario.json"
+        TN_PHYSICS_SYNC_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/physics_sync_reference.json")
+    if(TN_PNPM_EXECUTABLE)
+        add_test(NAME native_engine_rapier_sync_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/world/physics-sync-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_rapier_sync_reference_current PROPERTIES LABELS "native-engine")
+    endif()
+else()
+    message(STATUS "native physics target absent: the engine PhysicsSync and its test are not built")
 endif()
 
 get_property(tn_native_engine_test_targets GLOBAL PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS)
