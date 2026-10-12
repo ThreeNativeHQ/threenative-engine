@@ -174,7 +174,10 @@ R5 CPU budget, 2026-10-12 (perf plus `/proc` stime, R5@4096 1920x1080, RTX 2080 
     - Inclusive frame p50: 96.35 vs 85.92 ms (1.12x). p95: 122.3 vs 117.0. p99: 137.8 vs 130.9.
     - Engine phases, ms: render 1.53, other 1.64, animation 0.87 (legacy 0.68), game 0.79, matrixWorld 0.54, projection 0.44.
     - Host load 10 to 21. Artifacts: `artifacts/engine-load-test/prd-573/v111/v1-confirm-*`.
-  - Left: R2 and R3 on this tip, and the real-GPU inclusive lane. The 2x claim waits for that lane.
+  - R3@4096 1280x720, 3 rounds, at 425114540: 13.23 vs 6.38 ms, pooled **2.07x** (rounds 2.15, 2.08, 2.01). Triangles are 155,907 on both arms. Inclusive p50 is 49.86 vs 42.05 ms (1.19x), and p99 is 64.4 vs 52.9 ms.
+  - R2@4096 1280x720, 3 rounds: 7.97 vs 4.71 ms, pooled 1.69x (rounds 1.71, 1.68, 1.98). Triangles are 98,307 on both arms. Inclusive p50 1.03x, but p99 is worse on the engine (76.7 vs 58.5 ms, 3 hitches).
+  - Engine `other` (the frame minus the five phases) is higher than legacy on every rung: R2 2.17/1.48 ms, R3 2.17/1.81 ms. It is the next target. Host load was 25 to 27 for R2/R3. Artifacts: `v111/v1-confirm-R2-*`, `v111/v1-confirm-R3-*`.
+  - Left: the real-GPU inclusive lane. The 2x claim waits for it.
 
 
 ## Cycle v2 — stop wasted work
