@@ -2,8 +2,9 @@
 # tests. A host build includes it through NativeEngine.cmake; an Emscripten or `TN_ENGINE_CORE_ONLY`
 # build includes it alone, which is the guard that the core stays Wasm-safe (owner decision 4).
 #
-# PRD-573 slice 2b lands foundation, scene, animation and the binding registry. Every target here is
-# `EXCLUDE_FROM_ALL`, so the legacy build never compiles any of it.
+# PRD-573 slice 2b lands foundation, scene, animation and the binding registry. Slice 3 adds the
+# shader IR and WGSL emitter, the cooked asset package (TNPK), the glTF loader and the C ABI over
+# them. Every target here is `EXCLUDE_FROM_ALL`, so the legacy build never compiles any of it.
 
 option(TN_ENGINE_SANITIZE "Build the native engine targets under ASan and UBSan" OFF)
 option(TN_ENGINE_TSAN "Build the native engine targets under ThreadSanitizer (a separate build: TSan excludes ASan)" OFF)
@@ -36,6 +37,9 @@ function(tn_native_engine_target target)
     if(EMSCRIPTEN)
         # Owner decision 4: the core runs on a growing Wasm heap, never a fixed one.
         target_link_options(${target} PRIVATE -sALLOW_MEMORY_GROWTH=1)
+        # emcc's default stack is 64 KB. Shader graphs are recursive (a 2000-term sum is a 2000-deep
+        # key, copy and destructor chain), which native takes on an 8 MB stack and Wasm did not survive.
+        target_link_options(${target} PRIVATE -sSTACK_SIZE=1MB)
     endif()
 endfunction()
 
@@ -74,6 +78,28 @@ tn_native_engine_target(tn_engine_animation)
 target_link_libraries(tn_engine_animation PUBLIC tn_engine_scene)
 target_include_directories(tn_engine_animation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
+add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
+    src/engine/shader/standard.cpp src/engine/shader/tonemap.cpp src/engine/shader/output.cpp
+    src/engine/shader/graph/graph.cpp src/engine/shader/graph/serialized.cpp src/engine/shader/graph/post_effects.cpp
+    src/engine/shader/graph/smaa_tables.cpp src/engine/shader/sprite.cpp)
+tn_native_engine_target(tn_engine_shader)
+target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
+# stb_image is third-party C in a C++ unit: its own warnings are not this engine's.
+set_source_files_properties(src/engine/shader/graph/smaa_tables.cpp PROPERTIES COMPILE_OPTIONS "-w")
+
+# Cooked asset packages (N10): the TNPK reader and its hash gate. Untrusted input, portable.
+add_library(tn_engine_assets STATIC src/engine/assets/sha256.cpp src/engine/assets/package.cpp)
+tn_native_engine_target(tn_engine_assets)
+target_include_directories(tn_engine_assets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# The N03 C ABI over the foundation: version handshake, contexts, generational object handles.
+add_library(tn_engine_abi STATIC src/engine/abi/abi.cpp src/engine/abi/identity.cpp src/engine/abi/tsl_call.cpp)
+tn_native_engine_target(tn_engine_abi)
+target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation tn_engine_bindings tn_engine_shader)
+target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 # One executable per test file; each ctest names a case inside it.
 function(tn_native_engine_test target source)
     add_executable(${target} EXCLUDE_FROM_ALL ${source})
@@ -101,6 +127,248 @@ if(TN_ENGINE_FUZZ)
     target_compile_options(native_engine_fuzz_buffers PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(native_engine_fuzz_buffers PRIVATE -fsanitize=fuzzer,address,undefined)
     set_target_properties(native_engine_fuzz_buffers PROPERTIES CXX_STANDARD 20)
+    add_executable(native_engine_fuzz_abi EXCLUDE_FROM_ALL tests/native-engine/fuzz_abi.cpp)
+    target_link_libraries(native_engine_fuzz_abi PRIVATE tn_engine_abi)
+    target_compile_options(native_engine_fuzz_abi PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_options(native_engine_fuzz_abi PRIVATE -fsanitize=fuzzer,address,undefined)
+    set_target_properties(native_engine_fuzz_abi PROPERTIES CXX_STANDARD 20)
+endif()
+
+# PRD-515 phase 1: glTF/GLB to a native scene in GLTFLoader's shape. cgltf (provisioned by
+# download-deps) only parses; the corpus test reads the repository's glTF files from disk.
+set(TN_CGLTF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cgltf)
+# PRD-540: the web host loads models through this same loader, so it builds for Wasm too.
+if(EXISTS ${TN_CGLTF_DIR}/cgltf.h)
+    add_library(tn_engine_gltf STATIC src/engine/assets/gltf/loader.cpp src/engine/assets/gltf/cgltf_impl.cpp
+        src/engine/assets/gltf/image_decode.cpp)
+    tn_native_engine_target(tn_engine_gltf)
+    target_link_libraries(tn_engine_gltf PUBLIC tn_engine_scene tn_engine_animation tn_engine_foundation)
+    target_include_directories(tn_engine_gltf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
+        PRIVATE ${TN_CGLTF_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
+    # cgltf is third-party C in a C++ unit: its own warnings are not this engine's.
+    set_source_files_properties(src/engine/assets/gltf/cgltf_impl.cpp src/engine/assets/gltf/image_decode.cpp
+        PROPERTIES COMPILE_OPTIONS "-w")
+    # EXT_texture_webp: libwebp built from the pinned `webp-source` (download-deps.mjs), one build
+    # for desktop, Android and iOS. Without the source the extension stays refused by name.
+    file(GLOB TN_WEBP_SOURCE_CANDIDATES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/webp-source/libwebp-*)
+    set(TN_WEBP_SOURCE_DIR "")
+    foreach(candidate ${TN_WEBP_SOURCE_CANDIDATES})
+        if(EXISTS ${candidate}/CMakeLists.txt)
+            set(TN_WEBP_SOURCE_DIR ${candidate})
+        endif()
+    endforeach()
+    if(TN_WEBP_SOURCE_DIR)
+        if(NOT TARGET webp)
+            set(WEBP_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+            set(WEBP_LINK_STATIC ON CACHE BOOL "" FORCE)
+            foreach(tool WEBP_BUILD_ANIM_UTILS WEBP_BUILD_CWEBP WEBP_BUILD_DWEBP WEBP_BUILD_GIF2WEBP
+                    WEBP_BUILD_IMG2WEBP WEBP_BUILD_VWEBP WEBP_BUILD_WEBPINFO WEBP_BUILD_LIBWEBPMUX WEBP_BUILD_EXTRAS)
+                set(${tool} OFF CACHE BOOL "" FORCE)
+            endforeach()
+            add_subdirectory(${TN_WEBP_SOURCE_DIR} ${CMAKE_BINARY_DIR}/libwebp-build EXCLUDE_FROM_ALL)
+        endif()
+        target_link_libraries(tn_engine_gltf PRIVATE webp)
+        target_compile_definitions(tn_engine_gltf PRIVATE TN_ENGINE_WEBP=1)
+    else()
+        message(STATUS "webp-source not found: the native glTF loader refuses EXT_texture_webp. Run 'node scripts/download-deps.mjs --only webp-source'.")
+    endif()
+    tn_native_engine_test(tn-native-engine-gltf-hierarchy-test tests/native-engine/assets/gltf_hierarchy_test.cpp
+        native_engine_gltf_hierarchy=hierarchy)
+    target_link_libraries(tn-native-engine-gltf-hierarchy-test PRIVATE tn_engine_gltf)
+    find_program(TN_PNPM_EXECUTABLE pnpm)
+    target_compile_definitions(tn-native-engine-gltf-hierarchy-test PRIVATE
+        TN_GLTF_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/gltf_reference.json"
+        TN_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+    if(TN_PNPM_EXECUTABLE)
+        add_test(NAME native_engine_gltf_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/assets/gltf-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_gltf_reference_current PROPERTIES LABELS "native-engine")
+    endif()
+    # PRD-515 phase 3: the glTF and TNPK readers under a budgeted, deterministic mutation run from
+    # seed files (fuzz_driver.cpp), so the ASan/UBSan lane fuzzes them without a libFuzzer toolchain.
+    # TN_FUZZ_ITERATIONS sets the budget (20000 by default).
+    set(TN_REPO ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    add_executable(tn-native-engine-fuzz-gltf EXCLUDE_FROM_ALL tests/native-engine/fuzz_gltf.cpp
+        tests/native-engine/fuzz_driver.cpp)
+    target_link_libraries(tn-native-engine-fuzz-gltf PRIVATE tn_engine_gltf)
+    add_executable(tn-native-engine-fuzz-package EXCLUDE_FROM_ALL tests/native-engine/fuzz_package.cpp
+        tests/native-engine/fuzz_driver.cpp)
+    target_link_libraries(tn-native-engine-fuzz-package PRIVATE tn_engine_assets)
+    foreach(fuzz_target tn-native-engine-fuzz-gltf tn-native-engine-fuzz-package)
+        tn_native_engine_target(${fuzz_target})
+        set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS ${fuzz_target})
+    endforeach()
+    if(EMSCRIPTEN)
+        # These read repository files by path: node's own filesystem, not the sandboxed MEMFS.
+        foreach(file_target tn-native-engine-gltf-hierarchy-test tn-native-engine-fuzz-gltf tn-native-engine-fuzz-package)
+            target_link_options(${file_target} PRIVATE -sNODERAWFS=1)
+        endforeach()
+    endif()
+    add_test(NAME native_engine_asset_fuzz_gltf COMMAND tn-native-engine-fuzz-gltf
+        ${TN_REPO}/packages/create-threenative/templates/starter/assets/native-proof.glb
+        ${TN_REPO}/packages/core/__tests__/fixtures/world-v1/assets/rock.glb
+        ${TN_REPO}/examples/csg-doorway/assets/doorway.glb
+        ${TN_REPO}/packages/create-threenative/__tests__/fixtures/bounded-decals/public/receiver.glb
+        ${TN_REPO}/test-support/fixtures/skinned-character.glb
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/fuzz-seeds/skinned-character.gltf
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/fuzz-seeds/doorway.gltf)
+    add_test(NAME native_engine_asset_fuzz_package COMMAND tn-native-engine-fuzz-package
+        ${TN_REPO}/packages/assets/__tests__/fixtures/reference.tnpk)
+    foreach(fuzz_test native_engine_asset_fuzz_gltf native_engine_asset_fuzz_package)
+        set_tests_properties(${fuzz_test} PROPERTIES LABELS "native-engine;native-sanitizer"
+            ENVIRONMENT "ASAN_OPTIONS=abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endforeach()
+else()
+    message(STATUS "cgltf not provisioned (or Emscripten): the native glTF loader is not built")
+endif()
+
+tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
+    native_engine_tsl_ir_order=order
+    native_engine_tsl_ir_types=types
+    native_engine_tsl_unsupported=unsupported)
+target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
+
+tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
+    native_engine_material_unsupported=unsupported
+    native_engine_material_standard_builds=builds
+    native_engine_fog_math=fog
+    native_engine_material_node_key=node_key
+    native_engine_material_bloom_passes=bloom_passes)
+target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
+tn_native_engine_test(tn-native-engine-tonemap-test tests/native-engine/tonemap_test.cpp
+    native_engine_tonemap_operators=operators)
+target_link_libraries(tn-native-engine-tonemap-test PRIVATE tn_engine_shader)
+
+tn_native_engine_test(tn-native-engine-package-test tests/native-engine/package_test.cpp
+    native_engine_package_sha256=sha256
+    native_engine_cooked_package_parse=load
+    native_engine_cooked_package_reject=reject)
+target_link_libraries(tn-native-engine-package-test PRIVATE tn_engine_assets)
+# PRD-515: every format qualified or refused on this target, mobile and Wasm included.
+tn_native_engine_test(tn-native-engine-decoder-matrix-test tests/native-engine/decoder_matrix_test.cpp
+    native_engine_decoder_matrix=matrix)
+target_link_libraries(tn-native-engine-decoder-matrix-test PRIVATE tn_engine_assets)
+
+tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
+    native_engine_abi_version=version
+    native_engine_abi_handles=handles
+    native_engine_abi_generic=generic
+    native_engine_abi_scene=scene
+    native_engine_abi_lifetime=lifetime
+    native_engine_unsupported_member=unsupported_member
+    native_engine_abi_material=material
+    native_engine_abi_light=light
+    native_engine_abi_callbacks=callbacks
+    native_engine_abi_color_set=color_set
+    native_engine_abi_children=children
+    native_engine_abi_tsl_call=tsl_call
+    native_engine_abi_tsl_uniform_value=tsl_uniform_value
+    native_engine_abi_tsl_statements=tsl_statements
+    native_engine_abi_tsl_effect_parameter=tsl_effect_parameter
+    native_engine_abi_mixer_time_field=mixer_time_field
+    native_engine_abi_visible_field=visible_field
+    native_engine_abi_layers_field=layers_field
+    native_engine_abi_walk_parents=walk_parents
+    native_engine_abi_property_bind=property_bind
+    native_engine_abi_euler_order_field=euler_order_field
+    native_engine_abi_object_addresses=object_addresses
+    native_engine_abi_geometry_shapes=geometry_shapes
+    native_engine_abi_typed_bytes=typed_bytes
+    native_engine_abi_data_texture_bytes=data_texture_bytes
+    native_engine_abi_attribute_view_writes=attribute_view_writes
+    native_engine_abi_attribute_defer=attribute_defer)
+target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
+
+# The header compiles as strict C11 and a C program links against the ABI.
+add_executable(tn-native-engine-abi-c11 EXCLUDE_FROM_ALL tests/native-engine/abi_c11.c)
+target_link_libraries(tn-native-engine-abi-c11 PRIVATE tn_engine_abi)
+tn_native_engine_target(tn-native-engine-abi-c11)
+set_target_properties(tn-native-engine-abi-c11 PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+    LINKER_LANGUAGE CXX)
+if(NOT MSVC)
+    target_compile_options(tn-native-engine-abi-c11 PRIVATE -Wall -Wextra -Werror -pedantic)
+endif()
+add_test(NAME native_engine_abi_c11 COMMAND tn-native-engine-abi-c11)
+set_tests_properties(native_engine_abi_c11 PROPERTIES LABELS "native-engine")
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-abi-c11)
+
+# PRD-530: the artifact identity manifest, its checks and the tool a packager runs.
+tn_native_engine_test(tn-native-engine-identity-test tests/native-engine/identity_test.cpp
+    native_engine_artifact_identity=identity)
+target_link_libraries(tn-native-engine-identity-test PRIVATE tn_engine_abi)
+add_executable(tn-native-engine-identity EXCLUDE_FROM_ALL tests/native-engine/identity_tool.cpp)
+target_link_libraries(tn-native-engine-identity PRIVATE tn_engine_abi)
+tn_native_engine_target(tn-native-engine-identity)
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-identity)
+
+# PRD-510 phase 2: the native TSL builder's corpus (src/engine/shader/tsl/tsl.h), compared graph for
+# graph with the pinned three's TSL node trees by differential.mjs --suite tsl-ir. Two authoring
+# routes reach the same IR: the builder directly, and the lazy shader graph lowered through it.
+# The differential runs the host-built binary under node, so an Emscripten build has no case.
+add_executable(tn-native-engine-tsl-corpus EXCLUDE_FROM_ALL tests/native-engine/tsl-corpus/tsl_corpus.cpp)
+tn_native_engine_target(tn-native-engine-tsl-corpus)
+target_link_libraries(tn-native-engine-tsl-corpus PRIVATE tn_engine_shader)
+add_executable(tn-native-engine-tsl-graph EXCLUDE_FROM_ALL tests/native-engine/tsl-corpus/graph_corpus.cpp)
+tn_native_engine_target(tn-native-engine-tsl-graph)
+target_link_libraries(tn-native-engine-tsl-graph PRIVATE tn_engine_shader)
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-tsl-corpus tn-native-engine-tsl-graph)
+if(NOT EMSCRIPTEN)
+    find_program(TN_NODE_EXECUTABLE node)
+    if(TN_NODE_EXECUTABLE)
+        foreach(corpus_pair "tsl_ir:tn-native-engine-tsl-corpus" "tsl_graph:tn-native-engine-tsl-graph")
+            string(REPLACE ":" ";" corpus_pair "${corpus_pair}")
+            list(GET corpus_pair 0 corpus_name)
+            list(GET corpus_pair 1 corpus_target)
+            add_test(NAME native_engine_${corpus_name}
+                COMMAND ${TN_NODE_EXECUTABLE} tests/native-engine/differential.mjs --suite tsl-ir
+                    --native $<TARGET_FILE:${corpus_target}>
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+            set_tests_properties(native_engine_${corpus_name} PROPERTIES LABELS "native-engine")
+        endforeach()
+        unset(corpus_pair)
+    else()
+        message(WARNING "node not found: native_engine_tsl_ir and native_engine_tsl_graph are not registered")
+    endif()
+endif()
+
+# The shader corpus as WGSL files, judged by the offline validators when this machine has them:
+# Tint (the Dawn release in third_party, or PATH) and naga. shader_emit_test.cpp, which needs a GPU
+# context, joins with the renderer.
+add_executable(tn-native-engine-shader-corpus-dump EXCLUDE_FROM_ALL tests/native-engine/shader_corpus_dump.cpp)
+target_link_libraries(tn-native-engine-shader-corpus-dump PRIVATE tn_engine_shader)
+target_include_directories(tn-native-engine-shader-corpus-dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
+tn_native_engine_target(tn-native-engine-shader-corpus-dump)
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-shader-corpus-dump)
+if(NOT EMSCRIPTEN)
+    file(GLOB TN_TINT_CANDIDATES "${CMAKE_CURRENT_SOURCE_DIR}/third_party/dawn/*/bin/tint")
+    find_program(TN_TINT_EXECUTABLE tint)
+    if(NOT TN_TINT_EXECUTABLE AND TN_TINT_CANDIDATES)
+        list(GET TN_TINT_CANDIDATES 0 TN_TINT_EXECUTABLE)
+    endif()
+    find_program(TN_NAGA_EXECUTABLE naga)
+    if(TN_NAGA_EXECUTABLE)
+        # The emitter writes `diagnostic(off, ...)`, which naga parses from 24 on (wgpu-native 25 ships it).
+        execute_process(COMMAND ${TN_NAGA_EXECUTABLE} --version OUTPUT_VARIABLE TN_NAGA_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
+        string(REGEX MATCH "[0-9]+\\.[0-9]+(\\.[0-9]+)?" TN_NAGA_VERSION "${TN_NAGA_VERSION}")
+        if(TN_NAGA_VERSION VERSION_LESS 24)
+            message(STATUS "naga ${TN_NAGA_VERSION} is older than 24: native_engine_shader_corpus_naga is not registered")
+            unset(TN_NAGA_EXECUTABLE CACHE)
+        endif()
+    endif()
+    foreach(validator tint naga)
+        string(TOUPPER ${validator} validator_upper)
+        if(TN_${validator_upper}_EXECUTABLE)
+            add_test(NAME native_engine_shader_corpus_${validator}
+                COMMAND sh -c "mkdir -p \"$3\" && \"$1\" \"$3\" && for f in \"$3\"/*.wgsl; do \"$2\" \"$f\" > /dev/null || exit 1; done" --
+                    $<TARGET_FILE:tn-native-engine-shader-corpus-dump> ${TN_${validator_upper}_EXECUTABLE}
+                    ${CMAKE_CURRENT_BINARY_DIR}/wgsl-corpus-${validator})
+            set_tests_properties(native_engine_shader_corpus_${validator} PROPERTIES LABELS "native-engine")
+        else()
+            message(STATUS "${validator} not found: native_engine_shader_corpus_${validator} is not registered")
+        endif()
+    endforeach()
 endif()
 
 tn_native_engine_test(tn-native-engine-handles-test tests/native-engine/handles_test.cpp
@@ -280,6 +548,11 @@ target_include_directories(tn-native-engine-json-test PRIVATE ${CMAKE_CURRENT_SO
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
 target_include_directories(tn_fixture_driver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
+if(TARGET tn_engine_gltf)
+    # The `gltf` fixture op loads a repository file through the native loader.
+    target_link_libraries(tn_fixture_driver PUBLIC tn_engine_gltf)
+    target_compile_definitions(tn_fixture_driver PRIVATE TN_FIXTURE_GLTF=1)
+endif()
 target_link_libraries(tn_fixture_driver PUBLIC tn_engine_foundation tn_engine_bindings)
 if(EMSCRIPTEN)
     # The driver (a test tool) reports unsupported fixtures by exception; engine code never throws.
@@ -339,6 +612,18 @@ if(NOT EMSCRIPTEN)
     else()
         message(WARNING "pnpm not found: the native_engine_math_* and native_engine_scene_* fixture cases are not registered")
     endif()
+endif()
+
+if(EMSCRIPTEN)
+    # The C ABI as a module for the browser-JS back end (PRD-532); it runs under node as well.
+    add_executable(tn-native-engine-abi-module EXCLUDE_FROM_ALL tests/native-engine/wasm/abi_module.cpp)
+    target_link_libraries(tn-native-engine-abi-module PRIVATE tn_engine_abi)
+    tn_native_engine_target(tn-native-engine-abi-module)
+    target_link_options(tn-native-engine-abi-module PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_NAME=createTnAbi
+        -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_attribute_defer,_tnw_fire_before_render,_tnw_tsl_dump,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_malloc,_free"
+        "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
+    target_include_directories(tn-native-engine-abi-module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 endif()
 
 # The math fixture cases spawn the driver, so the aggregate target has to build it too.

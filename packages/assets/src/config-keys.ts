@@ -12,6 +12,7 @@ export const ASSETS_CONFIG_KEYS: readonly string[] = [
   "concurrency",
   "lod",
   "models",
+  "nativePackage",
   "source",
   "output",
   "targets",

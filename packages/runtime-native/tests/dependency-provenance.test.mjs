@@ -118,7 +118,7 @@ test('should report the locked matrix without network access', () => {
   // PRD-059 Phase 1 user verification: deps:verify lists every selectable
   // payload and performs no download, extraction, or toolchain invocation.
   const output = execFileSync(process.execPath, [DOWNLOADER, '--check-lock'], { encoding: 'utf8' });
-  assert.match(output, /payloads: 63/);
+  assert.match(output, /payloads: 64/);
   assert.match(output, /wgpu:/);
   assert.match(output, /gradle-wrapper:/);
 });

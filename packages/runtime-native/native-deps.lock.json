@@ -651,6 +651,34 @@
       ]
     },
     {
+      "name": "cgltf",
+      "version": "1.15",
+      "source": {
+        "repository": "jkuhlmann/cgltf",
+        "revision": "v1.15"
+      },
+      "license": {
+        "spdx": "MIT",
+        "evidence": {
+          "url": "https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.15/LICENSE",
+          "sha256": "f619925f80ef862497aaf8e8155ef218fa6a2190055129523ca3df9119a9ba95",
+          "bytes": 1066
+        }
+      },
+      "payloads": [
+        {
+          "id": "cgltf-cgltf.h",
+          "url": "https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.15/cgltf.h",
+          "sha256": "e378a21c084bf1f288bb799de827bb26906efb024255f1ecf1705ea13f11c6ec",
+          "bytes": 202865,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "two-run-fetch-2026-10-05-tag-v1.15"
+        }
+      ]
+    },
+    {
       "name": "webp",
       "version": "1.5.0",
       "source": {

@@ -789,6 +789,29 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).rejects.toThrow(/assets\.concurrency/u);
   });
 
+  it("hands assets.nativePackage to the pipeline that receives it", async () => {
+    // The same seam: the compiler grew the native cooked package, and this validator's key list is
+    // where the opt-in dies before an asset compiles.
+    const root = await project();
+    await config(root, "export default { assets: { nativePackage: true } };");
+    const resolved = await loadConfig(root);
+    expect(resolved.assets).toMatchObject({ nativePackage: true });
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
+      skipped: 0,
+      skippedCompression: [],
+      written: 0,
+    });
+  });
+
+  it("rejects a non-boolean assets.nativePackage with the named code", async () => {
+    const root = await project();
+    await config(root, 'export default { assets: { nativePackage: "yes" } };');
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.nativePackage/u);
+  });
+
   it("hands assets.audio to the pipeline that receives it and ships the declared bytes", async () => {
     // The seam a real game hit: `assets.audio` is a documented compile option that this
     // validator's key list dropped, so a project asking to ship its cues exactly as authored
@@ -1192,6 +1215,7 @@ const SEAM_SAMPLE = {
       simplifyRatio: 0.5,
     },
   },
+  nativePackage: true,
   output: "public",
   source: "assets",
   targets: { maxTriangles: 100_000, maxTextureDimension: 2048 },

@@ -14,8 +14,8 @@
  *   node scripts/download-deps.mjs --rebuild-wgpu-cache-api  # Rebuild patched wgpu-native from source
  *   node scripts/download-deps.mjs --force      # Re-download even if exists
  *
- * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, webp, skia, swc
- * iOS deps: wgpu-ios, skia-ios (for cross-compilation from macOS)
+ * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, cgltf, webp, webp-source, skia, swc
+ * iOS deps: wgpu-ios, skia-ios, webp-source (for cross-compilation from macOS)
  * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android, webp-source
  */
 
@@ -271,6 +271,7 @@ const DEPS = {
     version: 'master',
     // stb doesn't use archives - we download individual headers
     getUrl: () => null,  // Special handling below
+    headerUrl: (header) => `https://raw.githubusercontent.com/nothings/stb/master/${header}`,
     extractTo: 'stb',
     headers: [
       'stb_image.h',
@@ -282,6 +283,15 @@ const DEPS = {
       // as stb_image above; `src/audio/vorbis_impl.c` is the one translation unit that compiles it.
       'stb_vorbis.c',
     ],
+  },
+  cgltf: {
+    // cgltf parses glTF/GLB for the native engine's loader (PRD-515); parsing only, construction
+    // is owned code. One header, pinned to a release tag.
+    version: '1.15',
+    getUrl: () => null,
+    headerUrl: (header) => `https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.15/${header}`,
+    extractTo: 'cgltf',
+    headers: ['cgltf.h'],
   },
   webp: {
     // libwebp for WebP image decoding (used by GLTF EXT_texture_webp extension)
@@ -304,7 +314,8 @@ const DEPS = {
   },
   'webp-source': {
     // libwebp upstream source, for platforms with no prebuilt release (Android,
-    // iOS). Games embed WebP textures in glTF (EXT_texture_webp); without this a
+    // iOS) and for the native engine's glTF loader on every platform (NativeEngineCore.cmake
+    // builds it once). Games embed WebP textures in glTF (EXT_texture_webp); without this a
     // native build silently reports "WebP format support: NO" and GLTFLoader
     // drops every model texture, which renders as untextured white meshes.
     // The runtime's CMakeLists builds the extracted tree with the cross toolchain.
@@ -1251,8 +1262,8 @@ export async function downloadDep(name, options = {}) {
 
   const destDir = destinationFor(name, dep);
 
-  // Special handling for stb (individual header downloads)
-  if (name === 'stb' && dep.headers) {
+  // Header-only dependencies (stb, cgltf): individual files, each verified against the lock.
+  if (dep.headers) {
     // Per header, not per directory. Testing the directory meant that adding a header to the list
     // above provisioned nothing on any checkout that already had the others: `stb_vorbis.c` was
     // added for Ogg decode and every existing tree reported "already exists" and skipped it, so
@@ -1274,11 +1285,11 @@ export async function downloadDep(name, options = {}) {
     try {
       const verified = [];
       for (const header of missing) {
-        const url = `https://raw.githubusercontent.com/nothings/stb/master/${header}`;
+        const url = dep.headerUrl(header);
         const quarantine = mkdtempSync(join(tmpdir(), 'threenative-dep-'));
         try {
           const staged = join(quarantine, header);
-          const payload = await downloadLockedArchive(lock.payloads, lock.lockHash, `stb ${header}`, url, staged);
+          const payload = await downloadLockedArchive(lock.payloads, lock.lockHash, `${name} ${header}`, url, staged);
           copyFileSync(staged, join(destDir, header));
           verified.push(payload.id);
         } finally {
@@ -1556,11 +1567,11 @@ async function main() {
   // for the matching configure overrides.
   const linuxArm64 = platformName === 'linux' && ARCH === 'arm64';
   const desktopDeps = linuxArm64
-    ? ['wgpu', 'sdl3', 'quickjs', 'stb', 'libuv-source']
-    : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
+    ? ['wgpu', 'sdl3', 'quickjs', 'stb', 'cgltf', 'libuv-source', 'webp-source']
+    : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', 'webp-source', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
-  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios'];
+  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios', 'webp-source'];
 
   // Android deps (only downloaded with --only or --android)
   const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source'];

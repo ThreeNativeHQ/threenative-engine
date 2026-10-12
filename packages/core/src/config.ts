@@ -437,6 +437,12 @@ export interface IThreeNativeConfig {
      */
     readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;
+    /**
+     * Also emit the native cooked package (`<output>/native/assets.tnpk`, TNPK v1) beside the
+     * existing outputs, for a native-engine build that loads its assets without a JS `GLTFLoader`.
+     * Absent or `false` leaves the output set unchanged.
+     */
+    readonly nativePackage?: boolean;
     readonly output?: string;
     readonly source?: string;
     readonly targets?: {

@@ -97,6 +97,8 @@ export interface IResolvedThreeNativeConfig {
     /** Validated, not yet resolved: per-asset resolution happens where the asset is known. */
     readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;
+    /** Also emit the native cooked package beside the existing outputs. */
+    readonly nativePackage?: boolean;
     readonly output?: string;
     readonly source?: string;
     readonly targets?: {
@@ -1180,6 +1182,7 @@ export const ASSETS_CONFIG_KEYS = [
   "concurrency",
   "lod",
   "models",
+  "nativePackage",
   "source",
   "output",
   "targets",
@@ -1588,6 +1591,9 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
   ) {
     fail("TN_CONFIG_ASSETS_INVALID", "assets.exclude must be an array of non-empty glob strings.");
   }
+  if (assets.nativePackage !== undefined && typeof assets.nativePackage !== "boolean") {
+    fail("TN_CONFIG_ASSETS_INVALID", "assets.nativePackage must be true or false.");
+  }
   return {
     ...(assets.audio === undefined ? {} : { audio: validateAudio(assets.audio) }),
     ...(assets.exclude === undefined ? {} : { exclude: assets.exclude as readonly string[] }),
@@ -1614,6 +1620,7 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
     ...(targets === undefined ? {} : { targets }),
     ...(lod === undefined ? {} : { lod }),
     ...(models === undefined ? {} : { models }),
+    ...(assets.nativePackage === undefined ? {} : { nativePackage: assets.nativePackage }),
     ...(textures === undefined ? {} : { textures }),
   };
 }
@@ -1625,6 +1632,7 @@ const PROFILE_ASSET_KEYS: readonly string[] = [
   "budget",
   "lod",
   "models",
+  "nativePackage",
   "targets",
   "textures",
 ];
