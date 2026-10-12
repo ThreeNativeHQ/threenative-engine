@@ -449,7 +449,8 @@ globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(
 if (size.x + "x" + size.y !== ${JSON.stringify(want)}) globalThis.tn.__startupError = "getDrawingBufferSize reported " + size.x + "x" + size.y;
 `;
 for (const [env, want] of [[{ TN_PLAYER_WIDTH: "640", TN_PLAYER_HEIGHT: "360" }, "640x360"], [{}, "1280x720"]]) {
-  const surfaceEntry = resolve(work, "surface.ts"), surfaceOut = resolve(work, "surface.js");
+  const surfaceEntry = resolve(work, "surface.ts");
+  const surfaceOut = resolve(work, "surface.js");
   await writeFile(surfaceEntry, surfaceGame(want));
   await bundleNativeEngine({ entry: surfaceEntry, outfile: surfaceOut, boot: false });
   const surface = spawnSync(resolve(executable), ["--check-game", surfaceOut], { encoding: "utf8", env: { ...process.env, ...env } });
