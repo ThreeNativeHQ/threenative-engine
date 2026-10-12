@@ -35,9 +35,9 @@ Add the missing specs and the capability-detail note.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: A native conformance case streams two WorldCells cells and swaps a proxy with zero validation errors. proof: `pnpm parity` case in `registry.json` — Evidence: pending.
-- [ ] AC-2 [local]: A native conformance case uploads a compressed texture through `prepareTextures`. proof: `pnpm parity` — Evidence: pending.
-- [ ] AC-3 [local]: A native conformance case submits a virtual-shadow first frame with no "Destroyed texture" error. proof: `pnpm parity` — Evidence: pending.
+- [x] AC-1 [local]: A native conformance case streams two WorldCells cells and swaps a proxy with zero validation errors. proof: `pnpm parity` case in `registry.json` — Evidence: 2026-10-11 `run-conformance.mjs --only-tests world-cells-proxy-stream` pass on web (5.1 s) and desktop (16.2 s, nvidia, strata-terrain-proof host) at b5aa0d786; the original 1 MB proxy budget could never admit the 8 MiB HLOD reserve.
+- [x] AC-2 [local]: A native conformance case uploads a compressed texture through `prepareTextures`. proof: `pnpm parity` — Evidence: 2026-10-11 `compressed-texture-preparation` pass on web (3.0 s) and desktop (13.3 s).
+- [x] AC-3 [local]: A native conformance case submits a virtual-shadow first frame with no "Destroyed texture" error. proof: `pnpm parity` — Evidence: 2026-10-11 `virtual-shadow-first-frame` pass on web (3.1 s) and desktop (12.9 s).
 - [ ] AC-4 [local]: A fresh visual judge rates the shadow, velocity and LUT changes NEUTRAL or IMPROVEMENT against the pre-#381 parent at fixed poses (headed WebGPU, two runs per arm). proof: judge verdict and images on the PR — Evidence: pending.
 - [x] AC-5 [local]: A TRAA chain holds its `temporalUpscale` floor without the removed lift. proof: `pnpm exec vitest run packages/core/__tests__/renderer.spec.ts` case — Evidence: 2026-10-11 `renderer.spec.ts` 43/43 passed; real game scaler with active TRAA velocity chain holds desktop 0.61 floor through 30 GPU-overload windows; removed velocity lift remains absent. No GPU/browser claim.
 - [x] AC-6 [local]: `addInSlices`' capability detail states the 8 ms default, and `FrameBudget` disconnects its observer on `dispose()`. proof: `pnpm build` manifest diff + `frame-budget.spec.ts` case — Evidence: 2026-10-11 `frame-budget.spec.ts` 28/28 passed; observer disconnects once over two dispose calls; capability-detail assertion confirms 8 ms default. `pnpm capabilities:sync` regenerates 448 entries and both manifests/reference; `pnpm api:surface:sync` passes (422 symbols), no API drift. Observer behavior was already true.
@@ -51,9 +51,9 @@ Add the missing specs and the capability-detail note.
 #### Phase 1: native cases
 **Status:** PARTIAL
 **Files:** `packages/runtime-native/conformance/registry.json`, conformance fixtures
-- [ ] WorldCells stream. proof: `pnpm parity`
-- [ ] Texture upload. proof: `pnpm parity`
-- [ ] Shadow first frame. proof: `pnpm parity`
+- [x] WorldCells stream. proof: `pnpm parity` — 2026-10-11 pass web and desktop.
+- [x] Texture upload. proof: `pnpm parity` — 2026-10-11 pass web and desktop.
+- [x] Shadow first frame. proof: `pnpm parity` — 2026-10-11 pass web and desktop.
 
 #### Phase 2: pixels judged
 **Status:** NOT STARTED
