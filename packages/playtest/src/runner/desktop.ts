@@ -25,6 +25,8 @@ export interface IDesktopPlaytestDriverOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   executable: string;
+  /** Ask the host for the wall clock, the native counterpart of the browser's init script. */
+  liveClock?: boolean;
   mailboxRoot?: string;
   screenshotTimeoutMs?: number;
 }
@@ -111,6 +113,11 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       MYSTRAL_HEADLESS: "1",
       ...this.options.env,
       TN_PLAYTEST_MAILBOX_ROOT: this.mailboxRoot,
+      // The host reads the request before it evaluates the game entry, the way the browser runner
+      // puts it ahead of every page script. No key when the run asked for no clock. The desktop
+      // runner refuses an inherited TN_PLAYTEST_CLOCK before this driver starts, so a counted run
+      // never reaches this line with one.
+      ...(this.options.liveClock === true ? { TN_PLAYTEST_CLOCK: "wall-clock" } : {}),
     };
     const child = spawn(this.options.executable, [...(this.options.args ?? [])], {
       cwd: this.options.cwd,

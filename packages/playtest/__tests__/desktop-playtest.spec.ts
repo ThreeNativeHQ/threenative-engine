@@ -2,7 +2,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { PNG } from "pngjs";
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 import {
@@ -20,6 +20,24 @@ import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { normalizedRuntimeDiagnostics } from "../src/runner/observationSampling.js";
 import type { IDevicePlaytestDriver } from "../src/runner/androidRunner.js";
 import { connectDevicePlaytestBridge, type IDeviceBridgeInstallation } from "../src/three/device.js";
+
+beforeEach(() => {
+  vi.stubEnv("TN_PLAYTEST_CLOCK", undefined);
+  Reflect.deleteProperty(process.env, "TN_PLAYTEST_CLOCK");
+});
+afterEach(() => vi.unstubAllEnvs());
+
+test.each([undefined, false])("desktop counted run refuses an inherited clock with liveClock=%s", async (liveClock) => {
+  const driverFactory = vi.fn(() => { throw new Error("driver started"); });
+  for (const clock of ["wall-clock", "", "unsupported"]) {
+    process.env.TN_PLAYTEST_CLOCK = clock;
+    await expect(runDesktopPlaytest(
+      { ...minimalConfig("desktop"), liveClock },
+      { driverFactory },
+    )).rejects.toThrow("TN_PLAYTEST_CLOCK: a counted run must not inherit a wall clock; unset TN_PLAYTEST_CLOCK or pass --live-clock.");
+    expect(driverFactory).not.toHaveBeenCalled();
+  }
+});
 
 test("desktop CLI parsing requires and resolves the native executable", () => {
   const config = parseStandalonePlaytestArgs([
@@ -392,6 +410,34 @@ test("desktop runner asks for the frame series a performance assertion reads", a
     if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
     else host.__THREENATIVE_NATIVE__ = previous;
     await rm(projectPath, { force: true, recursive: true });
+  }
+});
+
+test("desktop driver gives the native host the clock the run asked for, and none when it asked for none", async () => {
+  // The runner's own `clock` field is a claim about the run. This reads the environment the child
+  // process actually receives, which is the only thing the host can read the request from.
+  const root = await makeTempDir("playtest-desktop-clock-");
+  const observed = async (liveClock: boolean): Promise<string> => {
+    const mailbox = join(root, liveClock ? "asked" : "counted");
+    const driver = new DesktopPlaytestDriver({
+      executable: process.execPath,
+      liveClock,
+      mailboxRoot: mailbox,
+      args: ["-e", `require("node:fs").writeFileSync(process.env.TN_PLAYTEST_MAILBOX_ROOT + "/clock.txt", process.env.TN_PLAYTEST_CLOCK ?? "absent");`],
+    });
+    try {
+      await driver.prepare("unused");
+      await expect.poll(() => driver.isAlive()).toBe(false);
+      return await readFile(join(mailbox, "clock.txt"), "utf8");
+    } finally {
+      await driver.stop();
+    }
+  };
+  try {
+    expect(await observed(true)).toBe("wall-clock");
+    expect(await observed(false)).toBe("absent");
+  } finally {
+    await rm(root, { force: true, recursive: true });
   }
 });
 
