@@ -4079,6 +4079,16 @@ describe("the same-run pair guard", () => {
     ).toBe(0.5);
   });
 
+  it("names the web arms' phase clock as page wall time, not thread CPU", () => {
+    const markdown = renderPairMarkdown(
+      [arm("tn-web", { rung: phased({ game: 1 }, { present: 1, thread: 5 }) })],
+      [arm("tn-engine-web", { rung: phased({ game: 2 }, { present: 1, thread: 5 }) })],
+      ["tn-web", "tn-engine-web"],
+    );
+    expect(markdown).toContain("performance.now()");
+    expect(markdown).not.toContain("CLOCK_THREAD_CPUTIME_ID");
+  });
+
   it("leaves the phase block out when either arm carries no phases", () => {
     const phasedArm = arm("tn-desktop", { rung: phased({ game: 1 }, { present: 1, thread: 5 }) });
     expect(renderPairMarkdown([phasedArm], [arm("tn-engine-desktop")], labels)).not.toContain(

@@ -289,7 +289,7 @@ export function renderPhaseBlock(
     "",
     "#### Where the frame goes",
     "",
-    `Thread cpu ms per frame on one clock (CLOCK_THREAD_CPUTIME_ID). \`other\` is the frame minus the five phases; \`present\` is outside the no-present frame. Ratio is ${labels[1]} over ${labels[0]}, below 1 means ${labels[1]} spends less.`,
+    `${labels.every((label) => label.endsWith("-web")) ? "Main-thread ms per frame on one clock (performance.now(): a page has no thread CPU clock, so this is wall time on the page's thread)" : "Thread cpu ms per frame on one clock (CLOCK_THREAD_CPUTIME_ID)"}. \`other\` is the frame minus the five phases; \`present\` is outside the no-present frame. Ratio is ${labels[1]} over ${labels[0]}, below 1 means ${labels[1]} spends less.`,
     "",
     `| rung | phase | ${labels[0]} p50 | ${labels[0]} mean | ${labels[1]} p50 | ${labels[1]} mean | ratio p50 |`,
     "|---|---|---|---|---|---|---|",
