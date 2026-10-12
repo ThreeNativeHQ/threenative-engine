@@ -1,6 +1,6 @@
 # PRD-609 — A GPU burst starts where and when it is asked, and live particles stay put
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — phase 1 done, phase 2 core landed, probe arms and parity open
 **Priority:** P1 — core correctness bug in `GPUParticles3D`: AC-1 to AC-3 are open, a burst begins with its particles at random points of their lives, and a second hit moves the first hit's live particles. Every game with hit effects sees it.
 **Complexity:** 6 (MEDIUM) — 6–10 files (`particles.ts`, its spec, a conformance scene and registry row, the gallery probe, the action-rpg template) (+2), new public method and option set (+2), ring state that carries across frames (+2); risk override: none
 **Owner:** unassigned
@@ -47,9 +47,9 @@ Reused systems: `ComputeDrivenRegistry` for attach, warm-up and release (`packag
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: On the first frame after `emitParticle`, every particle of the burst lies within its spawn envelope plus one frame of its launch speed, and the mean age is at most one frame. Phase 1 records the restart-based baseline. proof: `node packages/playtest/dist/runner/cli.js examples/vfx-gallery/playtests/burst-probe.playtest.json --url http://127.0.0.1:5185 --server-command 'pnpm --filter vfx-gallery dev --host 127.0.0.1 --port 5185 --strictPort' --browser-recipe webgpu` — Evidence: pending.
-- [ ] AC-2 [local]: Two bursts 0.3 s apart at different points: no live particle of the first burst moves more than 0.5 m in one frame, and both bursts live their full lifetime. proof: the same playtest, second arm — Evidence: pending.
-- [ ] AC-3 [local]: A frame with requests that total three times `amount` throws nothing, leaves no NaN in the readback, and reports `stats.clamped` equal to the excess. proof: `pnpm exec vitest run packages/core/__tests__/particles.spec.ts` and the same playtest, third arm — Evidence: pending.
+- [ ] AC-1 [local]: On the first frame after `emitParticle`, every particle of the burst lies within its spawn envelope plus one frame of its launch speed, and the mean age is at most one frame. Phase 1 records the restart-based baseline. proof: `node packages/playtest/dist/runner/cli.js examples/vfx-gallery/playtests/burst-probe-spawn.playtest.json --url "http://127.0.0.1:5185/?burstProbe=spawn" --server-command 'pnpm --filter vfx-gallery dev --host 127.0.0.1 --port 5185 --strictPort' --browser-recipe webgpu --headed --live-clock` on the Debian laptop (`offload.sh start --gpu`, real adapter; the desktop's private Xvfb serves SwiftShader) — Evidence: pending.
+- [ ] AC-2 [local]: Two bursts 0.3 s apart at different points: no live particle of the first burst moves more than 0.5 m in one frame, and both bursts live their full lifetime. proof: the same playtest (`burst-probe-spawn`), second arm — Evidence: pending.
+- [ ] AC-3 [local]: A frame with requests that total three times `amount` throws nothing, leaves no NaN in the readback, and reports `stats.clamped` equal to the excess. proof: `pnpm exec vitest run packages/core/__tests__/particles.spec.ts` and `burst-probe-overflow.playtest.json` with `?burstProbe=overflow`, run as above — Evidence: pending.
 - [ ] AC-4 [native]: The spawn-request conformance row matches the browser reference on the desktop host. proof: `pnpm parity` (new row `vfx-spawn-requests`) — Evidence: pending.
 
 ## Integration Ledger
@@ -63,17 +63,17 @@ Reused systems: `ComputeDrivenRegistry` for attach, warm-up and release (`packag
 ## Execution Phases
 
 #### Phase 1: Measure what a restart-based burst does today
-**Status:** NOT STARTED
+**Status:** DONE 2026-10-12
 **Files:** `examples/vfx-gallery/src/scenes/Gallery.ts`, `examples/vfx-gallery/playtests/burst-probe.playtest.json` (new)
 **Implementation:** add a probe entity to the gallery. Examples may expose a readback probe and template source may not, so the probe drives the gallery's `impact-sparks` preset (`examples/vfx-gallery/src/render/archivePresets.ts:695`) through the same sequence as the action-rpg `burst()`: move, show, `restart()`, hide after 0.45 s. It reads `buffers.positions` through `GPUReadback` for six frames and reports the mean age fraction at the first visible frame, the largest one-frame move of any particle after a second burst, and the frame on which the second burst was hidden. The gate verdict goes under `## Decisions`. **Gate:** continue if the mean age fraction at the first visible frame is above 0.10, or any particle moves more than 0.5 m in one frame at the second burst. Otherwise record the decline and delete Phases 2–3 (R4).
-- [ ] The probe prints the three numbers for the restart-based burst. proof: `node packages/playtest/dist/runner/cli.js examples/vfx-gallery/playtests/burst-probe.playtest.json --url http://127.0.0.1:5185 --server-command 'pnpm --filter vfx-gallery dev --host 127.0.0.1 --port 5185 --strictPort' --browser-recipe webgpu`
+- [x] The probe prints the three numbers for the restart-based burst. proof: `node packages/playtest/dist/runner/cli.js examples/vfx-gallery/playtests/burst-probe.playtest.json --url "http://127.0.0.1:5185/?burstProbe=restart" --server-command 'pnpm --filter vfx-gallery dev --host 127.0.0.1 --port 5185 --strictPort' --browser-recipe webgpu --headed --live-clock` on the Debian laptop (`offload.sh start --gpu`, real adapter; the desktop's private Xvfb serves SwiftShader)`. Result 2026-10-12, adapter intel gen-12lp, `clock: wall-clock`, exit 0: mean age fraction at the first visible frame 0.476, largest one-frame move at the second burst 6.15 m, second burst hidden after 9 frames (expected 27).
 
 #### Phase 2: Core spawns by request into a ring
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/core/src/particles.ts`, `packages/core/__tests__/particles.spec.ts`, `packages/runtime-native/conformance/scenes/shared/vfx-spawn-requests.js` (new), `packages/runtime-native/conformance/registry.json`, `examples/vfx-gallery/playtests/burst-probe.playtest.json`
 **Implementation:** add `spawn`, `localCoords`, `lifetime`, `maxSpawnPerFrame`, `buffers.births`, the `runtime` argument and `emitParticle`. Keep the old constructor shape valid. Add a second and a third probe arm for AC-2 and AC-3.
 **Verification:** AC-1, AC-2 and AC-3 close the web side on a named WebGPU adapter, and AC-4 closes the desktop side. Because this changes what reaches the screen, the phase also needs the visual judge from the root `AGENTS.md`: before and after frames of the same burst, judged by a fresh read-only subagent.
-- [ ] Core spec holds: slots do not overlap across calls, a wrap reuses the oldest slots, a request over `amount` clamps and counts, `recycledLive` is `undefined` without `lifetime`, a spawn-driven emitter keeps an identity world matrix under a moving parent, and `localCoords: true` follows the parent. proof: red-green `pnpm exec vitest run packages/core/__tests__/particles.spec.ts`
+- [x] Core spec holds: slots do not overlap across calls, a wrap reuses the oldest slots, a request over `amount` clamps and counts, `recycledLive` is `undefined` without `lifetime`, a spawn-driven emitter keeps an identity world matrix under a moving parent, and `localCoords: true` follows the parent. proof: red-green `pnpm exec vitest run packages/core/__tests__/particles.spec.ts`. Result: 9 of the 11 tests fail on the pre-change `particles.ts`, all 11 pass after.
 
 #### Phase 3: The action-rpg template spawns its bursts
 **Status:** NOT STARTED
@@ -88,5 +88,6 @@ Reused systems: `ComputeDrivenRegistry` for attach, warm-up and release (`packag
 - 2026-10-12 (PRD shape, R5): the PRD had 12 boxes against a cap of about 8. The Phase 2 probe-arm box and desktop-parity box repeated AC-1/AC-2 and AC-4, so they were dropped in favour of the ACs. The two spec boxes became one, and the template-docs and manifest boxes became one. No criterion was weakened. Priority raised from P2 to P1 on the owner's call: core correctness bug every game with hit effects sees.
 
 - 2026-10-12 (Unreal source review): no readback-free on-death spawn. Unreal counts event spawns on the CPU even for a GPU emitter (`NiagaraEmitterInstanceImpl.cpp:1295-1318`). A ThreeNative version would need atomic appends and an indirect dispatch. No effect here has a measured need. File it only with a real sub-emitter consumer.
+- 2026-10-12 (phase 1 gate): CONTINUE. The restart-based burst shows all three predicted defects: mean age fraction 0.476 at the first visible frame (gate: above 0.10), 6.15 m largest one-frame particle move at the second burst (gate: above 0.5 m), and the second burst hidden after 9 of 27 frames. The probe runs wall-clock (`--live-clock`) because the scenario's ticks outrun rendered frames and starve the readback, and on the Debian laptop's real display because the desktop's private Xvfb serves SwiftShader.
 - 2026-10-12: no sub-frame birth spread. Bursts are instants. Add the spread (Unreal's start offset and interval) with the first rate emitter that shows clumping.
 - 2026-10-12: closed-form emitters stay valid and stay the cheap tier. Rain, snow and runner dust are continuous and look the same at any time, so they need no spawn list.
