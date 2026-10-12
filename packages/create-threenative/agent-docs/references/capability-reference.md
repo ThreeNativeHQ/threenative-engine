@@ -70,20 +70,6 @@ export async function compileAssets( options: IAssetCompileOptions = { … }
 const result = await compileAssets({ source: "assets", output: "public" });
 ```
 
-### `cookTerrainWorld`
-
-`function` — Bake evaluated terrain and static species into an instanced GLB and streaming world package.
-
-```ts
-export function cookTerrainWorld( options: IPreparedTerrainWorldOptions, ): Promise< { … }
-```
-
-- **Use when:** bake a terrain world headlessly into a GLB with instanced trees and rocks · generate a forest world for my game
-
-```ts
-await cookTerrainWorld({ state, species, out: "assets/world" });
-```
-
 ### `dedupeMaterials`
 
 `function` — Collapse materials that became identical once their textures shared an atlas page, and count the buckets a merge would find — before and after — so the promise can be checked rather than made.
@@ -433,7 +419,7 @@ if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);
 
 ### `addInSlices`
 
-`function` — Attach hundreds of built objects to the scene in slices with an 8 ms default budget, presenting a frame between each.
+`function` — Attach hundreds of built objects to the scene in slices, presenting a frame between each.
 
 ```ts
 export async function addInSlices<T>( objects: Iterable<T>, add: (object: T, index: number) => void, options: IAddInSlicesOptions = { … }
@@ -2963,22 +2949,6 @@ const mirror = subscribeUiState(bridge);
 
 ## `@threenative/core/world`
 
-### `applyTerrainSurface`
-
-`function` — Apply a cooked GLB's package-authored layered surface to its marked terrain meshes. `url` is the loaded GLB URL; extras pointers are relative to it. Uses the same asset/fetch path as loadTerrainSplat on web and native. The caller owns the assigned materials' lifetime.
-
-```ts
-export async function applyTerrainSurface( root: Object3D, options: ILoadTerrainSplatOptions, ): Promise<void> { … }
-```
-
-- **Use when:** apply the authored layered terrain surface after loading a cooked world GLB
-- **Constraints:** url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON
-- **Overrides:** every appearance input comes from the package table or loadTerrainSplat options
-
-```ts
-await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "world/world.glb" });
-```
-
 ### `cellPlacements`
 
 `function` — Borrow the run's placement records as a live view over the placement buffer.
@@ -3168,7 +3138,7 @@ export class WorldCells extends Group implements IComputeDriven { … }
 ```
 
 - **Use when:** stream a large Blender-authored world by cell instead of one huge GLB · keep scattered props and hand-placed chunks resident around a moving player · honour per-asset draw distances and hard streaming budgets without a mid-frame throw
-- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · `whenSpawnReady(position, radius, timeoutMs)` snapshots a fixed region and settles from existing updates or disposal; it does not drive streaming, and `prewarmed` remains the separate draw gate · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose · a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts · eligible static CPU cells can use their cooked HLOD after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation · `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number · every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers · two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct · the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds · a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left · `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
+- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose · a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts · eligible static CPU cells can use their cooked HLOD after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation · `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number · every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers · two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct · the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds · a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left · `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
 - **Overrides:** `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
 
 ```ts
@@ -5870,7 +5840,7 @@ const gradient = gradientAt(new Terrain({ resolution: 17 }).evaluate(), 0, 0);
 `function` — Recovered numerical/project exports; GLB/runtime outputs contain terrain only.
 
 ```ts
-export function makeExport( state: ITerrainState | null, recipe: ITerrainDocument, kind: "project", ): Promise<IExportArchive>;
+export async function makeExport( state: ITerrainState, recipe: ITerrainDocument, kind: ExportKind, ): Promise<IExportArchive> { … }
 ```
 
 - **Use when:** export a terrain recipe and its numerical runtime data
@@ -6031,70 +6001,6 @@ export function checkEnvironmentAssets( environment: IEnvironment, assets: reado
 checkEnvironmentAssets({ sky: { image: "dusk" } }, document.assets ?? []);
 ```
 
-### `createEditorSelection`
-
-`function` — Gesture and transaction mechanics; the caller owns the controls, proxy and all rendering.
-
-```ts
-export function createEditorSelection( { … }
-```
-
-- **Use when:** drive terrain-editor selection, gizmo drags, undo and saved transactions
-- **Constraints:** the caller supplies the TransformControls, proxy, controller and every drawing callback
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-const selection = createEditorSelection({ gizmo, proxy, controller, grounding, surface, defaultFootprintSize, refreshPose, drawFootprint, restorePlacement, previewPlacement, setSaving, selectedChanged, setNavigation, message });
-```
-
-### `editorPlacementCenter`
-
-`function` — Transform the caller's measured geometry centre into the evaluated placement's world space.
-
-```ts
-export function editorPlacementCenter(point: Vector3, pose: IPlacementOverride): Vector3 { … }
-```
-
-- **Use when:** find the world-space centre of a placed terrain-editor instance
-- **Constraints:** the point is multiplied in place; the pose needs finite position, quaternion and scale
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-const centre = editorPlacementCenter(localCentre.clone(), placement);
-```
-
-### `editorPointToClient`
-
-`function` — Project an injected world point to client pixels in the caller's viewport.
-
-```ts
-export function editorPointToClient( point: Vector3, camera: Camera, box: { … }
-```
-
-- **Use when:** convert a terrain-editor world point to viewport client pixels
-- **Constraints:** the point is projected in place; pass a clone to keep the original
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-const [x, y] = editorPointToClient(point.clone(), camera, canvas.getBoundingClientRect());
-```
-
-### `editorSurfaceHeight`
-
-`function` — Query the rendered heightfield, including its triangulation rather than an interpolated bake.
-
-```ts
-export function editorSurfaceHeight( ctx: { … }
-```
-
-- **Use when:** query terrain-editor surface elevation at world X/Z coordinates
-- **Constraints:** the supplied mesh and raycast determine the surface; missing intersections return undefined
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-const height = editorSurfaceHeight(ctx, terrainMesh, x, z);
-```
-
 ### `focusCamera`
 
 `function` — Frame a point, prop, landmark or region for the live viewport and projection. @summary Frame a focus target with an editor observation camera
@@ -6146,22 +6052,6 @@ export function inspectSpatial( state: ITerrainState, revision: string, query: I
 const observation = inspectSpatial(state, revision, { kind: "point", at: [0, 0] });
 ```
 
-### `landformPose`
-
-`function` — Recipe footprints are heights over X/Z, never independently transformed solids.
-
-```ts
-export function landformPose(layer: Layer, worldSize: number, defaultSize: number) { … }
-```
-
-- **Use when:** derive a terrain-editor gizmo pose from a landform layer
-- **Constraints:** the caller supplies world and default footprint sizes; unsupported layers return undefined
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-const pose = landformPose(layer, terrain.size, footprintSize);
-```
-
 ### `mountTerrainEditor`
 
 `function` — Mount recovered terrain controls around the project-owned ThreeNative view.
@@ -6177,38 +6067,6 @@ export async function mountTerrainEditor(options: { … }
 
 ```ts
 await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });
-```
-
-### `pickEditorPlacement`
-
-`function` — A foreground terrain hit occludes placements; matching uses the evaluated world position.
-
-```ts
-export function pickEditorPlacement( ctx: Parameters<typeof pickEditorSurface>[0], terrain: Mesh, meshes: readonly Object3D[], placements: Iterable< { … }
-```
-
-- **Use when:** pick a placed instance in the terrain editor from viewport client coordinates
-- **Constraints:** the caller supplies the raycast context, terrain mesh, instanced meshes and evaluated placements
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-const id = pickEditorPlacement(ctx, terrainMesh, meshes, placements, event.clientX, event.clientY);
-```
-
-### `pickEditorSurface`
-
-`function` — Convert viewport client coordinates once; the installed picker owns ray intersection.
-
-```ts
-export function pickEditorSurface( ctx: { … }
-```
-
-- **Use when:** pick a terrain-editor surface from viewport client coordinates
-- **Constraints:** the caller supplies the raycast implementation and ordered targets
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-const hit = pickEditorSurface(ctx, [terrainMesh], event.clientX, event.clientY);
 ```
 
 ### `probeTerrain`
@@ -6311,22 +6169,6 @@ export class TerrainEditorController { … }
 
 ```ts
 const controller = new TerrainEditorController(editorUrl); const snapshot = await controller.snapshot();
-```
-
-### `transformedLandform`
-
-`function` — transformedLandform
-
-```ts
-export function transformedLandform( layer: Layer, position: Vector3, quaternion: Quaternion, scale: Vector3, anchor: number, ): Layer { … }
-```
-
-- **Use when:** apply a terrain-editor gizmo transform to a landform layer
-- **Constraints:** finite coordinates and positive scales are required; X/Z rotations that overhang throw
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-const next = transformedLandform(layer, position, quaternion, scale, surfaceHeight);
 ```
 
 ### `validateAsset`
@@ -6486,88 +6328,21 @@ const document = new TerrainEditorDocument("/project/terrain/world.json"); const
 
 ## `@threenative/terrain/export`
 
-### `prepareWorldGLTF`
+### `exportWorldGLB`
 
-`function` — Prepare the game's validated, frozen portable scene; the server cook owns GLB encoding.
+`function` — Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.
 
 ```ts
-export async function prepareWorldGLTF(input: IWorldGLBInput): Promise< { … }
+export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }
 ```
 
-- **Use when:** export the terrain as a glb for another three.js project via the headless cook · prepare the terrain editor's resolved world for headless portable GLB cooking
-- **Constraints:** browser authoring FileReader/canvas; all appearance and coherent water come from the game
+- **Use when:** export terrain, resolved models and final manual placement transforms as a portable GLB · export the whole terrain world as one glb for another three.js project
+- **Constraints:** browser authoring (FileReader/canvas); caller supplies all appearance and coherent baked water; root and /three remain headless
 - **Requires:** npm i -D @threenative/terrain
+- **Overrides:** actual static models, final matrices and baked PBR maps are supplied by the game
 
 ```ts
-const prepared = await prepareWorldGLTF(input);
-```
-
-## `@threenative/terrain/kit`
-
-### `bakeKit`
-
-`function` — Bake a copied kit, optionally using the caller's installed world cook.
-
-```ts
-export async function bakeKit( url: string, { … }
-```
-
-- **Use when:** bake a copied terrain starter kit into its offline world package
-- **Constraints:** Node authoring only; recipes, asset tables and sky paths stay in the game
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-await bakeKit(import.meta.url, { sky: "hdri/game-sky.hdr" });
-```
-
-### `starterAssetsDir`
-
-`function` — Resolve shared starter assets locally, or download the package's pinned archive on demand.
-
-```ts
-export async function starterAssetsDir(): Promise<string> { … }
-```
-
-- **Use when:** resolve terrain kit models and textures for offline baking
-- **Constraints:** Node authoring only; verifies archive size and SHA256 before atomic extraction
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-const assets = await starterAssetsDir();
-```
-
-## `@threenative/terrain/starter`
-
-### `addStarterWorld`
-
-`function` — Load caller-authored starter data with one scene lifetime; all appearance comes from spec.
-
-```ts
-export async function addStarterWorld<Extra extends { … }
-```
-
-- **Use when:** attach a baked starter world with game-owned surfaces, prop dressing and water
-- **Constraints:** Runtime subpath; the game supplies every appearance and collision choice
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-await addStarterWorld(ctx, follow, spec);
-```
-
-### `PropColliders`
-
-`class` — Stream caller-specified fixed collision shapes around a moving follow object.
-
-```ts
-export class PropColliders extends Object3D implements IComputeDriven { … }
-```
-
-- **Use when:** attach nearby prop collision bodies from baked placement records
-- **Constraints:** Shapes and reach are supplied by the game; detach releases every body
-- **Requires:** npm i -D @threenative/terrain
-
-```ts
-new PropColliders(ctx, follow, manifest, records, shapes, reach, name);
+const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });
 ```
 
 ## `@threenative/terrain/three`

@@ -6,6 +6,7 @@
 // reconstructed, and the authored GLB is never overwritten.
 
 import { createHash } from "node:crypto";
+import { MathUtils } from "@gltf-transform/core";
 import type {
   Accessor,
   Document,
@@ -35,6 +36,7 @@ import {
   classifyPrimitive,
   primitiveTriangleCount,
 } from "./eligibility.js";
+import type { Simplify } from "./simplify-pool.js";
 
 export type { DiscreteLodSkipReason, LodMinTrianglesScope } from "./eligibility.js";
 import {
@@ -607,16 +609,22 @@ function packAttributes(primitive: Primitive, vertexCount: number): IAttributePa
   for (const { accessor } of accessors) stride += accessor.getElementSize();
   if (stride === 0) return { data: new Float32Array(0), stride: 0, weights: [] };
   const data = new Float32Array(vertexCount * stride);
-  const element: number[] = new Array<number>(stride).fill(0);
-  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
-    let offset = 0;
-    for (const { accessor } of accessors) {
-      accessor.getElement(vertex, element);
-      const size = accessor.getElementSize();
-      for (let component = 0; component < size; component += 1)
-        data[vertex * stride + offset + component] = element[component] as number;
-      offset += size;
+  let offset = 0;
+  for (const { accessor } of accessors) {
+    const size = accessor.getElementSize();
+    const array = accessor.getArray();
+    if (array === null) throw new Error("LOD attribute has no array");
+    const normalized = accessor.getNormalized();
+    const componentType = accessor.getComponentType();
+    for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+      for (let component = 0; component < size; component += 1) {
+        const value = array[vertex * size + component] as number;
+        data[vertex * stride + offset + component] = normalized
+          ? MathUtils.decodeNormalizedInt(value, componentType)
+          : value;
+      }
     }
+    offset += size;
   }
   return { data, stride, weights: new Array<number>(stride).fill(1) };
 }
@@ -635,6 +643,13 @@ interface IGeneratedChain {
   readonly vertexCopies?: readonly ICardCopies[];
 }
 
+/** Snapshot once per primitive; worker targets read the same bytes without cloning them each time. */
+function sharedBuffer(array: Float32Array | Uint32Array): SharedArrayBuffer {
+  const buffer = new SharedArrayBuffer(array.byteLength);
+  new Uint8Array(buffer).set(new Uint8Array(array.buffer, array.byteOffset, array.byteLength));
+  return buffer;
+}
+
 /**
  * Every level is derived from the same LOD0 reference — never from the previous level — so the
  * reported error is relative to the authored geometry and a change to one target cannot disturb
@@ -646,6 +661,7 @@ async function generateChain(
   maxLevels: number,
   errorTargets: readonly number[],
   minSaving: number,
+  simplify?: Simplify,
 ): Promise<IGeneratedChain | null> {
   const position = primitive.getAttribute("POSITION");
   if (position === null) return null;
@@ -658,28 +674,29 @@ async function generateChain(
   const scale = MeshoptSimplifier.getScale(positions, 3);
   const attributes = packAttributes(primitive, vertexCount);
 
-  const candidates: { error: number; indices: Uint32Array; triangles: number }[] = [];
-  for (const targetError of errorTargets) {
-    // target_index_count 3 is the smallest triangle list; the error target is the binding
-    // constraint, which is what makes this an error-driven chain rather than a ratio ladder.
-    const [simplified, error] = MeshoptSimplifier.simplifyWithAttributes(
-      indices,
-      positions,
-      3,
-      attributes.data,
-      attributes.stride,
-      attributes.weights,
-      null,
-      3,
-      targetError,
-      ["LockBorder"],
-    );
-    candidates.push({
-      error,
-      indices: Uint32Array.from(simplified),
-      triangles: Math.floor(simplified.length / 3),
-    });
-  }
+  const inputIndices = simplify ? new Uint32Array(sharedBuffer(indices)) : indices;
+  const inputPositions = simplify ? new Float32Array(sharedBuffer(positions)) : positions;
+  const inputAttributes = simplify
+    ? new Float32Array(sharedBuffer(attributes.data))
+    : attributes.data;
+  const candidates = await Promise.all(
+    errorTargets.map(async (targetError) => {
+      // Each target derives from LOD0; the worker path changes only where the same call runs.
+      const [simplified, error] = await (simplify ?? MeshoptSimplifier.simplifyWithAttributes)(
+        inputIndices,
+        inputPositions,
+        3,
+        inputAttributes,
+        attributes.stride,
+        attributes.weights,
+        null,
+        3,
+        targetError,
+        ["LockBorder"],
+      );
+      return { error, indices: simplified, triangles: Math.floor(simplified.length / 3) };
+    }),
+  );
   const kept = selectDiscreteLevels(candidates, maxLevels, lod0Triangles, minSaving);
   if (kept.length === 0) return null;
   const keptSet = new Set(kept);
@@ -1367,7 +1384,7 @@ export async function generateDiscreteLod(
   sourceDigest: string,
   legacy: ILodLegacyFlags = {},
   now: () => number = () => Date.now(),
-  constraints: { readonly preserveVertices?: boolean } = {},
+  constraints: { readonly preserveVertices?: boolean; readonly simplify?: Simplify } = {},
 ): Promise<IModelLodSummary> {
   const started = now();
   const policy = resolveLodPolicy(lod, logicalPath, legacy);
@@ -1441,6 +1458,7 @@ export async function generateDiscreteLod(
         policy.generation.maxLevels,
         policy.generation.errorTargets,
         policy.generation.minSaving,
+        constraints.simplify,
       );
       const thinned =
         chain === null && !constraints.preserveVertices

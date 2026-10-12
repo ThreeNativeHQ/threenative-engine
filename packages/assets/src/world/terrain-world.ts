@@ -27,7 +27,8 @@ import { bakeTerrain, bakeWorldPackage, decodeRAW16, sampleHeight } from "@three
 import type { IPlacement, ITerrainState } from "@threenative/terrain";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../lod/extension.js";
-import { generateDiscreteLod } from "../lod/generate.js";
+import { LOD_ERROR_TARGETS, generateDiscreteLod } from "../lod/generate.js";
+import { createSimplifyPool } from "../lod/simplify-pool.js";
 import { modelPass } from "../passes/model.js";
 
 /** The world.json contract, taken from the shared baker rather than restated here. */
@@ -183,8 +184,9 @@ function assertInstancable(speciesId: string, speciesDoc: Document): void {
 
 /** Parse one species or LOD GLB. The same bytes are parsed exactly once per level. */
 async function parseSpecies(bytes: Uint8Array): Promise<Document> {
-  const reader = await createGltfReader(Buffer.from(bytes));
-  return readGltfDocument(reader, Buffer.from(bytes));
+  const input = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const reader = await createGltfReader(input);
+  return readGltfDocument(reader, input);
 }
 
 /**
@@ -227,8 +229,8 @@ function dequantizeNormals(mesh: Mesh): void {
     if (normal === null || source == null || !normal.getNormalized()) continue;
     const type = normal.getComponentType();
     const decoded = new Float32Array(source.length);
-    for (const [index, value] of source.entries())
-      decoded[index] = MathUtils.decodeNormalizedInt(value, type);
+    for (let index = 0; index < source.length; index++)
+      decoded[index] = MathUtils.decodeNormalizedInt(source[index] as number, type);
     normal.setArray(decoded).setNormalized(false);
   }
 }
@@ -389,66 +391,71 @@ export async function cookTerrainWorld(
     lods: { distance: number; glb: Uint8Array; filename: string; doc: Document }[];
   }[] = [];
 
-  for (const [speciesId, spec] of Object.entries(species)) {
-    const lod0 = await resolveBytes(spec.glb);
-    const nearDoc = await parseSpecies(lod0);
-    assertInstancable(speciesId, nearDoc);
+  const pool = createSimplifyPool(LOD_ERROR_TARGETS.length);
+  try {
+    for (const [speciesId, spec] of Object.entries(species)) {
+      const lod0 = await resolveBytes(spec.glb);
+      const nearDoc = await parseSpecies(lod0);
+      assertInstancable(speciesId, nearDoc);
 
-    // Authored LODs first: explicit `spec.lods`, then a sibling `-mid`/`-lod1` file beside a path
-    // species. Only when neither exists does simplification invent a level.
-    const authored =
-      spec.lods && spec.lods.length > 0
-        ? spec.lods
-        : typeof spec.glb === "string"
-          ? await authoredSiblingLods(spec.glb)
-          : [];
+      // Authored LODs first: explicit `spec.lods`, then a sibling `-mid`/`-lod1` file beside a path
+      // species. Only when neither exists does simplification invent a level.
+      const authored =
+        spec.lods && spec.lods.length > 0
+          ? spec.lods
+          : typeof spec.glb === "string"
+            ? await authoredSiblingLods(spec.glb)
+            : [];
 
-    const lods: { distance: number; glb: Uint8Array; filename: string; doc: Document }[] = [];
-    for (const [i, level] of authored.entries()) {
-      if (level.glb === undefined) continue;
-      const bytes = await resolveBytes(level.glb);
-      const doc = await parseSpecies(bytes);
-      assertInstancable(speciesId, doc);
-      lods.push({
-        distance: level.distance,
-        glb: bytes,
-        filename: `${speciesId}_lod${i + 1}.glb`,
-        doc,
-      });
+      const lods: { distance: number; glb: Uint8Array; filename: string; doc: Document }[] = [];
+      for (const [i, level] of authored.entries()) {
+        if (level.glb === undefined) continue;
+        const bytes = await resolveBytes(level.glb);
+        const doc = await parseSpecies(bytes);
+        assertInstancable(speciesId, doc);
+        lods.push({
+          distance: level.distance,
+          glb: bytes,
+          filename: `${speciesId}_lod${i + 1}.glb`,
+          doc,
+        });
+      }
+
+      if (lods.length === 0) {
+        const pass = modelPass({
+          simplify: { ratio: 0.5 },
+          textures: "none",
+          passes: { meshopt: false, prune: true, dedup: true },
+        });
+        const simplified = await pass.apply(Buffer.from(lod0), `${speciesId}_lod1.glb`);
+        const bytes = Uint8Array.from(Buffer.isBuffer(simplified) ? simplified : simplified.buffer);
+        const doc = await parseSpecies(bytes);
+        assertInstancable(speciesId, doc);
+        lods.push({ distance: 40, glb: bytes, filename: `${speciesId}_lod1.glb`, doc });
+      }
+
+      speciesFiles.push({ speciesId, lod0, nearDoc, lods });
+
+      // The combined world's near meshes need their own index-only chain; streamed files stay authored.
+      await generateDiscreteLod(
+        nearDoc,
+        { cutout: false },
+        `${speciesId}.glb`,
+        createHash("sha256").update(lod0).digest("hex"),
+        {},
+        undefined,
+        { preserveVertices: true, simplify: pool.simplify },
+      );
+
+      assets[speciesId] = {
+        glb: `models/${speciesId}.glb`,
+        bounds: spec.bounds ?? sourceBounds(nearDoc),
+        lods: lods.map((level) => ({ distance: level.distance, glb: `models/${level.filename}` })),
+        ...(spec.maxDistance === undefined ? {} : { maxDistance: spec.maxDistance }),
+      };
     }
-
-    if (lods.length === 0) {
-      const pass = modelPass({
-        simplify: { ratio: 0.5 },
-        textures: "none",
-        passes: { meshopt: false, prune: true, dedup: true },
-      });
-      const simplified = await pass.apply(Buffer.from(lod0), `${speciesId}_lod1.glb`);
-      const bytes = Uint8Array.from(Buffer.isBuffer(simplified) ? simplified : simplified.buffer);
-      const doc = await parseSpecies(bytes);
-      assertInstancable(speciesId, doc);
-      lods.push({ distance: 40, glb: bytes, filename: `${speciesId}_lod1.glb`, doc });
-    }
-
-    speciesFiles.push({ speciesId, lod0, nearDoc, lods });
-
-    // The combined world's near meshes need their own index-only chain; streamed files stay authored.
-    await generateDiscreteLod(
-      nearDoc,
-      { cutout: false },
-      `${speciesId}.glb`,
-      createHash("sha256").update(lod0).digest("hex"),
-      {},
-      undefined,
-      { preserveVertices: true },
-    );
-
-    assets[speciesId] = {
-      glb: `models/${speciesId}.glb`,
-      bounds: spec.bounds ?? sourceBounds(nearDoc),
-      lods: lods.map((level) => ({ distance: level.distance, glb: `models/${level.filename}` })),
-      ...(spec.maxDistance === undefined ? {} : { maxDistance: spec.maxDistance }),
-    };
+  } finally {
+    await pool.dispose();
   }
 
   // Fail closed before any glTF work or output write: the shared baker validates finite heights,
@@ -504,7 +511,7 @@ export async function cookTerrainWorld(
   const instancingExt = doc.createExtension(EXTMeshGPUInstancing);
 
   // Terrain mesh chunks, always from the shared baker's LOD0.
-  const chunks = bakeTerrain(state).lods[0]?.chunks ?? [];
+  const chunks = bakeTerrain(state, { lodSteps: [1] }).lods[0]?.chunks ?? [];
 
   // Preserve authored maps separately; the GLB retains its vanilla first-layer fallback.
   const textureFiles = new Map<string, Uint8Array>();
@@ -634,28 +641,19 @@ export async function cookTerrainWorld(
   const writer = new NodeIO().registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod]);
   const worldGlb = await writer.writeBinary(doc);
 
-  // Write files to out directory
+  // Collect in the original write order so even overlapping species filenames keep last-write wins.
+  const outputs = new Map<string, string | Uint8Array>([["world.glb", worldGlb]]);
+  for (const [name, bytes] of textureFiles) outputs.set(path.join("textures", name), bytes);
+  for (const [name, bytes] of Object.entries(files)) outputs.set(name, bytes);
+  for (const { speciesId, lod0, lods } of speciesFiles) {
+    outputs.set(path.join("models", `${speciesId}.glb`), lod0);
+    for (const level of lods) outputs.set(path.join("models", level.filename), level.glb);
+  }
+  outputs.set("world.json", `${JSON.stringify(manifest, null, 2)}\n`);
   await mkdir(out, { recursive: true });
   await mkdir(path.join(out, "models"), { recursive: true });
-  await writeFile(path.join(out, "world.glb"), worldGlb);
-  if (textureFiles.size > 0) {
-    await mkdir(path.join(out, "textures"), { recursive: true });
-    for (const [name, bytes] of textureFiles)
-      await writeFile(path.join(out, "textures", name), bytes);
-  }
-
-  for (const [name, bytes] of Object.entries(files)) {
-    await writeFile(path.join(out, name), bytes);
-  }
-
-  for (const { speciesId, lod0, lods } of speciesFiles) {
-    await writeFile(path.join(out, "models", `${speciesId}.glb`), lod0);
-    for (const level of lods) {
-      await writeFile(path.join(out, "models", level.filename), level.glb);
-    }
-  }
-
-  await writeFile(path.join(out, "world.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  if (textureFiles.size > 0) await mkdir(path.join(out, "textures"), { recursive: true });
+  await Promise.all([...outputs].map(([name, bytes]) => writeFile(path.join(out, name), bytes)));
 
   const finalNodes = doc.getRoot().listNodes();
   let instancedMeshCount = 0;

@@ -188,19 +188,18 @@ function nonManifold(primitive: Primitive): boolean {
   const array = indices.getArray();
   if (array === null) return false;
   const seen = new Map<number, number>();
+  const vertices = primitive.getAttribute("POSITION")?.getCount() ?? 0;
   for (let index = 0; index + 2 < array.length; index += 3) {
     const a = array[index] as number;
     const b = array[index + 1] as number;
     const c = array[index + 2] as number;
     if (a === b || b === c || a === c) continue;
-    for (const [u, v] of [
-      [a, b],
-      [b, c],
-      [c, a],
-    ] as const) {
+    for (let edge = 0; edge < 3; edge++) {
+      const u = edge === 0 ? a : edge === 1 ? b : c;
+      const v = edge === 0 ? b : edge === 1 ? c : a;
       const low = Math.min(u, v);
       const high = Math.max(u, v);
-      const key = low * 0x1_0000_0000 + high;
+      const key = low * vertices + high;
       const count = (seen.get(key) ?? 0) + 1;
       if (count > 2) return true;
       seen.set(key, count);
