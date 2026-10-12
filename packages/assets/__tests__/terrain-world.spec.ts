@@ -9,11 +9,13 @@ import {
   type Buffer as GltfBuffer,
   type Mesh as GltfMesh,
   type Material,
+  MathUtils,
   NodeIO,
 } from "@gltf-transform/core";
 import {
   ALL_EXTENSIONS,
   type InstancedMesh as GltfInstancedMesh,
+  KHRMeshQuantization,
   KHRTextureTransform,
   type Transform,
 } from "@gltf-transform/extensions";
@@ -145,6 +147,23 @@ async function simpleSpecies(): Promise<Uint8Array> {
     .createMesh("rock")
     .addPrimitive(triangle(doc, buffer, doc.createMaterial("rock")));
   scene.addChild(doc.createNode("rockNode").setMesh(mesh));
+  return io().writeBinary(doc);
+}
+
+/** One triangle whose normals are KHR_mesh_quantization snorm16, as a quantized cooked model stores them. */
+async function quantizedNormalSpecies(): Promise<Uint8Array> {
+  const doc = new Document();
+  doc.createExtension(KHRMeshQuantization).setRequired(true);
+  const buffer = doc.createBuffer();
+  const primitive = triangle(doc, buffer, doc.createMaterial("fir"));
+  primitive
+    .getAttribute("NORMAL")
+    ?.setArray(new Int16Array([0, 32767, 0, 0, 32767, 0, 0, 32767, 0]))
+    .setNormalized(true);
+  const mesh = doc.createMesh("fir").addPrimitive(primitive);
+  doc
+    .createScene("Scene")
+    .addChild(doc.createNode("firNode").setMesh(mesh).setTranslation([5, 0, 0]));
   return io().writeBinary(doc);
 }
 
@@ -441,6 +460,19 @@ describe("cookTerrainWorld", () => {
             createDefaultPropertyResolver(expected, source),
           ).get(mesh) as GltfMesh | undefined;
           assert.ok(copied);
+          // gltf-transform's transformMesh zeroes snorm normals, so the expectation transforms floats.
+          for (const primitive of copied.listPrimitives()) {
+            const normal = primitive.getAttribute("NORMAL");
+            if (normal?.getNormalized() !== true) continue;
+            const type = normal.getComponentType();
+            normal
+              .setArray(
+                Float32Array.from(normal.getArray() ?? [], (v) =>
+                  MathUtils.decodeNormalizedInt(v, type),
+                ),
+              )
+              .setNormalized(false);
+          }
           transformMesh(copied, node.getWorldMatrix());
           originals.push(...copied.listPrimitives());
         });
@@ -662,6 +694,27 @@ describe("cookTerrainWorld", () => {
     expect(primitive.getAttribute("NORMAL")).not.toBeNull();
     expect(primitive.getAttribute("TEXCOORD_0")).not.toBeNull();
     expect(primitive.getMode()).toBe(4); // TRIANGLES
+  });
+
+  it("keeps the unit length of quantized species normals through the flatten", async () => {
+    const result = await cookTerrainWorld({
+      state: evaluatedTerrain(),
+      species: { fir: { glb: await quantizedNormalSpecies() } },
+      out: dir,
+    });
+    const doc = await io().readBinary(result.worldGlb);
+    const normals = doc
+      .getRoot()
+      .listNodes()
+      .find((node) => node.getExtension("EXT_mesh_gpu_instancing") !== null)
+      ?.getMesh()
+      ?.listPrimitives()[0]
+      ?.getAttribute("NORMAL");
+    assert.ok(normals);
+    for (let i = 0; i < normals.getCount(); i += 1) {
+      const [x = 0, y = 0, z = 0] = normals.getElement(i, [0, 0, 0]);
+      expect(Math.hypot(x, y, z)).toBeCloseTo(1, 2);
+    }
   });
 
   it("stores identical species textures once and keeps each material's sampler and UV offset", async () => {

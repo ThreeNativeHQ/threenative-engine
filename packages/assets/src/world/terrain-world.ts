@@ -6,6 +6,7 @@ import {
   Extension,
   type GLTF,
   type Buffer as GltfBuffer,
+  MathUtils,
   type Mesh,
   type Node,
   NodeIO,
@@ -215,6 +216,24 @@ function isExtensionConstructor(ctor: unknown): ctor is new (doc: Document) => E
 }
 
 /**
+ * `transformMesh` writes a normalized-integer NORMAL back through `decodeNormalizedInt` instead of
+ * `encodeNormalizedInt`, so a quantized model's normals all become zero: no light reaches the
+ * prop and screen-space occlusion reads it as fully occluded. Float normals survive its transform.
+ */
+function dequantizeNormals(mesh: Mesh): void {
+  for (const primitive of mesh.listPrimitives()) {
+    const normal = primitive.getAttribute("NORMAL");
+    const source = normal?.getArray();
+    if (normal === null || source == null || !normal.getNormalized()) continue;
+    const type = normal.getComponentType();
+    const decoded = new Float32Array(source.length);
+    for (const [index, value] of source.entries())
+      decoded[index] = MathUtils.decodeNormalizedInt(value, type);
+    normal.setArray(decoded).setNormalized(false);
+  }
+}
+
+/**
  * One `EXT_mesh_gpu_instancing` node for one species-and-LOD pair, holding every logical
  * placement. Source meshes, materials, textures and each source node's world transform are
  * preserved by the fresh-copy-per-node path: one resolver per node keeps shared geometry private.
@@ -267,6 +286,7 @@ function addInstancedSpeciesNode(
     const resolve = createDefaultPropertyResolver(doc, speciesDoc);
     const targetMesh = copyToDocument(doc, speciesDoc, [mesh], resolve).get(mesh) as Mesh;
     const matrix = node.getWorldMatrix();
+    dequantizeNormals(targetMesh);
     transformMesh(targetMesh, matrix);
     // Index-only levels share the transformed vertices; their local errors must follow them.
     const scale = Math.max(

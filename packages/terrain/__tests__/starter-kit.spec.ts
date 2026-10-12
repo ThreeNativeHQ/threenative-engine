@@ -13,7 +13,7 @@ const starterAssets = join(packageRoot, "starter-assets");
 
 const GOLDEN_HASHES: Record<string, Record<string, string>> = {
   forest: {
-    "world.glb": "b17e1a8f2e16809eca14916781a34c47c6dfe71be2b5227fc847e6b43c9a42fc",
+    "world.glb": "0ccea412a03f6e48231835480889063ca3491a59b5a5d5a4b4b73134047edfa2",
     "heightmap.u16": "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
     "placements.bin": "36ab2fd57e76b4b0bd998c5398f983e5f030968b83d5326c0cb98df1b67e4019",
     "splat.rgba": "f5e45e3740eea9e751e94570abe785854670d060fda6fe4b5518ccd4a562c7ec",
