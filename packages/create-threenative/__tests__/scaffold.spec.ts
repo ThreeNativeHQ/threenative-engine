@@ -188,6 +188,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // Three patch. Restoring the previous patch recovers every prior fingerprint.
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
+// PRD-584: the terrain MCP server was added to every template (2026-10-11), so all thirteen trees move.
 // PRD-591/593: measured all thirteen actual trees after readiness manifest and generated patch changes.
 // Restoring only the previous shared patch/manifest/reference bytes recovers every prior hash.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
@@ -233,20 +234,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // strata branch: measured through createProject on the merged tree.
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
-  "action-rpg": "f564218c84e1bdaa92cc80199191a8e9393653067a3bf80d3611d8b00b41e8ab",
-  minimal: "0ebcac7e199458b5387b1114f6ef4563430b0d1bbd1070b6bba24798fca59cb2",
-  platformer: "2d7df1fe72acccbc8dd7b3eed26cf1d293dbd58fdbb0fd1ee1ea4c8829c93d8e",
-  puzzle: "f3175c1791fa5780849523ee9e4ee898242da1e9a50a43e23ccdc6002de81459",
-  racing: "2095ecaede919f5a51790c5c762e6cb7259a0683ab7ddca66fac28faeedb8fe1",
-  rain: "f4b44083ccc11fbff18356d09473abaa1e0c86d681cb1b1d24d37a3ded4082dd",
-  rts: "884aa0c01a4350ad1cf8524337100e0f6d298ae1b0a67893d6cc1335607b8f2e",
-  runner: "143f9798fd42af8a5b0710ad028e8c805624e1275e71ab26a6ecfda9e6888405",
+  "action-rpg": "6e64e2f0565370283534798a25f525af7fec6bfcb65eae85736e7d2489346c1a",
+  minimal: "de25a977ace261346c8782ed391bf3e0ab557723ebd0a5da795cbd5c92eb863f",
+  platformer: "0688807b7d6afcd4b0a5f8bcccf2226d901e674db750d3ff12ddc5f9882fc52b",
+  puzzle: "a9edfa25a4013543ee22dca20dde1580b89cd4e702bcf07fbe1e3006e0eb29d5",
+  racing: "bb637b90b3856db3b194b97d19211202ff623492236d2f70c28f08ed64f3ea58",
+  rain: "c0ccf6d6caf6106ef70239b3b909db29e077d7e1d4d5b51f033a2d58010a074e",
+  rts: "03c2acca96f8e57efcf587ac2b18bdbc74ae43732de1c695688f96361e07d277",
+  runner: "4f662644e22d7305567118f3c8f560cda3146a8fd390f92addd2ea54f687701d",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "42139f7a5f0e1314651942d8ff4c08648958735654626fbd1dd2bae744004783",
-  shooter: "6333597c38d5dede454bb9668e4348d01dded6a4db6e69dc1f06d739cfd91053",
-  snow: "f37a026eb96cae8a987a678230c3a0a652aa778af0921460eaddb18d8ae0b710",
-  starter: "c8a3ef3bc29fa4b20e746961f85c6140fad2f978d89b455452bdf08134bc1d8e",
-  "tower-defense": "a5959f1223ca0ee3fe9ed3c446438e2d13167a8398a1304994914ae8c190b916",
+  sailing: "f3b210daa9cb6c1991e5b26f3cd84131918651f70b2ba9f86bca60e93b6c96a8",
+  shooter: "088a4be56c7aacc1178717bbe3e439f8c5bfa41753bc94ce4e068989cec21958",
+  snow: "a909b9eadcf4e3f8da71ea5eeaa3d841487a2b380d9fcf43ad7f4228b64c9325",
+  starter: "aa082895b04bf92e87d328e365f4343341cf379192e2223b834d84be69727a7f",
+  "tower-defense": "3a7a0a5320ba7995a6fa1a53b5b210bd37494434de65d80c7f2c8b61b7cf2b32",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -1513,6 +1514,10 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/blender.mjs`],
           },
+          "threenative-terrain": {
+            command: "node",
+            args: [`${CORE_SHIM}/terrain.mjs`],
+          },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
@@ -1548,6 +1553,10 @@ describe("create-threenative", () => {
           "threenative-blender": {
             command: "node",
             args: [`${CORE_SHIM}/blender.mjs`],
+          },
+          "threenative-terrain": {
+            command: "node",
+            args: [`${CORE_SHIM}/terrain.mjs`],
           },
         },
       });
