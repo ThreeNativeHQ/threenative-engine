@@ -3587,6 +3587,16 @@ describe("PRD-373 selective feature verification", () => {
       }
     });
 
+    it("runs every strata proof lane, gated by the scope plan", async () => {
+      const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+      const strata = requiredJob(ci, "strata");
+      expect(strata).toContain("fromJSON(needs.scope.outputs.plan).jobs.strata.required");
+      for (const lane of ["web", "editor", "authored", "custom", "export"]) {
+        expect(strata).toContain(`test:terrain:${lane}`);
+      }
+      expect(strata).toContain("test:consumer");
+    });
+
     it("requires strata job in full qualification mode", async () => {
       const fixture = await scopeFixture();
       try {

@@ -424,7 +424,7 @@ try {
   assert(report.assertionResults?.length > 0, "Scenario assertions were not observed");
   assert(
     report.assertionResults.every((result) => result.pass),
-    JSON.stringify(report.assertionResults),
+    JSON.stringify({ results: report.assertionResults, diagnostics: report.diagnostics }),
   );
   assert(
     !report.diagnostics.some((diagnostic) => diagnostic.severity === "error"),

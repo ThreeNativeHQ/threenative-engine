@@ -296,10 +296,18 @@
     },
     {
       "kind": "input",
-      "label": "start-high-resolution-build",
+      "label": "choose-high-resolution",
       "press": "End",
       "holdTicks": 1,
       "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "start-high-resolution-build",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 1,
       "release": true
     },
     {

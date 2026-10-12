@@ -234,15 +234,20 @@ try {
       saved.revision,
     );
 
-    // Placement matrices in the exported file: exact for the hand-posed one, and every id arrives.
+    // Placement matrices in the exported file: the hand-posed one, component by component within the
+    // tolerance a GLB round trip costs, and every id arrives. The exported translation is the only
+    // float32 hop between the two sides, so 2e-4 m is the floor that absorbs its rounding and still
+    // fails a placement that actually moved.
     const posed = after.placements.find((p) => p.id === chosen.id);
-    assert.deepEqual(
-      posed.matrix.slice(12, 15).map((v) => Math.round(v * 1e4) / 1e4),
-      [
-        after.live.props.find((p) => p.id === chosen.id).position[0],
-        55,
-        after.live.props.find((p) => p.id === chosen.id).position[2],
-      ].map((v) => Math.round(v * 1e4) / 1e4),
+    const live = after.live.props.find((p) => p.id === chosen.id);
+    const exported = posed.matrix.slice(12, 15);
+    const authored = [live.position[0], 55, live.position[2]];
+    assert.equal(exported.length, authored.length, "The exported matrix has no translation");
+    exported.forEach((value, axis) =>
+      assert.ok(
+        Math.abs(value - (authored[axis] ?? 0)) <= 2e-4,
+        `The exported ${axis} translation is ${value} m, not the authored ${authored[axis]} m`,
+      ),
     );
     assert.deepEqual(
       after.placements.map((p) => p.id).sort(),

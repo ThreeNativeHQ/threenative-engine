@@ -663,7 +663,7 @@ jobs:
     needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs.strata.required }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
@@ -692,6 +692,12 @@ jobs:
         run: pnpm --filter strata-terrain-preview test:consumer
       - name: Run strata editor verification
         run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:editor
+      - name: Run strata authored-world reproduction
+        run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:authored
+      - name: Run strata custom-art swap
+        run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:custom
+      - name: Run strata static-world export
+        run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:export
 
   golden-path-template:
     needs: [scope, build-artifacts]

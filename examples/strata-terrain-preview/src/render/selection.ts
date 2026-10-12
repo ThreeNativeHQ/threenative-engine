@@ -67,7 +67,7 @@ export function createPropSelection(
     <button class="secondary full" type="submit">Apply transform</button></form>
     <div class="segmented"><button type="button" id="placement-reset">Reset</button><button type="button" id="placement-undo">Undo transform</button></div>
     <p class="small muted">Y translation disables grounding. Escape cancels the current drag. XYZ rotations apply to props.</p>
-    <div id="placement-orphans"></div><p id="placement-status" role="status" aria-live="polite"></p>`;
+    <div id="placement-orphans"></div><p id="placement-status" class="small muted"></p>`;
   const style = document.createElement("style");
   style.textContent =
     "#placement-inspector [hidden]{display:none!important}body[data-terrain-tool=select] .brush-section>.slider-label,body[data-terrain-tool=select] .brush-section>input[type=range],body[data-terrain-tool=select] .brush-section>.advanced{display:none}.right-sidebar[data-selecting=true]>.inspector:not(#placement-inspector){display:none}.right-sidebar[data-selecting=true]>.layer-list{flex:none;max-height:170px}#placement-inspector{overflow-y:auto;min-height:0;flex:1}#placement-inspector h3{margin-bottom:12px}#placement-inspector fieldset{border:0;padding:0;margin:0 0 12px}#placement-inspector legend{font-size:10px;margin-bottom:6px}.transform-vector{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.transform-vector label{font-size:10px}.transform-vector input{width:100%}#placement-status{margin-top:10px;overflow-wrap:anywhere}";

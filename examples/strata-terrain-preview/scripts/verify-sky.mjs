@@ -321,6 +321,8 @@ export async function verifySky(session, controller, captures) {
       swapped.asset.sha256,
       { timeout: 20000 },
     );
+    // The hash is published before the decode finishes, so wait for the load itself.
+    await state("background", "ready");
     const replaced = await live();
     assert.equal(replaced.images.background.state, "ready");
     near(
