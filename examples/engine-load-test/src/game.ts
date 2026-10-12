@@ -38,7 +38,6 @@ import type {
   IRenderProjectionReport,
   SceneRenderProjection,
 } from "../../../packages/core/src/renderProjection.js";
-import { type IPhaseRecorder, PHASE } from "./phases.js";
 import {
   type IFoxMeasurement,
   type IFrameStats,
@@ -60,6 +59,7 @@ import {
   resolutionOf,
   rungAtLeast,
 } from "./ladder.js";
+import { type IPhaseRecorder, PHASE } from "./phases.js";
 import {
   DEFAULT_AXES,
   type ICubePlacement,
