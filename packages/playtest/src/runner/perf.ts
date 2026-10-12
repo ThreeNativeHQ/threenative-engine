@@ -908,6 +908,10 @@ async function runExecutable(args: IPerfArgs, executable: string): Promise<numbe
       while (framesSeen >= nextSampleFrame) {
         const reading = readMemory();
         if (reading === undefined) return stop();
+        if (reading.rssMb === undefined) {
+          memoryError ??= "TN_PERF_RSS_UNREADABLE: /proc status printed no VmRSS";
+          return stop();
+        }
         samples.push({ frame: nextSampleFrame, rssMb: reading.rssMb });
         nextSampleFrame += SOAK_SAMPLE_EVERY_FRAMES;
       }

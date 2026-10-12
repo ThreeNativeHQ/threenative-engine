@@ -3808,7 +3808,9 @@ const phased = (
   page: Record<string, number>,
   host: { present: number; thread: number; render?: number },
 ) => ({
-  phases: Object.fromEntries(PHASES.map((name) => [name, column(page[name] ?? 0)])),
+  phases: Object.fromEntries(PHASES.map((name) => [name, column(page[name] ?? 0)])) as NonNullable<
+    IRunReport["rungs"][number]["phases"]
+  >,
   presentCpuMs: column(host.present),
   ...(host.render === undefined ? {} : { renderCpuMs: column(host.render) }),
   threadCpuMs: column(host.thread),
