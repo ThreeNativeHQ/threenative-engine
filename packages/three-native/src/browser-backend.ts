@@ -62,6 +62,8 @@ export interface IBrowserRuntime {
   engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
   /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
   readDoubles?(address: number, count: number): number | number[];
+  /** The byte at `address` in the engine's memory; Wasm only. A registry field `[offset, 0]` is a byte flag. */
+  readByte?(address: number): number;
   /** A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it. */
   attributeArray?(self: IEngineRef): TypedArray;
   /** Writes `array` into the attribute's data; present with attributeArray. */
@@ -277,7 +279,8 @@ export function defineBrowserClasses(
   const fastGetter = (binding: IRegistryClass, property: string) => {
     const field = binding.fields?.[property];
     const read = runtime.readDoubles;
-    if (field !== undefined && read !== undefined) {
+    const readByte = runtime.readByte;
+    if (field !== undefined && read !== undefined && readByte !== undefined) {
       const [offset = 0, count = 1] = field;
       return function (this: object) {
         let address = addresses.get(this);
@@ -285,7 +288,8 @@ export function defineBrowserClasses(
           address = runtime.get(refOf(this), "__address") as number;
           addresses.set(this, address);
         }
-        return read(address + offset, count);
+        // `[offset, 0]` is a byte flag (visible, castShadow, receiveShadow), `[offset, n]` n doubles.
+        return count === 0 ? readByte(address + offset) !== 0 : read(address + offset, count);
       };
     }
     if (binding.fixedMembers?.includes(property) && !binding.setters.includes(property))
@@ -1319,6 +1323,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         const v = view();
         return refs.map((_, i) => v.getUint32(out + i * 4, true));
       }),
+    readByte: (address) => abi.HEAPU8[address] as number,
     readDoubles: (address, count) => {
       const at = address / 8;
       return count === 1

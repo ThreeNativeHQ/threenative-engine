@@ -71,6 +71,13 @@ check(v.x === 7, "a setter reaches the engine");
 
 const material = new MeshStandardMaterial();
 const mesh = new Mesh(new BoxGeometry(1, 1, 1), material);
+// The registry's `[offset, 0]` fields are byte flags read in place, not doubles.
+check(
+  mesh.castShadow === false && mesh.visible === true,
+  `flag fields read as booleans (castShadow ${String(mesh.castShadow)}, visible ${String(mesh.visible)})`,
+);
+mesh.castShadow = true;
+check(mesh.castShadow === true, "a set flag field reads back");
 const position = mesh.position;
 check(position === mesh.position, "a member object keeps one identity");
 mesh.position.x = 5;
