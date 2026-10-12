@@ -432,7 +432,7 @@ describe("terrain jobs", () => {
         worker.onmessage?.({ data: { id: captured.id, result: runTerrainJob(captured.job) } });
         await Promise.resolve();
         expect(tiles.terrainTiles.blocks, "superseded input cannot create a block").toBe(0);
-        expect(tiles.terrainTiles.rebuilds, "superseded input is not recorded as applied").toBe(0);
+        expect(tiles.terrainTiles.rebuilds, "completed stale work still costs one rebuild").toBe(1);
         await settleWith(tiles);
         expect(tiles.terrainTiles.blocks).toBeGreaterThan(0);
         expect(tiles.terrainTiles.tiles).toBe(tiles.residentTileCount);

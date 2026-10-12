@@ -369,7 +369,7 @@ describe("TerrainTiles blend-frame cost", () => {
       console.log(
         `TerrainTiles blend 65×65: ${mean.toFixed(3)} ms mean, ` +
           `${timings[49]?.toFixed(3)} ms median, ${timings[98]?.toFixed(3)} ms p99, ` +
-          `${timings.length} frames, 4225 normalAt + 25350 heightAt per tile; ` +
+          `${timings.length} frames, 0 normalAt + 0 heightAt per GPU blend tile; ` +
           `gate >=0.5 ms: ${mean >= 0.5}`,
       );
       expect(mean).toBeGreaterThan(0);
