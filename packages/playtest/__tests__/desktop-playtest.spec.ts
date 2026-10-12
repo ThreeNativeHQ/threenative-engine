@@ -9,6 +9,7 @@ import {
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
   type IPlaytestBridgeV1,
+  type IPlaytestObservationSnapshot,
   type JsonValue,
 } from "../src/index.js";
 import { assertCaptureNotBlank } from "../src/capture.js";
@@ -606,6 +607,8 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout can be rai
 });
 
 interface IDesktopScenarioOptions {
+  network?: JsonValue;
+  assertNetwork?: boolean;
   console?: { text: string; type: string }[];
   mailboxFile?: boolean;
   onDriver?: (driver: FakeDesktopDriver) => void;
@@ -633,7 +636,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   const scenarioPath = join(projectPath, "scenario.json");
   await writeFile(scenarioPath, JSON.stringify({
     artifacts: { screenshots: options.screenshots ?? false },
-    assert: { movement: { entity: "player", minDistance } },
+    assert: { movement: { entity: "player", minDistance }, ...(options.assertNetwork ? { diagnostics: { noNetworkErrors: true } } : {}) },
     name: "desktop-cross-target-scenario",
     schemaVersion: 1,
     steps: [{
@@ -649,6 +652,10 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   }));
   const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;
   const moving = movingBridge();
+  const sample = moving.bridge.sample;
+  moving.bridge.sample = async (request) => ({ ...await sample(request), network: (options.network === undefined ? { requests: 0, entries: [] } : options.network) as IPlaytestObservationSnapshot["network"] });
+  const describe = moving.bridge.describe;
+  moving.bridge.describe = async () => ({ ...await describe(), capabilities: [...(await describe()).capabilities, "runtime.network"] });
   const driver = new FakeDesktopDriver(
     moving.bridge,
     options.stopError,
@@ -790,6 +797,7 @@ function movingBridge(options: { resourceReadyAtTick?: number } = {}): { bridge:
           "entity.observe",
           "runtime.diagnostics",
           "runtime.fixedStep",
+          "runtime.network",
           ...(resourceReadyAtTick === undefined ? [] : ["runtime.resources"]),
         ],
         limits: PLAYTEST_PROTOCOL_LIMITS,
@@ -800,6 +808,7 @@ function movingBridge(options: { resourceReadyAtTick?: number } = {}): { bridge:
       sample: () => ({
         clock: { mode: "fixed-step", tick },
         diagnostics: [],
+        network: { requests: 0, entries: [] },
         entities: [{ id: "player", transform: { position: [x, 0, 0] }, visible: true }],
         resources: resources(),
       }),
@@ -880,7 +889,7 @@ function poll() {
   let result = null;
   if (request.method === "describe") {
     result = {
-      capabilities: ["entity.observe", "runtime.diagnostics", "runtime.fixedStep"],
+      capabilities: ["entity.observe", "runtime.diagnostics", "runtime.fixedStep", "runtime.network"],
       limits: { maxEntitiesPerSample: 100, maxEventsPerDrain: 1000, maxPayloadBytes: 1000000, operationTimeoutMs: 5000 },
       name: "desktop-mailbox-fixture",
       protocolVersion: 1,
@@ -895,6 +904,7 @@ function poll() {
     result = {
       clock: { mode: "fixed-step", tick },
       diagnostics: [],
+      network: { requests: 0, entries: [] },
       entities: [{ id: "player", transform: { position: [x, 0, 0] }, visible: true }],
       resources: {},
     };
@@ -943,3 +953,22 @@ function minimalConfig(target: "android" | "browser" | "desktop" | "ios"): IStan
     url: "http://127.0.0.1:5173",
   };
 }
+
+
+test("desktop evaluates the host network observation instead of rejecting the assertion", async () => {
+  const { report } = await runDesktopScenario(2, { assertNetwork: true, network: {
+    requests: 2, entries: [{ method: "GET", url: "https://host/failure" }],
+  } });
+  expect(report.pass).toBe(false);
+  expect(report.diagnostics.some(({ code }) => code === "TN_PLAYTEST_UNSUPPORTED_ON_TARGET")).toBe(false);
+  expect(report.observations?.network).toEqual([{ method: "GET", url: "https://host/failure" }]);
+  expect(report.diagnostics.some(({ code }) => code === "TN_PLAYTEST_NETWORK_ERROR")).toBe(true);
+  const healthy = await runDesktopScenario(2, { assertNetwork: true, network: { requests: 2, entries: [] } });
+  expect(healthy.report.pass).toBe(true);
+});
+
+test.each([null, { requests: -1, entries: [] }, { requests: 1, entries: [{ url: 123 }] }])(
+  "desktop fails closed for a missing or malformed network observation %j", async (network) => {
+    await expect(runDesktopScenario(2, { assertNetwork: true, network })).rejects.toThrow(/NETWORK.*UNOBSERVED/u);
+  },
+);

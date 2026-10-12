@@ -4,6 +4,7 @@ import {
   jsonByteLength,
   playtestDiagnostic,
   type IPlaytestBridgeV1,
+  type IPlaytestObservationSnapshot,
   type IPlaytestDeviceRequest,
   type IPlaytestDeviceResponse,
   type JsonValue,
@@ -88,6 +89,7 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
     TN_PLAYTEST_MAILBOX?: { request?: unknown; response?: unknown };
     __THREENATIVE_NATIVE__?: {
       playtest?: {
+        network?(): NonNullable<IPlaytestObservationSnapshot["network"]>;
         receive?(path: string): string | undefined;
         respond?(path: string, payload: string, requestId?: string, method?: string, order?: number): boolean;
       };
@@ -101,6 +103,15 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
     || typeof host?.receive !== "function"
     || typeof host.respond !== "function"
   ) return undefined;
+  if (typeof host.network === "function") {
+    const describe = bridge.describe.bind(bridge);
+    bridge.describe = async () => {
+      const description = await describe();
+      return { ...description, capabilities: [...description.capabilities, "runtime.network"] };
+    };
+    const sample = bridge.sample.bind(bridge);
+    bridge.sample = async (request) => ({ ...await sample(request), network: host.network!() });
+  }
   let closed = false;
   let frame: number | undefined;
   const nativePointers = new Map<number, INativePointer>();
