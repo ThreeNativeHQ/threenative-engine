@@ -12,6 +12,7 @@
  * collected wrapper releases its object.
  */
 
+import { defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 
 export interface IRegistryClass {
@@ -64,6 +65,8 @@ export interface IBrowserRuntime {
   readDoubles?(address: number, count: number): number | number[];
   /** The byte at `address` in the engine's memory; Wasm only. A registry field `[offset, 0]` is a byte flag. */
   readByte?(address: number): number;
+  /** Writes one double at `address` in the engine's memory; Wasm only. */
+  writeDouble?(address: number, value: number): void;
   /** A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it. */
   attributeArray?(self: IEngineRef): TypedArray;
   /** Writes `array` into the attribute's data; present with attributeArray. */
@@ -180,7 +183,7 @@ function setValues(target: object, className: string, values: object): void {
     if (current === undefined)
       throw new TypeError(`TN_BROWSER_PARAMETER_UNSUPPORTED: ${className} has no '${key}'`);
     if (isWrapperOf(current, "Color")) setColor(current, value);
-    else if (isWrapperOf(current, "Vector3") && isWrapperOf(value, "Vector3"))
+    else if (isWrapperOf(current, "Vector3") && (value as { isVector3?: boolean }).isVector3)
       current.copy?.(value);
     else self[key] = value;
   }
@@ -276,20 +279,35 @@ export function defineBrowserClasses(
   // Writes still go through the engine's setters, which it reacts to.
   const addresses = new WeakMap<object, number>();
   const kept = new WeakMap<object, Map<string, unknown>>();
+  // Properties only the object's own setter or methods change: `name` and `type` (read per track and
+  // per bone while a game binds animations), an attribute's shape (read per merge), a mesh's
+  // geometry and material. The answer is kept until JS sets it or calls a method on that object.
+  // ponytail: an engine call on another object that changes one of these is missed; none does today.
+  const labelled = new Set([
+    "name",
+    "type",
+    "itemSize",
+    "normalized",
+    "gpuType",
+    "geometry",
+    "material",
+  ]);
+  const labels = new WeakMap<object, Map<string, unknown>>();
   const fastGetter = (binding: IRegistryClass, property: string) => {
     const field = binding.fields?.[property];
     const read = runtime.readDoubles;
     const readByte = runtime.readByte;
-    if (field !== undefined && read !== undefined && readByte !== undefined) {
+    if (field !== undefined && read !== undefined) {
       const [offset = 0, count = 1] = field;
+      // `[offset, 0]` is a byte flag (visible, castShadow, receiveShadow), `[offset, n]` n doubles.
+      if (count === 0)
+        return readByte === undefined
+          ? undefined
+          : function (this: object) {
+              return readByte(addressOf(this) + offset) !== 0;
+            };
       return function (this: object) {
-        let address = addresses.get(this);
-        if (address === undefined) {
-          address = runtime.get(refOf(this), "__address") as number;
-          addresses.set(this, address);
-        }
-        // `[offset, 0]` is a byte flag (visible, castShadow, receiveShadow), `[offset, n]` n doubles.
-        return count === 0 ? readByte(address + offset) !== 0 : read(address + offset, count);
+        return read(addressOf(this) + offset, count);
       };
     }
     if (binding.fixedMembers?.includes(property) && !binding.setters.includes(property))
@@ -304,6 +322,73 @@ export function defineBrowserClasses(
         return members.get(property);
       };
     return undefined;
+  };
+  const addressOf = (self: object): number => {
+    let address = addresses.get(self);
+    if (address === undefined) {
+      address = runtime.get(refOf(self), "__address") as number;
+      addresses.set(self, address);
+    }
+    return address;
+  };
+  // three's math values are JS (browser-math.ts): `new Vector3()` holds its own lanes. The engine's
+  // vectors (`mesh.position`) share that prototype through `engine`, whose lanes are its memory.
+  // An engine call takes a JS value by value: a method borrows a pooled engine object and copies
+  // the lanes back after the call (an output argument); a constructor or setter, which may keep the
+  // object, gets the value itself turned into an engine object in place, so identity survives.
+  interface IValueClass {
+    name: string;
+    lanes: string[];
+    engine: object;
+    pool: object[];
+    top: number;
+  }
+  const math = defineMath(
+    () =>
+      new (classes.Quaternion as new () => object)() as ReturnType<
+        Parameters<typeof defineMath>[0]
+      >,
+  ) as Record<string, new (...args: unknown[]) => object>;
+  const valueClasses = new Map<object, IValueClass>(); // JS prototype -> its engine side
+  const loans: [Record<string, number>, Record<string, number>, IValueClass][] = [];
+  let borrowing = false;
+  const toEngineArgs = (args: readonly unknown[]): EngineValue[] => {
+    borrowing = true;
+    try {
+      return args.map(toEngine);
+    } finally {
+      borrowing = false;
+    }
+  };
+  const lend = (value: Record<string, number>, info: IValueClass): IEngineRef => {
+    let scratch = info.pool[info.top];
+    if (scratch === undefined) {
+      scratch = wrap(runtime.construct(info.name, []));
+      info.pool.push(scratch);
+    }
+    info.top++;
+    const lanes = scratch as Record<string, number>;
+    for (const lane of info.lanes) lanes[lane] = value[lane] as number;
+    loans.push([value, lanes, info]);
+    return refOf(scratch);
+  };
+  // Copies each borrowed object's lanes back to its JS value; the result answers the value itself.
+  const repay = (mark: number, returned: unknown): unknown => {
+    let result = returned;
+    for (let i = loans.length - 1; i >= mark; i--) {
+      const [value, scratch, info] = loans[i] as (typeof loans)[number];
+      for (const lane of info.lanes) value[lane] = scratch[lane] as number;
+      info.top--;
+      if (result === scratch) result = value;
+    }
+    loans.length = mark;
+    return result;
+  };
+  const promote = (value: Record<string, number>, info: IValueClass): void => {
+    const lanes = info.lanes.map((lane) => value[lane] as number);
+    for (const lane of info.lanes) delete value[lane];
+    Object.setPrototypeOf(value, info.engine);
+    adopt(value, runtime.construct(info.name, lanes));
   };
   const wrappers = new Map<string, WeakRef<object>>();
   // Callbacks: the function lives on its wrapper (a WeakMap entry), so wrapper -> closure is an edge
@@ -377,6 +462,11 @@ export function defineBrowserClasses(
       return list;
     }
     if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
+    const info = valueClasses.get(Object.getPrototypeOf(value) as object);
+    if (info !== undefined) {
+      if (borrowing) return lend(value as Record<string, number>, info);
+      promote(value as Record<string, number>, info);
+    }
     if (typeof value === "object" && REF in value) {
       // A wrapper passed into the engine is held until the next safe point decides (collect()).
       held.add(value);
@@ -388,7 +478,12 @@ export function defineBrowserClasses(
       const fields: Record<string, EngineValue> = {};
       for (const [key, item] of Object.entries(value as object)) {
         if (item === undefined) continue;
-        if (item !== null && typeof item === "object" && !(REF in item))
+        if (
+          item !== null &&
+          typeof item === "object" &&
+          !(REF in item) &&
+          !valueClasses.has(Object.getPrototypeOf(item) as object)
+        )
           throw new TypeError(
             `TN_BROWSER_ARGUMENT_UNSUPPORTED: option ${key} cannot cross to the engine`,
           );
@@ -415,7 +510,7 @@ export function defineBrowserClasses(
       attributeWrite !== undefined &&
       (name === "BufferAttribute" || name === "InstancedBufferAttribute");
     const writesAttributes = ATTRIBUTE_CLASSES.has(name) || name.endsWith("Geometry");
-    const cls = class {
+    const engineClass = class {
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
         // three's parameters object (`new MeshStandardMaterial({ color })`) is construct, then
@@ -436,23 +531,53 @@ export function defineBrowserClasses(
         }
       }
     };
+    const valueClass = math[name];
+    const cls = (valueClass ?? engineClass) as typeof engineClass;
     Object.defineProperty(cls, "name", { value: name });
     const prototype = cls.prototype as Record<string, unknown>;
+    // A value class's engine accessors (its lanes, `__address`) live on the engine side only.
+    const accessors = (valueClass === undefined ? prototype : Object.create(prototype)) as Record<
+      string,
+      unknown
+    >;
+    if (valueClass !== undefined && binding.fields !== undefined)
+      valueClasses.set(prototype, {
+        name,
+        lanes: Object.keys(binding.fields ?? {}),
+        engine: accessors,
+        pool: [],
+        top: 0,
+      });
     for (const method of binding.methods) {
+      if (valueClass !== undefined && Object.hasOwn(prototype, method)) continue;
       const bumps = writesAttributes && !/^(get|has|clone|equals|toJSON)/u.test(method);
+      // A geometry's attribute lookups are kept with its labels, until anything else runs on it.
+      const query = method === "getAttribute" || method === "hasAttribute";
+      // A read-only method keeps them too: core's projection asks each mesh __tnVisibleInWorld a frame,
+      // and dropping the labels there re-crossed and re-kept every mesh's geometry and material each frame.
+      const keeps = query || /^(get|has|clone|equals|toJSON|__tnVisibleInWorld$)/u.test(method);
       Object.defineProperty(prototype, method, {
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
           const intersections = method === "intersectObject" || method === "intersectObjects";
+          const key = query ? `${method} ${String(args[0])}` : "";
+          if (query && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
           if (pending.size > 0) writeBack();
-          const result = fromEngine(
-            runtime.invoke(
-              refOf(this),
-              method,
-              (intersections ? args.slice(0, 2) : args).map(toEngine),
-            ),
-          );
+          if (!keeps) labels.delete(this);
+          const mark = loans.length;
+          let result: unknown;
+          try {
+            result = fromEngine(
+              runtime.invoke(
+                refOf(this),
+                method,
+                toEngineArgs(intersections ? args.slice(0, 2) : args),
+              ),
+            );
+          } finally {
+            if (loans.length > mark) result = repay(mark, result);
+          }
           if (bumps) epoch++;
           if (intersections && args[2] !== undefined) {
             if (!Array.isArray(args[2]) || !Array.isArray(result))
@@ -461,6 +586,8 @@ export function defineBrowserClasses(
             args[2].sort((a, b) => a.distance - b.distance);
             return args[2];
           }
+          if (query)
+            labels.get(this)?.set(key, result) ?? labels.set(this, new Map([[key, result]]));
           return result;
         },
       });
@@ -519,27 +646,48 @@ export function defineBrowserClasses(
         },
       });
     }
+    const write = runtime.writeDouble;
     for (const property of [...binding.getters, ...binding.members]) {
       if (
         property.includes(".") ||
         binding.methods.includes(property) ||
-        Object.hasOwn(prototype, property)
+        Object.hasOwn(accessors, property)
       )
         continue;
-      Object.defineProperty(prototype, property, {
+      // A value class's lane is written in place: its engine setter is a plain store.
+      const lane = valueClass !== undefined ? binding.fields?.[property] : undefined;
+      Object.defineProperty(accessors, property, {
         configurable: true,
         get:
           fastGetter(binding, property) ??
-          function (this: object) {
-            return fromEngine(runtime.get(refOf(this), property));
-          },
-        ...(setters.has(property)
+          (labelled.has(property)
+            ? function (this: object) {
+                let known = labels.get(this);
+                if (known === undefined) {
+                  known = new Map();
+                  labels.set(this, known);
+                }
+                if (!known.has(property))
+                  known.set(property, fromEngine(runtime.get(refOf(this), property)));
+                return known.get(property);
+              }
+            : function (this: object) {
+                return fromEngine(runtime.get(refOf(this), property));
+              }),
+        ...(lane !== undefined && write !== undefined
           ? {
-              set(this: object, value: unknown) {
-                runtime.set(refOf(this), property, toEngine(value));
+              set(this: object, value: number) {
+                write(addressOf(this) + (lane[0] ?? 0), value);
               },
             }
-          : {}),
+          : setters.has(property)
+            ? {
+                set(this: object, value: unknown) {
+                  labels.delete(this);
+                  runtime.set(refOf(this), property, toEngine(value));
+                },
+              }
+            : {}),
       });
     }
     // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
@@ -577,8 +725,8 @@ export function defineBrowserClasses(
     // A write-only setter (three's `texture.needsUpdate`) is a property too: without an accessor
     // the write lands on a plain JS property and never reaches the engine.
     for (const property of binding.setters) {
-      if (property.includes(".") || Object.hasOwn(prototype, property)) continue;
-      Object.defineProperty(prototype, property, {
+      if (property.includes(".") || Object.hasOwn(accessors, property)) continue;
+      Object.defineProperty(accessors, property, {
         configurable: true,
         set(this: object, value: unknown) {
           runtime.set(refOf(this), property, toEngine(value));
@@ -725,7 +873,7 @@ export function defineBrowserClasses(
       );
     }
     classes[name] = cls;
-    byType.set(runtime.typeId(name), cls);
+    byType.set(runtime.typeId(name), { prototype: accessors });
     typeNames.set(runtime.typeId(name), name);
   }
   if (attributeArray !== undefined && attributeWrite !== undefined) {
@@ -1354,6 +1502,9 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         return refs.map((_, i) => v.getUint32(out + i * 4, true));
       }),
     readByte: (address) => abi.HEAPU8[address] as number,
+    writeDouble: (address, value) => {
+      abi.HEAPF64[address / 8] = value;
+    },
     readDoubles: (address, count) => {
       const at = address / 8;
       return count === 1

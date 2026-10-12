@@ -42,7 +42,8 @@ function surfaceOnly(): IBrowserRuntime {
 }
 
 describe("the browser-JS back end", () => {
-  const { classes } = defineBrowserClasses(registry, surfaceOnly());
+  const runtime = surfaceOnly();
+  const { classes, wrap } = defineBrowserClasses(registry, runtime);
 
   it("defines exactly the catalog's supported classes", () => {
     const supported = loadCatalog(REPO)
@@ -55,7 +56,14 @@ describe("the browser-JS back end", () => {
   it("gives each class exactly its registry members", () => {
     for (const [name, binding] of Object.entries(registry.classes)) {
       const prototype = classes[name]?.prototype as object;
-      const exposed = Object.getOwnPropertyNames(prototype).filter((key) => key !== "constructor");
+      // A math value class (`Vector3`) keeps its engine accessors on the side its engine objects use.
+      const engineSide = Object.getPrototypeOf(
+        wrap({ key: `${name}:surface`, type: runtime.typeId(name) }),
+      ) as object;
+      const sides = engineSide === prototype ? [prototype] : [prototype, engineSide];
+      const exposed = sides
+        .flatMap((side) => Object.getOwnPropertyNames(side))
+        .filter((key) => key !== "constructor");
       // PRD-540: scene-graph classes also carry the JavaScript-side members (browser-surface.spec.ts).
       const language: readonly string[] = binding.members.includes("parent")
         ? LANGUAGE_MEMBERS
@@ -77,7 +85,9 @@ describe("the browser-JS back end", () => {
       ]);
       expect(exposed.sort(), name).toEqual([...expected].sort());
       for (const key of exposed) {
-        const descriptor = Object.getOwnPropertyDescriptor(prototype, key);
+        const descriptor = sides
+          .map((side) => Object.getOwnPropertyDescriptor(side, key))
+          .find((found) => found !== undefined);
         if (
           descriptor?.get === undefined ||
           binding.callbacks.includes(key) ||

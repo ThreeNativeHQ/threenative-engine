@@ -257,9 +257,10 @@ export function defineTsl(
       return { kind: "handle", ref: engineRef(value) as IEngineRef };
     if (index === 0 && (name === "texture" || name === "textureLoad") && typeof value === "object")
       return { kind: "named", text: String((value as { name?: unknown } | null)?.name ?? "") };
-    if (typeof value === "object" && value !== null && engineRef(value) !== undefined) {
+    // A three value is the engine's (`mesh.position`) or JS's own (`new Vector3()`).
+    if (typeof value === "object" && value !== null) {
       const object = value as Record<string, unknown>;
-      if (takesEngineObject(name, index))
+      if (takesEngineObject(name, index) && engineRef(value) !== undefined)
         return { kind: "handle", ref: engineRef(value) as IEngineRef };
       // TSL's nodeObject turns a three Color or VectorN into its constant: vec3(new Vector3(1, 2, 3)).
       if (object.isColor === true) return { kind: "rgb", numbers: uniformLanes(object) };

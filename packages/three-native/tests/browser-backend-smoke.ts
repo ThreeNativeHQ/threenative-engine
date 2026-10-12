@@ -591,9 +591,10 @@ engine.collect();
     visible.join() === "root,a,a1",
     `traverseVisible skips a hidden subtree: ${visible.join()}`,
   );
-  // Two walks, and the callbacks read `name` (a crossing each): 2 + 8 names.
+  // Two walks, and each name crosses once until a setter or method runs on its object: 2 walks, the
+  // first walk's 5 names, and root's again (its __walk is a method, which drops what it kept).
   check(
-    crossings === 10,
+    crossings === 8,
     `two walks cost two engine calls plus the names read: ${crossings} (${[...counts.keys()].join(", ")})`,
   );
 }
