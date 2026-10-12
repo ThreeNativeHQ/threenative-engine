@@ -1,0 +1,296 @@
+{
+  "name": "scene-object-bounds-instanced",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 Box3.expandByObject, InstancedMesh.computeBoundingBox and SkinnedMesh.applyBoneTransform: hierarchy updates, cached versus precise bounds and explicit recomputation",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:c032000000000000",
+      "decimal": "-18"
+    },
+    {
+      "index": 1,
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:c010000000000000",
+      "decimal": "-4"
+    },
+    {
+      "index": 2,
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 3,
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4028000000000000",
+      "decimal": "12"
+    },
+    {
+      "index": 4,
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 5,
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:4024000000000000",
+      "decimal": "10"
+    },
+    {
+      "index": 6,
+      "id": "precise",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:c032000000000000",
+      "decimal": "-18"
+    },
+    {
+      "index": 7,
+      "id": "precise",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:c010000000000000",
+      "decimal": "-4"
+    },
+    {
+      "index": 8,
+      "id": "precise",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 9,
+      "id": "precise",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4028000000000000",
+      "decimal": "12"
+    },
+    {
+      "index": 10,
+      "id": "precise",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 11,
+      "id": "precise",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:4024000000000000",
+      "decimal": "10"
+    },
+    {
+      "index": 12,
+      "id": "stale",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:c032000000000000",
+      "decimal": "-18"
+    },
+    {
+      "index": 13,
+      "id": "stale",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:c010000000000000",
+      "decimal": "-4"
+    },
+    {
+      "index": 14,
+      "id": "stale",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 15,
+      "id": "stale",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4028000000000000",
+      "decimal": "12"
+    },
+    {
+      "index": 16,
+      "id": "stale",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 17,
+      "id": "stale",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:4024000000000000",
+      "decimal": "10"
+    },
+    {
+      "index": 18,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:c06b800000000000",
+      "decimal": "-220"
+    },
+    {
+      "index": 19,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:4059400000000000",
+      "decimal": "101"
+    },
+    {
+      "index": 20,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:405a800000000000",
+      "decimal": "106"
+    },
+    {
+      "index": 21,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:c069000000000000",
+      "decimal": "-200"
+    },
+    {
+      "index": 22,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:405bc00000000000",
+      "decimal": "111"
+    },
+    {
+      "index": 23,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:405d000000000000",
+      "decimal": "116"
+    },
+    {
+      "index": 24,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:c069000000000000",
+      "decimal": "-200"
+    },
+    {
+      "index": 25,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:c000000000000000",
+      "decimal": "-2"
+    },
+    {
+      "index": 26,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 27,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4028000000000000",
+      "decimal": "12"
+    },
+    {
+      "index": 28,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 29,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:401c000000000000",
+      "decimal": "7"
+    },
+    {
+      "index": 30,
+      "id": "empty",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 31,
+      "id": "empty",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 32,
+      "id": "empty",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 33,
+      "id": "empty",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:fff0000000000000",
+      "decimal": "-Infinity"
+    },
+    {
+      "index": 34,
+      "id": "empty",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:fff0000000000000",
+      "decimal": "-Infinity"
+    },
+    {
+      "index": 35,
+      "id": "empty",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:fff0000000000000",
+      "decimal": "-Infinity"
+    }
+  ]
+}

@@ -1,0 +1,287 @@
+{
+  "name": "scene-object-bounds-skinned-vertex",
+  "adaptedFrom": "three@0.185.1 SkinnedMesh.getVertexPosition: the morphed vertex through applyBoneTransform, on the posed rig of scene-object-bounds-skinned",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "geometry",
+      "class": "BufferGeometry",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "position",
+      "class": "Float32BufferAttribute",
+      "args": [
+        {
+          "array": [-1, -1, 0, 1, -1, 0, 0, 1, 1],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "new",
+      "id": "skinIndex",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0],
+          "type": "Uint16Array"
+        },
+        4
+      ]
+    },
+    {
+      "op": "new",
+      "id": "skinWeight",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [0.25, 0.5, 0, 0, 1, 0, 0, 0, 0.75, 0.75, 0, 0],
+          "type": "Float32Array"
+        },
+        4
+      ]
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setAttribute",
+      "args": [
+        "position",
+        {
+          "ref": "position"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setAttribute",
+      "args": [
+        "skinIndex",
+        {
+          "ref": "skinIndex"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setAttribute",
+      "args": [
+        "skinWeight",
+        {
+          "ref": "skinWeight"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "mesh",
+      "class": "SkinnedMesh",
+      "args": [
+        {
+          "ref": "geometry"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "bone0",
+      "class": "Bone",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "bone1",
+      "class": "Bone",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "bone0",
+      "path": "position.x",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "bone1",
+      "path": "position.y",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "bone0",
+      "method": "add",
+      "args": [
+        {
+          "ref": "bone1"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "add",
+      "args": [
+        {
+          "ref": "bone0"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mesh"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "skeleton",
+      "class": "Skeleton",
+      "args": [
+        {
+          "refs": ["bone0", "bone1"]
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "binding",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "binding",
+      "method": "set",
+      "args": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.1, 0.2, 0, 1]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "bind",
+      "args": [
+        {
+          "ref": "skeleton"
+        },
+        {
+          "ref": "binding"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "bindMode",
+      "value": "detached"
+    },
+    {
+      "op": "set",
+      "id": "bone0",
+      "path": "rotation.z",
+      "value": 0.35
+    },
+    {
+      "op": "set",
+      "id": "bone1",
+      "path": "rotation.x",
+      "value": 0.2
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "v0",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "getVertexPosition",
+      "args": [
+        0,
+        {
+          "ref": "v0"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v1",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "getVertexPosition",
+      "args": [
+        1,
+        {
+          "ref": "v1"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v2",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "getVertexPosition",
+      "args": [
+        2,
+        {
+          "ref": "v2"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "v0",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v1",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v2",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

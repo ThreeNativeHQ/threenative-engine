@@ -1,0 +1,222 @@
+{
+  "name": "gltf-model-doorway",
+  "adaptedFrom": "original \u2014 two repository GLB files (the CSG doorway example and a world rock) loaded by three's GLTFLoader in the reference and by the native glTF loader, lit and drawn in one frame",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [45, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.x",
+      "value": 3.5
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 3.2
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 7.5
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0.4, 1.3, 0]
+    },
+    {
+      "op": "new",
+      "id": "sun",
+      "class": "DirectionalLight",
+      "args": [16777215, 2.5]
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.x",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.y",
+      "value": 6
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.z",
+      "value": 4
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [11189196, 3355443, 0.7]
+    },
+    {
+      "op": "gltf",
+      "id": "doorway",
+      "file": "examples/csg-doorway/assets/doorway.glb"
+    },
+    {
+      "op": "gltf",
+      "id": "rock",
+      "file": "packages/core/__tests__/fixtures/world-v1/assets/rock.glb"
+    },
+    {
+      "op": "set",
+      "id": "rock",
+      "path": "position.x",
+      "value": 2.6
+    },
+    {
+      "op": "set",
+      "id": "rock",
+      "path": "position.y",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "rock",
+      "path": "position.z",
+      "value": 1.4
+    },
+    {
+      "op": "set",
+      "id": "rock",
+      "path": "rotation.y",
+      "value": 0.7
+    },
+    {
+      "op": "set",
+      "id": "rock",
+      "path": "scale.x",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "rock",
+      "path": "scale.y",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "rock",
+      "path": "scale.z",
+      "value": 0.6
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "doorway"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "rock"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sun"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "doorway",
+      "path": "name",
+      "kind": "string"
+    },
+    {
+      "id": "rock",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  }
+}

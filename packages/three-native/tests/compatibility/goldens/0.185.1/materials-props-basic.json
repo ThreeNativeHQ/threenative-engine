@@ -1,0 +1,176 @@
+{
+  "name": "materials-props-basic",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — MeshBasicMaterial's members, the ones the lit and alpha render fixtures set: components and a whole-color write",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "fresh",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshBasicMaterial",
+      "decimal": "MeshBasicMaterial"
+    },
+    {
+      "index": 1,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 2,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 3,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 4,
+      "id": "fresh",
+      "kind": "boolean",
+      "path": "transparent",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 5,
+      "id": "fresh",
+      "kind": "number",
+      "path": "opacity",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 6,
+      "id": "fresh",
+      "kind": "number",
+      "path": "alphaTest",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 7,
+      "id": "fresh",
+      "kind": "boolean",
+      "path": "toneMapped",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 8,
+      "id": "m",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshBasicMaterial",
+      "decimal": "MeshBasicMaterial"
+    },
+    {
+      "index": 9,
+      "id": "m",
+      "kind": "string",
+      "path": "name",
+      "value": "s:basic",
+      "decimal": "basic"
+    },
+    {
+      "index": 10,
+      "id": "m",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3fc999999999999a",
+      "decimal": "0.2"
+    },
+    {
+      "index": 11,
+      "id": "m",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 12,
+      "id": "m",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3fe3333333333333",
+      "decimal": "0.6"
+    },
+    {
+      "index": 13,
+      "id": "m",
+      "kind": "boolean",
+      "path": "transparent",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 14,
+      "id": "m",
+      "kind": "number",
+      "path": "opacity",
+      "value": "n:3fe3333333333333",
+      "decimal": "0.6"
+    },
+    {
+      "index": 15,
+      "id": "m",
+      "kind": "number",
+      "path": "alphaTest",
+      "value": "n:3fd0000000000000",
+      "decimal": "0.25"
+    },
+    {
+      "index": 16,
+      "id": "m",
+      "kind": "boolean",
+      "path": "depthTest",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 17,
+      "id": "m",
+      "kind": "boolean",
+      "path": "depthWrite",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 18,
+      "id": "m",
+      "kind": "number",
+      "path": "side",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 19,
+      "id": "m",
+      "kind": "boolean",
+      "path": "visible",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 20,
+      "id": "m",
+      "kind": "boolean",
+      "path": "toneMapped",
+      "value": "b:0",
+      "decimal": "false"
+    }
+  ]
+}

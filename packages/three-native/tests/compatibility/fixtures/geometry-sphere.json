@@ -1,0 +1,83 @@
+{
+  "name": "geometry-sphere",
+  "adaptedFrom": "three@0.185.1 src/geometries/SphereGeometry.js — a coarse sphere and a partial phi/theta sweep",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "coarse",
+      "class": "SphereGeometry",
+      "args": [1, 4, 3]
+    },
+    {
+      "op": "new",
+      "id": "sweep",
+      "class": "SphereGeometry",
+      "args": [2.5, 6, 4, 0.5, 3, 0.25, 1.5]
+    }
+  ],
+  "observe": [
+    {
+      "id": "coarse",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "coarse",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "sweep",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "sweep",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

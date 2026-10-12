@@ -1,0 +1,33 @@
+{
+  "name": "vector3-apply-quaternion",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector3.tests.js — applyQuaternion, normalize and length",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "euler", "class": "Euler", "args": [0.4, 0.9, -0.2, "XYZ"] },
+    { "op": "new", "id": "q", "class": "Quaternion", "args": [] },
+    { "op": "call", "id": "q", "method": "setFromEuler", "args": [{ "ref": "euler" }] },
+    { "op": "new", "id": "out", "class": "Vector3", "args": [1, 2, 3] },
+    { "op": "call", "id": "out", "method": "applyQuaternion", "args": [{ "ref": "q" }] },
+    { "op": "new", "id": "unit", "class": "Vector3", "args": [0, 0, -1] },
+    { "op": "call", "id": "unit", "method": "applyQuaternion", "args": [{ "ref": "q" }] },
+    { "op": "new", "id": "zero", "class": "Vector3", "args": [0, 0, 0] },
+    { "op": "call", "id": "zero", "method": "applyQuaternion", "args": [{ "ref": "q" }] },
+    { "op": "new", "id": "scaled", "class": "Vector3", "args": [0, 0, -3] },
+    { "op": "call", "id": "scaled", "method": "normalize", "args": [] },
+    { "op": "new", "id": "sum", "class": "Vector3", "args": [] },
+    { "op": "call", "id": "sum", "method": "add", "args": [{ "ref": "unit" }, { "ref": "out" }] },
+    { "op": "call", "id": "sum", "method": "negate", "args": [] }
+  ],
+  "observe": [
+    { "id": "q", "method": "toArray", "kind": "numbers" },
+    { "id": "out", "method": "toArray", "kind": "numbers" },
+    { "id": "out", "method": "length", "kind": "number" },
+    { "id": "unit", "method": "toArray", "kind": "numbers" },
+    { "id": "unit", "method": "length", "kind": "number" },
+    { "id": "zero", "method": "toArray", "kind": "numbers" },
+    { "id": "scaled", "method": "toArray", "kind": "numbers" },
+    { "id": "scaled", "method": "length", "kind": "number" },
+    { "id": "sum", "method": "toArray", "kind": "numbers" },
+    { "id": "sum", "method": "length", "kind": "number" }
+  ]
+}

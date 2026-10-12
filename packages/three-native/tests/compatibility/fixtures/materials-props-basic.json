@@ -1,0 +1,118 @@
+{
+  "name": "materials-props-basic",
+  "adaptedFrom": "original \u2014 MeshBasicMaterial's members, the ones the lit and alpha render fixtures set: components and a whole-color write",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "fresh",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "paint",
+      "class": "Color",
+      "args": [0.2, 0.4, 0.6]
+    },
+    {
+      "op": "new",
+      "id": "m",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "name",
+      "value": "basic"
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color",
+      "value": {
+        "ref": "paint"
+      }
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "transparent",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "opacity",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "alphaTest",
+      "value": 0.25
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "depthTest",
+      "value": false
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "depthWrite",
+      "value": false
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "visible",
+      "value": false
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "toneMapped",
+      "value": false
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "needsUpdate",
+      "value": true
+    }
+  ],
+  "observe": [
+    { "id": "fresh", "path": "type", "kind": "string" },
+    { "id": "fresh", "path": "color.r", "kind": "number" },
+    { "id": "fresh", "path": "color.g", "kind": "number" },
+    { "id": "fresh", "path": "color.b", "kind": "number" },
+    { "id": "fresh", "path": "transparent", "kind": "boolean" },
+    { "id": "fresh", "path": "opacity", "kind": "number" },
+    { "id": "fresh", "path": "alphaTest", "kind": "number" },
+    { "id": "fresh", "path": "toneMapped", "kind": "boolean" },
+    { "id": "m", "path": "type", "kind": "string" },
+    { "id": "m", "path": "name", "kind": "string" },
+    { "id": "m", "path": "color.r", "kind": "number" },
+    { "id": "m", "path": "color.g", "kind": "number" },
+    { "id": "m", "path": "color.b", "kind": "number" },
+    { "id": "m", "path": "transparent", "kind": "boolean" },
+    { "id": "m", "path": "opacity", "kind": "number" },
+    { "id": "m", "path": "alphaTest", "kind": "number" },
+    { "id": "m", "path": "depthTest", "kind": "boolean" },
+    { "id": "m", "path": "depthWrite", "kind": "boolean" },
+    { "id": "m", "path": "side", "kind": "number" },
+    { "id": "m", "path": "visible", "kind": "boolean" },
+    { "id": "m", "path": "toneMapped", "kind": "boolean" }
+  ]
+}

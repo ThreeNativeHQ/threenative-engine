@@ -1,0 +1,830 @@
+{
+  "name": "math-core-matrix4",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Matrix4.tests.js \u2014 every public method that does not evaluate a sine or a cosine",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "a01",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "new",
+      "id": "b02",
+      "class": "Matrix4",
+      "args": [59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131]
+    },
+    {
+      "op": "new",
+      "id": "m303",
+      "class": "Matrix3",
+      "args": [2, 0, 0, 0, 3, 0, 0, 0, 4]
+    },
+    {
+      "op": "new",
+      "id": "x04",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "y05",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "z06",
+      "class": "Vector3",
+      "args": [0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "o07",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "e08",
+      "class": "Vector3",
+      "args": [2, 2, 2]
+    },
+    {
+      "op": "new",
+      "id": "q09",
+      "class": "Quaternion",
+      "args": [0, 0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "eye10",
+      "class": "Vector3",
+      "args": [0, 0, 10]
+    },
+    {
+      "op": "new",
+      "id": "t11",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "m12",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "new",
+      "id": "m13",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m13",
+      "method": "identity",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m14",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m14",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m15",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m15",
+      "method": "copyPosition",
+      "args": [
+        {
+          "ref": "b02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m16",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m16",
+      "method": "setFromMatrix3",
+      "args": [
+        {
+          "ref": "m303"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m17",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m17",
+      "method": "makeBasis",
+      "args": [
+        {
+          "ref": "x04"
+        },
+        {
+          "ref": "y05"
+        },
+        {
+          "ref": "z06"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m18",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m18",
+      "method": "extractBasis",
+      "args": [
+        {
+          "ref": "x04"
+        },
+        {
+          "ref": "y05"
+        },
+        {
+          "ref": "z06"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "r19",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r19",
+      "method": "makeRotationFromQuaternion",
+      "args": [
+        {
+          "ref": "q09"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m20",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m20",
+      "method": "extractRotation",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m21",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m21",
+      "method": "makeRotationFromQuaternion",
+      "args": [
+        {
+          "ref": "q09"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m22",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m22",
+      "method": "multiply",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m23",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m23",
+      "method": "premultiply",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m24",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m24",
+      "method": "multiplyMatrices",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        {
+          "ref": "b02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m25",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m25",
+      "method": "multiplyScalar",
+      "args": [3]
+    },
+    {
+      "op": "new",
+      "id": "m26",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m26",
+      "method": "transpose",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m27",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m27",
+      "method": "scale",
+      "args": [
+        {
+          "ref": "e08"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m28",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m28",
+      "method": "makeTranslation",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "m29",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m29",
+      "method": "makeShear",
+      "args": [1, 2, 3, 4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "m30",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m30",
+      "method": "compose",
+      "args": [
+        {
+          "ref": "o07"
+        },
+        {
+          "ref": "q09"
+        },
+        {
+          "ref": "e08"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m31",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m31",
+      "method": "setPosition",
+      "args": [
+        {
+          "ref": "o07"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m32",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m32",
+      "method": "makePerspective",
+      "args": [-1, 1, 1, -1, 1, 100]
+    },
+    {
+      "op": "new",
+      "id": "m33",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m33",
+      "method": "makePerspective",
+      "args": [-1, 1, 1, -1, 1, 100, 2001, true]
+    },
+    {
+      "op": "new",
+      "id": "m34",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m34",
+      "method": "makePerspective",
+      "args": [-1, 1, 1, -1, 1, 100, 2000, false]
+    },
+    {
+      "op": "new",
+      "id": "m35",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m35",
+      "method": "makeOrthographic",
+      "args": [-2, 2, 1, -1, 1, 100]
+    },
+    {
+      "op": "new",
+      "id": "m36",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m36",
+      "method": "makeOrthographic",
+      "args": [-2, 2, 1, -1, 1, 100, 2001, false]
+    },
+    {
+      "op": "new",
+      "id": "m37",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m37",
+      "method": "makeOrthographic",
+      "args": [-2, 2, 1, -1, 1, 100, 2000, true]
+    },
+    {
+      "op": "new",
+      "id": "m38",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m38",
+      "method": "lookAt",
+      "args": [
+        {
+          "ref": "eye10"
+        },
+        {
+          "ref": "t11"
+        },
+        {
+          "ref": "y05"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m39",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m39",
+      "method": "determinant",
+      "args": [],
+      "result": "r40"
+    },
+    {
+      "op": "new",
+      "id": "m41",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m41",
+      "method": "determinantAffine",
+      "args": [],
+      "result": "r42"
+    },
+    {
+      "op": "new",
+      "id": "m43",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m43",
+      "method": "getMaxScaleOnAxis",
+      "args": [],
+      "result": "r44"
+    },
+    {
+      "op": "new",
+      "id": "m45",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m45",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m46",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m46",
+      "method": "compose",
+      "args": [
+        {
+          "ref": "o07"
+        },
+        {
+          "ref": "q09"
+        },
+        {
+          "ref": "e08"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "p47",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "r48",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "s49",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m46",
+      "method": "decompose",
+      "args": [
+        {
+          "ref": "p47"
+        },
+        {
+          "ref": "r48"
+        },
+        {
+          "ref": "s49"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m50",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m50",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r51"
+    },
+    {
+      "op": "new",
+      "id": "s52",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "s52",
+      "method": "toArray",
+      "args": [],
+      "result": "arr1"
+    },
+    {
+      "op": "new",
+      "id": "m53",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m53",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "arr1"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "m12",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m12",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "m13",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m14",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m15",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m16",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m17",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m18",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "x04",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "y05",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "z06",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m20",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m21",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m22",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m23",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m24",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m25",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m26",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m27",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m28",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m29",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m30",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m31",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m32",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m33",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m34",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m35",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m36",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m37",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m38",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r40",
+      "kind": "number"
+    },
+    {
+      "id": "r42",
+      "kind": "number"
+    },
+    {
+      "id": "r44",
+      "kind": "number"
+    },
+    {
+      "id": "m45",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "p47",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r48",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "s49",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r51",
+      "kind": "boolean"
+    },
+    {
+      "id": "arr1",
+      "kind": "numbers"
+    },
+    {
+      "id": "m53",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "name": "gltf-model-doorway",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — two repository GLB files (the CSG doorway example and a world rock) loaded by three's GLTFLoader in the reference and by the native glTF loader, lit and drawn in one frame",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "doorway",
+      "kind": "string",
+      "path": "name",
+      "value": "s:CSG",
+      "decimal": "CSG"
+    },
+    {
+      "index": 1,
+      "id": "rock",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3fdd5eb46325f048,n:0000000000000000,n:bfd8bceae4ba8543,n:0000000000000000,n:0000000000000000,n:3fe3333333333333,n:0000000000000000,n:0000000000000000,n:3fd8bceae4ba8543,n:0000000000000000,n:3fdd5eb46325f048,n:0000000000000000,n:4004cccccccccccd,n:3fe3333333333333,n:3ff6666666666666,n:3ff0000000000000",
+      "decimal": "0.458905312370693, 0, -0.3865306123426146, 0, 0, 0.6, 0, 0, 0.3865306123426146, 0, 0.458905312370693, 0, 2.6, 0.6, 1.4, 1"
+    },
+    {
+      "index": 2,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:736d0536807b3f5a9e146cc30644501cff3df0146176c92aeef9851854be8a30",
+      "decimal": "736d0536807b3f5a9e146cc30644501cff3df0146176c92aeef9851854be8a30"
+    }
+  ],
+  "render": {
+    "png": "gltf-model-doorway.png",
+    "pngSha256": "736d0536807b3f5a9e146cc30644501cff3df0146176c92aeef9851854be8a30",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

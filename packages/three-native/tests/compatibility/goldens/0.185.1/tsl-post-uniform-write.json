@@ -1,0 +1,35 @@
+{
+  "name": "tsl-post-uniform-write",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — tsl-post-bloom's scene through a convertToTexture pass scaled by one uniform and an output scaled by another; both uniforms change after the first frame and the captured second frame shows the new values",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:22306d245ca71c14cab47193fb3e1d03157021ef6205b5e6f3bbf5eac5c155e5",
+      "decimal": "22306d245ca71c14cab47193fb3e1d03157021ef6205b5e6f3bbf5eac5c155e5"
+    }
+  ],
+  "render": {
+    "png": "tsl-post-uniform-write.png",
+    "pngSha256": "22306d245ca71c14cab47193fb3e1d03157021ef6205b5e6f3bbf5eac5c155e5",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

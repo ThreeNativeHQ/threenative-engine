@@ -1,0 +1,104 @@
+{
+  "name": "scene-transforms-attach",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js — attach keeps the object's world transform, add re-parents, and remove detaches without touching the transform",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "beforeAttach",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4008000000000000,n:4000000000000000,n:0000000000000000",
+      "decimal": "3, 2, 0"
+    },
+    {
+      "index": 1,
+      "id": "afterAttach",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4007ffffffffffff,n:4000000000000000,n:0000000000000000",
+      "decimal": "2.9999999999999996, 2, 0"
+    },
+    {
+      "index": 2,
+      "id": "backToLocal",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:bcb0000000000000",
+      "decimal": "0, 0, -2.220446049250313e-16"
+    },
+    {
+      "index": 3,
+      "id": "mover",
+      "kind": "numbers",
+      "path": "matrix.elements",
+      "value": "n:3ff6fdb8bda90d23,n:bfe0c8e9879a6d7a,n:bff49d6e694619b8,n:0000000000000000,n:3fd5f209a5390a8b,n:3fee0f575d0de5b7,n:bc80000000000000,n:0000000000000000,n:3fe35d799669bc02,n:bfcc467a7d93624b,n:3fe87996529f9d91,n:0000000000000000,n:400c0803ef18aeec,n:3feb33a042463b9e,n:4008000000000000,n:3ff0000000000000",
+      "decimal": "1.4369437607391056, -0.5245254181385655, -1.288435374475382, 0, 0.34289780745545134, 0.9393727128473789, -2.7755575615628914e-17, 0, 0.605160516524734, -0.22090083247782596, 0.7648421872844883, 0, 3.5039137534530393, 0.8500520033284038, 3, 1"
+    },
+    {
+      "index": 4,
+      "id": "mover",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:400c0803ef18aeec",
+      "decimal": "3.5039137534530393"
+    },
+    {
+      "index": 5,
+      "id": "mover",
+      "kind": "number",
+      "path": "position.y",
+      "value": "n:3feb33a042463b9e",
+      "decimal": "0.8500520033284038"
+    },
+    {
+      "index": 6,
+      "id": "mover",
+      "kind": "number",
+      "path": "quaternion.w",
+      "value": "n:3fed99ce885d0f97",
+      "decimal": "0.9250252402639373"
+    },
+    {
+      "index": 7,
+      "id": "mover",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff6fdb8bda90d23,n:bfe0c8e9879a6d7a,n:bff49d6e694619b8,n:0000000000000000,n:3fd5f209a5390a8b,n:3fee0f575d0de5b7,n:bc80000000000000,n:0000000000000000,n:3fe35d799669bc02,n:bfcc467a7d93624b,n:3fe87996529f9d91,n:0000000000000000,n:400c0803ef18aeec,n:3feb33a042463b9e,n:4008000000000000,n:3ff0000000000000",
+      "decimal": "1.4369437607391056, -0.5245254181385655, -1.288435374475382, 0, 0.34289780745545134, 0.9393727128473789, -2.7755575615628914e-17, 0, 0.605160516524734, -0.22090083247782596, 0.7648421872844883, 0, 3.5039137534530393, 0.8500520033284038, 3, 1"
+    },
+    {
+      "index": 8,
+      "id": "newParent",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3fee0f575d0de5b7,n:3fd5f209a5390a8b,n:0000000000000000,n:0000000000000000,n:bfd5f209a5390a8b,n:3fee0f575d0de5b7,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:c008000000000000,n:3ff0000000000000",
+      "decimal": "0.9393727128473789, 0.34289780745545134, 0, 0, -0.34289780745545134, 0.9393727128473789, 0, 0, 0, 0, 1, 0, 0, 0, -3, 1"
+    },
+    {
+      "index": 9,
+      "id": "scene",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1"
+    },
+    {
+      "index": 10,
+      "id": "scene",
+      "kind": "number",
+      "path": "backgroundIntensity",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 11,
+      "id": "mover",
+      "kind": "boolean",
+      "path": "visible",
+      "value": "b:1",
+      "decimal": "true"
+    }
+  ]
+}

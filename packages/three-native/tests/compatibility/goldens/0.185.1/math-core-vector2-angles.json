@@ -1,0 +1,30 @@
+{
+  "name": "math-core-vector2-angles",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector2.tests.js — angle, angleTo and rotateAround",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "r03",
+      "kind": "number",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 1,
+      "id": "r05",
+      "kind": "number",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 2,
+      "id": "v07",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd7940d31ac060a,n:400928fe68da7453",
+      "decimal": "0.36841134882715265, 3.145016497770976"
+    }
+  ]
+}

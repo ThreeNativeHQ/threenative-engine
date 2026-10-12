@@ -1,0 +1,27 @@
+{
+  "name": "probes",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "PRD-525: shipped ProbeVolume capture, packed SH sampling, cooked coefficients and isolated light rebake",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:f5a35e632daedc90c6e7f60d1a54e0862c11a0e49837dfdde1cbc153037c6ffc",
+      "decimal": "f5a35e632daedc90c6e7f60d1a54e0862c11a0e49837dfdde1cbc153037c6ffc"
+    }
+  ],
+  "render": {
+    "png": "probes.png",
+    "pngSha256": "f5a35e632daedc90c6e7f60d1a54e0862c11a0e49837dfdde1cbc153037c6ffc",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

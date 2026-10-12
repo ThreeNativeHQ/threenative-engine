@@ -1,0 +1,72 @@
+{
+  "name": "alias-method-returns-self",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 src/math/Vector3.js set()/normalize() and src/core/Object3D.js translateX()/add() mutate and return this — the handle a chaining call answers is the object itself, so repeated access through a retained result is one identity",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "v",
+      "kind": "number",
+      "path": "x",
+      "value": "n:4022000000000000",
+      "decimal": "9"
+    },
+    {
+      "index": 1,
+      "id": "n1",
+      "kind": "number",
+      "path": "x",
+      "value": "n:4022000000000000",
+      "decimal": "9"
+    },
+    {
+      "index": 2,
+      "id": "n2",
+      "kind": "number",
+      "path": "x",
+      "value": "n:4022000000000000",
+      "decimal": "9"
+    },
+    {
+      "index": 3,
+      "id": "n2",
+      "kind": "number",
+      "path": "y",
+      "value": "n:4014000000000000",
+      "decimal": "5"
+    },
+    {
+      "index": 4,
+      "id": "o",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:4014000000000000",
+      "decimal": "5"
+    },
+    {
+      "index": 5,
+      "id": "r1",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:4014000000000000",
+      "decimal": "5"
+    },
+    {
+      "index": 6,
+      "id": "r2",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:4014000000000000",
+      "decimal": "5"
+    },
+    {
+      "index": 7,
+      "id": "r2",
+      "kind": "number",
+      "path": "quaternion.y",
+      "value": "n:3fbfeaaeee86ee36",
+      "decimal": "0.12467473338522769"
+    }
+  ]
+}

@@ -1,0 +1,156 @@
+{
+  "name": "scene-cameras-orthographic",
+  "adaptedFrom": "three@0.185.1 test/unit/src/cameras/OrthographicCamera.tests.js \u2014 the six frustum planes, zoom, setViewOffset/clearViewOffset and updateProjectionMatrix",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "default",
+      "class": "OrthographicCamera",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "OrthographicCamera",
+      "args": [-2, 2, 1, -1, 0.1, 2000]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "zoom",
+      "value": 0.5
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "offCentre",
+      "class": "OrthographicCamera",
+      "args": [-1, 3, 2, -2, 0.5, 50]
+    },
+    {
+      "op": "set",
+      "id": "offCentre",
+      "path": "zoom",
+      "value": 2
+    },
+    {
+      "op": "call",
+      "id": "offCentre",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "windowed",
+      "class": "OrthographicCamera",
+      "args": [-1, 1, 1, -1, 0.1, 100]
+    },
+    {
+      "op": "call",
+      "id": "windowed",
+      "method": "setViewOffset",
+      "args": [1920, 1080, 480, 270, 960, 540]
+    },
+    {
+      "op": "call",
+      "id": "windowed",
+      "method": "clearViewOffset",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "placed",
+      "class": "OrthographicCamera",
+      "args": [-1, 1, 1, -1, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "placed",
+      "path": "position.x",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "placed",
+      "path": "position.y",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "placed",
+      "method": "rotateZ",
+      "args": [0.4]
+    },
+    {
+      "op": "call",
+      "id": "placed",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "default",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "default",
+      "path": "projectionMatrixInverse.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "camera",
+      "path": "left",
+      "kind": "number"
+    },
+    {
+      "id": "camera",
+      "path": "far",
+      "kind": "number"
+    },
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "camera",
+      "path": "projectionMatrixInverse.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "offCentre",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "offCentre",
+      "path": "projectionMatrixInverse.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "windowed",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "placed",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "placed",
+      "path": "matrixWorldInverse.elements",
+      "kind": "numbers"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "name": "textures-data-filters",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a four-colour 2x2 DataTexture magnified under NearestFilter and under LinearFilter, and an 8x8 checker in 2x2 blocks minified on a grazing floor under LinearMipmapLinearFilter with generated mips (every mip level is an exact average)",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "nearestTex",
+      "kind": "number",
+      "path": "magFilter",
+      "value": "n:408f580000000000",
+      "decimal": "1003"
+    },
+    {
+      "index": 1,
+      "id": "linearTex",
+      "kind": "number",
+      "path": "magFilter",
+      "value": "n:408f700000000000",
+      "decimal": "1006"
+    },
+    {
+      "index": 2,
+      "id": "mipTex",
+      "kind": "number",
+      "path": "minFilter",
+      "value": "n:408f800000000000",
+      "decimal": "1008"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:c7cba8cf7e3cbd758ccdb6b5df117ff569a88d10f66e71231d0a2f49f0f25421",
+      "decimal": "c7cba8cf7e3cbd758ccdb6b5df117ff569a88d10f66e71231d0a2f49f0f25421"
+    }
+  ],
+  "render": {
+    "png": "textures-data-filters.png",
+    "pngSha256": "c7cba8cf7e3cbd758ccdb6b5df117ff569a88d10f66e71231d0a2f49f0f25421",
+    "width": 320,
+    "height": 160,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

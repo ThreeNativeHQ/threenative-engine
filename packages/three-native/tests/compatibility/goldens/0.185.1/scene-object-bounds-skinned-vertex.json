@@ -1,0 +1,32 @@
+{
+  "name": "scene-object-bounds-skinned-vertex",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 SkinnedMesh.getVertexPosition: the morphed vertex through applyBoneTransform, on the posed rig of scene-object-bounds-skinned",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "v0",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfd3710cd8b524db,n:bfefdedae4f43b78,n:bfce5e097b5315d8",
+      "decimal": "-0.30377503550387325, -0.9959539863356062, -0.23724478265482563"
+    },
+    {
+      "index": 1,
+      "id": "v1",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff42c2c75c6de78,n:bff1989bd30c04ce,n:0000000000000000",
+      "decimal": "1.260784587922812, -1.099757980730192, 0"
+    },
+    {
+      "index": 2,
+      "id": "v2",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfd057dd434e8c8e,n:3fb202dc2437cf6c,n:3ff15c6810f69ccf",
+      "decimal": "-0.2553628117841037, 0.07035613903263788, 1.0850601828222357"
+    }
+  ]
+}

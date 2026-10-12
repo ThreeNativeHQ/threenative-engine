@@ -1,0 +1,284 @@
+{
+  "name": "viewport-textures",
+  "adaptedFrom": "original — WaterSurface3D's viewport reads: a transparent water plane over a lit floor box whose colour is the frame behind it (viewportSharedTexture at an offset screenUV) tinted, plus its viewportLinearDepth in blue; three copies the colour and depth at the water's draw",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [60, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 1.4
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 3.2
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "light",
+      "class": "DirectionalLight",
+      "args": [16777215, 3]
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.x",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.y",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.z",
+      "value": 1
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [11189137, 2236962, 0.6]
+    },
+    {
+      "op": "new",
+      "id": "floorGeometry",
+      "class": "BoxGeometry",
+      "args": [3, 0.2, 2]
+    },
+    {
+      "op": "new",
+      "id": "floorMaterial",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "floorMaterial",
+      "path": "color.r",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "floorMaterial",
+      "path": "color.g",
+      "value": 0.45
+    },
+    {
+      "op": "set",
+      "id": "floorMaterial",
+      "path": "color.b",
+      "value": 0.2
+    },
+    {
+      "op": "set",
+      "id": "floorMaterial",
+      "path": "roughness",
+      "value": 0.6
+    },
+    {
+      "op": "new",
+      "id": "floor",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "floorGeometry"
+        },
+        {
+          "ref": "floorMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "floor",
+      "path": "position.y",
+      "value": -0.6
+    },
+    {
+      "op": "set",
+      "id": "floor",
+      "path": "rotation.x",
+      "value": 0.25
+    },
+    {
+      "op": "new",
+      "id": "waterGeometry",
+      "class": "PlaneGeometry",
+      "args": [2.4, 1.6]
+    },
+    {
+      "op": "new",
+      "id": "waterMaterial",
+      "class": "MeshBasicNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "waterMaterial",
+      "path": "transparent",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "water",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "waterGeometry"
+        },
+        {
+          "ref": "waterMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "water",
+      "path": "name",
+      "value": "water"
+    },
+    {
+      "op": "set",
+      "id": "water",
+      "path": "rotation.x",
+      "value": -0.9
+    },
+    {
+      "op": "set",
+      "id": "water",
+      "path": "position.z",
+      "value": 0.4
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "floor"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "water"
+        }
+      ]
+    },
+    {
+      "op": "tsl",
+      "id": "scene",
+      "program": "viewport-textures"
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "light"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "camera",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "light",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

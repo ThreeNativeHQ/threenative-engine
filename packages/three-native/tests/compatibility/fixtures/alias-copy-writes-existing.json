@@ -1,0 +1,223 @@
+{
+  "name": "alias-copy-writes-existing",
+  "adaptedFrom": "three@0.185.1 src/core/Object3D.js copy() — it writes into this.up/position/quaternion/scale, the objects the constructor allocated, so an alias taken before copy() reads the copied values (the retained-alias claim of PRD-502 §6.1, adapted from arrays-identity.json)",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "src",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "src",
+      "path": "position.x",
+      "value": 1.5
+    },
+    {
+      "op": "set",
+      "id": "src",
+      "path": "position.y",
+      "value": -2.5
+    },
+    {
+      "op": "set",
+      "id": "src",
+      "path": "position.z",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "src",
+      "path": "scale.x",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "src",
+      "path": "scale.y",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "src",
+      "path": "scale.z",
+      "value": 4
+    },
+    {
+      "op": "set",
+      "id": "src",
+      "path": "quaternion.x",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "src",
+      "path": "quaternion.w",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "src",
+      "path": "up.z",
+      "value": 0.25
+    },
+    {
+      "op": "new",
+      "id": "dst",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "dst",
+      "method": "position",
+      "args": [],
+      "result": "p"
+    },
+    {
+      "op": "call",
+      "id": "dst",
+      "method": "scale",
+      "args": [],
+      "result": "s"
+    },
+    {
+      "op": "call",
+      "id": "dst",
+      "method": "quaternion",
+      "args": [],
+      "result": "q"
+    },
+    {
+      "op": "call",
+      "id": "dst",
+      "method": "up",
+      "args": [],
+      "result": "u"
+    },
+    {
+      "op": "set",
+      "id": "p",
+      "path": "x",
+      "value": 9
+    },
+    {
+      "op": "set",
+      "id": "s",
+      "path": "x",
+      "value": 9
+    },
+    {
+      "op": "set",
+      "id": "u",
+      "path": "y",
+      "value": -1
+    },
+    {
+      "op": "call",
+      "id": "dst",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "src"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "p",
+      "path": "x",
+      "kind": "number"
+    },
+    {
+      "id": "p",
+      "path": "y",
+      "kind": "number"
+    },
+    {
+      "id": "p",
+      "path": "z",
+      "kind": "number"
+    },
+    {
+      "id": "dst",
+      "path": "position.x",
+      "kind": "number"
+    },
+    {
+      "id": "dst",
+      "path": "position.z",
+      "kind": "number"
+    },
+    {
+      "id": "s",
+      "path": "x",
+      "kind": "number"
+    },
+    {
+      "id": "s",
+      "path": "y",
+      "kind": "number"
+    },
+    {
+      "id": "s",
+      "path": "z",
+      "kind": "number"
+    },
+    {
+      "id": "q",
+      "path": "x",
+      "kind": "number"
+    },
+    {
+      "id": "q",
+      "path": "y",
+      "kind": "number"
+    },
+    {
+      "id": "q",
+      "path": "z",
+      "kind": "number"
+    },
+    {
+      "id": "q",
+      "path": "w",
+      "kind": "number"
+    },
+    {
+      "id": "u",
+      "path": "x",
+      "kind": "number"
+    },
+    {
+      "id": "u",
+      "path": "y",
+      "kind": "number"
+    },
+    {
+      "id": "u",
+      "path": "z",
+      "kind": "number"
+    },
+    {
+      "id": "dst",
+      "path": "up.z",
+      "kind": "number"
+    },
+    {
+      "id": "dst",
+      "path": "scale.y",
+      "kind": "number"
+    },
+    {
+      "id": "dst",
+      "path": "quaternion.x",
+      "kind": "number"
+    }
+  ]
+}

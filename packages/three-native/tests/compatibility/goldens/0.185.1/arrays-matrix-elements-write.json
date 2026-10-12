@@ -1,0 +1,16 @@
+{
+  "name": "arrays-matrix-elements-write",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 Matrix4.elements — a write through the flat array is seen by the matrix",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "m",
+      "kind": "numbers",
+      "path": "elements",
+      "value": "n:4014000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "5, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1"
+    }
+  ]
+}

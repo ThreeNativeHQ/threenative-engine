@@ -1,0 +1,136 @@
+{
+  "name": "lights-props-directional",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — DirectionalLight: a hex colour argument, intensity, and Object3D.DEFAULT_UP as its starting position, matching lit-render",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "fresh",
+      "kind": "string",
+      "path": "type",
+      "value": "s:DirectionalLight",
+      "decimal": "DirectionalLight"
+    },
+    {
+      "index": 1,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 2,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 3,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 4,
+      "id": "fresh",
+      "kind": "number",
+      "path": "intensity",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 5,
+      "id": "fresh",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 6,
+      "id": "fresh",
+      "kind": "number",
+      "path": "position.y",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 7,
+      "id": "fresh",
+      "kind": "number",
+      "path": "position.z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 8,
+      "id": "l",
+      "kind": "string",
+      "path": "type",
+      "value": "s:DirectionalLight",
+      "decimal": "DirectionalLight"
+    },
+    {
+      "index": 9,
+      "id": "l",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 10,
+      "id": "l",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 11,
+      "id": "l",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 12,
+      "id": "l",
+      "kind": "number",
+      "path": "intensity",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 13,
+      "id": "l",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 14,
+      "id": "l",
+      "kind": "number",
+      "path": "position.y",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 15,
+      "id": "l",
+      "kind": "number",
+      "path": "position.z",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    }
+  ]
+}

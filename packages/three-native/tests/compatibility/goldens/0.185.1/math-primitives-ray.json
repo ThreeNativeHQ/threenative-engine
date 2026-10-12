@@ -1,0 +1,276 @@
+{
+  "name": "math-primitives-ray",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Ray.tests.js — the whole surface; an intersection writes its target only on a hit, and the fixture compares that target either way",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "r03",
+      "kind": "number",
+      "path": "origin.x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 1,
+      "id": "r03",
+      "kind": "number",
+      "path": "direction.z",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 2,
+      "id": "r04",
+      "kind": "number",
+      "path": "origin.x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 3,
+      "id": "r04",
+      "kind": "number",
+      "path": "direction.z",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 4,
+      "id": "r07",
+      "kind": "number",
+      "path": "origin.x",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 5,
+      "id": "r07",
+      "kind": "number",
+      "path": "direction.y",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 6,
+      "id": "r15",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:4000000000000000,n:3fe0000000000000",
+      "decimal": "1, 2, 0.5"
+    },
+    {
+      "index": 7,
+      "id": "r18",
+      "kind": "number",
+      "path": "direction.x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 8,
+      "id": "r18",
+      "kind": "number",
+      "path": "direction.y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 9,
+      "id": "r22",
+      "kind": "number",
+      "path": "origin.x",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 10,
+      "id": "r28",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:4000000000000000,n:4008000000000000",
+      "decimal": "1, 2, 3"
+    },
+    {
+      "index": 11,
+      "id": "r33",
+      "kind": "number",
+      "value": "n:4010f876ccdf6cd9",
+      "decimal": "4.242640687119285"
+    },
+    {
+      "index": 12,
+      "id": "r35",
+      "kind": "number",
+      "value": "n:4032000000000000",
+      "decimal": "18"
+    },
+    {
+      "index": 13,
+      "id": "r41",
+      "kind": "number",
+      "value": "n:4032000000000000",
+      "decimal": "18"
+    },
+    {
+      "index": 14,
+      "id": "r47",
+      "kind": "number",
+      "value": "n:4032000000000000",
+      "decimal": "18"
+    },
+    {
+      "index": 15,
+      "id": "p45",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:4000000000000000,n:c008000000000000",
+      "decimal": "1, 2, -3"
+    },
+    {
+      "index": 16,
+      "id": "s46",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4010000000000000,n:4014000000000000,n:c008000000000000",
+      "decimal": "4, 5, -3"
+    },
+    {
+      "index": 17,
+      "id": "r53",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 18,
+      "id": "r59",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 19,
+      "id": "r62",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 20,
+      "id": "t66",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:401c000000000000,n:4020000000000000,n:4022000000000000",
+      "decimal": "7, 8, 9"
+    },
+    {
+      "index": 21,
+      "id": "t72",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:c014000000000000",
+      "decimal": "0, 0, -5"
+    },
+    {
+      "index": 22,
+      "id": "r80",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 23,
+      "id": "r83",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 24,
+      "id": "r87",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 25,
+      "id": "r91",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 26,
+      "id": "t95",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:c010000000000000",
+      "decimal": "0, 0, -4"
+    },
+    {
+      "index": 27,
+      "id": "t101",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:401c000000000000,n:4020000000000000,n:4022000000000000",
+      "decimal": "7, 8, 9"
+    },
+    {
+      "index": 28,
+      "id": "t107",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:c010000000000000",
+      "decimal": "0, 0, -4"
+    },
+    {
+      "index": 29,
+      "id": "t114",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:401c000000000000,n:4020000000000000,n:4022000000000000",
+      "decimal": "7, 8, 9"
+    },
+    {
+      "index": 30,
+      "id": "t124",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:c014000000000000",
+      "decimal": "0, 0, -5"
+    },
+    {
+      "index": 31,
+      "id": "t128",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:c014000000000000",
+      "decimal": "0, 0, -5"
+    },
+    {
+      "index": 32,
+      "id": "r132",
+      "kind": "number",
+      "path": "origin.x",
+      "value": "n:3fa8618618618618",
+      "decimal": "0.047619047619047616"
+    },
+    {
+      "index": 33,
+      "id": "r132",
+      "kind": "number",
+      "path": "direction.z",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 34,
+      "id": "r136",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    }
+  ]
+}

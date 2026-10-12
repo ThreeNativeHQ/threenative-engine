@@ -1,0 +1,235 @@
+{
+  "name": "materials-vertex-node",
+  "adaptedFrom": "original \u2014 NodeMaterial.vertexNode: a screen-space quad (vec4(positionGeometry.xy, 0, 1) scaled and moved) and a world-space wave through cameraProjectionMatrix and cameraViewMatrix, which ignores the mesh's own position as three's vertexNode does",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb",
+    "shadowMap": false
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "new",
+      "id": "quadGeo",
+      "class": "PlaneGeometry",
+      "args": [1, 1]
+    },
+    {
+      "op": "new",
+      "id": "quadMat",
+      "class": "MeshBasicNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "quadMat",
+      "path": "color.r",
+      "value": 0.9
+    },
+    {
+      "op": "set",
+      "id": "quadMat",
+      "path": "color.g",
+      "value": 0.4
+    },
+    {
+      "op": "set",
+      "id": "quadMat",
+      "path": "color.b",
+      "value": 0.2
+    },
+    {
+      "op": "tsl",
+      "id": "quadMat",
+      "program": "vertex-node-screen"
+    },
+    {
+      "op": "new",
+      "id": "quad",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "quadGeo"
+        },
+        {
+          "ref": "quadMat"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "quad"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "waveGeo",
+      "class": "PlaneGeometry",
+      "args": [3, 1.2, 48, 8]
+    },
+    {
+      "op": "new",
+      "id": "waveMat",
+      "class": "MeshStandardNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "waveMat",
+      "path": "color.r",
+      "value": 0.3
+    },
+    {
+      "op": "set",
+      "id": "waveMat",
+      "path": "color.g",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "waveMat",
+      "path": "color.b",
+      "value": 0.9
+    },
+    {
+      "op": "set",
+      "id": "waveMat",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "tsl",
+      "id": "waveMat",
+      "program": "vertex-node-world"
+    },
+    {
+      "op": "new",
+      "id": "wave",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "waveGeo"
+        },
+        {
+          "ref": "waveMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "wave",
+      "path": "position.y",
+      "value": -0.8
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "wave"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "sun",
+      "class": "DirectionalLight",
+      "args": [16777215, 2.5]
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.x",
+      "value": -2
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.y",
+      "value": 4
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sun"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "name": "alias-rotation-quaternion-sync",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js — rotation and quaternion are two views of one orientation: an Euler component write reaches the quaternion and a quaternion write reaches the Euler (scene-rotation-sync.json, driven through the member aliases the fixture retains)",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "quat1",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fe0f91dd49075e6",
+      "decimal": "0.5304097320219483"
+    },
+    {
+      "index": 1,
+      "id": "quat1",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd21cc43ea76111",
+      "decimal": "-0.2830057727674254"
+    },
+    {
+      "index": 2,
+      "id": "quat1",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bfc8c85d89835001",
+      "decimal": "-0.19361466612338066"
+    },
+    {
+      "index": 3,
+      "id": "quat1",
+      "kind": "number",
+      "path": "w",
+      "value": "n:3fe8cf3d3d1d1aa1",
+      "decimal": "0.7752977555872641"
+    },
+    {
+      "index": 4,
+      "id": "o1",
+      "kind": "number",
+      "path": "quaternion.x",
+      "value": "n:3fe0f91dd49075e6",
+      "decimal": "0.5304097320219483"
+    },
+    {
+      "index": 5,
+      "id": "rot1",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfe6666666666666",
+      "decimal": "-0.7"
+    },
+    {
+      "index": 6,
+      "id": "o1",
+      "kind": "number",
+      "path": "rotation.y",
+      "value": "n:bfe6666666666666",
+      "decimal": "-0.7"
+    },
+    {
+      "index": 7,
+      "id": "rot2",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fe921fb54442d18",
+      "decimal": "0.7853981633974483"
+    },
+    {
+      "index": 8,
+      "id": "rot2",
+      "kind": "number",
+      "path": "y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 9,
+      "id": "rot2",
+      "kind": "number",
+      "path": "z",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 10,
+      "id": "o2",
+      "kind": "number",
+      "path": "rotation.x",
+      "value": "n:3fe921fb54442d18",
+      "decimal": "0.7853981633974483"
+    },
+    {
+      "index": 11,
+      "id": "quat2",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 12,
+      "id": "quat2",
+      "kind": "number",
+      "path": "w",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 13,
+      "id": "o2",
+      "kind": "number",
+      "path": "quaternion.w",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    }
+  ]
+}

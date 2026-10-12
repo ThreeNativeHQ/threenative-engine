@@ -1,0 +1,243 @@
+{
+  "name": "animation-authored-tracks",
+  "adaptedFrom": "three@0.185.1 src/animation/tracks/*KeyframeTrack.js and AnimationClip.js \u2014 tracks built in code, cloned, put in a clip and played",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "q",
+      "class": "QuaternionKeyframeTrack",
+      "args": [
+        "hip.quaternion",
+        {
+          "array": [0, 0.5, 1],
+          "type": "Float32Array"
+        },
+        {
+          "array": [0, 0, 0, 1, 0, 0.38268343, 0, 0.92387953, 0, 0.70710678, 0, 0.70710678],
+          "type": "Float32Array"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v",
+      "class": "VectorKeyframeTrack",
+      "args": [
+        "hip.position",
+        {
+          "array": [0, 1],
+          "type": "Float32Array"
+        },
+        {
+          "array": [0, 0, 0, 1, 2, 3],
+          "type": "Float32Array"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n",
+      "class": "NumberKeyframeTrack",
+      "args": [
+        "hip.scale[x]",
+        {
+          "array": [0, 1],
+          "type": "Float32Array"
+        },
+        {
+          "array": [1, 2],
+          "type": "Float32Array"
+        },
+        2300
+      ]
+    },
+    {
+      "op": "call",
+      "id": "q",
+      "method": "clone",
+      "args": [],
+      "result": "qc"
+    },
+    {
+      "op": "new",
+      "id": "clip",
+      "class": "AnimationClip",
+      "args": [
+        "grip",
+        -1,
+        {
+          "refs": ["qc", "v"]
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "root",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "hip",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "hip",
+      "path": "name",
+      "value": "hip"
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "add",
+      "args": [
+        {
+          "ref": "hip"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "mixer",
+      "class": "AnimationMixer",
+      "args": [
+        {
+          "ref": "root"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "mixer",
+      "method": "clipAction",
+      "args": [
+        {
+          "ref": "clip"
+        }
+      ],
+      "result": "action"
+    },
+    {
+      "op": "call",
+      "id": "action",
+      "method": "play",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "mixer",
+      "method": "update",
+      "args": [0.3]
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "hq",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "hip",
+      "method": "getWorldQuaternion",
+      "args": [
+        {
+          "ref": "hq"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "hp",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "hip",
+      "method": "getWorldPosition",
+      "args": [
+        {
+          "ref": "hp"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "q",
+      "kind": "numbers",
+      "path": "times"
+    },
+    {
+      "id": "q",
+      "kind": "numbers",
+      "path": "values"
+    },
+    {
+      "id": "q",
+      "kind": "string",
+      "path": "name"
+    },
+    {
+      "id": "q",
+      "kind": "string",
+      "path": "ValueTypeName"
+    },
+    {
+      "id": "v",
+      "kind": "string",
+      "path": "ValueTypeName"
+    },
+    {
+      "id": "n",
+      "kind": "string",
+      "path": "ValueTypeName"
+    },
+    {
+      "id": "n",
+      "kind": "numbers",
+      "path": "values"
+    },
+    {
+      "id": "qc",
+      "kind": "numbers",
+      "path": "values"
+    },
+    {
+      "id": "qc",
+      "kind": "string",
+      "path": "name"
+    },
+    {
+      "id": "clip",
+      "kind": "number",
+      "path": "duration"
+    },
+    {
+      "id": "clip",
+      "kind": "string",
+      "path": "name"
+    },
+    {
+      "id": "hq",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "hp",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

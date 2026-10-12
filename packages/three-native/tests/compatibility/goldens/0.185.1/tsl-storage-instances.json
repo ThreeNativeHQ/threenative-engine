@@ -1,0 +1,35 @@
+{
+  "name": "tsl-storage-instances",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — PRD-513: a TSL compute pass writes 10,000 instance positions (a 100 x 100 grid with a sine wave) into a storage buffer, and the following draw places each instance of an InstancedMesh at its entry through the material's positionNode",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0041919bda9af,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc99ce0e16487bf,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.001000500250125, -1, 0, 0, -0.2001000500250125, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:376040709cefe53145e56abe2bc03467881ed5760bf1c7061de2f8360ffc1d2d",
+      "decimal": "376040709cefe53145e56abe2bc03467881ed5760bf1c7061de2f8360ffc1d2d"
+    }
+  ],
+  "render": {
+    "png": "tsl-storage-instances.png",
+    "pngSha256": "376040709cefe53145e56abe2bc03467881ed5760bf1c7061de2f8360ffc1d2d",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

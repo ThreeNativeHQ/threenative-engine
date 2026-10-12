@@ -1,0 +1,344 @@
+{
+  "name": "scene-object-bounds-skinned",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 Box3.expandByObject, InstancedMesh.computeBoundingBox and SkinnedMesh.applyBoneTransform: hierarchy updates, cached versus precise bounds and explicit recomputation",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bfd3710cd8b524db",
+      "decimal": "-0.30377503550387325"
+    },
+    {
+      "index": 1,
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:bff1989bd30c04ce",
+      "decimal": "-1.099757980730192"
+    },
+    {
+      "index": 2,
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:bfce5e097b5315d8",
+      "decimal": "-0.23724478265482563"
+    },
+    {
+      "index": 3,
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:3ff42c2c75c6de78",
+      "decimal": "1.260784587922812"
+    },
+    {
+      "index": 4,
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:3fb202dc2437cf6c",
+      "decimal": "0.07035613903263788"
+    },
+    {
+      "index": 5,
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:3ff15c6810f69ccf",
+      "decimal": "1.0850601828222357"
+    },
+    {
+      "index": 6,
+      "id": "precise",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bfd3710cd8b524db",
+      "decimal": "-0.30377503550387325"
+    },
+    {
+      "index": 7,
+      "id": "precise",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:bff1989bd30c04ce",
+      "decimal": "-1.099757980730192"
+    },
+    {
+      "index": 8,
+      "id": "precise",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:bfce5e097b5315d8",
+      "decimal": "-0.23724478265482563"
+    },
+    {
+      "index": 9,
+      "id": "precise",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:3ff42c2c75c6de78",
+      "decimal": "1.260784587922812"
+    },
+    {
+      "index": 10,
+      "id": "precise",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:3fb202dc2437cf6c",
+      "decimal": "0.07035613903263788"
+    },
+    {
+      "index": 11,
+      "id": "precise",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:3ff15c6810f69ccf",
+      "decimal": "1.0850601828222357"
+    },
+    {
+      "index": 12,
+      "id": "stale",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bfd3710cd8b524db",
+      "decimal": "-0.30377503550387325"
+    },
+    {
+      "index": 13,
+      "id": "stale",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:bff1989bd30c04ce",
+      "decimal": "-1.099757980730192"
+    },
+    {
+      "index": 14,
+      "id": "stale",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:bfce5e097b5315d8",
+      "decimal": "-0.23724478265482563"
+    },
+    {
+      "index": 15,
+      "id": "stale",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:3ff42c2c75c6de78",
+      "decimal": "1.260784587922812"
+    },
+    {
+      "index": 16,
+      "id": "stale",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:3fb202dc2437cf6c",
+      "decimal": "0.07035613903263788"
+    },
+    {
+      "index": 17,
+      "id": "stale",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:3ff15c6810f69ccf",
+      "decimal": "1.0850601828222357"
+    },
+    {
+      "index": 18,
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:c04b79a10813a177",
+      "decimal": "-54.95022679289371"
+    },
+    {
+      "index": 19,
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:bff1989bd30c04ce",
+      "decimal": "-1.099757980730192"
+    },
+    {
+      "index": 20,
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:bfd561e75a6dad13",
+      "decimal": "-0.3341005690660534"
+    },
+    {
+      "index": 21,
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:3ff42c2c75c6de78",
+      "decimal": "1.260784587922812"
+    },
+    {
+      "index": 22,
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:4061026891a58248",
+      "decimal": "136.0752647621723"
+    },
+    {
+      "index": 23,
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:4038f042f5037d91",
+      "decimal": "24.93852168402879"
+    },
+    {
+      "index": 24,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:c04b79a10813a177",
+      "decimal": "-54.95022679289371"
+    },
+    {
+      "index": 25,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:bff1989bd30c04ce",
+      "decimal": "-1.099757980730192"
+    },
+    {
+      "index": 26,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:bfd561e75a6dad13",
+      "decimal": "-0.3341005690660534"
+    },
+    {
+      "index": 27,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:3ff42c2c75c6de78",
+      "decimal": "1.260784587922812"
+    },
+    {
+      "index": 28,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:4061026891a58248",
+      "decimal": "136.0752647621723"
+    },
+    {
+      "index": 29,
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:4038f042f5037d91",
+      "decimal": "24.93852168402879"
+    },
+    {
+      "index": 30,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:4059000000000000",
+      "decimal": "100"
+    },
+    {
+      "index": 31,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:4059400000000000",
+      "decimal": "101"
+    },
+    {
+      "index": 32,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:4059800000000000",
+      "decimal": "102"
+    },
+    {
+      "index": 33,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:405b800000000000",
+      "decimal": "110"
+    },
+    {
+      "index": 34,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:405bc00000000000",
+      "decimal": "111"
+    },
+    {
+      "index": 35,
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:405c000000000000",
+      "decimal": "112"
+    },
+    {
+      "index": 36,
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:c04b79a10813a177",
+      "decimal": "-54.95022679289371"
+    },
+    {
+      "index": 37,
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:bff1989bd30c04ce",
+      "decimal": "-1.099757980730192"
+    },
+    {
+      "index": 38,
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:bfd561e75a6dad13",
+      "decimal": "-0.3341005690660534"
+    },
+    {
+      "index": 39,
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:3ff42c2c75c6de78",
+      "decimal": "1.260784587922812"
+    },
+    {
+      "index": 40,
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:4061026891a58248",
+      "decimal": "136.0752647621723"
+    },
+    {
+      "index": 41,
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:4038f042f5037d91",
+      "decimal": "24.93852168402879"
+    }
+  ]
+}

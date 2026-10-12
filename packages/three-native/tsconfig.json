@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true,
+    "paths": {
+      "three": ["./generated/three.d.ts"]
+    }
+  },
+  "include": [
+    "generated/**/*.d.ts",
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.ts",
+    "__tests__/**/*.ts"
+  ]
+}

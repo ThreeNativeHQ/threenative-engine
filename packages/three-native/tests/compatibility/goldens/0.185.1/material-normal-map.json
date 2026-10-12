@@ -1,0 +1,27 @@
+{
+  "name": "material-normal-map",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a MeshStandardMaterial with a tangent-space normalMap (an 8x8 data texture repeated 3x2, so the map's uv transform differs from the geometry's uv) and a non-uniform, y-flipped normalScale set as properties, lit by one directional light",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:49ae1afefc6ee419a498e2f86c9576082bb9fd165566ceb70f258536724b3a87",
+      "decimal": "49ae1afefc6ee419a498e2f86c9576082bb9fd165566ceb70f258536724b3a87"
+    }
+  ],
+  "render": {
+    "png": "material-normal-map.png",
+    "pngSha256": "49ae1afefc6ee419a498e2f86c9576082bb9fd165566ceb70f258536724b3a87",
+    "width": 300,
+    "height": 200,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

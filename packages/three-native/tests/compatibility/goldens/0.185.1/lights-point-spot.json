@@ -1,0 +1,59 @@
+{
+  "name": "lights-point-spot",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — point and spot lights (distance cutoff, decay, cone and penumbra) beside a directional and a hemisphere light, on Standard, Lambert and Phong meshes",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff70d41d0ea800a,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ffebc57c138aab7,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.4407365952283748, 0, 0, 0, 0, 1.9209821269711662, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "point",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:bff999999999999a,n:3ff6666666666666,n:3ff3333333333333,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.6, 1.4, 1.2, 1"
+    },
+    {
+      "index": 2,
+      "id": "spot",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:400199999999999a,n:400b333333333333,n:3ff999999999999a,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2.2, 3.4, 1.6, 1"
+    },
+    {
+      "index": 3,
+      "id": "spot",
+      "kind": "number",
+      "path": "angle",
+      "value": "n:3fdae147ae147ae1",
+      "decimal": "0.42"
+    },
+    {
+      "index": 4,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:9404dd270aedf9afab5b7ed0855de935fffc82fbeea36a5586e6ff3171a66c4a",
+      "decimal": "9404dd270aedf9afab5b7ed0855de935fffc82fbeea36a5586e6ff3171a66c4a"
+    }
+  ],
+  "render": {
+    "png": "lights-point-spot.png",
+    "pngSha256": "9404dd270aedf9afab5b7ed0855de935fffc82fbeea36a5586e6ff3171a66c4a",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

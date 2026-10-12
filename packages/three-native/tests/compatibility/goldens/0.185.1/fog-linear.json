@@ -1,0 +1,27 @@
+{
+  "name": "fog-linear",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — nodes/fog/Fog.js linear factor over -positionView.z before tone mapping, alpha retained, material.fog=false. Red control: force fogFactor to constant 0 (all three panels stay red).",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:1e1d59e32a4cf46f22aa4259f228dba26a2be74b7f9e179b73fde690b1351b9f",
+      "decimal": "1e1d59e32a4cf46f22aa4259f228dba26a2be74b7f9e179b73fde690b1351b9f"
+    }
+  ],
+  "render": {
+    "png": "fog-linear.png",
+    "pngSha256": "1e1d59e32a4cf46f22aa4259f228dba26a2be74b7f9e179b73fde690b1351b9f",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

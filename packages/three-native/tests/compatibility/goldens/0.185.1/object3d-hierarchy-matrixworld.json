@@ -1,0 +1,80 @@
+{
+  "name": "object3d-hierarchy-matrixworld",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js — add, updateMatrixWorld, getWorldPosition, getWorldDirection, localToWorld",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "parent",
+      "kind": "numbers",
+      "path": "matrix.elements",
+      "value": "n:3ff37eb92b01a70e,n:3fb2fbf418ad2fae,n:bff9592aa30f3554,n:0000000000000000,n:3fd7b604a8b5dc7c,n:40079325bf9e0e37,n:3fdb1052fb9d9c0d,n:0000000000000000,n:3fd91103985da840,n:bfb7836d14ea28d6,n:3fd300cac3330bff,n:0000000000000000,n:3ff0000000000000,n:4000000000000000,n:4008000000000000,n:3ff0000000000000",
+      "decimal": "1.2184383087100659, 0.07415700533346012, -1.5842691773899178, 0, 0.3704845092356164, 2.9468493433103293, 0.42287134715883284, 0, 0.39166345481374165, -0.09184915314304773, 0.29692334234658796, 0, 1, 2, 3, 1"
+    },
+    {
+      "index": 1,
+      "id": "parent",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff37eb92b01a70e,n:3fb2fbf418ad2fae,n:bff9592aa30f3554,n:0000000000000000,n:3fd7b604a8b5dc7c,n:40079325bf9e0e37,n:3fdb1052fb9d9c0d,n:0000000000000000,n:3fd91103985da840,n:bfb7836d14ea28d6,n:3fd300cac3330bff,n:0000000000000000,n:3ff0000000000000,n:4000000000000000,n:4008000000000000,n:3ff0000000000000",
+      "decimal": "1.2184383087100659, 0.07415700533346012, -1.5842691773899178, 0, 0.3704845092356164, 2.9468493433103293, 0.42287134715883284, 0, 0.39166345481374165, -0.09184915314304773, 0.29692334234658796, 0, 1, 2, 3, 1"
+    },
+    {
+      "index": 2,
+      "id": "child",
+      "kind": "numbers",
+      "path": "matrix.elements",
+      "value": "n:3fdc73944aa8084e,n:3febf33dc9116345,n:bfc96dff233dd2bb,n:0000000000000000,n:bfea68f43e1bc5c1,n:3fd40b3110445750,n:bfde1255342376d0,n:0000000000000000,n:bfe648a41a2213c2,n:3fe7dcb756571364,n:3ffb85da136753a6,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "0.444554398447626, 0.8734425475223381, -0.1986693307950612, 0, -0.8253117764526722, 0.3131830843789105, -0.4698689469495152, 0, -0.6963673124706633, 0.7456928907709934, 1.7201786764100944, 0, 0, 1, 0, 1"
+    },
+    {
+      "index": 3,
+      "id": "child",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3fe932c527b0aa66,n:4005003de1c13d15,n:bfd936245ada034d,n:0000000000000000,n:bff12d6f53fa38b6,n:3fecf4984e6f7294,n:3ff4ce9722f39888,n:0000000000000000,n:3fb9fd18647098c0,n:3fffce0edb120e50,n:3ffede859952db8e,n:0000000000000000,n:3ff5ed812a2d771f,n:4013c992dfcf071c,n:400b620a5f73b382,n:3ff0000000000000",
+      "decimal": "0.7874475264737384, 2.6251180302712194, -0.39392956611850566, 0, -1.0735924988144183, 0.9048577815952563, 1.3004371037764333, 0, 0.10151817752975756, 1.987807136291753, 1.929326628609235, 0, 1.3704845092356164, 4.94684934331033, 3.422871347158833, 1"
+    },
+    {
+      "index": 4,
+      "id": "worldPosition",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff5ed812a2d771f,n:4013c992dfcf071c,n:400b620a5f73b382",
+      "decimal": "1.3704845092356164, 4.94684934331033, 3.422871347158833"
+    },
+    {
+      "index": 5,
+      "id": "worldDirection",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fa2c03682362d04,n:3fe6f28026e954b0,n:3fe645acd27404bb",
+      "decimal": "0.036622718234037094, 0.7171021232594708, 0.6960052595533378"
+    },
+    {
+      "index": 6,
+      "id": "worldDirection",
+      "kind": "number",
+      "method": "length",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 7,
+      "id": "localPoint",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff2f945f0529d28,n:4024ede448a10bc6,n:401908ea191dd692",
+      "decimal": "1.185857714424694, 10.464632291468558, 6.258705513425996"
+    },
+    {
+      "index": 8,
+      "id": "worldScale",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:40062697d7be3d16,n:3ffe9eca6aaf5aab,n:40062d0e5f7d5eec",
+      "decimal": "2.7688443045550555, 1.9137672583944247, 2.7720000705847863"
+    }
+  ]
+}

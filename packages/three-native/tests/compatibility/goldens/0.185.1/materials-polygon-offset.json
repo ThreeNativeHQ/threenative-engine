@@ -1,0 +1,51 @@
+{
+  "name": "materials-polygon-offset",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — material.polygonOffset as Midway's markings use it: a decal plane coplanar with a base plane and drawn before it (lower id), which still wins the depth test everywhere through polygonOffsetFactor -1 and polygonOffsetUnits -4; without the bias the base would overwrite it",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff4c8dc2e423980,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ffbb67ae8584cab,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.299038105676658, 0, 0, 0, 0, 1.7320508075688774, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:3ff6666666666666,n:400999999999999a,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1.4, 3.2, 1"
+    },
+    {
+      "index": 2,
+      "id": "light",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:4000000000000000,n:4008000000000000,n:3ff0000000000000,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 3, 1, 1"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:0cabb1b355f1f6c0147410ec675d9f6bf7ec828bb24d2ed0888bfd1f657107a3",
+      "decimal": "0cabb1b355f1f6c0147410ec675d9f6bf7ec828bb24d2ed0888bfd1f657107a3"
+    }
+  ],
+  "render": {
+    "png": "materials-polygon-offset.png",
+    "pngSha256": "0cabb1b355f1f6c0147410ec675d9f6bf7ec828bb24d2ed0888bfd1f657107a3",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

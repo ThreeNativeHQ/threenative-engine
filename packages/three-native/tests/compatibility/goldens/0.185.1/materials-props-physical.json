@@ -1,0 +1,216 @@
+{
+  "name": "materials-props-physical",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — MeshPhysicalMaterial: ior, specularIntensity, specularColor and the physical feature numbers, matching materials-physical",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "fresh",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshPhysicalMaterial",
+      "decimal": "MeshPhysicalMaterial"
+    },
+    {
+      "index": 1,
+      "id": "fresh",
+      "kind": "number",
+      "path": "ior",
+      "value": "n:3ff8000000000000",
+      "decimal": "1.5"
+    },
+    {
+      "index": 2,
+      "id": "fresh",
+      "kind": "number",
+      "path": "specularIntensity",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 3,
+      "id": "fresh",
+      "kind": "number",
+      "path": "specularColor.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 4,
+      "id": "fresh",
+      "kind": "number",
+      "path": "specularColor.g",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 5,
+      "id": "fresh",
+      "kind": "number",
+      "path": "specularColor.b",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 6,
+      "id": "fresh",
+      "kind": "number",
+      "path": "roughness",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 7,
+      "id": "fresh",
+      "kind": "number",
+      "path": "metalness",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 8,
+      "id": "fresh",
+      "kind": "number",
+      "path": "clearcoat",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 9,
+      "id": "m",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshPhysicalMaterial",
+      "decimal": "MeshPhysicalMaterial"
+    },
+    {
+      "index": 10,
+      "id": "m",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3fe999999999999a",
+      "decimal": "0.8"
+    },
+    {
+      "index": 11,
+      "id": "m",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3fd6666666666666",
+      "decimal": "0.35"
+    },
+    {
+      "index": 12,
+      "id": "m",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3fc999999999999a",
+      "decimal": "0.2"
+    },
+    {
+      "index": 13,
+      "id": "m",
+      "kind": "number",
+      "path": "roughness",
+      "value": "n:3fd6666666666666",
+      "decimal": "0.35"
+    },
+    {
+      "index": 14,
+      "id": "m",
+      "kind": "number",
+      "path": "metalness",
+      "value": "n:3fb999999999999a",
+      "decimal": "0.1"
+    },
+    {
+      "index": 15,
+      "id": "m",
+      "kind": "number",
+      "path": "ior",
+      "value": "n:3ffccccccccccccd",
+      "decimal": "1.8"
+    },
+    {
+      "index": 16,
+      "id": "m",
+      "kind": "number",
+      "path": "specularIntensity",
+      "value": "n:3fe6666666666666",
+      "decimal": "0.7"
+    },
+    {
+      "index": 17,
+      "id": "m",
+      "kind": "number",
+      "path": "specularColor.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 18,
+      "id": "m",
+      "kind": "number",
+      "path": "specularColor.g",
+      "value": "n:3fe999999999999a",
+      "decimal": "0.8"
+    },
+    {
+      "index": 19,
+      "id": "m",
+      "kind": "number",
+      "path": "specularColor.b",
+      "value": "n:3fe3333333333333",
+      "decimal": "0.6"
+    },
+    {
+      "index": 20,
+      "id": "m",
+      "kind": "number",
+      "path": "clearcoat",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 21,
+      "id": "m",
+      "kind": "number",
+      "path": "sheen",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 22,
+      "id": "m",
+      "kind": "number",
+      "path": "transmission",
+      "value": "n:3fc999999999999a",
+      "decimal": "0.2"
+    },
+    {
+      "index": 23,
+      "id": "m",
+      "kind": "number",
+      "path": "iridescence",
+      "value": "n:3fe3333333333333",
+      "decimal": "0.6"
+    },
+    {
+      "index": 24,
+      "id": "m",
+      "kind": "number",
+      "path": "anisotropy",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
+    },
+    {
+      "index": 25,
+      "id": "m",
+      "kind": "number",
+      "path": "dispersion",
+      "value": "n:3fb999999999999a",
+      "decimal": "0.1"
+    }
+  ]
+}

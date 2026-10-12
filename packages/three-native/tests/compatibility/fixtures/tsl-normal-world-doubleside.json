@@ -1,0 +1,373 @@
+{
+  "name": "tsl-normal-world-doubleside",
+  "adaptedFrom": "original \u2014 normalWorld as a colour on four DoubleSide planes (three r185 Normal.js normalView = NodeMaterial.setupNormal): a front face and a back face of MeshBasicNodeMaterial (negateOnBackSide), a MeshStandardNodeMaterial with a normalNode, and a back-facing one with a normalMap, each standard plane black and unlit with normalWorld as its emissiveNode",
+  "tolerance": {
+    "abs": 0
+  },
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb",
+    "shadowMap": false
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "new",
+      "id": "geometry",
+      "class": "PlaneGeometry",
+      "args": [1.4, 1.0, 1, 1]
+    },
+    {
+      "op": "new",
+      "id": "frontMaterial",
+      "class": "MeshBasicNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "frontMaterial",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "new",
+      "id": "front",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geometry"
+        },
+        {
+          "ref": "frontMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "front",
+      "path": "name",
+      "value": "front"
+    },
+    {
+      "op": "set",
+      "id": "front",
+      "path": "position.x",
+      "value": -0.8
+    },
+    {
+      "op": "set",
+      "id": "front",
+      "path": "position.y",
+      "value": 0.6
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "front"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "backMaterial",
+      "class": "MeshBasicNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "backMaterial",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "new",
+      "id": "back",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geometry"
+        },
+        {
+          "ref": "backMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "back",
+      "path": "name",
+      "value": "back"
+    },
+    {
+      "op": "set",
+      "id": "back",
+      "path": "position.x",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "back",
+      "path": "position.y",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "back",
+      "path": "rotation.y",
+      "value": 3.141592653589793
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "back"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tiltedMaterial",
+      "class": "MeshStandardNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "tiltedMaterial",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "tiltedMaterial",
+      "path": "color.r",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "tiltedMaterial",
+      "path": "color.g",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "tiltedMaterial",
+      "path": "color.b",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "tiltedMaterial",
+      "path": "roughness",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "tiltedMaterial",
+      "path": "metalness",
+      "value": 0
+    },
+    {
+      "op": "new",
+      "id": "tilted",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geometry"
+        },
+        {
+          "ref": "tiltedMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "tilted",
+      "path": "name",
+      "value": "tilted"
+    },
+    {
+      "op": "set",
+      "id": "tilted",
+      "path": "position.x",
+      "value": -0.8
+    },
+    {
+      "op": "set",
+      "id": "tilted",
+      "path": "position.y",
+      "value": -0.6
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "tilted"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "mappedMaterial",
+      "class": "MeshStandardNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "mappedMaterial",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "mappedMaterial",
+      "path": "color.r",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "mappedMaterial",
+      "path": "color.g",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "mappedMaterial",
+      "path": "color.b",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "mappedMaterial",
+      "path": "roughness",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "mappedMaterial",
+      "path": "metalness",
+      "value": 0
+    },
+    {
+      "op": "new",
+      "id": "mapped",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geometry"
+        },
+        {
+          "ref": "mappedMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mapped",
+      "path": "name",
+      "value": "mapped"
+    },
+    {
+      "op": "set",
+      "id": "mapped",
+      "path": "position.x",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "mapped",
+      "path": "position.y",
+      "value": -0.6
+    },
+    {
+      "op": "set",
+      "id": "mapped",
+      "path": "rotation.y",
+      "value": 3.141592653589793
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mapped"
+        }
+      ]
+    },
+    {
+      "op": "tsl",
+      "id": "scene",
+      "program": "tsl-normal-world-doubleside"
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ]
+}

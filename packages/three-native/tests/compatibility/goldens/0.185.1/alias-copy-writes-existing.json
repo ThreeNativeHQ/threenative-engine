@@ -1,0 +1,152 @@
+{
+  "name": "alias-copy-writes-existing",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 src/core/Object3D.js copy() — it writes into this.up/position/quaternion/scale, the objects the constructor allocated, so an alias taken before copy() reads the copied values (the retained-alias claim of PRD-502 §6.1, adapted from arrays-identity.json)",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "p",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff8000000000000",
+      "decimal": "1.5"
+    },
+    {
+      "index": 1,
+      "id": "p",
+      "kind": "number",
+      "path": "y",
+      "value": "n:c004000000000000",
+      "decimal": "-2.5"
+    },
+    {
+      "index": 2,
+      "id": "p",
+      "kind": "number",
+      "path": "z",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 3,
+      "id": "dst",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:3ff8000000000000",
+      "decimal": "1.5"
+    },
+    {
+      "index": 4,
+      "id": "dst",
+      "kind": "number",
+      "path": "position.z",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 5,
+      "id": "s",
+      "kind": "number",
+      "path": "x",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 6,
+      "id": "s",
+      "kind": "number",
+      "path": "y",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 7,
+      "id": "s",
+      "kind": "number",
+      "path": "z",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 8,
+      "id": "q",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 9,
+      "id": "q",
+      "kind": "number",
+      "path": "y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 10,
+      "id": "q",
+      "kind": "number",
+      "path": "z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 11,
+      "id": "q",
+      "kind": "number",
+      "path": "w",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 12,
+      "id": "u",
+      "kind": "number",
+      "path": "x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 13,
+      "id": "u",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 14,
+      "id": "u",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3fd0000000000000",
+      "decimal": "0.25"
+    },
+    {
+      "index": 15,
+      "id": "dst",
+      "kind": "number",
+      "path": "up.z",
+      "value": "n:3fd0000000000000",
+      "decimal": "0.25"
+    },
+    {
+      "index": 16,
+      "id": "dst",
+      "kind": "number",
+      "path": "scale.y",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 17,
+      "id": "dst",
+      "kind": "number",
+      "path": "quaternion.x",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "name": "lights-props-hemisphere",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — HemisphereLight: sky and ground hex colour arguments through ColorManagement, intensity and groundColor",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "fresh",
+      "kind": "string",
+      "path": "type",
+      "value": "s:HemisphereLight",
+      "decimal": "HemisphereLight"
+    },
+    {
+      "index": 1,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 2,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 3,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 4,
+      "id": "fresh",
+      "kind": "number",
+      "path": "groundColor.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 5,
+      "id": "fresh",
+      "kind": "number",
+      "path": "groundColor.g",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 6,
+      "id": "fresh",
+      "kind": "number",
+      "path": "groundColor.b",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 7,
+      "id": "fresh",
+      "kind": "number",
+      "path": "intensity",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 8,
+      "id": "l",
+      "kind": "string",
+      "path": "type",
+      "value": "s:HemisphereLight",
+      "decimal": "HemisphereLight"
+    },
+    {
+      "index": 9,
+      "id": "l",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3fd9ba01028373e8",
+      "decimal": "0.4019777798219466"
+    },
+    {
+      "index": 10,
+      "id": "l",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3fdfcdc00c8331ce",
+      "decimal": "0.4969329950515914"
+    },
+    {
+      "index": 11,
+      "id": "l",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3fd21f1be500411b",
+      "decimal": "0.28314874041918053"
+    },
+    {
+      "index": 12,
+      "id": "l",
+      "kind": "number",
+      "path": "groundColor.r",
+      "value": "n:3fd0000000000000",
+      "decimal": "0.25"
+    },
+    {
+      "index": 13,
+      "id": "l",
+      "kind": "number",
+      "path": "groundColor.g",
+      "value": "n:3fc3333333333333",
+      "decimal": "0.15"
+    },
+    {
+      "index": 14,
+      "id": "l",
+      "kind": "number",
+      "path": "groundColor.b",
+      "value": "n:3fa999999999999a",
+      "decimal": "0.05"
+    },
+    {
+      "index": 15,
+      "id": "l",
+      "kind": "number",
+      "path": "intensity",
+      "value": "n:3feccccccccccccd",
+      "decimal": "0.9"
+    },
+    {
+      "index": 16,
+      "id": "l",
+      "kind": "number",
+      "path": "position.z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    }
+  ]
+}

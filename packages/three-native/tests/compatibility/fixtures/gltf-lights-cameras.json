@@ -1,0 +1,123 @@
+{
+  "name": "gltf-lights-cameras",
+  "adaptedFrom": "original \u2014 GLTFLoader r185 native twin. Red control: ignore punctual lights (lit panels go black); replace authored camera with defaults (framing changes).",
+  "tolerance": {
+    "abs": 1e-12
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "bg",
+      "class": "Color",
+      "args": [0.04, 0.04, 0.04]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "bg"
+      }
+    },
+    {
+      "op": "gltf",
+      "id": "model",
+      "file": "packages/three-native/tests/compatibility/fixtures/gltf-lights-cameras.glb"
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "model"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "model",
+      "method": "getObjectByName",
+      "args": ["authoredCamera"],
+      "result": "camera"
+    },
+    {
+      "op": "call",
+      "id": "model",
+      "method": "getObjectByName",
+      "args": ["authoredOrtho"],
+      "result": "ortho"
+    },
+    {
+      "op": "call",
+      "id": "model",
+      "method": "getObjectByName",
+      "args": ["light_0"],
+      "result": "sun"
+    },
+    {
+      "op": "call",
+      "id": "model",
+      "method": "getObjectByName",
+      "args": ["light_1"],
+      "result": "point"
+    },
+    {
+      "op": "call",
+      "id": "model",
+      "method": "getObjectByName",
+      "args": ["light_2"],
+      "result": "spot"
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "fov",
+      "kind": "number"
+    },
+    {
+      "id": "ortho",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "sun",
+      "path": "intensity",
+      "kind": "number"
+    },
+    {
+      "id": "point",
+      "path": "distance",
+      "kind": "number"
+    },
+    {
+      "id": "spot",
+      "path": "penumbra",
+      "kind": "number"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  }
+}

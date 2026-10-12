@@ -1,0 +1,33 @@
+{
+  "name": "alias-rotation-quaternion-sync",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js — rotation and quaternion are two views of one orientation: an Euler component write reaches the quaternion and a quaternion write reaches the Euler (scene-rotation-sync.json, driven through the member aliases the fixture retains)",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "o1", "class": "Object3D", "args": [] },
+    { "op": "call", "id": "o1", "method": "rotation", "args": [], "result": "rot1" },
+    { "op": "call", "id": "o1", "method": "quaternion", "args": [], "result": "quat1" },
+    { "op": "set", "id": "rot1", "path": "x", "value": 1.2 },
+    { "op": "set", "id": "rot1", "path": "y", "value": -0.7 },
+    { "op": "new", "id": "o2", "class": "Object3D", "args": [] },
+    { "op": "call", "id": "o2", "method": "rotation", "args": [], "result": "rot2" },
+    { "op": "call", "id": "o2", "method": "quaternion", "args": [], "result": "quat2" },
+    { "op": "set", "id": "quat2", "path": "x", "value": 0.5 },
+    { "op": "set", "id": "quat2", "path": "w", "value": 0.5 }
+  ],
+  "observe": [
+    { "id": "quat1", "path": "x", "kind": "number" },
+    { "id": "quat1", "path": "y", "kind": "number" },
+    { "id": "quat1", "path": "z", "kind": "number" },
+    { "id": "quat1", "path": "w", "kind": "number" },
+    { "id": "o1", "path": "quaternion.x", "kind": "number" },
+    { "id": "rot1", "path": "y", "kind": "number" },
+    { "id": "o1", "path": "rotation.y", "kind": "number" },
+    { "id": "rot2", "path": "x", "kind": "number" },
+    { "id": "rot2", "path": "y", "kind": "number" },
+    { "id": "rot2", "path": "z", "kind": "number" },
+    { "id": "o2", "path": "rotation.x", "kind": "number" },
+    { "id": "quat2", "path": "x", "kind": "number" },
+    { "id": "quat2", "path": "w", "kind": "number" },
+    { "id": "o2", "path": "quaternion.w", "kind": "number" }
+  ]
+}

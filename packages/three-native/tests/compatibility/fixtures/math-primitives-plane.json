@@ -1,0 +1,764 @@
+{
+  "name": "math-primitives-plane",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Plane.tests.js \u2014 the whole surface except the Line3 forms",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "v01",
+      "class": "Vector3",
+      "args": [1, 5, -1]
+    },
+    {
+      "op": "new",
+      "id": "n02",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p03",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p03",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n02"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "p04",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "n05",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "p06",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p06",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n05"
+        },
+        4
+      ]
+    },
+    {
+      "op": "call",
+      "id": "p06",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "n07",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "p08",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p08",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n07"
+        },
+        4
+      ]
+    },
+    {
+      "op": "call",
+      "id": "p08",
+      "method": "negate",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "n09",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "p10",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p10",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n09"
+        },
+        4
+      ]
+    },
+    {
+      "op": "call",
+      "id": "p10",
+      "method": "setComponents",
+      "args": [1, 2, 3, 4]
+    },
+    {
+      "op": "new",
+      "id": "p11",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "n12",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "v13",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "p11",
+      "method": "setFromNormalAndCoplanarPoint",
+      "args": [
+        {
+          "ref": "n12"
+        },
+        {
+          "ref": "v13"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "p14",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "a15",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "b16",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "c17",
+      "class": "Vector3",
+      "args": [0, 0, 1]
+    },
+    {
+      "op": "call",
+      "id": "p14",
+      "method": "setFromCoplanarPoints",
+      "args": [
+        {
+          "ref": "a15"
+        },
+        {
+          "ref": "b16"
+        },
+        {
+          "ref": "c17"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n18",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "p19",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p19",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n18"
+        },
+        4
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n20",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p21",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p21",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n20"
+        },
+        2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "p19",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "p21"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n22",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p23",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p23",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n22"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v24",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "p23",
+      "method": "distanceToPoint",
+      "args": [
+        {
+          "ref": "v24"
+        }
+      ],
+      "result": "r25"
+    },
+    {
+      "op": "new",
+      "id": "v26",
+      "class": "Vector3",
+      "args": [0, 5, 0]
+    },
+    {
+      "op": "call",
+      "id": "p23",
+      "method": "distanceToPoint",
+      "args": [
+        {
+          "ref": "v26"
+        }
+      ],
+      "result": "r27"
+    },
+    {
+      "op": "new",
+      "id": "n28",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p29",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p29",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n28"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c30",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "s31",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s31",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c30"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "p29",
+      "method": "distanceToSphere",
+      "args": [
+        {
+          "ref": "s31"
+        }
+      ],
+      "result": "r32"
+    },
+    {
+      "op": "new",
+      "id": "c33",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "s34",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s34",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c33"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "p29",
+      "method": "intersectsSphere",
+      "args": [
+        {
+          "ref": "s34"
+        }
+      ],
+      "result": "r35"
+    },
+    {
+      "op": "new",
+      "id": "lo36",
+      "class": "Vector3",
+      "args": [-1, -1, -1]
+    },
+    {
+      "op": "new",
+      "id": "hi37",
+      "class": "Vector3",
+      "args": [1, 1, 1]
+    },
+    {
+      "op": "new",
+      "id": "b38",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b38",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo36"
+        },
+        {
+          "ref": "hi37"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "p29",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b38"
+        }
+      ],
+      "result": "r39"
+    },
+    {
+      "op": "new",
+      "id": "n40",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p41",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p41",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n40"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t42",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p41",
+      "method": "projectPoint",
+      "args": [
+        {
+          "ref": "v01"
+        },
+        {
+          "ref": "t42"
+        }
+      ],
+      "result": "r43"
+    },
+    {
+      "op": "new",
+      "id": "n44",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p45",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p45",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n44"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t46",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p45",
+      "method": "coplanarPoint",
+      "args": [
+        {
+          "ref": "t46"
+        }
+      ],
+      "result": "r47"
+    },
+    {
+      "op": "new",
+      "id": "m48",
+      "class": "Matrix4",
+      "args": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    },
+    {
+      "op": "new",
+      "id": "n49",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p50",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p50",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n49"
+        },
+        2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "p50",
+      "method": "applyMatrix4",
+      "args": [
+        {
+          "ref": "m48"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n51",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p52",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p52",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n51"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v53",
+      "class": "Vector3",
+      "args": [0, 2, 0]
+    },
+    {
+      "op": "call",
+      "id": "p52",
+      "method": "translate",
+      "args": [
+        {
+          "ref": "v53"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n54",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p55",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p55",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n54"
+        },
+        2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "p55",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "p04"
+        }
+      ],
+      "result": "r56"
+    }
+  ],
+  "observe": [
+    {
+      "id": "p03",
+      "kind": "number",
+      "path": "normal.y"
+    },
+    {
+      "id": "p03",
+      "kind": "number",
+      "path": "constant"
+    },
+    {
+      "id": "p04",
+      "kind": "number",
+      "path": "normal.x"
+    },
+    {
+      "id": "p04",
+      "kind": "number",
+      "path": "constant"
+    },
+    {
+      "id": "p06",
+      "kind": "number",
+      "path": "normal.x"
+    },
+    {
+      "id": "p06",
+      "kind": "number",
+      "path": "constant"
+    },
+    {
+      "id": "p08",
+      "kind": "number",
+      "path": "constant"
+    },
+    {
+      "id": "p10",
+      "kind": "number",
+      "path": "normal.x"
+    },
+    {
+      "id": "p10",
+      "kind": "number",
+      "path": "constant"
+    },
+    {
+      "id": "p11",
+      "kind": "number",
+      "path": "constant"
+    },
+    {
+      "id": "p14",
+      "kind": "number",
+      "path": "constant"
+    },
+    {
+      "id": "p14",
+      "kind": "number",
+      "path": "normal.z"
+    },
+    {
+      "id": "p19",
+      "kind": "number",
+      "path": "normal.x"
+    },
+    {
+      "id": "p19",
+      "kind": "number",
+      "path": "constant"
+    },
+    {
+      "id": "r25",
+      "kind": "number"
+    },
+    {
+      "id": "r27",
+      "kind": "number"
+    },
+    {
+      "id": "r32",
+      "kind": "number"
+    },
+    {
+      "id": "r35",
+      "kind": "boolean"
+    },
+    {
+      "id": "r39",
+      "kind": "boolean"
+    },
+    {
+      "id": "r43",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r47",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "p50",
+      "kind": "number",
+      "path": "constant"
+    },
+    {
+      "id": "p50",
+      "kind": "number",
+      "path": "normal.x"
+    },
+    {
+      "id": "p52",
+      "kind": "number",
+      "path": "constant"
+    },
+    {
+      "id": "r56",
+      "kind": "boolean"
+    }
+  ]
+}

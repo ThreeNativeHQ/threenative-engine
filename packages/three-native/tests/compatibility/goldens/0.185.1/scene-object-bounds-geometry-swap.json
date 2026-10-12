@@ -1,0 +1,56 @@
+{
+  "name": "scene-object-bounds-geometry-swap",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — Mesh.geometry is a plain property in three: Midway swaps a mesh's geometry after building it; Box3.setFromObject then measures the new geometry",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "bounds",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 1,
+      "id": "bounds",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:c000000000000000",
+      "decimal": "-2"
+    },
+    {
+      "index": 2,
+      "id": "bounds",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:c008000000000000",
+      "decimal": "-3"
+    },
+    {
+      "index": 3,
+      "id": "bounds",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 4,
+      "id": "bounds",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 5,
+      "id": "bounds",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    }
+  ]
+}

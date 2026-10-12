@@ -1,0 +1,80 @@
+{
+  "name": "geometry-attribute-clone",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — BufferAttribute.clone on a geometry's index and position, as Midway's particle batch copies a PlaneGeometry's into an InstancedBufferGeometry: a new attribute of the same class, itemSize and array type holding a copy of the elements, so an edit to one leaves the other",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "index",
+      "kind": "numbers",
+      "path": "array",
+      "value": "n:4008000000000000,n:4000000000000000,n:3ff0000000000000,n:4000000000000000,n:4008000000000000,n:3ff0000000000000",
+      "decimal": "3, 2, 1, 2, 3, 1"
+    },
+    {
+      "index": 1,
+      "id": "indexCopy",
+      "kind": "numbers",
+      "path": "array",
+      "value": "n:0000000000000000,n:4000000000000000,n:3ff0000000000000,n:4000000000000000,n:4008000000000000,n:3ff0000000000000",
+      "decimal": "0, 2, 1, 2, 3, 1"
+    },
+    {
+      "index": 2,
+      "id": "indexCopy",
+      "kind": "number",
+      "path": "itemSize",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 3,
+      "id": "position",
+      "kind": "numbers",
+      "path": "array",
+      "value": "n:bfe0000000000000,n:3fe0000000000000,n:0000000000000000,n:3fe0000000000000,n:3fe0000000000000,n:0000000000000000,n:bfe0000000000000,n:bfe0000000000000,n:0000000000000000,n:3fe0000000000000,n:bfe0000000000000,n:0000000000000000",
+      "decimal": "-0.5, 0.5, 0, 0.5, 0.5, 0, -0.5, -0.5, 0, 0.5, -0.5, 0"
+    },
+    {
+      "index": 4,
+      "id": "positionCopy",
+      "kind": "numbers",
+      "path": "array",
+      "value": "n:bfe0000000000000,n:3fe0000000000000,n:0000000000000000,n:4022000000000000,n:4020000000000000,n:401c000000000000,n:bfe0000000000000,n:bfe0000000000000,n:0000000000000000,n:3fe0000000000000,n:bfe0000000000000,n:0000000000000000",
+      "decimal": "-0.5, 0.5, 0, 9, 8, 7, -0.5, -0.5, 0, 0.5, -0.5, 0"
+    },
+    {
+      "index": 5,
+      "id": "positionCopy",
+      "kind": "number",
+      "path": "usage",
+      "value": "n:40e11d0000000000",
+      "decimal": "35048"
+    },
+    {
+      "index": 6,
+      "id": "positionCopy",
+      "kind": "number",
+      "path": "count",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 7,
+      "id": "instancedCopy",
+      "kind": "numbers",
+      "path": "array",
+      "value": "n:3ff0000000000000,n:4000000000000000,n:4008000000000000,n:4010000000000000,n:4014000000000000,n:4018000000000000",
+      "decimal": "1, 2, 3, 4, 5, 6"
+    },
+    {
+      "index": 8,
+      "id": "instancedCopy",
+      "kind": "number",
+      "path": "meshPerAttribute",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    }
+  ]
+}

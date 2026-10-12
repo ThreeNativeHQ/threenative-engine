@@ -1,0 +1,439 @@
+{
+  "name": "scene-object-bounds-instanced",
+  "adaptedFrom": "three@0.185.1 Box3.expandByObject, InstancedMesh.computeBoundingBox and SkinnedMesh.applyBoneTransform: hierarchy updates, cached versus precise bounds and explicit recomputation",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "geometry",
+      "class": "BoxGeometry",
+      "args": [2, 4, 6]
+    },
+    {
+      "op": "new",
+      "id": "material",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "mesh",
+      "class": "InstancedMesh",
+      "args": [
+        {
+          "ref": "geometry"
+        },
+        {
+          "ref": "material"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "matrix",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "matrix",
+      "method": "makeTranslation",
+      "args": [-5, 1, 0]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "setMatrixAt",
+      "args": [
+        0,
+        {
+          "ref": "matrix"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "matrix",
+      "method": "makeTranslation",
+      "args": [8, -2, 3]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "setMatrixAt",
+      "args": [
+        1,
+        {
+          "ref": "matrix"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "scale.x",
+      "value": -2
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "position.z",
+      "value": 4
+    },
+    {
+      "op": "new",
+      "id": "conservative",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "conservative",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        false
+      ]
+    },
+    {
+      "op": "new",
+      "id": "precise",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "precise",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        true
+      ]
+    },
+    {
+      "op": "call",
+      "id": "matrix",
+      "method": "makeTranslation",
+      "args": [99, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "setMatrixAt",
+      "args": [
+        1,
+        {
+          "ref": "matrix"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "stale",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "stale",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        false
+      ]
+    },
+    {
+      "op": "new",
+      "id": "lo",
+      "class": "Vector3",
+      "args": [100, 101, 102]
+    },
+    {
+      "op": "new",
+      "id": "hi",
+      "class": "Vector3",
+      "args": [110, 111, 112]
+    },
+    {
+      "op": "new",
+      "id": "authored",
+      "class": "Box3",
+      "args": [
+        {
+          "ref": "lo"
+        },
+        {
+          "ref": "hi"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "boundingBox",
+      "value": {
+        "ref": "authored"
+      }
+    },
+    {
+      "op": "new",
+      "id": "authoredWorld",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "authoredWorld",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        true
+      ]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "computeBoundingBox",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "recomputed",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "recomputed",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        false
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "count",
+      "value": 0
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "computeBoundingBox",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "empty",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "empty",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        false
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "max.z"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "name": "object3d-hierarchy-matrixworld",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js — add, updateMatrixWorld, getWorldPosition, getWorldDirection, localToWorld",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "parent", "class": "Object3D", "args": [] },
+    { "op": "set", "id": "parent", "path": "position.x", "value": 1 },
+    { "op": "set", "id": "parent", "path": "position.y", "value": 2 },
+    { "op": "set", "id": "parent", "path": "position.z", "value": 3 },
+    { "op": "set", "id": "parent", "path": "scale.x", "value": 2 },
+    { "op": "set", "id": "parent", "path": "scale.y", "value": 3 },
+    { "op": "set", "id": "parent", "path": "scale.z", "value": 0.5 },
+    { "op": "new", "id": "spin", "class": "Euler", "args": [0.3, 0.9, -0.2, "XYZ"] },
+    { "op": "call", "id": "parent", "method": "setRotationFromEuler", "args": [{ "ref": "spin" }] },
+    { "op": "new", "id": "child", "class": "Object3D", "args": [] },
+    { "op": "set", "id": "child", "path": "position.y", "value": 1 },
+    { "op": "set", "id": "child", "path": "scale.z", "value": 2 },
+    { "op": "new", "id": "childSpin", "class": "Euler", "args": [-0.5, 0.2, 1.1, "ZYX"] },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "setRotationFromEuler",
+      "args": [{ "ref": "childSpin" }]
+    },
+    { "op": "call", "id": "parent", "method": "add", "args": [{ "ref": "child" }] },
+    { "op": "call", "id": "parent", "method": "updateMatrixWorld", "args": [true] },
+    { "op": "new", "id": "worldPosition", "class": "Vector3", "args": [] },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "getWorldPosition",
+      "args": [{ "ref": "worldPosition" }]
+    },
+    { "op": "new", "id": "worldDirection", "class": "Vector3", "args": [0, 1, 0] },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "getWorldDirection",
+      "args": [{ "ref": "worldDirection" }]
+    },
+    { "op": "new", "id": "localPoint", "class": "Vector3", "args": [1, 1, 1] },
+    { "op": "call", "id": "child", "method": "localToWorld", "args": [{ "ref": "localPoint" }] },
+    { "op": "new", "id": "worldScale", "class": "Vector3", "args": [] },
+    { "op": "call", "id": "child", "method": "getWorldScale", "args": [{ "ref": "worldScale" }] }
+  ],
+  "observe": [
+    { "id": "parent", "path": "matrix.elements", "kind": "numbers" },
+    { "id": "parent", "path": "matrixWorld.elements", "kind": "numbers" },
+    { "id": "child", "path": "matrix.elements", "kind": "numbers" },
+    { "id": "child", "path": "matrixWorld.elements", "kind": "numbers" },
+    { "id": "worldPosition", "method": "toArray", "kind": "numbers" },
+    { "id": "worldDirection", "method": "toArray", "kind": "numbers" },
+    { "id": "worldDirection", "method": "length", "kind": "number" },
+    { "id": "localPoint", "method": "toArray", "kind": "numbers" },
+    { "id": "worldScale", "method": "toArray", "kind": "numbers" }
+  ]
+}

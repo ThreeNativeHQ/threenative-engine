@@ -1,0 +1,27 @@
+{
+  "name": "blending-additive",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — MeshBasicMaterial planes over an opaque red band: AdditiveBlending on a transparent green, AdditiveBlending on an opaque blue (three blends a non-Normal mode even when transparent is false and keeps its alpha), and a NormalBlending transparent control between them",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:8b513bf6a173f9f23ce8c9ad7815256fd183fd69f2cf2e4ad25c181601031220",
+      "decimal": "8b513bf6a173f9f23ce8c9ad7815256fd183fd69f2cf2e4ad25c181601031220"
+    }
+  ],
+  "render": {
+    "png": "blending-additive.png",
+    "pngSha256": "8b513bf6a173f9f23ce8c9ad7815256fd183fd69f2cf2e4ad25c181601031220",
+    "width": 256,
+    "height": 128,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

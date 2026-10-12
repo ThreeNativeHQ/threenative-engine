@@ -1,0 +1,345 @@
+{
+  "name": "shadows-billboard-position-node",
+  "adaptedFrom": "original \u2014 Midway's camera-facing cards: a quad whose positionNode spans cameraWorldMatrix's right and up axes, under shadows-directional's light; r185 draws the shadow pass through the shadow camera, so the card faces the light there and casts its full silhouette",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.x",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 4.5
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 6
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0.3, 0.3]
+    },
+    {
+      "op": "new",
+      "id": "sun",
+      "class": "DirectionalLight",
+      "args": [16777215, 2.5]
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.x",
+      "value": -3
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.y",
+      "value": 5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.z",
+      "value": -3
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "castShadow",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.bias",
+      "value": -0.0005
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.normalBias",
+      "value": 0.02
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.camera.left",
+      "value": -5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.camera.right",
+      "value": 5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.camera.top",
+      "value": 5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.camera.bottom",
+      "value": -5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.mapSize.width",
+      "value": 1024
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.mapSize.height",
+      "value": 1024
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [11189196, 3355443, 0.6]
+    },
+    {
+      "op": "new",
+      "id": "floorGeometry",
+      "class": "PlaneGeometry",
+      "args": [10, 10]
+    },
+    {
+      "op": "new",
+      "id": "floorMaterial",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "floorMaterial",
+      "path": "roughness",
+      "value": 0.9
+    },
+    {
+      "op": "new",
+      "id": "floor",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "floorGeometry"
+        },
+        {
+          "ref": "floorMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "floor",
+      "path": "rotation.x",
+      "value": -1.5707963267948966
+    },
+    {
+      "op": "set",
+      "id": "floor",
+      "path": "receiveShadow",
+      "value": true
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "floor"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "cardGeometry",
+      "class": "PlaneGeometry",
+      "args": [1.2, 1.6]
+    },
+    {
+      "op": "new",
+      "id": "cardMaterial",
+      "class": "MeshStandardNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "cardMaterial",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "cardMaterial",
+      "path": "color.r",
+      "value": 0.9
+    },
+    {
+      "op": "set",
+      "id": "cardMaterial",
+      "path": "color.g",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "cardMaterial",
+      "path": "color.b",
+      "value": 0.3
+    },
+    {
+      "op": "new",
+      "id": "card",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "cardGeometry"
+        },
+        {
+          "ref": "cardMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "card",
+      "path": "name",
+      "value": "card"
+    },
+    {
+      "op": "set",
+      "id": "card",
+      "path": "position.y",
+      "value": 1.2
+    },
+    {
+      "op": "set",
+      "id": "card",
+      "path": "castShadow",
+      "value": true
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "card"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sun"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "tsl",
+      "id": "scene",
+      "program": "shadow-billboard"
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "sun",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "sun",
+      "path": "shadow.bias",
+      "kind": "number"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb",
+    "shadowMap": true
+  }
+}

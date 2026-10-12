@@ -1,0 +1,56 @@
+{
+  "name": "alias-reparent-and-growth",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 src/core/Object3D.js add()/remove() move a node between parents without reallocating it, and src/math/Vector3.js members are allocated once — so a position alias taken before the move still names its object after re-parenting and after the scene grows (scene_hierarchy_test.cpp alias(), through the differential runner)",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "o",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:401e000000000000",
+      "decimal": "7.5"
+    },
+    {
+      "index": 1,
+      "id": "o",
+      "kind": "number",
+      "path": "position.y",
+      "value": "n:4004000000000000",
+      "decimal": "2.5"
+    },
+    {
+      "index": 2,
+      "id": "p",
+      "kind": "number",
+      "path": "x",
+      "value": "n:401e000000000000",
+      "decimal": "7.5"
+    },
+    {
+      "index": 3,
+      "id": "p",
+      "kind": "number",
+      "path": "y",
+      "value": "n:4004000000000000",
+      "decimal": "2.5"
+    },
+    {
+      "index": 4,
+      "id": "p2",
+      "kind": "number",
+      "path": "x",
+      "value": "n:401e000000000000",
+      "decimal": "7.5"
+    },
+    {
+      "index": 5,
+      "id": "p2",
+      "kind": "number",
+      "path": "y",
+      "value": "n:4004000000000000",
+      "decimal": "2.5"
+    }
+  ]
+}

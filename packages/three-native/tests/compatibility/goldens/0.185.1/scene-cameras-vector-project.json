@@ -1,0 +1,104 @@
+{
+  "name": "scene-cameras-vector-project",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 Vector3.project/unproject: perspective and orthographic matrix order without implicit camera updates",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "perspectiveProjected",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fb985d51872f423",
+      "decimal": "0.09969837042713485"
+    },
+    {
+      "index": 1,
+      "id": "perspectiveProjected",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfe4b3a34cc72a71",
+      "decimal": "-0.6469284534044403"
+    },
+    {
+      "index": 2,
+      "id": "perspectiveProjected",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3fee6b27b883cd59",
+      "decimal": "0.9505804637723642"
+    },
+    {
+      "index": 3,
+      "id": "perspectiveRoundTrip",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff8000000000006",
+      "decimal": "1.5000000000000013"
+    },
+    {
+      "index": 4,
+      "id": "perspectiveRoundTrip",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfcfffffffffffa0",
+      "decimal": "-0.24999999999999734"
+    },
+    {
+      "index": 5,
+      "id": "perspectiveRoundTrip",
+      "kind": "number",
+      "path": "z",
+      "value": "n:4000000000000006",
+      "decimal": "2.0000000000000027"
+    },
+    {
+      "index": 6,
+      "id": "orthographicProjected",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fb5f3aa673fa910",
+      "decimal": "0.08574929257125441"
+    },
+    {
+      "index": 7,
+      "id": "orthographicProjected",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfe0b1442cdf3f9f",
+      "decimal": "-0.5216389538199911"
+    },
+    {
+      "index": 8,
+      "id": "orthographicProjected",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bfed91e19cbea539",
+      "decimal": "-0.9240577756328668"
+    },
+    {
+      "index": 9,
+      "id": "orthographicRoundTrip",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff800000000000c",
+      "decimal": "1.5000000000000027"
+    },
+    {
+      "index": 10,
+      "id": "orthographicRoundTrip",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfcfffffffffffc0",
+      "decimal": "-0.24999999999999822"
+    },
+    {
+      "index": 11,
+      "id": "orthographicRoundTrip",
+      "kind": "number",
+      "path": "z",
+      "value": "n:4000000000000009",
+      "decimal": "2.000000000000004"
+    }
+  ]
+}

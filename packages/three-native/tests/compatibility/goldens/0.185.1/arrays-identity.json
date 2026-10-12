@@ -1,0 +1,16 @@
+{
+  "name": "arrays-identity",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 BufferGeometry.getAttribute — two reads of the same attribute name hand back one object, so a write through one is seen through the other",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "p2",
+      "kind": "number",
+      "path": "version",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    }
+  ]
+}

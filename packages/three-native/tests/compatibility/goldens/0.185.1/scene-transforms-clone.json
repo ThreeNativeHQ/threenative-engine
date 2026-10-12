@@ -1,0 +1,64 @@
+{
+  "name": "scene-transforms-clone",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — Object3D.clone(), as Midway clones a loaded ship's scene: a group holding a named mesh and a nested group; the clone copies names and transforms recursively, shares the mesh's geometry, and moving the clone's mesh leaves the source's",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "copy",
+      "kind": "string",
+      "path": "name",
+      "value": "s:ship",
+      "decimal": "ship"
+    },
+    {
+      "index": 1,
+      "id": "copy",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 2,
+      "id": "copyHull",
+      "kind": "number",
+      "path": "position.y",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 3,
+      "id": "hull",
+      "kind": "number",
+      "path": "position.y",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 4,
+      "id": "copyHull",
+      "kind": "number",
+      "path": "rotation.z",
+      "value": "n:3fd3333333333332",
+      "decimal": "0.29999999999999993"
+    },
+    {
+      "index": 5,
+      "id": "copyHull",
+      "kind": "string",
+      "path": "type",
+      "value": "s:Mesh",
+      "decimal": "Mesh"
+    },
+    {
+      "index": 6,
+      "id": "copyGun",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3fd0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:4000000000000000,n:0000000000000000,n:bff0000000000000,n:3ff0000000000000",
+      "decimal": "0.25, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, -1, 1"
+    }
+  ]
+}

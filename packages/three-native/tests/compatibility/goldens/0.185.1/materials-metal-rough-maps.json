@@ -1,0 +1,35 @@
+{
+  "name": "materials-metal-rough-maps",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a lit MeshStandardMaterial sphere whose metalnessMap and roughnessMap are one 2x2 metallicRoughness DataTexture (glTF packing: roughness in green, metalness in blue), Nearest filtered, so four quarters are rough/smooth metal/dielectric under a directional and a hemisphere light",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "material",
+      "kind": "number",
+      "path": "metalness",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:77f4d97569a639b3f3a56259caf430a3d77d0f32a580ba1b32480ce0822a80d8",
+      "decimal": "77f4d97569a639b3f3a56259caf430a3d77d0f32a580ba1b32480ce0822a80d8"
+    }
+  ],
+  "render": {
+    "png": "materials-metal-rough-maps.png",
+    "pngSha256": "77f4d97569a639b3f3a56259caf430a3d77d0f32a580ba1b32480ce0822a80d8",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

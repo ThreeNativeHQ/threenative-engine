@@ -1,0 +1,907 @@
+{
+  "name": "math-euler-quaternion-bridge",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Quaternion.tests.js \u2014 setFromAxisAngle, setFromEuler and Matrix4's makeRotation* forms, plus the round trip back through a rotation matrix",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "axis01",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "e02",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "new",
+      "id": "q03",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q03",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m04",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m04",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "r05",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r05",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m04"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e06",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YXZ"]
+    },
+    {
+      "op": "new",
+      "id": "q07",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q07",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e06"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m08",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m08",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e06"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "r09",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r09",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m08"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e10",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZXY"]
+    },
+    {
+      "op": "new",
+      "id": "q11",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q11",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e10"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m12",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m12",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e10"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "r13",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r13",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m12"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e14",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "new",
+      "id": "q15",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q15",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e14"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m16",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m16",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e14"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "r17",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r17",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m16"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e18",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YZX"]
+    },
+    {
+      "op": "new",
+      "id": "q19",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q19",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e18"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m20",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m20",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e18"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "r21",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r21",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m20"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e22",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XZY"]
+    },
+    {
+      "op": "new",
+      "id": "q23",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q23",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e22"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m24",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m24",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e22"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "r25",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r25",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m24"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q26",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q26",
+      "method": "setFromAxisAngle",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m27",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m27",
+      "method": "makeRotationAxis",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q28",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q28",
+      "method": "setFromAxisAngle",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        -0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m29",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m29",
+      "method": "makeRotationAxis",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        -0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q30",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q30",
+      "method": "setFromAxisAngle",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        3.141592653589793
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m31",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m31",
+      "method": "makeRotationAxis",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        3.141592653589793
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q32",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q32",
+      "method": "setFromAxisAngle",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        0
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m33",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m33",
+      "method": "makeRotationAxis",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        0
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v34",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "v34",
+      "method": "applyAxisAngle",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m35",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m35",
+      "method": "makeRotationX",
+      "args": [0.75]
+    },
+    {
+      "op": "new",
+      "id": "m36",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m36",
+      "method": "makeRotationY",
+      "args": [0.75]
+    },
+    {
+      "op": "new",
+      "id": "m37",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m37",
+      "method": "makeRotationZ",
+      "args": [0.75]
+    },
+    {
+      "op": "new",
+      "id": "v38",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "e39",
+      "class": "Euler",
+      "args": [0.75, -0.75, 0.75, "YZX"]
+    },
+    {
+      "op": "call",
+      "id": "v38",
+      "method": "applyEuler",
+      "args": [
+        {
+          "ref": "e39"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v40",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "v40",
+      "method": "applyAxisAngle",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        -0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m41",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m41",
+      "method": "makeRotationX",
+      "args": [-0.75]
+    },
+    {
+      "op": "new",
+      "id": "m42",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m42",
+      "method": "makeRotationY",
+      "args": [-0.75]
+    },
+    {
+      "op": "new",
+      "id": "m43",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m43",
+      "method": "makeRotationZ",
+      "args": [-0.75]
+    },
+    {
+      "op": "new",
+      "id": "v44",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "e45",
+      "class": "Euler",
+      "args": [-0.75, 0.75, -0.75, "YZX"]
+    },
+    {
+      "op": "call",
+      "id": "v44",
+      "method": "applyEuler",
+      "args": [
+        {
+          "ref": "e45"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v46",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "v46",
+      "method": "applyAxisAngle",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        0
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m47",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m47",
+      "method": "makeRotationX",
+      "args": [0]
+    },
+    {
+      "op": "new",
+      "id": "m48",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m48",
+      "method": "makeRotationY",
+      "args": [0]
+    },
+    {
+      "op": "new",
+      "id": "m49",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m49",
+      "method": "makeRotationZ",
+      "args": [0]
+    },
+    {
+      "op": "new",
+      "id": "v50",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "e51",
+      "class": "Euler",
+      "args": [0, 0, 0, "YZX"]
+    },
+    {
+      "op": "call",
+      "id": "v50",
+      "method": "applyEuler",
+      "args": [
+        {
+          "ref": "e51"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "q03",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m04",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "r05",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q07",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m08",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "r09",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q11",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m12",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "r13",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q15",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m16",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "r17",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q19",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m20",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "r21",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q23",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m24",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "r25",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q26",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m27",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "q28",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m29",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "q30",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m31",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "q32",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m33",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "v34",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m35",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "m36",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "m37",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "v38",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v40",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m41",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "m42",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "m43",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "v44",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v46",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m47",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "m48",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "m49",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "v50",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

@@ -1,0 +1,231 @@
+{
+  "name": "tsl-instanced-geometry",
+  "adaptedFrom": "original — Midway's particle batches: an InstancedBufferGeometry quad (index and position cloned from a PlaneGeometry) with per-instance InstancedBufferAttributes aOffset and aTint, instanceCount 3 of 4, read by TSL attribute() in a material.vertexNode (clip space) and colorNode",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "new",
+      "id": "plane",
+      "class": "PlaneGeometry",
+      "args": [1, 1]
+    },
+    {
+      "op": "new",
+      "id": "geometry",
+      "class": "InstancedBufferGeometry",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "plane",
+      "method": "getIndex",
+      "args": [],
+      "result": "planeIndex"
+    },
+    {
+      "op": "call",
+      "id": "planeIndex",
+      "method": "clone",
+      "args": [],
+      "result": "index"
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setIndex",
+      "args": [
+        {
+          "ref": "index"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "plane",
+      "method": "getAttribute",
+      "args": ["position"],
+      "result": "planePosition"
+    },
+    {
+      "op": "call",
+      "id": "planePosition",
+      "method": "clone",
+      "args": [],
+      "result": "position"
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setAttribute",
+      "args": [
+        "position",
+        {
+          "ref": "position"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "offsets",
+      "class": "InstancedBufferAttribute",
+      "args": [
+        {
+          "array": [-1.2, 0, 0, 0, 0.6, 0, 1.2, 0, 0, 0, -0.6, 0],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setAttribute",
+      "args": [
+        "aOffset",
+        {
+          "ref": "offsets"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tints",
+      "class": "InstancedBufferAttribute",
+      "args": [
+        {
+          "array": [1, 0.3, 0.2, 0.2, 1, 0.3, 0.3, 0.4, 1, 1, 1, 0.3],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setAttribute",
+      "args": [
+        "aTint",
+        {
+          "ref": "tints"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "geometry",
+      "path": "instanceCount",
+      "value": 3
+    },
+    {
+      "op": "new",
+      "id": "material",
+      "class": "MeshBasicNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "mesh",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geometry"
+        },
+        {
+          "ref": "material"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "name",
+      "value": "quads"
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mesh"
+        }
+      ]
+    },
+    {
+      "op": "tsl",
+      "id": "scene",
+      "program": "instanced-geometry"
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb",
+    "shadowMap": false
+  }
+}

@@ -1,0 +1,501 @@
+{
+  "name": "textures-data-wraps",
+  "adaptedFrom": "original \u2014 one four-colour 2x2 DataTexture per wrap mode (ClampToEdgeWrapping, RepeatWrapping, MirroredRepeatWrapping), NearestFilter, sampled over uv -0.75..1.75 so each mode's out-of-range rule shows",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 128,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 2.5, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 4
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "clampTex",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [220, 40, 40, 255, 40, 200, 60, 255, 40, 80, 220, 255, 230, 210, 40, 255],
+          "type": "Uint8Array"
+        },
+        2,
+        2,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "clampTex",
+      "path": "colorSpace",
+      "value": "srgb"
+    },
+    {
+      "op": "set",
+      "id": "clampTex",
+      "path": "wrapS",
+      "value": 1001
+    },
+    {
+      "op": "set",
+      "id": "clampTex",
+      "path": "wrapT",
+      "value": 1001
+    },
+    {
+      "op": "set",
+      "id": "clampTex",
+      "path": "magFilter",
+      "value": 1003
+    },
+    {
+      "op": "set",
+      "id": "clampTex",
+      "path": "minFilter",
+      "value": 1003
+    },
+    {
+      "op": "set",
+      "id": "clampTex",
+      "path": "repeat.x",
+      "value": 2.5
+    },
+    {
+      "op": "set",
+      "id": "clampTex",
+      "path": "repeat.y",
+      "value": 2.5
+    },
+    {
+      "op": "set",
+      "id": "clampTex",
+      "path": "offset.x",
+      "value": -0.75
+    },
+    {
+      "op": "set",
+      "id": "clampTex",
+      "path": "offset.y",
+      "value": -0.75
+    },
+    {
+      "op": "set",
+      "id": "clampTex",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "clampMat",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "clampMat",
+      "path": "map",
+      "value": {
+        "ref": "clampTex"
+      }
+    },
+    {
+      "op": "new",
+      "id": "clampGeo",
+      "class": "PlaneGeometry",
+      "args": [1.5, 1.5]
+    },
+    {
+      "op": "new",
+      "id": "clamp",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "clampGeo"
+        },
+        {
+          "ref": "clampMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "clamp",
+      "path": "position.x",
+      "value": -1.7
+    },
+    {
+      "op": "set",
+      "id": "clamp",
+      "path": "position.y",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "clamp",
+      "path": "position.z",
+      "value": 0
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "clamp"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "repeatTex",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [220, 40, 40, 255, 40, 200, 60, 255, 40, 80, 220, 255, 230, 210, 40, 255],
+          "type": "Uint8Array"
+        },
+        2,
+        2,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "repeatTex",
+      "path": "colorSpace",
+      "value": "srgb"
+    },
+    {
+      "op": "set",
+      "id": "repeatTex",
+      "path": "wrapS",
+      "value": 1000
+    },
+    {
+      "op": "set",
+      "id": "repeatTex",
+      "path": "wrapT",
+      "value": 1000
+    },
+    {
+      "op": "set",
+      "id": "repeatTex",
+      "path": "magFilter",
+      "value": 1003
+    },
+    {
+      "op": "set",
+      "id": "repeatTex",
+      "path": "minFilter",
+      "value": 1003
+    },
+    {
+      "op": "set",
+      "id": "repeatTex",
+      "path": "repeat.x",
+      "value": 2.5
+    },
+    {
+      "op": "set",
+      "id": "repeatTex",
+      "path": "repeat.y",
+      "value": 2.5
+    },
+    {
+      "op": "set",
+      "id": "repeatTex",
+      "path": "offset.x",
+      "value": -0.75
+    },
+    {
+      "op": "set",
+      "id": "repeatTex",
+      "path": "offset.y",
+      "value": -0.75
+    },
+    {
+      "op": "set",
+      "id": "repeatTex",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "repeatMat",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "repeatMat",
+      "path": "map",
+      "value": {
+        "ref": "repeatTex"
+      }
+    },
+    {
+      "op": "new",
+      "id": "repeatGeo",
+      "class": "PlaneGeometry",
+      "args": [1.5, 1.5]
+    },
+    {
+      "op": "new",
+      "id": "repeat",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "repeatGeo"
+        },
+        {
+          "ref": "repeatMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "repeat",
+      "path": "position.x",
+      "value": 0.0
+    },
+    {
+      "op": "set",
+      "id": "repeat",
+      "path": "position.y",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "repeat",
+      "path": "position.z",
+      "value": 0
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "repeat"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "mirrorTex",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [220, 40, 40, 255, 40, 200, 60, 255, 40, 80, 220, 255, 230, 210, 40, 255],
+          "type": "Uint8Array"
+        },
+        2,
+        2,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mirrorTex",
+      "path": "colorSpace",
+      "value": "srgb"
+    },
+    {
+      "op": "set",
+      "id": "mirrorTex",
+      "path": "wrapS",
+      "value": 1002
+    },
+    {
+      "op": "set",
+      "id": "mirrorTex",
+      "path": "wrapT",
+      "value": 1002
+    },
+    {
+      "op": "set",
+      "id": "mirrorTex",
+      "path": "magFilter",
+      "value": 1003
+    },
+    {
+      "op": "set",
+      "id": "mirrorTex",
+      "path": "minFilter",
+      "value": 1003
+    },
+    {
+      "op": "set",
+      "id": "mirrorTex",
+      "path": "repeat.x",
+      "value": 2.5
+    },
+    {
+      "op": "set",
+      "id": "mirrorTex",
+      "path": "repeat.y",
+      "value": 2.5
+    },
+    {
+      "op": "set",
+      "id": "mirrorTex",
+      "path": "offset.x",
+      "value": -0.75
+    },
+    {
+      "op": "set",
+      "id": "mirrorTex",
+      "path": "offset.y",
+      "value": -0.75
+    },
+    {
+      "op": "set",
+      "id": "mirrorTex",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "mirrorMat",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "mirrorMat",
+      "path": "map",
+      "value": {
+        "ref": "mirrorTex"
+      }
+    },
+    {
+      "op": "new",
+      "id": "mirrorGeo",
+      "class": "PlaneGeometry",
+      "args": [1.5, 1.5]
+    },
+    {
+      "op": "new",
+      "id": "mirror",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "mirrorGeo"
+        },
+        {
+          "ref": "mirrorMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mirror",
+      "path": "position.x",
+      "value": 1.7
+    },
+    {
+      "op": "set",
+      "id": "mirror",
+      "path": "position.y",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "mirror",
+      "path": "position.z",
+      "value": 0
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mirror"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "clampTex",
+      "path": "wrapS",
+      "kind": "number"
+    },
+    {
+      "id": "repeatTex",
+      "path": "wrapS",
+      "kind": "number"
+    },
+    {
+      "id": "mirrorTex",
+      "path": "wrapS",
+      "kind": "number"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

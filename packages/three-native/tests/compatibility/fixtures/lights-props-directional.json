@@ -1,0 +1,121 @@
+{
+  "name": "lights-props-directional",
+  "adaptedFrom": "original — DirectionalLight: a hex colour argument, intensity, and Object3D.DEFAULT_UP as its starting position, matching lit-render",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "fresh",
+      "class": "DirectionalLight",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "l",
+      "class": "DirectionalLight",
+      "args": [16777215, 3]
+    },
+    {
+      "op": "set",
+      "id": "l",
+      "path": "position.x",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "l",
+      "path": "position.y",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "l",
+      "path": "position.z",
+      "value": 1
+    }
+  ],
+  "observe": [
+    {
+      "id": "fresh",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "fresh",
+      "path": "color.r",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "color.g",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "color.b",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "intensity",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "position.x",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "position.y",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "position.z",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "l",
+      "path": "color.r",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "color.g",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "color.b",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "intensity",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "position.x",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "position.y",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "position.z",
+      "kind": "number"
+    }
+  ]
+}

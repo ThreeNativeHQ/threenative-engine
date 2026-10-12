@@ -1,0 +1,128 @@
+{
+  "name": "material-clone",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 src/materials/Material.js clone/copy — a standard material's values and map carried to an independent copy, and a basic material's",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "c",
+      "kind": "number",
+      "path": "roughness",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
+    },
+    {
+      "index": 1,
+      "id": "c",
+      "kind": "number",
+      "path": "metalness",
+      "value": "n:3fe6666666666666",
+      "decimal": "0.7"
+    },
+    {
+      "index": 2,
+      "id": "c",
+      "kind": "number",
+      "path": "opacity",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 3,
+      "id": "c",
+      "kind": "number",
+      "path": "side",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 4,
+      "id": "c",
+      "kind": "number",
+      "path": "emissiveIntensity",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 5,
+      "id": "c",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3fc999999999999a",
+      "decimal": "0.2"
+    },
+    {
+      "index": 6,
+      "id": "c",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 7,
+      "id": "c",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3fe3333333333333",
+      "decimal": "0.6"
+    },
+    {
+      "index": 8,
+      "id": "c",
+      "kind": "boolean",
+      "path": "transparent",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 9,
+      "id": "c",
+      "kind": "string",
+      "path": "name",
+      "value": "s:hull",
+      "decimal": "hull"
+    },
+    {
+      "index": 10,
+      "id": "c",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshStandardMaterial",
+      "decimal": "MeshStandardMaterial"
+    },
+    {
+      "index": 11,
+      "id": "m",
+      "kind": "number",
+      "path": "roughness",
+      "value": "n:3feccccccccccccd",
+      "decimal": "0.9"
+    },
+    {
+      "index": 12,
+      "id": "m",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 13,
+      "id": "bc",
+      "kind": "number",
+      "path": "opacity",
+      "value": "n:3fd0000000000000",
+      "decimal": "0.25"
+    },
+    {
+      "index": 14,
+      "id": "bc",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshBasicMaterial",
+      "decimal": "MeshBasicMaterial"
+    }
+  ]
+}

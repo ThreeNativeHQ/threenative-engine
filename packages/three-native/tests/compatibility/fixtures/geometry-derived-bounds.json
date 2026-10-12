@@ -1,0 +1,134 @@
+{
+  "name": "geometry-derived-bounds",
+  "adaptedFrom": "three@0.185.1 BufferGeometry.computeBoundingBox/Sphere after translate/rotateY/center — bounds follow the transformed positions",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "box",
+      "class": "BoxGeometry",
+      "args": [2, 4, 6, 2, 2, 2]
+    },
+    {
+      "op": "call",
+      "id": "box",
+      "method": "translate",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "box",
+      "method": "rotateY",
+      "args": [0.7]
+    },
+    {
+      "op": "call",
+      "id": "box",
+      "method": "computeBoundingBox",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "box",
+      "method": "computeBoundingSphere",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "plane",
+      "class": "PlaneGeometry",
+      "args": [3, 5, 2, 2]
+    },
+    {
+      "op": "call",
+      "id": "plane",
+      "method": "center",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "plane",
+      "method": "computeBoundingSphere",
+      "args": []
+    }
+  ],
+  "observe": [
+    {
+      "id": "box",
+      "path": "boundingBox.min.x",
+      "kind": "number"
+    },
+    {
+      "id": "box",
+      "path": "boundingBox.min.y",
+      "kind": "number"
+    },
+    {
+      "id": "box",
+      "path": "boundingBox.min.z",
+      "kind": "number"
+    },
+    {
+      "id": "box",
+      "path": "boundingBox.max.x",
+      "kind": "number"
+    },
+    {
+      "id": "box",
+      "path": "boundingBox.max.y",
+      "kind": "number"
+    },
+    {
+      "id": "box",
+      "path": "boundingBox.max.z",
+      "kind": "number"
+    },
+    {
+      "id": "box",
+      "path": "boundingSphere.radius",
+      "kind": "number"
+    },
+    {
+      "id": "box",
+      "path": "boundingSphere.center.x",
+      "kind": "number"
+    },
+    {
+      "id": "box",
+      "path": "boundingSphere.center.y",
+      "kind": "number"
+    },
+    {
+      "id": "box",
+      "path": "boundingSphere.center.z",
+      "kind": "number"
+    },
+    {
+      "id": "plane",
+      "path": "boundingBox.min.x",
+      "kind": "number"
+    },
+    {
+      "id": "plane",
+      "path": "boundingBox.max.y",
+      "kind": "number"
+    },
+    {
+      "id": "plane",
+      "path": "boundingSphere.radius",
+      "kind": "number"
+    },
+    {
+      "id": "plane",
+      "path": "boundingSphere.center.x",
+      "kind": "number"
+    },
+    {
+      "id": "plane",
+      "path": "boundingSphere.center.y",
+      "kind": "number"
+    }
+  ]
+}

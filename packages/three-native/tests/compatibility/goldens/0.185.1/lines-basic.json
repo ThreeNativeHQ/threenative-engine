@@ -1,0 +1,51 @@
+{
+  "name": "lines-basic",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a zigzag Line (line strip), a LineSegments (line list: a cross and a bar) and an indexed Line strip around a square, each with its own LineBasicMaterial colour",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "strip",
+      "kind": "string",
+      "path": "type",
+      "value": "s:Line",
+      "decimal": "Line"
+    },
+    {
+      "index": 1,
+      "id": "segments",
+      "kind": "string",
+      "path": "type",
+      "value": "s:LineSegments",
+      "decimal": "LineSegments"
+    },
+    {
+      "index": 2,
+      "id": "stripMat",
+      "kind": "string",
+      "path": "type",
+      "value": "s:LineBasicMaterial",
+      "decimal": "LineBasicMaterial"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:fab9ec507522984ae25aab6da0bf4d34df6e93197eb548f3363fd6756fd429f7",
+      "decimal": "fab9ec507522984ae25aab6da0bf4d34df6e93197eb548f3363fd6756fd429f7"
+    }
+  ],
+  "render": {
+    "png": "lines-basic.png",
+    "pngSha256": "fab9ec507522984ae25aab6da0bf4d34df6e93197eb548f3363fd6756fd429f7",
+    "width": 320,
+    "height": 128,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

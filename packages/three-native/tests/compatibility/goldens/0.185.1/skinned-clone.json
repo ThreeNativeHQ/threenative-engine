@@ -1,0 +1,27 @@
+{
+  "name": "skinned-clone",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three's SkinnedMesh documentation example (skinned-single-t0) and SkeletonUtils.clone (three r185 examples/jsm/utils/SkeletonUtils.js): the original at x -1.2 keeps its pose; the clone at x 1.2 bends bones 2 and 3 by 0.5 rad, which moves only its own skin",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:a5c66063be9d21b1762777cdcc517452ac2ebb7ae4837f29e7858519bc47c3bb",
+      "decimal": "a5c66063be9d21b1762777cdcc517452ac2ebb7ae4837f29e7858519bc47c3bb"
+    }
+  ],
+  "render": {
+    "png": "skinned-clone.png",
+    "pngSha256": "a5c66063be9d21b1762777cdcc517452ac2ebb7ae4837f29e7858519bc47c3bb",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

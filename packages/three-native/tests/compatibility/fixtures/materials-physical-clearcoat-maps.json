@@ -1,0 +1,419 @@
+{
+  "name": "materials-physical-clearcoat-maps",
+  "adaptedFrom": "original — the materials-physical-clearcoat sphere with the clearcoat maps: clearcoatMap (.r, a checker of 1 and 0.25), clearcoatRoughnessMap (.r, a horizontal ramp) and a tangent-space clearcoatNormalMap with clearcoatNormalScale (0.6, 0.6), roughness 0.3 under it; MaterialNode's CLEARCOAT, CLEARCOAT_ROUGHNESS and CLEARCOAT_NORMAL",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [60, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 1.4
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 3.2
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "light",
+      "class": "DirectionalLight",
+      "args": [16777215, 3]
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.x",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.y",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.z",
+      "value": 1
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [11189137, 2236962, 0.6]
+    },
+    {
+      "op": "new",
+      "id": "geometry",
+      "class": "SphereGeometry",
+      "args": [1, 32, 16]
+    },
+    {
+      "op": "new",
+      "id": "ccMap",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [
+            255, 0, 0, 255, 255, 0, 0, 255, 64, 0, 0, 255, 64, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0,
+            255, 64, 0, 0, 255, 64, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 64, 0, 0, 255, 64, 0,
+            0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 64, 0, 0, 255, 64, 0, 0, 255, 64, 0, 0, 255, 64,
+            0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 64, 0, 0, 255, 64, 0, 0, 255, 255, 0, 0, 255,
+            255, 0, 0, 255, 64, 0, 0, 255, 64, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 64, 0, 0,
+            255, 64, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 64,
+            0, 0, 255, 64, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 64, 0, 0, 255, 64, 0, 0, 255,
+            255, 0, 0, 255, 255, 0, 0, 255, 64, 0, 0, 255, 64, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0,
+            255, 64, 0, 0, 255, 64, 0, 0, 255, 64, 0, 0, 255, 64, 0, 0, 255, 255, 0, 0, 255, 255, 0,
+            0, 255, 64, 0, 0, 255, 64, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 64, 0, 0, 255, 64,
+            0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 64, 0, 0, 255, 64, 0, 0, 255, 255, 0, 0, 255,
+            255, 0, 0, 255
+          ],
+          "type": "Uint8Array"
+        },
+        8,
+        8,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "ccMap",
+      "path": "magFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "ccMap",
+      "path": "minFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "ccMap",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "ccRoughnessMap",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [
+            0, 0, 0, 255, 36, 0, 0, 255, 72, 0, 0, 255, 109, 0, 0, 255, 145, 0, 0, 255, 182, 0, 0,
+            255, 218, 0, 0, 255, 255, 0, 0, 255, 0, 0, 0, 255, 36, 0, 0, 255, 72, 0, 0, 255, 109, 0,
+            0, 255, 145, 0, 0, 255, 182, 0, 0, 255, 218, 0, 0, 255, 255, 0, 0, 255, 0, 0, 0, 255,
+            36, 0, 0, 255, 72, 0, 0, 255, 109, 0, 0, 255, 145, 0, 0, 255, 182, 0, 0, 255, 218, 0, 0,
+            255, 255, 0, 0, 255, 0, 0, 0, 255, 36, 0, 0, 255, 72, 0, 0, 255, 109, 0, 0, 255, 145, 0,
+            0, 255, 182, 0, 0, 255, 218, 0, 0, 255, 255, 0, 0, 255, 0, 0, 0, 255, 36, 0, 0, 255, 72,
+            0, 0, 255, 109, 0, 0, 255, 145, 0, 0, 255, 182, 0, 0, 255, 218, 0, 0, 255, 255, 0, 0,
+            255, 0, 0, 0, 255, 36, 0, 0, 255, 72, 0, 0, 255, 109, 0, 0, 255, 145, 0, 0, 255, 182, 0,
+            0, 255, 218, 0, 0, 255, 255, 0, 0, 255, 0, 0, 0, 255, 36, 0, 0, 255, 72, 0, 0, 255, 109,
+            0, 0, 255, 145, 0, 0, 255, 182, 0, 0, 255, 218, 0, 0, 255, 255, 0, 0, 255, 0, 0, 0, 255,
+            36, 0, 0, 255, 72, 0, 0, 255, 109, 0, 0, 255, 145, 0, 0, 255, 182, 0, 0, 255, 218, 0, 0,
+            255, 255, 0, 0, 255
+          ],
+          "type": "Uint8Array"
+        },
+        8,
+        8,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "ccRoughnessMap",
+      "path": "magFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "ccRoughnessMap",
+      "path": "minFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "ccRoughnessMap",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "ccNormalMap",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [
+            38, 38, 220, 255, 98, 38, 220, 255, 158, 38, 220, 255, 218, 38, 220, 255, 38, 38, 220,
+            255, 98, 38, 220, 255, 158, 38, 220, 255, 218, 38, 220, 255, 38, 98, 220, 255, 98, 98,
+            220, 255, 158, 98, 220, 255, 218, 98, 220, 255, 38, 98, 220, 255, 98, 98, 220, 255, 158,
+            98, 220, 255, 218, 98, 220, 255, 38, 158, 220, 255, 98, 158, 220, 255, 158, 158, 220,
+            255, 218, 158, 220, 255, 38, 158, 220, 255, 98, 158, 220, 255, 158, 158, 220, 255, 218,
+            158, 220, 255, 38, 218, 220, 255, 98, 218, 220, 255, 158, 218, 220, 255, 218, 218, 220,
+            255, 38, 218, 220, 255, 98, 218, 220, 255, 158, 218, 220, 255, 218, 218, 220, 255, 38,
+            38, 220, 255, 98, 38, 220, 255, 158, 38, 220, 255, 218, 38, 220, 255, 38, 38, 220, 255,
+            98, 38, 220, 255, 158, 38, 220, 255, 218, 38, 220, 255, 38, 98, 220, 255, 98, 98, 220,
+            255, 158, 98, 220, 255, 218, 98, 220, 255, 38, 98, 220, 255, 98, 98, 220, 255, 158, 98,
+            220, 255, 218, 98, 220, 255, 38, 158, 220, 255, 98, 158, 220, 255, 158, 158, 220, 255,
+            218, 158, 220, 255, 38, 158, 220, 255, 98, 158, 220, 255, 158, 158, 220, 255, 218, 158,
+            220, 255, 38, 218, 220, 255, 98, 218, 220, 255, 158, 218, 220, 255, 218, 218, 220, 255,
+            38, 218, 220, 255, 98, 218, 220, 255, 158, 218, 220, 255, 218, 218, 220, 255
+          ],
+          "type": "Uint8Array"
+        },
+        8,
+        8,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "ccNormalMap",
+      "path": "magFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "ccNormalMap",
+      "path": "minFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "ccNormalMap",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "material",
+      "class": "MeshPhysicalMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "color.r",
+      "value": 0.66
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "color.g",
+      "value": 0.74
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "color.b",
+      "value": 0.74
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "metalness",
+      "value": 0.02
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "clearcoat",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "clearcoatRoughness",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "roughness",
+      "value": 0.3
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "clearcoatMap",
+      "value": {
+        "ref": "ccMap"
+      }
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "clearcoatRoughnessMap",
+      "value": {
+        "ref": "ccRoughnessMap"
+      }
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "clearcoatNormalMap",
+      "value": {
+        "ref": "ccNormalMap"
+      }
+    },
+    {
+      "op": "new",
+      "id": "ccScale",
+      "class": "Vector2",
+      "args": [0.6, 0.6]
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "clearcoatNormalScale",
+      "value": {
+        "ref": "ccScale"
+      }
+    },
+    {
+      "op": "new",
+      "id": "mesh",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geometry"
+        },
+        {
+          "ref": "material"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mesh"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "light"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "camera",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "light",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "mesh",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "geometry",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "material",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

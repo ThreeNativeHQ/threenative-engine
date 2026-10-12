@@ -1,0 +1,35 @@
+{
+  "name": "tsl-post-live-parameters",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — tsl-post-bloom's scene under GTAO and bloom; after the first frame the AO pass takes resolutionScale 0.5 and bloom takes strength 0.3, radius 0.9 and threshold 0.8, and the captured second frame shows them",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:47b4a9e3b6f3e17cd08f2d8ed306b0736be99664c5c621e3259f39ff1bc2fdc0",
+      "decimal": "47b4a9e3b6f3e17cd08f2d8ed306b0736be99664c5c621e3259f39ff1bc2fdc0"
+    }
+  ],
+  "render": {
+    "png": "tsl-post-live-parameters.png",
+    "pngSha256": "47b4a9e3b6f3e17cd08f2d8ed306b0736be99664c5c621e3259f39ff1bc2fdc0",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

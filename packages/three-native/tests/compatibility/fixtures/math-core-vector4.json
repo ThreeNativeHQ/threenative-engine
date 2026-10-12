@@ -1,0 +1,876 @@
+{
+  "name": "math-core-vector4",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector4.tests.js \u2014 every public method except the two axis-angle forms, which need math-core-vector4-axis-angle",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "a01",
+      "class": "Vector4",
+      "args": [2, 3, 4, 5]
+    },
+    {
+      "op": "new",
+      "id": "b02",
+      "class": "Vector4",
+      "args": [-1.5, 4.25, 0.5, -2]
+    },
+    {
+      "op": "new",
+      "id": "lo03",
+      "class": "Vector4",
+      "args": [-1, -2, -3, -4]
+    },
+    {
+      "op": "new",
+      "id": "hi04",
+      "class": "Vector4",
+      "args": [3, 4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "m405",
+      "class": "Matrix4",
+      "args": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    },
+    {
+      "op": "new",
+      "id": "m4t06",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m4t06",
+      "method": "set",
+      "args": [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 5, 6, 7, 1]
+    },
+    {
+      "op": "new",
+      "id": "v07",
+      "class": "Vector4",
+      "args": [3.5, -4.25, 5.75, 6.5]
+    },
+    {
+      "op": "new",
+      "id": "v08",
+      "class": "Vector4",
+      "args": [1, 2, 3, 4]
+    },
+    {
+      "op": "call",
+      "id": "v08",
+      "method": "set",
+      "args": [2, 3, 4, 5]
+    },
+    {
+      "op": "new",
+      "id": "v09",
+      "class": "Vector4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "v09",
+      "method": "setScalar",
+      "args": [2.5]
+    },
+    {
+      "op": "new",
+      "id": "v10",
+      "class": "Vector4",
+      "args": [1, 1, 1, 1]
+    },
+    {
+      "op": "call",
+      "id": "v10",
+      "method": "setX",
+      "args": [-1.5]
+    },
+    {
+      "op": "call",
+      "id": "v10",
+      "method": "setY",
+      "args": [2.25]
+    },
+    {
+      "op": "call",
+      "id": "v10",
+      "method": "setZ",
+      "args": [-3.125]
+    },
+    {
+      "op": "call",
+      "id": "v10",
+      "method": "setW",
+      "args": [4.0625]
+    },
+    {
+      "op": "new",
+      "id": "v11",
+      "class": "Vector4",
+      "args": [1, 1, 1, 1]
+    },
+    {
+      "op": "call",
+      "id": "v11",
+      "method": "setComponent",
+      "args": [3, 7.5]
+    },
+    {
+      "op": "call",
+      "id": "v11",
+      "method": "getComponent",
+      "args": [3],
+      "result": "r12"
+    },
+    {
+      "op": "new",
+      "id": "v13",
+      "class": "Vector4",
+      "args": [1, 1, 1, 1]
+    },
+    {
+      "op": "call",
+      "id": "v13",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "b02"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "v13",
+      "method": "clone",
+      "args": [],
+      "result": "r14"
+    },
+    {
+      "op": "new",
+      "id": "v15",
+      "class": "Vector4",
+      "args": [1, 1, 1, 1]
+    },
+    {
+      "op": "call",
+      "id": "v15",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "b02"
+        }
+      ],
+      "result": "r16"
+    },
+    {
+      "op": "new",
+      "id": "v17",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v17",
+      "method": "add",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v18",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v18",
+      "method": "addScalar",
+      "args": [-0.5]
+    },
+    {
+      "op": "new",
+      "id": "v19",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v19",
+      "method": "addVectors",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        {
+          "ref": "b02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v20",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v20",
+      "method": "addScaledVector",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        -2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v21",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v21",
+      "method": "sub",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v22",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v22",
+      "method": "subScalar",
+      "args": [1.5]
+    },
+    {
+      "op": "new",
+      "id": "v23",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v23",
+      "method": "subVectors",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        {
+          "ref": "b02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v24",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v24",
+      "method": "multiply",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v25",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v25",
+      "method": "multiplyScalar",
+      "args": [3]
+    },
+    {
+      "op": "new",
+      "id": "v26",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v26",
+      "method": "applyMatrix4",
+      "args": [
+        {
+          "ref": "m405"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v27",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v27",
+      "method": "divide",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v28",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v28",
+      "method": "divideScalar",
+      "args": [4]
+    },
+    {
+      "op": "new",
+      "id": "v29",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v29",
+      "method": "setFromMatrixPosition",
+      "args": [
+        {
+          "ref": "m4t06"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v30",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v30",
+      "method": "min",
+      "args": [
+        {
+          "ref": "lo03"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v31",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v31",
+      "method": "max",
+      "args": [
+        {
+          "ref": "hi04"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v32",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v32",
+      "method": "clamp",
+      "args": [
+        {
+          "ref": "lo03"
+        },
+        {
+          "ref": "hi04"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v33",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v33",
+      "method": "clampScalar",
+      "args": [-0.5, 0.5]
+    },
+    {
+      "op": "new",
+      "id": "v34",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v34",
+      "method": "clampLength",
+      "args": [0, 2]
+    },
+    {
+      "op": "new",
+      "id": "v35",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v35",
+      "method": "floor",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v36",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v36",
+      "method": "ceil",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v37",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v37",
+      "method": "round",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v38",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v38",
+      "method": "roundToZero",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v39",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v39",
+      "method": "negate",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v40",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v40",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v41",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v41",
+      "method": "setLength",
+      "args": [5]
+    },
+    {
+      "op": "new",
+      "id": "v42",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v42",
+      "method": "lerp",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        0.25
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v43",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v43",
+      "method": "lerpVectors",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        {
+          "ref": "b02"
+        },
+        0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v44",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v44",
+      "method": "dot",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r45"
+    },
+    {
+      "op": "new",
+      "id": "v46",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v46",
+      "method": "lengthSq",
+      "args": [],
+      "result": "r47"
+    },
+    {
+      "op": "new",
+      "id": "v48",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v48",
+      "method": "manhattanLength",
+      "args": [],
+      "result": "r49"
+    },
+    {
+      "op": "new",
+      "id": "v50",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "v50",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "v50",
+      "method": "length",
+      "args": [],
+      "result": "r51"
+    },
+    {
+      "op": "new",
+      "id": "s52",
+      "class": "Vector4",
+      "args": [1.5, -2.5, 0.25, 3.125]
+    },
+    {
+      "op": "call",
+      "id": "s52",
+      "method": "toArray",
+      "args": [],
+      "result": "arr1"
+    },
+    {
+      "op": "new",
+      "id": "v53",
+      "class": "Vector4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "v53",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "arr1"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "v07",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v07",
+      "kind": "number",
+      "path": "width"
+    },
+    {
+      "id": "v07",
+      "kind": "number",
+      "path": "height"
+    },
+    {
+      "id": "v08",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v09",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v10",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r12",
+      "kind": "number"
+    },
+    {
+      "id": "v11",
+      "kind": "number",
+      "path": "w"
+    },
+    {
+      "id": "v13",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r14",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r16",
+      "kind": "boolean"
+    },
+    {
+      "id": "v17",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v18",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v19",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v20",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v21",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v22",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v23",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v24",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v25",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v26",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v27",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v28",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v29",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v30",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v31",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v32",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v33",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v34",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v35",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v36",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v37",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v38",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v39",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v40",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v41",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v42",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v43",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r45",
+      "kind": "number"
+    },
+    {
+      "id": "r47",
+      "kind": "number"
+    },
+    {
+      "id": "r49",
+      "kind": "number"
+    },
+    {
+      "id": "r51",
+      "kind": "number"
+    },
+    {
+      "id": "v50",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "arr1",
+      "kind": "numbers"
+    },
+    {
+      "id": "v53",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

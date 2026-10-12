@@ -1,0 +1,40 @@
+{
+  "name": "attribute-usage",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 src/core/BufferAttribute.js — setUsage and the usage field, a hint the WebGPU backend stores",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "a",
+      "kind": "number",
+      "path": "usage",
+      "value": "n:40e11d0000000000",
+      "decimal": "35048"
+    },
+    {
+      "index": 1,
+      "id": "same",
+      "kind": "number",
+      "path": "usage",
+      "value": "n:40e11d0000000000",
+      "decimal": "35048"
+    },
+    {
+      "index": 2,
+      "id": "b",
+      "kind": "number",
+      "path": "usage",
+      "value": "n:40e11c8000000000",
+      "decimal": "35044"
+    },
+    {
+      "index": 3,
+      "id": "a",
+      "kind": "numbers",
+      "path": "array",
+      "value": "n:0000000000000000,n:3ff0000000000000,n:4000000000000000,n:4008000000000000,n:4010000000000000,n:4014000000000000",
+      "decimal": "0, 1, 2, 3, 4, 5"
+    }
+  ]
+}

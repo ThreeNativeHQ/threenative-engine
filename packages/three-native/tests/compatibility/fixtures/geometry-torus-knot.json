@@ -1,0 +1,73 @@
+{
+  "name": "geometry-torus-knot",
+  "adaptedFrom": "three@0.185.1 src/geometries/TorusKnotGeometry.js — coarse default and non-default shape",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "coarse",
+      "class": "TorusKnotGeometry",
+      "args": [1, 0.4, 32, 6, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "shaped",
+      "class": "TorusKnotGeometry",
+      "args": [2, 0.5, 48, 8, 3, 5]
+    }
+  ],
+  "observe": [
+    {
+      "id": "coarse",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "shaped",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "shaped",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "shaped",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "shaped",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "shaped",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "name": "scene-cameras-lookat",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js lookAt and src/cameras/Camera.tests.js getWorldDirection — a camera looks down its own negative z, an object down its positive z, and both re-orient against a rotated parent",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "number",
+      "path": "quaternion.w",
+      "value": "n:3fe6a0e88b46890a",
+      "decimal": "0.7071421356415908"
+    },
+    {
+      "index": 1,
+      "id": "camera",
+      "kind": "number",
+      "path": "rotation.y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 2,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3f1a36e2e8e94000,n:bfeffffffd50ce24,n:0000000000000000,n:0000000000000000,n:3feffffffd50ce24,n:3f1a36e2e8e94000,n:0000000000000000,n:0000000000000000,n:4008000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 0.00009999999949994454, -0.999999995, 0, 0, 0.999999995, 0.00009999999949994454, 0, 0, 3, 0, 1"
+    },
+    {
+      "index": 3,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "matrixWorldInverse.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:8000000000000000,n:3f1a36e2e8e94000,n:3feffffffd50ce24,n:0000000000000000,n:0000000000000000,n:bfeffffffd50ce24,n:3f1a36e2e8e94000,n:0000000000000000,n:0000000000000000,n:bf33a92a2eaef000,n:c007fffffdfc9a9b,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, -0, 0.00009999999949994454, 0.999999995, 0, 0, -0.999999995, 0.00009999999949994454, 0, 0, -0.0002999999984998336, -2.999999985, 1"
+    },
+    {
+      "index": 4,
+      "id": "cameraDirection",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:8000000000000000,n:bfeffffffd50ce24,n:bf1a36e2e8e94000",
+      "decimal": "-0, -0.999999995, -0.00009999999949994454"
+    },
+    {
+      "index": 5,
+      "id": "cameraPosition",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:4008000000000000,n:0000000000000000",
+      "decimal": "0, 3, 0"
+    },
+    {
+      "index": 6,
+      "id": "node",
+      "kind": "number",
+      "path": "quaternion.w",
+      "value": "n:3fe6a09e667f3bcd",
+      "decimal": "0.7071067811865476"
+    },
+    {
+      "index": 7,
+      "id": "node",
+      "kind": "numbers",
+      "path": "matrix.elements",
+      "value": "n:3cb0000000000000,n:8000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:bff0000000000000,n:0000000000000000,n:3cb0000000000000,n:0000000000000000,n:4014000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "2.220446049250313e-16, -0, 1, 0, 0, 1, 0, 0, -1, 0, 2.220446049250313e-16, 0, 5, 0, 0, 1"
+    },
+    {
+      "index": 8,
+      "id": "nodeDirection",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bff0000000000000,n:0000000000000000,n:3cb0000000000000",
+      "decimal": "-1, 0, 2.220446049250313e-16"
+    },
+    {
+      "index": 9,
+      "id": "tilted",
+      "kind": "numbers",
+      "path": "matrix.elements",
+      "value": "n:bfee7b87ad6388f0,n:3fc16b28f55d72d4,n:bfd16b28f55d72d4,n:0000000000000000,n:3fa501f30572b50f,n:3fee32cd57d4e449,n:3fd501f30572b512,n:0000000000000000,n:3fd34bf63d156826,n:3fd34bf63d156826,n:bfecf1f15ba01c36,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:4010000000000000,n:3ff0000000000000",
+      "decimal": "-0.95257934441568, 0.13608276348795434, -0.2721655269759087, 0, 0.04103049699311089, 0.9437014308415509, 0.3282439759448873, 0, 0.30151134457776363, 0.30151134457776363, -0.9045340337332906, 0, 0, 0, 4, 1"
+    },
+    {
+      "index": 10,
+      "id": "tilted",
+      "kind": "number",
+      "path": "quaternion.x",
+      "value": "n:3fa741c73a3c621f",
+      "decimal": "0.045423723086234206"
+    },
+    {
+      "index": 11,
+      "id": "child",
+      "kind": "number",
+      "path": "quaternion.w",
+      "value": "n:3fefbbd69ceb2ead",
+      "decimal": "0.9916794838731754"
+    },
+    {
+      "index": 12,
+      "id": "child",
+      "kind": "number",
+      "path": "rotation.z",
+      "value": "n:3f9b08df9a76e902",
+      "decimal": "0.026401037028088055"
+    },
+    {
+      "index": 13,
+      "id": "child",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3fe6a09e667f3bcc,n:bc74000000000000,n:bfe6a09e667f3bcd,n:0000000000000000,n:3fc4c3abe93bcf76,n:3fef2581ddd9b72e,n:3fc4c3abe93bcf72,n:0000000000000000,n:3fe6061efecf8aea,n:bfcd5d7ea914b937,n:3fe6061efecf8ae8,n:0000000000000000,n:0000000000000000,n:4010000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "0.7071067811865475, -1.734723475976807e-17, -0.7071067811865476, 0, 0.1622214211307626, 0.9733285267845753, 0.1622214211307625, 0, 0.6882472016116854, -0.22941573387056177, 0.6882472016116852, 0, 0, 4, 0, 1"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "arrays-indexed-write",
+  "adaptedFrom": "three@0.185.1 BufferAttribute.array — an indexed write `attribute.array[i] = value` is visible in the array",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "box", "class": "BoxGeometry", "args": [1, 1, 1] },
+    { "op": "call", "id": "box", "method": "getAttribute", "args": ["position"], "result": "p" },
+    { "op": "set", "id": "p", "path": "array.1", "value": 2.5 }
+  ],
+  "observe": [{ "id": "p", "path": "array", "kind": "numbers" }]
+}

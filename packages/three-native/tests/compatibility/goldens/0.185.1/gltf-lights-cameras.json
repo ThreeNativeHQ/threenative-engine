@@ -1,0 +1,67 @@
+{
+  "name": "gltf-lights-cameras",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — GLTFLoader r185 native twin. Red control: ignore punctual lights (lit panels go black); replace authored camera with defaults (framing changes).",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "number",
+      "path": "fov",
+      "value": "n:4046eb167b830194",
+      "decimal": "45.836623610465864"
+    },
+    {
+      "index": 1,
+      "id": "ortho",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3fd5555555555555,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3fe0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bf948020cd014802,n:0000000000000000,n:8000000000000000,n:8000000000000000,n:bff0083340520083,n:3ff0000000000000",
+      "decimal": "0.3333333333333333, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, -0.02002002002002002, 0, -0, -0, -1.002002002002002, 1"
+    },
+    {
+      "index": 2,
+      "id": "sun",
+      "kind": "number",
+      "path": "intensity",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 3,
+      "id": "point",
+      "kind": "number",
+      "path": "distance",
+      "value": "n:401c000000000000",
+      "decimal": "7"
+    },
+    {
+      "index": 4,
+      "id": "spot",
+      "kind": "number",
+      "path": "penumbra",
+      "value": "n:3fe5555555555555",
+      "decimal": "0.6666666666666666"
+    },
+    {
+      "index": 5,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:d8db1e08e69d27a6f663febb621d1632d378660782f893d79f5feea382ffd4c0",
+      "decimal": "d8db1e08e69d27a6f663febb621d1632d378660782f893d79f5feea382ffd4c0"
+    }
+  ],
+  "render": {
+    "png": "gltf-lights-cameras.png",
+    "pngSha256": "d8db1e08e69d27a6f663febb621d1632d378660782f893d79f5feea382ffd4c0",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

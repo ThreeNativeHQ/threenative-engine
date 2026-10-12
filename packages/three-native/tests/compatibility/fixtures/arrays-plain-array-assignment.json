@@ -1,0 +1,13 @@
+{
+  "name": "arrays-plain-array-assignment",
+  "adaptedFrom": "three@0.185.1 BufferAttribute.array — a plain Array assigned where a TypedArray is expected",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "v", "class": "Vector3", "args": [4, 5, 6] },
+    { "op": "call", "id": "v", "method": "toArray", "args": [], "result": "arr" },
+    { "op": "new", "id": "box", "class": "BoxGeometry", "args": [1, 1, 1] },
+    { "op": "call", "id": "box", "method": "getAttribute", "args": ["position"], "result": "p" },
+    { "op": "set", "id": "p", "path": "array", "value": { "ref": "arr" } }
+  ],
+  "observe": [{ "id": "p", "path": "array", "kind": "numbers" }]
+}

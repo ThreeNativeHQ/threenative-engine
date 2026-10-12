@@ -1,0 +1,334 @@
+{
+  "name": "blending-additive",
+  "adaptedFrom": "original \u2014 MeshBasicMaterial planes over an opaque red band: AdditiveBlending on a transparent green, AdditiveBlending on an opaque blue (three blends a non-Normal mode even when transparent is false and keeps its alpha), and a NormalBlending transparent control between them",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 256,
+    "height": 128,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.1, 0.1, 0.1]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "OrthographicCamera",
+      "args": [-2, 2, 1, -1, 0.1, 10]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "new",
+      "id": "big",
+      "class": "PlaneGeometry",
+      "args": [3.2, 1.2]
+    },
+    {
+      "op": "new",
+      "id": "small",
+      "class": "PlaneGeometry",
+      "args": [1.2, 1.6]
+    },
+    {
+      "op": "new",
+      "id": "redMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "redMaterialColor",
+      "class": "Color",
+      "args": [0.6, 0.1, 0.1]
+    },
+    {
+      "op": "set",
+      "id": "redMaterial",
+      "path": "color",
+      "value": {
+        "ref": "redMaterialColor"
+      }
+    },
+    {
+      "op": "new",
+      "id": "red",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "big"
+        },
+        {
+          "ref": "redMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "red",
+      "path": "position.x",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "red",
+      "path": "position.z",
+      "value": 0
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "red"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "greenMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "greenMaterialColor",
+      "class": "Color",
+      "args": [0, 0.8, 0.2]
+    },
+    {
+      "op": "set",
+      "id": "greenMaterial",
+      "path": "color",
+      "value": {
+        "ref": "greenMaterialColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "greenMaterial",
+      "path": "transparent",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "greenMaterial",
+      "path": "opacity",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "greenMaterial",
+      "path": "blending",
+      "value": 2
+    },
+    {
+      "op": "new",
+      "id": "green",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "small"
+        },
+        {
+          "ref": "greenMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "green",
+      "path": "position.x",
+      "value": -0.9
+    },
+    {
+      "op": "set",
+      "id": "green",
+      "path": "position.z",
+      "value": 0.5
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "green"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "blueMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "blueMaterialColor",
+      "class": "Color",
+      "args": [0.1, 0.2, 0.7]
+    },
+    {
+      "op": "set",
+      "id": "blueMaterial",
+      "path": "color",
+      "value": {
+        "ref": "blueMaterialColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "blueMaterial",
+      "path": "opacity",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "blueMaterial",
+      "path": "blending",
+      "value": 2
+    },
+    {
+      "op": "new",
+      "id": "blue",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "small"
+        },
+        {
+          "ref": "blueMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "blue",
+      "path": "position.x",
+      "value": 0.9
+    },
+    {
+      "op": "set",
+      "id": "blue",
+      "path": "position.z",
+      "value": 0.5
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "blue"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "plainMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "plainMaterialColor",
+      "class": "Color",
+      "args": [0.2, 0.6, 0.9]
+    },
+    {
+      "op": "set",
+      "id": "plainMaterial",
+      "path": "color",
+      "value": {
+        "ref": "plainMaterialColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "plainMaterial",
+      "path": "transparent",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "plainMaterial",
+      "path": "opacity",
+      "value": 0.5
+    },
+    {
+      "op": "new",
+      "id": "plain",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "small"
+        },
+        {
+          "ref": "plainMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "plain",
+      "path": "position.x",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "plain",
+      "path": "position.z",
+      "value": 1
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "plain"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

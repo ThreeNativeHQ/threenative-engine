@@ -1,0 +1,211 @@
+{
+  "name": "math-edges-nan-infinity",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/*.tests.js — NaN and Infinity propagate the way IEEE-754 and the reference's own expressions do",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "v01",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff0000000000000,n:fff0000000000000,n:0000000000000000",
+      "decimal": "Infinity, -Infinity, 0"
+    },
+    {
+      "index": 1,
+      "id": "v02",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff8000000000000,n:0000000000000000,n:0000000000000000",
+      "decimal": "NaN, 0, 0"
+    },
+    {
+      "index": 2,
+      "id": "v02",
+      "kind": "number",
+      "method": "length",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    },
+    {
+      "index": 3,
+      "id": "r04",
+      "kind": "number",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 4,
+      "id": "r05",
+      "kind": "number",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 5,
+      "id": "r08",
+      "kind": "number",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    },
+    {
+      "index": 6,
+      "id": "v06",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:7ff8000000000000,n:4000000000000000",
+      "decimal": "1, NaN, 2"
+    },
+    {
+      "index": 7,
+      "id": "r10",
+      "kind": "number",
+      "value": "n:402c000000000000",
+      "decimal": "14"
+    },
+    {
+      "index": 8,
+      "id": "v12",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff0000000000000,n:7ff0000000000000,n:7ff0000000000000",
+      "decimal": "Infinity, Infinity, Infinity"
+    },
+    {
+      "index": 9,
+      "id": "v13",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff0000000000000,n:7ff0000000000000,n:7ff0000000000000",
+      "decimal": "Infinity, Infinity, Infinity"
+    },
+    {
+      "index": 10,
+      "id": "r15",
+      "kind": "number",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 11,
+      "id": "v16",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000",
+      "decimal": "0, 0, 0"
+    },
+    {
+      "index": 12,
+      "id": "v17",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff8000000000000,n:3ff0000000000000,n:3ff0000000000000",
+      "decimal": "NaN, 1, 1"
+    },
+    {
+      "index": 13,
+      "id": "v18",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff0000000000000,n:fff0000000000000",
+      "decimal": "Infinity, -Infinity"
+    },
+    {
+      "index": 14,
+      "id": "v18",
+      "kind": "number",
+      "method": "length",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 15,
+      "id": "v19",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff0000000000000,n:7ff8000000000000,n:fff0000000000000,n:3ff0000000000000",
+      "decimal": "Infinity, NaN, -Infinity, 1"
+    },
+    {
+      "index": 16,
+      "id": "r21",
+      "kind": "number",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 17,
+      "id": "m22",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000",
+      "decimal": "NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN"
+    },
+    {
+      "index": 18,
+      "id": "r24",
+      "kind": "number",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    },
+    {
+      "index": 19,
+      "id": "r26",
+      "kind": "number",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    },
+    {
+      "index": 20,
+      "id": "m27",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000",
+      "decimal": "NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN"
+    },
+    {
+      "index": 21,
+      "id": "r29",
+      "kind": "number",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    },
+    {
+      "index": 22,
+      "id": "r31",
+      "kind": "number",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    },
+    {
+      "index": 23,
+      "id": "r32",
+      "kind": "number",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    },
+    {
+      "index": 24,
+      "id": "q33",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000",
+      "decimal": "NaN, NaN, NaN, NaN"
+    },
+    {
+      "index": 25,
+      "id": "r35",
+      "kind": "number",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 26,
+      "id": "r37",
+      "kind": "number",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    }
+  ]
+}

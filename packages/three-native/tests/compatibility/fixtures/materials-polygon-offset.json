@@ -1,0 +1,285 @@
+{
+  "name": "materials-polygon-offset",
+  "adaptedFrom": "original — material.polygonOffset as Midway's markings use it: a decal plane coplanar with a base plane and drawn before it (lower id), which still wins the depth test everywhere through polygonOffsetFactor -1 and polygonOffsetUnits -4; without the bias the base would overwrite it",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [60, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 1.4
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 3.2
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "light",
+      "class": "DirectionalLight",
+      "args": [16777215, 3]
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.x",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.y",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.z",
+      "value": 1
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [11189137, 2236962, 0.6]
+    },
+    {
+      "op": "new",
+      "id": "decalGeometry",
+      "class": "PlaneGeometry",
+      "args": [1.2, 0.8]
+    },
+    {
+      "op": "new",
+      "id": "decalMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "decalMaterial",
+      "path": "color.r",
+      "value": 0.1
+    },
+    {
+      "op": "set",
+      "id": "decalMaterial",
+      "path": "color.g",
+      "value": 0.7
+    },
+    {
+      "op": "set",
+      "id": "decalMaterial",
+      "path": "color.b",
+      "value": 0.2
+    },
+    {
+      "op": "set",
+      "id": "decalMaterial",
+      "path": "polygonOffset",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "decalMaterial",
+      "path": "polygonOffsetFactor",
+      "value": -1
+    },
+    {
+      "op": "set",
+      "id": "decalMaterial",
+      "path": "polygonOffsetUnits",
+      "value": -4
+    },
+    {
+      "op": "new",
+      "id": "decal",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "decalGeometry"
+        },
+        {
+          "ref": "decalMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "decal",
+      "path": "rotation.x",
+      "value": -1.1
+    },
+    {
+      "op": "new",
+      "id": "plane",
+      "class": "PlaneGeometry",
+      "args": [2.4, 1.6]
+    },
+    {
+      "op": "new",
+      "id": "baseMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "baseMaterial",
+      "path": "color.r",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "baseMaterial",
+      "path": "color.g",
+      "value": 0.1
+    },
+    {
+      "op": "set",
+      "id": "baseMaterial",
+      "path": "color.b",
+      "value": 0.1
+    },
+    {
+      "op": "new",
+      "id": "base",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "plane"
+        },
+        {
+          "ref": "baseMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "base",
+      "path": "rotation.x",
+      "value": -1.1
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "decal"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "base"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "light"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "camera",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "light",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

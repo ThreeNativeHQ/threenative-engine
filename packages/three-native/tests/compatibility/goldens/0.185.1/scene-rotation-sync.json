@@ -1,0 +1,96 @@
+{
+  "name": "scene-rotation-sync",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — three's Euler and Quaternion setters fire _onChangeCallback, so on an Object3D a rotation.x write updates the quaternion and a quaternion.x write updates the rotation (and an order change re-syncs the quaternion); this is how games rotate objects",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "o",
+      "kind": "number",
+      "path": "quaternion.x",
+      "value": "n:3fe0f91dd49075e6",
+      "decimal": "0.5304097320219483"
+    },
+    {
+      "index": 1,
+      "id": "o",
+      "kind": "number",
+      "path": "quaternion.y",
+      "value": "n:bfd21cc43ea76111",
+      "decimal": "-0.2830057727674254"
+    },
+    {
+      "index": 2,
+      "id": "o",
+      "kind": "number",
+      "path": "quaternion.z",
+      "value": "n:bfc8c85d89835001",
+      "decimal": "-0.19361466612338066"
+    },
+    {
+      "index": 3,
+      "id": "o",
+      "kind": "number",
+      "path": "quaternion.w",
+      "value": "n:3fe8cf3d3d1d1aa1",
+      "decimal": "0.7752977555872641"
+    },
+    {
+      "index": 4,
+      "id": "o",
+      "kind": "numbers",
+      "path": "matrix.elements",
+      "value": "n:3fe87996529f9d92,n:bfe336c5b17ad012,n:3fcde145c9e96abd,n:0000000000000000,n:3c90000000000000,n:3fd730de943b79d4,n:3fedd343a21a55c4,n:0000000000000000,n:bfe49d6e694619b8,n:bfe6cfc5ac9fdda6,n:3fd1bcc4a9c15a7c,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "0.7648421872844884, -0.600436064376938, 0.2334372745416057, 0, 5.551115123125783e-17, 0.3623577544766736, 0.9320390859672263, 0, -0.644217687237691, -0.7128628131458086, 0.2771464975134348, 0, 0, 0, 0, 1"
+    },
+    {
+      "index": 5,
+      "id": "p",
+      "kind": "number",
+      "path": "rotation.x",
+      "value": "n:3fe921fb54442d18",
+      "decimal": "0.7853981633974483"
+    },
+    {
+      "index": 6,
+      "id": "p",
+      "kind": "number",
+      "path": "rotation.y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 7,
+      "id": "p",
+      "kind": "number",
+      "path": "rotation.z",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 8,
+      "id": "p",
+      "kind": "number",
+      "path": "quaternion.x",
+      "value": "n:3fd87de2a6aea963",
+      "decimal": "0.3826834323650898"
+    },
+    {
+      "index": 9,
+      "id": "p",
+      "kind": "number",
+      "path": "quaternion.y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 10,
+      "id": "p",
+      "kind": "number",
+      "path": "quaternion.w",
+      "value": "n:3fed906bcf328d46",
+      "decimal": "0.9238795325112867"
+    }
+  ]
+}

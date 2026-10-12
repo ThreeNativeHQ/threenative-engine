@@ -1,0 +1,279 @@
+{
+  "name": "scene-cameras-lookat",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js lookAt and src/cameras/Camera.tests.js getWorldDirection \u2014 a camera looks down its own negative z, an object down its positive z, and both re-orient against a rotated parent",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [60, 1, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "camera"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "cameraDirection",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "getWorldDirection",
+      "args": [
+        {
+          "ref": "cameraDirection"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "cameraPosition",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "getWorldPosition",
+      "args": [
+        {
+          "ref": "cameraPosition"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "node",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "node",
+      "path": "position.x",
+      "value": 5
+    },
+    {
+      "op": "call",
+      "id": "node",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "nodeDirection",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "node",
+      "method": "getWorldDirection",
+      "args": [
+        {
+          "ref": "nodeDirection"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tilted",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "tilted",
+      "path": "up.z",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "tilted",
+      "path": "position.z",
+      "value": 4
+    },
+    {
+      "op": "call",
+      "id": "tilted",
+      "method": "lookAt",
+      "args": [1, 1, 1]
+    },
+    {
+      "op": "call",
+      "id": "tilted",
+      "method": "updateMatrix",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "parent",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "parent",
+      "path": "position.y",
+      "value": 4
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "rotateY",
+      "args": [0.9]
+    },
+    {
+      "op": "new",
+      "id": "child",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "child"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "lookAt",
+      "args": [3, 3, 3]
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "target",
+      "class": "Vector3",
+      "args": [3, 3, 3]
+    },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "lookAt",
+      "args": [
+        {
+          "ref": "target"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "quaternion.w",
+      "kind": "number"
+    },
+    {
+      "id": "camera",
+      "path": "rotation.y",
+      "kind": "number"
+    },
+    {
+      "id": "camera",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "camera",
+      "path": "matrixWorldInverse.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "cameraDirection",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "cameraPosition",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "node",
+      "path": "quaternion.w",
+      "kind": "number"
+    },
+    {
+      "id": "node",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "nodeDirection",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "tilted",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "tilted",
+      "path": "quaternion.x",
+      "kind": "number"
+    },
+    {
+      "id": "child",
+      "path": "quaternion.w",
+      "kind": "number"
+    },
+    {
+      "id": "child",
+      "path": "rotation.z",
+      "kind": "number"
+    },
+    {
+      "id": "child",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    }
+  ]
+}

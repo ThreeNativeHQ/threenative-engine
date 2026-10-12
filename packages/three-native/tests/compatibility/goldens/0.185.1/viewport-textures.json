@@ -1,0 +1,51 @@
+{
+  "name": "viewport-textures",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — WaterSurface3D's viewport reads: a transparent water plane over a lit floor box whose colour is the frame behind it (viewportSharedTexture at an offset screenUV) tinted, plus its viewportLinearDepth in blue; three copies the colour and depth at the water's draw",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff4c8dc2e423980,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ffbb67ae8584cab,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.299038105676658, 0, 0, 0, 0, 1.7320508075688774, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:3ff6666666666666,n:400999999999999a,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1.4, 3.2, 1"
+    },
+    {
+      "index": 2,
+      "id": "light",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:4000000000000000,n:4008000000000000,n:3ff0000000000000,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 3, 1, 1"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:3604bff09b9456971f8143d864959a1227ee918dc296b05691bc14fcb9a0ecff",
+      "decimal": "3604bff09b9456971f8143d864959a1227ee918dc296b05691bc14fcb9a0ecff"
+    }
+  ],
+  "render": {
+    "png": "viewport-textures.png",
+    "pngSha256": "3604bff09b9456971f8143d864959a1227ee918dc296b05691bc14fcb9a0ecff",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

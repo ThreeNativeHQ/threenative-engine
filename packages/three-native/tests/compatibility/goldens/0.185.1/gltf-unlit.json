@@ -1,0 +1,43 @@
+{
+  "name": "gltf-unlit",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — GLTFLoader r185 native twin. Red control: load KHR_materials_unlit as Standard (left panel goes dark without lights); emissiveFactor must be ignored.",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "number",
+      "path": "fov",
+      "value": "n:4046eb167b830194",
+      "decimal": "45.836623610465864"
+    },
+    {
+      "index": 1,
+      "id": "ortho",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3fd5555555555555,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3fe0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bf948020cd014802,n:0000000000000000,n:8000000000000000,n:8000000000000000,n:bff0083340520083,n:3ff0000000000000",
+      "decimal": "0.3333333333333333, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, -0.02002002002002002, 0, -0, -0, -1.002002002002002, 1"
+    },
+    {
+      "index": 2,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:247ffac3b8706a4b0fe5aec629d847ad4c55fd590fb8e6598baabf8a253b86ef",
+      "decimal": "247ffac3b8706a4b0fe5aec629d847ad4c55fd590fb8e6598baabf8a253b86ef"
+    }
+  ],
+  "render": {
+    "png": "gltf-unlit.png",
+    "pngSha256": "247ffac3b8706a4b0fe5aec629d847ad4c55fd590fb8e6598baabf8a253b86ef",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

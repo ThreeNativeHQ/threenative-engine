@@ -1,0 +1,388 @@
+{
+  "name": "math-core-vector2",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector2.tests.js — every public method except the two atan2 forms, which need math-core-vector2-angles",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "v06",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:400c000000000000,n:c011000000000000",
+      "decimal": "3.5, -4.25"
+    },
+    {
+      "index": 1,
+      "id": "v06",
+      "kind": "number",
+      "path": "width",
+      "value": "n:400c000000000000",
+      "decimal": "3.5"
+    },
+    {
+      "index": 2,
+      "id": "v06",
+      "kind": "number",
+      "path": "height",
+      "value": "n:c011000000000000",
+      "decimal": "-4.25"
+    },
+    {
+      "index": 3,
+      "id": "v07",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4000000000000000,n:4008000000000000",
+      "decimal": "2, 3"
+    },
+    {
+      "index": 4,
+      "id": "v08",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4004000000000000,n:4004000000000000",
+      "decimal": "2.5, 2.5"
+    },
+    {
+      "index": 5,
+      "id": "v09",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bff8000000000000,n:4002000000000000",
+      "decimal": "-1.5, 2.25"
+    },
+    {
+      "index": 6,
+      "id": "r11",
+      "kind": "number",
+      "value": "n:401e000000000000",
+      "decimal": "7.5"
+    },
+    {
+      "index": 7,
+      "id": "v10",
+      "kind": "number",
+      "path": "x",
+      "value": "n:401e000000000000",
+      "decimal": "7.5"
+    },
+    {
+      "index": 8,
+      "id": "v12",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bff8000000000000,n:4011000000000000",
+      "decimal": "-1.5, 4.25"
+    },
+    {
+      "index": 9,
+      "id": "r13",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bff8000000000000,n:4011000000000000",
+      "decimal": "-1.5, 4.25"
+    },
+    {
+      "index": 10,
+      "id": "r15",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 11,
+      "id": "r17",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 12,
+      "id": "v18",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:400c000000000000,n:3fe0000000000000",
+      "decimal": "3.5, 0.5"
+    },
+    {
+      "index": 13,
+      "id": "v19",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:c008000000000000",
+      "decimal": "1, -3"
+    },
+    {
+      "index": 14,
+      "id": "v20",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe0000000000000,n:401d000000000000",
+      "decimal": "0.5, 7.25"
+    },
+    {
+      "index": 15,
+      "id": "v21",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:c004000000000000,n:c021000000000000",
+      "decimal": "-2.5, -8.5"
+    },
+    {
+      "index": 16,
+      "id": "v22",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfe0000000000000,n:c016000000000000",
+      "decimal": "-0.5, -5.5"
+    },
+    {
+      "index": 17,
+      "id": "v23",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:c010000000000000",
+      "decimal": "0, -4"
+    },
+    {
+      "index": 18,
+      "id": "v24",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:400c000000000000,n:bff4000000000000",
+      "decimal": "3.5, -1.25"
+    },
+    {
+      "index": 19,
+      "id": "v25",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4008000000000000,n:c01e000000000000",
+      "decimal": "3, -7.5"
+    },
+    {
+      "index": 20,
+      "id": "v26",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4012000000000000,n:c01e000000000000",
+      "decimal": "4.5, -7.5"
+    },
+    {
+      "index": 21,
+      "id": "v27",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe8000000000000,n:bfeaaaaaaaaaaaab",
+      "decimal": "0.75, -0.8333333333333334"
+    },
+    {
+      "index": 22,
+      "id": "v28",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd8000000000000,n:bfe4000000000000",
+      "decimal": "0.375, -0.625"
+    },
+    {
+      "index": 23,
+      "id": "v29",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfe0000000000000,n:bfe0000000000000",
+      "decimal": "-0.5, -0.5"
+    },
+    {
+      "index": 24,
+      "id": "v30",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bff0000000000000,n:c004000000000000",
+      "decimal": "-1, -2.5"
+    },
+    {
+      "index": 25,
+      "id": "v31",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4008000000000000,n:4010000000000000",
+      "decimal": "3, 4"
+    },
+    {
+      "index": 26,
+      "id": "v32",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff8000000000000,n:c000000000000000",
+      "decimal": "1.5, -2"
+    },
+    {
+      "index": 27,
+      "id": "v33",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe0000000000000,n:bfe0000000000000",
+      "decimal": "0.5, -0.5"
+    },
+    {
+      "index": 28,
+      "id": "v34",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff076bfcd6fbecc,n:bffb7095010f9354",
+      "decimal": "1.028991510855053, -1.7149858514250882"
+    },
+    {
+      "index": 29,
+      "id": "v35",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:c008000000000000",
+      "decimal": "1, -3"
+    },
+    {
+      "index": 30,
+      "id": "v36",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4000000000000000,n:c000000000000000",
+      "decimal": "2, -2"
+    },
+    {
+      "index": 31,
+      "id": "v37",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4000000000000000,n:c000000000000000",
+      "decimal": "2, -2"
+    },
+    {
+      "index": 32,
+      "id": "v38",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:c000000000000000",
+      "decimal": "1, -2"
+    },
+    {
+      "index": 33,
+      "id": "v39",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bff8000000000000,n:4004000000000000",
+      "decimal": "-1.5, 2.5"
+    },
+    {
+      "index": 34,
+      "id": "v40",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe076bfcd6fbecc,n:bfeb7095010f9354",
+      "decimal": "0.5144957554275265, -0.8574929257125441"
+    },
+    {
+      "index": 35,
+      "id": "v41",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4004946fc0cbae7f,n:c011265d20a9bc14",
+      "decimal": "2.5724787771376323, -4.28746462856272"
+    },
+    {
+      "index": 36,
+      "id": "v42",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ffa000000000000,n:bff2000000000000",
+      "decimal": "1.625, -1.125"
+    },
+    {
+      "index": 37,
+      "id": "v43",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfe4000000000000,n:400f800000000000",
+      "decimal": "-0.625, 3.9375"
+    },
+    {
+      "index": 38,
+      "id": "r45",
+      "kind": "number",
+      "value": "n:c012000000000000",
+      "decimal": "-4.5"
+    },
+    {
+      "index": 39,
+      "id": "r47",
+      "kind": "number",
+      "value": "n:4023000000000000",
+      "decimal": "9.5"
+    },
+    {
+      "index": 40,
+      "id": "r49",
+      "kind": "number",
+      "value": "n:4021000000000000",
+      "decimal": "8.5"
+    },
+    {
+      "index": 41,
+      "id": "r51",
+      "kind": "number",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 42,
+      "id": "r53",
+      "kind": "number",
+      "value": "n:3fefffffffffffff",
+      "decimal": "0.9999999999999999"
+    },
+    {
+      "index": 43,
+      "id": "v52",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe076bfcd6fbecc,n:bfeb7095010f9354",
+      "decimal": "0.5144957554275265, -0.8574929257125441"
+    },
+    {
+      "index": 44,
+      "id": "r55",
+      "kind": "number",
+      "value": "n:401617398f2aaa48",
+      "decimal": "5.522680508593631"
+    },
+    {
+      "index": 45,
+      "id": "r57",
+      "kind": "number",
+      "value": "n:403e800000000000",
+      "decimal": "30.5"
+    },
+    {
+      "index": 46,
+      "id": "r59",
+      "kind": "number",
+      "value": "n:4018000000000000",
+      "decimal": "6"
+    },
+    {
+      "index": 47,
+      "id": "arr1",
+      "kind": "numbers",
+      "value": "n:3ff8000000000000,n:c004000000000000",
+      "decimal": "1.5, -2.5"
+    },
+    {
+      "index": 48,
+      "id": "v61",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff8000000000000,n:c004000000000000",
+      "decimal": "1.5, -2.5"
+    }
+  ]
+}

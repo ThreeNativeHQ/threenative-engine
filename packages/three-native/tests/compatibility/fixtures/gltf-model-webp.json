@@ -1,0 +1,92 @@
+{
+  "name": "gltf-model-webp",
+  "adaptedFrom": "original — an unlit glTF quad whose texture is EXT_texture_webp (a lossless 4x4 quadrant marker: red, green, blue, yellow) with a magenta PNG fallback in the core `source`. three's GLTFLoader, with WebP support, draws the WebP image; drawing the fallback or no image fails the frame.",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "bg",
+      "class": "Color",
+      "args": [0.04, 0.04, 0.04]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "bg"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 3
+    },
+    {
+      "op": "gltf",
+      "id": "model",
+      "file": "packages/three-native/tests/compatibility/fixtures/gltf-model-webp.glb"
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "model"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "model",
+      "path": "name",
+      "kind": "string"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  }
+}

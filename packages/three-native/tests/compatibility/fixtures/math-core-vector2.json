@@ -1,0 +1,946 @@
+{
+  "name": "math-core-vector2",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector2.tests.js \u2014 every public method except the two atan2 forms, which need math-core-vector2-angles",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "a01",
+      "class": "Vector2",
+      "args": [2, 3]
+    },
+    {
+      "op": "new",
+      "id": "b02",
+      "class": "Vector2",
+      "args": [-1.5, 4.25]
+    },
+    {
+      "op": "new",
+      "id": "lo03",
+      "class": "Vector2",
+      "args": [-1, -2]
+    },
+    {
+      "op": "new",
+      "id": "hi04",
+      "class": "Vector2",
+      "args": [3, 4]
+    },
+    {
+      "op": "new",
+      "id": "m05",
+      "class": "Matrix3",
+      "args": [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    },
+    {
+      "op": "new",
+      "id": "v06",
+      "class": "Vector2",
+      "args": [3.5, -4.25]
+    },
+    {
+      "op": "new",
+      "id": "v07",
+      "class": "Vector2",
+      "args": [3.5, -4.25]
+    },
+    {
+      "op": "call",
+      "id": "v07",
+      "method": "set",
+      "args": [2, 3]
+    },
+    {
+      "op": "new",
+      "id": "v08",
+      "class": "Vector2",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "v08",
+      "method": "setScalar",
+      "args": [2.5]
+    },
+    {
+      "op": "new",
+      "id": "v09",
+      "class": "Vector2",
+      "args": [1, 1]
+    },
+    {
+      "op": "call",
+      "id": "v09",
+      "method": "setX",
+      "args": [-1.5]
+    },
+    {
+      "op": "call",
+      "id": "v09",
+      "method": "setY",
+      "args": [2.25]
+    },
+    {
+      "op": "new",
+      "id": "v10",
+      "class": "Vector2",
+      "args": [1, 1]
+    },
+    {
+      "op": "call",
+      "id": "v10",
+      "method": "setComponent",
+      "args": [0, 7.5]
+    },
+    {
+      "op": "call",
+      "id": "v10",
+      "method": "getComponent",
+      "args": [0],
+      "result": "r11"
+    },
+    {
+      "op": "new",
+      "id": "v12",
+      "class": "Vector2",
+      "args": [1, 1]
+    },
+    {
+      "op": "call",
+      "id": "v12",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "b02"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "v12",
+      "method": "clone",
+      "args": [],
+      "result": "r13"
+    },
+    {
+      "op": "new",
+      "id": "v14",
+      "class": "Vector2",
+      "args": [1, 1]
+    },
+    {
+      "op": "call",
+      "id": "v14",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "b02"
+        }
+      ],
+      "result": "r15"
+    },
+    {
+      "op": "new",
+      "id": "v16",
+      "class": "Vector2",
+      "args": [1, 1]
+    },
+    {
+      "op": "call",
+      "id": "v16",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "v16",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r17"
+    },
+    {
+      "op": "new",
+      "id": "v18",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v18",
+      "method": "add",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v19",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v19",
+      "method": "addScalar",
+      "args": [-0.5]
+    },
+    {
+      "op": "new",
+      "id": "v20",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v20",
+      "method": "addVectors",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        {
+          "ref": "b02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v21",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v21",
+      "method": "addScaledVector",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        -2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v22",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v22",
+      "method": "sub",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v23",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v23",
+      "method": "subScalar",
+      "args": [1.5]
+    },
+    {
+      "op": "new",
+      "id": "v24",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v24",
+      "method": "subVectors",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        {
+          "ref": "b02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v25",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v25",
+      "method": "multiply",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v26",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v26",
+      "method": "multiplyScalar",
+      "args": [3]
+    },
+    {
+      "op": "new",
+      "id": "v27",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v27",
+      "method": "divide",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v28",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v28",
+      "method": "divideScalar",
+      "args": [4]
+    },
+    {
+      "op": "new",
+      "id": "v29",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v29",
+      "method": "applyMatrix3",
+      "args": [
+        {
+          "ref": "m05"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v30",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v30",
+      "method": "min",
+      "args": [
+        {
+          "ref": "lo03"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v31",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v31",
+      "method": "max",
+      "args": [
+        {
+          "ref": "hi04"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v32",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v32",
+      "method": "clamp",
+      "args": [
+        {
+          "ref": "lo03"
+        },
+        {
+          "ref": "hi04"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v33",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v33",
+      "method": "clampScalar",
+      "args": [-0.5, 0.5]
+    },
+    {
+      "op": "new",
+      "id": "v34",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v34",
+      "method": "clampLength",
+      "args": [0, 2]
+    },
+    {
+      "op": "new",
+      "id": "v35",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v35",
+      "method": "floor",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v36",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v36",
+      "method": "ceil",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v37",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v37",
+      "method": "round",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v38",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v38",
+      "method": "roundToZero",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v39",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v39",
+      "method": "negate",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v40",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v40",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v41",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v41",
+      "method": "setLength",
+      "args": [5]
+    },
+    {
+      "op": "new",
+      "id": "v42",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v42",
+      "method": "lerp",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        0.25
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v43",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v43",
+      "method": "lerpVectors",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        {
+          "ref": "b02"
+        },
+        0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v44",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v44",
+      "method": "dot",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r45"
+    },
+    {
+      "op": "new",
+      "id": "v46",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v46",
+      "method": "cross",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r47"
+    },
+    {
+      "op": "new",
+      "id": "v48",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v48",
+      "method": "lengthSq",
+      "args": [],
+      "result": "r49"
+    },
+    {
+      "op": "new",
+      "id": "v50",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v50",
+      "method": "manhattanLength",
+      "args": [],
+      "result": "r51"
+    },
+    {
+      "op": "new",
+      "id": "v52",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v52",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "v52",
+      "method": "length",
+      "args": [],
+      "result": "r53"
+    },
+    {
+      "op": "new",
+      "id": "v54",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v54",
+      "method": "distanceTo",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r55"
+    },
+    {
+      "op": "new",
+      "id": "v56",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v56",
+      "method": "distanceToSquared",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r57"
+    },
+    {
+      "op": "new",
+      "id": "v58",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "v58",
+      "method": "manhattanDistanceTo",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r59"
+    },
+    {
+      "op": "new",
+      "id": "s60",
+      "class": "Vector2",
+      "args": [1.5, -2.5]
+    },
+    {
+      "op": "call",
+      "id": "s60",
+      "method": "toArray",
+      "args": [],
+      "result": "arr1"
+    },
+    {
+      "op": "new",
+      "id": "v61",
+      "class": "Vector2",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "v61",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "arr1"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "v06",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v06",
+      "kind": "number",
+      "path": "width"
+    },
+    {
+      "id": "v06",
+      "kind": "number",
+      "path": "height"
+    },
+    {
+      "id": "v07",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v08",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v09",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r11",
+      "kind": "number"
+    },
+    {
+      "id": "v10",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "v12",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r13",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r15",
+      "kind": "boolean"
+    },
+    {
+      "id": "r17",
+      "kind": "boolean"
+    },
+    {
+      "id": "v18",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v19",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v20",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v21",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v22",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v23",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v24",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v25",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v26",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v27",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v28",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v29",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v30",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v31",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v32",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v33",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v34",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v35",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v36",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v37",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v38",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v39",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v40",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v41",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v42",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v43",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r45",
+      "kind": "number"
+    },
+    {
+      "id": "r47",
+      "kind": "number"
+    },
+    {
+      "id": "r49",
+      "kind": "number"
+    },
+    {
+      "id": "r51",
+      "kind": "number"
+    },
+    {
+      "id": "r53",
+      "kind": "number"
+    },
+    {
+      "id": "v52",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r55",
+      "kind": "number"
+    },
+    {
+      "id": "r57",
+      "kind": "number"
+    },
+    {
+      "id": "r59",
+      "kind": "number"
+    },
+    {
+      "id": "arr1",
+      "kind": "numbers"
+    },
+    {
+      "id": "v61",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

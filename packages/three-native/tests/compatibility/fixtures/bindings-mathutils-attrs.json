@@ -1,0 +1,127 @@
+{
+  "name": "bindings-mathutils-attrs",
+  "adaptedFrom": "original \u2014 three's MathUtils functions the minimal template calls (Player, touch-controls) and Float32BufferAttribute's constructor and array",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "math",
+      "class": "MathUtils",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "math",
+      "method": "clamp",
+      "args": [3.5, 0, 2],
+      "result": "clampHigh"
+    },
+    {
+      "op": "call",
+      "id": "math",
+      "method": "clamp",
+      "args": [-5, 0, 2],
+      "result": "clampLow"
+    },
+    {
+      "op": "call",
+      "id": "math",
+      "method": "lerp",
+      "args": [0.1, 0.2, 0.30000000000000004],
+      "result": "lerpMid"
+    },
+    {
+      "op": "call",
+      "id": "math",
+      "method": "degToRad",
+      "args": [180],
+      "result": "radians"
+    },
+    {
+      "op": "call",
+      "id": "math",
+      "method": "euclideanModulo",
+      "args": [-1, 3],
+      "result": "modulo"
+    },
+    {
+      "op": "new",
+      "id": "uv",
+      "class": "Float32BufferAttribute",
+      "args": [
+        {
+          "array": [0, 0, 1, 0, 0, 1, 1, 1],
+          "type": "Float32Array"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "gradient",
+      "class": "Float32BufferAttribute",
+      "args": [
+        {
+          "array": [0.1, 0.2, 0.3, 0.7],
+          "type": "Float32Array"
+        },
+        1,
+        true
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "clampHigh",
+      "kind": "number"
+    },
+    {
+      "id": "clampLow",
+      "kind": "number"
+    },
+    {
+      "id": "lerpMid",
+      "kind": "number"
+    },
+    {
+      "id": "radians",
+      "kind": "number"
+    },
+    {
+      "id": "modulo",
+      "kind": "number"
+    },
+    {
+      "id": "uv",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "uv",
+      "kind": "number",
+      "path": "itemSize"
+    },
+    {
+      "id": "uv",
+      "kind": "number",
+      "path": "count"
+    },
+    {
+      "id": "uv",
+      "kind": "boolean",
+      "path": "normalized"
+    },
+    {
+      "id": "gradient",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "gradient",
+      "kind": "boolean",
+      "path": "normalized"
+    }
+  ]
+}

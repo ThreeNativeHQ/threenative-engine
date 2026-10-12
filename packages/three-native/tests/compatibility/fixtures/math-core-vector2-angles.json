@@ -1,0 +1,83 @@
+{
+  "name": "math-core-vector2-angles",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector2.tests.js \u2014 angle, angleTo and rotateAround",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "a01",
+      "class": "Vector2",
+      "args": [2, 3]
+    },
+    {
+      "op": "new",
+      "id": "v02",
+      "class": "Vector2",
+      "args": [0, 3]
+    },
+    {
+      "op": "call",
+      "id": "v02",
+      "method": "angle",
+      "args": [],
+      "result": "r03"
+    },
+    {
+      "op": "new",
+      "id": "v04",
+      "class": "Vector2",
+      "args": [2, 3]
+    },
+    {
+      "op": "call",
+      "id": "v04",
+      "method": "angleTo",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r05"
+    },
+    {
+      "op": "new",
+      "id": "c06",
+      "class": "Vector2",
+      "args": [1, 1]
+    },
+    {
+      "op": "new",
+      "id": "v07",
+      "class": "Vector2",
+      "args": [2, 3]
+    },
+    {
+      "op": "call",
+      "id": "v07",
+      "method": "rotateAround",
+      "args": [
+        {
+          "ref": "c06"
+        },
+        0.75
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "r03",
+      "kind": "number"
+    },
+    {
+      "id": "r05",
+      "kind": "number"
+    },
+    {
+      "id": "v07",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

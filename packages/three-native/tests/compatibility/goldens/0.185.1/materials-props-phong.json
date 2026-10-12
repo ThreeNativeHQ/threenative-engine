@@ -1,0 +1,112 @@
+{
+  "name": "materials-props-phong",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — MeshPhongMaterial: shininess and specular default through ColorManagement, matching materials-phong",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "fresh",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshPhongMaterial",
+      "decimal": "MeshPhongMaterial"
+    },
+    {
+      "index": 1,
+      "id": "fresh",
+      "kind": "number",
+      "path": "specular.r",
+      "value": "n:3f76f5addb270744",
+      "decimal": "0.005605391621829107"
+    },
+    {
+      "index": 2,
+      "id": "fresh",
+      "kind": "number",
+      "path": "specular.g",
+      "value": "n:3f76f5addb270744",
+      "decimal": "0.005605391621829107"
+    },
+    {
+      "index": 3,
+      "id": "fresh",
+      "kind": "number",
+      "path": "specular.b",
+      "value": "n:3f76f5addb270744",
+      "decimal": "0.005605391621829107"
+    },
+    {
+      "index": 4,
+      "id": "fresh",
+      "kind": "number",
+      "path": "shininess",
+      "value": "n:403e000000000000",
+      "decimal": "30"
+    },
+    {
+      "index": 5,
+      "id": "m",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshPhongMaterial",
+      "decimal": "MeshPhongMaterial"
+    },
+    {
+      "index": 6,
+      "id": "m",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3fe999999999999a",
+      "decimal": "0.8"
+    },
+    {
+      "index": 7,
+      "id": "m",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3fd6666666666666",
+      "decimal": "0.35"
+    },
+    {
+      "index": 8,
+      "id": "m",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3fc999999999999a",
+      "decimal": "0.2"
+    },
+    {
+      "index": 9,
+      "id": "m",
+      "kind": "number",
+      "path": "shininess",
+      "value": "n:404e000000000000",
+      "decimal": "60"
+    },
+    {
+      "index": 10,
+      "id": "m",
+      "kind": "number",
+      "path": "specular.r",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 11,
+      "id": "m",
+      "kind": "number",
+      "path": "specular.g",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 12,
+      "id": "m",
+      "kind": "number",
+      "path": "specular.b",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    }
+  ]
+}

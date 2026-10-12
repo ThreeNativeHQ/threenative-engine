@@ -1,0 +1,103 @@
+{
+  "name": "materials-props-standard",
+  "adaptedFrom": "original — MeshStandardMaterial: roughness and metalness defaults, matching lit-render",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "fresh",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.r",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.g",
+      "value": 0.35
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.b",
+      "value": 0.2
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "roughness",
+      "value": 0.35
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "metalness",
+      "value": 0.1
+    }
+  ],
+  "observe": [
+    {
+      "id": "fresh",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "fresh",
+      "path": "roughness",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "metalness",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "color.r",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "m",
+      "path": "color.r",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "color.g",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "color.b",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "roughness",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "metalness",
+      "kind": "number"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "name": "gltf-model-webp",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — an unlit glTF quad whose texture is EXT_texture_webp (a lossless 4x4 quadrant marker: red, green, blue, yellow) with a magenta PNG fallback in the core `source`. three's GLTFLoader, with WebP support, draws the WebP image; drawing the fallback or no image fails the frame.",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "model",
+      "kind": "string",
+      "path": "name",
+      "value": "s:",
+      "decimal": ""
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:62fc75f5983526ac6d64bc0c57e3b6c8ea264ffe742f59217a4fd3b2bdee83e5",
+      "decimal": "62fc75f5983526ac6d64bc0c57e3b6c8ea264ffe742f59217a4fd3b2bdee83e5"
+    }
+  ],
+  "render": {
+    "png": "gltf-model-webp.png",
+    "pngSha256": "62fc75f5983526ac6d64bc0c57e3b6c8ea264ffe742f59217a4fd3b2bdee83e5",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

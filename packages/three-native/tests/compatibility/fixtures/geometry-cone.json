@@ -1,0 +1,119 @@
+{
+  "name": "geometry-cone",
+  "adaptedFrom": "three@0.185.1 src/geometries/ConeGeometry.js — coarse, partial-theta and open-ended cones",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "coarse",
+      "class": "ConeGeometry",
+      "args": [1, 2, 6, 1]
+    },
+    {
+      "op": "new",
+      "id": "sweep",
+      "class": "ConeGeometry",
+      "args": [2, 3, 5, 2, false, 0.5, 4]
+    },
+    {
+      "op": "new",
+      "id": "open",
+      "class": "ConeGeometry",
+      "args": [1.5, 2.5, 4, 1, true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "coarse",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "coarse",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "sweep",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "sweep",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "open",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "open",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "open",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "open",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "open",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "open",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

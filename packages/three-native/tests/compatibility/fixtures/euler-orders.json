@@ -1,0 +1,94 @@
+{
+  "name": "euler-orders",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Euler.tests.js — setFromRotationMatrix over all six orders",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "source", "class": "Euler", "args": [0.3, -0.4, 1.2, "XYZ"] },
+    { "op": "new", "id": "q", "class": "Quaternion", "args": [] },
+    { "op": "call", "id": "q", "method": "setFromEuler", "args": [{ "ref": "source" }] },
+    { "op": "new", "id": "origin", "class": "Vector3", "args": [0, 0, 0] },
+    { "op": "new", "id": "extent", "class": "Vector3", "args": [1, 1, 1] },
+    { "op": "new", "id": "m", "class": "Matrix4", "args": [] },
+    {
+      "op": "call",
+      "id": "m",
+      "method": "compose",
+      "args": [{ "ref": "origin" }, { "ref": "q" }, { "ref": "extent" }]
+    },
+    { "op": "new", "id": "e_XYZ", "class": "Euler", "args": [] },
+    {
+      "op": "call",
+      "id": "e_XYZ",
+      "method": "setFromRotationMatrix",
+      "args": [{ "ref": "m" }, "XYZ"]
+    },
+    { "op": "new", "id": "e_YZX", "class": "Euler", "args": [] },
+    {
+      "op": "call",
+      "id": "e_YZX",
+      "method": "setFromRotationMatrix",
+      "args": [{ "ref": "m" }, "YZX"]
+    },
+    { "op": "new", "id": "e_ZXY", "class": "Euler", "args": [] },
+    {
+      "op": "call",
+      "id": "e_ZXY",
+      "method": "setFromRotationMatrix",
+      "args": [{ "ref": "m" }, "ZXY"]
+    },
+    { "op": "new", "id": "e_XZY", "class": "Euler", "args": [] },
+    {
+      "op": "call",
+      "id": "e_XZY",
+      "method": "setFromRotationMatrix",
+      "args": [{ "ref": "m" }, "XZY"]
+    },
+    { "op": "new", "id": "e_YXZ", "class": "Euler", "args": [] },
+    {
+      "op": "call",
+      "id": "e_YXZ",
+      "method": "setFromRotationMatrix",
+      "args": [{ "ref": "m" }, "YXZ"]
+    },
+    { "op": "new", "id": "e_ZYX", "class": "Euler", "args": [] },
+    {
+      "op": "call",
+      "id": "e_ZYX",
+      "method": "setFromRotationMatrix",
+      "args": [{ "ref": "m" }, "ZYX"]
+    },
+    { "op": "call", "id": "e_YZX", "method": "toArray", "args": [], "result": "a_YZX" }
+  ],
+  "observe": [
+    { "id": "source", "path": "x", "kind": "number" },
+    { "id": "source", "path": "y", "kind": "number" },
+    { "id": "source", "path": "z", "kind": "number" },
+    { "id": "source", "path": "order", "kind": "string" },
+    { "id": "e_XYZ", "path": "x", "kind": "number" },
+    { "id": "e_XYZ", "path": "y", "kind": "number" },
+    { "id": "e_XYZ", "path": "z", "kind": "number" },
+    { "id": "e_XYZ", "path": "order", "kind": "string" },
+    { "id": "e_YZX", "path": "x", "kind": "number" },
+    { "id": "e_YZX", "path": "y", "kind": "number" },
+    { "id": "e_YZX", "path": "z", "kind": "number" },
+    { "id": "e_YZX", "path": "order", "kind": "string" },
+    { "id": "e_ZXY", "path": "x", "kind": "number" },
+    { "id": "e_ZXY", "path": "y", "kind": "number" },
+    { "id": "e_ZXY", "path": "z", "kind": "number" },
+    { "id": "e_ZXY", "path": "order", "kind": "string" },
+    { "id": "e_XZY", "path": "x", "kind": "number" },
+    { "id": "e_XZY", "path": "y", "kind": "number" },
+    { "id": "e_XZY", "path": "z", "kind": "number" },
+    { "id": "e_XZY", "path": "order", "kind": "string" },
+    { "id": "e_YXZ", "path": "x", "kind": "number" },
+    { "id": "e_YXZ", "path": "y", "kind": "number" },
+    { "id": "e_YXZ", "path": "z", "kind": "number" },
+    { "id": "e_YXZ", "path": "order", "kind": "string" },
+    { "id": "e_ZYX", "path": "x", "kind": "number" },
+    { "id": "e_ZYX", "path": "y", "kind": "number" },
+    { "id": "e_ZYX", "path": "z", "kind": "number" },
+    { "id": "e_ZYX", "path": "order", "kind": "string" },
+    { "id": "a_YZX", "path": "0", "kind": "number" },
+    { "id": "a_YZX", "path": "3", "kind": "string" }
+  ]
+}

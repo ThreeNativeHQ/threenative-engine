@@ -1,0 +1,27 @@
+{
+  "name": "alpha-transparency",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — MeshBasicMaterial planes: an opaque red, then transparent green and blue added front-most first (three sorts transparent objects back to front), and a yellow/magenta pair where renderOrder overrides depth while transparent materials keep depthWrite on",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:936154bb1fa3d46d3f8044bb68beb663a10059b532bc4da87a011044adfaed22",
+      "decimal": "936154bb1fa3d46d3f8044bb68beb663a10059b532bc4da87a011044adfaed22"
+    }
+  ],
+  "render": {
+    "png": "alpha-transparency.png",
+    "pngSha256": "936154bb1fa3d46d3f8044bb68beb663a10059b532bc4da87a011044adfaed22",
+    "width": 256,
+    "height": 128,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

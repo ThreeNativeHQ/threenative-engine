@@ -1,0 +1,234 @@
+{
+  "name": "math-edges-zero-length",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/*.tests.js \u2014 the length-zero branches, where the reference guards its division with `length || 1`",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "v01",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "v01",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v02",
+      "class": "Vector2",
+      "args": [0, 0]
+    },
+    {
+      "op": "call",
+      "id": "v02",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v03",
+      "class": "Vector4",
+      "args": [0, 0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "v03",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v04",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "v04",
+      "method": "setLength",
+      "args": [0]
+    },
+    {
+      "op": "new",
+      "id": "v05",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "v05",
+      "method": "clampLength",
+      "args": [0, 0]
+    },
+    {
+      "op": "new",
+      "id": "v06",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "v06",
+      "method": "length",
+      "args": [],
+      "result": "r07"
+    },
+    {
+      "op": "call",
+      "id": "v06",
+      "method": "distanceTo",
+      "args": [
+        {
+          "ref": "v06"
+        }
+      ],
+      "result": "r08"
+    },
+    {
+      "op": "new",
+      "id": "q09",
+      "class": "Quaternion",
+      "args": [0, 0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "q09",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "q10",
+      "class": "Quaternion",
+      "args": [0, 0, 0, 1]
+    },
+    {
+      "op": "call",
+      "id": "q10",
+      "method": "angleTo",
+      "args": [
+        {
+          "ref": "q10"
+        }
+      ],
+      "result": "r11"
+    },
+    {
+      "op": "new",
+      "id": "v12",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "v12",
+      "method": "angleTo",
+      "args": [
+        {
+          "ref": "v12"
+        }
+      ],
+      "result": "r13"
+    },
+    {
+      "op": "new",
+      "id": "s14",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "b15",
+      "class": "Box3",
+      "args": []
+    }
+  ],
+  "observe": [
+    {
+      "id": "v01",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v01",
+      "kind": "number",
+      "method": "length"
+    },
+    {
+      "id": "v02",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v03",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v04",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v05",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r07",
+      "kind": "number"
+    },
+    {
+      "id": "r08",
+      "kind": "number"
+    },
+    {
+      "id": "q09",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r11",
+      "kind": "number"
+    },
+    {
+      "id": "r13",
+      "kind": "number"
+    },
+    {
+      "id": "s14",
+      "kind": "boolean",
+      "method": "isEmpty"
+    },
+    {
+      "id": "s14",
+      "kind": "number",
+      "path": "radius"
+    },
+    {
+      "id": "s14",
+      "kind": "number",
+      "path": "center.x"
+    },
+    {
+      "id": "b15",
+      "kind": "boolean",
+      "method": "isEmpty"
+    },
+    {
+      "id": "b15",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "b15",
+      "kind": "number",
+      "path": "max.x"
+    }
+  ]
+}

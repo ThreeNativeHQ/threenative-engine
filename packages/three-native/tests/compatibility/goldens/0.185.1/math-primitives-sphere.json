@@ -1,0 +1,178 @@
+{
+  "name": "math-primitives-sphere",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Sphere.tests.js — the whole surface except setFromPoints, whose point array the line protocol cannot carry",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "s03",
+      "kind": "number",
+      "path": "center.x",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 1,
+      "id": "s03",
+      "kind": "number",
+      "path": "radius",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 2,
+      "id": "s03",
+      "kind": "boolean",
+      "method": "isEmpty",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 3,
+      "id": "s04",
+      "kind": "boolean",
+      "method": "isEmpty",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 4,
+      "id": "s04",
+      "kind": "number",
+      "path": "radius",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 5,
+      "id": "s06",
+      "kind": "boolean",
+      "method": "isEmpty",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 6,
+      "id": "s08",
+      "kind": "number",
+      "path": "radius",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 7,
+      "id": "r13",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 8,
+      "id": "r14",
+      "kind": "number",
+      "value": "n:400991b85c847300",
+      "decimal": "3.196152422706632"
+    },
+    {
+      "index": 9,
+      "id": "r17",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 10,
+      "id": "r21",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 11,
+      "id": "r24",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 12,
+      "id": "r28",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:40013cd3a2c8198e,n:40093cd3a2c8198e,n:40109e69d1640cc7",
+      "decimal": "2.1547005383792515, 3.1547005383792515, 4.1547005383792515"
+    },
+    {
+      "index": 13,
+      "id": "r34",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 14,
+      "id": "r34",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4008000000000000",
+      "decimal": "3"
+    },
+    {
+      "index": 15,
+      "id": "s37",
+      "kind": "number",
+      "path": "center.x",
+      "value": "n:3fc6969696969696",
+      "decimal": "0.1764705882352941"
+    },
+    {
+      "index": 16,
+      "id": "s37",
+      "kind": "number",
+      "path": "radius",
+      "value": "n:403ac217d7e53b66",
+      "decimal": "26.758176320519304"
+    },
+    {
+      "index": 17,
+      "id": "s39",
+      "kind": "number",
+      "path": "center.x",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 18,
+      "id": "s42",
+      "kind": "number",
+      "path": "radius",
+      "value": "n:400cc8dc2e423980",
+      "decimal": "3.598076211353316"
+    },
+    {
+      "index": 19,
+      "id": "s44",
+      "kind": "number",
+      "path": "radius",
+      "value": "n:4010646e17211cc0",
+      "decimal": "4.098076211353316"
+    },
+    {
+      "index": 20,
+      "id": "s44",
+      "kind": "number",
+      "path": "center.x",
+      "value": "n:4001b0cb174df99d",
+      "decimal": "2.2113248654051874"
+    },
+    {
+      "index": 21,
+      "id": "r49",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    }
+  ]
+}

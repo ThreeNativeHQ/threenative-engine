@@ -1,0 +1,74 @@
+{
+  "name": "attribute-usage",
+  "adaptedFrom": "three@0.185.1 src/core/BufferAttribute.js \u2014 setUsage and the usage field, a hint the WebGPU backend stores",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "a",
+      "class": "Float32BufferAttribute",
+      "args": [
+        {
+          "array": [0, 1, 2, 3, 4, 5],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "a",
+      "method": "setUsage",
+      "args": [35048],
+      "result": "same"
+    },
+    {
+      "op": "new",
+      "id": "b",
+      "class": "Float32BufferAttribute",
+      "args": [
+        {
+          "array": [1, 2],
+          "type": "Float32Array"
+        },
+        2
+      ]
+    },
+    {
+      "op": "set",
+      "id": "b",
+      "path": "usage",
+      "value": 35048
+    },
+    {
+      "op": "call",
+      "id": "b",
+      "method": "setUsage",
+      "args": [35044]
+    }
+  ],
+  "observe": [
+    {
+      "id": "a",
+      "kind": "number",
+      "path": "usage"
+    },
+    {
+      "id": "same",
+      "kind": "number",
+      "path": "usage"
+    },
+    {
+      "id": "b",
+      "kind": "number",
+      "path": "usage"
+    },
+    {
+      "id": "a",
+      "kind": "numbers",
+      "path": "array"
+    }
+  ]
+}

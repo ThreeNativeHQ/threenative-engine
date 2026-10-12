@@ -1,0 +1,112 @@
+{
+  "name": "animation-authored-tracks",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 src/animation/tracks/*KeyframeTrack.js and AnimationClip.js — tracks built in code, cloned, put in a clip and played",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "q",
+      "kind": "numbers",
+      "path": "times",
+      "value": "n:0000000000000000,n:3fe0000000000000,n:3ff0000000000000",
+      "decimal": "0, 0.5, 1"
+    },
+    {
+      "index": 1,
+      "id": "q",
+      "kind": "numbers",
+      "path": "values",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:3fd87de2a0000000,n:0000000000000000,n:3fed906bc0000000,n:0000000000000000,n:3fe6a09e60000000,n:0000000000000000,n:3fe6a09e60000000",
+      "decimal": "0, 0, 0, 1, 0, 0.3826834261417389, 0, 0.9238795042037964, 0, 0.7071067690849304, 0, 0.7071067690849304"
+    },
+    {
+      "index": 2,
+      "id": "q",
+      "kind": "string",
+      "path": "name",
+      "value": "s:hip.quaternion",
+      "decimal": "hip.quaternion"
+    },
+    {
+      "index": 3,
+      "id": "q",
+      "kind": "string",
+      "path": "ValueTypeName",
+      "value": "s:quaternion",
+      "decimal": "quaternion"
+    },
+    {
+      "index": 4,
+      "id": "v",
+      "kind": "string",
+      "path": "ValueTypeName",
+      "value": "s:vector",
+      "decimal": "vector"
+    },
+    {
+      "index": 5,
+      "id": "n",
+      "kind": "string",
+      "path": "ValueTypeName",
+      "value": "s:number",
+      "decimal": "number"
+    },
+    {
+      "index": 6,
+      "id": "n",
+      "kind": "numbers",
+      "path": "values",
+      "value": "n:3ff0000000000000,n:4000000000000000",
+      "decimal": "1, 2"
+    },
+    {
+      "index": 7,
+      "id": "qc",
+      "kind": "numbers",
+      "path": "values",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:3fd87de2a0000000,n:0000000000000000,n:3fed906bc0000000,n:0000000000000000,n:3fe6a09e60000000,n:0000000000000000,n:3fe6a09e60000000",
+      "decimal": "0, 0, 0, 1, 0, 0.3826834261417389, 0, 0.9238795042037964, 0, 0.7071067690849304, 0, 0.7071067690849304"
+    },
+    {
+      "index": 8,
+      "id": "qc",
+      "kind": "string",
+      "path": "name",
+      "value": "s:hip.quaternion",
+      "decimal": "hip.quaternion"
+    },
+    {
+      "index": 9,
+      "id": "clip",
+      "kind": "number",
+      "path": "duration",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 10,
+      "id": "clip",
+      "kind": "string",
+      "path": "name",
+      "value": "s:grip",
+      "decimal": "grip"
+    },
+    {
+      "index": 11,
+      "id": "hq",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:3fcde1899bd64cae,n:0000000000000000,n:3fef1da7868cd6ba",
+      "decimal": "0, 0.23344535931810156, 0, 0.9723699214871069"
+    },
+    {
+      "index": 12,
+      "id": "hp",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd3333333333333,n:3fe3333333333333,n:3feccccccccccccc",
+      "decimal": "0.3, 0.6, 0.8999999999999999"
+    }
+  ]
+}

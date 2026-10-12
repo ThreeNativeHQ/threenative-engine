@@ -1,0 +1,215 @@
+{
+  "name": "material-clone",
+  "adaptedFrom": "three@0.185.1 src/materials/Material.js clone/copy \u2014 a standard material's values and map carried to an independent copy, and a basic material's",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "tex",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [255, 0, 0, 255],
+          "type": "Uint8Array"
+        },
+        1,
+        1,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "tex",
+      "path": "name",
+      "value": "paint"
+    },
+    {
+      "op": "new",
+      "id": "tint",
+      "class": "Color",
+      "args": [0.2, 0.4, 0.6]
+    },
+    {
+      "op": "new",
+      "id": "m",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color",
+      "value": {
+        "ref": "tint"
+      }
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "roughness",
+      "value": 0.3
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "metalness",
+      "value": 0.7
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "transparent",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "opacity",
+      "value": 0.4
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "name",
+      "value": "hull"
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "emissiveIntensity",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "map",
+      "value": {
+        "ref": "tex"
+      }
+    },
+    {
+      "op": "call",
+      "id": "m",
+      "method": "clone",
+      "args": [],
+      "result": "c"
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "roughness",
+      "value": 0.9
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.r",
+      "value": 1
+    },
+    {
+      "op": "new",
+      "id": "b",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "b",
+      "path": "opacity",
+      "value": 0.25
+    },
+    {
+      "op": "call",
+      "id": "b",
+      "method": "clone",
+      "args": [],
+      "result": "bc"
+    }
+  ],
+  "observe": [
+    {
+      "id": "c",
+      "kind": "number",
+      "path": "roughness"
+    },
+    {
+      "id": "c",
+      "kind": "number",
+      "path": "metalness"
+    },
+    {
+      "id": "c",
+      "kind": "number",
+      "path": "opacity"
+    },
+    {
+      "id": "c",
+      "kind": "number",
+      "path": "side"
+    },
+    {
+      "id": "c",
+      "kind": "number",
+      "path": "emissiveIntensity"
+    },
+    {
+      "id": "c",
+      "kind": "number",
+      "path": "color.r"
+    },
+    {
+      "id": "c",
+      "kind": "number",
+      "path": "color.g"
+    },
+    {
+      "id": "c",
+      "kind": "number",
+      "path": "color.b"
+    },
+    {
+      "id": "c",
+      "kind": "boolean",
+      "path": "transparent"
+    },
+    {
+      "id": "c",
+      "kind": "string",
+      "path": "name"
+    },
+    {
+      "id": "c",
+      "kind": "string",
+      "path": "type"
+    },
+    {
+      "id": "m",
+      "kind": "number",
+      "path": "roughness"
+    },
+    {
+      "id": "m",
+      "kind": "number",
+      "path": "color.r"
+    },
+    {
+      "id": "bc",
+      "kind": "number",
+      "path": "opacity"
+    },
+    {
+      "id": "bc",
+      "kind": "string",
+      "path": "type"
+    }
+  ]
+}

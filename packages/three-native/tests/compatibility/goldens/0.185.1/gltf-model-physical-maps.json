@@ -1,0 +1,35 @@
+{
+  "name": "gltf-model-physical-maps",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — two dark dielectric spheres whose KHR_materials_specular textures share one PNG, as Midway's boat.pt59 does: specularTexture reads its alpha bands, specularColorTexture its sRGB colour stripes. A swapped channel, a linear-read colour map or an ignored map changes the highlights.",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "model",
+      "kind": "string",
+      "path": "name",
+      "value": "s:",
+      "decimal": ""
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:f70ce3bad4dc9548ce83490d24183449ef86a240e7a7e8b9a3ad9a30fc977642",
+      "decimal": "f70ce3bad4dc9548ce83490d24183449ef86a240e7a7e8b9a3ad9a30fc977642"
+    }
+  ],
+  "render": {
+    "png": "gltf-model-physical-maps.png",
+    "pngSha256": "f70ce3bad4dc9548ce83490d24183449ef86a240e7a7e8b9a3ad9a30fc977642",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

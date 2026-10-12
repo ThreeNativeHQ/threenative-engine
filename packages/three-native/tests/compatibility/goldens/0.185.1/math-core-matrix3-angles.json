@@ -1,0 +1,32 @@
+{
+  "name": "math-core-matrix3-angles",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Matrix3.tests.js — rotate, makeRotation and setUvTransform",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "m01",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:401471cfb477b1ed,n:4014bca5f706ace8,n:4031000000000000,n:401fa02ed255e313,n:40206e25b977dd98,n:4033000000000000,n:40253daaf13b1192,n:402205dc32fe9ce4,n:4037000000000000",
+      "decimal": "5.1111438940101666, 5.184226856024203, 17, 7.906428610317351, 8.21513156498149, 19, 10.620444811306502, 9.011445611553832, 23"
+    },
+    {
+      "index": 1,
+      "id": "m02",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fec1528065b7d50,n:3fdeaee8744b05f0,n:0000000000000000,n:bfdeaee8744b05f0,n:3fec1528065b7d50,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "0.8775825618903728, 0.479425538604203, 0, -0.479425538604203, 0.8775825618903728, 0, 0, 0, 1"
+    },
+    {
+      "index": 2,
+      "id": "m03",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:40018f7f14bfd8d7,n:c005cffc16bf8f0d,n:0000000000000000,n:40005bfd110fab4a,n:400769fec655211f,n:0000000000000000,n:bfbbd7d9d47ae7c0,n:40070d7e59ca7f3f,n:3ff0000000000000",
+      "decimal": "2.1950666066214626, -2.7265550400933365, 0, 2.0449162800700025, 2.9267554754952836, 0, -0.10876237332823191, 2.8815886511728475, 1"
+    }
+  ]
+}

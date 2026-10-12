@@ -1,0 +1,432 @@
+{
+  "name": "alpha-test",
+  "adaptedFrom": "original \u2014 MeshBasicMaterial tiles over an opaque red wall: alphaTest discards at or below the threshold for opaque and transparent materials alike, an opaque material ignores its opacity, a transparent one blends",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 256,
+    "height": 128,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.1, 0.1, 0.1]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "OrthographicCamera",
+      "args": [-2, 2, 1, -1, 0.1, 10]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "new",
+      "id": "wall",
+      "class": "PlaneGeometry",
+      "args": [4, 1.2]
+    },
+    {
+      "op": "new",
+      "id": "tile",
+      "class": "PlaneGeometry",
+      "args": [0.7, 0.7]
+    },
+    {
+      "op": "new",
+      "id": "redMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "redColor",
+      "class": "Color",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "set",
+      "id": "redMaterial",
+      "path": "color",
+      "value": {
+        "ref": "redColor"
+      }
+    },
+    {
+      "op": "new",
+      "id": "red",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "wall"
+        },
+        {
+          "ref": "redMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "red",
+      "path": "position.z",
+      "value": -0.5
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "red"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "greenMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "greenColor",
+      "class": "Color",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "set",
+      "id": "greenMaterial",
+      "path": "color",
+      "value": {
+        "ref": "greenColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "greenMaterial",
+      "path": "opacity",
+      "value": 0.4
+    },
+    {
+      "op": "set",
+      "id": "greenMaterial",
+      "path": "alphaTest",
+      "value": 0.5
+    },
+    {
+      "op": "new",
+      "id": "green",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "tile"
+        },
+        {
+          "ref": "greenMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "green",
+      "path": "position.x",
+      "value": -1.6
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "green"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "blueMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "blueColor",
+      "class": "Color",
+      "args": [0, 0, 1]
+    },
+    {
+      "op": "set",
+      "id": "blueMaterial",
+      "path": "color",
+      "value": {
+        "ref": "blueColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "blueMaterial",
+      "path": "opacity",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "blueMaterial",
+      "path": "alphaTest",
+      "value": 0.5
+    },
+    {
+      "op": "new",
+      "id": "blue",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "tile"
+        },
+        {
+          "ref": "blueMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "blue",
+      "path": "position.x",
+      "value": -0.8
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "blue"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "yellowMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "yellowColor",
+      "class": "Color",
+      "args": [1, 1, 0]
+    },
+    {
+      "op": "set",
+      "id": "yellowMaterial",
+      "path": "color",
+      "value": {
+        "ref": "yellowColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "yellowMaterial",
+      "path": "opacity",
+      "value": 0.3
+    },
+    {
+      "op": "new",
+      "id": "yellow",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "tile"
+        },
+        {
+          "ref": "yellowMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "yellow",
+      "path": "position.x",
+      "value": 0
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "yellow"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "magentaMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "magentaColor",
+      "class": "Color",
+      "args": [1, 0, 1]
+    },
+    {
+      "op": "set",
+      "id": "magentaMaterial",
+      "path": "color",
+      "value": {
+        "ref": "magentaColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "magentaMaterial",
+      "path": "opacity",
+      "value": 0.45
+    },
+    {
+      "op": "set",
+      "id": "magentaMaterial",
+      "path": "transparent",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "magentaMaterial",
+      "path": "alphaTest",
+      "value": 0.5
+    },
+    {
+      "op": "new",
+      "id": "magenta",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "tile"
+        },
+        {
+          "ref": "magentaMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "magenta",
+      "path": "position.x",
+      "value": 0.8
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "magenta"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "cyanMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "cyanColor",
+      "class": "Color",
+      "args": [0, 1, 1]
+    },
+    {
+      "op": "set",
+      "id": "cyanMaterial",
+      "path": "color",
+      "value": {
+        "ref": "cyanColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "cyanMaterial",
+      "path": "opacity",
+      "value": 0.55
+    },
+    {
+      "op": "set",
+      "id": "cyanMaterial",
+      "path": "transparent",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "cyanMaterial",
+      "path": "alphaTest",
+      "value": 0.5
+    },
+    {
+      "op": "new",
+      "id": "cyan",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "tile"
+        },
+        {
+          "ref": "cyanMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "cyan",
+      "path": "position.x",
+      "value": 1.6
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "cyan"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

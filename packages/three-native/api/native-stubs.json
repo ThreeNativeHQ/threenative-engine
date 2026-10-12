@@ -1,0 +1,4 @@
+{
+  "$comment": "Every symbol the native engine answers with a stub or mock instead of a real binding. Starts and must stay empty: each entry names its bundler refusal (`specifier:name`), the PRD that removes it and why it exists. A non-empty ledger blocks PRD-533 promotion and PRD-535 deletion; `native-stubs.spec.ts` pins its size. Check: pnpm tsx packages/three-native/scripts/native-stubs.ts --gate",
+  "entries": []
+}

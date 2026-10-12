@@ -1,0 +1,130 @@
+{
+  "name": "materials-props-phong",
+  "adaptedFrom": "original — MeshPhongMaterial: shininess and specular default through ColorManagement, matching materials-phong",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "fresh",
+      "class": "MeshPhongMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m",
+      "class": "MeshPhongMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.r",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.g",
+      "value": 0.35
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.b",
+      "value": 0.2
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "shininess",
+      "value": 60
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "specular.r",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "specular.g",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "specular.b",
+      "value": 0.5
+    }
+  ],
+  "observe": [
+    {
+      "id": "fresh",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "fresh",
+      "path": "specular.r",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "specular.g",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "specular.b",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "shininess",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "m",
+      "path": "color.r",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "color.g",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "color.b",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "shininess",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "specular.r",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "specular.g",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "specular.b",
+      "kind": "number"
+    }
+  ]
+}

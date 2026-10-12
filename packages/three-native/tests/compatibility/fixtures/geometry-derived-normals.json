@@ -1,0 +1,67 @@
+{
+  "name": "geometry-derived-normals",
+  "adaptedFrom": "three@0.185.1 BufferGeometry.computeVertexNormals — an indexed box recomputes shared normals, and a non-indexed plane sets per-face normals",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "box",
+      "class": "BoxGeometry",
+      "args": [2, 3, 4, 2, 2, 2]
+    },
+    {
+      "op": "call",
+      "id": "box",
+      "method": "computeVertexNormals",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "plane",
+      "class": "PlaneGeometry",
+      "args": [2, 2, 2, 2]
+    },
+    {
+      "op": "call",
+      "id": "plane",
+      "method": "toNonIndexed",
+      "args": [],
+      "result": "soup"
+    },
+    {
+      "op": "call",
+      "id": "soup",
+      "method": "computeVertexNormals",
+      "args": []
+    }
+  ],
+  "observe": [
+    {
+      "id": "box",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "box",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "box",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "soup",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "soup",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    }
+  ]
+}

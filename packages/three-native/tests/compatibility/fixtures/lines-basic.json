@@ -1,0 +1,349 @@
+{
+  "name": "lines-basic",
+  "adaptedFrom": "original \u2014 a zigzag Line (line strip), a LineSegments (line list: a cross and a bar) and an indexed Line strip around a square, each with its own LineBasicMaterial colour",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 128,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 2, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "stripGeo",
+      "class": "BufferGeometry",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "stripGeoPos",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [-0.8, -1, 0, -0.4, 1, 0, 0, -1, 0, 0.4, 1, 0, 0.8, -1, 0],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "stripGeo",
+      "method": "setAttribute",
+      "args": [
+        "position",
+        {
+          "ref": "stripGeoPos"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "stripColor",
+      "class": "Color",
+      "args": [1, 0.3, 0.2]
+    },
+    {
+      "op": "new",
+      "id": "stripMat",
+      "class": "LineBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "stripMat",
+      "path": "color",
+      "value": {
+        "ref": "stripColor"
+      }
+    },
+    {
+      "op": "new",
+      "id": "strip",
+      "class": "Line",
+      "args": [
+        {
+          "ref": "stripGeo"
+        },
+        {
+          "ref": "stripMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "strip",
+      "path": "position.x",
+      "value": -2.6
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "strip"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "segGeo",
+      "class": "BufferGeometry",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "segGeoPos",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [-0.8, -0.8, 0, 0.8, 0.8, 0, -0.8, 0.8, 0, 0.8, -0.8, 0, -0.8, 0, 0, 0.8, 0, 0],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "segGeo",
+      "method": "setAttribute",
+      "args": [
+        "position",
+        {
+          "ref": "segGeoPos"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "segmentsColor",
+      "class": "Color",
+      "args": [0.2, 1, 0.4]
+    },
+    {
+      "op": "new",
+      "id": "segmentsMat",
+      "class": "LineBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "segmentsMat",
+      "path": "color",
+      "value": {
+        "ref": "segmentsColor"
+      }
+    },
+    {
+      "op": "new",
+      "id": "segments",
+      "class": "LineSegments",
+      "args": [
+        {
+          "ref": "segGeo"
+        },
+        {
+          "ref": "segmentsMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "segments",
+      "path": "position.x",
+      "value": 0
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "segments"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "loopGeo",
+      "class": "BufferGeometry",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "loopGeoPos",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [-0.8, -0.8, 0, 0.8, -0.8, 0, 0.8, 0.8, 0, -0.8, 0.8, 0],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "loopGeo",
+      "method": "setAttribute",
+      "args": [
+        "position",
+        {
+          "ref": "loopGeoPos"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "loopGeoIdx",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [0, 1, 2, 3, 0],
+          "type": "Uint16Array"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "loopGeo",
+      "method": "setIndex",
+      "args": [
+        {
+          "ref": "loopGeoIdx"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "squareColor",
+      "class": "Color",
+      "args": [0.3, 0.5, 1]
+    },
+    {
+      "op": "new",
+      "id": "squareMat",
+      "class": "LineBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "squareMat",
+      "path": "color",
+      "value": {
+        "ref": "squareColor"
+      }
+    },
+    {
+      "op": "new",
+      "id": "square",
+      "class": "Line",
+      "args": [
+        {
+          "ref": "loopGeo"
+        },
+        {
+          "ref": "squareMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "square",
+      "path": "position.x",
+      "value": 2.6
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "square"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "strip",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "segments",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "stripMat",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

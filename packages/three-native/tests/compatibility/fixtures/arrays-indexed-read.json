@@ -1,0 +1,10 @@
+{
+  "name": "arrays-indexed-read",
+  "adaptedFrom": "three@0.185.1 BufferAttribute.array — reading `attribute.array[i]` names that element",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "box", "class": "BoxGeometry", "args": [1, 1, 1] },
+    { "op": "call", "id": "box", "method": "getAttribute", "args": ["position"], "result": "p" }
+  ],
+  "observe": [{ "id": "p", "path": "array.1", "kind": "number" }]
+}

@@ -1,0 +1,249 @@
+{
+  "name": "shape-extrude",
+  "adaptedFrom": "three@0.185.1 src/extras/core/{Path,Shape}.js, src/extras/ShapeUtils.js, earcut 3.0.2, src/geometries/{Shape,Extrude}Geometry.js \u2014 a plate drawn with lines, a quadratic corner, an arc and a rotated ellipse, cut by a round bore and a slot, as a flat shape, an array of shapes and a default-bevel extrusion of the triangle (the bevelled plate is proven in V8 against three, player-imports.mjs)",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "plate",
+      "class": "Shape",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "plate",
+      "method": "moveTo",
+      "args": [-0.4, -0.25]
+    },
+    {
+      "op": "call",
+      "id": "plate",
+      "method": "lineTo",
+      "args": [0.35, -0.25]
+    },
+    {
+      "op": "call",
+      "id": "plate",
+      "method": "quadraticCurveTo",
+      "args": [0.45, -0.25, 0.45, -0.15]
+    },
+    {
+      "op": "call",
+      "id": "plate",
+      "method": "lineTo",
+      "args": [0.45, 0.2]
+    },
+    {
+      "op": "call",
+      "id": "plate",
+      "method": "absarc",
+      "args": [0.3, 0.2, 0.15, 0, 1.5707963267948966, false]
+    },
+    {
+      "op": "call",
+      "id": "plate",
+      "method": "lineTo",
+      "args": [-0.4, 0.35]
+    },
+    {
+      "op": "call",
+      "id": "plate",
+      "method": "ellipse",
+      "args": [0, -0.3, 0.1, 0.3, 1.5707963267948966, 4.71238898038469, false, 0.2]
+    },
+    {
+      "op": "new",
+      "id": "bore",
+      "class": "Path",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "bore",
+      "method": "absarc",
+      "args": [0, 0, 0.12, 0, 6.283185307179586, true]
+    },
+    {
+      "op": "new",
+      "id": "slot",
+      "class": "Path",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "slot",
+      "method": "moveTo",
+      "args": [0.25, -0.1]
+    },
+    {
+      "op": "call",
+      "id": "slot",
+      "method": "lineTo",
+      "args": [0.35, -0.1]
+    },
+    {
+      "op": "call",
+      "id": "slot",
+      "method": "lineTo",
+      "args": [0.35, 0.1]
+    },
+    {
+      "op": "call",
+      "id": "slot",
+      "method": "lineTo",
+      "args": [0.25, 0.1]
+    },
+    {
+      "op": "set",
+      "id": "plate",
+      "path": "holes",
+      "value": {
+        "refs": ["bore", "slot"]
+      }
+    },
+    {
+      "op": "new",
+      "id": "flat",
+      "class": "ShapeGeometry",
+      "args": [
+        {
+          "ref": "plate"
+        },
+        6
+      ]
+    },
+    {
+      "op": "new",
+      "id": "p0",
+      "class": "Vector2",
+      "args": [0, 0.5]
+    },
+    {
+      "op": "new",
+      "id": "p1",
+      "class": "Vector2",
+      "args": [-0.5, -0.5]
+    },
+    {
+      "op": "new",
+      "id": "p2",
+      "class": "Vector2",
+      "args": [0.5, -0.5]
+    },
+    {
+      "op": "new",
+      "id": "tri",
+      "class": "Shape",
+      "args": [
+        {
+          "refs": ["p0", "p1", "p2"]
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "pair",
+      "class": "ShapeGeometry",
+      "args": [
+        {
+          "refs": ["tri", "plate"]
+        },
+        3
+      ]
+    },
+    {
+      "op": "new",
+      "id": "wedge",
+      "class": "ExtrudeGeometry",
+      "args": [
+        {
+          "ref": "tri"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "plate",
+      "kind": "number",
+      "method": "getLength"
+    },
+    {
+      "id": "bore",
+      "kind": "number",
+      "method": "getLength"
+    },
+    {
+      "id": "flat",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "flat",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "flat",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "flat",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "flat",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "pair",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "pair",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "pair",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "pair",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "pair",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "wedge",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "wedge",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "wedge",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "wedge",
+      "path": "groups",
+      "kind": "json"
+    }
+  ]
+}

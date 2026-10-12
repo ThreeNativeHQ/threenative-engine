@@ -1,0 +1,88 @@
+{
+  "name": "vector3-apply-quaternion",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector3.tests.js — applyQuaternion, normalize and length",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "q",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fc15610be4f81a1,n:3fdc4a2267903390,n:bf615e628b056dc0,n:3fec5ffaed8659c8",
+      "decimal": "0.13543900768764863, 0.44202480424501633, -0.00212020155610812, 0.8867163314014812"
+    },
+    {
+      "index": 1,
+      "id": "out",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4009a646b5c07a53,n:3ff50fe7887b6aa4,n:3ff68e774b94d37b",
+      "decimal": "3.206189556061227, 1.3163829165775178, 1.4097817375561295"
+    },
+    {
+      "index": 2,
+      "id": "out",
+      "kind": "number",
+      "method": "length",
+      "value": "n:400deeea11683f49",
+      "decimal": "3.7416573867739413"
+    },
+    {
+      "index": 3,
+      "id": "unit",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfe91103985da841,n:3fcefc077f3f36a5,n:bfe25240dd3851c0",
+      "decimal": "-0.7833269096274834, 0.24206632340649495, -0.5725406952574801"
+    },
+    {
+      "index": 4,
+      "id": "unit",
+      "kind": "number",
+      "method": "length",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 5,
+      "id": "zero",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000",
+      "decimal": "0, 0, 0"
+    },
+    {
+      "index": 6,
+      "id": "scaled",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:bff0000000000000",
+      "decimal": "0, 0, -1"
+    },
+    {
+      "index": 7,
+      "id": "scaled",
+      "kind": "number",
+      "method": "length",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 8,
+      "id": "sum",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe91103985da841,n:bfcefc077f3f36a5,n:3fe25240dd3851c0",
+      "decimal": "0.7833269096274834, -0.24206632340649495, 0.5725406952574801"
+    },
+    {
+      "index": 9,
+      "id": "sum",
+      "kind": "number",
+      "method": "length",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    }
+  ]
+}

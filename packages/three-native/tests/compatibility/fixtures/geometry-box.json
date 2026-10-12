@@ -1,0 +1,83 @@
+{
+  "name": "geometry-box",
+  "adaptedFrom": "three@0.185.1 src/geometries/BoxGeometry.js — the unit cube and a segmented cuboid with six groups",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "unit",
+      "class": "BoxGeometry",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "segmented",
+      "class": "BoxGeometry",
+      "args": [2, 3, 4, 2, 3, 2]
+    }
+  ],
+  "observe": [
+    {
+      "id": "unit",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "unit",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "unit",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "unit",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "unit",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "unit",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "segmented",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "segmented",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

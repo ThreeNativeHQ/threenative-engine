@@ -1,0 +1,46 @@
+{
+  "name": "alias-member-identity",
+  "adaptedFrom": "three@0.185.1 src/core/Object3D.js — position, scale, up, quaternion and matrix are each allocated once in the constructor and returned by the same property on every read; the arrays-identity.json write-through-one-alias-read-through-the-other shape applied to Object3D's own member objects",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "o", "class": "Object3D", "args": [] },
+    { "op": "call", "id": "o", "method": "position", "args": [], "result": "pos1" },
+    { "op": "call", "id": "o", "method": "position", "args": [], "result": "pos2" },
+    { "op": "call", "id": "o", "method": "scale", "args": [], "result": "scl1" },
+    { "op": "call", "id": "o", "method": "scale", "args": [], "result": "scl2" },
+    { "op": "call", "id": "o", "method": "up", "args": [], "result": "up1" },
+    { "op": "call", "id": "o", "method": "up", "args": [], "result": "up2" },
+    { "op": "call", "id": "o", "method": "quaternion", "args": [], "result": "quat1" },
+    { "op": "call", "id": "o", "method": "quaternion", "args": [], "result": "quat2" },
+    { "op": "call", "id": "o", "method": "matrix", "args": [], "result": "mat1" },
+    { "op": "call", "id": "o", "method": "matrix", "args": [], "result": "mat2" },
+    { "op": "set", "id": "pos1", "path": "x", "value": 4 },
+    { "op": "set", "id": "pos1", "path": "y", "value": -1.5 },
+    { "op": "set", "id": "scl1", "path": "z", "value": 2.25 },
+    { "op": "set", "id": "up1", "path": "z", "value": 0.5 },
+    { "op": "set", "id": "quat1", "path": "x", "value": 0.25 },
+    { "op": "set", "id": "quat1", "path": "w", "value": 0.75 },
+    {
+      "op": "call",
+      "id": "mat1",
+      "method": "set",
+      "args": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    }
+  ],
+  "observe": [
+    { "id": "pos2", "path": "x", "kind": "number" },
+    { "id": "pos2", "path": "y", "kind": "number" },
+    { "id": "pos2", "path": "z", "kind": "number" },
+    { "id": "o", "path": "position.x", "kind": "number" },
+    { "id": "o", "path": "position.y", "kind": "number" },
+    { "id": "scl2", "path": "z", "kind": "number" },
+    { "id": "o", "path": "scale.z", "kind": "number" },
+    { "id": "up2", "path": "z", "kind": "number" },
+    { "id": "o", "path": "up.z", "kind": "number" },
+    { "id": "quat2", "path": "x", "kind": "number" },
+    { "id": "quat2", "path": "w", "kind": "number" },
+    { "id": "o", "path": "quaternion.x", "kind": "number" },
+    { "id": "mat2", "path": "elements", "kind": "numbers" },
+    { "id": "o", "path": "matrix.elements", "kind": "numbers" }
+  ]
+}

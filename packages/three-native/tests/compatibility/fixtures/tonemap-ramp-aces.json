@@ -1,0 +1,523 @@
+{
+  "name": "tonemap-ramp-aces",
+  "adaptedFrom": "original \u2014 an HDR ramp 0..8 in nine strips, tone mapped with ACESFilmicToneMapping: the curve as one row of pixels",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 288,
+    "height": 64,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "black",
+      "class": "Color",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "black"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "OrthographicCamera",
+      "args": [-1, 1, 1, -1, 0.1, 10]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 1
+    },
+    {
+      "op": "new",
+      "id": "quad",
+      "class": "PlaneGeometry",
+      "args": [0.2222222222222222, 2, 1, 1]
+    },
+    {
+      "op": "new",
+      "id": "tint0",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "tone0",
+      "class": "Color",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "set",
+      "id": "tint0",
+      "path": "color",
+      "value": {
+        "ref": "tone0"
+      }
+    },
+    {
+      "op": "new",
+      "id": "strip0",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "quad"
+        },
+        {
+          "ref": "tint0"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "strip0",
+      "path": "position.x",
+      "value": -0.8888888888888888
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "strip0"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tint1",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "tone1",
+      "class": "Color",
+      "args": [1, 1, 1]
+    },
+    {
+      "op": "set",
+      "id": "tint1",
+      "path": "color",
+      "value": {
+        "ref": "tone1"
+      }
+    },
+    {
+      "op": "new",
+      "id": "strip1",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "quad"
+        },
+        {
+          "ref": "tint1"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "strip1",
+      "path": "position.x",
+      "value": -0.6666666666666667
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "strip1"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tint2",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "tone2",
+      "class": "Color",
+      "args": [2, 2, 2]
+    },
+    {
+      "op": "set",
+      "id": "tint2",
+      "path": "color",
+      "value": {
+        "ref": "tone2"
+      }
+    },
+    {
+      "op": "new",
+      "id": "strip2",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "quad"
+        },
+        {
+          "ref": "tint2"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "strip2",
+      "path": "position.x",
+      "value": -0.4444444444444444
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "strip2"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tint3",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "tone3",
+      "class": "Color",
+      "args": [3, 3, 3]
+    },
+    {
+      "op": "set",
+      "id": "tint3",
+      "path": "color",
+      "value": {
+        "ref": "tone3"
+      }
+    },
+    {
+      "op": "new",
+      "id": "strip3",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "quad"
+        },
+        {
+          "ref": "tint3"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "strip3",
+      "path": "position.x",
+      "value": -0.22222222222222232
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "strip3"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tint4",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "tone4",
+      "class": "Color",
+      "args": [4, 4, 4]
+    },
+    {
+      "op": "set",
+      "id": "tint4",
+      "path": "color",
+      "value": {
+        "ref": "tone4"
+      }
+    },
+    {
+      "op": "new",
+      "id": "strip4",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "quad"
+        },
+        {
+          "ref": "tint4"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "strip4",
+      "path": "position.x",
+      "value": 0
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "strip4"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tint5",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "tone5",
+      "class": "Color",
+      "args": [5, 5, 5]
+    },
+    {
+      "op": "set",
+      "id": "tint5",
+      "path": "color",
+      "value": {
+        "ref": "tone5"
+      }
+    },
+    {
+      "op": "new",
+      "id": "strip5",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "quad"
+        },
+        {
+          "ref": "tint5"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "strip5",
+      "path": "position.x",
+      "value": 0.2222222222222221
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "strip5"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tint6",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "tone6",
+      "class": "Color",
+      "args": [6, 6, 6]
+    },
+    {
+      "op": "set",
+      "id": "tint6",
+      "path": "color",
+      "value": {
+        "ref": "tone6"
+      }
+    },
+    {
+      "op": "new",
+      "id": "strip6",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "quad"
+        },
+        {
+          "ref": "tint6"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "strip6",
+      "path": "position.x",
+      "value": 0.4444444444444444
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "strip6"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tint7",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "tone7",
+      "class": "Color",
+      "args": [7, 7, 7]
+    },
+    {
+      "op": "set",
+      "id": "tint7",
+      "path": "color",
+      "value": {
+        "ref": "tone7"
+      }
+    },
+    {
+      "op": "new",
+      "id": "strip7",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "quad"
+        },
+        {
+          "ref": "tint7"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "strip7",
+      "path": "position.x",
+      "value": 0.6666666666666665
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "strip7"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tint8",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "tone8",
+      "class": "Color",
+      "args": [8, 8, 8]
+    },
+    {
+      "op": "set",
+      "id": "tint8",
+      "path": "color",
+      "value": {
+        "ref": "tone8"
+      }
+    },
+    {
+      "op": "new",
+      "id": "strip8",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "quad"
+        },
+        {
+          "ref": "tint8"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "strip8",
+      "path": "position.x",
+      "value": 0.8888888888888888
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "strip8"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "quad",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

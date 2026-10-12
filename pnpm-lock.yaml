@@ -1387,6 +1387,18 @@ importers:
         specifier: 'catalog:'
         version: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
 
+  packages/three-native:
+    devDependencies:
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1(patch_hash=dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
   packages/ueformat:
     dependencies:
       fflate:
