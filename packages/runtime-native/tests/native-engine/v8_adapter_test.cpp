@@ -1136,6 +1136,40 @@ void collectVisits() {
     CHECK(js("(() => { const k = scene.getObjectByName('keep'); return k.hp; })()") == "9");
 }
 
+// The world-matrix walk core's MatrixWorldPass asks for: one call walks the whole tree, so its crossings do not grow
+// with the node count, it answers the nodes it covered, and the matrices are the ones updateMatrixWorld gives.
+void nativeMatrixWorld() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    uint64_t crossed[2] = {};
+    int slot = 0;
+    for (const int groups : {500, 2000}) {  // 1,001 and 4,001 nodes: a scene, then a group and a mesh in it for each
+        const std::string build = "const scene = new Scene(), geometry = new BoxGeometry(1, 1, 1), material = new MeshBasicMaterial();"
+            "for (let i = 0; i < " + std::to_string(groups) + "; ++i) { const g = new Group(); g.position.set(i, 1, 2);"
+            " const m = new Mesh(geometry, material); m.position.x = 5; g.add(m); scene.add(g); }"
+            "const last = scene.children[scene.children.length - 1].children[0];"
+            "const where = () => { const e = last.matrixWorld.elements; return [e[12], e[13], e[14]].join(); };";
+        // Each run is a fresh context, so the walk's cost is the difference between a run with it and one without.
+        const uint64_t base = tn::abi::crossings();
+        run(rt, adapter, (build + "where()").c_str());
+        const uint64_t built = tn::abi::crossings() - base;
+        const uint64_t before = tn::abi::crossings();
+        // The walk covers every node, and leaves the matrices where the plain walk puts them: x = group index + 5.
+        const std::string answer = run(rt, adapter, (build + "const n = scene.__tnUpdateMatrixWorld(true); const native = where();"
+            "scene.updateMatrixWorld(true); n + '|' + native + '|' + where()").c_str());
+        crossed[slot] = (tn::abi::crossings() - before) - built;
+        const std::string expected = std::to_string(groups - 1 + 5) + ",1,2";
+        CHECK(answer == std::to_string(2 * groups + 1) + "|" + expected + "|" + expected);
+        if (answer != std::to_string(2 * groups + 1) + "|" + expected + "|" + expected) std::fprintf(stderr, "walk answered %s\n", answer.c_str());
+        ++slot;
+    }
+    std::printf("native matrix walk: %llu extra crossings at 1,001 nodes, %llu at 4,001 (answer, two reads, a plain walk)\n",
+                (unsigned long long)crossed[0], (unsigned long long)crossed[1]);
+    CHECK(crossed[0] == crossed[1]);  // the same crossings for 1,001 and 4,001 nodes
+    CHECK(crossed[0] <= 16);          // the walk, two reads of three numbers and a plain walk: no more
+}
+
 void raycasterLOD() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
@@ -1407,7 +1441,7 @@ void crossingHistogram() {
 
 }  // namespace
 
-TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits},{"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld},{"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},

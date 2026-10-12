@@ -44,6 +44,14 @@ import { isStatic } from "./static-transform.js";
  * that moment. `isStatic` is what separates the engine's freeze from a game that turned the flags off
  * for its own reasons. See `static-transform.ts`.
  *
+ * Where the root is a native-engine object it has its own walk, `__tnUpdateMatrixWorld(force)`: three's recursion
+ * run natively in one call, answering the nodes it covered. The pass calls that and nothing else, since the walk
+ * above costs a bridge call per node read and written (about 16 to 25 thousand a frame at 4,096 cubes). The
+ * native walk visits a hidden or frozen subtree too, which is the same matrices three's own walk gives, so
+ * `"visible"` and `"all"` read alike there and `visited` counts every node under the root. A JS subclass of
+ * `Object3D` that overrides `updateMatrixWorld` is not called from inside it; the base methods of the engine's
+ * own `SkinnedMesh` and `Camera` are. The web and the legacy host have no such method and walk as above.
+ *
  * A game that reads a **hidden** object's `matrixWorld` directly must not rely on this pass
  * having reached it: use `getWorldPosition`/`getWorldQuaternion`/`getWorldScale` (which update the
  * chain they need) or call `object.updateWorldMatrix(true, false)` first. The convention's named
@@ -73,6 +81,9 @@ export interface IMatrixWorldOptions {
   /** `"visible"` (default) skips a hidden subtree; `"all"` reproduces three's own walk. */
   readonly mode?: MatrixWorldMode;
 }
+
+/** What a native-engine root offers: the whole walk in one call, answering the nodes it covered. */
+type NativeWalk = (this: Object3D, force: boolean) => number;
 
 /** The base walk, to tell a class that overrides `updateMatrixWorld` (SkinnedMesh, Camera) apart. */
 const BASE_UPDATE_MATRIX_WORLD = Object3D.prototype.updateMatrixWorld;
@@ -175,7 +186,10 @@ export class MatrixWorldPass {
     const before = this.#visited;
     beginSpan(SPANS.sceneUpdate);
     try {
-      this.#step(root, force, this.#mode === "visible");
+      const native = (root as Object3D & { __tnUpdateMatrixWorld?: NativeWalk })
+        .__tnUpdateMatrixWorld;
+      if (typeof native === "function") this.#visited += native.call(root, force);
+      else this.#step(root, force, this.#mode === "visible");
     } finally {
       endSpan(SPANS.sceneUpdate);
     }

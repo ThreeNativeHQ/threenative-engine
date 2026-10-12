@@ -213,6 +213,13 @@ void registerObject3DEvents(ClassBinding& b) {
 // geometry, material, flags, render order and layer mask. It walks the way that proof walks, so a
 // light or LOD hides its children. A hash, so a match is a claim at 2^-53 and a mismatch only sends
 // the caller to its own exact walk.
+// The nodes at and under `root`: what a walk of its subtree covers.
+double subtreeSize(const Object3D& root) {
+    double count = 1;
+    for (const Object3D* child : root.children) count += subtreeSize(*child);
+    return count;
+}
+
 double structureStamp(Object3D& root) {
     uint64_t h = 0xcbf29ce484222325ULL;
     const auto mix = [&h](uint64_t v) {
@@ -471,6 +478,13 @@ void registerObject3D(ClassBinding& b) {
         for (const Object3D* node = as<Object3D>(self); node != nullptr; node = node->parent)
             if (!node->visible()) return Value::of(false);
         return Value::of(true);
+    };
+    // core's MatrixWorldPass asks for this where it exists: three's updateMatrixWorld recursion in one call instead
+    // of a call per node. It answers how many nodes the walk covered (the root and everything under it).
+    b.methods["__tnUpdateMatrixWorld"] = [](void* self, const Args& a, Store&) {
+        Object3D* root = as<Object3D>(self);
+        root->updateMatrixWorld(boolean(a, 0, false));
+        return Value::of(subtreeSize(*root));
     };
     b.methods["updateMatrix"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->updateMatrix();
