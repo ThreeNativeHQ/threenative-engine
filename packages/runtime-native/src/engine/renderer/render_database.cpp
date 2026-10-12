@@ -530,21 +530,15 @@ bool RenderDatabase::boundingSphereOf(Object3D& object, std::string_view type, S
     return true;
 }
 
-bool RenderDatabase::inFrustum(Object3D& object, std::string_view type) {
-    Sphere sphere;
-    if (!boundingSphereOf(object, type, sphere)) return true;
-    return frustum_.intersectsSphere(sphere);
-}
-
-bool RenderDatabase::inShadowFrustum(Object3D& object, std::string_view type) {
+// `sphere` is the object's world bounding sphere, null when it has none (it then always casts).
+bool RenderDatabase::inShadowFrustum(const Object3D& object, const Sphere* sphere) {
     // ponytail: point light shadow culling across 6 faces omitted; keep casters unculled when a point shadow is present
     if (shadowPointLightActive_) return true;
     if (shadowFrustums_.empty()) return false;
-    Sphere sphere;
-    if (!boundingSphereOf(object, type, sphere)) return true;
+    if (!sphere) return true;
     const uint32_t mask = Layers::bits(object.layers().mask);
     for (const auto& sf : shadowFrustums_) {
-        if ((mask & sf.layersMask) != 0 && sf.frustum.intersectsSphere(sphere)) return true;
+        if ((mask & sf.layersMask) != 0 && sf.frustum.intersectsSphere(*sphere)) return true;
     }
     return false;
 }
@@ -631,8 +625,17 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         if (!lightsOnly && (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
             type == "LineSegments")) {
             const auto& mesh = static_cast<const Mesh&>(object);
-            if (mainPass && mesh.frustumCulled && !cullExempt_ && !inFrustum(object, type)) mainPass = false;
-            if (shadowCaster && mesh.frustumCulled && !cullExempt_ && !inShadowFrustum(object, type)) shadowCaster = false;
+            if (mesh.frustumCulled && !cullExempt_) {
+                // One world sphere serves the camera's frustum and the shadow frustums.
+                Sphere sphere;
+                bool bounded = false, measured = false;
+                const auto measure = [&] {
+                    if (!measured) bounded = boundingSphereOf(object, type, sphere), measured = true;
+                    return bounded;
+                };
+                if (mainPass && measure() && !frustum_.intersectsSphere(sphere)) mainPass = false;
+                if (shadowCaster && !inShadowFrustum(object, measure() ? &sphere : nullptr)) shadowCaster = false;
+            }
             const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                  !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                  !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&

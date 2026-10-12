@@ -132,7 +132,7 @@ class RenderDatabase {
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
     std::vector<std::shared_ptr<BufferStore>> batchColors_;
     std::vector<shader::StandardMaterial> batchParams_;
-    std::deque<DrawCache> batchCaches_;
+    std::deque<DrawCache> batchCaches_;  // a deque: a draw keeps its slot's address while later slots grow
     Frustum frustum_;          // this prepare's camera frustum, as three's _frustum
     bool cullExempt_ = false;  // inside a BatchedMesh, which three culls per instance
     struct ShadowFrustum {
@@ -149,8 +149,7 @@ class RenderDatabase {
     uint64_t shadowLightsVersion_ = ~uint64_t(0);
     void collectShadowFrustums(Object3D& root, const Camera& mainCamera);
     bool boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere);
-    bool inFrustum(Object3D& object, std::string_view type);  // a deque: a draw keeps its slot's address while later slots grow
-    bool inShadowFrustum(Object3D& object, std::string_view type);
+    bool inShadowFrustum(const Object3D& object, const Sphere* sphere);
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     // core's DECLINE_RESCAN_FRAMES: a settled projection decline re-judges on this cadence, not per
     // frame. Starts at the interval so the first batch always scans.
