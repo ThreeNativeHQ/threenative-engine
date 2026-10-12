@@ -1,7 +1,7 @@
 # PRD-609 — A GPU burst starts where and when it is asked, and live particles stay put
 
 **Status:** NOT STARTED
-**Priority:** P2 — AC-1 to AC-3 are open: a `GPUParticles3D` burst begins with its particles at random points of their lives, and a second hit moves the first hit's live particles.
+**Priority:** P1 — core correctness bug in `GPUParticles3D`: AC-1 to AC-3 are open, a burst begins with its particles at random points of their lives, and a second hit moves the first hit's live particles. Every game with hit effects sees it.
 **Complexity:** 6 (MEDIUM) — 6–10 files (`particles.ts`, its spec, a conformance scene and registry row, the gallery probe, the action-rpg template) (+2), new public method and option set (+2), ring state that carries across frames (+2); risk override: none
 **Owner:** unassigned
 **Depends on:** None. Coordinate with [PRD-569](PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md): its `"clear"` cull reaction calls `restart()`, which this PRD defines for spawn-driven emitters. Respects [PRD-316](PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md) (§3): the new surface moves no appearance decision into core.
@@ -72,11 +72,8 @@ Reused systems: `ComputeDrivenRegistry` for attach, warm-up and release (`packag
 **Status:** NOT STARTED
 **Files:** `packages/core/src/particles.ts`, `packages/core/__tests__/particles.spec.ts`, `packages/runtime-native/conformance/scenes/shared/vfx-spawn-requests.js` (new), `packages/runtime-native/conformance/registry.json`, `examples/vfx-gallery/playtests/burst-probe.playtest.json`
 **Implementation:** add `spawn`, `localCoords`, `lifetime`, `maxSpawnPerFrame`, `buffers.births`, the `runtime` argument and `emitParticle`. Keep the old constructor shape valid. Add a second and a third probe arm for AC-2 and AC-3.
-**Verification:** AC-1, AC-2 and AC-3 close the web side. Because this changes what reaches the screen, the phase also needs the visual judge from the root `AGENTS.md`: before and after frames of the same burst, judged by a fresh read-only subagent.
-- [ ] Ring cases hold: slots do not overlap across calls, a wrap reuses the oldest slots, a request over `amount` clamps and counts, and `recycledLive` is `undefined` without `lifetime`. proof: red-green `pnpm exec vitest run packages/core/__tests__/particles.spec.ts`
-- [ ] A spawn-driven emitter keeps an identity world matrix under a moving parent, and `localCoords: true` follows the parent. proof: the same spec
-- [ ] The probe's new-path arms meet AC-1 and AC-2 on a named WebGPU adapter. proof: the AC-1 playtest command
-- [ ] The desktop host matches the browser reference for the new row. proof: `pnpm parity`
+**Verification:** AC-1, AC-2 and AC-3 close the web side on a named WebGPU adapter, and AC-4 closes the desktop side. Because this changes what reaches the screen, the phase also needs the visual judge from the root `AGENTS.md`: before and after frames of the same burst, judged by a fresh read-only subagent.
+- [ ] Core spec holds: slots do not overlap across calls, a wrap reuses the oldest slots, a request over `amount` clamps and counts, `recycledLive` is `undefined` without `lifetime`, a spawn-driven emitter keeps an identity world matrix under a moving parent, and `localCoords: true` follows the parent. proof: red-green `pnpm exec vitest run packages/core/__tests__/particles.spec.ts`
 
 #### Phase 3: The action-rpg template spawns its bursts
 **Status:** NOT STARTED
@@ -84,10 +81,11 @@ Reused systems: `ComputeDrivenRegistry` for attach, warm-up and release (`packag
 **Implementation:** give the hit, attack and surge effects a `spawn` kernel and an age-based `process` kernel in `vfx.ts`. Keep the look values (counts, colors, speeds, drag, mask) as they are. Replace `burst()` with `emitParticle`. The template's `AGENTS.md` says gameplay "calls `restart()` from the real attack or Arcane Surge path", so change that line. Run `pnpm sync:agents`.
 **Verification:** the visual judge compares the three effects before and after at two runs per arm. NEUTRAL or REGRESSION means fix the cause and judge again.
 - [ ] The combat scenario stays green with no console errors after `burst()` is replaced. proof: `pnpm test:templates` (action-rpg)
-- [ ] The template instructions and mirrors name `emitParticle`, not `restart()`. proof: `pnpm sync:agents && pnpm check:docs`
-- [ ] The capability manifest lists `emitParticle` for a cold search. proof: `pnpm budgets`
+- [ ] The template instructions, mirrors and capability manifest name `emitParticle`, not `restart()`. proof: `pnpm sync:agents && pnpm check:docs && pnpm budgets`
 
 ## Decisions
+
+- 2026-10-12 (PRD shape, R5): the PRD had 12 boxes against a cap of about 8. The Phase 2 probe-arm box and desktop-parity box repeated AC-1/AC-2 and AC-4, so they were dropped in favour of the ACs. The two spec boxes became one, and the template-docs and manifest boxes became one. No criterion was weakened. Priority raised from P2 to P1 on the owner's call: core correctness bug every game with hit effects sees.
 
 - 2026-10-12 (Unreal source review): no readback-free on-death spawn. Unreal counts event spawns on the CPU even for a GPU emitter (`NiagaraEmitterInstanceImpl.cpp:1295-1318`). A ThreeNative version would need atomic appends and an indirect dispatch. No effect here has a measured need. File it only with a real sub-emitter consumer.
 - 2026-10-12: no sub-frame birth spread. Bursts are instants. Add the spread (Unreal's start offset and interval) with the first rate emitter that shows clumping.
