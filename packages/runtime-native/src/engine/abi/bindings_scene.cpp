@@ -12,6 +12,7 @@
 // fire _onChangeCallback, so the quaternion follows; a JS `mesh.rotation.x = v` reaches the same
 // notify through the Euler member's own setters.
 
+#include "engine/renderer/projection/plan.h"
 #include "engine/scene/projected_cull.h"
 #include "engine/abi/bindings.h"
 #include "engine/abi/pooled_shared.h"
@@ -247,6 +248,50 @@ double structureStamp(Object3D& root) {
     return static_cast<double>(h & ((1ULL << 53) - 1));
 }
 
+// core's host projection seam (renderProjection.ts): the verdict the native renderer's own batching gives a
+// root, in one call per frame. It is projection::decide, the port of core's scanProjection, kept while the
+// structure stamp it reads holds and re-judged on core's decline cadence (matrices move a verdict too: a
+// mirrored or non-uniform rig leaves its batch). The renderer batches the root itself; this only reports it.
+struct HostProjection {
+    double stamp = -1;
+    int minMeshes = -1;
+    int sinceDecide = 0;
+    projection::Decision decision;
+};
+
+HostProjection& hostProjectionOf(Object3D& root) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, HostProjection>> roots;
+    for (auto it = roots.begin(); it != roots.end();)
+        it = it->second.first.expired() ? roots.erase(it) : std::next(it);
+    auto& entry = roots[&root];
+    if (entry.first.expired()) entry = {root.weak_from_this(), HostProjection{}};
+    return entry.second;
+}
+
+Value hostProjectionReport(Object3D& root, int minMeshes) {
+    constexpr int kDeclineRescanFrames = 60;  // core's DECLINE_RESCAN_FRAMES
+    HostProjection& host = hostProjectionOf(root);
+    const double stamp = structureStamp(root);
+    if (stamp != host.stamp || minMeshes != host.minMeshes || ++host.sinceDecide >= kDeclineRescanFrames) {
+        host.decision = projection::decide(root, minMeshes);
+        host.stamp = stamp;
+        host.minMeshes = minMeshes;
+        host.sinceDecide = 0;
+    }
+    const projection::Decision& d = host.decision;
+    std::vector<std::pair<std::string, Value>> exact;
+    for (const auto& [reason, count] : d.exact) exact.emplace_back(reason, Value::of(double(count)));
+    return Value::record({{"projecting", Value::of(d.projecting)},
+                          {"reasonCode", Value{Value::Kind::String, 0, d.reasonCode}},
+                          {"sourceRenderables", Value::of(double(d.sourceRenderables))},
+                          {"projectedObjects", Value::of(double(d.projectedObjects))},
+                          {"instancedBatches", Value::of(double(d.instancedBatches))},
+                          {"materialBatches", Value::of(double(d.materialBatches))},
+                          {"skinnedBatches", Value::of(double(d.skinnedBatches))},
+                          {"exactObjects", Value::of(double(d.exactObjects))},
+                          {"exact", Value::record(std::move(exact))}});
+}
+
 void registerObject3D(ClassBinding& b) {
     b.members["parent"] = [](void* self, const Args&, Store& store) {
         return foundObject(store, as<Object3D>(self)->parent);
@@ -472,6 +517,12 @@ void registerObject3D(ClassBinding& b) {
     // core's projection-stability proof asks for this where it exists; three has no such method.
     b.methods["__tnStructureStamp"] = [](void* self, const Args&, Store&) {
         return Value::of(structureStamp(*as<Object3D>(self)));
+    };
+    // core's SceneRenderProjection asks for this where it exists, instead of building a mirror: the native
+    // renderer batches this scene itself, so one call answers what that batching will make of it.
+    // `__tnProjectionReport(minMeshes)`: { projecting, reasonCode, sourceRenderables, projectedObjects, ... }.
+    b.methods["__tnProjectionReport"] = [](void* self, const Args& a, Store&) {
+        return hostProjectionReport(*as<Object3D>(self), a.empty() ? 200 : int(number(a.at(0))));
     };
     // The same, for projection-apply's "does the game want this drawn": every ancestor's flag in one
     // call, where the script walk costs a call and a wrapper per level.

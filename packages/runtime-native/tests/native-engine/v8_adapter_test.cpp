@@ -1170,6 +1170,50 @@ void nativeMatrixWorld() {
     CHECK(crossed[0] <= 16);          // the walk, two reads of three numbers and a plain walk: no more
 }
 
+// The host projection seam core's SceneRenderProjection asks for (PRD-573 v1.11 step 3): one call answers what the
+// renderer's own batching makes of the scene, so a frame's crossings do not grow with the cube count, and the
+// verdict is the one projection::decide gives (tests/native-engine/projection/plan_test.cpp holds it to core's).
+void nativeProjectionReport() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    uint64_t crossed[2] = {};
+    int slot = 0;
+    for (const int cubes : {1000, 4000}) {
+        const std::string build = "const scene = new Scene(), geometry = new BoxGeometry(1, 1, 1), material = new MeshStandardMaterial();"
+            "for (let i = 0; i < " + std::to_string(cubes) + "; ++i) { const m = new Mesh(geometry, material); m.position.x = i; scene.add(m); }";
+        // Each run is a fresh context, so the call's cost is the difference between a run with it and one without.
+        const uint64_t base = tn::abi::crossings();
+        run(rt, adapter, (build + "'built'").c_str());
+        const uint64_t built = tn::abi::crossings() - base;
+        const uint64_t before = tn::abi::crossings();
+        // Three frames: the first decides, the others answer from the structure stamp. Every frame reads the record's fields.
+        const std::string answer = run(rt, adapter, (build +
+            "let r; for (let f = 0; f < 3; ++f) r = scene.__tnProjectionReport(200);"
+            "[r.projecting, r.reasonCode, r.sourceRenderables, r.projectedObjects, r.instancedBatches, r.exactObjects].join()").c_str());
+        crossed[slot] = (tn::abi::crossings() - before) - built;
+        const std::string expected = "true,projected," + std::to_string(cubes) + "," + std::to_string(cubes) + ",1,0";
+        if (answer != expected) std::fprintf(stderr, "report answered %s, wanted %s\n", answer.c_str(), expected.c_str());
+        CHECK(answer == expected);
+        ++slot;
+    }
+    std::printf("projection report: %llu extra crossings for three frames at 1,000 cubes, %llu at 4,000\n",
+                (unsigned long long)crossed[0], (unsigned long long)crossed[1]);
+    CHECK(crossed[0] == crossed[1]);  // the same crossings for 1,000 and 4,000 cubes
+    CHECK(crossed[0] <= 3);           // one call a frame
+    // A scene under the floor answers its decline, and a mixed one counts what the native scene holds.
+    const std::string declined = run(rt, adapter, "const s = new Scene(); for (let i = 0; i < 10; ++i) s.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));"
+        "const r = s.__tnProjectionReport(200); [r.projecting, r.reasonCode, r.sourceRenderables, r.projectedObjects].join()");
+    CHECK(declined == "false,belowMeshFloor,10,0");
+    // Moving a cube is not a structure change; adding one is, and the next call counts it.
+    const std::string grown = run(rt, adapter, "const s = new Scene(), g = new BoxGeometry(), m = new MeshBasicMaterial();"
+        "for (let i = 0; i < 300; ++i) s.add(new Mesh(g, m));"
+        "const a = s.__tnProjectionReport(200).sourceRenderables; s.children[0].position.x = 4;"
+        "const b = s.__tnProjectionReport(200).sourceRenderables; s.add(new Mesh(g, m));"
+        "const c = s.__tnProjectionReport(200).sourceRenderables; [a, b, c].join()");
+    CHECK(grown == "300,300,301");
+}
+
 void raycasterLOD() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
@@ -1574,7 +1618,7 @@ void jsMathMembers() {
 
 }  // namespace
 
-TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld},{"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},
