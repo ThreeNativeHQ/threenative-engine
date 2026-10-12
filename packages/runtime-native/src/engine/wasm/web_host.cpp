@@ -374,8 +374,10 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
     switch (field) {
-        case 0: return double(renderer->lastFrame().draws);
-        case 1: return double(renderer->lastFrame().triangles);
+        // three's renderer.info.render counts every pass of a render(), the shadow pass's included, as the
+        // V8 player's frameDrawn does: one scene is counted the same on every backend.
+        case 0: return double(renderer->lastFrame().draws + renderer->lastFrame().shadowDraws);
+        case 1: return double(renderer->lastFrame().triangles + renderer->lastFrame().shadowTriangles);
         case 2: return double(renderer->pipelines().compiles());
         case 3: return double(renderer->pipelines().textLookups());
         case 4: return double(bindGroupsCreated());
