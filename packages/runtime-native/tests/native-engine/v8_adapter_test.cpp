@@ -1478,6 +1478,90 @@ void jsMath() {
     )JS") == "7 8 9 4 5 6 0.25");
 }
 
+// A transform member is a view over the object's own memory (PRD-573 v1.11 step 4b): component writes
+// cross nothing, the next updateMatrix sees them, and the matrix it writes is the one three composes.
+void jsMathViews() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    adapter.setJsMath(true);
+    v8::HandleScope scope(rt.isolate);
+    v8::Local<v8::Context> ctx = v8::Context::New(rt.isolate);
+    v8::Context::Scope contextScope(ctx);
+    adapter.install(ctx, ctx->Global());
+    ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__crossings"),
+        v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            info.GetReturnValue().Set(static_cast<double>(tn::abi::crossings()));
+        }).ToLocalChecked()).Check();
+    const char* source = R"JS(
+        const make = () => new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        const meshes = []; for (let i = 0; i < 100; i++) meshes.push(make());
+        const views = meshes.map((m) => [m.position, m.quaternion, m.scale, m.rotation]);   // one read each
+        const mesh = meshes[0], [p, q, s, r] = views[0];
+        const rev0 = mesh.revision;
+        const c0 = __crossings();
+        for (let i = 0; i < 100; i++) {
+            const [vp, vq, vs] = views[i];
+            vp.x = i; vp.y = i * 2; vp.z = i * 3;
+            vs.x = 1 + i; vs.y = 2; vs.z = 3;
+            vq.x = 0.1; vq.y = 0.2; vq.z = 0.3; vq.w = 0.9;
+        }
+        r.set(0, 0.5, 0);                           // the pair follows: rotation writes the quaternion
+        const writes = __crossings() - c0;
+        const paired = Math.abs(q.y - Math.sin(0.25)) < 1e-12 && Math.abs(q.w - Math.cos(0.25)) < 1e-12;
+        p.set(1, 2, 3); s.set(2, 3, 4); q.set(0.1, 0.2, 0.3, 0.9);   // the pair settles on this quaternion
+        mesh.updateMatrix();
+        const expected = new Matrix4().compose(p, q, s);
+        const same = expected.elements.every((v, i) => Object.is(v, mesh.matrix.elements[i]));
+        `${writes} ${paired} ${mesh.revision - rev0} ${same} ${p.x} ${mesh.position === p} ${mesh.rotation === r}`
+    )JS";
+    v8::Local<v8::Script> script = v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, source).ToLocalChecked()).ToLocalChecked();
+    v8::TryCatch tryCatch(rt.isolate);
+    v8::Local<v8::Value> result;
+    if (!script->Run(ctx).ToLocal(&result)) {
+        v8::String::Utf8Value error(rt.isolate, tryCatch.Exception());
+        std::printf("THROWN %s\n", *error ? *error : "?");
+        CHECK(false);
+        return;
+    }
+    v8::String::Utf8Value text(rt.isolate, result);
+    if (std::string(*text) != "0 true 1 true 1 true true") std::printf("got: %s\n", *text);  // the failure's whole story
+    CHECK(std::string(*text) == "0 true 1 true 1 true true");
+}
+
+// The other native-backed members are views too, and a write through one reaches the object: `clone()`
+// copies the native state, so what its members read back is what the first object holds.
+void jsMathMembers() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    adapter.setJsMath(true);
+    const std::string got = run(rt, adapter, R"JS(
+        const material = new MeshStandardMaterial();
+        material.color.r = 0.25; material.color.set(0.25, 0.5, 0.75);
+        const copy = material.clone();
+        const color = `${copy.color.r} ${copy.color.g} ${copy.color.b} ${copy.color.isColor} ${material.color === material.color}`;
+        material.color = new Color(1, 0, 0);                     // assigning a JS colour copies it into the material's
+        const assigned = `${material.clone().color.r} ${material.clone().color.g}`;
+        const mesh = new Mesh(new BoxGeometry(2, 4, 6), material);
+        mesh.up.set(0, 0, 1);
+        const up = `${mesh.clone().up.z}`;
+        mesh.geometry.computeBoundingBox();
+        const box = mesh.geometry.boundingBox;
+        const bounds = `${box.min.x} ${box.max.z} ${box.isBox3} ${box.getSize(new Vector3()).y}`;
+        mesh.geometry.computeBoundingSphere();
+        const sphere = `${mesh.geometry.boundingSphere.radius.toFixed(4)} ${mesh.geometry.boundingSphere.isSphere}`;
+        const camera = new PerspectiveCamera(60, 2, 0.1, 100);
+        camera.updateProjectionMatrix();
+        const e = camera.projectionMatrix.elements;
+        const matrix = `${e.length} ${e[0].toFixed(6)} ${e[5].toFixed(6)} ${camera.projectionMatrix.isMatrix4}`;
+        [color, assigned, up, bounds, sphere, matrix].join(" | ")
+    )JS");
+    const char* want = "0.25 0.5 0.75 true true | 1 0 | 1 | -1 3 true 4 | 3.7417 true | 16 0.866025 1.732051 true";
+    if (got != want) std::printf("got: %s\n", got.c_str());
+    CHECK(got == want);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld},{"unsupported", unsupported}, {"gc_release", gcRelease},
@@ -1487,4 +1571,4 @@ TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp"
              {"catalog_coverage", catalogCoverage},
              {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
              {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle},
-             {"material_slots", materialSlots}, {"js_math", jsMath})
+             {"material_slots", materialSlots}, {"js_math", jsMath}, {"js_math_views", jsMathViews}, {"js_math_members", jsMathMembers})
