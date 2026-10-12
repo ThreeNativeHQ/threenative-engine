@@ -107,8 +107,8 @@ export function createPropSelection(
     const instance = instances()?.get(id);
     if (!instance) return undefined;
     const pose = readPropTransform(instance);
-    instance.mesh.geometry.computeBoundingSphere();
-    const point = instance.mesh.geometry.boundingSphere?.center.clone() ?? new Vector3();
+    instance.geometry.computeBoundingSphere();
+    const point = instance.geometry.boundingSphere?.center.clone() ?? new Vector3();
     return point
       .multiply(new Vector3().fromArray(pose.scale))
       .applyQuaternion(new Quaternion().fromArray(pose.quaternion))

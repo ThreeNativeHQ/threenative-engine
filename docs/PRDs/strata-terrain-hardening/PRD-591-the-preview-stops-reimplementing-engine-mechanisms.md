@@ -41,7 +41,7 @@ both material paths.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: The editor draws props through the streamed path, and `levelFor`/`setLevels` are deleted. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` plus `count-loc.ts` — Evidence: pending.
+- [x] AC-1 [local]: The editor draws props through the streamed path, and `levelFor`/`setLevels` are deleted. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` plus `count-loc.ts` — Evidence: 2026-10-12, NVIDIA Turing, private Xvfb. The editor view draws through `createStreamedProps`; `levelFor`, the `propWork` ladder, `createProps` and `createPropsInSlices` are deleted from `props.ts` (10 files, 641 lines removed, 412 added, net -229). `test:terrain:editor` passes before and after (terrain edits 707 to 747 ms). The editor viewport is pixel-identical in four views (mean absolute RGB difference below 2e-6, 0% of pixels over 8; 100 placements, 200 parts, 390,800 triangles each), so no pixel reached the screen differently and no visual judge ran. 88 of 88 preview tests pass; typecheck and Biome pass; `count-loc.ts --check` passes. `check-temperate.mts:45` keeps one tree-scale assertion that already failed before this change, and its streamed section passes on its own.
 - [ ] AC-2 [local]: `WorldCells.whenSpawnReady` gates the preview's spawn, and the example's readiness module is deleted. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-data.spec.ts` plus `test:terrain:web` — Evidence: pending.
 - [ ] AC-3 [local]: Scatter runs in the bake, and `enter` does no scatter work. proof: `test:terrain:web` asserting no long task over 50 ms during `enter` — Evidence: pending.
 - [ ] AC-4 [local]: Ground plumbing uses `loadTerrainSplat`, and height bands come from the world's measured range. proof: `test:terrain:web` — Evidence: pending.
@@ -51,7 +51,7 @@ both material paths.
 
 #### Phase 1: one prop pipeline
 **Status:** NOT STARTED
-- [ ] Ladder deleted; editor on streamed props. proof: editor script + count-loc
+- [x] Ladder deleted; editor on streamed props. proof: editor script + count-loc (see AC-1 evidence)
 
 #### Phase 2: readiness and scatter
 **Status:** PARTIAL

@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { createAssetLoader } from "@threenative/core";
 import { WorldCells } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
@@ -18,7 +19,7 @@ import {
   createStreamedProps,
   invalidatePropShadows,
 } from "../src/render/propStreaming.js";
-import { createProps, variantFor } from "../src/render/props.js";
+import { DRAW_REACH, LOD_BANDS, preparePose, variantFor } from "../src/render/props.js";
 
 it("reports an outstanding world load before the factory returns or attaches it", async () => {
   const placement = {
@@ -124,7 +125,6 @@ it("streams Strata's exact grounded transforms, seeded cover density and origina
   );
   const ground = () => ({ height: 4, offset: 0 });
   const materials = { grass: material } as never;
-  const original = createProps(placements, ground, parts, materials);
   const follow = { position: new Vector3(-480, 5, 0) };
   const streamed = await createStreamedProps({
     placements,
@@ -142,26 +142,40 @@ it("streams Strata's exact grounded transforms, seeded cover density and origina
     expect(streamed.stats().loadedCells).toBe(0);
     expect(streamed.stats().residentCells).toBeGreaterThan(0);
     expect(streamed.byId.size).toBe(placements.length);
-    for (const placement of placements)
+    for (const placement of placements) {
+      const foot = parts.get(`grass:${variantFor(placement, "grass")}`)?.[0];
+      assert(foot);
       expect(streamed.byId.get(placement.id)?.pose.elements).toEqual(
-        original.byId.get(placement.id)?.pose.elements,
+        preparePose(foot.geometry, material, placement, placement.transform, ground).matrix
+          .elements,
       );
+    }
     for (const x of [-480, 480, -480]) {
       follow.position.x = x;
-      original.setLevels(follow.position);
       for (let frame = 0; frame < 150; frame++) {
         for (const world of streamed.worlds) world.update();
         await Promise.resolve();
       }
       expect(streamed.meshes.reduce((n, m) => n + m.count, 0)).toBe(
-        original.meshes.reduce((n, m) => n + m.count, 0),
+        placements.filter((placement, index) => {
+          const variantIndex = placements
+            .slice(0, index)
+            .filter(
+              (prior) => variantFor(prior, "grass") === variantFor(placement, "grass"),
+            ).length;
+          const seed = (Math.imul(variantIndex + 1, 2654435761) >>> 0) / 4294967296;
+          const reach = 28 + ((DRAW_REACH.grass ?? 0) - 28) * (1 - Math.sqrt(seed));
+          const instance = streamed.byId.get(placement.id);
+          assert(instance);
+          const pose = instance.pose;
+          return new Vector3().setFromMatrixPosition(pose).distanceTo(follow.position) <= reach;
+        }).length,
       );
     }
     expect(streamed.stats().evictions).toBeGreaterThan(0);
     expect(streamed.stats().failures).toBe(0);
   } finally {
     streamed.dispose();
-    original.dispose();
   }
   expect(streamed.worlds.every((world) => world.released)).toBe(true);
 });
@@ -319,7 +333,6 @@ it("preserves authored LOD return hysteresis through an oscillating boundary wal
   }));
   const parts = new Map([[`boulder:${variantFor(placement, "boulder")}`, levels]]);
   const materials = { bark: material } as never;
-  const original = createProps([placement], () => ({ height: 0, offset: 0 }), parts, materials);
   const follow = { position: new Vector3() };
   const streamed = await createStreamedProps({
     placements: [placement],
@@ -336,18 +349,36 @@ it("preserves authored LOD return hysteresis through an oscillating boundary wal
       .filter((mesh) => mesh.count > 0)
       .map((mesh) => Array.from(mesh.geometry.getAttribute("position").array));
   try {
-    for (const distance of [0, 65, 500, 55, 61, 59, 61, 59, 47, 155, 140, 151, 149, 119, 47]) {
+    for (const [distance, level] of [
+      [0, 0],
+      [65, 1],
+      [500, null],
+      [55, 1],
+      [61, 1],
+      [59, 1],
+      [61, 1],
+      [59, 1],
+      [47, 0],
+      [155, 2],
+      [140, 2],
+      [151, 2],
+      [149, 2],
+      [119, 1],
+      [47, 0],
+    ] as const) {
       follow.position.x = distance;
-      original.setLevels(follow.position);
       for (let frame = 0; frame < 100; frame++) {
         for (const world of streamed.worlds) world.update();
         await Promise.resolve();
       }
-      expect(active(streamed.meshes), `distance ${distance}`).toEqual(active(original.meshes));
+      const chosen = level === null ? undefined : levels[level];
+      if (level !== null) assert(chosen);
+      expect(active(streamed.meshes), `distance ${distance}`).toEqual(
+        chosen ? [Array.from(chosen.geometry.getAttribute("position").array)] : [],
+      );
     }
   } finally {
     streamed.dispose();
-    original.dispose();
   }
 });
 
@@ -389,7 +420,6 @@ it("writes the original rendered matrices and materials for multi-part nonunifor
     ]),
   );
   const materials = { bark, crown } as never;
-  const original = createProps(placements, () => ({ height: 0, offset: 0 }), parts, materials);
   const streamed = await createStreamedProps({
     placements,
     parts,
@@ -419,7 +449,14 @@ it("writes the original rendered matrices and materials for multi-part nonunifor
       await Promise.resolve();
     }
     for (const material of [bark, crown]) {
-      const before = draws(original.meshes, material);
+      const before = placements.map((placement) => {
+        assert(placement.transform);
+        return new Matrix4().compose(
+          new Vector3().fromArray(placement.transform.position),
+          new Quaternion().fromArray(placement.transform.quaternion),
+          new Vector3().fromArray(placement.transform.scale),
+        ).elements;
+      });
       const after = draws(streamed.meshes, material);
       expect(after).toHaveLength(placements.length);
       for (let i = 0; i < before.length; i++)
@@ -428,7 +465,6 @@ it("writes the original rendered matrices and materials for multi-part nonunifor
     }
   } finally {
     streamed.dispose();
-    original.dispose();
   }
 });
 
@@ -529,7 +565,6 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
     ],
   ]);
   const follow = { position: new Vector3(0, 1, 0) };
-  const original = createProps(placements, () => ({ height: 0, offset: 0 }), parts, {} as never);
   const streamed = await createStreamedProps({
     placements,
     parts,
@@ -544,7 +579,6 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
   try {
     for (const z of [0, 80, 0]) {
       follow.position.z = z;
-      original.setLevels(follow.position);
       for (let i = 0; i < 200; i++) {
         for (const w of streamed.worlds) {
           w.update();
@@ -570,19 +604,25 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
             geometry: m.geometry.getAttribute("position").array.toString(),
             count: m.count,
           }));
-      expect(active(streamed.meshes)).toEqual(active(original.meshes));
+      const expected = (parts.values().next().value ?? [])
+        .filter((part) => part.level === (z > LOD_BANDS.mid ? 1 : 0))
+        .map((part) => ({
+          material: part.material?.uuid,
+          geometry: part.geometry.getAttribute("position").array.toString(),
+          count: placements.length,
+        }));
+      expect(active(streamed.meshes)).toEqual(expected);
       for (const layer of [28, 27]) {
         const casters: InstancedMesh[] = [];
         for (const world of streamed.worlds)
           world.traverse((node) => {
             if (node instanceof InstancedMesh && node.layers.isEnabled(layer)) casters.push(node);
           });
-        expect(active(casters)).toEqual(active(original.meshes.filter((mesh) => mesh.castShadow)));
+        expect(active(casters)).toEqual(expected);
       }
     }
   } finally {
     streamed.dispose();
-    original.dispose();
   }
 });
 
@@ -664,5 +704,57 @@ it("keeps streamed caster changes regional and reserves global invalidation for 
   } finally {
     streamed.dispose();
     timer.mockRestore();
+  }
+});
+
+it("settles an editor stream without caster layers when no shadow renderer exists", async () => {
+  const placement = {
+    id: "spruce:editor",
+    asset: "spruce",
+    position: [0, 0, 0],
+    rotation: 0,
+    scale: 1,
+    normal: [0, 1, 0],
+    alignToNormal: false,
+  } as IPlacement;
+  const geometry = new BoxGeometry();
+  const material = new MeshBasicMaterial();
+  const streamed = await createStreamedProps({
+    placements: [placement],
+    parts: new Map([
+      [
+        `spruce:${variantFor(placement, "spruce")}`,
+        [{ geometry, material, role: "bark", variant: 0 }],
+      ],
+    ]),
+    materials: { bark: material } as never,
+    groundAt: () => ({ height: 0, offset: 0 }),
+    follow: { position: new Vector3() },
+    size: 512,
+    whileCurrent: () => true,
+    castShadows: false,
+    bundles: false,
+  });
+  assert(streamed);
+  new Group().add(...streamed.worlds);
+  try {
+    for (let frame = 0; frame < 100 && !streamed.ready; frame++) {
+      for (const world of streamed.worlds) {
+        world.update();
+        world.traverse((node) => {
+          if (!(node instanceof InstancedMesh)) return;
+          expect(node.layers.isEnabled(27) || node.layers.isEnabled(28)).toBe(false);
+          (node.onBeforeRender as (...args: unknown[]) => void)(node, null, null, null, null, null);
+        });
+      }
+      await Promise.resolve();
+    }
+    expect(streamed.ready).toBe(true);
+    expect(streamed.meshes.reduce((count, mesh) => count + mesh.count, 0)).toBe(1);
+    expect(streamed.stats().failures).toBe(0);
+  } finally {
+    streamed.dispose();
+    geometry.dispose();
+    material.dispose();
   }
 });

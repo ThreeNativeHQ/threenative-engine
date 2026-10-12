@@ -105,6 +105,15 @@ export async function verifySurfaces(session, controller, captures) {
     await waitSource("bark.normal", "tilt-normal", tilt.sha256);
     await waitSource("bark.roughness", "matte-rough", matte.sha256);
 
+    await page.waitForFunction(
+      () =>
+        window.strata.view
+          .inspectSurfaces()
+          .filter((r) => ["bark.albedo", "bark.normal", "bark.roughness"].includes(r.input))
+          .every((r) => r.gpuFormat !== null),
+      {},
+      { timeout: 15000 },
+    );
     const mapped = await readings();
     const byInput = Object.fromEntries(mapped.map((r) => [r.input, r]));
     // Numerical meaning: the bytes the texture holds are the file's bytes, unconverted, and each

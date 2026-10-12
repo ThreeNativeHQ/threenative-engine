@@ -64,7 +64,10 @@ try {
       if (message.type() === "error") errors.push(message.text());
     });
     await session.page.waitForFunction(
-      () => window.strata?.state && !window.strata.busy,
+      () =>
+        window.strata?.state &&
+        !window.strata.busy &&
+        window.strata.view.inspect().renderedRevision,
       {},
       { timeout: 10000 },
     );
@@ -79,7 +82,9 @@ try {
       });
       const start = performance.now();
       await session.page.waitForFunction(
-        (revision) => window.strata?.renderedRevision === revision,
+        (revision) =>
+          window.strata?.renderedRevision === revision &&
+          window.strata.view.inspect().renderedRevision === revision,
         accepted.revision,
         { timeout: 2000 },
       );
