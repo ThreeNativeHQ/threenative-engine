@@ -392,7 +392,7 @@ test("desktop runner asks for the frame series a performance assertion reads", a
     const performance = report.assertionResults?.find(({ id }) => id === "performance.minFps");
     expect(performance?.pass).toBe(true);
   } finally {
-    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    if (previous === undefined) Reflect.deleteProperty(host, "__THREENATIVE_NATIVE__");
     else host.__THREENATIVE_NATIVE__ = previous;
     await rm(projectPath, { force: true, recursive: true });
   }
@@ -698,7 +698,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
     });
     return { driver, report };
   } finally {
-    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    if (previous === undefined) Reflect.deleteProperty(host, "__THREENATIVE_NATIVE__");
     else host.__THREENATIVE_NATIVE__ = previous;
     if (ownsProjectPath) await rm(projectPath, { force: true, recursive: true });
   }

@@ -581,7 +581,7 @@ const networkEntries = [];
 let networkRequests = 0;
 async function fetch(input, options = {}) {
   const url = input && typeof input.url === "string" ? input.url : String(input);
-  const method = options.method || (input && input.method) || "GET";
+  const method = options.method || input?.method || "GET";
   networkRequests++;
   try {
     const response = await fetchRequest(input, options);
