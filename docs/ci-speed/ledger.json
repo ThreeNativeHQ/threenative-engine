@@ -2045,6 +2045,63 @@
           "count": 1
         }
       ]
+    },
+    {
+      "id": 21,
+      "at": "2026-10-12T02:43:25.243Z",
+      "commit": "474dea239",
+      "label": "narrowed merge-group plan, post #476",
+      "notes": "Window: #476 (merged 00:15Z), #491 and #492 (both 01:29Z). 4 merge-group runs. Named cost: the Android emulator visual parity leg, 31 min on the critical path. #491's 43.5-min group: web reference +1..+7, Android queued 2m50s for a hosted runner, then ran 31 min. Desktop parity 14 min. No change this iteration: deferring Android is blocked by AGENTS.md (follow-ups first) and the owner call in native-platforms.yml. Fewer than 5 PRs, so provisional.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-12",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 179.1,
+        "lastPushToMergeP90Min": 1497.9,
+        "firstAttemptSuccessPct": 100,
+        "boardWallMedianMin": 22.6,
+        "queueWaitP90Min": 7.9
+      },
+      "extra": {
+        "prCount": 3,
+        "mergeGroupRuns": 4,
+        "mergeGroupRunSuccessPct": 100,
+        "enqueueToMergeMedianMin": 44.5,
+        "queueWaitJobs": 95
+      },
+      "prs": [
+        {
+          "number": 492,
+          "title": "PRD-550: drop the auto-revert job, record the decision",
+          "lastPushToMergeMin": 43.4,
+          "enqueueToMergeMin": 44.9,
+          "attempts": 2,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 491,
+          "title": "fix(platformer): visible waterfall and own gradient sky; core reports PMREM-size and ignored-opacity traps",
+          "lastPushToMergeMin": 179.1,
+          "enqueueToMergeMin": 44.1,
+          "attempts": 2,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 476,
+          "title": "PRD-550: the merge queue reviews the narrowed plan",
+          "lastPushToMergeMin": 1827.6,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        }
+      ],
+      "firstFailingJobs": []
     }
   ]
 }
