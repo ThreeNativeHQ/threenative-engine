@@ -2,7 +2,7 @@ import type { IPlaytestToneObservation } from "../tone.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { assertCaptureNotBlank } from "../capture.js";
+import { assertCaptureNotBlank, assertDesktopCaptureNotBlank } from "../capture.js";
 import {
   loadPlaytestScenario,
   playtestDiagnostic,
@@ -656,7 +656,9 @@ async function captureDeviceScreenshot(
   atStep?: string,
 ): Promise<void> {
   await target.driver.screenshot(path);
-  const stats = assertCaptureNotBlank(await readFile(path), path);
+  const png = await readFile(path);
+  // Only the native desktop host has no HTML overlay, so only it takes the content floor.
+  const stats = target.name === "desktop" ? assertDesktopCaptureNotBlank(png, path) : assertCaptureNotBlank(png, path);
   if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
 }
 
