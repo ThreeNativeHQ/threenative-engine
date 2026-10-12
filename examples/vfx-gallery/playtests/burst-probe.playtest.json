@@ -1,5 +1,5 @@
 {
-  "name": "vfx-gallery-burst-probe",
+  "name": "vfx-gallery-burst-probe-restart",
   "target": "web",
   "schemaVersion": 1,
   "viewport": { "width": 1280, "height": 720 },
