@@ -1,3 +1,4 @@
+import { MessageChannel } from "node:worker_threads";
 import { Terrain } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 import { SaveQueue, diffLayers, externalSnapshotAction } from "../src/editor/saveQueue.js";
@@ -538,4 +539,69 @@ describe("terrain editor save queue", () => {
     expect(ids(server.document)).toEqual(["a"]);
     expect(server.document.recipe.config.seed).toBe(73);
   });
+});
+
+describe("editor worker transfer", () => {
+  it.each(["../src/editor/worker.js", "../dist/editor/worker.js"])(
+    "%s transfers height, genuine normal and splat buffers and can evaluate again",
+    async (entry) => {
+      const { Terrain } = await import("../src/index.js");
+      const { bakeMesh } = await import("../src/core/bake.js");
+      const recipe = new Terrain({ resolution: 17, size: 16 }).noise({ amplitude: 4 }).toJSON();
+      const channel = new MessageChannel();
+      const sent: ArrayBuffer[] = [];
+      const expected: ArrayBufferLike[] = [];
+      const post = Object.getOwnPropertyDescriptor(globalThis, "postMessage");
+      const handler = Object.getOwnPropertyDescriptor(globalThis, "onmessage");
+      Object.defineProperty(globalThis, "postMessage", {
+        configurable: true,
+        value: (
+          message: import("../src/editor/worker.js").EditorWorkerReply,
+          transfer?: ArrayBuffer[],
+        ) => {
+          if (message.type === "progress") return;
+          if (message.type === "evaluated") {
+            expected.push(message.state.height.buffer, message.state.splat.buffer);
+            if (message.normal) expected.push(message.normal.buffer);
+          }
+          sent.push(...(transfer ?? []));
+          channel.port1.postMessage(message, transfer);
+        },
+      });
+      try {
+        await import(entry);
+        for (const id of [1, 2]) {
+          const reply = new Promise<import("../src/editor/worker.js").EditorWorkerReply>(
+            (resolve) => channel.port2.once("message", resolve),
+          );
+          await (
+            globalThis.onmessage as unknown as (
+              event: MessageEvent<import("../src/editor/worker.js").IWorkerRequest>,
+            ) => Promise<void>
+          )(
+            new MessageEvent("message", { data: { id, type: "evaluate", recipe, resolution: 17 } }),
+          );
+          const received = await reply;
+          expect(received.type).toBe("evaluated");
+          if (received.type !== "evaluated") throw new Error("No evaluated state");
+          expect(sent).toHaveLength(3 * id);
+          expect(sent).toEqual(expect.arrayContaining(expected));
+          expect(sent.every((buffer) => buffer.byteLength === 0)).toBe(true);
+          expect(received.state.height.length).toBe(17 * 17);
+          expect(received.state.splat.length).toBe(17 * 17 * 8);
+          expect(received.normal).toEqual(bakeMesh(received.state).normals);
+          expect(received.state.height.some((height) => height !== 0)).toBe(true);
+        }
+        expect(sent).toHaveLength(6);
+      } finally {
+        channel.port1.close();
+        channel.port2.close();
+        if (post) Object.defineProperty(globalThis, "postMessage", post);
+        else Reflect.deleteProperty(globalThis, "postMessage");
+        if (handler) Object.defineProperty(globalThis, "onmessage", handler);
+        else Reflect.deleteProperty(globalThis, "onmessage");
+      }
+    },
+    10_000,
+  );
 });

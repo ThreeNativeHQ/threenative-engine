@@ -1,4 +1,4 @@
-import { TerrainEvaluator, makeExport, validateDocument } from "../index.js";
+import { TerrainEvaluator, bakeMesh, makeExport, validateDocument } from "../index.js";
 import type { ExportKind, IExportArchive, ITerrainDocument, ITerrainState } from "../index.js";
 
 export interface IWorkerRequest {
@@ -11,7 +11,7 @@ export interface IWorkerRequest {
 export type EditorWorkerReply =
   | { id: number; type: "progress"; progress: { index: number; total: number; id: string } }
   | { id: number; type: "error"; error: string }
-  | { id: number; type: "evaluated"; state: ITerrainState; ms: number }
+  | { id: number; type: "evaluated"; state: ITerrainState; normal: Float32Array; ms: number }
   | { id: number; type: "exported"; output: IExportArchive };
 interface IEditorWorkerScope {
   onmessage: ((event: MessageEvent<IWorkerRequest>) => Promise<void>) | null;
@@ -34,7 +34,17 @@ worker.onmessage = async ({ data }) => {
       if (!(output.bytes.buffer instanceof ArrayBuffer))
         throw Error("Export buffer is not transferable");
       worker.postMessage({ id, type: "exported", output }, [output.bytes.buffer]);
-    } else worker.postMessage({ id, type: "evaluated", state, ms: performance.now() - start });
+    } else {
+      const normal = bakeMesh(state).normals;
+      const transfer = [state.height, normal, state.splat].map(({ buffer }) => {
+        if (!(buffer instanceof ArrayBuffer)) throw Error("Terrain buffer is not transferable");
+        return buffer;
+      });
+      worker.postMessage(
+        { id, type: "evaluated", state, normal, ms: performance.now() - start },
+        transfer,
+      );
+    }
   } catch (error) {
     worker.postMessage({
       id,
