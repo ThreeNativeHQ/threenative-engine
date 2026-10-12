@@ -685,6 +685,16 @@ The score is a planning heuristic. Dependencies still override literal rank duri
 2. [ ] **[PARITY] TSR-P002** — Optical-flow or learned reconstruction behind an optional capability tier.
 3. [ ] **[PARITY] TSR-P003** — Foveated and variable-rate temporal reconstruction for XR/native backends.
 
+### UE 5.8.3 source notes
+
+Checked 2026-10-12 against the Unreal Engine 5.8.3 source. The notes describe ideas in our own words and cite `path:line`. No Unreal code is copied (Epic EULA). Cite the line again before you rely on a number, because 5.8.x point releases can move lines.
+
+- Pass chain. TSR runs, in order, clear of previous textures, velocity dilation, history decimation, shading rejection, a spatial anti-aliasing pass for rejected pixels, history update and history resolve. UE 5.8.3: Engine/Source/Runtime/Renderer/Private/PostProcess/TemporalSuperResolution.cpp:1898 (entry), :2422, :2586, :2728, :3135, :3178, :3371 and :3460. The shaders sit in Engine/Shaders/Private/TemporalSuperResolution/.
+- Jitter. The default jitter set has 8 positions, scaled up when the internal resolution is below output resolution. UE 5.8.3: Engine/Source/Runtime/Renderer/Private/SceneVisibility.cpp:99-103 and :5237-5271. This answers TSR-002.
+- History. The history holds up to 16 samples per output pixel by default. The allowed range is 8 to 32. UE 5.8.3: TemporalSuperResolution.cpp:44-52 (`r.TSR.History.SampleCount`). Total shading rejection falls back to 2 samples. UE 5.8.3: TemporalSuperResolution.cpp:129-133.
+- Flicker. Shading rejection tracks luma oscillation over a 2 frame period and adjusts it when the frame rate drops below 60. UE 5.8.3: TemporalSuperResolution.cpp:176-192. This covers TSR-015.
+- Off by default. History resurrection is off (`r.TSR.Resurrection` is 0) and thin geometry detection is off (`r.TSR.ThinGeometryDetection` is 0). UE 5.8.3: TemporalSuperResolution.cpp:246-250 and :331-335. TSR-P001 matches a feature that UE ships but does not enable by default.
+
 ### Primary research references
 
 - [Epic — Temporal Super Resolution](https://dev.epicgames.com/documentation/en-us/unreal-engine/temporal-super-resolution-in-unreal-engine)
@@ -797,6 +807,19 @@ The score is a planning heuristic. Dependencies still override literal rank duri
 2. [ ] **[PARITY] VSM-P002** — Advanced stochastic soft shadows and denoising comparable to high-sample area-light results.
 3. [ ] **[PARITY] VSM-P003** — Persistent cross-camera page sharing with provably correct demand and invalidation.
 
+### UE 5.8.3 source notes
+
+Checked 2026-10-12 against the Unreal Engine 5.8.3 source. The notes describe ideas in our own words and cite `path:line`. No Unreal code is copied (Epic EULA). Cite the line again before you rely on a number, because 5.8.x point releases can move lines.
+
+- Page geometry. A page is 128 by 128 texels. One virtual map is 128 by 128 pages, so 16384 by 16384 texels, with 8 mip levels. UE 5.8.3: Engine/Shaders/Shared/VirtualShadowMapDefinitions.h:12-21. This answers VSM-001.
+- Pool size. The default pool holds 2048 physical pages. UE 5.8.3: Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/VirtualShadowMapArray.cpp:173-182 (`r.Shadow.Virtual.MaxPhysicalPages`). At 128 by 128 texels per page, 2048 pages hold 32 million texels.
+- Clipmaps. Directional lights use clipmap levels 6 to 22 by default. Level L covers a radius of 2 to the power L+1 centimeters. UE 5.8.3: Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/VirtualShadowMapClipmap.cpp:57-68 and :175-181. This answers VSM-008 and VSM-029.
+- Page marking. Required pages come from receiver depth pixels, sampled with a pixel stride, with an optional froxel path. UE 5.8.3: VirtualShadowMapArray.cpp:138-145 and :643-660, and Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapPageMarking.usf.
+- Cache. Caching is on by default. An object moves to static caching after 100 frames without an invalidation. The pool keeps a static slice and a dynamic slice, and a merge step combines them with a per-texel max on the stored depth. UE 5.8.3: VirtualShadowMapCacheManager.cpp:97-102 and :141-145, VirtualShadowMapArray.cpp:1820 and :1996-2010 (merge pass), and Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapPhysicalPageManagement.usf:805-811. This is the VSM-017 split.
+- Overflow. Pool overflow drops page allocations and logs a warning that shadow is missing. UE avoids it by raising a global resolution bias as pool pressure grows, clamped to 2 levels by default. UE 5.8.3: VirtualShadowMapCacheManager.cpp:154-160 and :725-740. VSM-006 can copy this behavior: bias first, then drop.
+- Casters. Nanite casters use the same two-pass HZB culling as the beauty pass, set by `r.Shadow.Virtual.UseHZB`. UE 5.8.3: VirtualShadowMapArray.cpp:623-628.
+- Filtering. Soft shadows use shadow map ray tracing with 7 rays and 8 samples per ray by default for both light kinds. UE 5.8.3: VirtualShadowMapArray.cpp:680-692 and :727-739.
+
 ### Primary research references
 
 - [Epic — Virtual Shadow Maps](https://dev.epicgames.com/documentation/en-us/unreal-engine/virtual-shadow-maps-in-unreal-engine)
@@ -900,6 +923,18 @@ The score is a planning heuristic. Dependencies still override literal rank duri
 1. [ ] **[PARITY] VFX-P001** — Grid-based 2D/3D gas, smoke, fire and shallow-water simulation integrated into the same authoring model.
 2. [ ] **[PARITY] VFX-P002** — Visual graph editor with live node preview and stack inheritance UI.
 3. [ ] **[PARITY] VFX-P003** — Deterministic GPU event replay across different GPU vendors.
+
+### UE 5.8.3 source notes
+
+Checked 2026-10-12 against the Unreal Engine 5.8.3 source. The notes describe ideas in our own words and cite `path:line`. No Unreal code is copied (Epic EULA). Cite the line again before you rely on a number, because 5.8.x point releases can move lines.
+
+- Sim target. An emitter runs on either the CPU or a GPU compute path, set per emitter. UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Public/NiagaraCommon.h:176-180. This is the VFX-010 split.
+- GPU dispatch. The GPU path builds per-tick dispatches and runs each simulation stage in order. UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Private/NiagaraGpuComputeDispatch.cpp:1100 (ExecuteTicks) and :1475 (DispatchStage).
+- Draw counts. Live counts stay in a GPU buffer and draws use indirect arguments built from it. UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Private/NiagaraGPUInstanceCountManager.cpp:353 (AddDrawIndirect). This is the VFX-011 answer.
+- Count readback. UE still reads the counts back asynchronously, one or more frames late. The CPU keeps an upper bound and shrinks it from the readback. UE 5.8.3: NiagaraGpuComputeDispatch.cpp:736-760 and NiagaraGPUInstanceCountManager.cpp:620-650. VFX-011 says "no mandatory readback" for drawing, which holds. The dispatch size still comes from a CPU upper bound, so VFX-023 needs a particle cap per emitter.
+- Allocation modes. An emitter sets its particle storage by an automatic estimate, a manual estimate, or a fixed count. UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Classes/NiagaraEmitter.h:117-125. A fixed count suits GPU emitters and VFX-023.
+- Fixed bounds. UE counts GPU emitters that have dynamic bounds in a system without fixed bounds, and reports the count as an asset tag and a validation rule, because GPU bounds are not read back. UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Private/NiagaraSystem.cpp:1872-1876, :1916 and :2079-2081. This is the VFX-019 rule.
+- Stateless emitters. A second emitter kind rebuilds the particle buffer each tick from a random seed, the emitter age, the time step and the spawn list, with no per-particle update modules. UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Private/Stateless/NiagaraStatelessComputeManager.cpp:80 (CPU) and :94 (GPU). It is the closest Unreal analog to a particle system that cannot own appearance, and it suits the cheap tier of VFX-021.
 
 ### Primary research references
 
@@ -1024,6 +1059,20 @@ The score is a planning heuristic. Dependencies still override literal rank duri
 1. [ ] **[PARITY] VGEO-P001** — Skinned/deformable virtual geometry with bounded cluster deformation and acceleration updates.
 2. [ ] **[PARITY] VGEO-P002** — Visibility-buffer shading and material binning optimized for very high material/cluster counts.
 3. [ ] **[PARITY] VGEO-P003** — Native mesh-shader path while preserving compute+indirect behavior on WebGPU.
+
+### UE 5.8.3 source notes
+
+Checked 2026-10-12 against the Unreal Engine 5.8.3 source. The notes describe ideas in our own words and cite `path:line`. No Unreal code is copied (Epic EULA). Cite the line again before you rely on a number, because 5.8.x point releases can move lines.
+
+- Cluster size. A Nanite cluster holds at most 128 triangles and 256 vertices. UE 5.8.3: Engine/Shaders/Shared/NaniteDefinitions.h:21-26. VGEO-003 leaves the bound open, so pick one and record it.
+- Hierarchy build. The builder merges the children of a group, simplifies the merge to fit the parent clusters, and sets the parent error to the largest child error. That rule keeps error monotonic from leaf to root. UE 5.8.3: Engine/Source/Developer/NaniteBuilder/Private/ClusterDAG.cpp:1378 (ReduceGroup), :1441 (parent error), :1471-1477 (simplify).
+- LOD test. The runtime compares the projected edge scale with the cluster error times a view scale. A node is visited when its parent error is too coarse, so the cut moves per frame with no CPU draw loop. UE 5.8.3: Engine/Shaders/Private/Nanite/NaniteClusterCulling.usf:258-284 (node test) and :287-309 (draw test).
+- Pixel target. The view scale comes from `r.Nanite.MaxPixelsPerEdge`, which defaults to 1.0 pixel. UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Nanite/NaniteCullRaster.cpp:132-137 and Engine/Source/Runtime/Renderer/Private/Nanite/NaniteShared.cpp:195-202. VGEO-013 needs one such named, configurable value.
+- Raster choice. The same draw test picks hardware or software raster per cluster from the projected edge length. UE 5.8.3: NaniteClusterCulling.usf:294-308. A WebGPU port needs its own rule for the split, because 5.8.3 sends large triangles to the hardware raster and small ones to the compute raster.
+- Occlusion. Culling runs twice. The main pass tests against last frame's HZB and defers occluded nodes. The post pass retests the deferred nodes against the current HZB. UE 5.8.3: Engine/Shaders/Private/Nanite/NaniteCulling.ush:9-12 and NaniteClusterCulling.usf:390-420, :505 and :579-600. VGEO-016 describes this need without naming the two-pass answer.
+- Missing pages. A cluster flagged as a streaming leaf is drawn even when it fails the error test, so the best resident ancestor shows while children load. Visible leaf nodes also write page requests with a priority. UE 5.8.3: NaniteClusterCulling.usf:842 and :579-584. This matches VGEO-028 and VGEO-031.
+- Page sizes. A streamed page is 128 KB on the GPU and the always-resident root page is 32 KB. UE 5.8.3: NaniteDefinitions.h:52 and :57. Streaming pool size is `r.Nanite.Streaming.StreamingPoolSize`, in Engine/Source/Runtime/Engine/Private/Rendering/NaniteStreamingManager.cpp:58-63.
+- Skinning. The 5.8.3 definitions carry per-cluster bone influence limits, so VGEO-P001 is no longer only a parity idea. UE 5.8.3: NaniteDefinitions.h:33.
 
 ### Primary research references
 
@@ -1258,6 +1307,17 @@ The score is a planning heuristic. Dependencies still override literal rank duri
 1. [ ] **[PARITY] GI-P001** — Hardware ray-traced hit lighting and acceleration-structure updates on TN-RT platforms.
 2. [ ] **[PARITY] GI-P002** — Higher-fidelity translucency, hair and volumetric global illumination.
 3. [ ] **[PARITY] GI-P003** — Radiance-field/neural cache implementations behind the same contract.
+
+### UE 5.8.3 source notes
+
+Checked 2026-10-12 against the Unreal Engine 5.8.3 source. The notes describe ideas in our own words and cite `path:line`. No Unreal code is copied (Epic EULA). Cite the line again before you rely on a number, because 5.8.x point releases can move lines.
+
+- Probe grid. Lumen places one screen probe per 16 by 16 pixel tile by default and traces an 8 by 8 octahedral ray set per probe. UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp:70-76 and :86-92. A ThreeNative GI-027 budget can start from these two numbers.
+- Trace order. A screen probe first traces screen space, then a mesh distance field pass, then a global distance field (voxel) pass, and reads the radiance cache for the far field. UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeTracing.cpp:678 (TraceScreenProbes), :722 (screen), :836 (mesh SDF), :891 (voxel). This is the GI-009 order.
+- Software default. Mesh distance field tracing is off by default, so software Lumen uses the coarser global distance field. UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenDiffuseIndirect.cpp:97-103 (`r.Lumen.TraceMeshSDFs`). The cvar text names scenes with dense overlapping meshes as the reason.
+- Hardware path. `r.Lumen.HardwareRayTracing` defaults to 1 and falls back to the software path when the device cannot ray trace. UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenHardwareRayTracingCommon.cpp:16-27. GI-029 and GI-030 match this two-backend shape. GI-P001 is a default-on path in UE, not an extension.
+- Surface cache. The off-screen representation is a card atlas that captures 300 cards per frame by default and has feedback cvars that steer page resolution. UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneRendering.cpp:104-110 and LumenSurfaceCacheFeedback.cpp:16-32. This is the GI-002 "surface cache" option and GI-014 update budget.
+- Temporal. The final gather accumulates history with distance and normal rejection (`r.Lumen.ScreenProbeGather.Temporal.*`), and probes are also filtered over time. UE 5.8.3: LumenScreenProbeGather.cpp:160-250 and LumenScreenProbeFiltering.cpp:78-90.
 
 ### Primary research references
 
@@ -1800,6 +1860,15 @@ The score is a planning heuristic. Dependencies still override literal rank duri
 1. [ ] **[PARITY] WORLD-P001** — Server-authoritative replication-aware streaming and per-client relevance.
 2. [ ] **[PARITY] WORLD-P002** — Portal/room visibility and semantic streaming volumes combined with distance sources.
 3. [ ] **[PARITY] WORLD-P003** — Remote CDN patching and live cell-version migration.
+
+### UE 5.8.3 source notes
+
+Checked 2026-10-12 against the Unreal Engine 5.8.3 source. The notes describe ideas in our own words and cite `path:line`. No Unreal code is copied (Epic EULA). Cite the line again before you rely on a number, because 5.8.x point releases can move lines.
+
+- Default hash. New worlds use the runtime hash set, not the older spatial hash. UE 5.8.3: Engine/Config/BaseEngine.ini:3951-3953. The default grid cell is 25600 units (256 m). UE 5.8.3: Engine/Source/Runtime/Engine/Public/WorldPartition/RuntimeHashSet/RuntimePartitionLHGrid.h:57. The older spatial hash used 12800 units and a loading range of 25600. UE 5.8.3: Engine/Source/Runtime/Engine/Public/WorldPartition/WorldPartitionRuntimeSpatialHash.h:231-232. A source that quotes the older numbers is out of date.
+- Streaming loop. One update per frame reads the sources, finds cells to load, activate and unload, and applies them. UE 5.8.3: Engine/Source/Runtime/Engine/Private/WorldPartition/WorldPartitionStreamingPolicy.cpp:105 (sources) and :271 (state), with the activate, load and unload steps at :563, :588 and :627. A source asks for a target state of Loaded or Activated. UE 5.8.3: Engine/Source/Runtime/Engine/Public/WorldPartition/WorldPartitionStreamingSource.h:218-222. This is the WORLD-007 and WORLD-009 split.
+- HLOD kinds. An HLOD layer builds one of instancing, merged mesh, simplified mesh, approximated mesh, or a custom builder. UE 5.8.3: Engine/Source/Runtime/Engine/Public/WorldPartition/HLOD/HLODLayer.h:31-39. This is the WORLD-017 list.
+- HLOD swap. An HLOD actor is hidden when its source cell is shown and shown when that cell is hidden. The swap is a visibility flip with no cross-fade. UE 5.8.3: Engine/Source/Runtime/Engine/Private/WorldPartition/HLOD/HLODRuntimeSubsystem.cpp:623-661. WORLD-020 asks for no gaps and no double rendering, so a ThreeNative port must order the show and hide in one frame.
 
 ### Primary research references
 

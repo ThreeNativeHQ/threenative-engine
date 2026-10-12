@@ -4,7 +4,7 @@
 **Priority:** P2 — All boxes are open: the native host allocates and stores every 4× MSAA attachment in memory; no measurement shows yet what a transient attachment saves on a Mali or Adreno phone.
 **Complexity:** 3 (LOW) — 1–5 host files (1), crosses into the Dawn-on-Android build that PRD-329 owns (+2); risk override: none
 **Owner:** João (device runs), agent (implementation)
-**Depends on:** [PRD-329](../performance/critical/PRD-329-the-native-gpu-frame-matches-chrome-at-matched-pixels.md) Phase 2 (the Dawn-on-Android build). This PRD feeds PRD-329 Phase 3's MSAA arm with one specific lever; it does not repeat that arm's `sampleCount 4` resolve-path pair.
+**Depends on:** [PRD-329](../../performance/critical/PRD-329-the-native-gpu-frame-matches-chrome-at-matched-pixels.md) Phase 2 (the Dawn-on-Android build). This PRD feeds PRD-329 Phase 3's MSAA arm with one specific lever; it does not repeat that arm's `sampleCount 4` resolve-path pair.
 
 ## Context
 
@@ -31,8 +31,13 @@ The host does not mark anything transient today:
 - The mobile renderer sets `bMemorylessMSAA` when the scene renders in a single pass: no
   multi-pass, no editor composite, no separate view pass
   (`Engine/Source/Runtime/Renderer/Private/MobileShadingRenderer.cpp:744-745`).
-- With more than one sample and `bMemorylessMSAA`, the scene's multisampled targets get the
-  memoryless flag (`Engine/Source/Runtime/Renderer/Private/SceneTextures.cpp:805-810`).
+- With more than one sample and `bMemorylessMSAA`, the multisampled scene colour target gets the
+  memoryless flag (`Engine/Source/Runtime/Engine/Private/SceneTexturesConfig.cpp:171-173`). The
+  multisampled scene depth target gets it too, except on mobile with a full depth prepass, because
+  the base pass reads that depth again (`SceneTexturesConfig.cpp:178-186`). The depth-aux target
+  follows the same condition (`Engine/Source/Runtime/Renderer/Private/SceneTextures.cpp:805-810`).
+- The mobile renderer keeps scene depth in memory when post-processing, temporal AA, a depth
+  prepass or HZB needs it (`MobileShadingRenderer.cpp:688-708`).
 - A depth target with the memoryless flag gets no store action
   (`Engine/Source/Runtime/Renderer/Private/MeshPassProcessor.cpp:2245`), and later passes skip any
   copy from a memoryless texture (`SceneTextures.cpp:1032`, `:1303-1346`).
@@ -45,7 +50,11 @@ The decision is host mechanism, invisible to the game and to three:
    `TransientAttachment` to a texture whose usage is exactly `RenderAttachment` and whose sample
    count is above 1. That texture is never sampled or copied, so nothing can read its contents.
 2. A render pass that uses such a texture gets `storeOp: discard` for it. Its resolve target keeps
-   `store`. The host rewrites the store op only for the transient texture.
+   `store`. The host rewrites the store op only for the transient texture, in the attachment parser
+   at `packages/runtime-native/src/webgpu/bindings_commands.cpp:1119-1160`. A transient texture may
+   only be cleared on load and discarded on store, so a pass that loads it (a second pass into the
+   same multisampled target) makes the texture ineligible. Unreal drops memoryless MSAA for the
+   same reason when the frame needs more than one pass (`MobileShadingRenderer.cpp:744-745`).
 3. A depth texture stays stored when any chain stage samples scene depth (AO, SSR, SSGI, velocity
    all do). The host can see that from the usage: a sampled depth texture has
    `TextureBinding` and is never made transient. Unreal's single-pass condition maps to the same
@@ -75,6 +84,7 @@ On wgpu-native, or with the feature not granted, nothing changes.
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/src/webgpu/context.cpp` (request the feature), `packages/runtime-native/src/webgpu/bindings_resources.cpp` (usage), the render-pass binding (store op); a host contract test
 - [ ] With the feature granted, a multisampled render-only texture is created transient and its pass stores `discard`; a sampled depth texture and every texture without the feature stay unchanged. proof: a host contract-test executable over the binding, red-green.
+- [ ] A multisampled render-only texture that any pass loads instead of clearing is created as an ordinary texture, so no validation error appears. The contract test also records which load and store ops Dawn accepts for a transient attachment. proof: the same contract test with one load-on-second-pass case, red-green.
 - [ ] `TN_TRANSIENT_ATTACHMENTS` reports granted state, count and bytes. proof: the same contract test reads the line.
 
 #### Phase 2: Prove on desktop Dawn
@@ -83,5 +93,7 @@ On wgpu-native, or with the feature not granted, nothing changes.
 - [ ] AC-1's capture pair and validation-clean run. proof: `pnpm native:verify:desktop`, both captures recorded here.
 
 ## Decisions
+
+- 2026-10-12 (Unreal source review): the color and depth memoryless flags live in `SceneTexturesConfig.cpp`, not `SceneTextures.cpp` (that file sets it only for depth-aux). Unreal also keeps depth when anything reads it again. Added a box for the load-op rule, because a texture is created before the host knows how many passes will load it. The host must decide at creation or fall back. The Dawn rule on load and store ops is unverified here: the headers carry no text for it, so the contract test must record it.
 
 - 2026-10-09 (João, via the Unreal review request): filed separately from PRD-329. PRD-329 is a four-phase critical PRD whose MSAA arm compares resolve paths; this lever is one host rule with its own on/off gate, and adding it there would break the three-phase cap (R5).

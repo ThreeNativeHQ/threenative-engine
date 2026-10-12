@@ -154,7 +154,7 @@ João asked for a review of Unreal 5.8.3's Niagara source. The review found mech
 does not own. It does not change this PRD's thesis: effect looks stay generated source.
 
 - **Culling and budget go to
-  [PRD-569](../unreal-source-borrowing/PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md).**
+  [PRD-569](PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md).**
   Niagara culls an effect after it stays out of view for a grace time (1 s default). It applies a
   per-effect reaction, such as pause or kill. It ranks effects by significance against a damped FX
   budget (`UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Classes/NiagaraEffectType.h:23-35, 115-230`).
@@ -162,9 +162,10 @@ does not own. It does not change this PRD's thesis: effect looks stay generated 
   asks for. It must pass the admission gate above. Its first consumer is `examples/vfx-gallery`,
   whose hand-written `emitting = visible` page gate it replaces. The gallery effects in this PRD
   then choose their own cull reaction in `src/render/`, and keep no gate of their own.
-- **GPU depth sorting is not proposed.** Niagara sorts on the GPU above a particle-count threshold,
-  and sorts on the CPU below it
-  (`UE 5.8.3: Engine/Plugins/FX/Niagara/Source/NiagaraVertexFactories/Private/NiagaraSortingGPU.cpp:13-15`).
+- **GPU depth sorting is not proposed.** For CPU-simulated emitters, Niagara can move a sort to the
+  GPU above a particle-count threshold. That threshold is off by default (`Niagara.GPUSorting.CPUToGPUThreshold`,
+  default -1, `UE 5.8.3: Engine/Plugins/FX/Niagara/Source/NiagaraVertexFactories/Private/NiagaraSortingGPU.cpp:13-18`).
+  The sprite renderer applies the threshold to CPU systems only (`UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Private/NiagaraRendererSprites.cpp:337-346`). GPU-simulated emitters keep their data on the GPU.
   No effect here has a measured sort artifact, and WebGPU core has no wave operations for the
   sort's fast path. File a mechanism PRD only after an effect shows a visible order error.
 
