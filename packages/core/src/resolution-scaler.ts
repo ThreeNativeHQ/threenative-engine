@@ -14,6 +14,8 @@
  * buffer moves, which is the arrangement the device ladder measured and accepted.
  */
 
+import type { GpuClass } from "./gpu-class.js";
+
 /** How the active scale was arrived at, reported beside every fps number. */
 export type ScaleSource = "pinned" | "auto" | "auto-pinned";
 
@@ -36,6 +38,15 @@ export const RESOLUTION_SCALER = {
    * rungs come back; `renderer-config.ts` decides which floor a platform starts with.
    */
   desktopFloorScale: 0.61,
+  /**
+   * The rung a class of adapter starts on instead of the ceiling; a class not named here starts at
+   * 1.0. Only `mobile-low` moves: one rung down is 0.85, close to the 0.8 content scale Unreal's
+   * Low Android bucket sets. A start is a guess the first eligible window corrects — it steps down
+   * at once and climbs after `upWindows` clean ones — so a wrong row costs windows, not a stuck
+   * look. `unknown` and `discrete` keep the ceiling on purpose: a strong GPU is never capped by a
+   * table row.
+   */
+  startScaleByGpuClass: { "mobile-low": 0.85 } as Partial<Record<GpuClass, number>>,
   /**
    * The signal is **fps against the configured target**, not the presented interval.
    *

@@ -448,11 +448,22 @@ export interface IPlaytestRenderChainAssertion extends IPlaytestRenderChainExpec
    * whose adapter cannot be classified is a failed observation, not a hardware one: a missing
    * branch is not a licence to pass.
    */
-  perAdapter?: Partial<Record<PlaytestAdapterClass, IPlaytestRenderChainExpectation>>;
+  perAdapter?: Partial<Record<PlaytestAdapterClass | PlaytestGpuFamily, IPlaytestRenderChainExpectation>>;
 }
 
 /** What the harness read out of `adapter.info` for this run, before any game code answered. */
 export type PlaytestAdapterClass = "hardware" | "software";
+
+/**
+ * The GPU family the same `adapter.info` fields prove on a hardware run. A family row beside
+ * `hardware` is how a scenario holds an iGPU or a phone to the tier a template starts that family
+ * at; it overrides `hardware` only when the observed fields prove the family.
+ */
+export const PLAYTEST_GPU_FAMILIES = ["discrete", "integrated", "mobile-high", "mobile-low", "mobile-mid"] as const;
+export type PlaytestGpuFamily = (typeof PLAYTEST_GPU_FAMILIES)[number];
+
+/** Every key a `perAdapter` assertion accepts. */
+export const PLAYTEST_PER_ADAPTER_KEYS = ["hardware", "software", ...PLAYTEST_GPU_FAMILIES] as const;
 
 /** Ceilings on the application's startup milestones, in milliseconds since navigation. */
 export interface IPlaytestStartupAssertion {

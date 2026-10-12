@@ -189,6 +189,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
   // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
   // Measured through all thirteen actual createProject trees on the Oct 4 published-head
@@ -232,25 +233,34 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
   // PRD-560 (2026-10-10): the eleven FogExp2 kits carry height fog (heightFog.ts, sky.ts, AGENTS.md);
-  // rain and tower-defense do not and keep develop's values. Seven kits at the 150 m scale then
+  // rain and tower-defense had no height-fog change in that merge. Seven kits at the 150 m scale then
   // took density 0.0018 so ridges read clearer than low ground (AC-1b).
   // Recomputed through all thirteen actual createProject trees after merging develop 2d2124792
   // into PRD-571; these fingerprints cover both the exposure and landed base changes.
+  // Recomputed 2026-10-11 after merging develop b4e74627f into PRD-563: measured through
+  // createProject on the merged tree, including the GPU-class start tier in every kit.
+  // Recomputed 2026-10-11 for the PRD-563 render-chain tier fix: ten kits' medium presets now request
+  // the medium chain, the four flat-high scenarios gained family and software rows, and every
+  // render-chain scenario names the GPU families. Measured by the same actual-tree test; snow moves not.
+  // Recomputed 2026-10-11 for the PRD-563 grade table upload as half floats: only starter's grade.ts
+  // and postprocessing.ts changed, and the actual-tree test moved only starter.
   // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
-  "action-rpg": "c022de28097aa344b891be25c55b29d2d3053a050f8bfb3c263d782690d7c245",
-  minimal: "3b5aa727964b59028d2b9f4850835a91857d9bb979430ace026b19505444efe1",
-  platformer: "522335b150b9c1027a624a134a76267dc703bb78b10f420ebd1a6ff75d9d26c1",
-  puzzle: "edd2e8eb7e1602e23e42634afe2fc768ae8a2c4b8e9e1006c208aa9bab343ec3",
-  racing: "33900c8a4b715f9bc8eb5c0c22456b48b9b8f1987fcdbcf32965f0880c442367",
-  rain: "93f8227373687566e46cc8d7f03586cb346b05bb5a5589c97a3e0ee83be76d91",
-  rts: "0da907cc2a6c4d3c5b782c6d5c57cd6be94f8cb8f6baebef74c045f32b7b70bf",
-  runner: "73e06ca20c752c35788b48faf9dd28ed38875c7fa3bc80ee2b4a54884bd5fcc4",
+  // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
+  // createProject on the merged tree.
+  "action-rpg": "254697940e5805434f380528ea8b69e19613a1548f64497ee23989677b59763c",
+  minimal: "0202ac5dd7ac436e474f55dd9ec2f5f43da3d67c219b2351405e960ca8f1a71e",
+  platformer: "edf75a6bfbb3b0ab7513b7e8fc3a8441b9aa41ff5f544ab77c201f1fcd8d8faf",
+  puzzle: "c5739a462298a6b1a0c2ba27ebca8c276fa89ccd6464d8b49f43b2da0e9e9f72",
+  racing: "deff5eb215f9d3be8007f2f0bc4530618035db36418c05aee292791a07ca76a9",
+  rain: "643494c2812208b8db1c24e38c06053d7fe349bb25692802c8acf3511e08dd43",
+  rts: "8dfd9b5cb3d441463389b842ff2b3cde015d81ed4d86dad089f8cd2e2916f15f",
+  runner: "1844ee1b87ef97d51aad6d157715bdc74df39b39a08d822403f92b2d9e4a3302",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "01dd15cf54550a9679bb06519710387ae64b97af1d5441064753ff8517a422d6",
-  shooter: "894ac1cda8990b78431f20bd11853f3b4d6b55fee923c93aadd2502a97b3d680",
-  snow: "d10f698d21ed243bbc680a132de6c68f2bbeacf0a2488e0035e87e27f9d531da",
-  starter: "d4fbca1409a4dcba6cf052b5f3865f563a067a5e4e748522bd0716a118c7d1ba",
-  "tower-defense": "e409e2de944c81ecd03d31b5ee404ff763263f8acb414e274e37546bc14da01a",
+  sailing: "a524164861fad5282f55b69a9515529604afb8f73ad25e4bcd51c7b93ce17a82",
+  shooter: "816c172e0c9d86fa1be9a866a09b3b377a336f0038e5ed3600d7f153cc753301",
+  snow: "e4be666568eeb003b274486d791a183867c5b0e176f2888650305475c4dc820a",
+  starter: "cb2221f6a07dd981fb19be00477e3304fe8add983eb17e0c7066d68164489b30",
+  "tower-defense": "54184c2d75fe452ada59a5a3ce00e326e485b9288153b5617320fbcaa88b47fb",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

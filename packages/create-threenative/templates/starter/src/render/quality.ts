@@ -23,12 +23,8 @@ import type { IGradeSettings } from "./grade.js";
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
- * The three names this game's look comes in.
- *
- * `low` is what a phone gets and `high` what a desktop gets — those two are this template's
- * shipped looks. `medium` is the rung in between for a machine that is neither: a laptop iGPU, a
- * handheld, a desktop that is dropping frames. Nothing outside this file decides what any of them
- * mean.
+ * This game's authored looks. GPU family picks the start; measured frame budgets refine it.
+ * Edit these presets to change the look without changing the framework.
  */
 export type QualityTier = "low" | "medium" | "high";
 
@@ -43,6 +39,23 @@ function isQualityTier(value: string): value is QualityTier {
 }
 
 /**
+ * Where each GPU family starts, from `ctx.renderer.gpuClass`.
+ *
+ * A start, not a ceiling: the measured frame-budget windows move the look from here, and an
+ * explicit `tier` above still wins. A class absent from this table — `unknown`, an adapter no
+ * family rule matched — falls back to the `mobile` flag, exactly as before families existed.
+ * Edit the right-hand side to change what a family looks like; nothing outside this file reads it.
+ */
+const START_TIER_BY_GPU_CLASS: Readonly<Record<string, QualityTier | undefined>> = {
+  software: "low",
+  "mobile-low": "low",
+  "mobile-mid": "low",
+  "mobile-high": "medium",
+  integrated: "medium",
+  discrete: "high",
+};
+
+/**
  * Picks the tier: an explicit `tier` always wins, otherwise the platform decides.
  *
  * Fails closed. An unrecognised tier name throws with the value it was handed rather than
@@ -50,7 +63,12 @@ function isQualityTier(value: string): value is QualityTier {
  * turned out to have no effect.
  */
 export function resolveQualityTier(
-  request: { readonly mobile?: boolean; readonly software?: boolean; readonly tier?: string } = {},
+  request: {
+    readonly gpuClass?: string;
+    readonly mobile?: boolean;
+    readonly software?: boolean;
+    readonly tier?: string;
+  } = {},
 ): QualityTier {
   const requested = request.tier;
   if (requested !== undefined) {
@@ -67,6 +85,9 @@ export function resolveQualityTier(
   // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
   // `tier` above still wins over it.
   if (request.software === true) return "low";
+  const family =
+    request.gpuClass === undefined ? undefined : START_TIER_BY_GPU_CLASS[request.gpuClass];
+  if (family !== undefined) return family;
   return request.mobile === true ? "low" : "high";
 }
 
@@ -113,7 +134,13 @@ const high: IWorldEnvironmentOptions = {
  * The rung in between: the same occlusion at half the directions. Saving unmeasured, and the
  * chain's own antialiasing one notch cheaper.
  */
-const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8, renderChainTier: "medium" };
+// SMAA owns medium edges; another four-sample world resolve adds mobile bandwidth.
+const medium: IWorldEnvironmentOptions = {
+  ...high,
+  gtaoSamples: 8,
+  renderChainTier: "medium",
+  samples: 0,
+};
 
 /** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
 const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
@@ -165,35 +192,8 @@ export function gradePreset(tier: string): IGradeSettings {
   return preset;
 }
 
-/** First admitted material lane: high desktop hardware WebGPU in the browser only. */
-export interface IMaterialLightingEnvironment {
-  readonly web: boolean;
-  readonly rendererKind: string;
-  readonly mobile?: boolean;
-  readonly software?: boolean;
-  readonly webglFallback?: boolean;
-}
-export function materialLightingEnabled(
-  tier: QualityTier,
-  environment: IMaterialLightingEnvironment,
-): boolean {
-  return (
-    tier === "high" &&
-    environment.web &&
-    environment.rendererKind === "webgpu" &&
-    environment.mobile !== true &&
-    environment.software !== true &&
-    environment.webglFallback !== true
-  );
-}
-
-/** A WebGPURenderer wrapper may run an ordinary WebGL fallback backend. */
-export function isWebGLFallbackRenderer(renderer: unknown): boolean {
-  if (renderer === null || typeof renderer !== "object") return false;
-  const backend = Reflect.get(renderer, "backend");
-  return (
-    backend !== null &&
-    typeof backend === "object" &&
-    Reflect.get(backend, "isWebGLBackend") === true
-  );
-}
+export {
+  type IMaterialLightingEnvironment,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "./rendererGate.js";

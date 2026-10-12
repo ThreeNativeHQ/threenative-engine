@@ -42,7 +42,13 @@
     },
     "renderChain": {
       "tier": "high",
-      "perAdapter": { "software": { "tier": "low" } }
+      "perAdapter": {
+        "integrated": { "tier": "medium" },
+        "mobile-high": { "tier": "medium" },
+        "mobile-low": { "tier": "low" },
+        "mobile-mid": { "tier": "low" },
+        "software": { "tier": "low" }
+      }
     },
     "visual": [
       {

@@ -88,6 +88,7 @@ export class Run extends Scene<GameState, RunnerPhysics> {
       godraysLight: key,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
