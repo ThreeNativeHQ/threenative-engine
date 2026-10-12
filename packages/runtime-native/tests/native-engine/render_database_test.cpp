@@ -2533,11 +2533,50 @@ void shadowLightsFollowHierarchy() {
     CHECK((seen == std::vector<std::size_t>{1, 0, 1, 0, 1, 0}));
 }
 
+// A scene's plain meshes find their records by scene order, so a sibling that leaves, joins or moves
+// must not make the others rebuild theirs: a spawn or a despawn in a 4,096 mesh scene is not a hitch.
+void recordsSurviveSiblings() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.batching = false;  // one record and one item per mesh
+    camera.position.set(0, 0, 30);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Group group;  // a child with children keeps the scene off the flat lane
+    Object3D leaf;
+    group.add(leaf);
+    scene.add(group);
+    const auto geometry = makeBoxGeometry();
+    const auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 12; ++i) {
+        meshes.push_back(std::make_shared<Mesh>(geometry, material));
+        meshes.back()->position.set(i - 6.0, 0, 0);
+        scene.add(*meshes.back());
+    }
+    const auto drawn = [&] { return database.prepare(scene, camera, lights).size(); };
+    CHECK(drawn() == 12);
+    const uint64_t built = database.rebuilds();
+    CHECK(built == 12);
+    CHECK(drawn() == 12 && database.rebuilds() == built);
+    scene.remove(*meshes[3]);  // every later mesh moves up one place in scene order
+    CHECK(drawn() == 11 && database.rebuilds() == built);
+    scene.add(*meshes[3]);  // it left the database, so it is built again, and only it
+    CHECK(drawn() == 12 && database.rebuilds() == built + 1);
+    scene.remove(*meshes[0]);
+    group.add(*meshes[0]);  // deeper in the graph: the same record, found by the mesh
+    CHECK(drawn() == 12 && database.rebuilds() == built + 1);
+    group.remove(*meshes[0]);
+    scene.add(*meshes[0]);
+    for (int frame = 0; frame < 3; ++frame) CHECK(drawn() == 12 && database.rebuilds() == built + 1);
+    meshes[5]->setVisible(false);  // hidden meshes keep their records and draw nothing
+    CHECK(drawn() == 11 && database.rebuilds() == built + 1);
+}
+
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings})
 
 
 

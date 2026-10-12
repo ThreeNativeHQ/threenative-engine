@@ -207,6 +207,8 @@ class RenderDatabase {
     std::vector<PendingCallback> callbacks_;
     std::unordered_map<const Object3D*, Record> records_;
     std::vector<Record> flatRecords_; // scene-order slots; no per-mesh hash lookup on the flat lane
+    std::vector<Record*> slotRecords_; // the scene's plain meshes' records in records_, by scene order
+    const Object3D* slotRoot_ = nullptr; // the object whose children use slotRecords_ while a prepare projects
     std::vector<uint8_t> flatPlainMeshes_;
     bool flatParentIdentity_ = false;
     std::vector<std::size_t> sortScratch_;

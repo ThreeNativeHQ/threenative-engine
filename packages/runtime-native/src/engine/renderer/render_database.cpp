@@ -780,9 +780,35 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
     } else if (const auto it = records_.find(&object); !lightsOnly && it != records_.end()) {
         it->second.seen = frame_; // in the scene, on another camera's layer: its record stays
     }
+    const bool ordered = !updateChildren && &object == slotRoot_;
     for (std::size_t i = 0; i < object.children.size(); ++i) {
         Object3D* child = object.children[i];
+        Record* slot = updateChildren ? &flatRecords_[i] : nullptr;
+        bool plainChild = updateChildren && flatPlainMeshes_[i];
+        if (ordered && i < slotRecords_.size() && typeid(*child) == typeid(Mesh)) {
+            // The pointer survives while its record does; a moved or new mesh looks itself up once.
+            Record*& found = slotRecords_[i];
+            if (!found || found->meshId != child->id()) {
+                const auto it = records_.find(child);
+                found = it != records_.end() ? &it->second : nullptr;
+            }
+            slot = found;
+            plainChild = true;
+        }
 #if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
+        if (ordered && i + 32 < slotRecords_.size() && slotRecords_[i + 32])
+            __builtin_prefetch(slotRecords_[i + 32], 0, 1);
+        if (ordered && i + 16 < slotRecords_.size() && i + 16 < object.children.size()) {
+            const auto* next = reinterpret_cast<const char*>(object.children[i + 16]);
+            for (std::size_t offset = 0; offset <= sizeof(Object3D); offset += 64)
+                __builtin_prefetch(next + offset, 0, 1);
+            if (const Record* future = slotRecords_[i + 16]) {
+                const auto* material = reinterpret_cast<const char*>(future->material.get());
+                if (material)
+                    for (std::size_t offset = 0; offset < sizeof(Material); offset += 64)
+                        __builtin_prefetch(material + offset, 0, 1);
+            }
+        }
         // Sparse authored metadata remains outside the dense transform columns. Fetch it
         // ahead of the fused traversal instead of serializing every cache miss at 64k.
         if (updateChildren && i + 32 < object.children.size())
@@ -812,8 +838,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
 #endif
         if (updateChildren)
             child->Object3D::updateMatrixWorldSelf(force, flatParentIdentity_, flatPlainMeshes_[i]);
-        project(*child, camera, items, lights, false, false, updateChildren ? &flatRecords_[i] : nullptr,
-                updateChildren && flatPlainMeshes_[i], lightsOnly, excluded);
+        project(*child, camera, items, lights, false, false, slot, plainChild, lightsOnly, excluded);
     }
 }
 
@@ -1232,7 +1257,11 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     collectShadowFrustums(targetScene ? *targetScene : scene, camera);
     if (flat) flatRecords_.resize(scene.children.size());
     else flatRecords_.clear();
+    // Off the flat lane, the scene's plain meshes still find their records by scene order, not by hash.
+    slotRecords_.resize(scene.children.size());
+    slotRoot_ = flat ? nullptr : &scene;
     project(scene, camera, items, lights, flat, force);
+    slotRoot_ = nullptr;
     if (targetScene && targetScene != &scene)
         project(*targetScene, camera, items, lights, false, false, nullptr, false, true, &scene);
     const auto projected = profiling ? Clock::now() : Clock::time_point{};
@@ -1271,13 +1300,16 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
                                " hemisphere lights; one is drawn");
     for (auto& r : flatRecords_) if (r.seen != frame_) r = Record{};
     // Objects that left the scene leave the database.
+    bool erased = false;
     for (auto it = records_.begin(); it != records_.end();) {
         if (it->second.seen != frame_) {
             it = records_.erase(it);
+            erased = true;
         } else {
             ++it;
         }
     }
+    if (erased) std::fill(slotRecords_.begin(), slotRecords_.end(), nullptr);  // one of these may have been erased
     batchGroups_ = batchMembers_ = 0;
     const auto beforeBatch = profiling ? Clock::now() : Clock::time_point{};
     if (batching) {
