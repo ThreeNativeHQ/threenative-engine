@@ -49,211 +49,6 @@
 
 namespace mystral {
 namespace webgpu {
-// ---------------------------------------------------------------------------
-// Presentation ceiling (PRD-218)
-// ---------------------------------------------------------------------------
-//
-// A convention that ships on: a game presents at most `g_presentationCapHz` frames a second, and
-// runs uncapped only when it asks to.
-//
-// The measurement that bought this: on a Pixel 8, a build whose whole scene was a static dark
-// screen with three textures held **119.8 presents per second, indefinitely**. `fifo` vsync was
-// the only ceiling in the runtime, so on a 120 Hz panel a loading screen, a pause menu or a game
-// that has finished drawing burns the SoC at the panel's rate for no visible benefit -- the phone
-// warms and the battery drains to present the same pixels twice. Nothing in the frame was
-// expensive; that was exactly the problem.
-//
-// 60 Hz is the default because it is the rate every game in this repository was authored against
-// and half of the common high-refresh panel, so a frame is presented on every second vsync
-// interval rather than at an unrelated period that would judder against it.
-//
-// Honesty when overridden is part of the convention, not a nicety: the effective cap rides along
-// in every `TN_PRESENTS_TICK`, so a probe that reads 120 presents a second can tell "the game
-// opted out" from "the cap is broken" without reading the game's source.
-static uint32_t g_presentationCapHz = 60;
-
-/** The pacing deadline for the next present. Zero until the first paced frame. */
-static std::chrono::steady_clock::time_point g_nextPresentDeadline{};
-
-// ---------------------------------------------------------------------------
-// Display-synchronized pacing (PRD-399)
-// ---------------------------------------------------------------------------
-//
-// The Android activity feeds its `Choreographer.FrameCallback` here. While those callbacks are
-// live the cap is a target in the display's own timestamp domain -- nanoseconds, never compared
-// with `steady_clock`: the next present is scheduled `1/cap` after the previous target and the
-// render thread waits until a display frame reaches it. The measured cadence, not an assumed
-// 60 Hz, decides, and advancing from the target rather than the frame seen keeps a fractional
-// cap's remainder. A first frame or an already-past target schedules forward, so a slow frame
-// never draws a catch-up burst. With no callbacks -- startup, paused, or signal lost -- the wait
-// is bounded and the pre-existing `steady_clock` deadline below takes over; `maxFps == 0` returns
-// before either path. No new scheduler: the signal is only a better deadline for the existing
-// `paceToPresentationCap()` owner.
-namespace {
-
-struct PresentationPacing {
-    std::mutex mutex;
-    std::condition_variable ready;
-    bool running = false;           // set on resume, cleared on pause; frames require it
-    bool haveFrame = false;         // at least one display frame timestamp has been seen
-    int64_t frameTimeNs = 0;        // latest display frame timestamp, in the display's own domain
-    int64_t nextPresentTargetNs = 0;  // schedule target, in that same domain
-};
-
-PresentationPacing g_presentationPacing;
-
-// Test-only, PRD-399. A display-release test parks the render thread and unblocks it with a
-// synthetic display frame; on a loaded runner that synthetic frame can arrive after the production
-// bounded timeout, so the waiter falls back to the wrong path. Non-zero replaces the bounded
-// allowance with a value the test chooses. Production never calls the setter, and the lifecycle
-// reset clears it, so the production formula below is what ships.
-std::chrono::nanoseconds g_presentationPacingTimeoutOverride{0};
-
-// Reports the effective pacing path once per transition, never per frame. A run can then tell
-// "display-aligned" from "deadline-fallback" without reading the source, and a packaged `.so` can
-// be grepped for the marker to prove the APK actually carries this change.
-void reportPacingPath(const char* path) {
-#if defined(__ANDROID__)
-    __android_log_print(ANDROID_LOG_INFO, "MystralRuntime",
-                        "TN_PRESENTATION_PACING:{\"path\":\"%s\"}", path);
-#else
-    (void)path;
-#endif
-}
-
-// Waits for the display target and reports why the caller may need its software deadline.
-PresentationPacingPath paceToDisplayFrame(std::chrono::nanoseconds interval) {
-    std::unique_lock<std::mutex> lock(g_presentationPacing.mutex);
-    if (!g_presentationPacing.running || !g_presentationPacing.haveFrame)
-        return PresentationPacingPath::SoftwareDeadline;
-
-    const int64_t intervalNs = interval.count();
-    if (g_presentationPacing.nextPresentTargetNs == 0) {
-        // First paced frame: schedule forward from the frame just observed.
-        g_presentationPacing.nextPresentTargetNs = g_presentationPacing.frameTimeNs + intervalNs;
-        return PresentationPacingPath::Display;
-    }
-
-    // One absolute bounded wait tolerates a late callback without extending on spurious wakes.
-    // Only a deadline with no qualifying frame drops the display schedule until a fresh callback.
-    // The production allowance is two intervals plus 50 ms; the test seam only ever widens it.
-    const std::chrono::nanoseconds boundedWait =
-        g_presentationPacingTimeoutOverride.count() > 0
-            ? g_presentationPacingTimeoutOverride
-            : interval * 2 + std::chrono::milliseconds(50);
-    const auto deadline = std::chrono::steady_clock::now() + boundedWait;
-    while (g_presentationPacing.running &&
-           g_presentationPacing.frameTimeNs < g_presentationPacing.nextPresentTargetNs) {
-        if (g_presentationPacing.ready.wait_until(lock, deadline) == std::cv_status::timeout) {
-            // A notified frame can be ready even when the waiting thread runs after the deadline.
-            if (!g_presentationPacing.running) return PresentationPacingPath::SoftwareDeadline;
-            if (g_presentationPacing.frameTimeNs < g_presentationPacing.nextPresentTargetNs) {
-                g_presentationPacing.haveFrame = false;
-                g_presentationPacing.nextPresentTargetNs = 0;
-                return PresentationPacingPath::DisplayTimeoutFallback;
-            }
-        }
-    }
-    if (!g_presentationPacing.running) return PresentationPacingPath::SoftwareDeadline;
-
-    // Advance from the target, not from the frame just seen -- for an already-arrived frame too: a
-    // fractional cap keeps its remainder instead of losing it to the display period. If callbacks
-    // arrived so late that the target is already behind, reschedule from now rather than firing a
-    // burst to catch up.
-    g_presentationPacing.nextPresentTargetNs += intervalNs;
-    if (g_presentationPacing.nextPresentTargetNs <= g_presentationPacing.frameTimeNs) {
-        g_presentationPacing.nextPresentTargetNs = g_presentationPacing.frameTimeNs + intervalNs;
-    }
-    return PresentationPacingPath::Display;
-}
-
-}  // namespace
-
-// Fed from the activity's Choreographer callback. `started`/`stopped` bracket its registration:
-// started on resume, stopped on pause *before* the callback is removed, so a render thread inside
-// paceToPresentationCap() is woken and falls back instead of waiting out its timeout. A frame
-// update is ignored unless the frames are running, so a late callback cannot resurrect a stopped
-// schedule.
-void notePresentationFramesStarted() {
-    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
-    g_presentationPacing.running = true;
-    g_presentationPacing.nextPresentTargetNs = 0;
-    g_presentationPacing.ready.notify_all();
-}
-
-void notePresentationFramesStopped() {
-    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
-    g_presentationPacing.running = false;
-    g_presentationPacing.haveFrame = false;
-    g_presentationPacing.frameTimeNs = 0;
-    g_presentationPacing.nextPresentTargetNs = 0;
-    g_presentationPacingTimeoutOverride = std::chrono::nanoseconds{0};
-    g_presentationPacing.ready.notify_all();
-}
-
-void notePresentationFrame(int64_t frameTimeNs) {
-    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
-    if (!g_presentationPacing.running) return;
-    g_presentationPacing.frameTimeNs = frameTimeNs;
-    g_presentationPacing.haveFrame = true;
-    g_presentationPacing.ready.notify_all();
-}
-
-void setPresentationPacingTimeoutForTest(std::chrono::milliseconds timeout) {
-    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
-    g_presentationPacingTimeoutOverride = std::chrono::duration_cast<std::chrono::nanoseconds>(timeout);
-}
-
-bool setPresentationCapHz(uint32_t hz) {
-    if (hz > 1000) return false;
-    g_presentationCapHz = hz;
-    g_nextPresentDeadline = std::chrono::steady_clock::time_point{};
-    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
-    g_presentationPacing.nextPresentTargetNs = 0;
-    return true;
-}
-
-/**
- * Holds the loop back to the presentation ceiling, after a frame that actually presented.
- *
- * Only after a present, and never during startup: the launch stall this same PRD measures has no
- * presents in it at all, and pacing an unpresented loop would add sleep to the twelve seconds a
- * player already waits. A frame that misses its deadline resets the schedule instead of trying to
- * catch up, because a game running below the cap must not then be asked to present a burst.
- */
-PresentationPacingPath paceToPresentationCap() {
-    if (g_presentationCapHz == 0) return PresentationPacingPath::Uncapped;
-    const auto interval = std::chrono::nanoseconds(1000000000ull / g_presentationCapHz);
-
-    static bool reportedDisplay = false;
-    static bool reportedFallback = false;
-    const auto path = paceToDisplayFrame(interval);
-    if (path == PresentationPacingPath::Display) {
-        if (!reportedDisplay) {
-            reportedDisplay = true;
-            reportedFallback = false;
-            reportPacingPath("display-aligned");
-        }
-        return path;
-    }
-    if (!reportedFallback) {
-        reportedFallback = true;
-        reportedDisplay = false;
-        reportPacingPath("deadline-fallback");
-    }
-
-    using clock = std::chrono::steady_clock;
-    const auto now = clock::now();
-    if (g_nextPresentDeadline == clock::time_point{} || now > g_nextPresentDeadline + interval) {
-        // First paced frame, or the loop fell far enough behind that the old schedule is stale.
-        g_nextPresentDeadline = now + interval;
-        return path;
-    }
-    if (now < g_nextPresentDeadline) std::this_thread::sleep_until(g_nextPresentDeadline);
-    g_nextPresentDeadline += interval;
-    return path;
-}
-
 bool isSrgbSurfaceFormat(WGPUTextureFormat format) {
     return format == WGPUTextureFormat_RGBA8UnormSrgb ||
            format == WGPUTextureFormat_BGRA8UnormSrgb;
@@ -352,7 +147,7 @@ bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
         config.width = surfaceWidth;
         config.height = surfaceHeight;
         config.presentMode = state->presentation.presentMode;
-        wgpuSurfaceConfigure(state->surface, &config);
+        configurePresentationSurface(state->surface, &config);
         state->presentation.surfaceWidth = surfaceWidth;
         state->presentation.surfaceHeight = surfaceHeight;
     }
@@ -388,7 +183,7 @@ static bool reconfigureSurfaceForAcquire(BindingsState* state) {
     config.width = state->presentation.surfaceWidth;
     config.height = state->presentation.surfaceHeight;
     config.presentMode = state->presentation.presentMode;
-    wgpuSurfaceConfigure(state->surface, &config);
+    configurePresentationSurface(state->surface, &config);
     return true;
 }
 
@@ -397,12 +192,12 @@ static bool reconfigureSurfaceForAcquire(BindingsState* state) {
  * Ownership of the returned texture is the caller's, exactly as the raw call's is.
  */
 static void acquireSurfaceImage(BindingsState* state, WGPUSurfaceTexture* surfaceTexture) {
-    wgpuSurfaceGetCurrentTexture(state->surface, surfaceTexture);
+    acquirePresentationSurface(state->surface, surfaceTexture);
     if (!wgpuSurfaceTextureStatusNeedsReconfigure(surfaceTexture->status)) return;
     if (surfaceTexture->texture) wgpuTextureRelease(surfaceTexture->texture);
     surfaceTexture->texture = nullptr;
     if (!reconfigureSurfaceForAcquire(state)) return;
-    wgpuSurfaceGetCurrentTexture(state->surface, surfaceTexture);
+    acquirePresentationSurface(state->surface, surfaceTexture);
 }
 
 void trackCurrentSurfaceTextureView(BindingsState* state, uint64_t viewId, WGPUTextureView view) {
@@ -971,7 +766,7 @@ void reportPresentTick(BindingsState* state, uint64_t frames) {
     output << "TN_PRESENTS_TICK:{\"frames\":" << frames << ",\"presents\":" << state->profiling.presentCount
            << ",\"textureMB\":" << (state->profiling.textureBytesLive / 1048576)
            << ",\"textures\":" << state->profiling.textureCountLive
-           << ",\"bufferMB\":" << (state->profiling.bufferBytesLive / 1048576) << ",\"capHz\":" << g_presentationCapHz
+           << ",\"bufferMB\":" << (state->profiling.bufferBytesLive / 1048576) << ",\"capHz\":" << getPresentationCapHz()
            << "}";
     const std::string marker = output.str();
     std::cout << marker << std::endl;
@@ -1049,7 +844,7 @@ js::JSValueHandle handleWebGpuPresentationCap(BindingsState* state, BindingDesti
     //
     // Fail closed on a rate the runtime cannot honour: a game that asks for -1 or 5000 has a bug,
     // and silently clamping it would make the next frame-rate measurement a fiction.
-    if (args.empty()) return state->engine->newNumber(static_cast<double>(g_presentationCapHz));
+    if (args.empty()) return state->engine->newNumber(static_cast<double>(getPresentationCapHz()));
     const double requested = state->engine->toNumber(args[0]);
     const int32_t hz = static_cast<int32_t>(requested);
     if (!(requested >= 0.0) || requested > 1000.0 || static_cast<double>(hz) != requested) {
@@ -1059,7 +854,7 @@ js::JSValueHandle handleWebGpuPresentationCap(BindingsState* state, BindingDesti
         return state->engine->newUndefined();
     }
     setPresentationCapHz(static_cast<uint32_t>(hz));
-    return state->engine->newNumber(static_cast<double>(g_presentationCapHz));
+    return state->engine->newNumber(static_cast<double>(getPresentationCapHz()));
 }
 }  // namespace webgpu
 }  // namespace mystral

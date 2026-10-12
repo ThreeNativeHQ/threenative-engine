@@ -1,7 +1,12 @@
 #pragma once
 
+#include "mystral/webgpu/presentation.h"
+
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+
+#include "mystral/host/frame_capture.h"
 
 namespace mystral {
 namespace js {
@@ -58,19 +63,6 @@ void setOffscreenTexture(BindingsState* state, void* texture, void* textureView)
 void beginDawnFrame(BindingsState* state);
 void endDawnFrame(BindingsState* state);
 
-// Set the process presentation ceiling before frames begin. Returns false for unsupported values.
-bool setPresentationCapHz(uint32_t hz);
-
-// PRD-399 display-synchronized pacing. The platform's display-frame signal feeds these: `started`
-// and `stopped` bracket the signal's registration around the activity lifecycle, and each `frame`
-// carries that display frame's timestamp. While frames are live, `paceToPresentationCap()` aligns
-// the cap to the measured display cadence instead of sleeping on the render thread's clock; with
-// no signal it falls back to the pre-existing software deadline. Declared here so the executable
-// pacing regression can drive the same owner the activity does.
-void notePresentationFramesStarted();
-void notePresentationFramesStopped();
-void notePresentationFrame(int64_t frameTimeNs);
-
 void* getCurrentRenderedTexture(BindingsState* state);
 uint32_t getCurrentTextureWidth(BindingsState* state);
 uint32_t getCurrentTextureHeight(BindingsState* state);
@@ -83,6 +75,8 @@ uint64_t presentCount(BindingsState* state);
 bool isScreenshotReady(BindingsState* state);
 void clearScreenshotReady(BindingsState* state);
 void requestFrameScreenshot(BindingsState* state);
+/** The bindings as the GPU context's frame-capture source; the caller owns it and drops it before the state. */
+std::unique_ptr<host::IFrameCaptureSource> makeFrameCaptureSource(BindingsState* state);
 
 void compositeCanvas2DToWebGPU(BindingsState* state);
 

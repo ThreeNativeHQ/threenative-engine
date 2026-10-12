@@ -1,14 +1,105 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 import { nativeDefinition } from "../../../test-support/native-definition.js";
 
 const compiler = process.env.CXX || "c++";
 const probe = spawnSync(compiler, ["--version"], { encoding: "utf8" });
 const nativeTest = probe.error?.code === "ENOENT" ? test.skip : test;
+
+nativeTest(
+  "shared Android presentation configures latency and stops a wedged acquire at its deadline",
+  () => {
+    const directory = mkdtempSync(join(tmpdir(), "tn-android-acquire-"));
+    try {
+      const root = fileURLToPath(new URL("../", import.meta.url));
+      mkdirSync(join(directory, "android"));
+      writeFileSync(
+        join(directory, "android/log.h"),
+        `
+#pragma once
+#include <cstdarg>
+#include <cstdio>
+#define ANDROID_LOG_INFO 4
+#define ANDROID_LOG_ERROR 6
+inline int __android_log_print(int, const char*, const char* format, ...) {
+  va_list args; va_start(args, format);
+  int result = std::vfprintf(stderr, format, args);
+  va_end(args); std::fputc('\\n', stderr); return result;
+}
+`,
+      );
+      const source = join(directory, "acquire.cpp");
+      const executable = join(directory, "acquire");
+      writeFileSync(
+        source,
+        `
+#include "mystral/webgpu/presentation.h"
+#include <webgpu/webgpu.h>
+#include <webgpu/wgpu.h>
+#include <chrono>
+#include <thread>
+bool hang = false;
+bool configured = false;
+extern "C" void wgpuSurfaceConfigure(WGPUSurface, const WGPUSurfaceConfiguration* config) {
+  const auto* extras = reinterpret_cast<const WGPUSurfaceConfigurationExtras*>(config->nextInChain);
+  configured = config->presentMode == WGPUPresentMode_Immediate &&
+    config->alphaMode == WGPUCompositeAlphaMode_Auto && extras &&
+    extras->chain.sType == static_cast<WGPUSType>(WGPUSType_SurfaceConfigurationExtras) &&
+    extras->desiredMaximumFrameLatency == 2;
+}
+extern "C" void wgpuSurfaceGetCurrentTexture(WGPUSurface, WGPUSurfaceTexture*) {
+  while (hang) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+int main(int argc, char**) {
+  WGPUSurfaceConfiguration config{};
+  config.presentMode = WGPUPresentMode_Immediate;
+  mystral::webgpu::configurePresentationSurface(nullptr, &config);
+  if (!configured) return 3;
+  hang = argc > 1;
+  WGPUSurfaceTexture texture{};
+  mystral::webgpu::acquirePresentationSurface(nullptr, &texture);
+  // A returned acquire must disarm the deadline rather than abort during later CPU work.
+  std::this_thread::sleep_for(std::chrono::milliseconds(2100));
+}
+`,
+      );
+      const built = spawnSync(
+        compiler,
+        [
+          "-std=c++20",
+          "-pthread",
+          "-D__ANDROID__",
+          "-DMYSTRAL_WEBGPU_WGPU",
+          "-DTN_WEBGPU_DESIRED_FRAME_LATENCY=0",
+          `-I${directory}`,
+          `-I${join(root, "include")}`,
+          `-I${join(root, "third_party/wgpu/include")}`,
+          join(root, "src/webgpu/presentation.cpp"),
+          source,
+          "-o",
+          executable,
+        ],
+        { encoding: "utf8", timeout: 30_000 },
+      );
+      assert.equal(built.status, 0, built.error?.message ?? built.stderr);
+      const returned = spawnSync(executable, [], { encoding: "utf8", timeout: 5_000 });
+      assert.equal(returned.status, 0, returned.error?.message ?? returned.stderr);
+      const begin = Date.now();
+      const wedged = spawnSync(executable, ["hang"], { encoding: "utf8", timeout: 5_000 });
+      assert.equal(wedged.status, 2, wedged.error?.message ?? wedged.stderr);
+      assert.match(wedged.stderr, /TN_SURFACE_ACQUIRE_TIMEOUT/u);
+      assert.ok(Date.now() - begin >= 1900, "acquire must get its two-second allowance");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+  30_000,
+);
 
 // Compile the production synchronization body against controlled platform/GPU boundaries.
 // This proves its state transitions, not driver behavior; the source-built hosted test proves
@@ -61,7 +152,7 @@ constexpr int success = 1, outdated = 2, timeout = 3;
 int firstStatus = outdated, secondStatus = success, acquireCalls = 0;
 std::vector<WGPUTexture> releasedTextures;
 bool wgpuSurfaceTextureStatusNeedsReconfigure(int status) { return status == outdated; }
-void wgpuSurfaceGetCurrentTexture(void*, WGPUSurfaceTexture* texture) {
+void acquirePresentationSurface(void*, WGPUSurfaceTexture* texture) {
   calls.push_back("acquire");
   texture->status = acquireCalls == 0 ? firstStatus : secondStatus;
   texture->texture = reinterpret_cast<void*>(static_cast<uintptr_t>(100 + ++acquireCalls));
@@ -78,7 +169,7 @@ bool readCanvasDimension(BindingsState*, js::JSValueHandle canvas, const char* n
 bool flushRecordedFrameOps(BindingsState*) { calls.push_back("flush"); return canFlush; }
 void releaseCurrentSurfaceTextureViews(BindingsState*) { calls.push_back("views"); }
 void wgpuTextureRelease(WGPUTexture texture) { calls.push_back("texture"); releasedTextures.push_back(texture); }
-void wgpuSurfaceConfigure(void*, const WGPUSurfaceConfiguration* config) {
+void configurePresentationSurface(void*, const WGPUSurfaceConfiguration* config) {
   calls.push_back("configure"); lastConfig = *config;
 }
 void reportSurfaceFormatMarker(int, int, bool, int) {}

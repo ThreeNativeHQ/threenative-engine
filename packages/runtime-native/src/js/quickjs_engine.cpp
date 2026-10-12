@@ -908,6 +908,12 @@ public:
         return result;
     }
 
+    void throwTypeError(const char* message) override {
+        JS_ThrowTypeError(context_, "%s", message);
+        replaceLastException(JS_GetException(context_));
+        if (nativeCallbackDepth_ > 0) exceptionFromNativeCallback_ = true;
+    }
+
     void throwException(const char* message) override {
         JS_ThrowInternalError(context_, "%s", message);
         replaceLastException(JS_GetException(context_));

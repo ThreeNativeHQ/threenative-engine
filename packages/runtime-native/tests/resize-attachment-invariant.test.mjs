@@ -20,7 +20,7 @@ function assertResizeAttachmentContract(definitions) {
   );
   assert.match(
     definitions.syncSize,
-    /config\.width = surfaceWidth;[\s\S]*?config\.height = surfaceHeight;[\s\S]*?wgpuSurfaceConfigure\(state->surface, &config\)/u,
+    /config\.width = surfaceWidth;[\s\S]*?config\.height = surfaceHeight;[\s\S]*?(?:wgpuSurfaceConfigure|configurePresentationSurface)\(state->surface, &config\)/u,
     "only physical drawable dimensions may configure the native surface",
   );
   assert.match(

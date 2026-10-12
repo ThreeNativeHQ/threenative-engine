@@ -69,9 +69,12 @@ test('every host keeps hit regions to itself instead of forwarding them to the g
   assert.equal(message, 'tn:hit-regions');
   assert.match(android, new RegExp(`HIT_REGIONS_MESSAGE = "${message}"`, 'u'));
   assert.match(ios, new RegExp(`kHitRegions = @"${message}"`, 'u'));
-  // Desktop's runtime recognises the frame before it reaches the game's bridge.
+  // Desktop's runtime hands the frame to the shared overlay seam, which recognises it before it
+  // reaches the game's bridge (the parser moved out of runtime.cpp so the player shares it).
   const runtime = readFileSync(new URL('../src/runtime.cpp', import.meta.url), 'utf8');
-  assert.match(runtime, new RegExp(`"\\\\"${message}\\\\""`, 'u'));
+  assert.match(runtime, /platform::applyUiHitRegionsFrame\(frame\)/u);
+  const overlay = readFileSync(new URL('../src/platform/ui_overlay.cpp', import.meta.url), 'utf8');
+  assert.match(overlay, new RegExp(`"\\\\"${message}\\\\""`, 'u'));
 });
 
 test('no host serves the UI from file://', () => {
@@ -272,7 +275,9 @@ bool attached = true;
 bool uiOverlayAttached() { return attached; }
 void setUiOverlayAttached(bool value) { attached = value; }
 void tn_ui_overlay_detach() {}
-void resetUiOverlayKeyboard() {}
+int keyboardResets = 0;
+void countKeyboardReset() { ++keyboardResets; }
+void (*g_resetKeyboard)() = &countKeyboardReset;
 std::string delivered;
 bool uiOverlayHitTest(float x, float y) { return x >= 0.1f && x <= 0.3f && y >= 0.1f && y <= 0.3f; }
 bool uiOverlayInjectPointer(const char* type, float, float, int, int) { delivered = type; return true; }
@@ -301,6 +306,7 @@ int main() {
   assert(uiOverlayRoutePointer("pointerdown", 0.2f, 0.2f, 1, 1));
   detachDesktopUiOverlay();
   assert(!g_uiGesture.uiOwned && !g_uiGesture.gameOwned);
+  assert(keyboardResets == 1);  // detach releases the keys the UI owned through the installed reset
   attached = true;
   assert(!uiOverlayRoutePointer("pointerdown", 0.8f, 0.8f, 1, 1));
   assert(!uiOverlayRoutePointer("pointercancel", 0, 0, 0, 1));

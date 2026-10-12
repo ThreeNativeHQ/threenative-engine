@@ -3,17 +3,19 @@
 #include <cstdint>
 #include <vector>
 
+#include "mystral/host/frame_capture.h"
+
 // Forward declare WebGPU types to avoid header dependency
 typedef struct WGPUInstanceImpl* WGPUInstance;
 typedef struct WGPUSurfaceImpl* WGPUSurface;
+typedef struct WGPUTextureViewImpl* WGPUTextureView;
+typedef struct WGPUTextureImpl* WGPUTexture;
 typedef struct WGPUAdapterImpl* WGPUAdapter;
 typedef struct WGPUDeviceImpl* WGPUDevice;
 typedef struct WGPUQueueImpl* WGPUQueue;
 
 namespace mystral {
 namespace webgpu {
-
-struct BindingsState;
 
 /**
  * WebGPU Context
@@ -88,7 +90,11 @@ public:
      * @param height Window height
      * @return true on success
      */
-    bool configureSurface(uint32_t width, uint32_t height, bool vsync = true);
+    bool configureSurface(uint32_t width, uint32_t height, bool vsync);
+    // Recovery callers that omit a mode must preserve the current Android presentation path.
+    bool configureSurface(uint32_t width, uint32_t height) {
+        return configureSurface(width, height, vsync_);
+    }
 
     /**
      * Resize the surface
@@ -105,6 +111,8 @@ public:
      * Returns false rather than leaving the old, dead surface in place silently.
      */
     bool rebuildSurface(void* nativeHandle, int platformType);
+    /** Release only window-bound objects before Android destroys its native window. */
+    void releaseSurface();
 
     /** The native window the live surface was built from, or nullptr. */
     void* getSurfaceNativeHandle() const { return surfaceNativeHandle_; }
@@ -112,7 +120,7 @@ public:
 
     /**
      * Get the current texture to render to
-     * @return WGPUTextureView or nullptr if failed
+     * @return WGPUTextureView owned by this context until present/reconfigure, or nullptr if failed
      */
     void* getCurrentTextureView();
 
@@ -145,7 +153,7 @@ public:
      */
     void clearFrameScreenshotReady();
 
-    void setBindingsState(BindingsState* state) { bindingsState_ = state; }
+    void setFrameCaptureSource(host::IFrameCaptureSource* source) { captureSource_ = source; }
 
     /**
      * Capture the current frame as RGBA pixel data
@@ -199,11 +207,14 @@ public:
     };
 
 private:
+    void releaseSurfaceView();
     /** Builds a surface handle for a native window without touching any member state. */
     WGPUSurface makeSurface(void* nativeHandle, int platformType);
 
     WGPUInstance instance_ = nullptr;
     WGPUSurface surface_ = nullptr;
+    WGPUTexture surfaceTexture_ = nullptr;
+    WGPUTextureView surfaceView_ = nullptr;
     void* surfaceNativeHandle_ = nullptr;
     int surfacePlatformType_ = -1;
     WGPUAdapter adapter_ = nullptr;
@@ -224,7 +235,7 @@ private:
     // Offscreen rendering (for headless mode)
     void* offscreenTexture_ = nullptr;  // WGPUTexture
     void* offscreenTextureView_ = nullptr;  // WGPUTextureView
-    BindingsState* bindingsState_ = nullptr;
+    host::IFrameCaptureSource* captureSource_ = nullptr;
 };
 
 }  // namespace webgpu

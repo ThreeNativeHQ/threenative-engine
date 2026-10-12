@@ -60,24 +60,51 @@ static js::JSValueHandle handleGpuRenderBundleEncoderDrawIndexed(BindingsState* 
                                     return state->engine->newUndefined();
 }
 
-// renderBundleEncoder.drawIndexedIndirect(indirectBuffer, indirectOffset): the GPU scene records its
-// dispatch-sized draws into bundles, so a bundle without it throws on every recorded world batch.
-static js::JSValueHandle handleGpuRenderBundleEncoderDrawIndexedIndirect(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.size() < 2) return state->engine->newUndefined();
-                                    WGPUBuffer indirectBuffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
-                                    uint64_t indirectOffset = (uint64_t)state->engine->toNumber(args[1]);
-                                    if (capturedEncoder && indirectBuffer)
-                                        wgpuRenderBundleEncoderDrawIndexedIndirect(capturedEncoder, indirectBuffer, indirectOffset);
-                                    return state->engine->newUndefined();
+// renderBundleEncoder.drawIndirect / drawIndexedIndirect(indirectBuffer, indirectOffset): the GPU-driven
+// world (core's BundleGroup path) records its indirect batches into bundles, so a host without these
+// throws `drawIndexedIndirect is not a function` on the first streamed cell. A bad call fails closed by
+// name (a TypeError, as on the web) rather than recording nothing, because a bundle that silently drops a
+// draw renders a world with holes and reports success.
+static bool readBundleIndirectArgs(BindingsState* state, WGPURenderBundleEncoder encoder, const char* method,
+                                   const std::vector<js::JSValueHandle>& args, WGPUBuffer* buffer, uint64_t* offset) {
+    const std::string name = std::string("GPURenderBundleEncoder.") + method;
+    if (args.size() < 2) {
+        state->engine->throwTypeError((name + ": needs an indirect buffer and an indirect offset").c_str());
+        return false;
+    }
+    if (!encoder) {
+        state->engine->throwTypeError((name + ": the encoder is not valid").c_str());
+        return false;
+    }
+    *buffer = state->engine->isObject(args[0]) ? (WGPUBuffer)state->engine->getPrivateData(args[0]) : nullptr;
+    if (!*buffer) {
+        state->engine->throwTypeError((name + ": argument 1 is not a GPUBuffer").c_str());
+        return false;
+    }
+    const double rawOffset = state->engine->isNumber(args[1]) ? state->engine->toNumber(args[1]) : std::nan("");
+    // 2^53 is the largest integer a JS number holds exactly, so a larger offset is not the one the caller wrote.
+    if (!std::isfinite(rawOffset) || rawOffset < 0 || rawOffset > 9007199254740992.0 || std::fmod(rawOffset, 4.0) != 0.0) {
+        state->engine->throwTypeError((name + ": the indirect offset must be a finite, non-negative multiple of 4").c_str());
+        return false;
+    }
+    *offset = (uint64_t)rawOffset;
+    return true;
 }
 
 static js::JSValueHandle handleGpuRenderBundleEncoderDrawIndirect(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.size() < 2) return state->engine->newUndefined();
-                                    WGPUBuffer indirectBuffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
-                                    uint64_t indirectOffset = (uint64_t)state->engine->toNumber(args[1]);
-                                    if (capturedEncoder && indirectBuffer)
-                                        wgpuRenderBundleEncoderDrawIndirect(capturedEncoder, indirectBuffer, indirectOffset);
-                                    return state->engine->newUndefined();
+    WGPUBuffer indirectBuffer = nullptr;
+    uint64_t indirectOffset = 0;
+    if (readBundleIndirectArgs(state, capturedEncoder, "drawIndirect", args, &indirectBuffer, &indirectOffset))
+        wgpuRenderBundleEncoderDrawIndirect(capturedEncoder, indirectBuffer, indirectOffset);
+    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle handleGpuRenderBundleEncoderDrawIndexedIndirect(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+    WGPUBuffer indirectBuffer = nullptr;
+    uint64_t indirectOffset = 0;
+    if (readBundleIndirectArgs(state, capturedEncoder, "drawIndexedIndirect", args, &indirectBuffer, &indirectOffset))
+        wgpuRenderBundleEncoderDrawIndexedIndirect(capturedEncoder, indirectBuffer, indirectOffset);
+    return state->engine->newUndefined();
 }
 
 static js::JSValueHandle handleGpuRenderBundleEncoderDraw(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {

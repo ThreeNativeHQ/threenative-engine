@@ -3,25 +3,12 @@
 #include "bindings_state.h"
 #include "mystral/webgpu/registration_table.h"
 
-#include <chrono>
+#include "mystral/webgpu/presentation.h"
 
 namespace mystral::webgpu {
 
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
 
-enum class PresentationPacingPath {
-    Uncapped,
-    Display,
-    SoftwareDeadline,
-    DisplayTimeoutFallback,
-};
-
-PresentationPacingPath paceToPresentationCap();
-
-// Test-only override of the display wait's bounded allowance. Zero restores the production
-// formula (two intervals plus 50 ms); production never calls this, so the value is inert there.
-// The lifecycle reset clears it. See the display-release tests in tests/presentation_pacing_test.cpp.
-void setPresentationPacingTimeoutForTest(std::chrono::milliseconds timeout);
 bool isSrgbSurfaceFormat(WGPUTextureFormat format);
 WGPUTextureFormat linearSurfaceFormat(WGPUTextureFormat format);
 void reportSurfaceFormatMarker(

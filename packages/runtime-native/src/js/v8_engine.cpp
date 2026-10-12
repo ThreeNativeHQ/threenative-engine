@@ -1466,6 +1466,16 @@ public:
         return result;
     }
 
+    void throwTypeError(const char* message) override {
+        V8EntryScope entry_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        entry_scope.enterContext(context);
+        isolate_->ThrowException(v8::Exception::TypeError(
+            v8::String::NewFromUtf8(isolate_, message).ToLocalChecked()));
+        lastException_ = std::string("TypeError: ") + message;
+        if (nativeCallbackDepth_ > 0) exceptionFromNativeCallback_ = true;
+    }
+
     void throwException(const char* message) override {
         V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);

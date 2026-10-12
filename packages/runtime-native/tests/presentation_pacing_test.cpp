@@ -9,8 +9,7 @@
 // were milliseconds, so every display target was unreachable and the 83 ms fallback made the
 // checks pass. The units and actual pacing path are now asserted explicitly.
 
-#include "mystral/webgpu/bindings.h"
-#include "../src/webgpu/bindings_presentation.h"
+#include "mystral/webgpu/presentation.h"
 
 #include <chrono>
 #include <future>

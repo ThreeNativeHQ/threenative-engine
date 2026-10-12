@@ -267,6 +267,8 @@ bool createWindow(
         std::cerr << "[Window] SDL_CreateWindow failed: " << SDL_GetError() << std::endl;
         return false;
     }
+    setUiOverlayWindow(g_window.sdlWindow);
+    setUiOverlayKeyboardReset(&resetUiOverlayKeyboard);
 
     // Get actual window size (may differ from requested, especially on mobile)
     int actualWidth, actualHeight;
@@ -316,6 +318,7 @@ void destroyWindow() {
 #endif
 
     if (g_window.sdlWindow) {
+        setUiOverlayWindow(nullptr);
         SDL_DestroyWindow(g_window.sdlWindow);
         g_window.sdlWindow = nullptr;
     }

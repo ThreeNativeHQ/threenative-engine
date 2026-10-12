@@ -1490,6 +1490,7 @@ set(MYSTRAL_SOURCES
     src/webgpu/bindings_pipeline_cache.cpp
     src/webgpu/pipeline_cache.cpp
     src/webgpu/bindings_presentation.cpp
+    src/webgpu/presentation.cpp
     src/webgpu/bindings_ui_composite.cpp
     src/webgpu/bindings_resources.cpp
     src/webgpu/bindings_screenshot.cpp

@@ -129,6 +129,9 @@ std::deque<std::string> g_inbound;
 std::atomic<uint64_t> g_dropped{0};
 std::atomic<bool> g_attached{false};
 std::atomic<bool> g_uiReadyIntentReceived{false};
+// The window a desktop overlay attaches to and measures (setUiOverlayWindow); null before one exists.
+SDL_Window* g_uiWindow = nullptr;
+void (*g_resetKeyboard)() = nullptr;
 
 /** How many interactive rectangles the page last published, for the OS press verdict line. */
 std::atomic<size_t> g_hitRegionCount{0};
@@ -407,6 +410,59 @@ void cssPump() {
 
 }  // namespace
 
+void setUiOverlayWindow(SDL_Window* window) { g_uiWindow = window; }
+void setUiOverlayKeyboardReset(void (*reset)()) { g_resetKeyboard = reset; }
+
+/**
+ * Applies a `tn:hit-regions` frame the page published, or reports that it was not one (moved from the
+ * legacy host so the native-engine player applies them the same way, PRD-554). Fail closed: a
+ * malformed publication keeps the previous rectangles, and the TN_UI_HIT_REGIONS line names them.
+ */
+bool applyUiHitRegionsFrame(const std::string& frame) {
+    if (frame.find("\"tn:hit-regions\"") == std::string::npos) return false;
+    // The registry emits each rectangle as x, y, width, height and nothing else lives in this
+    // frame, so reading the four keys in order is the whole parse. Named keys rather than
+    // "every number after a colon": a payload that grows a field would otherwise silently
+    // shift every rectangle by one.
+    static constexpr const char* kKeys[] = {"\"x\":", "\"y\":", "\"width\":", "\"height\":"};
+    std::vector<float> regions;
+    size_t cursor = 0;
+    while (true) {
+        float rectangle[4];
+        size_t next = cursor;
+        bool complete = true;
+        for (size_t index = 0; index < 4; ++index) {
+            const size_t found = frame.find(kKeys[index], next);
+            if (found == std::string::npos) {
+                complete = false;
+                break;
+            }
+            const size_t value = found + std::strlen(kKeys[index]);
+            char* end = nullptr;
+            rectangle[index] = std::strtof(frame.c_str() + value, &end);
+            if (end == frame.c_str() + value) {
+                complete = false;
+                break;
+            }
+            next = static_cast<size_t>(end - frame.c_str());
+        }
+        if (!complete) break;
+        regions.insert(regions.end(), std::begin(rectangle), std::end(rectangle));
+        cursor = next;
+    }
+    setUiHitRegions(regions);
+    // The rectangles themselves, not just the count: a hit that lands in the wrong place is a
+    // layout or coordinate question, and only the published rectangles can answer it.
+    std::cout << "TN_UI_HIT_REGIONS:{\"count\":" << regions.size() / 4 << ",\"regions\":[";
+    for (size_t index = 0; index < regions.size(); ++index) {
+        if (index > 0) std::cout << ",";
+        std::cout << regions[index];
+    }
+    std::cout << "]}" << std::endl;
+    return true;
+}
+
+
 #if defined(__ANDROID__)
 /**
  * Publish one produced page frame, copied out of the producer's direct buffer.
@@ -619,7 +675,7 @@ const char* attachFailure(int code) {
 }  // namespace
 
 bool attachDesktopUiOverlay(const std::string& uiRoot) {
-    auto* window = mystral::platform::getSDLWindow();
+    auto* window = g_uiWindow;
     if (window == nullptr) return false;
     const auto properties = SDL_GetWindowProperties(window);
     // Each desktop hands `wry` the window it already owns, in that window system's own type: an
@@ -750,7 +806,7 @@ void setUiHitRegions(const std::vector<float>& regions) {
 void detachDesktopUiOverlay() {
     if (!uiOverlayAttached()) return;
     uiOverlayRoutePointer("pointercancel", 0, 0, 0, 1);
-    resetUiOverlayKeyboard();
+    if (g_resetKeyboard) g_resetKeyboard();
 #if TN_ENABLE_CSS_UI
     if (g_cssBackend) {
         tn_css_ui_detach();
@@ -1008,7 +1064,7 @@ bool attachDesktopCssUi(const std::string& uiRoot) {
     // nothing is presented.
     int width = 1280;
     int height = 720;
-    if (auto* window = getSDLWindow()) SDL_GetWindowSizeInPixels(window, &width, &height);
+    if (auto* window = g_uiWindow) SDL_GetWindowSizeInPixels(window, &width, &height);
     // The test clock is read before anything attaches, so a malformed value refuses the backend by
     // name rather than quietly running on real time under a run that asked for a fixed one.
     g_cssFixedStepMs = 0.0;

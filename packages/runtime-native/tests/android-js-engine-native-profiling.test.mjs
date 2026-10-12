@@ -104,7 +104,11 @@ test("RuntimeConfig vsync selects and preserves a supported presentation mode", 
 
 test("display.maxFps configures the native presentation ceiling", () => {
   assert.match(runtimeHeader, /uint32_t maxFps = 60/u);
-  assert.match(bindingsHeader, /setPresentationCapHz\(uint32_t/u);
+  assert.match(bindingsHeader, /mystral\/webgpu\/presentation\.h/u);
+  assert.match(
+    source("../include/mystral/webgpu/presentation.h"),
+    /setPresentationCapHz\(uint32_t/u,
+  );
   assert.match(runtime, /setPresentationCapHz\(config_\.maxFps\)/u);
   assert.match(androidMain, /config\.maxFps/u);
   assert.match(nativeDefinition("reportPresentTick").text, /TN_PRESENTS_TICK:[\s\S]*capHz/u);
