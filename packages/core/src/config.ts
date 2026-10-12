@@ -501,9 +501,16 @@ export interface IThreeNativeConfig {
      *   it when a game would rather pay the per-frame cost than accept the bound.
      *
      * Any other value throws at startup rather than falling back to a default nobody asked for.
+     *
+     * `"js"` names the mirror on a host that would not build one. The native engine player batches
+     * the authored scene in its own renderer and reports `hostProjected`, so core builds no mirror and
+     * reads no object across the boundary. `"js"` forces the mirror there anyway (for a comparison, or
+     * a game that depends on it), and the report states `path: "js"` and `pathOverridden: true`. On
+     * three the mirror is the only path, so `"js"` changes nothing.
      */
     readonly projection?:
       | boolean
+      | "js"
       | {
           readonly materialChecks?: "spread" | "everyFrame";
         };

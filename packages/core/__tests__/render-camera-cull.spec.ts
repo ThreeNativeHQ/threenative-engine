@@ -393,6 +393,8 @@ describe("render camera cull", () => {
         materialChecksPerFrame: 512,
         materialCheckStaleFrames: 0,
         materialChecksOverridden: false,
+        path: "js",
+        pathOverridden: false,
         timings: { compileMs: 0, reconcileMs: 0, lastReconcileMs: 0, maxReconcileMs: 0 },
       },
       7,
