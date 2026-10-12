@@ -72,6 +72,14 @@ tn_native_engine_target(tn_engine_scene)
 target_link_libraries(tn_engine_scene PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+# The projected-size camera cull (PRD-519), ported from packages/core/src/render-camera-cull.ts over
+# the scene graph: it hides the renderables this camera cannot resolve. Portable, so it joins the
+# Wasm core.
+add_library(tn_engine_visibility STATIC src/engine/renderer/visibility/camera_cull.cpp)
+tn_native_engine_target(tn_engine_visibility)
+target_link_libraries(tn_engine_visibility PUBLIC tn_engine_scene)
+target_include_directories(tn_engine_visibility PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # Virtual shadow page logic (PRD-524 phase 1), ported from
 # packages/core/src/render/virtual-shadow-pages.ts: the pages a frame requests from receiver
 # feedback, the bounded LRU physical page pool, and the pages a moving caster invalidates. Portable,
@@ -350,6 +358,27 @@ if(NOT EMSCRIPTEN)
         $<TARGET_FILE:tn-native-engine-render-graph-test>
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/traa_reference_test.mjs)
     set_tests_properties(native_engine_traa_jitter_reference PROPERTIES LABELS "native-engine")
+endif()
+
+# PRD-519: every recorded RenderCameraCull report reproduces over the native scene graph.
+tn_native_engine_test(tn-native-engine-visibility-camera-cull-test tests/native-engine/visibility/camera_cull_test.cpp
+    native_engine_camera_cull=camera_cull)
+target_link_libraries(tn-native-engine-visibility-camera-cull-test PRIVATE tn_engine_visibility)
+target_include_directories(tn-native-engine-visibility-camera-cull-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/visibility)
+
+# PRD-519 phase 1 / PRD-518 phase 2: the render projection's batching decisions (header-only
+# engine/renderer/projection/plan.h) against the real SceneRenderProjection. The test reads its JSON
+# table from disk, which a Wasm test under node cannot; the header compiles the same there.
+if(NOT EMSCRIPTEN)
+    tn_native_engine_test(tn-native-engine-projection-plan-test tests/native-engine/projection/plan_test.cpp
+        native_engine_projection_plan=plan)
+    # PRD-519 box 32 names the projection-*.spec.ts verdicts beside instanced-batch.spec.ts.
+    add_test(NAME native_engine_batching_eligibility_projection COMMAND tn-native-engine-projection-plan-test plan)
+    set_tests_properties(native_engine_batching_eligibility_projection PROPERTIES LABELS "native-engine")
+    target_link_libraries(tn-native-engine-projection-plan-test PRIVATE tn_engine_animation)
+    target_include_directories(tn-native-engine-projection-plan-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(tn-native-engine-projection-plan-test PRIVATE
+        TN_PROJECTION_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/projection/projection_reference.json")
 endif()
 
 # PRD-524 phase 1: the recorded page requests, allocations, evictions and invalidations reproduce
@@ -698,6 +727,8 @@ if(NOT EMSCRIPTEN)
                 "skeleton_reference_current:packages/runtime-native/tests/native-engine/animation/skeleton-reference.ts"
                 "skinned_palette_reference_current:packages/runtime-native/tests/native-engine/animation/skinned-palette-reference.ts"
                 "json_reference_current:packages/runtime-native/tests/native-engine/json/json-reference.ts"
+                "projection_plan_reference_current:packages/runtime-native/tests/native-engine/projection/projection-reference.ts"
+                "camera_cull_reference_current:packages/runtime-native/tests/native-engine/visibility/camera-cull-reference.ts"
                 "vsm_reference_current:packages/runtime-native/tests/native-engine/vsm/vsm-reference.ts"
                 "probes_reference_current:packages/runtime-native/tests/native-engine/probes/probes-reference.ts")
             string(REPLACE ":" ";" reference_pair "${reference}")

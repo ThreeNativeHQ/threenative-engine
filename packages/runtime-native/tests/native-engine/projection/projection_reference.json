@@ -1,0 +1,4227 @@
+{
+ "three": "0.185.1",
+ "scenes": [
+  {
+   "scene": {
+    "name": "props-300",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 300
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 300,
+    "projectedObjects": 300,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
+    "name": "props-below-floor",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 150
+     }
+    ]
+   },
+   "decision": {
+    "projecting": false,
+    "reasonCode": "belowMeshFloor",
+    "sourceRenderables": 150,
+    "projectedObjects": 0,
+    "instancedBatches": 0,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
+    "name": "props-floor-exact",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "minMeshes": 50,
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 50
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 50,
+    "projectedObjects": 50,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
+    "name": "props-with-hook",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 299
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 1,
+      "hook": true
+     }
+    ]
+   },
+   "decision": {
+    "projecting": false,
+    "reasonCode": "renderHook",
+    "sourceRenderables": 300,
+    "projectedObjects": 0,
+    "instancedBatches": 0,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
+    "name": "crowd-8",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "skinned",
+      "geometry": "rig",
+      "material": "skin",
+      "bones": 4,
+      "repeat": 8
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 8,
+    "projectedObjects": 8,
+    "instancedBatches": 0,
+    "materialBatches": 0,
+    "skinnedBatches": 1,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
+    "name": "crowd-8-props",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "skinned",
+      "geometry": "rig",
+      "material": "skin",
+      "bones": 4,
+      "repeat": 8
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 300
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 308,
+    "projectedObjects": 308,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 1,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
+    "name": "crowd-8-bad-scales",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "skinned",
+      "geometry": "rig",
+      "material": "skin",
+      "bones": 4,
+      "repeat": 1,
+      "scale": [
+       1,
+       2,
+       1
+      ]
+     },
+     {
+      "kind": "skinned",
+      "geometry": "rig",
+      "material": "skin",
+      "bones": 4,
+      "repeat": 1,
+      "scale": [
+       -1,
+       1,
+       1
+      ]
+     },
+     {
+      "kind": "skinned",
+      "geometry": "rig",
+      "material": "skin",
+      "bones": 4,
+      "repeat": 6
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 8,
+    "projectedObjects": 6,
+    "instancedBatches": 0,
+    "materialBatches": 0,
+    "skinnedBatches": 1,
+    "exactObjects": 2,
+    "exact": {
+     "negativeScale": 1,
+     "nonUniformScale": 1
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "crowd-3-props",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "skinned",
+      "geometry": "rig",
+      "material": "skin",
+      "bones": 4,
+      "repeat": 3
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 300
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 303,
+    "projectedObjects": 300,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 3,
+    "exact": {
+     "tooFewToBatch": 3
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "crowd-transparent",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial",
+      "transparent": true
+     }
+    ],
+    "objects": [
+     {
+      "kind": "skinned",
+      "geometry": "rig",
+      "material": "skin",
+      "bones": 4,
+      "repeat": 8
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 300
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 308,
+    "projectedObjects": 300,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 8,
+    "exact": {
+     "transparent": 8
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "crowd-no-normal",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true,
+      "noNormal": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "skinned",
+      "geometry": "rig",
+      "material": "skin",
+      "bones": 4,
+      "repeat": 8
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 300
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 308,
+    "projectedObjects": 300,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 8,
+    "exact": {
+     "skinned": 8
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "crowd-two-bone-counts",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "skinned",
+      "geometry": "rig",
+      "material": "skin",
+      "bones": 4,
+      "repeat": 5
+     },
+     {
+      "kind": "skinned",
+      "geometry": "rig",
+      "material": "skin",
+      "bones": 6,
+      "repeat": 5
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 300
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 310,
+    "projectedObjects": 310,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 2,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
+    "name": "props-render-order",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 290
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 10,
+      "renderOrder": 2
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 300,
+    "projectedObjects": 290,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 10,
+    "exact": {
+     "renderOrder": 10
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "props-transparent",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "glass",
+      "type": "MeshStandardMaterial",
+      "transparent": true
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 290
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "glass",
+      "repeat": 10
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 300,
+    "projectedObjects": 290,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 10,
+    "exact": {
+     "transparent": 10
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "props-morph",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "morphed",
+      "kind": "box",
+      "morph": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 290
+     },
+     {
+      "kind": "mesh",
+      "geometry": "morphed",
+      "material": "std",
+      "repeat": 10
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 300,
+    "projectedObjects": 290,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 10,
+    "exact": {
+     "morph": 10
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "props-and-instanced",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 290
+     },
+     {
+      "kind": "instanced",
+      "geometry": "box",
+      "material": "std",
+      "count": 16,
+      "repeat": 3
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 293,
+    "projectedObjects": 290,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 3,
+    "exact": {
+     "instanced": 3
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "props-shadow-flags",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 150
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 150,
+      "castShadow": true
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 3,
+      "receiveShadow": true
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 303,
+    "projectedObjects": 300,
+    "instancedBatches": 2,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 3,
+    "exact": {
+     "tooFewToBatch": 3
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "uniform-colors",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     }
+    ],
+    "materials": [
+     {
+      "id": "a",
+      "type": "MeshStandardMaterial",
+      "color": 16711680
+     },
+     {
+      "id": "b",
+      "type": "MeshStandardMaterial",
+      "color": 65280
+     },
+     {
+      "id": "c",
+      "type": "MeshStandardMaterial",
+      "color": 255
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "a",
+      "repeat": 100
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "a",
+      "repeat": 2,
+      "castShadow": true
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "b",
+      "repeat": 2,
+      "castShadow": true
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "c",
+      "repeat": 2,
+      "castShadow": true
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "b",
+      "repeat": 100
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 206,
+    "projectedObjects": 206,
+    "instancedBatches": 3,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
+    "name": "uniform-differ-in-roughness",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "r1",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.2
+     },
+     {
+      "id": "r2",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.7
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 200
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "r1",
+      "repeat": 2,
+      "castShadow": true
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "r2",
+      "repeat": 2,
+      "castShadow": true
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 204,
+    "projectedObjects": 200,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 4,
+    "exact": {
+     "tooFewToBatch": 4
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "material-groups",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "ball",
+      "kind": "sphere"
+     },
+     {
+      "id": "ball2",
+      "kind": "sphere"
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 200
+     },
+     {
+      "kind": "mesh",
+      "geometry": "ball",
+      "material": "std",
+      "repeat": 2,
+      "castShadow": true
+     },
+     {
+      "kind": "mesh",
+      "geometry": "ball2",
+      "material": "std",
+      "repeat": 2,
+      "castShadow": true
+     },
+     {
+      "kind": "mesh",
+      "geometry": "ball",
+      "material": "std",
+      "repeat": 1,
+      "castShadow": true,
+      "scale": [
+       -1,
+       1,
+       1
+      ]
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 205,
+    "projectedObjects": 204,
+    "instancedBatches": 1,
+    "materialBatches": 1,
+    "skinnedBatches": 0,
+    "exactObjects": 1,
+    "exact": {
+     "negativeScale": 1
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "nested-groups-and-lights",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "light"
+     },
+     {
+      "kind": "group",
+      "children": [
+       {
+        "kind": "mesh",
+        "geometry": "box",
+        "material": "std",
+        "repeat": 100
+       },
+       {
+        "kind": "group",
+        "children": [
+         {
+          "kind": "mesh",
+          "geometry": "box",
+          "material": "std",
+          "repeat": 150
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "kind": "light",
+      "children": [
+       {
+        "kind": "mesh",
+        "geometry": "box",
+        "material": "std",
+        "repeat": 10
+       }
+      ]
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 250,
+    "projectedObjects": 250,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
+    "name": "mixed-materials",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "lam",
+      "type": "MeshLambertMaterial"
+     },
+     {
+      "id": "pho",
+      "type": "MeshPhongMaterial"
+     },
+     {
+      "id": "bas",
+      "type": "MeshBasicMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 100
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "lam",
+      "repeat": 100
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "pho",
+      "repeat": 50
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "bas",
+      "repeat": 3
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 253,
+    "projectedObjects": 250,
+    "instancedBatches": 3,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 3,
+    "exact": {
+     "tooFewToBatch": 3
+    }
+   }
+  },
+  {
+   "scene": {
+    "name": "not-worthwhile",
+    "geometries": [
+     {
+      "id": "g0",
+      "kind": "box"
+     },
+     {
+      "id": "g1",
+      "kind": "box"
+     },
+     {
+      "id": "g2",
+      "kind": "box"
+     },
+     {
+      "id": "g3",
+      "kind": "box"
+     },
+     {
+      "id": "g4",
+      "kind": "box"
+     },
+     {
+      "id": "g5",
+      "kind": "box"
+     },
+     {
+      "id": "g6",
+      "kind": "box"
+     },
+     {
+      "id": "g7",
+      "kind": "box"
+     },
+     {
+      "id": "g8",
+      "kind": "box"
+     },
+     {
+      "id": "g9",
+      "kind": "box"
+     },
+     {
+      "id": "g10",
+      "kind": "box"
+     },
+     {
+      "id": "g11",
+      "kind": "box"
+     },
+     {
+      "id": "g12",
+      "kind": "box"
+     },
+     {
+      "id": "g13",
+      "kind": "box"
+     },
+     {
+      "id": "g14",
+      "kind": "box"
+     },
+     {
+      "id": "g15",
+      "kind": "box"
+     },
+     {
+      "id": "g16",
+      "kind": "box"
+     },
+     {
+      "id": "g17",
+      "kind": "box"
+     },
+     {
+      "id": "g18",
+      "kind": "box"
+     },
+     {
+      "id": "g19",
+      "kind": "box"
+     },
+     {
+      "id": "g20",
+      "kind": "box"
+     },
+     {
+      "id": "g21",
+      "kind": "box"
+     },
+     {
+      "id": "g22",
+      "kind": "box"
+     },
+     {
+      "id": "g23",
+      "kind": "box"
+     },
+     {
+      "id": "g24",
+      "kind": "box"
+     },
+     {
+      "id": "g25",
+      "kind": "box"
+     },
+     {
+      "id": "g26",
+      "kind": "box"
+     },
+     {
+      "id": "g27",
+      "kind": "box"
+     },
+     {
+      "id": "g28",
+      "kind": "box"
+     },
+     {
+      "id": "g29",
+      "kind": "box"
+     },
+     {
+      "id": "g30",
+      "kind": "box"
+     },
+     {
+      "id": "g31",
+      "kind": "box"
+     },
+     {
+      "id": "g32",
+      "kind": "box"
+     },
+     {
+      "id": "g33",
+      "kind": "box"
+     },
+     {
+      "id": "g34",
+      "kind": "box"
+     },
+     {
+      "id": "g35",
+      "kind": "box"
+     },
+     {
+      "id": "g36",
+      "kind": "box"
+     },
+     {
+      "id": "g37",
+      "kind": "box"
+     },
+     {
+      "id": "g38",
+      "kind": "box"
+     },
+     {
+      "id": "g39",
+      "kind": "box"
+     },
+     {
+      "id": "g40",
+      "kind": "box"
+     },
+     {
+      "id": "g41",
+      "kind": "box"
+     },
+     {
+      "id": "g42",
+      "kind": "box"
+     },
+     {
+      "id": "g43",
+      "kind": "box"
+     },
+     {
+      "id": "g44",
+      "kind": "box"
+     },
+     {
+      "id": "g45",
+      "kind": "box"
+     },
+     {
+      "id": "g46",
+      "kind": "box"
+     },
+     {
+      "id": "g47",
+      "kind": "box"
+     },
+     {
+      "id": "g48",
+      "kind": "box"
+     },
+     {
+      "id": "g49",
+      "kind": "box"
+     },
+     {
+      "id": "g50",
+      "kind": "box"
+     },
+     {
+      "id": "g51",
+      "kind": "box"
+     },
+     {
+      "id": "g52",
+      "kind": "box"
+     },
+     {
+      "id": "g53",
+      "kind": "box"
+     },
+     {
+      "id": "g54",
+      "kind": "box"
+     },
+     {
+      "id": "g55",
+      "kind": "box"
+     },
+     {
+      "id": "g56",
+      "kind": "box"
+     },
+     {
+      "id": "g57",
+      "kind": "box"
+     },
+     {
+      "id": "g58",
+      "kind": "box"
+     },
+     {
+      "id": "g59",
+      "kind": "box"
+     },
+     {
+      "id": "g60",
+      "kind": "box"
+     },
+     {
+      "id": "g61",
+      "kind": "box"
+     },
+     {
+      "id": "g62",
+      "kind": "box"
+     },
+     {
+      "id": "g63",
+      "kind": "box"
+     },
+     {
+      "id": "g64",
+      "kind": "box"
+     },
+     {
+      "id": "g65",
+      "kind": "box"
+     },
+     {
+      "id": "g66",
+      "kind": "box"
+     },
+     {
+      "id": "g67",
+      "kind": "box"
+     },
+     {
+      "id": "g68",
+      "kind": "box"
+     },
+     {
+      "id": "g69",
+      "kind": "box"
+     },
+     {
+      "id": "g70",
+      "kind": "box"
+     },
+     {
+      "id": "g71",
+      "kind": "box"
+     },
+     {
+      "id": "g72",
+      "kind": "box"
+     },
+     {
+      "id": "g73",
+      "kind": "box"
+     },
+     {
+      "id": "g74",
+      "kind": "box"
+     },
+     {
+      "id": "g75",
+      "kind": "box"
+     },
+     {
+      "id": "g76",
+      "kind": "box"
+     },
+     {
+      "id": "g77",
+      "kind": "box"
+     },
+     {
+      "id": "g78",
+      "kind": "box"
+     },
+     {
+      "id": "g79",
+      "kind": "box"
+     },
+     {
+      "id": "g80",
+      "kind": "box"
+     },
+     {
+      "id": "g81",
+      "kind": "box"
+     },
+     {
+      "id": "g82",
+      "kind": "box"
+     },
+     {
+      "id": "g83",
+      "kind": "box"
+     },
+     {
+      "id": "g84",
+      "kind": "box"
+     },
+     {
+      "id": "g85",
+      "kind": "box"
+     },
+     {
+      "id": "g86",
+      "kind": "box"
+     },
+     {
+      "id": "g87",
+      "kind": "box"
+     },
+     {
+      "id": "g88",
+      "kind": "box"
+     },
+     {
+      "id": "g89",
+      "kind": "box"
+     },
+     {
+      "id": "g90",
+      "kind": "box"
+     },
+     {
+      "id": "g91",
+      "kind": "box"
+     },
+     {
+      "id": "g92",
+      "kind": "box"
+     },
+     {
+      "id": "g93",
+      "kind": "box"
+     },
+     {
+      "id": "g94",
+      "kind": "box"
+     },
+     {
+      "id": "g95",
+      "kind": "box"
+     },
+     {
+      "id": "g96",
+      "kind": "box"
+     },
+     {
+      "id": "g97",
+      "kind": "box"
+     },
+     {
+      "id": "g98",
+      "kind": "box"
+     },
+     {
+      "id": "g99",
+      "kind": "box"
+     },
+     {
+      "id": "g100",
+      "kind": "box"
+     },
+     {
+      "id": "g101",
+      "kind": "box"
+     },
+     {
+      "id": "g102",
+      "kind": "box"
+     },
+     {
+      "id": "g103",
+      "kind": "box"
+     },
+     {
+      "id": "g104",
+      "kind": "box"
+     },
+     {
+      "id": "g105",
+      "kind": "box"
+     },
+     {
+      "id": "g106",
+      "kind": "box"
+     },
+     {
+      "id": "g107",
+      "kind": "box"
+     },
+     {
+      "id": "g108",
+      "kind": "box"
+     },
+     {
+      "id": "g109",
+      "kind": "box"
+     },
+     {
+      "id": "g110",
+      "kind": "box"
+     },
+     {
+      "id": "g111",
+      "kind": "box"
+     },
+     {
+      "id": "g112",
+      "kind": "box"
+     },
+     {
+      "id": "g113",
+      "kind": "box"
+     },
+     {
+      "id": "g114",
+      "kind": "box"
+     },
+     {
+      "id": "g115",
+      "kind": "box"
+     },
+     {
+      "id": "g116",
+      "kind": "box"
+     },
+     {
+      "id": "g117",
+      "kind": "box"
+     },
+     {
+      "id": "g118",
+      "kind": "box"
+     },
+     {
+      "id": "g119",
+      "kind": "box"
+     },
+     {
+      "id": "g120",
+      "kind": "box"
+     },
+     {
+      "id": "g121",
+      "kind": "box"
+     },
+     {
+      "id": "g122",
+      "kind": "box"
+     },
+     {
+      "id": "g123",
+      "kind": "box"
+     },
+     {
+      "id": "g124",
+      "kind": "box"
+     },
+     {
+      "id": "g125",
+      "kind": "box"
+     },
+     {
+      "id": "g126",
+      "kind": "box"
+     },
+     {
+      "id": "g127",
+      "kind": "box"
+     },
+     {
+      "id": "g128",
+      "kind": "box"
+     },
+     {
+      "id": "g129",
+      "kind": "box"
+     },
+     {
+      "id": "g130",
+      "kind": "box"
+     },
+     {
+      "id": "g131",
+      "kind": "box"
+     },
+     {
+      "id": "g132",
+      "kind": "box"
+     },
+     {
+      "id": "g133",
+      "kind": "box"
+     },
+     {
+      "id": "g134",
+      "kind": "box"
+     },
+     {
+      "id": "g135",
+      "kind": "box"
+     },
+     {
+      "id": "g136",
+      "kind": "box"
+     },
+     {
+      "id": "g137",
+      "kind": "box"
+     },
+     {
+      "id": "g138",
+      "kind": "box"
+     },
+     {
+      "id": "g139",
+      "kind": "box"
+     },
+     {
+      "id": "g140",
+      "kind": "box"
+     },
+     {
+      "id": "g141",
+      "kind": "box"
+     },
+     {
+      "id": "g142",
+      "kind": "box"
+     },
+     {
+      "id": "g143",
+      "kind": "box"
+     },
+     {
+      "id": "g144",
+      "kind": "box"
+     },
+     {
+      "id": "g145",
+      "kind": "box"
+     },
+     {
+      "id": "g146",
+      "kind": "box"
+     },
+     {
+      "id": "g147",
+      "kind": "box"
+     },
+     {
+      "id": "g148",
+      "kind": "box"
+     },
+     {
+      "id": "g149",
+      "kind": "box"
+     },
+     {
+      "id": "g150",
+      "kind": "box"
+     },
+     {
+      "id": "g151",
+      "kind": "box"
+     },
+     {
+      "id": "g152",
+      "kind": "box"
+     },
+     {
+      "id": "g153",
+      "kind": "box"
+     },
+     {
+      "id": "g154",
+      "kind": "box"
+     },
+     {
+      "id": "g155",
+      "kind": "box"
+     },
+     {
+      "id": "g156",
+      "kind": "box"
+     },
+     {
+      "id": "g157",
+      "kind": "box"
+     },
+     {
+      "id": "g158",
+      "kind": "box"
+     },
+     {
+      "id": "g159",
+      "kind": "box"
+     },
+     {
+      "id": "g160",
+      "kind": "box"
+     },
+     {
+      "id": "g161",
+      "kind": "box"
+     },
+     {
+      "id": "g162",
+      "kind": "box"
+     },
+     {
+      "id": "g163",
+      "kind": "box"
+     },
+     {
+      "id": "g164",
+      "kind": "box"
+     },
+     {
+      "id": "g165",
+      "kind": "box"
+     },
+     {
+      "id": "g166",
+      "kind": "box"
+     },
+     {
+      "id": "g167",
+      "kind": "box"
+     },
+     {
+      "id": "g168",
+      "kind": "box"
+     },
+     {
+      "id": "g169",
+      "kind": "box"
+     },
+     {
+      "id": "g170",
+      "kind": "box"
+     },
+     {
+      "id": "g171",
+      "kind": "box"
+     },
+     {
+      "id": "g172",
+      "kind": "box"
+     },
+     {
+      "id": "g173",
+      "kind": "box"
+     },
+     {
+      "id": "g174",
+      "kind": "box"
+     },
+     {
+      "id": "g175",
+      "kind": "box"
+     },
+     {
+      "id": "g176",
+      "kind": "box"
+     },
+     {
+      "id": "g177",
+      "kind": "box"
+     },
+     {
+      "id": "g178",
+      "kind": "box"
+     },
+     {
+      "id": "g179",
+      "kind": "box"
+     },
+     {
+      "id": "g180",
+      "kind": "box"
+     },
+     {
+      "id": "g181",
+      "kind": "box"
+     },
+     {
+      "id": "g182",
+      "kind": "box"
+     },
+     {
+      "id": "g183",
+      "kind": "box"
+     },
+     {
+      "id": "g184",
+      "kind": "box"
+     },
+     {
+      "id": "g185",
+      "kind": "box"
+     },
+     {
+      "id": "g186",
+      "kind": "box"
+     },
+     {
+      "id": "g187",
+      "kind": "box"
+     },
+     {
+      "id": "g188",
+      "kind": "box"
+     },
+     {
+      "id": "g189",
+      "kind": "box"
+     },
+     {
+      "id": "g190",
+      "kind": "box"
+     },
+     {
+      "id": "g191",
+      "kind": "box"
+     },
+     {
+      "id": "g192",
+      "kind": "box"
+     },
+     {
+      "id": "g193",
+      "kind": "box"
+     },
+     {
+      "id": "g194",
+      "kind": "box"
+     },
+     {
+      "id": "g195",
+      "kind": "box"
+     },
+     {
+      "id": "g196",
+      "kind": "box"
+     },
+     {
+      "id": "g197",
+      "kind": "box"
+     },
+     {
+      "id": "g198",
+      "kind": "box"
+     },
+     {
+      "id": "g199",
+      "kind": "box"
+     }
+    ],
+    "materials": [
+     {
+      "id": "m0",
+      "type": "MeshStandardMaterial",
+      "roughness": 0
+     },
+     {
+      "id": "m1",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.005
+     },
+     {
+      "id": "m2",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.01
+     },
+     {
+      "id": "m3",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.015
+     },
+     {
+      "id": "m4",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.02
+     },
+     {
+      "id": "m5",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.025
+     },
+     {
+      "id": "m6",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.03
+     },
+     {
+      "id": "m7",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.035
+     },
+     {
+      "id": "m8",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.04
+     },
+     {
+      "id": "m9",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.045
+     },
+     {
+      "id": "m10",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.05
+     },
+     {
+      "id": "m11",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.055
+     },
+     {
+      "id": "m12",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.06
+     },
+     {
+      "id": "m13",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.065
+     },
+     {
+      "id": "m14",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.07
+     },
+     {
+      "id": "m15",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.075
+     },
+     {
+      "id": "m16",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.08
+     },
+     {
+      "id": "m17",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.085
+     },
+     {
+      "id": "m18",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.09
+     },
+     {
+      "id": "m19",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.095
+     },
+     {
+      "id": "m20",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.1
+     },
+     {
+      "id": "m21",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.105
+     },
+     {
+      "id": "m22",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.11
+     },
+     {
+      "id": "m23",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.115
+     },
+     {
+      "id": "m24",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.12
+     },
+     {
+      "id": "m25",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.125
+     },
+     {
+      "id": "m26",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.13
+     },
+     {
+      "id": "m27",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.135
+     },
+     {
+      "id": "m28",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.14
+     },
+     {
+      "id": "m29",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.145
+     },
+     {
+      "id": "m30",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.15
+     },
+     {
+      "id": "m31",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.155
+     },
+     {
+      "id": "m32",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.16
+     },
+     {
+      "id": "m33",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.165
+     },
+     {
+      "id": "m34",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.17
+     },
+     {
+      "id": "m35",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.175
+     },
+     {
+      "id": "m36",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.18
+     },
+     {
+      "id": "m37",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.185
+     },
+     {
+      "id": "m38",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.19
+     },
+     {
+      "id": "m39",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.195
+     },
+     {
+      "id": "m40",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.2
+     },
+     {
+      "id": "m41",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.205
+     },
+     {
+      "id": "m42",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.21
+     },
+     {
+      "id": "m43",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.215
+     },
+     {
+      "id": "m44",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.22
+     },
+     {
+      "id": "m45",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.225
+     },
+     {
+      "id": "m46",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.23
+     },
+     {
+      "id": "m47",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.235
+     },
+     {
+      "id": "m48",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.24
+     },
+     {
+      "id": "m49",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.245
+     },
+     {
+      "id": "m50",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.25
+     },
+     {
+      "id": "m51",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.255
+     },
+     {
+      "id": "m52",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.26
+     },
+     {
+      "id": "m53",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.265
+     },
+     {
+      "id": "m54",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.27
+     },
+     {
+      "id": "m55",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.275
+     },
+     {
+      "id": "m56",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.28
+     },
+     {
+      "id": "m57",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.285
+     },
+     {
+      "id": "m58",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.29
+     },
+     {
+      "id": "m59",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.295
+     },
+     {
+      "id": "m60",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.3
+     },
+     {
+      "id": "m61",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.305
+     },
+     {
+      "id": "m62",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.31
+     },
+     {
+      "id": "m63",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.315
+     },
+     {
+      "id": "m64",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.32
+     },
+     {
+      "id": "m65",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.325
+     },
+     {
+      "id": "m66",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.33
+     },
+     {
+      "id": "m67",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.335
+     },
+     {
+      "id": "m68",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.34
+     },
+     {
+      "id": "m69",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.345
+     },
+     {
+      "id": "m70",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.35
+     },
+     {
+      "id": "m71",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.355
+     },
+     {
+      "id": "m72",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.36
+     },
+     {
+      "id": "m73",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.365
+     },
+     {
+      "id": "m74",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.37
+     },
+     {
+      "id": "m75",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.375
+     },
+     {
+      "id": "m76",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.38
+     },
+     {
+      "id": "m77",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.385
+     },
+     {
+      "id": "m78",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.39
+     },
+     {
+      "id": "m79",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.395
+     },
+     {
+      "id": "m80",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.4
+     },
+     {
+      "id": "m81",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.405
+     },
+     {
+      "id": "m82",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.41
+     },
+     {
+      "id": "m83",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.415
+     },
+     {
+      "id": "m84",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.42
+     },
+     {
+      "id": "m85",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.425
+     },
+     {
+      "id": "m86",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.43
+     },
+     {
+      "id": "m87",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.435
+     },
+     {
+      "id": "m88",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.44
+     },
+     {
+      "id": "m89",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.445
+     },
+     {
+      "id": "m90",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.45
+     },
+     {
+      "id": "m91",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.455
+     },
+     {
+      "id": "m92",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.46
+     },
+     {
+      "id": "m93",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.465
+     },
+     {
+      "id": "m94",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.47
+     },
+     {
+      "id": "m95",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.475
+     },
+     {
+      "id": "m96",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.48
+     },
+     {
+      "id": "m97",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.485
+     },
+     {
+      "id": "m98",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.49
+     },
+     {
+      "id": "m99",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.495
+     },
+     {
+      "id": "m100",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.5
+     },
+     {
+      "id": "m101",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.505
+     },
+     {
+      "id": "m102",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.51
+     },
+     {
+      "id": "m103",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.515
+     },
+     {
+      "id": "m104",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.52
+     },
+     {
+      "id": "m105",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.525
+     },
+     {
+      "id": "m106",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.53
+     },
+     {
+      "id": "m107",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.535
+     },
+     {
+      "id": "m108",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.54
+     },
+     {
+      "id": "m109",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.545
+     },
+     {
+      "id": "m110",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.55
+     },
+     {
+      "id": "m111",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.555
+     },
+     {
+      "id": "m112",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.56
+     },
+     {
+      "id": "m113",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.565
+     },
+     {
+      "id": "m114",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.57
+     },
+     {
+      "id": "m115",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.575
+     },
+     {
+      "id": "m116",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.58
+     },
+     {
+      "id": "m117",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.585
+     },
+     {
+      "id": "m118",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.59
+     },
+     {
+      "id": "m119",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.595
+     },
+     {
+      "id": "m120",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.6
+     },
+     {
+      "id": "m121",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.605
+     },
+     {
+      "id": "m122",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.61
+     },
+     {
+      "id": "m123",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.615
+     },
+     {
+      "id": "m124",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.62
+     },
+     {
+      "id": "m125",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.625
+     },
+     {
+      "id": "m126",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.63
+     },
+     {
+      "id": "m127",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.635
+     },
+     {
+      "id": "m128",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.64
+     },
+     {
+      "id": "m129",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.645
+     },
+     {
+      "id": "m130",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.65
+     },
+     {
+      "id": "m131",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.655
+     },
+     {
+      "id": "m132",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.66
+     },
+     {
+      "id": "m133",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.665
+     },
+     {
+      "id": "m134",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.67
+     },
+     {
+      "id": "m135",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.675
+     },
+     {
+      "id": "m136",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.68
+     },
+     {
+      "id": "m137",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.685
+     },
+     {
+      "id": "m138",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.69
+     },
+     {
+      "id": "m139",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.695
+     },
+     {
+      "id": "m140",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.7
+     },
+     {
+      "id": "m141",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.705
+     },
+     {
+      "id": "m142",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.71
+     },
+     {
+      "id": "m143",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.715
+     },
+     {
+      "id": "m144",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.72
+     },
+     {
+      "id": "m145",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.725
+     },
+     {
+      "id": "m146",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.73
+     },
+     {
+      "id": "m147",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.735
+     },
+     {
+      "id": "m148",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.74
+     },
+     {
+      "id": "m149",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.745
+     },
+     {
+      "id": "m150",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.75
+     },
+     {
+      "id": "m151",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.755
+     },
+     {
+      "id": "m152",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.76
+     },
+     {
+      "id": "m153",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.765
+     },
+     {
+      "id": "m154",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.77
+     },
+     {
+      "id": "m155",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.775
+     },
+     {
+      "id": "m156",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.78
+     },
+     {
+      "id": "m157",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.785
+     },
+     {
+      "id": "m158",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.79
+     },
+     {
+      "id": "m159",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.795
+     },
+     {
+      "id": "m160",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.8
+     },
+     {
+      "id": "m161",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.805
+     },
+     {
+      "id": "m162",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.81
+     },
+     {
+      "id": "m163",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.815
+     },
+     {
+      "id": "m164",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.82
+     },
+     {
+      "id": "m165",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.825
+     },
+     {
+      "id": "m166",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.83
+     },
+     {
+      "id": "m167",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.835
+     },
+     {
+      "id": "m168",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.84
+     },
+     {
+      "id": "m169",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.845
+     },
+     {
+      "id": "m170",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.85
+     },
+     {
+      "id": "m171",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.855
+     },
+     {
+      "id": "m172",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.86
+     },
+     {
+      "id": "m173",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.865
+     },
+     {
+      "id": "m174",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.87
+     },
+     {
+      "id": "m175",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.875
+     },
+     {
+      "id": "m176",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.88
+     },
+     {
+      "id": "m177",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.885
+     },
+     {
+      "id": "m178",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.89
+     },
+     {
+      "id": "m179",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.895
+     },
+     {
+      "id": "m180",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.9
+     },
+     {
+      "id": "m181",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.905
+     },
+     {
+      "id": "m182",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.91
+     },
+     {
+      "id": "m183",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.915
+     },
+     {
+      "id": "m184",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.92
+     },
+     {
+      "id": "m185",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.925
+     },
+     {
+      "id": "m186",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.93
+     },
+     {
+      "id": "m187",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.935
+     },
+     {
+      "id": "m188",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.94
+     },
+     {
+      "id": "m189",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.945
+     },
+     {
+      "id": "m190",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.95
+     },
+     {
+      "id": "m191",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.955
+     },
+     {
+      "id": "m192",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.96
+     },
+     {
+      "id": "m193",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.965
+     },
+     {
+      "id": "m194",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.97
+     },
+     {
+      "id": "m195",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.975
+     },
+     {
+      "id": "m196",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.98
+     },
+     {
+      "id": "m197",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.985
+     },
+     {
+      "id": "m198",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.99
+     },
+     {
+      "id": "m199",
+      "type": "MeshStandardMaterial",
+      "roughness": 0.995
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "g0",
+      "material": "m0",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g1",
+      "material": "m1",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g2",
+      "material": "m2",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g3",
+      "material": "m3",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g4",
+      "material": "m4",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g5",
+      "material": "m5",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g6",
+      "material": "m6",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g7",
+      "material": "m7",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g8",
+      "material": "m8",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g9",
+      "material": "m9",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g10",
+      "material": "m10",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g11",
+      "material": "m11",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g12",
+      "material": "m12",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g13",
+      "material": "m13",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g14",
+      "material": "m14",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g15",
+      "material": "m15",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g16",
+      "material": "m16",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g17",
+      "material": "m17",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g18",
+      "material": "m18",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g19",
+      "material": "m19",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g20",
+      "material": "m20",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g21",
+      "material": "m21",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g22",
+      "material": "m22",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g23",
+      "material": "m23",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g24",
+      "material": "m24",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g25",
+      "material": "m25",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g26",
+      "material": "m26",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g27",
+      "material": "m27",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g28",
+      "material": "m28",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g29",
+      "material": "m29",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g30",
+      "material": "m30",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g31",
+      "material": "m31",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g32",
+      "material": "m32",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g33",
+      "material": "m33",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g34",
+      "material": "m34",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g35",
+      "material": "m35",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g36",
+      "material": "m36",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g37",
+      "material": "m37",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g38",
+      "material": "m38",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g39",
+      "material": "m39",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g40",
+      "material": "m40",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g41",
+      "material": "m41",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g42",
+      "material": "m42",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g43",
+      "material": "m43",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g44",
+      "material": "m44",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g45",
+      "material": "m45",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g46",
+      "material": "m46",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g47",
+      "material": "m47",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g48",
+      "material": "m48",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g49",
+      "material": "m49",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g50",
+      "material": "m50",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g51",
+      "material": "m51",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g52",
+      "material": "m52",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g53",
+      "material": "m53",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g54",
+      "material": "m54",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g55",
+      "material": "m55",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g56",
+      "material": "m56",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g57",
+      "material": "m57",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g58",
+      "material": "m58",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g59",
+      "material": "m59",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g60",
+      "material": "m60",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g61",
+      "material": "m61",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g62",
+      "material": "m62",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g63",
+      "material": "m63",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g64",
+      "material": "m64",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g65",
+      "material": "m65",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g66",
+      "material": "m66",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g67",
+      "material": "m67",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g68",
+      "material": "m68",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g69",
+      "material": "m69",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g70",
+      "material": "m70",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g71",
+      "material": "m71",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g72",
+      "material": "m72",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g73",
+      "material": "m73",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g74",
+      "material": "m74",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g75",
+      "material": "m75",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g76",
+      "material": "m76",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g77",
+      "material": "m77",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g78",
+      "material": "m78",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g79",
+      "material": "m79",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g80",
+      "material": "m80",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g81",
+      "material": "m81",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g82",
+      "material": "m82",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g83",
+      "material": "m83",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g84",
+      "material": "m84",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g85",
+      "material": "m85",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g86",
+      "material": "m86",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g87",
+      "material": "m87",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g88",
+      "material": "m88",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g89",
+      "material": "m89",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g90",
+      "material": "m90",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g91",
+      "material": "m91",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g92",
+      "material": "m92",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g93",
+      "material": "m93",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g94",
+      "material": "m94",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g95",
+      "material": "m95",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g96",
+      "material": "m96",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g97",
+      "material": "m97",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g98",
+      "material": "m98",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g99",
+      "material": "m99",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g100",
+      "material": "m100",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g101",
+      "material": "m101",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g102",
+      "material": "m102",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g103",
+      "material": "m103",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g104",
+      "material": "m104",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g105",
+      "material": "m105",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g106",
+      "material": "m106",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g107",
+      "material": "m107",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g108",
+      "material": "m108",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g109",
+      "material": "m109",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g110",
+      "material": "m110",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g111",
+      "material": "m111",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g112",
+      "material": "m112",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g113",
+      "material": "m113",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g114",
+      "material": "m114",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g115",
+      "material": "m115",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g116",
+      "material": "m116",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g117",
+      "material": "m117",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g118",
+      "material": "m118",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g119",
+      "material": "m119",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g120",
+      "material": "m120",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g121",
+      "material": "m121",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g122",
+      "material": "m122",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g123",
+      "material": "m123",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g124",
+      "material": "m124",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g125",
+      "material": "m125",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g126",
+      "material": "m126",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g127",
+      "material": "m127",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g128",
+      "material": "m128",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g129",
+      "material": "m129",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g130",
+      "material": "m130",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g131",
+      "material": "m131",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g132",
+      "material": "m132",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g133",
+      "material": "m133",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g134",
+      "material": "m134",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g135",
+      "material": "m135",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g136",
+      "material": "m136",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g137",
+      "material": "m137",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g138",
+      "material": "m138",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g139",
+      "material": "m139",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g140",
+      "material": "m140",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g141",
+      "material": "m141",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g142",
+      "material": "m142",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g143",
+      "material": "m143",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g144",
+      "material": "m144",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g145",
+      "material": "m145",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g146",
+      "material": "m146",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g147",
+      "material": "m147",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g148",
+      "material": "m148",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g149",
+      "material": "m149",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g150",
+      "material": "m150",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g151",
+      "material": "m151",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g152",
+      "material": "m152",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g153",
+      "material": "m153",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g154",
+      "material": "m154",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g155",
+      "material": "m155",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g156",
+      "material": "m156",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g157",
+      "material": "m157",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g158",
+      "material": "m158",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g159",
+      "material": "m159",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g160",
+      "material": "m160",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g161",
+      "material": "m161",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g162",
+      "material": "m162",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g163",
+      "material": "m163",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g164",
+      "material": "m164",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g165",
+      "material": "m165",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g166",
+      "material": "m166",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g167",
+      "material": "m167",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g168",
+      "material": "m168",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g169",
+      "material": "m169",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g170",
+      "material": "m170",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g171",
+      "material": "m171",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g172",
+      "material": "m172",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g173",
+      "material": "m173",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g174",
+      "material": "m174",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g175",
+      "material": "m175",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g176",
+      "material": "m176",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g177",
+      "material": "m177",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g178",
+      "material": "m178",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g179",
+      "material": "m179",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g180",
+      "material": "m180",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g181",
+      "material": "m181",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g182",
+      "material": "m182",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g183",
+      "material": "m183",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g184",
+      "material": "m184",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g185",
+      "material": "m185",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g186",
+      "material": "m186",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g187",
+      "material": "m187",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g188",
+      "material": "m188",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g189",
+      "material": "m189",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g190",
+      "material": "m190",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g191",
+      "material": "m191",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g192",
+      "material": "m192",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g193",
+      "material": "m193",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g194",
+      "material": "m194",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g195",
+      "material": "m195",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g196",
+      "material": "m196",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g197",
+      "material": "m197",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g198",
+      "material": "m198",
+      "repeat": 1
+     },
+     {
+      "kind": "mesh",
+      "geometry": "g199",
+      "material": "m199",
+      "repeat": 1
+     }
+    ]
+   },
+   "decision": {
+    "projecting": false,
+    "reasonCode": "notWorthwhile",
+    "sourceRenderables": 200,
+    "projectedObjects": 0,
+    "instancedBatches": 0,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  }
+ ]
+}

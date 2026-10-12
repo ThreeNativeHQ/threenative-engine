@@ -108,6 +108,14 @@ const allowedProductionCreators = new Map<string, string>([
     "The asset-MCP tool snapshot installs the pinned published package into a scratch root it pushes onto `scratch` and removes in finally, for the same reason as the Blender one above.",
   ],
   [
+    "packages/runtime-native/tests/native-engine/post-normal-pass.ts",
+    "The CTest probe writes its fixture and readback under its caller's build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/template-post-packages.ts",
+    "The compiler CLI retains authored graphs, emitted modules and Tint outputs under its caller's build directory for diagnosis.",
+  ],
+  [
     "packages/three-native/tests/compatibility/run-native.ts",
     "The conformance CLI retains captured frames because failed pixel-comparison reports name their paths.",
   ],
