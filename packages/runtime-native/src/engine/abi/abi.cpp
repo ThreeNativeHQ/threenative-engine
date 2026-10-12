@@ -639,6 +639,62 @@ uint32_t engineReferences(tn_handle_t handle) {
     return others > 0 ? static_cast<uint32_t>(others) : 0;
 }
 
+struct ViewClaim {
+    std::shared_ptr<void> object;  // empty for a leased transform column
+    tn_context* context = nullptr;
+    const void* address = nullptr;
+    bool leased = false;
+};
+
+ViewClaim* claimView(tn_handle_t handle, const void*& address, int& column) {
+    tn_context* context = contextFor(handle.context);
+    tn::binding::Object* object = context ? context->object(handle) : nullptr;
+    if (!object) return nullptr;
+    address = object->ptr.get();
+    column = engine::Object3D::leaseTransform(address);
+    auto* claim = new ViewClaim;
+    claim->context = context;
+    claim->address = address;
+    if (column >= 0) {
+        claim->leased = true;
+        return claim;
+    }
+    claim->object = object->ptr;
+    context->ownCopy(claim->object, +1);
+    return claim;
+}
+
+ViewClaim* claimColumn(const void* address) {
+    if (engine::Object3D::leaseTransform(address) < 0) return nullptr;
+    auto* claim = new ViewClaim;
+    claim->address = address;
+    claim->leased = true;
+    return claim;
+}
+
+void releaseViewClaim(ViewClaim* claim) {
+    if (claim == nullptr) return;
+    if (claim->leased) {
+        engine::Object3D::unleaseTransform(claim->address);
+    } else {
+        // The context may be gone (its own copies went with it), or its slot taken by a newer one.
+        for (const auto& live : registry())
+            if (live.get() == claim->context) claim->context->ownCopy(claim->object, -1);
+    }
+    delete claim;
+}
+
+void dropHandle(tn_handle_t handle) {
+    tn_context* context = contextFor(handle.context);
+    if (!context) return;
+    const tn::engine::Handle h{handle.type, handle.context, handle.index, handle.generation};
+    if (context->objects.release(h) != tn::engine::HandleError::None || handle.index >= context->values.size()) return;
+    tn::binding::Object& slot = context->values[handle.index];
+    if (slot.ptr) context->dropOwner(slot.ptr.get());
+    context->ownCopy(slot.ptr, -1);
+    slot = tn::binding::Object{};
+}
+
 tn_handle_t shareObject(tn_context_t* context, std::string cls, std::shared_ptr<void> object) {
     const auto value = context->share(std::move(cls), std::move(object));
     tn_handle_t handle{};

@@ -256,6 +256,8 @@ public:
      */
     static int leaseTransform(const void* address);
     static void unleaseTransform(const void* address);
+    /** Where `column` (numbered as above) sits in the slot that holds `address`; null when `address` is no column address. */
+    [[nodiscard]] static const void* transformColumnAddress(const void* address, int column);
 
     // false suppresses recursive ray traversal, as three's raycast return value does.
     virtual bool raycast(const Raycaster&, std::vector<Intersection>&) { return true; }

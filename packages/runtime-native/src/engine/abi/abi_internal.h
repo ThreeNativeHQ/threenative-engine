@@ -63,6 +63,22 @@ struct MethodSlot {
 tn_status_t invokeMethod(tn_handle_t handle, MethodSlot& slot, const std::string& name, const tn_value_t* args, uint32_t count,
                          tn_value_t* result, tn_diagnostic_t* diagnostic);
 
+/**
+ * A language view's hold on the storage behind a handle (PRD-573 v1.11 step 4a): a typed array over a
+ * math object's own doubles must not outlive them. A transform column address leases its page slot
+ * (Object3D::leaseTransform); any other object is held by a shared_ptr copy that engineReferences does
+ * not count, so a view held by its owner's own wrapper never keeps that wrapper strong.
+ */
+struct ViewClaim;
+/** Claims `handle`'s object. `address` is its storage, `column` the transform column it is in (-1: none). Null for a dead handle. */
+ViewClaim* claimView(tn_handle_t handle, const void*& address, int& column);
+/** A lease on a transform column address of a slot the caller already holds a claim in (a sibling column). */
+ViewClaim* claimColumn(const void* address);
+/** Returns a claim. Not safe from any thread: the language side queues claims and calls this on its own thread. */
+void releaseViewClaim(ViewClaim* claim);
+/** Drops a handle without moving the ownership epoch: for a handle whose object was only a math value view. */
+void dropHandle(tn_handle_t handle);
+
 /** Calls that crossed the C ABI (construct, invoke, get, set) since the process started. */
 uint64_t crossings();
 

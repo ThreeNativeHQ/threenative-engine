@@ -1446,6 +1446,38 @@ void crossingHistogram() {
     if (sum != crossed) std::fprintf(stderr, "histogram sum %llu, crossings %llu\n", (unsigned long long)sum, (unsigned long long)crossed);
 }
 
+// With JS math on (PRD-573 v1.11 step 4a), Vector3 and the rest are three's own classes: a hot loop of
+// value ops crosses nothing, and a JS value passed into a native call is read by it.
+void jsMath() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    const char* loop = R"JS(
+        const w = new Vector3(1, 2, 3), v = new Vector3();
+        for (let i = 0; i < 10000; i++) v.add(w);
+        `${v.x} ${v.y} ${v.z}`
+    )JS";
+    {
+        Adapter adapter(rt.isolate, rt.context);
+        const uint64_t before = tn::abi::crossings();
+        CHECK(run(rt, adapter, loop) == "10000 20000 30000");
+        CHECK(tn::abi::crossings() - before >= 10000);  // native math: one crossing per op
+    }
+    Adapter adapter(rt.isolate, rt.context);
+    adapter.setJsMath(true);
+    const uint64_t before = tn::abi::crossings();
+    CHECK(run(rt, adapter, loop) == "10000 20000 30000");
+    CHECK(tn::abi::crossings() - before == 0);
+    // A JS value is the argument of a native call, and the call may change it.
+    CHECK(run(rt, adapter, R"JS(
+        const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        const w = new Vector3(4, 5, 6);
+        mesh.position.copy(w);
+        const p = mesh.position;
+        mesh.position.set(7, 8, 9);
+        `${p.x} ${p.y} ${p.z} ${w.x} ${w.y} ${w.z} ${new Color(0.25, 0.5, 1).r}`
+    )JS") == "7 8 9 4 5 6 0.25");
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld},{"unsupported", unsupported}, {"gc_release", gcRelease},
@@ -1455,4 +1487,4 @@ TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp"
              {"catalog_coverage", catalogCoverage},
              {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
              {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle},
-             {"material_slots", materialSlots})
+             {"material_slots", materialSlots}, {"js_math", jsMath})

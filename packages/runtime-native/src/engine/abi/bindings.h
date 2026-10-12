@@ -3,6 +3,7 @@
 #include "engine/abi/binding.h"
 
 #include <memory>
+#include <string>
 
 namespace tn::engine {
 class BufferAttribute;
@@ -15,6 +16,16 @@ void registerMathBindings(Registry& classes);
 
 /** three's stateless `MathUtils` namespace (PRD-531): the functions the minimal template reaches. */
 void registerMathUtilsBindings(Registry& classes);
+
+/**
+ * Where the math value classes keep their doubles, as JSON, for a language that views an object's
+ * storage in place (PRD-573 step 4a): `{"Vector3":{"bytes":24,"fields":{"x":0,"y":8,"z":16}}, ...}`,
+ * offsets in bytes from the object, plus Euler's `order` (an int at its byte offset) and the six
+ * order names by enum value. Measured on live objects, so no consumer hard-codes a stride.
+ */
+std::string viewLayoutJson();
+/** Euler's six orders by enum value, as three spells them. */
+inline constexpr const char* kEulerOrderNames[6] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
 
 /** The scene graph (PRD-508): Object3D, Scene, Group, Mesh and the cameras. */
 void registerSceneBindings(Registry& classes);

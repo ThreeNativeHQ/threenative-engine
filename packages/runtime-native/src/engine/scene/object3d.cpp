@@ -92,6 +92,16 @@ int Object3D::leaseTransform(const void* address) {
     return found.column;
 }
 
+const void* Object3D::transformColumnAddress(const void* address, int column) {
+    if (column < 0 || column > 5) return nullptr;
+    auto& pool = transforms();
+    const std::lock_guard lock(pool.mutex);
+    const Found found = findLocked(pool, address);
+    if (found.page == nullptr) return nullptr;
+    const auto [start, stride] = columns()[column];
+    return reinterpret_cast<const char*>(found.page) + start + stride * found.index;
+}
+
 void Object3D::unleaseTransform(const void* address) {
     auto& pool = transforms();
     const std::lock_guard lock(pool.mutex);

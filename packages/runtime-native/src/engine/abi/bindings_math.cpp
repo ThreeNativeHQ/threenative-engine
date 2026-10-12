@@ -1370,4 +1370,43 @@ void registerMathBindings(Registry& classes) {
             binding.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(self))); };
 }
 
+std::string viewLayoutJson() {
+    const auto at = [](const auto& object, const auto& member) {
+        return uint32_t(reinterpret_cast<const char*>(&member) - reinterpret_cast<const char*>(&object));
+    };
+    std::string json = "{";
+    const auto fields = [&](const char* name, uint32_t bytes, std::initializer_list<std::pair<const char*, uint32_t>> list,
+                            const std::string& extra = {}) {
+        if (json.size() > 1) json += ",";
+        json += std::string("\"") + name + "\":{\"bytes\":" + std::to_string(bytes) + ",\"fields\":{";
+        bool first = true;
+        for (const auto& [field, offset] : list) {
+            json += std::string(first ? "" : ",") + "\"" + field + "\":" + std::to_string(offset);
+            first = false;
+        }
+        json += "}" + extra + "}";
+    };
+    const Vector2 v2; const Vector3 v3; const Vector4 v4; const Quaternion q; const Euler e; const Color c; const Matrix3 m3;
+    const Matrix4 m4; const Box3 box; const Sphere sphere;
+    constexpr uint32_t D = sizeof(double);
+    fields("Vector2", at(v2, v2.y) + D, {{"x", at(v2, v2.x)}, {"y", at(v2, v2.y)}});
+    fields("Vector3", at(v3, v3.z) + D, {{"x", at(v3, v3.x)}, {"y", at(v3, v3.y)}, {"z", at(v3, v3.z)}});
+    fields("Vector4", at(v4, v4.w) + D, {{"x", at(v4, v4.x)}, {"y", at(v4, v4.y)}, {"z", at(v4, v4.z)}, {"w", at(v4, v4.w)}});
+    fields("Quaternion", at(q, q.w) + D, {{"x", at(q, q.x)}, {"y", at(q, q.y)}, {"z", at(q, q.z)}, {"w", at(q, q.w)}});
+    // The order is an int right after the three angles; the view covers it, padded to a whole double.
+    fields("Euler", (at(e, e.order) + uint32_t(sizeof(e.order)) + D - 1) / D * D,
+           {{"x", at(e, e.x)}, {"y", at(e, e.y)}, {"z", at(e, e.z)}}, ",\"order\":" + std::to_string(at(e, e.order)));
+    fields("Color", at(c, c.b) + D, {{"r", at(c, c.r)}, {"g", at(c, c.g)}, {"b", at(c, c.b)}});
+    fields("Matrix3", uint32_t(sizeof(m3.elements)), {{"elements", at(m3, m3.elements[0])}}, ",\"count\":9");
+    fields("Matrix4", uint32_t(sizeof(m4.elements)), {{"elements", at(m4, m4.elements[0])}}, ",\"count\":16");
+    fields("Box3", at(box, box.max) + uint32_t(sizeof(Vector3)), {{"min", at(box, box.min)}, {"max", at(box, box.max)}});
+    fields("Sphere", at(sphere, sphere.radius) + D, {{"center", at(sphere, sphere.center)}, {"radius", at(sphere, sphere.radius)}});
+    static_assert(int(EulerOrder::XYZ) == 0 && int(EulerOrder::YXZ) == 1 && int(EulerOrder::ZXY) == 2 &&
+                  int(EulerOrder::ZYX) == 3 && int(EulerOrder::YZX) == 4 && int(EulerOrder::XZY) == 5);
+    json += ",\"eulerOrders\":[";
+    for (int i = 0; i < 6; ++i) json += std::string(i ? "," : "") + "\"" + kEulerOrderNames[i] + "\"";
+    json += "]}";
+    return json;
+}
+
 }  // namespace tn::binding

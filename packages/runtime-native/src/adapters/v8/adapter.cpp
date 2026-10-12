@@ -1,4 +1,5 @@
 #include "adapter.h"
+#include "math_bridge.h"
 #include "tsl.h"
 
 #include <algorithm>
@@ -6,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -112,8 +114,16 @@ void setValues(Adapter& a, v8::Isolate* isolate, const char* cls, v8::Local<v8::
                 std::string("TN_NATIVE_MATERIAL_PARAMETER: ") + cls + "." + *key + " is not a bound material property")));
             return;
         }
+        // three: a Color member takes `set(value)`. With JS math the member is three's own Color (a view of the
+        // material's), recognised as upstream does, by its `isColor` flag.
         tn_handle_t member{};
-        if (a.unwrap(current, member) && member.type == tn_type_id("Color")) {
+        bool color = false;
+        if (a.unwrap(current, member)) color = member.type == tn_type_id("Color");
+        else if (current->IsObject()) {
+            v8::Local<v8::Value> flag;
+            color = current.As<v8::Object>()->Get(ctx, str(isolate, "isColor")).ToLocal(&flag) && flag->IsTrue();
+        }
+        if (color) {
             v8::Local<v8::Value> set, ignored;
             if (!current.As<v8::Object>()->Get(ctx, str(isolate, "set")).ToLocal(&set) || !set->IsFunction() ||
                 !set.As<v8::Function>()->Call(ctx, current, 1, &value).ToLocal(&ignored))
@@ -151,7 +161,7 @@ bool typedNumbers(v8::Local<v8::TypedArray> array, std::vector<double>& out) {
 // JS -> ABI values. Arrays become number arrays (fromArray), engine wrappers become handles.
 bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::vector<tn_value_t>& out,
               std::deque<std::string>& texts, std::vector<std::vector<double>>& arrays,
-              std::deque<std::vector<tn_value_t>>& values, int limit = -1) {
+              std::deque<std::vector<tn_value_t>>& values, int limit = -1, MathBridge::Stand* stand = nullptr) {
     a.noteGenericArguments();
     v8::Isolate* isolate = info.GetIsolate();
     v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
@@ -176,6 +186,8 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
             v.kind = TN_VALUE_HANDLE;
             v.handle = h;
             a.holdIfCallback(h);
+        } else if (stand != nullptr && a.math() != nullptr && a.math()->standIn(arg, *stand, v)) {
+            // three's own math value: a native stand-in for the call (copied back if the call changes it)
         } else if (arg->IsArray()) {
             v8::Local<v8::Array> array = arg.As<v8::Array>();
             // Object arrays (intersectObjects, Skeleton) use the same handle values as scalar args.
@@ -186,6 +198,7 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
                 if (!array->Get(ctx, k).ToLocal(&e)) return false;
                 if (e->IsNumber()) { elements[k].kind = TN_VALUE_NUMBER; elements[k].number = e.As<v8::Number>()->Value(); }
                 else if (a.unwrap(e, h)) { elements[k].kind = TN_VALUE_HANDLE; elements[k].handle = h; a.holdIfCallback(h); }
+                else if (stand != nullptr && a.math() != nullptr && a.math()->standIn(e, *stand, elements[k])) {}
                 else if (e->IsString()) {
                     // Euler.toArray()'s order slot, handed back to a fromArray.
                     v8::String::Utf8Value utf8(isolate, e);
@@ -245,6 +258,7 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
                     texts.emplace_back(*utf8 ? *utf8 : "");
                     field.kind = TN_VALUE_STRING; field.text = texts.back().c_str(); field.count = texts.back().size();
                 } else if (a.unwrap(e, h)) { field.kind = TN_VALUE_HANDLE; field.handle = h; a.holdIfCallback(h); }
+                else if (stand != nullptr && a.math() != nullptr && a.math()->standIn(e, *stand, field)) {}
                 else return false;
                 v8::String::Utf8Value name(isolate, key);
                 texts.emplace_back(*name ? *name : "");
@@ -262,7 +276,7 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
     return true;
 }
 
-v8::Local<v8::Value> fromValue(Adapter& a, const tn_value_t& v) {
+v8::Local<v8::Value> fromValue(Adapter& a, const tn_value_t& v, MathBridge::Stand* stand = nullptr) {
     v8::Isolate* isolate = a.isolate();
     switch (v.kind) {
         case TN_VALUE_NULL: return v8::Null(isolate);
@@ -270,11 +284,21 @@ v8::Local<v8::Value> fromValue(Adapter& a, const tn_value_t& v) {
         case TN_VALUE_NUMBER: return v8::Number::New(isolate, v.number);
         case TN_VALUE_BOOL: return v8::Boolean::New(isolate, v.boolean != 0);
         case TN_VALUE_STRING: return str(isolate, std::string(v.text, v.count));
-        case TN_VALUE_HANDLE: return a.wrap(v.handle);
+        case TN_VALUE_HANDLE: {
+            if (MathBridge* math = a.math()) {
+                // A method that answers one of its JS math arguments answers that object; a native math
+                // object answers three's class as a view of its memory.
+                if (stand != nullptr)
+                    if (v8::Local<v8::Value> argument = stand->jsFor(v.handle); !argument.IsEmpty()) return argument;
+                v8::Local<v8::Value> view;
+                if (math->view(v.handle).ToLocal(&view)) return view;
+            }
+            return a.wrap(v.handle);
+        }
         case TN_VALUE_ARRAY: {
             // One bulk construction: an element-by-element CreateDataProperty dominated the profile of a scene walk.
             std::vector<v8::Local<v8::Value>> items(v.count);
-            for (uint32_t i = 0; i < v.count; ++i) items[i] = fromValue(a, v.values[i]);
+            for (uint32_t i = 0; i < v.count; ++i) items[i] = fromValue(a, v.values[i], stand);
             return v8::Array::New(isolate, items.data(), items.size());
         }
         case TN_VALUE_RECORD: {
@@ -282,7 +306,7 @@ v8::Local<v8::Value> fromValue(Adapter& a, const tn_value_t& v) {
             for (uint64_t i = 0; i < v.count; ++i) {
                 const auto& key = v.values[i * 2];
                 record->CreateDataProperty(isolate->GetCurrentContext(), str(isolate, std::string(key.text, key.count)),
-                    fromValue(a, v.values[i * 2 + 1])).Check();
+                    fromValue(a, v.values[i * 2 + 1], stand)).Check();
             }
             return record;
         }
@@ -533,6 +557,7 @@ void Adapter::visit(Wrapper* w) {
 void Adapter::collect() {
     constexpr unsigned kFullEvery = 512;
     drainArrayViews();
+    if (math_) math_->drain();
     const uint64_t epoch = tn::abi::ownershipEpoch();
     if (epoch != ownershipSeen_ || ++safePointsSinceFull_ >= kFullEvery) {
         ownershipSeen_ = epoch;
@@ -788,7 +813,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 std::deque<std::string> texts;
                                std::deque<std::vector<tn_value_t>> values;
                 std::vector<std::vector<double>> arrays;
-                if (!parameters && !toValues(a, info, args, texts, arrays, values)) {
+                MathBridge::Stand stand(a.math());
+                if (!parameters && !toValues(a, info, args, texts, arrays, values, -1, &stand)) {
                     isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_ABI_VALUE: unsupported argument")));
                     return;
                 }
@@ -851,7 +877,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                std::deque<std::vector<tn_value_t>> values;
                                std::vector<std::vector<double>> arrays;
                                const bool intersections = d->intersections;
-                               if (!toValues(*d->adapter, info, args, texts, arrays, values, intersections ? 2 : -1)) {
+                               MathBridge::Stand stand(d->adapter->math());
+                               if (!toValues(*d->adapter, info, args, texts, arrays, values, intersections ? 2 : -1, &stand)) {
                                    isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_ABI_VALUE: unsupported argument")));
                                    return;
                                }
@@ -862,7 +889,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    throwStatus(isolate, diagnostic);
                                    return;
                                }
-                               auto converted = fromValue(*d->adapter, result);
+                               stand.copyBack();
+                               auto converted = fromValue(*d->adapter, result, &stand);
                                if (intersections && info.Length() > 2 && !info[2]->IsUndefined()) {
                                    if (!info[2]->IsArray() || !converted->IsArray()) {
                                        isolate->ThrowException(v8::Exception::TypeError(str(isolate, "intersection target must be an array"))); return;
@@ -1094,7 +1122,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    std::deque<std::string> texts;
                                std::deque<std::vector<tn_value_t>> values;
                                    std::vector<std::vector<double>> arrays;
-                                   if (!toValues(*d->adapter, info, args, texts, arrays, values) || args.size() != 1 ||
+                                   MathBridge::Stand stand(d->adapter->math());
+                                   if (!toValues(*d->adapter, info, args, texts, arrays, values, -1, &stand) || args.size() != 1 ||
                                        tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK) {
                                        throwStatus(info.GetIsolate(), diagnostic);
                                    }
@@ -1140,7 +1169,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                 std::deque<std::vector<tn_value_t>> values;
                                 std::vector<std::vector<double>> arrays;
                                 tn_diagnostic_t diagnostic{nullptr, 0};
-                                if (!toValues(*d->adapter, info, args, texts, arrays, values) || args.size() != 1 ||
+                                MathBridge::Stand stand(d->adapter->math());
+                                if (!toValues(*d->adapter, info, args, texts, arrays, values, -1, &stand) || args.size() != 1 ||
                                     tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK)
                                     throwStatus(isolate, diagnostic);
                             }, v8::External::New(isolate, tail)).ToLocalChecked();
@@ -1195,7 +1225,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     std::deque<std::vector<tn_value_t>> values;
                     std::vector<std::vector<double>> arrays;
                     tn_diagnostic_t diagnostic{nullptr, 0};
-                    if (!toValues(*d->adapter, info, args, texts, arrays, values) || args.size() != 1 ||
+                    MathBridge::Stand stand(d->adapter->math());
+                    if (!toValues(*d->adapter, info, args, texts, arrays, values, -1, &stand) || args.size() != 1 ||
                         tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK)
                         throwStatus(info.GetIsolate(), diagnostic);
                 }, v8::External::New(isolate_, keep(new MethodData{this, path, {}}))));
@@ -1259,6 +1290,12 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 info.This()->SetPrivate(ctx, storeKey, v8::External::New(isolate, store.get())).Check();
                 info.GetReturnValue().Set(view);
             }, v8::External::New(isolate_, this)).ToLocalChecked());
+    }
+    // Last, so the math classes replace the native ones as globals.
+    if (jsMath_) {
+        if (!math_) math_ = std::make_unique<MathBridge>(isolate_, context_);
+        std::string error;
+        if (!math_->install(context, target, error)) throw std::runtime_error(error);
     }
 }
 

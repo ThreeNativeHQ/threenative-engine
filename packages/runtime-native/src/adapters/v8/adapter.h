@@ -14,6 +14,7 @@
 namespace tn::adapters::v8adapter {
 
 class Tsl;
+class MathBridge;
 
 /**
  * The V8 game-runtime adapter (PRD-531): JS sees the engine's classes as ordinary constructors
@@ -28,6 +29,17 @@ public:
     ~Adapter();
     Adapter(const Adapter&) = delete;
     Adapter& operator=(const Adapter&) = delete;
+
+    /**
+     * Runs the value classes as three's own JS (PRD-573 v1.11 step 4a): `Vector3`, `Matrix4`, `Color` and the rest
+     * of the math are the bundled upstream sources, native objects hand JS views over their own memory, and a JS
+     * value passed to a native call is copied across. Call before install; off by default. install throws
+     * std::runtime_error when the build embeds no math script.
+     */
+    void setJsMath(bool on) { jsMath_ = on; }
+    bool jsMath() const { return jsMath_; }
+    /** The JS math bridge, or null while JS math is off. */
+    MathBridge* math() const { return math_.get(); }
 
     /** Defines one constructor per registered class on `target` (a namespace object or global). */
     void install(v8::Local<v8::Context> context, v8::Local<v8::Object> target);
@@ -93,6 +105,8 @@ private:
     static tn_status_t invokeEvent(void* context, const tn_value_t* args, uint32_t count, char* error, uint32_t capacity);
     static bool callListeners(Adapter& a, v8::Local<v8::Object> self, v8::Local<v8::Object> event);
 
+    bool jsMath_ = false;
+    std::unique_ptr<MathBridge> math_;
     uint64_t genericArguments_ = 0;
     uint64_t collectVisits_ = 0;
     uint64_t ownershipSeen_ = 0;          // tn::abi::ownershipEpoch() at the last full decision

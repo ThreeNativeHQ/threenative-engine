@@ -7,7 +7,34 @@ if(NOT TARGET v8::v8 OR NOT MYSTRAL_USE_V8 OR MYSTRAL_PLATFORM STREQUAL "ios" OR
     message(FATAL_ERROR "TN_ENGINE_PLAYER needs a desktop V8 (-DMYSTRAL_USE_V8=ON and third_party/v8 from scripts/download-deps.mjs)")
 endif()
 
-add_library(tn_adapter_v8 STATIC src/adapters/v8/adapter.cpp src/adapters/v8/tsl.cpp)
+# three@0.185.1's math sources as one embedded script (PRD-573 v1.11 step 4a), run at the end of Adapter::install
+# when JS math is on. The workspace root installs esbuild only when something there depends on it; runtime-native
+# always does. Without esbuild the adapter builds, and turning JS math on fails by name at install.
+find_program(TN_ESBUILD esbuild NO_DEFAULT_PATH
+    HINTS ${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/.bin ${CMAKE_CURRENT_SOURCE_DIR}/node_modules/.bin)
+set(TN_MATH_DIR ${CMAKE_CURRENT_BINARY_DIR}/tn_math)
+set(TN_MATH_HEADER ${TN_MATH_DIR}/tn_math_script.h)
+if(TN_ESBUILD)
+    file(GLOB TN_MATH_THREE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/node_modules/three/src/math/*.js)
+    add_custom_command(OUTPUT ${TN_MATH_DIR}/tn_math.js
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${TN_MATH_DIR}
+        COMMAND ${TN_ESBUILD} ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/v8/math/entry.js --bundle --minify --format=iife
+            --platform=neutral --target=es2022 --log-level=error --outfile=${TN_MATH_DIR}/tn_math.js
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/v8/math/entry.js ${TN_MATH_THREE_SOURCES}
+        COMMENT "Bundling three's math for the V8 adapter")
+    add_custom_command(OUTPUT ${TN_MATH_HEADER}
+        COMMAND ${CMAKE_COMMAND} -DOUTPUT=${TN_MATH_HEADER} -DSOURCE_DIR=${TN_MATH_DIR} -DSCRIPT_NAMES=tn_math
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedRuntimeScripts.cmake
+        DEPENDS ${TN_MATH_DIR}/tn_math.js ${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedRuntimeScripts.cmake
+        COMMENT "Embedding three's math script")
+endif()
+
+add_library(tn_adapter_v8 STATIC src/adapters/v8/adapter.cpp src/adapters/v8/math_bridge.cpp src/adapters/v8/tsl.cpp)
+if(TN_ESBUILD)
+    target_sources(tn_adapter_v8 PRIVATE ${TN_MATH_HEADER})
+    target_include_directories(tn_adapter_v8 PRIVATE ${TN_MATH_DIR})
+    target_compile_definitions(tn_adapter_v8 PRIVATE TN_JS_MATH_EMBEDDED=1)
+endif()
 # Not tn_native_engine_target: an adapter is not an engine target, and the graph check would
 # rightly fail on its V8 link.
 set_target_properties(tn_adapter_v8 PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
@@ -28,7 +55,7 @@ add_executable(tn-native-engine-v8-test EXCLUDE_FROM_ALL tests/native-engine/v8_
 target_link_libraries(tn-native-engine-v8-test PRIVATE tn_adapter_v8)
 target_include_directories(tn-native-engine-v8-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
 tn_adapter_v8_executable(tn-native-engine-v8-test)
-foreach(case handles fast_paths structure_stamp crossing_histogram collect_visits native_matrix_world unsupported gc_release runtime_churn crossing_bench scene raycaster_lod catalog_coverage callback_cycle wrapper_lifetime tsl_api uniform_value node_materials skeletal attribute_arrays geometry_lifecycle material_slots)
+foreach(case handles fast_paths structure_stamp crossing_histogram collect_visits native_matrix_world unsupported gc_release runtime_churn crossing_bench scene raycaster_lod catalog_coverage callback_cycle wrapper_lifetime tsl_api uniform_value node_materials skeletal attribute_arrays geometry_lifecycle material_slots js_math)
     add_test(NAME native_engine_v8_${case} COMMAND tn-native-engine-v8-test ${case})
     set_tests_properties(native_engine_v8_${case} PROPERTIES LABELS "native-engine")
 endforeach()
@@ -112,9 +139,6 @@ if(TN_NODE_EXECUTABLE)
 endif()
 
 # Both CP1 arms on a small L4: 64 cubes + the ground + the output pass, 66 draws in each.
-# The workspace root installs esbuild only when something there depends on it; runtime-native always does.
-find_program(TN_ESBUILD esbuild NO_DEFAULT_PATH
-    HINTS ${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/.bin ${CMAKE_CURRENT_SOURCE_DIR}/node_modules/.bin)
 set(TN_L4_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/engine-load-test/native-engine/l4-workload.ts)
 set(TN_L4_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/l4-workload.js)
 if(TN_ESBUILD)
