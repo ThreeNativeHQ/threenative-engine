@@ -98,7 +98,8 @@ jobs:
     name: csg
     if: ${{ needs.paths.outputs.csg == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # PRD-550: generic lanes run hosted so the local build/test capacity stays free for the heavy jobs.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
@@ -134,7 +135,7 @@ jobs:
     name: ik
     if: ${{ needs.paths.outputs.ik == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
@@ -166,7 +167,7 @@ jobs:
     name: vegetation
     if: ${{ needs.paths.outputs.vegetation == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
@@ -198,7 +199,7 @@ jobs:
     name: decals
     if: ${{ needs.paths.outputs.decals == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -314,7 +315,7 @@ jobs:
     name: exposure
     if: ${{ needs.paths.outputs.tone == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -358,7 +359,7 @@ jobs:
     name: temporal
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.temporal == 'true' }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -405,7 +406,7 @@ jobs:
     name: velocity
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.velocity == 'true' }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -426,7 +427,10 @@ jobs:
       - name: Check the exact source-wired fixture types
         run: pnpm exec tsc --noEmit -p examples/abyss-framework/velocity.tsconfig.json
       - name: Render actual authored batch velocity and missing-history control
-        run: pnpm exec tsx scripts/verify-velocity-history.ts
+        # PRD-550 phase 1. The temporal-off cost arm lives in performance-regression.yml: it prices
+        # actual frame submission against split-control noise, which a runner shared by twenty jobs
+        # cannot hold, and its `p95NoiseExcessMs` red was other people's load.
+        run: pnpm exec tsx scripts/verify-velocity-history.ts --variant=history
       - name: Retain runtime PNGs, readbacks and exact adapter provenance
         if: always()
         uses: actions/upload-artifact@v7
@@ -451,7 +455,7 @@ jobs:
     name: animation
     if: ${{ needs.paths.outputs.animation == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -575,7 +579,7 @@ jobs:
     name: fog capture
     if: ${{ needs.paths.outputs.fog == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -709,7 +713,7 @@ jobs:
     name: capture
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.world-capture == 'true' }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -759,7 +763,7 @@ jobs:
     name: fluid collision
     if: ${{ needs.paths.outputs.fluid-particles == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -961,7 +965,7 @@ jobs:
     name: auto-exposure
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.exposure == 'true' }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -1006,7 +1010,7 @@ jobs:
     name: auto-exposure cold boot
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.cold-boot == 'true' }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

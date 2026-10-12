@@ -51,6 +51,7 @@ import {
   formatValidationReport,
   renderListValidationRequested,
 } from "./profiling/render-list-validate.js";
+import { renderTrapAudit } from "./profiling/render-trap-audit.js";
 import {
   describeSceneShape,
   describeSceneWarning,
@@ -901,6 +902,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#scene !== scene) return false;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
+    for (const line of renderTrapAudit(ctx.scene)) console.error(line);
     // Cutout PBR with no image-based light renders as cardboard, and the compensating tint the
     // author reaches for is invisible in a screenshot review. Once per scene entry, right after
     // `enter()`: `load()` and `enter()` are where the game builds its meshes and sets its own
