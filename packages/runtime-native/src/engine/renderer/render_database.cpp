@@ -825,7 +825,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     projection::Decision decision;
     if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig; }) &&
         ++framesSinceDeclineScan_ >= kDeclineRescanFrames) {
-        decision = projection::decide(scene);
+        decision = projection::decide(scene, 200, true);
         framesSinceDeclineScan_ = decision.projecting || decision.sourceRenderables == 0 ? kDeclineRescanFrames : 0;
     }
     skinnedPalettes_.clear();

@@ -143,6 +143,22 @@ int main() {
         for (const auto& [reason, count] : exact->members())
             if (mismatch.empty() && (!d.exact.count(reason) || d.exact.at(reason) != int(count.number())))
                 mismatch = "exact." + reason;
+        // The renderer asks for rigs alone: every count and reason is the same, and only a rig keeps a verdict.
+        const projection::Decision lean = projection::decide(*scene, int(num(spec.find("minMeshes"), 200)), true);
+        if (mismatch.empty() && (lean.projecting != d.projecting || lean.reasonCode != d.reasonCode ||
+                                 lean.sourceRenderables != d.sourceRenderables || lean.projectedObjects != d.projectedObjects ||
+                                 lean.instancedBatches != d.instancedBatches || lean.materialBatches != d.materialBatches ||
+                                 lean.skinnedBatches != d.skinnedBatches || lean.exactObjects != d.exactObjects ||
+                                 lean.exact != d.exact))
+            mismatch = "skinnedVerdictsOnly changed a count";
+        for (const auto& [object, verdict] : d.verdict) {
+            const bool rig = dynamic_cast<const SkinnedMesh*>(object) != nullptr;
+            const auto found = lean.verdict.find(object);
+            if (mismatch.empty() && rig && (found == lean.verdict.end() || found->second != verdict))
+                mismatch = "skinnedVerdictsOnly lost a rig's verdict";
+            if (mismatch.empty() && !rig && found != lean.verdict.end())
+                mismatch = "skinnedVerdictsOnly kept a verdict for a non-rig";
+        }
         if (!mismatch.empty()) {
             std::printf("  %s differs: %s\n", text(spec.find("name")).c_str(), mismatch.c_str());
             ++differ;

@@ -16,6 +16,7 @@
 #include <vector>
 #include <unordered_map>
 #include <atomic>
+#include <typeinfo>
 
 #include "engine/animation/skinning/palette.h"
 #include "engine/animation/skinning/skeleton.h"
@@ -215,28 +216,48 @@ struct Group {
 
 } // namespace detail
 
-/** One frame's projection decision for `scene`, as a fresh SceneRenderProjection reconcile makes it. */
-inline Decision decide(Object3D& scene, int minMeshes = 200) {
+/**
+ * One frame's projection decision for `scene`, as a fresh SceneRenderProjection reconcile makes it.
+ * `skinnedVerdictsOnly` records a per-object verdict for rigs alone: the renderer asks no other object, and
+ * a verdict per cube costs a map node apiece. Every count and reason is the same either way.
+ */
+inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdictsOnly = false) {
     using namespace detail;
     Decision d;
     std::string blocked;
     std::vector<Mesh*> eligible;
     std::vector<SkinnedMesh*> skinned;
     std::vector<std::pair<const Object3D*, std::string>> exactLane;
+    // meshLaneReason for a plain Mesh, with the geometry's own verdict kept for the run of meshes sharing it.
+    const BufferGeometry* laneGeometry = nullptr;
+    const char* laneGeometryReason = nullptr;
+    const auto plainReason = [&](const Mesh& m) -> const char* {
+        if (!m.geometry) return "unsupportedGeometry";
+        if (m.geometry.get() != laneGeometry) {
+            laneGeometry = m.geometry.get();
+            laneGeometryReason = geometryLaneReason(*laneGeometry);
+        }
+        if (laneGeometryReason) return laneGeometryReason;
+        if (m.renderOrder() != 0) return "renderOrder";
+        if (!m.material) return "unsupportedGeometry";
+        return m.material->transparent ? "transparent" : nullptr;
+    };
     // walkProjection: depth first, children in order; a light's children are not visited.
     std::vector<Object3D*> stack(scene.children.rbegin(), scene.children.rend());
     while (!stack.empty()) {
         Object3D* object = stack.back();
         stack.pop_back();
-        auto* mesh = dynamic_cast<Mesh*>(object);
+        // A plain Mesh is neither a light, a rig nor an instanced mesh: one type check replaces the casts.
+        const bool plain = typeid(*object) == typeid(Mesh);
+        auto* mesh = plain ? static_cast<Mesh*>(object) : dynamic_cast<Mesh*>(object);
         if (blocked.empty() && mesh && mesh->onBeforeRender) blocked = "renderHook";
-        if (isLight(*object)) continue;
+        if (!plain && isLight(*object)) continue;
         if (mesh) {
             ++d.sourceRenderables;
-            if (auto* rig = dynamic_cast<SkinnedMesh*>(mesh)) {
+            if (auto* rig = plain ? nullptr : dynamic_cast<SkinnedMesh*>(mesh)) {
                 if (const char* reason = skinnedLaneReason(*rig)) exactLane.emplace_back(rig, reason);
                 else skinned.push_back(rig);
-            } else if (const char* reason = meshLaneReason(*mesh)) {
+            } else if (const char* reason = plain ? plainReason(*mesh) : meshLaneReason(*mesh)) {
                 exactLane.emplace_back(mesh, reason);
             } else {
                 eligible.push_back(mesh);
@@ -259,10 +280,19 @@ inline Decision decide(Object3D& scene, int minMeshes = 200) {
     using Key = std::tuple<const void*, const void*, double>;
     std::vector<Key> groupOrder, skinnedOrder;
     std::map<Key, Group> groups, skinnedGroups;
+    const Key* runKey = nullptr;  // the previous mesh's key and group: a run of one key skips the map
+    Group* runGroup = nullptr;
     for (Mesh* mesh : eligible) {
         const Key key{mesh->geometry.get(), mesh->material.get(), batchFlags(*mesh)};
-        if (!groups.count(key)) groupOrder.push_back(key);
-        groups[key].members.push_back(mesh);
+        if (runGroup && key == *runKey) {
+            runGroup->members.push_back(mesh);
+            continue;
+        }
+        const auto [at, added] = groups.try_emplace(key);
+        if (added) groupOrder.push_back(key);
+        at->second.members.push_back(mesh);
+        runKey = &at->first;  // std::map nodes keep their address
+        runGroup = &at->second;
     }
     for (SkinnedMesh* rig : skinned) {
         const Key key{rig->geometry.get(), rig->material.get(), batchFlags(*rig) * 65536 + double(rig->skeleton->bones.size())};
@@ -364,7 +394,7 @@ inline Decision decide(Object3D& scene, int minMeshes = 200) {
             if (!materialClaimed.count(mesh) && !uniformClaimed(mesh)) keep(mesh, "tooFewToBatch");
     }
     const auto project = [&](const Object3D* object, const char* lane) {
-        d.verdict[object] = lane;
+        if (!skinnedVerdictsOnly || (lane[0] == 's' && lane[1] == 'k')) d.verdict[object] = lane;
         ++d.projectedObjects;
     };
     for (const UniformGroup& u : uniformGroups) {
@@ -417,7 +447,7 @@ inline Decision decide(Object3D& scene, int minMeshes = 200) {
     d.exactObjects = int(exactLane.size());
     for (const auto& [object, reason] : exactLane) {
         ++d.exact[reason];
-        d.verdict[object] = reason;
+        if (!skinnedVerdictsOnly || dynamic_cast<const SkinnedMesh*>(object)) d.verdict[object] = reason;
     }
     return d;
 }
