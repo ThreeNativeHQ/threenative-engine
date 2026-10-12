@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-569 — GPU particle emitters out of view stop costing, and effects yield to the frame budget
 
-**Status:** PARTIAL — checkpoint corrections verified; runtime acceptance remains open.
-**Priority:** P2 — AC-1 and AC-2 are open: every `GPUParticles3D` simulates and draws every frame, on screen or not, and no effect reads the measured budget.
+**Status:** PARTIAL — web acceptance AC-1 and AC-2 ticked; the native desktop pan (P1B4) stays open, see `## Blocked on`.
+**Priority:** P2 — the native desktop pan (P1B4) is open: the native cull and budget measurements do not complete inside the scenario's tick windows.
 **Complexity:** 5 (MEDIUM) — 1–5 engine files (`particles.ts`, `render-camera-cull.ts`, a small bounds/significance module) (+1), a measured-bounds reduction is a new mechanism (+2), culled/paused state carries across frames (+2); risk override: none
 **Owner:** João
 **Depends on:** None. It must pass the core-change admission gate of [PRD-316](../rendering/PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md) (§3), because it adds core surface for effects.
@@ -174,6 +174,12 @@ camera)` → `GPUParticles3D.process(renderer, camera)` → skip or dispatch. Th
 - Located the existing primary-checkout host `packages/runtime-native/build/tn-linux-wgpu/mystral` and launched the common scenario with `--target desktop`, that executable and the gallery native bundle. It **exited 2**, aborting with `Buffer with '' label is still mapped` / SIGABRT (`artifacts/prd569-native-existing-host/`). This existing August host does not establish current native support; current-host/readback diagnosis remains required. The previous missing-executable result is superseded by this actual launch attempt. No native claim is ticked.
 - The Sonnet capture pass was stopped after its explicit 20-minute task bound (observed 21:09); its source and complete capture pairs were preserved and checked above. Action-rpg combat, native verification and the requested independent judge remain open. No phase or acceptance box is ticked, and the PR stays draft for user inspection.
 
+- **2026-10-11, owner call on the desktop gate:** a native desktop capture passes on a content-ratio floor (`desktopMinContentRatio` 0.001, measured in `capture.ts`). The browser bright-pixel floor is unchanged. Commits `7ccc79760`, `a6367f2f3`, `56c722972` and `df3ce7b20` apply it to the desktop driver and the shared device loop. Browser, Android and iOS keep the bright-pixel floor.
+
+## Blocked on
+
+- **Owner decision, native clock domain.** Pick how measurements pace on the native desktop pump. A tick-counted run renders about 21 ticks per frame, but these measurements assume about one tick per frame, so none completes inside the 240- and 360-tick windows: the cull grace (`packages/core/src/particles.ts`, wall clock), the dispatch ratio window and the budget report (`examples/vfx-gallery`, 60 frames each), and the dwell clock (wall clock). Options: (a) the native pump renders once per tick during tick-counted waits; (b) these measurements use simulated time. Either choice changes semantics on every platform.
+
 ## Execution Phases
 
 ### Checkpoint corrections — 2026-10-10
@@ -234,7 +240,8 @@ node packages/playtest/dist/runner/cli.js examples/vfx-gallery/playtests/emitter
 - [x] [local] The reduction measures a known particle cloud inside one sample's bounds, and an emitter with no landed sample is never culled. proof: red-green cases in `pnpm exec vitest run packages/core/__tests__/particles.spec.ts`. Verified 2026-10-11: **19/19** passed (exit 0). Red: the pre-PRD `particles.ts` (merge-base `1a5314a1d`) fails **17/19**, and single mutations fail their own cases — max-lane offset (2), non-finite sample accepted (1), unmeasured emitter culled (1); log `artifacts/prd569-sonnet-supervisor/20261011T165505Z/redgreen.log`. The TSL reduction kernel needs a GPU, so AC-1's browser playtest still proves it on hardware.
 - [x] [local] An emitter culled past the grace time skips its dispatch, `"pause"` resumes with its buffers intact, and `"clear"` restarts. proof: red-green cases in the same spec, counting `renderer.compute` calls on a stub renderer. Verified 2026-10-11: same spec **19/19**. Red: a culled emitter that still dispatches fails **5** cases, `clear` without a restart fails the clear case, and `pause` that restarts fails the pause case (same log).
 - [x] [local] `vfx-gallery` drops its hand-written `emitting = visible` gate and AC-1 passes. proof: AC-1's playtest. Verified 2026-10-11 on HEAD `34cc7f2de`, core rebuilt from that source: `emitter-cull.playtest.json` exited **0** on **NVIDIA / Turing** (documented Vulkan flags, `--live-clock`, port 5299), all 12 assertions passed with no diagnostics. The culled pan dispatched **0.4444** of the cull-off pan (55.6% fewer), the running emitters kept ratio **1.0**, and **5/9** emitters paused (`artifacts/prd569-sonnet-supervisor/20261011T165505Z/web-run-2/`). This is behavioral proof only. The independent visual judgment of the matched poses is separate and still pending, so the AC-1 box below stays open.
-- [ ] [local] The native desktop host runs the same pan with the cull active. proof: `node packages/playtest/dist/runner/cli.js examples/vfx-gallery/playtests/emitter-cull.playtest.json --target desktop`.
+- [ ] [local] The native desktop host runs the same pan with the cull active. proof: `node packages/playtest/dist/runner/cli.js examples/vfx-gallery/playtests/emitter-cull.playtest.json --target desktop --executable packages/runtime-native/build/tn-linux/mystral --host-arg run --host-arg examples/vfx-gallery/dist/vfx-gallery-native.js` (with the local GPU driver environment sourced in the same shell).
+  Open. Run 2026-10-11 on `df3ce7b20`: every native capture passes the desktop content guard. The run exits 1 on six state assertions: `baselineRatio`, `culledRatio`, `culledPausedFraction`, `shortestDwellSeconds`, `yieldedPeak` and `measuredOverBudgetWindows`. Owner call below.
   Open: the 2026-10-11 run on HEAD `34cc7f2de` exited 2 with `TN_CAPTURE_BLANK` on `panned-culled.png` (bright-pixel ratio 0.02994 < 0.05), the second run with this cause. The web render of the same pose passes the guard, so either native draws the panned view darker than web or the pan pose needs a brighter frame. Compare the two `panned-culled.png` luminance histograms before any change. The guard and the pan stay unchanged until the owner decides.
 
 #### Phase 2: Effects yield to the measured budget by significance
