@@ -2,7 +2,8 @@
 
 **Research snapshot:** 2026-08-30  
 **Scope:** Curated implementation candidates for the 20 UE5-class ThreeNative feature checklists.  
-**Companion specification:** `threenative-ue5-feature-checklists-and-repo-scan.md`
+**Companion specification:** `threenative-ue5-feature-checklists-and-repo-scan.md`  
+**Note (2026-10-12):** That file was not kept in the repository. Use `threenative-ue5-feature-checklists-and-repository-reuse-map.md` instead.
 
 > This is a technical triage catalog, not legal clearance. Re-check the pinned commit, every reused file, third-party notices, assets and submodules before adoption. Repositories with no detected license or proprietary terms are reference-only unless explicit permission/legal approval is obtained.
 

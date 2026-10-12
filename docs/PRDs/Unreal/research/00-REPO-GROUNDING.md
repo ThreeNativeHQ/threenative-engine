@@ -21,6 +21,8 @@ repo prose. **Keep the reuse-map, delete the repo-scan**, or the folder ships tw
 same twenty features and a reader has no way to know which one moved. Two copies of a score is two
 scores.
 
+*Note (2026-10-12): the repo-scan file was not kept in the repository. Only the reuse-map remains.*
+
 **(b) Several features are already in the tree, so their effort estimates are wrong.**
 The research ranks F17 (virtualized geometry) at effort 8–9/10 and puts it in band B — Strategic. It
 landed on 2026-08-30 and is on by default (`e69c737f`); the bake, the cluster DAG and the runtime
