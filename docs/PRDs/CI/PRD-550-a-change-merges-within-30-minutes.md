@@ -71,7 +71,7 @@ flowchart LR
   R -- no --> G["gating board<br/>≤ 15 min"]
   G --> M
   M --> D["develop push:<br/>native matrix, all templates,<br/>perf lanes (post-merge)"]
-  D -- red --> I["issue + revert PR<br/>(ci-janitor)"]
+  D -- red --> I["owner reads the red run<br/>and fixes forward"]
   D --> N["develop → main:<br/>full qualification (unchanged)"]
 ```
 
@@ -85,8 +85,8 @@ repeated `test-unit` red from the window as code or load; fix the load reds at t
 **Phase 2 — one gating board, run once.** Split the board into **gating** (the core above plus the
 affected template and Linux native contract legs that `scope` selects) and **qualifying** (native
 platform legs, all 13 templates, perf integration lanes). Merge groups run only gating. Develop pushes,
-the nightly run and `develop → main` run qualifying. A red qualifying run on `develop` opens an issue
-and a revert PR through the existing `ci-janitor.yml`. Prove `test-unit` shard expansion so it leaves
+the nightly run and `develop → main` run qualifying. A red qualifying run on `develop` is read and fixed forward by the owner
+(see Decisions). Prove `test-unit` shard expansion so it leaves
 `UNPROVEN_REUSE_BOARDS`; then an exact-tree merge group reuses the PR verdict (PRD-481's mechanism).
 
 **Phase 3 — capacity for the gating board.** The gating board needs about 10 free slots for 15 min.
@@ -95,7 +95,7 @@ qualifying legs. Add a small latency audit (`scripts/ci-merge-latency.mjs`) that
 PRs in a window: last push → merge, enqueue → merge, attempts, and first failing job. It replaces the
 ad-hoc `gh` queries used for this Context.
 
-Risks: a qualifying red lands on `develop` before it is seen. The revert PR bounds that window to one
+Risks: a qualifying red lands on `develop` before it is seen. Fix-forward bounds that window to one
 qualifying run. A PR can still opt in to qualifying on the merge path with a label for native-only changes.
 
 ## Acceptance Criteria
@@ -115,7 +115,7 @@ qualifying run. A PR can still opt in to qualifying on the merge path with a lab
 |---|---|---|---|
 | Gating board on merge groups | `merge_group` event → `.github/workflows/ci.yml` → `scope` job → `scripts/ci-change-scope.mjs` | Replaces the exhaustive merge-group board | AC-1, AC-2 |
 | Exact-tree reuse in the queue | `scope` job → `currentRun`/`coverageMiss` (`scripts/ci-change-scope.mjs:584`) | `test-unit` leaves `UNPROVEN_REUSE_BOARDS` | AC-3 |
-| Post-merge qualification | `push` to `develop`, `schedule` → `ci.yml`; red → `ci-janitor.yml` | Takes the legs removed from merge groups | Phase 2 box |
+| Post-merge qualification | `push` to `develop`, `schedule` → `ci.yml` | Takes the legs removed from merge groups | Phase 2 box |
 | Merge latency audit | `node scripts/ci-merge-latency.mjs` | Replaces ad-hoc `gh` queries | AC-1, AC-2 |
 
 ## Execution Phases
@@ -134,13 +134,13 @@ qualifying run. A PR can still opt in to qualifying on the merge path with a lab
 
 #### Phase 2: One gating board, run once
 **Status:** IN PROGRESS
-**Files:** `.github/workflows/ci.yml`, `scripts/ci-change-scope.mjs`, `scripts/ci-required.mjs`, `.github/workflows/ci-janitor.yml`, root `AGENTS.md` (+ `pnpm sync:agents`), `scripts/__tests__/ci-structure.spec.ts`.
-**Implementation:** Add a `gating` scope for `merge_group`; keep `full` for develop push, schedule, `workflow_dispatch` and `main`. Prove `test-unit` shard expansion from the run's job list and drop it from `UNPROVEN_REUSE_BOARDS`. Extend `ci-janitor.yml` to open an issue and a revert PR on a red qualifying `develop` run. Committed so far: a `merge_group` on develop selects the same narrowed plan a pull request earns (it reviews the exact tree a merge would produce) and a develop push selects `full`, so the exhaustive board moved from the queue to the promotion. Both outcome boxes below stay open until a CI run proves them.
+**Files:** `.github/workflows/ci.yml`, `scripts/ci-change-scope.mjs`, `scripts/ci-required.mjs`, root `AGENTS.md` (+ `pnpm sync:agents`), `scripts/__tests__/ci-structure.spec.ts`.
+**Implementation:** Add a `gating` scope for `merge_group`; keep `full` for develop push, schedule, `workflow_dispatch` and `main`. Prove `test-unit` shard expansion from the run's job list and drop it from `UNPROVEN_REUSE_BOARDS`. Committed so far: a `merge_group` on develop selects the same narrowed plan a pull request earns (it reviews the exact tree a merge would produce) and a develop push selects `full`, so the exhaustive board moved from the queue to the promotion. Both outcome boxes below stay open until a CI run proves them.
 **Repair (2026-10-09):** `validationProfile` compared a raw `baseRef` against `main` and then ORed any `merge_group` to `develop`, so an under-scoped review plan was accepted for `refs/heads/main` and for unknown or missing queue targets. The shared fix normalizes `refs/heads/` once inside `validationProfile` and classifies only explicit `main`/`develop`, removing the blanket `eventName === "merge_group"` fallback so an unproven target stays `other`. Reproduction: the committed regression test in `scripts/__tests__/ci-qualification.spec.ts`. The gate callers (`validateEventPlan`, `sourceVerdict`, `currentRun`) keep explicit develop/main behavior.
 **Shared assertion (2026-10-10):** the pull-request base/head parent assertion moved out of `ci-required.mjs` into `scripts/ci-change-scope.mjs` as `assertMergeParentCandidate`, called by `ci-required` in the same place with every condition, error code and error behavior preserved. The shared helper lets an early classifier reject a wrong-parent candidate before the fanout instead of after it. The guard runs only for the live GitHub projection (`--format github`, `pull_request`, not `--local`); local and offline classification keep their existing behavior. Proof: the focused scope, template-selection, efficiency, qualification, structure, needs, runners and dashboard specs pass 431/431 in 8 files (`/tmp/pr476-preflight-focused.log`). Red before green: against the original unguarded classifier, before the guard existed, the new stale-base test failed (1 failed, 53 skipped; the classifier exited 0) (`/tmp/opencode/ci-stale-base-red.log`); the added guard makes it pass. Biome reports 0 errors on the 3 changed code files (4 pre-existing complexity warnings), and `node --check` passes on both JS files. Actual gate note: `pnpm lint` and `pnpm typecheck` passed after rebuilding stale core declarations and running the shipped strata bake; the full local suite remains unqualified; the live CI outcome is pending. The live early-rejection outcome and the phase latency boxes stay open.
 - [x] `main` (bare/prefixed) and unknown/missing queue targets reject review plans; `develop` bare/prefixed preserves the valid reduced review. proof: `pnpm exec vitest run scripts/__tests__/ci-qualification.spec.ts` 19/19 after fix; new test was red before fix (18 passed, 1 failed). Profile caller/receipt/template selection specs 281/281 and `ci-structure.spec.ts` 159/159. Broader local gates: `pnpm lint` and `pnpm typecheck` passed; `pnpm test` failed (491 s) in 22 unchanged native cases, including an unexplained 120 s dry-run timeout, missing host binaries, and a missing mailbox response. Fresh shared CI passed on candidate `77bb0ee577ba39c514cd1262c48c8291f2210de2`: [run 38033595736, attempt 1](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/38033595736), 69 successful jobs including `ci-required`, completed 2026-10-10T07:56:51Z. This single PR run does not close the phase or its repeated merge-group requirements.
 - [ ] A merge group runs only gating jobs and finishes in ≤ 15 min wall. proof: CI run id.
-- [ ] A red qualifying run on `develop` opens an issue and a revert PR. proof: `ci-janitor.yml` run id on a seeded red branch.
+**Landing (2026-10-12):** PR 476 squash-merged as `4d40a486e` with the admin bypass at the owner's instruction, so it produced no merge-group run and no queue evidence.
 
 #### Phase 3: Capacity and the latency audit
 **Status:** IN PROGRESS
@@ -156,3 +156,7 @@ qualifying run. A PR can still opt in to qualifying on the merge path with a lab
 - [x] `release-reports` joins the light lane while native build and parity legs keep their heavy routing. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` — contract red before the one-line workflow change (`release-reports is off the light lane`, 1 failed / 159 passed) and green after (160 passed); live queue-wait effect unverified.
 **Placement (2026-10-10, collector coverage):** Live run `38069329212` showed the native `performance-coverage` job still queued on `tn-local` at 17:29:25 for at least 7 min while all five heavy slots were busy and three light slots idle, though it only checks out, `pnpm install`s, downloads the `native-*` artifacts and runs `tsx scripts/performance-regression/ci-summary.ts` — a JSON aggregator with no compile or GPU leg. It now selects `TN_RUNNER_LIGHT`; its condition, timeout, steps, receipts, coverage list and every native/parity build label are unchanged, and no variable, input or helper is added. Test-first: the exact routing contract was red before the one-line change (`performance-coverage is off the light lane`, 1 failed / 159 skipped, `/tmp/pr476-collector-route-red.log`) and the five focused CI specs run 331/331 after (`/tmp/pr476-collector-route-green.log`); `biome check scripts/__tests__/ci-structure.spec.ts` exit 0 (pre-existing complexity warnings only) and `git diff --check` clean. New-CI outcome pending, so no box is closed.
 - [ ] Gating jobs in a merge group wait ≤ 3 min p90 for a runner. proof: `node scripts/ci-merge-latency.mjs` queue column.
+
+## Decisions
+
+- 2026-10-12, João: no auto-revert job. A red qualifying `develop` run is read and fixed forward by the owner. Reason: most reds in the window were load reds, so a bot would revert good commits, and a `GITHUB_TOKEN` revert PR starts no CI. The phase 2 box and the `ci-janitor.yml` change were removed; `ci-janitor.yml` is unchanged.
