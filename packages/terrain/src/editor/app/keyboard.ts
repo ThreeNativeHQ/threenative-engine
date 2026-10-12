@@ -8,6 +8,7 @@ export function editorKeyAction(
   },
   tag = "",
   viewport = false,
+  splinePending = false,
 ): string | undefined {
   const key = event.key.toLowerCase();
   if (key === "escape") return "cancel";
@@ -22,6 +23,8 @@ export function editorKeyAction(
   if (key === "v") return "navigate";
   if (key === "f") return "frame";
   if (viewport && ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) return key;
+  // Clicks then Enter is how the recovered GUI finishes a spline; Space still adds a point.
+  if (viewport && key === "enter" && splinePending) return "finish";
   if (viewport && (key === "enter" || key === " ")) return "apply";
   if (key === "enter") return "finish";
 }

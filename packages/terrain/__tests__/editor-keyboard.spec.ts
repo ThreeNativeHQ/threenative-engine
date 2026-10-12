@@ -24,6 +24,9 @@ describe("editor keyboard and announcements", () => {
     for (const key of ["Enter", " "]) expect(editorKeyAction({ key }, "DIV", true)).toBe("apply");
     expect(editorKeyAction({ key: "Enter" }, "BUTTON")).toBeUndefined();
     expect(editorKeyAction({ key: "Enter" })).toBe("finish");
+    // Clicks then Enter finishes a spline in the viewport; Space keeps adding points.
+    expect(editorKeyAction({ key: "Enter" }, "DIV", true, true)).toBe("finish");
+    expect(editorKeyAction({ key: " " }, "DIV", true, true)).toBe("apply");
   });
   it("cancels even with a text field focused", () => {
     expect(editorKeyAction({ key: "Escape" }, "INPUT")).toBe("cancel");

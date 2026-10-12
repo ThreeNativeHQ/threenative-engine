@@ -195,12 +195,17 @@ export function installStrokes(c: EditorSession): void {
   c.host.tabIndex = 0;
   c.host.setAttribute(
     "aria-label",
-    "Terrain viewport. Arrows move the brush; Enter or Space applies; Shift lowers; Ctrl+Enter finishes a spline; Escape cancels.",
+    "Terrain viewport. Arrows move the brush; Enter or Space applies; Shift lowers; Enter or Ctrl+Enter finishes a spline of two or more points; Escape cancels.",
   );
   let cursor: [number, number] | undefined;
   c.keydown = (e) => {
     const target = e.target instanceof Element ? e.target : undefined;
-    const action = editorKeyAction(e, target?.tagName, target === c.host);
+    const action = editorKeyAction(
+      e,
+      target?.tagName,
+      target === c.host,
+      (c.active === "spline" || c.active === "ramp") && c.points.length >= 2,
+    );
     if (!action) return;
     if (action === "cancel") {
       if (c.stroke && c.host.hasPointerCapture(c.stroke.pointer))
