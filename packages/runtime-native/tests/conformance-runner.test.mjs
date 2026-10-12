@@ -986,6 +986,15 @@ test("uniform captures fail closed even when reference and candidate bytes match
     width: 2,
     height: 1,
   });
+
+  // An RGB reference carries no alpha: a candidate's alpha cannot differ from it, its colour can.
+  const rgbReference = PNG.sync.write(uniform, { colorType: 2 });
+  const transparent = new PNG({ width: 2, height: 1 });
+  transparent.data.set([12, 34, 56, 0, 13, 34, 56, 255]);
+  assert.equal(compareCaptures(rgbReference, PNG.sync.write(transparent)).pixelMismatchRatio, 0);
+  assert.equal(compareCaptures(visiblePng, PNG.sync.write(transparent)).pixelMismatchRatio, 0.5);
+  transparent.data.set([12, 34, 57, 0], 0);
+  assert.equal(compareCaptures(rgbReference, PNG.sync.write(transparent)).pixelMismatchRatio, 0.5);
 });
 
 test("screen-space glyph raster fails closed on missing pixels and drifting bounds", () => {

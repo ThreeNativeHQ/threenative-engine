@@ -107,6 +107,10 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/capture-asset-mcp-tools.ts",
     "The asset-MCP tool snapshot installs the pinned published package into a scratch root it pushes onto `scratch` and removes in finally, for the same reason as the Blender one above.",
   ],
+  [
+    "packages/three-native/tests/compatibility/run-native.ts",
+    "The conformance CLI retains captured frames because failed pixel-comparison reports name their paths.",
+  ],
 ]);
 
 async function sourceFiles(directory: string): Promise<string[]> {

@@ -66,7 +66,7 @@ function lab(r, g, b) {
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 }
 
-export function compareCaptures(referenceContents, candidateContents) {
+export function compareCaptures(referenceContents, candidateContents, levels = 0) {
   const reference = inspectCapture(referenceContents);
   const candidate = inspectCapture(candidateContents);
   if (reference.width !== candidate.width || reference.height !== candidate.height) {
@@ -75,12 +75,15 @@ export function compareCaptures(referenceContents, candidateContents) {
     );
   }
   const pixels = reference.width * reference.height;
+  // A reference with no alpha channel (an element screenshot) records only displayed colour, so
+  // alpha is not compared: pngjs would report 255 there whatever the frame held.
+  const channels = reference.png.alpha === false ? 3 : 4;
   let mismatched = 0;
   let deltaESum = 0;
   for (let offset = 0; offset < reference.png.data.length; offset += 4) {
     const different = reference.png.data
-      .subarray(offset, offset + 4)
-      .some((value, channel) => value !== candidate.png.data[offset + channel]);
+      .subarray(offset, offset + channels)
+      .some((value, channel) => Math.abs(value - candidate.png.data[offset + channel]) > levels);
     if (different) mismatched += 1;
     const left = lab(...reference.png.data.subarray(offset, offset + 3));
     const right = lab(...candidate.png.data.subarray(offset, offset + 3));

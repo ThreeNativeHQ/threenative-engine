@@ -50,7 +50,7 @@ import {
   writeProjectScene,
 } from "./project-mode.mjs";
 
-const REPORT_SCHEMA_VERSION = "0.3.0";
+export const REPORT_SCHEMA_VERSION = "0.3.0";
 const REGISTRY_SCHEMA_VERSION = "0.1.0";
 const runtimeRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
@@ -389,8 +389,17 @@ export function validateProvenance(provenance) {
   return [...errors, ...validateProvenanceEnv(provenance.env)];
 }
 
-export function validateReport(report, registry) {
+/**
+ * Validates a conformance report.
+ *
+ * `suite` names a lane that brings its own rows: the native-engine fixture suite reports each
+ * fixture as a row instead of a registry scene, so its ids come from `expectedIds` and a `pass`
+ * means every observation matched. Everything else — the field list, the provenance contract, the
+ * statuses, the summary arithmetic and the exit code — is the same rule every lane answers to.
+ */
+export function validateReport(report, registry, options = {}) {
   const errors = [];
+  const suite = options.suite ?? null;
   for (const field of Object.keys(report)) {
     if (!REPORT_FIELDS.includes(field)) {
       errors.push(`report.${field} is not a recognised report field`);
@@ -412,10 +421,14 @@ export function validateReport(report, registry) {
     errors.push("report.results must be an array");
     return errors;
   }
-  const expectedIds = registry.tests.map((entry) => entry.id);
+  const expectedIds = options.expectedIds ?? registry.tests.map((entry) => entry.id);
   const resultIds = report.results.map((entry) => entry.id);
   if (JSON.stringify(resultIds) !== JSON.stringify(expectedIds)) {
-    errors.push("report result IDs/order must exactly match the registry");
+    errors.push(
+      options.expectedIds === undefined
+        ? "report result IDs/order must exactly match the registry"
+        : "report result IDs/order must exactly match the suite's rows",
+    );
   }
   for (const exclusion of registry.exclusions ?? []) {
     if (exclusion.target !== report.target || typeof exclusion.row !== "string") continue;
@@ -436,7 +449,17 @@ export function validateReport(report, registry) {
     actualSummary[result.status] += 1;
     if (result.status !== "pass") continue;
     const target = report.target || "desktop";
-    if (target === "web") {
+    if (suite === "native-engine") {
+      if (result.native?.completed !== true) {
+        errors.push(`${result.id}: pass requires a completed native driver run`);
+      }
+      if (result.fixture?.matched !== result.fixture?.observations) {
+        errors.push(`${result.id}: pass requires every observation to match`);
+      }
+      if (!Array.isArray(result.gpuValidationErrors) || result.gpuValidationErrors.length > 0) {
+        errors.push(`${result.id}: pass requires zero GPU validation errors`);
+      }
+    } else if (target === "web") {
       if (result.browser?.completed !== true) {
         errors.push(`${result.id}: pass requires completed browser execution`);
       }

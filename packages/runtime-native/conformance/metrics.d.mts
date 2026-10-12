@@ -1,6 +1,8 @@
 export function compareCaptures(
   referenceContents: Uint8Array,
   candidateContents: Uint8Array,
+  /** Channel levels a pixel may differ by and still match (default 0). */
+  levels?: number,
 ): {
   readonly height: number;
   readonly perceptualDeltaE: number;
