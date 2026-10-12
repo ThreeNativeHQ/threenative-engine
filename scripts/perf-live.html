@@ -80,6 +80,7 @@
 
 <section class="card" id="trend"></section>
 <section class="card" id="frame" hidden></section>
+<section class="card" id="desktop"></section>
 <section class="card" id="web"></section>
 <section class="card" id="epic"></section>
 
@@ -105,7 +106,7 @@ function ago(ms) {
   if (s < 48 * 3600) return `${Math.round(s / 3600)} h ago`;
   return `${Math.round(s / 86400)} days ago`;
 }
-let hero = { status: "none" }, points = [], epic = [], rows = [], web = { pairs: [], cuts: [], census: [] };
+let hero = { status: "none" }, points = [], epic = [], rows = [], web = { pairs: [], cuts: [], census: [] }, desktop = { kpi: [], gpu: { status: "PENDING" }, godot: { status: "PENDING" } };
 
 // ---- 1. Hero -------------------------------------------------------------------------------------------
 function renderHero() {
@@ -202,6 +203,23 @@ const miss = (list) => (list.length ? list.map(esc).join(", ") : '<span class="p
 const fb = (v) => (v === undefined ? '<span class="mute">missing</span>' : v >= 1048576 ? `${(v / 1048576).toFixed(1)} MB` : `${(v / 1024).toFixed(0)} KB`);
 const fmm = (v) => (v === undefined ? '<span class="mute">missing</span>' : `${v.toFixed(1)} ms`);
 const VERDICT = { win: ["green", "win"], regression: ["red", "regression"], inconclusive: ["grey", "inside the noise"], pending: ["grey", "pending"] };
+function renderDesktop() {
+  const pending = '<span class="pill">PENDING</span>';
+  const ms = (v) => v === undefined ? pending : fm(v);
+  const ratio = (v) => v === undefined ? pending : fx(v);
+  const problem = (r) => r.problem ? `<p class="fine">${esc(r.problem)}</p>` : "";
+  const gpu = desktop.gpu, godot = desktop.godot;
+  $("desktop").innerHTML = `<h2>Desktop KPI (v1)</h2>
+    <p class="mute sm">tn-desktop ÷ tn-engine-desktop · thread CPU without present</p>
+    <p class="fine">Draw-call parity waived for desktop batching (drawCalls); triangles and remaining parity checks apply.</p>
+    <div class="scroll"><table><tr><th>Rung / set</th><th>Legacy ms</th><th>Engine ms</th><th>Pooled ratio</th><th>Per-round ratios</th><th>Triangles L / E</th><th>Commit</th></tr>
+    ${desktop.kpi.map((r) => `<tr><td>${esc(r.rung)} ${esc(r.label ?? "")}</td><td>${ms(r.pair?.left.threadCpuP50)}</td><td>${ms(r.pair?.right.threadCpuP50)}</td><td>${ratio(r.pair?.ratio.threadCpu)}</td><td>${r.rounds?.map((p) => `r${p.round}: ${ratio(p.ratio)}`).join(" · ") || pending}</td><td>${r.pair ? `${r.pair.left.triangles} / ${r.pair.right.triangles}` : pending}</td><td>${r.commits?.map(esc).join(" · ") || pending}</td></tr>`).join("")}
+    </table></div>
+    ${desktop.kpi.map(problem).join("")}
+    <p class="sm"><b>real-GPU inclusive (R5)</b>: ${gpu.status === "PENDING" ? pending : `frame p50 ratio ${ratio(gpu.pair?.ratio.p50)} · ${gpu.adapters.map(esc).join(" · ")}`}</p>${problem(gpu)}
+    <p class="sm"><b>Godot (R5)</b>: ${godot.status === "PENDING" ? pending : `Godot / tn-engine-desktop frame p50 ${ms(godot.pair?.left.p50)} / ${ms(godot.pair?.right.p50)}, p95 ${ms(godot.pair?.left.p95)} / ${ms(godot.pair?.right.p95)}, p99 ${ms(godot.pair?.left.p99)} / ${ms(godot.pair?.right.p99)}`}</p>${problem(godot)}`;
+}
+
 function renderWeb() {
   const el = $("web"), { pairs, cuts, census } = web;
   const head = `<h2>Web: tn-web vs tn-engine-web <span class="mute sm">browser WebGPU, separate from the desktop KPI</span></h2>`;
@@ -289,7 +307,7 @@ function renderDetails() {
 }
 
 function render() {
-  renderHero(); renderTrend(); renderFrame(); renderWeb(); renderEpic();
+  renderHero(); renderTrend(); renderFrame(); renderDesktop(); renderWeb(); renderEpic();
   if ($("details").open) renderDetails();
 }
 $("details").addEventListener("toggle", () => $("details").open && renderDetails());
@@ -297,8 +315,8 @@ $("details").addEventListener("toggle", () => $("details").open && renderDetails
 async function tick() {
   try {
     const get = (u) => fetch(u, { cache: "no-store" }).then((x) => x.json());
-    const [h, p, e, r, w] = await Promise.all([get("/api/hero"), get("/api/points"), get("/api/epic"), get("/api/rows"), get("/api/web")]);
-    hero = h; points = p; epic = e; rows = r.rows; web = w;
+    const [h, p, e, r, w, d] = await Promise.all([get("/api/hero"), get("/api/points"), get("/api/epic"), get("/api/rows"), get("/api/web"), get("/api/desktop")]);
+    hero = h; points = p; epic = e; rows = r.rows; web = w; desktop = d;
     render();
     $("status").textContent = `live · ${points.length} points · updated ${new Date().toLocaleTimeString()}`;
     $("dot").style.background = "var(--green)";
