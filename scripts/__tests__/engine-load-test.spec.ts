@@ -27,6 +27,12 @@ import {
   foxScale,
 } from "../../examples/engine-load-test/src/ladder.js";
 import {
+  PHASES,
+  createPhaseRecorder,
+  threadCpuClock,
+  topCrossings,
+} from "../../examples/engine-load-test/src/phases.js";
+import {
   CULLED_OFFSET_X,
   DEFAULT_AXES,
   type IWorkloadAxes,
@@ -3121,6 +3127,7 @@ describe("plain three.js control arm", () => {
       "examples/engine-load-test/src/game.ts",
       "examples/engine-load-test/src/identity.ts",
       "examples/engine-load-test/src/ladder.ts",
+      "examples/engine-load-test/src/phases.ts",
       "examples/engine-load-test/src/plain.ts",
       "examples/engine-load-test/src/workload.ts",
     ]);
@@ -3720,6 +3727,7 @@ describe("the runner's host CPU reading", () => {
         crossingsPerFrame: [900],
         key: "R2@4096",
         presentFrameMs: [30, 31],
+        renderFrameMs: [],
         threadFrameMs: [2.5, 3.5],
       },
     ]);
@@ -3792,6 +3800,176 @@ describe("the runner's host CPU reading", () => {
   });
 });
 
+const frames = 8;
+const column = (value: number): number[] => series(value, frames);
+/** The page's five phases for `frames` frames, then the host's lines for the same frames. */
+const phased = (
+  page: Record<string, number>,
+  host: { present: number; thread: number; render?: number },
+) => ({
+  phases: Object.fromEntries(PHASES.map((name) => [name, column(page[name] ?? 0)])),
+  presentCpuMs: column(host.present),
+  ...(host.render === undefined ? {} : { renderCpuMs: column(host.render) }),
+  threadCpuMs: column(host.thread),
+});
+const phasedRung = (extra: Partial<IRunReport["rungs"][number]>): IRunReport["rungs"][number] =>
+  rung({ frameMs: series(10, frames), ...extra });
+
+describe("the per-frame phase telemetry", () => {
+  it("splits a frame exclusively: a nested phase pauses its parent", () => {
+    let now = 0;
+    const phases = createPhaseRecorder(() => now);
+    phases.begin(1);
+    now = 2;
+    phases.begin(2);
+    now = 5;
+    phases.end();
+    now = 6;
+    phases.end();
+    now = 100;
+    expect(phases.take()).toEqual([0, 3, 3, 0, 0]);
+    expect(phases.take()).toEqual([0, 0, 0, 0, 0]);
+    phases.begin(0);
+    expect(() => phases.take()).toThrow(/TN_BENCH_PHASE_OPEN: game/u);
+    phases.end();
+    expect(() => phases.end()).toThrow(/TN_BENCH_PHASE_UNOPENED/u);
+  });
+
+  it("fails closed when the host has no thread CPU clock, and reads it when it has", () => {
+    expect(() => threadCpuClock()).toThrow(/TN_BENCH_PHASES_NO_CLOCK/u);
+    const host = globalThis as { __tnThreadCpuMs?: () => number };
+    host.__tnThreadCpuMs = () => -1;
+    try {
+      expect(() => threadCpuClock()).toThrow(/no thread CPU clock/u);
+      host.__tnThreadCpuMs = () => 12.5;
+      expect(threadCpuClock()()).toBe(12.5);
+    } finally {
+      host.__tnThreadCpuMs = undefined;
+    }
+  });
+
+  it("names the most crossed names between two snapshots, per frame", () => {
+    const before = { copy: 10, geometry: 5 };
+    const after = { copy: 110, geometry: 5, material: 50, position: 20, scale: 1, y: 300, z: 6 };
+    expect(topCrossings(before, after, 10)).toEqual([
+      ["y", 30],
+      ["copy", 10],
+      ["material", 5],
+      ["position", 2],
+      ["z", 0.6],
+    ]);
+  });
+
+  it("keeps the host's render call, when it reports one, and stamps it onto the rung", () => {
+    const recorder = new HostCpuRecorder({ read: () => 0 });
+    recorder.line("window R2@4096");
+    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":4,"presentCpuMs":30,"renderCpuMs":1.5}');
+    recorder.line("rung R2@4096 frame p50 1 | step");
+    const page = { rungs: [{ frameMs: series(1, 1), mode: "R2", objectCount: 4096 }] };
+    const stamped = withHostCpu(page, recorder, true) as {
+      rungs: Array<{ renderCpuMs?: number[] }>;
+    };
+    expect(stamped.rungs[0]?.renderCpuMs).toEqual([1.5]);
+  });
+
+  it("round-trips the phases and sums them with the host's lines into present and other", () => {
+    const parsed = parseRunReport(
+      JSON.parse(
+        JSON.stringify(
+          report({
+            rungs: [
+              phasedRung(
+                phased(
+                  { animation: 0.5, game: 1, matrixWorld: 0.25, projection: 2, render: 0.5 },
+                  { present: 30, render: 1.5, thread: 8 },
+                ),
+              ),
+            ],
+          }),
+        ),
+      ),
+    );
+    const stats = summarize(parsed)[0]?.phases;
+    // The engine player's draw is reported by the host, so `render` is the page's 0.5 plus 1.5.
+    expect(stats?.render).toEqual({ mean: 2, p50: 2 });
+    expect(stats?.present).toEqual({ mean: 30, p50: 30 });
+    // 8 ms of thread CPU less the five phases (1 + 0.5 + 0.25 + 2 + 2).
+    expect(stats?.other).toEqual({ mean: 2.25, p50: 2.25 });
+    expect(stats?.game).toEqual({ mean: 1, p50: 1 });
+  });
+
+  it("reports only the page's phases when the run carries no host lines, and skips runs without phases", () => {
+    const stats = summarize(
+      parseRunReport(
+        report({
+          rungs: [phasedRung({ phases: phased({ game: 3 }, { present: 0, thread: 0 }).phases })],
+        }),
+      ),
+    )[0]?.phases;
+    expect(stats?.game?.p50).toBe(3);
+    expect(stats?.present).toBeUndefined();
+    expect(stats?.other).toBeUndefined();
+    expect(
+      summarize(parseRunReport(report({ rungs: [phasedRung({})] })))[0]?.phases,
+    ).toBeUndefined();
+  });
+
+  it("fails closed on malformed phases and crossings", () => {
+    const good = phased({ game: 1 }, { present: 1, thread: 5 });
+    const parse = (extra: Record<string, unknown>) =>
+      parseRunReport({
+        ...report({ rungs: [phasedRung({})] }),
+        rungs: [{ ...phasedRung({}), ...extra }],
+      });
+    expect(parse({ phases: good.phases }).rungs[0]?.phases).toEqual(good.phases);
+    expect(() => parse({ phases: { ...good.phases, game: undefined } })).toThrow(/phases\.game/u);
+    expect(() => parse({ phases: { ...good.phases, game: [1, 2] } })).toThrow(/phases\.game/u);
+    expect(() => parse({ phases: { ...good.phases, render: column(-1) } })).toThrow(
+      /phases\.render/u,
+    );
+    expect(() => parse({ phases: { ...good.phases, render: column(Number.NaN) } })).toThrow(
+      /phases\.render/u,
+    );
+    expect(() => parse({ phases: { ...good.phases, physics: column(1) } })).toThrow(
+      /unknown phases: physics/u,
+    );
+    expect(() => parse({ phases: [] })).toThrow(/phases must be an object/u);
+    expect(() => parse({ renderCpuMs: [] })).toThrow(/renderCpuMs/u);
+    expect(parse({ crossingTop: [["y", 2.5]] }).rungs[0]?.crossingTop).toEqual([["y", 2.5]]);
+    for (const bad of [
+      [["y"]],
+      [["", 1]],
+      [["y", -1]],
+      [["y", "1"]],
+      "y",
+      Array.from({ length: 6 }, () => ["y", 1]),
+    ])
+      expect(() => parse({ crossingTop: bad })).toThrow(/crossingTop/u);
+  });
+
+  it("turns the page's telemetry and the crossing histogram on only when asked", () => {
+    const options = {
+      axes: DEFAULT_AXES,
+      frames: 1,
+      height: 1080,
+      ladder: "1",
+      modes: "R5",
+      repeats: 1,
+      warmup: 1,
+      width: 1920,
+    };
+    const phases = (): unknown =>
+      JSON.parse(engineDefines(options, undefined).__TN_BENCH_CONFIG__ as string).phases;
+    vi.stubEnv("TN_BENCH_PHASES", undefined);
+    expect(phases()).toBe(false);
+    vi.stubEnv("TN_BENCH_PHASES", "1");
+    expect(phases()).toBe(true);
+    vi.unstubAllEnvs();
+    expect(engineEnvironment(options, {}).TN_PLAYER_CROSSINGS).toBeUndefined();
+    expect(engineEnvironment(options, { TN_BENCH_CROSSINGS: "1" }).TN_PLAYER_CROSSINGS).toBe("1");
+  });
+});
+
 describe("the same-run pair guard", () => {
   const wobble = (base: number): number[] => [
     base,
@@ -3819,6 +3997,7 @@ describe("the same-run pair guard", () => {
       ladder?: Partial<typeof scene>;
       load?: number;
       overrides?: Partial<IRunReport>;
+      rung?: Partial<IRunReport["rungs"][number]>;
     } = {},
   ): IRunReport =>
     withHostLoad(
@@ -3833,6 +4012,7 @@ describe("the same-run pair guard", () => {
             mode: "R2",
             pipelineCompiles: 0,
             triangles: 49_154,
+            ...options.rung,
           }),
         ],
         ...options.overrides,
@@ -3858,6 +4038,44 @@ describe("the same-run pair guard", () => {
     expect(markdown).toContain("9.0!");
     expect(markdown).toContain("present cpu p50");
     expect(markdown).toContain("ratio thread cpu");
+  });
+
+  it("prints a per-phase table with the right arm over the left, and the top crossings", () => {
+    const withPhases = (
+      name: "tn-desktop" | "tn-engine-desktop",
+      page: Record<string, number>,
+      top?: Array<[string, number]>,
+    ) =>
+      arm(name, {
+        rung: {
+          ...phased(page, { present: 30, thread: 10 }),
+          ...(top === undefined ? {} : { crossingTop: top }),
+        },
+      });
+    const markdown = renderPairMarkdown(
+      [withPhases("tn-desktop", { game: 1, projection: 1, render: 4 })],
+      [withPhases("tn-engine-desktop", { game: 1, projection: 3, render: 1 }, [["y", 513]])],
+      labels,
+    );
+    expect(markdown).toContain("#### Where the frame goes");
+    expect(markdown).toContain("| R2@4096 | projection | 1.000 | 1.000 | 3.000 | 3.000 | 3.00 |");
+    expect(markdown).toContain("| R2@4096 | render | 4.000 | 4.000 | 1.000 | 1.000 | 0.25 |");
+    expect(markdown).toContain("| R2@4096 | present | 30.000 | 30.000 | 30.000 | 30.000 | 1.00 |");
+    expect(markdown).toContain("Top crossings per frame, R2@4096 tn-engine-desktop: y 513");
+    expect(
+      pairRows(
+        [withPhases("tn-desktop", { game: 2 })],
+        [withPhases("tn-engine-desktop", { game: 1 })],
+        labels,
+      )[0]?.phaseRatio.game,
+    ).toBe(0.5);
+  });
+
+  it("leaves the phase block out when either arm carries no phases", () => {
+    const phasedArm = arm("tn-desktop", { rung: phased({ game: 1 }, { present: 1, thread: 5 }) });
+    expect(renderPairMarkdown([phasedArm], [arm("tn-engine-desktop")], labels)).not.toContain(
+      "Where the frame goes",
+    );
   });
 
   it("refuses a ratio when the engine drew fewer lights or no bloom, and names what differs", () => {

@@ -16,6 +16,7 @@ import {
   ladderCountDiff,
   ladderRank,
 } from "../../examples/engine-load-test/src/ladder.js";
+import { PHASES, type Phase } from "../../examples/engine-load-test/src/phases.js";
 import {
   DEFAULT_AXES,
   type IWorkloadAxes,
@@ -136,8 +137,28 @@ export interface IRunReportRung {
   presentCpuMs?: number[];
   /** C ABI crossings per frame; only the owned engine player counts them. */
   bridgeCalls?: number[];
+  /** Thread CPU ms per frame inside the engine player's own render call, which the page's `render` phase cannot see. */
+  renderCpuMs?: number[];
+  /**
+   * Where the page's own work went, per frame in thread CPU ms (the clock `threadCpuMs` uses): one series per
+   * `PHASES` name, each as long as `frameMs`. Present when the run turned the telemetry on (`--pair` does).
+   */
+  phases?: Record<Phase, number[]>;
+  /** The names the engine player crossed the C ABI with most, as crossings per frame (`TN_BENCH_CROSSINGS=1`). */
+  crossingTop?: Array<[string, number]>;
   triangles: number;
   visibleObjects: number;
+}
+
+/**
+ * The phases a summary can carry: the page's five, the host's `present` call, and `other`, which is whatever
+ * the frame's thread CPU holds beyond the five (host work, GC, bookkeeping), so the phases sum to the frame.
+ */
+export const SUMMARY_PHASES = [...PHASES, "present", "other"] as const;
+export type SummaryPhase = (typeof SUMMARY_PHASES)[number];
+export interface IPhaseStat {
+  mean: number;
+  p50: number;
 }
 
 export interface IDeviceCondition {
@@ -218,6 +239,10 @@ export interface IRungSummary {
   presentCpuP50?: number;
   /** Median across repeats of the crossings p50 per frame; undefined unless the arm counts them. */
   crossingsP50?: number;
+  /** Per phase, the median across repeats of its p50 and its mean, in thread CPU ms per frame. */
+  phases?: Partial<Record<SummaryPhase, IPhaseStat>>;
+  /** The first repeat's most crossed names per frame; undefined unless the arm counts them. */
+  crossingTop?: Array<[string, number]>;
   triangles: number;
   visibleObjects: number;
 }
@@ -661,6 +686,9 @@ export function parseRunReport(value: unknown): IRunReport {
       );
     const presentCpuMs = optionalSeries(rung, "presentCpuMs", path);
     const bridgeCalls = optionalSeries(rung, "bridgeCalls", path);
+    const renderCpuMs = optionalSeries(rung, "renderCpuMs", path);
+    const phases = parsePhases(rung.phases, frameMs.length, `${path}.phases`);
+    const crossingTop = parseCrossingTop(rung.crossingTop, `${path}.crossingTop`);
     const initialPlacementSha256 = rung.initialPlacementSha256;
     if (
       initialPlacementSha256 !== undefined &&
@@ -775,6 +803,9 @@ export function parseRunReport(value: unknown): IRunReport {
       ...(threadCpuMs === undefined ? {} : { threadCpuMs: threadCpuMs as number[] }),
       ...(presentCpuMs === undefined ? {} : { presentCpuMs }),
       ...(bridgeCalls === undefined ? {} : { bridgeCalls }),
+      ...(renderCpuMs === undefined ? {} : { renderCpuMs }),
+      ...(phases === undefined ? {} : { phases }),
+      ...(crossingTop === undefined ? {} : { crossingTop }),
       drawCalls: requireNumber(rung, "drawCalls", path),
       ...(pipelineCompiles === undefined ? {} : { pipelineCompiles }),
       frameMs: frameMs as number[],
@@ -918,6 +949,122 @@ function optionalSeries(
   return series as number[];
 }
 
+/** A rung's phase series: exactly the `PHASES` names, each as long as `frameMs`, finite and non-negative. */
+function parsePhases(
+  value: unknown,
+  frames: number,
+  path: string,
+): Record<Phase, number[]> | undefined {
+  if (value === undefined) return undefined;
+  const series = requireObject(value, path);
+  const unknown = Object.keys(series).filter(
+    (name) => !(PHASES as readonly string[]).includes(name),
+  );
+  if (unknown.length > 0)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path} names unknown phases: ${unknown.join(", ")}`,
+    );
+  for (const name of PHASES) {
+    const samples = series[name];
+    if (
+      !Array.isArray(samples) ||
+      samples.length !== frames ||
+      samples.some((sample) => typeof sample !== "number" || !Number.isFinite(sample) || sample < 0)
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.${name} must carry ${frames} finite non-negative samples, one per frame`,
+      );
+  }
+  return series as Record<Phase, number[]>;
+}
+
+/** Up to five `[name, crossings per frame]` pairs, most crossed first. */
+function parseCrossingTop(value: unknown, path: string): Array<[string, number]> | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length > 5 ||
+    value.some(
+      (pair) =>
+        !Array.isArray(pair) ||
+        pair.length !== 2 ||
+        typeof pair[0] !== "string" ||
+        pair[0].length === 0 ||
+        typeof pair[1] !== "number" ||
+        !Number.isFinite(pair[1]) ||
+        pair[1] < 0,
+    )
+  )
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path} must be at most five [name, non-negative crossings per frame] pairs`,
+    );
+  return value as Array<[string, number]>;
+}
+
+const mean = (values: readonly number[]): number =>
+  values.reduce((sum, value) => sum + value, 0) / values.length;
+
+/**
+ * One repeat's phase stats. `present` and `other` need the host's frame line (`threadCpuMs` without the
+ * present call, `presentCpuMs`), joined to the page's frames by index from the start of the window; the
+ * host prints a frame or two more or fewer than the page measures, so the shortest series sets the length.
+ * The engine player's facade defers the real draw until the page's frame is over and reports it as
+ * `renderCpuMs`; it is added to `render`, so both arms' `render` is the whole draw call, Dawn work included.
+ */
+export function rungPhaseStats(
+  rung: IRunReportRung,
+): Partial<Record<SummaryPhase, IPhaseStat>> | undefined {
+  const phases = rung.phases;
+  if (phases === undefined) return undefined;
+  const { threadCpuMs: thread, presentCpuMs: present, renderCpuMs: host } = rung;
+  const hostSeries = [thread, present, host].filter((series) => series !== undefined);
+  const frames = Math.min(rung.frameMs.length, ...hostSeries.map((series) => series.length));
+  const stat = (series: readonly number[]): IPhaseStat => ({
+    mean: mean(series),
+    p50: percentile(series, 0.5),
+  });
+  const series = (name: Phase): number[] =>
+    phases[name]
+      .slice(0, frames)
+      .map((ms, index) =>
+        name === "render" && host !== undefined ? ms + (host[index] as number) : ms,
+      );
+  const out: Partial<Record<SummaryPhase, IPhaseStat>> = {};
+  for (const name of PHASES) out[name] = stat(series(name));
+  if (thread !== undefined && present !== undefined) {
+    const measured = PHASES.map(series);
+    out.present = stat(present.slice(0, frames));
+    out.other = stat(
+      thread
+        .slice(0, frames)
+        .map(
+          (ms, index) => ms - measured.reduce((sum, column) => sum + (column[index] as number), 0),
+        ),
+    );
+  }
+  return out;
+}
+
+/** The median across repeats of each phase's stats; a phase only some repeats carry is left out. */
+export function pooledPhaseStats(
+  stats: ReadonlyArray<Partial<Record<SummaryPhase, IPhaseStat>> | undefined>,
+): Partial<Record<SummaryPhase, IPhaseStat>> | undefined {
+  if (stats.some((entry) => entry === undefined)) return undefined;
+  const out: Partial<Record<SummaryPhase, IPhaseStat>> = {};
+  for (const name of SUMMARY_PHASES) {
+    const found = stats.map((entry) => entry?.[name]);
+    if (found.every((entry) => entry !== undefined))
+      out[name] = {
+        mean: median(found.map((entry) => (entry as IPhaseStat).mean)),
+        p50: median(found.map((entry) => (entry as IPhaseStat).p50)),
+      };
+  }
+  return out;
+}
+
 export function summarize(report: IRunReport): IRungSummary[] {
   const groups = new Map<string, IRunReportRung[]>();
   for (const rung of report.rungs) {
@@ -934,7 +1081,11 @@ export function summarize(report: IRunReport): IRungSummary[] {
     const thread = bucket.map((rung) => rung.threadCpuMs);
     const present = bucket.map((rung) => rung.presentCpuMs);
     const crossings = bucket.map((rung) => rung.bridgeCalls);
+    const phaseStats = pooledPhaseStats(bucket.map(rungPhaseStats));
+    const crossingTop = bucket.find((rung) => rung.crossingTop !== undefined)?.crossingTop;
     summaries.push({
+      ...(phaseStats === undefined ? {} : { phases: phaseStats }),
+      ...(crossingTop === undefined ? {} : { crossingTop }),
       ...(cpu.every((value) => value !== undefined)
         ? { cpuMsPerFrame: median(cpu as number[]) }
         : {}),

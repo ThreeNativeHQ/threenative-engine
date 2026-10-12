@@ -14,9 +14,12 @@ import {
   BenchError,
   type IRunReport,
   type IRungSummary,
+  SUMMARY_PHASES,
+  type SummaryPhase,
   checkEquivalence,
   isSoftwareRasteriser,
   percentile,
+  pooledPhaseStats,
   renderAxes,
   rungKey,
   summarize,
@@ -121,6 +124,8 @@ export interface IPairRow {
   left: IRungSummary;
   /** left over right: above 1 means the right arm is cheaper. */
   ratio: { cpu?: number; p50: number; p95: number; p99: number; threadCpu?: number };
+  /** Per phase, the right arm's p50 over the left arm's: below 1 means the right arm spends less there. */
+  phaseRatio: Partial<Record<SummaryPhase, number>>;
   right: IRungSummary;
 }
 
@@ -144,8 +149,10 @@ function pooled(runs: readonly IRunReport[]): Map<string, IRungSummary> {
     const present = list.map((item) => item.presentCpuP50);
     const crossings = list.map((item) => item.crossingsP50);
     const compiles = list.map((item) => item.pipelineCompiles);
+    const phases = pooledPhaseStats(list.map((item) => item.phases));
     out.set(key, {
       ...first,
+      ...(phases === undefined ? {} : { phases }),
       ...(cpu.every((value) => value !== undefined)
         ? { cpuMsPerFrame: medianOf(cpu as number[]) }
         : {}),
@@ -189,9 +196,15 @@ export function pairRows(
     .map((key) => {
       const l = a.get(key) as IRungSummary;
       const r = b.get(key) as IRungSummary;
+      const phaseRatio: Partial<Record<SummaryPhase, number>> = {};
+      for (const name of SUMMARY_PHASES) {
+        const [from, to] = [l.phases?.[name]?.p50, r.phases?.[name]?.p50];
+        if (from !== undefined && to !== undefined && from > 0) phaseRatio[name] = to / from;
+      }
       return {
         key,
         left: l,
+        phaseRatio,
         ratio: {
           ...(l.cpuMsPerFrame !== undefined && r.cpuMsPerFrame !== undefined && r.cpuMsPerFrame > 0
             ? { cpu: l.cpuMsPerFrame / r.cpuMsPerFrame }
@@ -245,5 +258,52 @@ export function renderPairMarkdown(
         `| ${row.key} | ${label} | ${f(summary.p50)} | ${f(summary.p95)} | ${f(summary.p99)} | ${summary.hitches} | ${summary.drawCalls} | ${summary.pipelineCompiles ?? "n/a"} | ${f(summary.cpuMsPerFrame)} | ${f(summary.threadCpuP50)} | ${f(summary.presentCpuP50)} | ${summary.crossingsP50 ?? "n/a"} | ${label === labels[1] ? f(row.ratio.p50) : ""} | ${label === labels[1] ? f(row.ratio.cpu) : ""} | ${label === labels[1] ? f(row.ratio.threadCpu) : ""} |`,
       );
   }
+  lines.push(...renderPhaseBlock(rows, labels));
   return lines.join("\n");
+}
+
+/**
+ * Where each arm's frame CPU goes: per rung and phase, p50 and mean thread CPU ms per frame for both arms and
+ * the right arm's p50 over the left's. The page's five phases and `other` sum to the frame's thread CPU without
+ * the present call; `present` is the swap call, which sits outside that figure. A rung where either arm has no
+ * phases is left out.
+ */
+export function renderPhaseBlock(
+  rows: readonly IPairRow[],
+  labels: readonly [string, string],
+): string[] {
+  const shown = rows.filter(
+    (row) => row.left.phases !== undefined && row.right.phases !== undefined,
+  );
+  if (shown.length === 0) return [];
+  const lines = [
+    "",
+    "#### Where the frame goes",
+    "",
+    `Thread cpu ms per frame on one clock (CLOCK_THREAD_CPUTIME_ID). \`other\` is the frame minus the five phases; \`present\` is outside the no-present frame. Ratio is ${labels[1]} over ${labels[0]}, below 1 means ${labels[1]} spends less.`,
+    "",
+    `| rung | phase | ${labels[0]} p50 | ${labels[0]} mean | ${labels[1]} p50 | ${labels[1]} mean | ratio p50 |`,
+    "|---|---|---|---|---|---|---|",
+  ];
+  for (const row of shown)
+    for (const name of SUMMARY_PHASES) {
+      const [l, r] = [row.left.phases?.[name], row.right.phases?.[name]];
+      if (l === undefined && r === undefined) continue;
+      lines.push(
+        `| ${row.key} | ${name} | ${f(l?.p50, 3)} | ${f(l?.mean, 3)} | ${f(r?.p50, 3)} | ${f(r?.mean, 3)} | ${f(row.phaseRatio[name])} |`,
+      );
+    }
+  for (const row of shown) {
+    const crossings = [
+      [labels[0], row.left.crossingTop],
+      [labels[1], row.right.crossingTop],
+    ] as const;
+    for (const [label, top] of crossings)
+      if (top !== undefined && top.length > 0)
+        lines.push(
+          "",
+          `Top crossings per frame, ${row.key} ${label}: ${top.map(([name, perFrame]) => `${name} ${perFrame}`).join(", ")}`,
+        );
+  }
+  return lines;
 }

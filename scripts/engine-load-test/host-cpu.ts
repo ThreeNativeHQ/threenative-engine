@@ -23,6 +23,11 @@ export interface IWindowCpu {
   presentFrameMs: number[];
   /** C ABI crossings per frame (`bridgeCalls`); only the engine player counts them. */
   crossingsPerFrame: number[];
+  /**
+   * Thread CPU inside the host's own render call (`renderCpuMs`): the work the engine player's facade
+   * `renderer.render` defers until the page's frame is over. Only the engine player prints it.
+   */
+  renderFrameMs: number[];
 }
 
 /** Fields 14 and 15 (utime, stime) and the process group (field 5) of a /proc/<pid>/stat line. */
@@ -109,6 +114,7 @@ export class HostCpuRecorder {
         crossingsPerFrame: [],
         key: opened[1] as string,
         presentFrameMs: [],
+        renderFrameMs: [],
         threadFrameMs: [],
       };
       return;
@@ -137,6 +143,7 @@ export class HostCpuRecorder {
         bridgeCalls?: unknown;
         cpuFrameCpuMs?: unknown;
         presentCpuMs?: unknown;
+        renderCpuMs?: unknown;
       };
       if (typeof sample.cpuFrameCpuMs === "number")
         this.open.threadFrameMs.push(sample.cpuFrameCpuMs);
@@ -144,6 +151,7 @@ export class HostCpuRecorder {
         this.open.presentFrameMs.push(sample.presentCpuMs);
       if (typeof sample.bridgeCalls === "number")
         this.open.crossingsPerFrame.push(sample.bridgeCalls);
+      if (typeof sample.renderCpuMs === "number") this.open.renderFrameMs.push(sample.renderCpuMs);
     }
   }
 }
@@ -200,6 +208,9 @@ export function withHostCpu(
               presentCpuMs: window.presentFrameMs.map((value) => Math.round(value * 1000) / 1000),
             }),
         ...(window.crossingsPerFrame.length === 0 ? {} : { bridgeCalls: window.crossingsPerFrame }),
+        ...(window.renderFrameMs.length === 0
+          ? {}
+          : { renderCpuMs: window.renderFrameMs.map((value) => Math.round(value * 1000) / 1000) }),
       };
     }),
   };
