@@ -337,6 +337,19 @@ engine.collect();
   lit.onBeforeCompile = () => {};
   check(lit.onBeforeCompile !== base.onBeforeCompile, "a game's onBeforeCompile is its own");
 }
+// three's InstancedMesh/BatchedMesh.dispose, which core's projection mirror calls on a retired batch: the
+// engine frees instance buffers with the object, so the call releases nothing (as core-three.mjs).
+{
+  const web = (await bindWebEngine(createTnAbi, ["InstancedMesh", "BatchedMesh"])) as Record<
+    string,
+    { prototype: { dispose?: unknown } }
+  >;
+  check(
+    typeof web.InstancedMesh?.prototype.dispose === "function" &&
+      typeof web.BatchedMesh?.prototype.dispose === "function",
+    "InstancedMesh and BatchedMesh have dispose",
+  );
+}
 // three's CanvasTexture is the engine's own class (PRD-546): three's Texture defaults (flipped, linear,
 // mipmapped) on the canvas's pixels, and a needsUpdate re-reads the canvas.
 {

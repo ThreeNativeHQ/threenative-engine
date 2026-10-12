@@ -108,6 +108,13 @@ export async function bindWebEngine(
     catalogJson as unknown as ICatalog,
   );
   defineTypeFlags(classes);
+  // three's BatchedMesh/InstancedMesh.dispose frees the instance textures; the engine frees its instance
+  // buffers with the object, so the call has nothing to release (core's projection mirror makes it).
+  for (const name of ["BatchedMesh", "InstancedMesh"]) {
+    const prototype = (classes[name] as { prototype: { dispose?: () => void } } | undefined)
+      ?.prototype;
+    if (prototype !== undefined) prototype.dispose ??= () => {};
+  }
   // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).
   const entries = (catalogJson as unknown as ICatalog).entries;
   const extending = (base: string) =>
