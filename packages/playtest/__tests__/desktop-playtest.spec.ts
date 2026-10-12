@@ -259,6 +259,8 @@ test.skipIf(process.platform === "win32")("desktop runner drives a real local ma
     expect(report.pass).toBe(true);
     expect(report.runtime).toBe("native");
     expect(report.target).toBe("desktop");
+    expect(JSON.parse(await readFile(join(mailboxRoot, "desktop-fixture-args.json"), "utf8")))
+      .toEqual(["--width", "640", "--height", "360", "--windowed"]);
     expect(report.assertionResults).toContainEqual(expect.objectContaining({ id: "movement.distance", pass: true }));
     if (process.platform === "linux") {
       expect(await readFile(join(mailboxRoot, "desktop-fixture-display.txt"), "utf8")).toMatch(/^:\d+$/u);
@@ -857,6 +859,7 @@ const responsePath = join(root, "tn-playtest-response.json");
 const screenshotRequestPath = join(root, "tn-playtest-screenshot-request.txt");
 const screenshotBytes = Buffer.from(${JSON.stringify(screenshot)}, "base64");
 writeFileSync(join(root, "desktop-fixture-display.txt"), process.env.DISPLAY ?? "");
+writeFileSync(join(root, "desktop-fixture-args.json"), JSON.stringify(process.argv.slice(2)));
 let held = false;
 let x = 0;
 let tick = 0;

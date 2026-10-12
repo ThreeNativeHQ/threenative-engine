@@ -240,7 +240,7 @@ async function runDevicePlaytestInternal(
     setupApplication = bridge.setupApplication;
     await throwIfAborted(target);
     // Startup owns temporary operation timeouts during first-use compilation. Complete that
-    // gate before the scenario warmup, whose full tick count must run against the ready world.
+    // gate before the scenario's frame warmup against the ready world.
     const attached = bridge;
     const startupOutcome = scenario.awaitStartup === false
       ? undefined
@@ -254,7 +254,11 @@ async function runDevicePlaytestInternal(
         pump: () => attached.advance(1),
       });
     await throwIfAborted(target);
-    if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
+    // Device requests are polled on animation frames; observe warmup draws, as the browser does,
+    // without spending simulation ticks before the scenario starts.
+    for (let frame = 0; frame < scenario.warmupFrames; frame += 1) {
+      await bridge.sample({ entities: [], include: [] });
+    }
     await throwIfAborted(target);
 
     const entityIds = observedEntityIds(scenario);

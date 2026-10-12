@@ -28,6 +28,9 @@ test("packages the shared terrain game as a portable desktop entry", async () =>
   const source = await readFile(output, "utf8");
   expect(source).toContain("TN_NATIVE_START_FAILED");
   expect(source).not.toContain("Missing #root element.");
+  expect(
+    JSON.parse(await readFile(path.join(root, "terrain-assets/assets.manifest.json"), "utf8")),
+  ).toEqual({ version: 1, entries: {} });
 }, 120_000);
 
 /**
