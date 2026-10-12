@@ -23,12 +23,8 @@ import type { IGradeSettings } from "./grade.js";
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
- * The three names this game's look comes in.
- *
- * `low` is what a phone gets and `high` what a desktop gets — those two are this template's
- * shipped looks. `medium` is the rung in between for a machine that is neither: a laptop iGPU, a
- * handheld, a desktop that is dropping frames. Nothing outside this file decides what any of them
- * mean.
+ * This game's authored looks. GPU family picks the start; measured frame budgets refine it.
+ * Edit these presets to change the look without changing the framework.
  */
 export type QualityTier = "low" | "medium" | "high";
 
