@@ -720,6 +720,16 @@ if(MYSTRAL_USE_DAWN)
     endif()
 endif()
 
+# The JS-free native engine (PRD-573): its GPU-backed targets are configured only on request, so the
+# default (legacy) configure defines no engine target. The portable CPU core has its own switch,
+# TN_ENGINE_CORE_ONLY, near the top of this file.
+option(TN_ENGINE_ONLY "Configure only the JS-free native engine targets" OFF)
+if(TN_ENGINE_ONLY)
+    include(cmake/NativeEngine.cmake)
+    message(STATUS "TN_ENGINE_ONLY: native engine targets only, no scripting configured")
+    return()
+endif()
+
 # QuickJS-NG (actively maintained fork with MSVC/Windows support)
 if(MYSTRAL_USE_QUICKJS)
     set(QUICKJS_DIR ${THIRD_PARTY_DIR}/quickjs)

@@ -4,7 +4,9 @@
 #
 # PRD-573 slice 2b lands foundation, scene, animation and the binding registry. Slice 3 adds the
 # shader IR and WGSL emitter, the cooked asset package (TNPK), the glTF loader and the C ABI over
-# them. Every target here is `EXCLUDE_FROM_ALL`, so the legacy build never compiles any of it.
+# them. Slice 5 adds the renderer's portable CPU modules (render graph, virtual shadow pages, probes)
+# and, from NativeEngine.cmake, the GPU renderer. Every target here is `EXCLUDE_FROM_ALL`, so the
+# legacy build never compiles any of it.
 
 option(TN_ENGINE_SANITIZE "Build the native engine targets under ASan and UBSan" OFF)
 option(TN_ENGINE_TSAN "Build the native engine targets under ThreadSanitizer (a separate build: TSan excludes ASan)" OFF)
@@ -70,6 +72,21 @@ tn_native_engine_target(tn_engine_scene)
 target_link_libraries(tn_engine_scene PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+# Virtual shadow page logic (PRD-524 phase 1), ported from
+# packages/core/src/render/virtual-shadow-pages.ts: the pages a frame requests from receiver
+# feedback, the bounded LRU physical page pool, and the pages a moving caster invalidates. Portable,
+# so it joins the Wasm core.
+add_library(tn_engine_vsm STATIC src/engine/renderer/shadows/virtual/pages.cpp
+    src/engine/renderer/shadows/virtual/atlas.cpp)
+tn_native_engine_target(tn_engine_vsm)
+target_link_libraries(tn_engine_vsm PUBLIC tn_engine_foundation)
+target_include_directories(tn_engine_vsm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# Render graph (N14a): pass ordering, transient aliasing and temporal history. Pure CPU logic.
+add_library(tn_engine_graph STATIC src/engine/renderer/graph/render_graph.cpp src/engine/renderer/graph/history.cpp)
+tn_native_engine_target(tn_engine_graph)
+target_include_directories(tn_engine_graph PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # Animation is a renderer/binding dependency, including in the browser-only build.
 add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp src/engine/animation/property_binding.cpp
     src/engine/animation/mixer.cpp src/engine/animation/schedule.cpp
@@ -99,6 +116,44 @@ add_library(tn_engine_abi STATIC src/engine/abi/abi.cpp src/engine/abi/identity.
 tn_native_engine_target(tn_engine_abi)
 target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation tn_engine_bindings tn_engine_shader)
 target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+# PRD-525: probe capture projection, convergence and cooked volumes share the portable CPU core.
+add_library(tn_engine_probes STATIC src/engine/renderer/probes/schedule.cpp
+    src/engine/renderer/probes/volume.cpp src/engine/assets/probe_volume.cpp)
+tn_native_engine_target(tn_engine_probes)
+target_link_libraries(tn_engine_probes PUBLIC tn_engine_foundation tn_engine_assets)
+target_include_directories(tn_engine_probes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# The renderer's sources, shared by the native build (NativeEngine.cmake, over the host's WebGPU
+# backend) and the browser build below.
+set(TN_ENGINE_RENDERER_SOURCES src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp
+    src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp
+    src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
+    src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp
+    src/engine/renderer/post/traa.cpp src/engine/renderer/post/effects.cpp src/engine/renderer/probes/capture.cpp
+    src/engine/renderer/render_target_pass.cpp)
+if(EMSCRIPTEN)
+    # PRD-532: the same renderer over the browser's WebGPU through Dawn's emdawnwebgpu port, whose
+    # webgpu.h is Dawn's. No host services: nothing here may assume a native driver.
+    add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
+    tn_native_engine_target(tn_engine_renderer)
+    target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
+        tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes)
+    target_compile_definitions(tn_engine_renderer PUBLIC MYSTRAL_WEBGPU_DAWN)
+    target_compile_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
+    target_link_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
+    target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    # Taking the address of the renderer's entry points pulls every renderer object into the link, so
+    # a wgpu* call the browser port lacks fails here rather than in a page.
+    add_executable(tn-native-engine-wasm-renderer-link EXCLUDE_FROM_ALL tests/native-engine/wasm/renderer_link.cpp)
+    target_link_libraries(tn-native-engine-wasm-renderer-link PRIVATE tn_engine_renderer)
+    target_include_directories(tn-native-engine-wasm-renderer-link PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    tn_native_engine_target(tn-native-engine-wasm-renderer-link)
+    add_test(NAME native_engine_wasm_renderer_linked COMMAND tn-native-engine-wasm-renderer-link)
+    set_tests_properties(native_engine_wasm_renderer_linked PROPERTIES LABELS "native-engine"
+        PASS_REGULAR_EXPRESSION "TN_WASM_RENDERER_LINKED")
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-wasm-renderer-link)
+endif()
 
 # One executable per test file; each ctest names a case inside it.
 function(tn_native_engine_test target source)
@@ -281,6 +336,34 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_attribute_defer=attribute_defer)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
+tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/render_graph_test.cpp
+    native_engine_render_graph_order=order
+    native_engine_render_graph_aliasing=aliasing
+    native_engine_render_graph_diagnostics=diagnostics
+    native_engine_history_cut_resize=cut_resize
+    native_engine_history_objects=objects
+    native_engine_history_multi_render=multi_render)
+target_link_libraries(tn-native-engine-render-graph-test PRIVATE tn_engine_graph)
+if(NOT EMSCRIPTEN)
+    add_test(NAME native_engine_traa_jitter_reference COMMAND sh -c
+        "\"$1\" jitter_dump | node \"$2\"" --
+        $<TARGET_FILE:tn-native-engine-render-graph-test>
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/traa_reference_test.mjs)
+    set_tests_properties(native_engine_traa_jitter_reference PROPERTIES LABELS "native-engine")
+endif()
+
+# PRD-524 phase 1: the recorded page requests, allocations, evictions and invalidations reproduce
+# over the native port.
+tn_native_engine_test(tn-native-engine-vsm-test tests/native-engine/vsm/vsm_pages_test.cpp
+    native_engine_vsm_pages=pages
+    native_engine_vsm_invalidation=invalidation)
+target_link_libraries(tn-native-engine-vsm-test PRIVATE tn_engine_vsm)
+target_include_directories(tn-native-engine-vsm-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/vsm)
+tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vsm_atlas_test.cpp
+    native_engine_vsm_atlas=atlas
+    native_engine_vsm_sampling=sampling)
+target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader)
+
 # The header compiles as strict C11 and a C program links against the ABI.
 add_executable(tn-native-engine-abi-c11 EXCLUDE_FROM_ALL tests/native-engine/abi_c11.c)
 target_link_libraries(tn-native-engine-abi-c11 PRIVATE tn_engine_abi)
@@ -408,6 +491,24 @@ tn_native_engine_test(tn-native-engine-geometry-edges-test tests/native-engine/g
     native_engine_geometry_out_of_range=out_of_range
     native_engine_geometry_nan_bounds=nan_bounds)
 target_link_libraries(tn-native-engine-geometry-edges-test PRIVATE tn_engine_scene)
+
+# PRD-525: probe placement and the bounded incremental update schedule as pure CPU functions, ported
+# from packages/core/src/render/probe-volume.ts. It links CPU math and cooked assets and owns no GPU
+# resource; `native_engine_probes_reference_current` keeps the committed table equal to what the core
+# module produces today. The shader case reports a refused graph by exception, which the Wasm core is
+# not built for, so the probe tests are native only (the library itself builds for Wasm).
+if(NOT EMSCRIPTEN)
+    tn_native_engine_test(tn-native-engine-probe-schedule-test tests/native-engine/probes/probe_schedule_test.cpp
+        native_engine_probe_schedule=schedule
+        native_engine_probe_budget=budget)
+    target_link_libraries(tn-native-engine-probe-schedule-test PRIVATE tn_engine_probes)
+    target_include_directories(tn-native-engine-probe-schedule-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/probes)
+    tn_native_engine_test(tn-native-engine-probe-volume-test tests/native-engine/probes/probe_volume_test.cpp
+        native_engine_probe_projection=projection native_engine_probe_atlas=sampling
+        native_engine_probe_convergence=bake native_engine_probe_cooked=cooked
+        native_engine_probe_shader=shader native_engine_probe_async=async)
+    target_link_libraries(tn-native-engine-probe-volume-test PRIVATE tn_engine_probes tn_engine_shader)
+endif()
 
 # PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
 tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hierarchy_test.cpp
@@ -596,7 +697,9 @@ if(NOT EMSCRIPTEN)
                 "mathutils_reference_current:packages/runtime-native/tests/native-engine/mathutils/mathutils-reference.ts"
                 "skeleton_reference_current:packages/runtime-native/tests/native-engine/animation/skeleton-reference.ts"
                 "skinned_palette_reference_current:packages/runtime-native/tests/native-engine/animation/skinned-palette-reference.ts"
-                "json_reference_current:packages/runtime-native/tests/native-engine/json/json-reference.ts")
+                "json_reference_current:packages/runtime-native/tests/native-engine/json/json-reference.ts"
+                "vsm_reference_current:packages/runtime-native/tests/native-engine/vsm/vsm-reference.ts"
+                "probes_reference_current:packages/runtime-native/tests/native-engine/probes/probes-reference.ts")
             string(REPLACE ":" ";" reference_pair "${reference}")
             list(GET reference_pair 0 reference_name)
             list(GET reference_pair 1 reference_script)

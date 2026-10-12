@@ -156,6 +156,23 @@ public:
     void setFrameCaptureSource(host::IFrameCaptureSource* source) { captureSource_ = source; }
 
     /**
+     * A device-loss observer (the native engine's device lifecycle). Installed, it hears every
+     * loss, the context's own destroy included, and the loss is no longer fatal. It may run on any
+     * thread the backend chooses, so it must only record the loss. Unset (the legacy host), a loss
+     * stays fatal exactly as before.
+     */
+    using DeviceLostHandler = void (*)(void* user, uint32_t reason, const char* message);
+    void setDeviceLostHandler(DeviceLostHandler handler, void* user) {
+        lostHandler_ = handler;
+        lostHandlerUser_ = user;
+    }
+    bool notifyDeviceLost(uint32_t reason, const char* message) {
+        if (!lostHandler_) return false;
+        lostHandler_(lostHandlerUser_, reason, message);
+        return true;
+    }
+
+    /**
      * Capture the current frame as RGBA pixel data
      * @param outData Output vector to receive RGBA data (width * height * 4 bytes)
      * @param outWidth Output parameter for frame width
@@ -236,6 +253,8 @@ private:
     void* offscreenTexture_ = nullptr;  // WGPUTexture
     void* offscreenTextureView_ = nullptr;  // WGPUTextureView
     host::IFrameCaptureSource* captureSource_ = nullptr;
+    DeviceLostHandler lostHandler_ = nullptr;
+    void* lostHandlerUser_ = nullptr;
 };
 
 }  // namespace webgpu

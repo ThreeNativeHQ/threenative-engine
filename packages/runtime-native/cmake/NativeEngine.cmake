@@ -1,0 +1,300 @@
+# Native engine targets that need a GPU backend (PRD-499, PRD-573 slice 5). Included from
+# CMakeLists.txt only when `-DTN_ENGINE_ONLY=ON`, after the WebGPU and SDL dependencies are found and
+# before any JS engine is configured, so nothing here can see a VM target or VM headers. The default
+# (legacy) configure never includes it and defines no engine target.
+# Every engine target is C++20 whatever MYSTRAL_USE_V8 selects for the legacy host, and every one is
+# EXCLUDE_FROM_ALL with the `native-engine` ctest label.
+
+include(${CMAKE_CURRENT_LIST_DIR}/NativeEngineCore.cmake)
+
+# Host services: the GPU context and presentation owner with no scripting state. The legacy
+# runtime compiles the same sources, so both hosts share their configuration and pacing path.
+# TN_ENGINE_HOST_SERVICES switches on the two engine-only behaviours in context.cpp (full-resolution
+# GPU timestamps and the queue release); the legacy host compiles the file without it.
+add_library(tn_host_services STATIC src/webgpu/context.cpp src/webgpu/presentation.cpp src/utils/stb_impl.cpp)
+tn_native_engine_target(tn_host_services)
+target_compile_definitions(tn_host_services PRIVATE TN_ENGINE_HOST_SERVICES)
+target_include_directories(tn_host_services PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(tn_host_services PRIVATE ${THIRD_PARTY_DIR}/stb)
+if(TARGET dawn::webgpu)
+    target_link_libraries(tn_host_services PUBLIC dawn::webgpu)
+    # These are the same Dawn platform dependencies the legacy host links below its engine-only
+    # early return. Engine consumers must carry them too, without linking the scripting host.
+    if(APPLE)
+        target_link_libraries(tn_host_services PUBLIC "-framework Metal" "-framework QuartzCore"
+            "-framework IOKit" "-framework IOSurface")
+    elseif(WIN32)
+        target_link_libraries(tn_host_services PUBLIC d3d12 dxgi dxguid)
+        if(MSVC)
+            target_link_libraries(tn_host_services PUBLIC OneCoreUap.lib)
+        endif()
+    endif()
+elseif(TARGET wgpu::wgpu)
+    target_link_libraries(tn_host_services PUBLIC wgpu::wgpu)
+endif()
+if(SDL3_STATIC_TARGET)
+    target_link_libraries(tn_host_services PRIVATE ${SDL3_STATIC_TARGET})
+elseif(SDL3_LIBRARY)
+    target_link_libraries(tn_host_services PRIVATE ${SDL3_LIBRARY})
+    target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
+endif()
+
+# The same pacing checks must link with the JS-free host, not only the legacy bindings.
+if(NOT MYSTRAL_PLATFORM STREQUAL "android" AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
+    add_executable(tn-native-engine-pacing-test EXCLUDE_FROM_ALL tests/presentation_pacing_test.cpp)
+    tn_native_engine_target(tn-native-engine-pacing-test)
+    target_link_libraries(tn-native-engine-pacing-test PRIVATE tn_host_services)
+    add_test(NAME native_engine_pacing COMMAND tn-native-engine-pacing-test)
+    set_tests_properties(native_engine_pacing PROPERTIES LABELS "native-engine" TIMEOUT 30)
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-pacing-test)
+endif()
+
+# Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
+add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
+tn_native_engine_target(tn_engine_renderer)
+target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
+    tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes tn_host_services)
+if(TARGET dawn::webgpu)
+    target_link_libraries(tn_engine_renderer PUBLIC dawn::webgpu)
+elseif(TARGET wgpu::wgpu)
+    target_link_libraries(tn_engine_renderer PUBLIC wgpu::wgpu)
+endif()
+target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    # Gate E: clear, submit and read back 300 headless frames with no JS engine linked.
+    add_executable(tn-native-engine-gate-e EXCLUDE_FROM_ALL tests/native-engine/gate_e_driver.cpp)
+    target_link_libraries(tn-native-engine-gate-e PRIVATE tn_host_services)
+    tn_native_engine_target(tn-native-engine-gate-e)
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-gate-e)
+    add_test(NAME native_engine_gate_e COMMAND $<TARGET_FILE:tn-native-engine-gate-e>)
+    set_tests_properties(native_engine_gate_e PROPERTIES LABELS "native-engine")
+    if(TN_ENGINE_SANITIZE)
+        # GPU drivers keep allocations alive past exit, so this driver judges memory errors and
+        # undefined behaviour, not leaks.
+        set_tests_properties(native_engine_gate_e PROPERTIES
+            LABELS "native-engine;native-sanitizer"
+            ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
+endif()
+
+get_directory_property(tn_tests_before_gpu TESTS)
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    tn_native_engine_test(tn-native-engine-gpu-resources-test tests/native-engine/gpu_resources_test.cpp
+        native_engine_gpu_upload_readback=upload_readback
+        native_engine_gpu_deferred_destroy=deferred_destroy
+        native_engine_gpu_async_only=async_only
+        native_engine_lifetime_deferred_gpu=lifetime_deferred_gpu)
+    target_link_libraries(tn-native-engine-gpu-resources-test PRIVATE tn_engine_renderer tn_host_services)
+    # A real window, so the ctest runs it under the repository's private Xvfb with SDL's dummy audio.
+    add_executable(tn-native-engine-presentation-test EXCLUDE_FROM_ALL tests/native-engine/presentation_test.cpp)
+    target_link_libraries(tn-native-engine-presentation-test PRIVATE tn_engine_renderer tn_host_services ${SDL3_STATIC_TARGET})
+    target_include_directories(tn-native-engine-presentation-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
+    tn_native_engine_target(tn-native-engine-presentation-test)
+    add_test(NAME native_engine_present_resize
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/xvfb.sh $<TARGET_FILE:tn-native-engine-presentation-test> resizes)
+    set_tests_properties(native_engine_present_resize PROPERTIES LABELS "native-engine"
+        ENVIRONMENT "SDL_AUDIODRIVER=dummy;SDL_VIDEODRIVER=x11;ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-presentation-test)
+
+    # The same corpus validates through the backend's own compiler: Tint on Dawn, naga on wgpu-native.
+    if(TARGET dawn::webgpu)
+        set(tn_shader_validator native_engine_shader_emit_tint)
+    else()
+        set(tn_shader_validator native_engine_shader_emit_naga)
+    endif()
+    tn_native_engine_test(tn-native-engine-shader-emit-test tests/native-engine/shader_emit_test.cpp
+        ${tn_shader_validator}=validates
+        native_engine_shader_emit_stable=stable
+        native_engine_shader_emit_position_invariant=position_invariant
+        native_engine_shader_emit_shared_once=shared_once)
+    target_link_libraries(tn-native-engine-shader-emit-test PRIVATE tn_engine_shader tn_host_services)
+    tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
+        native_engine_renderer_resize_readback=resize_readback
+        native_engine_renderer_output_ramp=output_ramp
+        native_engine_renderer_lit_reference=lit_reference
+        native_engine_renderer_lambert_reference=lambert_reference
+        native_engine_renderer_phong_reference=phong_reference
+        native_engine_renderer_physical_reference=physical_reference
+        native_engine_renderer_alpha_transparency=alpha_transparency
+        native_engine_renderer_alpha_test=alpha_test
+        native_engine_renderer_mipmaps_share_one_submit=mipmaps_share_one_submit
+        native_engine_traa_alpha=traa_alpha
+        native_engine_traa_reset_seed=traa_reset_seed)
+    target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
+    if(TN_ENGINE_SANITIZE)
+        # Like Gate E, exercise ASan/UBSan without judging the GPU driver's exit allocations.
+        set_tests_properties(native_engine_traa_alpha PROPERTIES
+            LABELS "native-engine;native-sanitizer"
+            ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
+    if(TARGET dawn::webgpu)
+        add_test(NAME native_engine_traa_validation COMMAND tn-native-engine-renderer-test traa_validation)
+        set_tests_properties(native_engine_traa_validation PROPERTIES LABELS "native-engine")
+        add_test(NAME native_engine_traa_projection_reference COMMAND sh -c
+            "\"$1\" traa_validation > \"$3\" && node \"$2\" --projection < \"$3\"" --
+            $<TARGET_FILE:tn-native-engine-renderer-test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/traa_reference_test.mjs
+            ${CMAKE_CURRENT_BINARY_DIR}/traa-projections.txt)
+        set_tests_properties(native_engine_traa_projection_reference PROPERTIES LABELS "native-engine")
+    endif()
+    target_compile_definitions(tn-native-engine-renderer-test PRIVATE
+        TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1")
+
+    tn_native_engine_test(tn-native-engine-compute-test tests/native-engine/compute_test.cpp
+        native_engine_compute_readback=readback)
+    target_link_libraries(tn-native-engine-compute-test PRIVATE tn_engine_renderer tn_host_services)
+
+    tn_native_engine_test(tn-native-engine-update-scaling-test tests/native-engine/update_scaling_test.cpp
+        native_engine_update_warm_batches=warm_batches)
+    target_link_libraries(tn-native-engine-update-scaling-test PRIVATE tn_engine_renderer tn_host_services)
+    # The 4k to 64k scaling limit (large <= small * 18) is a performance target, not a correctness
+    # check: F records it red ("scaling still behind"). It keeps its own label, `tn-perf`, so
+    # `ctest -L native-engine` judges correctness and `ctest -L tn-perf` reports the open target.
+    add_test(NAME native_engine_update_scaling COMMAND tn-native-engine-update-scaling-test scaling)
+    set_tests_properties(native_engine_update_scaling PROPERTIES LABELS "tn-perf" TIMEOUT 300)
+
+    tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
+        native_engine_uniform_batch_preparation=uniform_batch_preparation
+        native_engine_renderer_scene_lit=lit_scene
+        native_engine_renderer_present_direct=present_direct
+        native_engine_renderer_invariant_scope=invariant_scope
+        native_engine_renderer_instance_counts=instance_counts
+        native_engine_renderer_flat_lane_equivalence=flat_lane_equivalence
+        native_engine_directional_target=directional_target
+        native_engine_renderer_invalidation=invalidation
+        native_engine_renderer_scene_alpha=alpha_scene
+        native_engine_standard_materials_unsupported=material_unsupported
+        native_engine_renderer_shader_invalid=shader_invalid
+        native_engine_renderer_time_uniform=time_uniform
+        native_engine_renderer_steady_state=steady_state
+        native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
+        native_engine_render_target=render_target
+        native_engine_renderer_updates=updates
+        native_engine_renderer_multi_camera_layers=multi_camera_layers
+        native_engine_renderer_callback=render_callback
+        native_engine_renderer_instanced=instanced
+        native_engine_batched_vs_unbatched=batched_vs_unbatched
+        native_engine_normal_map_tilt=normal_map_tilt
+        native_engine_renderer_gpu_mipmaps=gpu_mipmaps
+        native_engine_renderer_msaa_edges=msaa_edges
+        native_engine_unsupported_map_slot=unsupported_map_slot
+        native_engine_converted_copies_swept=converted_copies_swept
+        native_engine_gpu_timer_covers_shadows=gpu_timer_covers_shadows
+        native_engine_renderer_overlay_over_frame=overlay_over_frame
+        native_engine_gpu_timer_is_opt_in=gpu_timer_is_opt_in
+        native_engine_shadow_camera_layers=shadow_camera_layers
+        native_engine_renderer_map_sampleability_changes=map_sampleability_changes
+        native_engine_renderer_batch_caches_stay_put=batch_caches_stay_put
+        native_engine_renderer_frustum_culling=frustum_culling
+        native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
+        native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy)
+    target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services)
+    target_compile_definitions(tn-native-engine-render-database-test PRIVATE
+        TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
+        TN_NATIVE_LIT_OUT="${CMAKE_CURRENT_BINARY_DIR}/native-lit-render.rgba")
+
+    tn_native_engine_test(tn-native-engine-renderer-caches-test tests/native-engine/renderer_caches_test.cpp
+        native_engine_renderer_geometry_cache=geometry
+        native_engine_renderer_pipeline_cache=pipelines
+        native_engine_renderer_pipeline_compile_async=compile_before_render
+        native_engine_renderer_init_texture=init_texture)
+    target_link_libraries(tn-native-engine-renderer-caches-test PRIVATE tn_engine_renderer tn_host_services)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MYSTRAL_USE_DAWN)
+        target_compile_definitions(tn-native-engine-renderer-caches-test PRIVATE TN_TEST_PIPELINE_WORKERS)
+        target_link_options(tn-native-engine-renderer-caches-test PRIVATE "-Wl,--wrap=wgpuDeviceCreateRenderPipeline")
+        foreach(case failed_ticket synchronous_adoption shutdown_queue nonstandard_exception)
+            add_test(NAME native_engine_renderer_pipeline_${case} COMMAND tn-native-engine-renderer-caches-test ${case})
+            set_tests_properties(native_engine_renderer_pipeline_${case} PROPERTIES LABELS "native-engine" TIMEOUT 10)
+        endforeach()
+    endif()
+
+    tn_native_engine_test(tn-native-engine-package-load-test tests/native-engine/package_load_test.cpp
+        native_engine_cooked_package_load=load)
+    target_link_libraries(tn-native-engine-package-load-test PRIVATE tn_engine_renderer tn_host_services)
+
+    tn_native_engine_test(tn-native-engine-shader-package-test tests/native-engine/shader_package_test.cpp
+        native_engine_shader_layouts=layouts
+        native_engine_shader_variants_gpu=variants
+        native_engine_shader_package_version=version)
+    target_link_libraries(tn-native-engine-shader-package-test PRIVATE tn_engine_shader tn_engine_renderer tn_host_services)
+
+    if(TARGET dawn::webgpu)
+        tn_native_engine_test(tn-native-engine-device-loss-test tests/native-engine/device_loss_test.cpp
+            native_engine_device_loss_recover=recover
+            native_engine_device_stale_handle=stale_handle
+            native_engine_device_no_adapter=no_adapter)
+        target_link_libraries(tn-native-engine-device-loss-test PRIVATE tn_engine_renderer tn_host_services)
+    else()
+        # Measured 2026-10-04: wgpu-native 25 never delivers the device-lost callback for
+        # wgpuDeviceDestroy, so the engine gets no loss signal to recover from.
+        foreach(name native_engine_device_loss_recover native_engine_device_stale_handle native_engine_device_no_adapter)
+            tn_register_blocked_test(${name} "wgpu-native 25 delivers no device-lost callback on wgpuDeviceDestroy")
+        endforeach()
+    endif()
+    if(TN_ENGINE_SANITIZE)
+        # These own a real device, whose driver keeps allocations past exit: judged for memory
+        # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
+        # Every test this block registered is one of them, except the Xvfb window test, which sets
+        # its own environment above.
+        get_directory_property(tn_tests_after_gpu TESTS)
+        set(tn_gpu_tests ${tn_tests_after_gpu})
+        list(REMOVE_ITEM tn_gpu_tests ${tn_tests_before_gpu} native_engine_present_resize)
+        set_tests_properties(${tn_gpu_tests} PROPERTIES
+            ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
+endif()
+
+get_property(tn_native_engine_test_targets GLOBAL PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS)
+add_custom_target(tn-native-engine-tests DEPENDS ${tn_native_engine_test_targets})
+
+# The engine target graph, recorded once every target in the project exists, so the ctest below can
+# prove no engine target reaches a JS engine, a web view or the scripting host.
+function(tn_native_engine_collect_links target out)
+    set(seen ${${out}})
+    foreach(property LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+        get_target_property(links ${target} ${property})
+        if(NOT links)
+            continue()
+        endif()
+        foreach(link IN LISTS links)
+            string(REGEX REPLACE "^\\$<LINK_ONLY:(.*)>$" "\\1" link "${link}")
+            if(link IN_LIST seen)
+                continue()
+            endif()
+            list(APPEND seen "${link}")
+            if(TARGET ${link})
+                get_target_property(location ${link} IMPORTED_LOCATION)
+                if(location)
+                    list(APPEND seen "${location}")
+                endif()
+                tn_native_engine_collect_links(${link} seen)
+            endif()
+        endforeach()
+    endforeach()
+    set(${out} ${seen} PARENT_SCOPE)
+endfunction()
+
+function(tn_native_engine_write_graph)
+    get_property(targets GLOBAL PROPERTY TN_NATIVE_ENGINE_TARGETS)
+    set(report "")
+    foreach(target IN LISTS targets)
+        get_target_property(standard ${target} CXX_STANDARD)
+        set(links "")
+        tn_native_engine_collect_links(${target} links)
+        string(APPEND report "${target}|${standard}|${links}\n")
+    endforeach()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/native-engine-target-graph.txt" "${report}")
+endfunction()
+cmake_language(DEFER DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} CALL tn_native_engine_write_graph)
+
+add_test(NAME native_engine_target_graph
+    COMMAND ${CMAKE_COMMAND}
+        -DGRAPH=${CMAKE_CURRENT_BINARY_DIR}/native-engine-target-graph.txt
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckNativeEngineGraph.cmake)
+set_tests_properties(native_engine_target_graph PROPERTIES LABELS "native-engine")
+
+add_test(NAME native_engine_no_blocking_waits
+    COMMAND ${CMAKE_COMMAND} -DENGINE_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src/engine
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckNoBlockingWaits.cmake)
+set_tests_properties(native_engine_no_blocking_waits PROPERTIES LABELS "native-engine")
