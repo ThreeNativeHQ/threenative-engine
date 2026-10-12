@@ -410,7 +410,7 @@ try {
     });
     try {
       await server.listen();
-      const url = `http://127.0.0.1:${PORT}/`;
+      const url = `http://127.0.0.1:${PORT}/?showcase=1`;
       const config = parseStandalonePlaytestArgs([
         "--scenario",
         "playtests/terrain.playtest.json",
@@ -422,7 +422,7 @@ try {
         "--timeout",
         "180000",
         "--artifacts",
-        `artifacts/playtest/custom-${arm}`,
+        join(temporary, `capture-${arm}`),
       ]);
       let observation = {};
       await withBrowserCapture(config, async (session) => {

@@ -10,6 +10,8 @@ export function shellElement(
       ? document.createElementNS("http://www.w3.org/2000/svg", tag)
       : document.createElement(tag);
   for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+  // Range values must be applied after step, or the browser rounds fractional defaults.
+  if (attributes.value !== undefined) element.setAttribute("value", attributes.value);
   parent.appendChild(element);
   return element;
 }

@@ -56,7 +56,7 @@ try {
     "--timeout",
     "120000",
     "--artifacts",
-    "artifacts/playtest/authored-world",
+    join(temporary, "capture"),
   ]);
   let recorded;
   await withBrowserCapture(config, async (session) => {
@@ -81,6 +81,14 @@ try {
       await advanceFixedStep(page, session.bridge, 2);
     };
     await ready();
+    assert.deepEqual(
+      await page.evaluate(() => [
+        document.querySelector("#brush-strength").value,
+        document.querySelector("#brush-falloff").value,
+      ]),
+      ["0.35", "0.65"],
+      "The shell preserves fractional brush defaults before input",
+    );
 
     // ---- GUI edits ------------------------------------------------------------------------------
     const box = await page.locator("#viewport").boundingBox();
