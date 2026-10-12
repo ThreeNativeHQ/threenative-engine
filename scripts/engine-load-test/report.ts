@@ -32,6 +32,7 @@ export const ARMS = [
   "tn-android",
   "tn-desktop",
   "tn-engine-desktop",
+  "tn-engine-web",
   "godot-web",
   "godot-android",
   "godot-desktop",
@@ -186,6 +187,65 @@ export interface IRunReport {
   identity?: IPerformanceIdentity;
   provisional?: string[];
   rungs: IRunReportRung[];
+  /** A web arm's startup, memory and shipped bytes (PRD-573 slice 7); see `parseWebMetrics`. */
+  web?: IWebReport;
+}
+
+/** What a web arm measures beyond its frames: the page's own startup and memory, and the runner's byte count. */
+export interface IWebReport {
+  startup?: { entryMs: number; firstFrameMs: number | null; wasmInstantiateMs: number[] };
+  memory?: { jsHeapUsedBytes: number | null; wasmMemoryBytes: number | null };
+  artifact?: { jsBytes: number; jsGzipBytes: number; wasmBytes: number; wasmGzipBytes: number };
+  engineWasm?: { mtime: string; sha256: string };
+}
+
+const nonNegative = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+/** Fails closed on a web block whose fields are not what the page and runner write. */
+export function parseWebMetrics(value: unknown): IWebReport {
+  const root = requireObject(value, "report.web");
+  const fail = (field: string): never => {
+    throw new BenchError("TN_BENCH_BAD_SHAPE", `report.web.${field} is malformed`);
+  };
+  const out: IWebReport = {};
+  if (root.startup !== undefined) {
+    const startup = requireObject(root.startup, "report.web.startup");
+    const instantiate = startup.wasmInstantiateMs;
+    if (!nonNegative(startup.entryMs)) fail("startup.entryMs");
+    if (startup.firstFrameMs !== null && !nonNegative(startup.firstFrameMs))
+      fail("startup.firstFrameMs");
+    if (!Array.isArray(instantiate) || !instantiate.every(nonNegative))
+      fail("startup.wasmInstantiateMs");
+    out.startup = {
+      entryMs: startup.entryMs as number,
+      firstFrameMs: startup.firstFrameMs as number | null,
+      wasmInstantiateMs: instantiate as number[],
+    };
+  }
+  if (root.memory !== undefined) {
+    const memory = requireObject(root.memory, "report.web.memory");
+    for (const field of ["jsHeapUsedBytes", "wasmMemoryBytes"] as const)
+      if (memory[field] !== null && !nonNegative(memory[field])) fail(`memory.${field}`);
+    out.memory = {
+      jsHeapUsedBytes: memory.jsHeapUsedBytes as number | null,
+      wasmMemoryBytes: memory.wasmMemoryBytes as number | null,
+    };
+  }
+  if (root.artifact !== undefined) {
+    const artifact = requireObject(root.artifact, "report.web.artifact");
+    for (const field of ["jsBytes", "jsGzipBytes", "wasmBytes", "wasmGzipBytes"] as const)
+      if (!nonNegative(artifact[field])) fail(`artifact.${field}`);
+    out.artifact = artifact as unknown as NonNullable<IWebReport["artifact"]>;
+  }
+  if (root.engineWasm !== undefined) {
+    const wasm = requireObject(root.engineWasm, "report.web.engineWasm");
+    out.engineWasm = {
+      mtime: requireString(wasm, "mtime", "report.web.engineWasm"),
+      sha256: requireString(wasm, "sha256", "report.web.engineWasm"),
+    };
+  }
+  return out;
 }
 
 /**
@@ -847,6 +907,7 @@ export function parseRunReport(value: unknown): IRunReport {
     ...(root.identity === undefined ? {} : { identity: parseReportIdentity(root.identity) }),
     ...(provisional === undefined ? {} : { provisional }),
     rungs,
+    ...(root.web === undefined ? {} : { web: parseWebMetrics(root.web) }),
   };
 }
 

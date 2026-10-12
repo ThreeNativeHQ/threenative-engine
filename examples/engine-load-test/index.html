@@ -14,6 +14,23 @@
   <body>
     <canvas id="stage" width="1280" height="720"></canvas>
     <div id="status">initializing</div>
+    <script>
+      // PRD-573 slice 7: how long each WebAssembly compile or instantiate took before the entry ran.
+      (() => {
+        const times = (globalThis.__tnWasmInstantiateMs = []);
+        for (const name of ["compile", "compileStreaming", "instantiate", "instantiateStreaming"]) {
+          const original = WebAssembly[name];
+          if (typeof original !== "function") continue;
+          WebAssembly[name] = function (...args) {
+            const started = performance.now();
+            return original.apply(this, args).then((result) => {
+              times.push(performance.now() - started);
+              return result;
+            });
+          };
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

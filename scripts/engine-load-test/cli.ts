@@ -14,6 +14,7 @@ import { runPerformanceRegressionCli } from "../performance-regression/compare.j
 import { cpuCommand, runCpuCommand } from "../performance-regression/cpu.js";
 import {
   assertBrowserPlacements,
+  assertHardwareAdapter,
   assertPlainThreePilot,
   driveBenchmarkPage,
   serveDirectory,
@@ -41,9 +42,15 @@ import {
   withHostLoad,
 } from "./report.js";
 import { runAndroidArm } from "./run-android.js";
-import { desktopTimeoutMs, runGodotDesktop, runTnDesktop } from "./run-desktop.js";
+import { desktopTimeoutMs, resolveFoxAsset, runGodotDesktop, runTnDesktop } from "./run-desktop.js";
 import { runTnEngineDesktop } from "./run-engine.js";
 import { exportGodotWeb } from "./run-godot.js";
+import {
+  ENGINE_DIST,
+  buildWebEngineExample,
+  freshWasm,
+  webArtifactBytes,
+} from "./run-web-engine.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const artifactRoot = path.join(repoRoot, "artifacts/engine-load-test");
@@ -126,7 +133,76 @@ function query(options: ILadderOptions): string {
     passes: String(options.axes.passCount),
   });
   if (options.sourceSha !== undefined) params.set("sourceSha", options.sourceSha);
+  // The pair's per-frame phases, and the engine arm's call census, as the desktop arms take them from the env.
+  if (process.env.TN_BENCH_PHASES === "1") params.set("phases", "1");
+  if (process.env.TN_BENCH_CROSSINGS === "1") params.set("crossings", "1");
+  // The named override that forces core's JS mirror where the host batches the scene, as on the engine player.
+  if (process.env.TN_BENCH_PROJECTION === "js") params.set("projection", "js");
   return params.toString();
+}
+
+/**
+ * A web arm's adapter is read from the page, never assumed. A software rasteriser fails the arm unless
+ * `--allow-software` is passed, and then the run says so in its build notes: it is never real-GPU evidence.
+ */
+function gateWebAdapter(report: IRunReport): IRunReport {
+  if (!process.argv.includes("--allow-software")) {
+    assertHardwareAdapter(report.driver.adapter);
+    return report;
+  }
+  try {
+    assertHardwareAdapter(report.driver.adapter);
+    return report;
+  } catch {
+    return {
+      ...report,
+      build: {
+        ...report.build,
+        notes: `SOFTWARE ADAPTER, not real-GPU evidence (--allow-software); ${report.build.notes}`,
+      },
+    };
+  }
+}
+
+/** The bytes the served build shipped, beside what the page measured about its own startup and memory. */
+async function withWebArtifact(
+  report: IRunReport,
+  dist: string,
+  wasm?: Awaited<ReturnType<typeof freshWasm>>,
+): Promise<IRunReport> {
+  const artifact = await webArtifactBytes(dist);
+  return {
+    ...report,
+    web: { ...report.web, artifact, ...(wasm === undefined ? {} : { engineWasm: wasm }) },
+  };
+}
+
+async function runTnEngineWeb(options: ILadderOptions): Promise<IRunReport> {
+  // The pinned Fox, digest checked, as the production builds ship it beside the page.
+  resolveFoxAsset(repoRoot, options.modes);
+  const wasm = await freshWasm(repoRoot);
+  await buildWebEngineExample(repoRoot);
+  // The build copies the Wasm; a source edited during the build would leave it stale again.
+  const after = await freshWasm(repoRoot);
+  if (after.sha256 !== wasm.sha256)
+    throw new BenchError("TN_BENCH_STALE_WASM", "the engine Wasm changed during the build", 1);
+  const dist = path.join(repoRoot, ENGINE_DIST);
+  const server = await serveDirectory(dist, TN_PORT);
+  try {
+    await waitForUrl(`http://127.0.0.1:${TN_PORT}/index.html`, 60_000);
+    const raw = await driveBenchmarkPage({
+      onConsole: (text) => process.stderr.write(`[tn-engine-web] ${text}\n`),
+      timeoutMs: desktopTimeoutMs(options),
+      url: `http://127.0.0.1:${TN_PORT}/index.html?${query(options)}`,
+    });
+    return withWebArtifact(
+      gateWebAdapter(assertBrowserPlacements(parseRunReport(raw))),
+      dist,
+      wasm,
+    );
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 }
 
 async function runTnWeb(options: ILadderOptions): Promise<IRunReport> {
@@ -158,6 +234,7 @@ async function runTnWeb(options: ILadderOptions): Promise<IRunReport> {
 }
 
 async function runTnWebProduction(options: ILadderOptions): Promise<IRunReport> {
+  resolveFoxAsset(repoRoot, options.modes);
   await buildTnExample();
   const server = await serveDirectory(TN_DIST, TN_PORT);
   try {
@@ -167,7 +244,7 @@ async function runTnWebProduction(options: ILadderOptions): Promise<IRunReport> 
       timeoutMs: desktopTimeoutMs(options),
       url: `http://127.0.0.1:${TN_PORT}/index.html?${query(options)}`,
     });
-    return assertBrowserPlacements(parseRunReport(raw));
+    return withWebArtifact(gateWebAdapter(assertBrowserPlacements(parseRunReport(raw))), TN_DIST);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
@@ -299,6 +376,7 @@ async function requiredBaseline(report: IRunReport): Promise<{
 async function runRequestedArm(arm: string, options: ILadderOptions): Promise<IRunReport> {
   if (arm === "tn-web")
     return process.argv.includes("--production") ? runTnWebProduction(options) : runTnWeb(options);
+  if (arm === "tn-engine-web") return runTnEngineWeb(options);
   if (arm === "godot-web") return runGodotWeb(options);
   if (arm === "tn-desktop") return parseRunReport(await runTnDesktop(repoRoot, options));
   if (arm === "tn-engine-desktop")
@@ -507,8 +585,19 @@ async function runReportCheckCommand(file: string): Promise<void> {
   }
 }
 
-/** The arms a same-run pair may name: the two desktop ThreeNative hosts and Godot's desktop export. */
-export const PAIRABLE_ARMS = ["tn-desktop", "tn-engine-desktop", "godot-desktop"] as const;
+/**
+ * The arms a same-run pair may name: the two desktop ThreeNative hosts and Godot's desktop export, and the two
+ * web arms (three.js WebGPURenderer and the Wasm engine), which pair only with each other and only as
+ * production builds. A web arm is never paired with a desktop one.
+ */
+export const PAIRABLE_ARMS = [
+  "tn-desktop",
+  "tn-engine-desktop",
+  "godot-desktop",
+  "tn-web",
+  "tn-engine-web",
+] as const;
+const WEB_PAIR_ARMS = new Set(["tn-web", "tn-engine-web"]);
 
 /**
  * `--pair a,b --rounds N`: both arms run the same ladder, alternating which goes first each round, and every
@@ -527,6 +616,18 @@ async function runPairCommand(spec: string): Promise<void> {
     throw new BenchError(
       "TN_BENCH_BAD_FLAG",
       `--pair takes two different arms from ${PAIRABLE_ARMS.join(", ")}, got '${spec}'`,
+      1,
+    );
+  if (WEB_PAIR_ARMS.has(first as string) !== WEB_PAIR_ARMS.has(second as string))
+    throw new BenchError(
+      "TN_BENCH_BAD_FLAG",
+      `--pair never mixes a web arm and a desktop arm, got '${spec}'`,
+      1,
+    );
+  if (WEB_PAIR_ARMS.has(first as string) && !process.argv.includes("--production"))
+    throw new BenchError(
+      "TN_BENCH_BAD_FLAG",
+      "a web pair runs production builds only: pass --production",
       1,
     );
   const rounds = positiveInteger(flag("rounds"), 3);
@@ -590,7 +691,7 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|tn-engine-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --pair tn-desktop,tn-engine-desktop [--rounds N --tag name --dir name] (same flags as --arm; fails unless both arms drew the same scene)\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n       pnpm bench:engines --cpu-setup\n       pnpm bench:engines --cpu --source <absolute checkout path> --name <result name>\n       pnpm bench:engines --cpu-compare --baseline <absolute saved-run dir> --candidate <absolute saved-run dir> [--control <name>]\n",
+    "usage: pnpm bench:engines --arm <tn-web|tn-engine-web|plain-three-webgpu|godot-web|tn-desktop|tn-engine-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --pair tn-desktop,tn-engine-desktop [--rounds N --tag name --dir name] (same flags as --arm; fails unless both arms drew the same scene)\n       pnpm bench:engines --pair tn-web,tn-engine-web --production [--allow-software] [--rounds N --tag name --dir name]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n       pnpm bench:engines --cpu-setup\n       pnpm bench:engines --cpu --source <absolute checkout path> --name <result name>\n       pnpm bench:engines --cpu-compare --baseline <absolute saved-run dir> --candidate <absolute saved-run dir> [--control <name>]\n",
   );
 }
 

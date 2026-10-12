@@ -96,6 +96,11 @@ export async function bindWebEngine(
   names: readonly string[],
 ): Promise<Record<string, unknown>> {
   const module = await createModule();
+  // The engine's linear memory, for a bench page's memory report (`memory.buffer` survives growth).
+  const memory = (module as { wasmMemory?: WebAssembly.Memory }).wasmMemory;
+  if (memory !== undefined)
+    (globalThis as { __tnWasmMemoryBytes?: () => number }).__tnWasmMemoryBytes = () =>
+      memory.buffer.byteLength;
   const runtime = createWasmRuntime(module);
   const { classes, wrap, collect } = defineBrowserClasses(
     registry as IRegistryDump,

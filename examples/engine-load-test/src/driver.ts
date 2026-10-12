@@ -28,6 +28,7 @@ import {
   type ILadderCounts,
   ladderRank,
 } from "./ladder.js";
+import { PHASES, createPhaseRecorder, topCrossings } from "./phases.js";
 import {
   FRAMES_PER_RUNG,
   type IWorkloadAxes,
@@ -85,6 +86,18 @@ export interface IRungReport {
   pipelineCompiles: number;
   stageReport?: unknown;
   stepMs?: number[];
+  /**
+   * With `phases=1`: the page's own frame work (step plus render submission) per frame, on `performance.now`.
+   * A browser exposes no thread CPU clock, so this is the web arms' frame-CPU series; the GPU process's
+   * present is outside it, as `presentCpuMs` is outside the desktop figure.
+   */
+  threadCpuMs?: number[];
+  /** With `phases=1`: the five `PHASES` per frame on the same clock as `threadCpuMs`. */
+  phases?: Record<string, number[]>;
+  /** With `crossings=1` on the engine arm: JS-to-Wasm get/set/invoke calls per frame. */
+  bridgeCalls?: number[];
+  /** With `crossings=1`: the names crossed most, per frame. */
+  crossingTop?: Array<[string, number]>;
   mode: RenderMode;
   objectCount: number;
   /** SHA-256 of every initial position read from the built scene, before animation or projection. */
@@ -167,6 +180,49 @@ function readAxes(): IWorkloadAxes {
 
 function nextFrame(): Promise<number> {
   return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+// Per-frame phases on `performance.now`, the one clock both web arms have (`--pair` asks for it).
+const phases =
+  parameters.get("phases") === "1" ? createPhaseRecorder(() => performance.now()) : undefined;
+// The engine arm's call census (`browser-backend.ts` `countCall`): a Map per crossing name. It costs a
+// string and a Map write per crossing, so it is its own opt-in and never on in a timed run.
+const callCounts = parameters.get("crossings") === "1" ? new Map<string, number>() : undefined;
+if (callCounts !== undefined)
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = callCounts;
+const census = (): Record<string, number> => Object.fromEntries(callCounts ?? []);
+const censusTotal = (): number => {
+  let total = 0;
+  for (const count of callCounts?.values() ?? []) total += count;
+  return total;
+};
+
+/** Startup and memory of a web arm, read in the page (PRD-573 slice 7). */
+export interface IWebMetrics {
+  startup: {
+    /** `performance.now()` when the entry ran: the engine module (fetch, compile, instantiate) is before it. */
+    entryMs: number;
+    /** `performance.now()` once the first rung's first frame was submitted; null before any frame. */
+    firstFrameMs: number | null;
+    /** Every `WebAssembly` compile or instantiate the page made before the entry, ms each. */
+    wasmInstantiateMs: number[];
+  };
+  memory: {
+    /** Largest `performance.memory.usedJSHeapSize` seen after a rung; null where the browser hides it. */
+    jsHeapUsedBytes: number | null;
+    /** Largest Wasm linear memory seen after a rung; null for an arm with no engine module. */
+    wasmMemoryBytes: number | null;
+  };
+}
+const entryMs = performance.now();
+let firstFrameMs: number | undefined;
+let jsHeapUsedBytes: number | null = null;
+let wasmMemoryBytes: number | null = null;
+function sampleMemory(): void {
+  const heap = (performance as { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize;
+  if (typeof heap === "number") jsHeapUsedBytes = Math.max(jsHeapUsedBytes ?? 0, heap);
+  const wasm = (globalThis as { __tnWasmMemoryBytes?: () => number }).__tnWasmMemoryBytes?.();
+  if (typeof wasm === "number") wasmMemoryBytes = Math.max(wasmMemoryBytes ?? 0, wasm);
 }
 
 // Opt-in and never part of a published ladder: wrapping every renderer stage inflates the
@@ -252,7 +308,9 @@ export async function measureRung(
     // un-projected scene would be a different experiment from the one its name states.
     if (rung.mode === "L3" || isRealisticRung(rung.mode)) {
       // `projected` is the projection's applied state, where the pass this replaced said `applied`.
-      if (harness.collapseStatus() !== "projected")
+      // `hostProjected` is the same verdict where the host renderer batches the authored scene itself
+      // (the Wasm engine's `__tnProjectionReport`), as `native-run.ts` accepts it on the engine player.
+      if (harness.collapseStatus() !== "projected" && harness.collapseStatus() !== "hostProjected")
         throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
       // Fail closed on the frozen scene. The pass this replaced could classify a moving object as
       // static and render a still picture at a very fast frame time, which is indistinguishable from
@@ -271,6 +329,10 @@ export async function measureRung(
   }
   const frameMs: number[] = [];
   const stepMs: number[] = [];
+  const threadCpuMs: number[] = [];
+  const phaseMs: number[][] = PHASES.map(() => []);
+  const bridgeCalls: number[] = [];
+  let censusAtOpen: Record<string, number> | undefined;
   let drawCalls = 0;
   let triangles = 0;
   let visibleObjects = 0;
@@ -302,11 +364,25 @@ export async function measureRung(
       windowStart = clock.now();
       previous = windowStart;
       compilesAtWindowStart = harness.pipelineCompiles();
+      // Phases opened before the window (the settle, the warmup probe) are not the window's.
+      phases?.take();
+      if (callCounts !== undefined) censusAtOpen = census();
     }
     const submittedAt = clock.now();
+    const callsBefore = callCounts === undefined ? 0 : censusTotal();
     harness.step(frameIndex);
     await harness.render();
-    if (frameIndex >= knobs.warmup) submitMs += clock.now() - submittedAt;
+    const submitted = clock.now() - submittedAt;
+    firstFrameMs ??= performance.now();
+    const taken = phases?.take();
+    if (frameIndex >= knobs.warmup) {
+      submitMs += submitted;
+      if (taken !== undefined) {
+        threadCpuMs.push(Math.round(submitted * 1000) / 1000);
+        taken.forEach((ms, index) => phaseMs[index]?.push(Math.round(ms * 1000) / 1000));
+      }
+      if (callCounts !== undefined) bridgeCalls.push(censusTotal() - callsBefore);
+    }
     // Read before yielding: three's own rAF resets the per-frame counters, so a read after
     // `nextFrame()` reports zero draws no matter what was submitted.
     if (frameIndex === statsFrame) {
@@ -345,7 +421,20 @@ export async function measureRung(
   const measuredFrames = knobs.frames - knobs.warmup;
   const stageReport = hooks?.snapshot({ measuredFrameCount: measuredFrames });
   hooks?.dispose();
+  sampleMemory();
+  const crossingTop =
+    censusAtOpen === undefined
+      ? undefined
+      : topCrossings(censusAtOpen, census(), measuredFrames, 8);
   return {
+    ...(phases === undefined
+      ? {}
+      : {
+          threadCpuMs,
+          phases: Object.fromEntries(PHASES.map((name, index) => [name, phaseMs[index] ?? []])),
+        }),
+    ...(callCounts === undefined ? {} : { bridgeCalls }),
+    ...(crossingTop === undefined ? {} : { crossingTop }),
     completedWorkMeanMs:
       completion === undefined ? null : (windowEnd - windowStart) / measuredFrames,
     completedWorkReason: completion === undefined ? "queue-completion-unavailable" : null,
@@ -551,6 +640,8 @@ export async function runLadderArm(
     arm.createCollapse,
     undefined,
     characters,
+    undefined,
+    phases,
   );
   const rungs: IRungReport[] = [];
   for (const objectCount of ladder) {
@@ -591,6 +682,15 @@ export async function runLadderArm(
     ...(culling === undefined ? {} : { culling }),
     identity: identity,
     rungs,
+    web: {
+      startup: {
+        entryMs,
+        firstFrameMs: firstFrameMs ?? null,
+        wasmInstantiateMs:
+          (globalThis as { __tnWasmInstantiateMs?: number[] }).__tnWasmInstantiateMs ?? [],
+      },
+      memory: { jsHeapUsedBytes, wasmMemoryBytes },
+    } satisfies IWebMetrics,
   };
   (globalThis as unknown as Record<string, unknown>).__ENGINE_LOAD_TEST__ = report;
   status.textContent = `done — ${rungs.length} rungs`;

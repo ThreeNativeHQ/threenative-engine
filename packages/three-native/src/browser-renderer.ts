@@ -115,8 +115,14 @@ export function defineWebRenderer(
     toneMappingExposure = 1;
     outputColorSpace = "srgb";
     readonly shadowMap = new ShadowMap();
-    /** What core reads to name the adapter: the engine's own device, not a second request. */
-    readonly backend: { readonly gpu: { requestAdapter(): Promise<{ info: IAdapterInfo }> } };
+    /**
+     * What core reads to name the adapter: the engine's own device, not a second request. `pipelineCompiles`
+     * is the engine's own pipeline cache count, as the V8 player's facade exposes it to the bench harness.
+     */
+    readonly backend: {
+      readonly gpu: { requestAdapter(): Promise<{ info: IAdapterInfo }> };
+      pipelineCompiles(): number;
+    };
     #pixelRatio = 1;
     #width: number;
     #height: number;
@@ -145,6 +151,7 @@ export function defineWebRenderer(
             return { info };
           },
         },
+        pipelineCompiles: () => module._tnw_web_frame(2),
       };
     }
 

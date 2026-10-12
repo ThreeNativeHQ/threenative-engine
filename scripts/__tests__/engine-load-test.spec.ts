@@ -85,6 +85,11 @@ import {
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
 import { KILL_GRACE_MS, runCapturing } from "../engine-load-test/run-desktop.js";
 import { engineDefines, engineEnvironment, playerSurface } from "../engine-load-test/run-engine.js";
+import {
+  WEB_ENGINE_WASM,
+  freshWasm,
+  webArtifactBytes,
+} from "../engine-load-test/run-web-engine.js";
 
 const BEGIN_MARKER = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END_MARKER = "ENGINE_LOAD_TEST_JSON_END";
@@ -657,7 +662,7 @@ describe("engine load test workload", () => {
     // The axes are read where the page is, in the driver both web arms drive.
     expect(driver).toMatch(/parseAxesRecord\(Object\.fromEntries\(parameters\.entries\(\)\)\)/u);
     expect(driver).toMatch(/createLoadTestHarness\([\s\S]*arm\.createCollapse/u);
-    expect(web).toMatch(/createCollapse: \(scene, options\) => new SceneRenderProjection/u);
+    expect(web).toMatch(/createCollapse: \(scene, options\) =>\s+new SceneRenderProjection/u);
     expect(native).toMatch(/parseAxesRecord\(config\.axes\)/u);
     expect(native).toMatch(/createLoadTestHarness\([\s\S]*axes,[\s\S]*new SceneRenderProjection/u);
     expect(vite).toMatch(/TN_BENCH_SHADOW_CASTER_SHARE/u);
@@ -3634,7 +3639,7 @@ describe("the tn-engine-desktop arm", () => {
       readFile(path.join(process.cwd(), "examples/engine-load-test/src/native-run.ts"), "utf8"),
     ]);
     expect(cli).toMatch(/arm === "tn-engine-desktop"[\s\S]*runTnEngineDesktop/u);
-    expect(cli).toMatch(/PAIRABLE_ARMS = \["tn-desktop", "tn-engine-desktop"/u);
+    expect(cli).toMatch(/PAIRABLE_ARMS = \[\s*"tn-desktop",\s*"tn-engine-desktop"/u);
     expect(cli).toMatch(/renderPairMarkdown\(/u);
     expect(entry).toMatch(/runNative\(/u);
     expect(run).toMatch(/onEngine/u);
@@ -4186,5 +4191,98 @@ describe("the probe's read-back on a host that draws after the frame callback", 
     drawn = stepped; // the callback returns and the player draws frame 4
     wake?.();
     expect(await result).toBe(4);
+  });
+});
+
+describe("the tn-engine-web arm (PRD-573 slice 7)", () => {
+  const web = {
+    startup: { entryMs: 812.5, firstFrameMs: 1340.2, wasmInstantiateMs: [96.4] },
+    memory: { jsHeapUsedBytes: 48_000_000, wasmMemoryBytes: 67_108_864 },
+    artifact: {
+      jsBytes: 900_000,
+      jsGzipBytes: 220_000,
+      wasmBytes: 3_311_074,
+      wasmGzipBytes: 1_067_000,
+    },
+    engineWasm: { mtime: "2026-10-12T21:36:54.969Z", sha256: "ab".repeat(32) },
+  };
+
+  it("parses an engine-web report with its startup, memory and byte counts", () => {
+    const parsed = parseRunReport(report({ arm: "tn-engine-web", web }));
+    expect(parsed.arm).toBe("tn-engine-web");
+    expect(parsed.web).toEqual(web);
+    expect(parseRunReport(report()).web).toBeUndefined();
+  });
+
+  it("fails closed on a malformed web block", () => {
+    for (const bad of [
+      { ...web, startup: { ...web.startup, entryMs: -1 } },
+      { ...web, startup: { ...web.startup, wasmInstantiateMs: ["fast"] } },
+      { ...web, memory: { ...web.memory, wasmMemoryBytes: "64 MB" } },
+      { ...web, artifact: { ...web.artifact, wasmGzipBytes: undefined } },
+      { ...web, engineWasm: { mtime: "x" } },
+    ])
+      expect(() => parseRunReport({ ...report({ arm: "tn-engine-web" }), web: bad })).toThrow(
+        /TN_BENCH_BAD_SHAPE|report\.web/u,
+      );
+  });
+
+  it("refuses a Wasm older than the engine sources it is built from", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tn-web-engine-"));
+    const wasm = path.join(root, WEB_ENGINE_WASM);
+    const source = path.join(root, "packages/runtime-native/src/engine/scene/object3d.cpp");
+    fs.mkdirSync(path.dirname(wasm), { recursive: true });
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    fs.mkdirSync(path.join(root, "packages/runtime-native/include"), { recursive: true });
+    fs.writeFileSync(source, "// engine");
+    fs.writeFileSync(wasm, "wasm");
+    fs.utimesSync(source, new Date(1_000_000), new Date(1_000_000));
+    fs.utimesSync(wasm, new Date(2_000_000), new Date(2_000_000));
+    expect((await freshWasm(root)).sha256).toBe(createHash("sha256").update("wasm").digest("hex"));
+    fs.utimesSync(source, new Date(3_000_000), new Date(3_000_000));
+    await expect(freshWasm(root)).rejects.toThrow("TN_BENCH_STALE_WASM");
+    fs.rmSync(wasm);
+    await expect(freshWasm(root)).rejects.toThrow("TN_BENCH_WASM_MISSING");
+    fs.rmSync(root, { force: true, recursive: true });
+  });
+
+  it("counts the shipped .js and .wasm bytes, raw and gzip", async () => {
+    const dist = fs.mkdtempSync(path.join(os.tmpdir(), "tn-web-dist-"));
+    fs.mkdirSync(path.join(dist, "assets"));
+    fs.writeFileSync(path.join(dist, "assets/a.js"), "x".repeat(1000));
+    fs.writeFileSync(path.join(dist, "assets/b.wasm"), "y".repeat(500));
+    fs.writeFileSync(path.join(dist, "assets/c.css"), "z");
+    const bytes = await webArtifactBytes(dist);
+    expect(bytes.jsBytes).toBe(1000);
+    expect(bytes.wasmBytes).toBe(500);
+    expect(bytes.jsGzipBytes).toBeGreaterThan(0);
+    expect(bytes.jsGzipBytes).toBeLessThan(1000);
+    fs.rmSync(path.join(dist, "assets/a.js"));
+    await expect(webArtifactBytes(dist)).rejects.toThrow("TN_BENCH_TN_BUILD_MISSING");
+    fs.rmSync(dist, { force: true, recursive: true });
+  });
+
+  it("launches every web arm with the playtest WebGPU recipe when asked, and refuses an unknown one", () => {
+    const recipe = browserLaunchArgs(undefined, "webgpu");
+    expect(recipe).toContain("--enable-features=Vulkan");
+    expect(recipe).toContain("--disable-gpu-vsync");
+    expect(browserLaunchArgs(undefined, undefined)).not.toContain("--enable-features=Vulkan");
+    expect(() => browserLaunchArgs(undefined, "metal")).toThrow("TN_BENCH_BAD_FLAG");
+  });
+
+  it("pairs the web arms only with each other, as production builds, and builds the engine page", async () => {
+    const [cli, config, main] = await Promise.all([
+      readFile(path.join(process.cwd(), "scripts/engine-load-test/cli.ts"), "utf8"),
+      readFile(path.join(process.cwd(), "examples/engine-load-test/vite.config.ts"), "utf8"),
+      readFile(path.join(process.cwd(), "examples/engine-load-test/src/main.ts"), "utf8"),
+    ]);
+    expect(cli).toMatch(/arm === "tn-engine-web"\) return runTnEngineWeb/u);
+    expect(cli).toMatch(/never mixes a web arm and a desktop arm/u);
+    expect(cli).toMatch(/a web pair runs production builds only/u);
+    expect(config).toMatch(/createWebEnginePlugin\(\{ engine: "native", wasm: WASM_ENGINE \}\)/u);
+    expect(config).toMatch(
+      /__TN_WEB_ARM__: JSON\.stringify\(webEngine \? "tn-engine-web" : "tn-web"\)/u,
+    );
+    expect(main).toMatch(/arm: __TN_WEB_ARM__/u);
   });
 });
