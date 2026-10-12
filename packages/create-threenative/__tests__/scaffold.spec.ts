@@ -1113,7 +1113,7 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   it("should parse the no-install and template flags", () => {
     expect(parseArgs(["my-game", "--template", "minimal", "--no-install"])).toEqual({

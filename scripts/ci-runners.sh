@@ -239,12 +239,30 @@ up() {
 # advertised while it has an idle runner and withdrawn the moment it has none.
 balance() {
   need gh
-  local repo want_heavy want_light have_heavy="" have_light="" idle seen_heavy=0 seen_light=0
+  local repo want_heavy want_light have_heavy have_light idle present token
+  local seen_heavy=0 seen_light=0
   repo="$(repo_name)"
   while [ ! -e "$STATE_DIR/stop" ]; do
     idle="$(gh api "repos/$repo/actions/runners" --paginate --jq \
       '[.runners[] | select(.status == "online" and .busy == false) | .labels[].name] | join(" ")' \
-      2>/dev/null)" || { sleep 20; continue; }
+      2>/dev/null)" || { seen_heavy=0; seen_light=0; sleep 20; continue; }
+    # Read the variables, not a cache: a cached value misses a change made outside this loop. Report
+    # the name alone for the exact expected label and NAME:invalid otherwise, so a wrong label is
+    # still visible without ever printing a value into a token.
+    present="$(gh api "repos/$repo/actions/variables" --paginate --jq \
+      ".variables[] | select(.name == \"$VARIABLE\" or .name == \"$LIGHT_VARIABLE\") | if (.name == \"$VARIABLE\" and .value == \"$LABEL\") or (.name == \"$LIGHT_VARIABLE\" and .value == \"$LIGHT_LABEL\") then .name else .name + \":invalid\" end" \
+      2>/dev/null)" || { seen_heavy=0; seen_light=0; sleep 20; continue; }
+    # A teardown that began during the reads must never be followed by an advertise.
+    if [ -e "$STATE_DIR/stop" ]; then break; fi
+    have_heavy=off; have_light=off
+    while IFS= read -r token; do
+      case "$token" in
+        "$VARIABLE") have_heavy=on ;;
+        "$VARIABLE:invalid") have_heavy=invalid ;;
+        "$LIGHT_VARIABLE") have_light=on ;;
+        "$LIGHT_VARIABLE:invalid") have_light=invalid ;;
+      esac
+    done <<< "$present"
     # Off at once when no runner is idle; on only after two polls in a row (~40 s) found one. A runner
     # that just re-registered in a saturated pool is idle for seconds before it takes a queued job, and
     # that blip must not route more work here.
@@ -256,12 +274,12 @@ balance() {
     if [ "$want_heavy" != "$have_heavy" ]; then
       if [ "$want_heavy" = on ]; then gh variable set "$VARIABLE" --body "$LABEL" --repo "$repo"
       else gh variable delete "$VARIABLE" --repo "$repo" 2>/dev/null || true; fi
-      have_heavy="$want_heavy"; printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$VARIABLE" "$want_heavy"
+      printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$VARIABLE" "$want_heavy"
     fi
     if [ "$want_light" != "$have_light" ]; then
       if [ "$want_light" = on ]; then gh variable set "$LIGHT_VARIABLE" --body "$LIGHT_LABEL" --repo "$repo"
       else gh variable delete "$LIGHT_VARIABLE" --repo "$repo" 2>/dev/null || true; fi
-      have_light="$want_light"; printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$LIGHT_VARIABLE" "$want_light"
+      printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$LIGHT_VARIABLE" "$want_light"
     fi
     sleep 20
   done
