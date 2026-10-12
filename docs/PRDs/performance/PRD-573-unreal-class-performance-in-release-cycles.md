@@ -75,8 +75,9 @@ stay `EXCLUDE_FROM_ALL` and `engine: "legacy"` stays the default, so every slice
 - [x] Charter, `CHARTER-HISTORY.md`, root `AGENTS.md` rule 5 and `NATIVE-ENGINE-DECISION.md` admit one opt-in engine. proof: commit `fc261bbd1` (from PR #494, green: check:docs, `sync:agents --check`, doc-link, primary-docs and ci specs)
 
 #### Phase v1.0b: CI scope for engine paths (slice 0b)
-**Status:** NOT STARTED
-- [ ] `scripts/ci-change-scope.mjs` classifies `src/engine/**`, `src/adapters/**`, `tests/native-engine/**` and `cmake/NativeEngine*` as `native-engine`, and `ci.yml` runs one `native-engine` job with its own ccache key and a cached emsdk. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` and the ci-change-scope spec, plus a `pnpm ci:local --affected` plan dump
+**Status:** IN PROGRESS (classification and wiring landed; runner proof open)
+- [x] `scripts/ci-change-scope.mjs` classifies `packages/runtime-native/{src/engine,src/adapters,tests/native-engine,cmake/NativeEngine*}` (the real engine prefixes on `feat/native-engine`) as `native-engine`, and `ci.yml` runs one `native-engine` job with its own ccache key and a cached emsdk. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` and the ci-change-scope spec, plus a `pnpm ci:local --affected` plan dump Result 2026-10-11 (commit from agent run, 18 new red-green cases): `ci-structure` + `ci-needs` 223 passed; owner call: engine-only PRs skip `native-platforms`; mixed, main, merge-group and `--full` keep it. `--base HEAD~1` plan dump selects `native-engine`, validates.
+- [ ] The `native-engine` job runs green on a runner, and `ci-integration-scope.mjs` stops selecting heavy lanes for an engine-only diff (it matches the `runtime-native` producer family today). proof: a CI run on an engine-only diff
 
 #### Phase v1.1: Core fixes that need no engine (slice 1)
 **Status:** IN PROGRESS (5 of 6 boxes; develop gates partial)
