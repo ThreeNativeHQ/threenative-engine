@@ -204,6 +204,16 @@
       "kind": "click",
       "at": {
         "element": {
+          "selector": "[data-tool=\"sculpt\"]"
+        }
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
           "id": "brush-radius"
         }
       },
