@@ -146,6 +146,18 @@ Today: `perf` has p95, p99 and hitches but no memory or host load; `bench:scoreb
 - [ ] Native steady frame CPU is at least 2x three.js on Midway web, frame p50 no worse. proof: `pnpm profile:wasm-page -- --url <native> --control <three.js> --cpu-work`
 - [ ] Stability gate S is green, and native becomes the default. proof: the S commands on the default switch commit
 
+#### Phase v1.11: Native reconcile (the route to the v1.10 KPI)
+
+Design study 2026-10-12 (read-only). The native renderer already batches the source scene (`RenderDatabase::batch`, `projection::decide` ports `scanProjection`), so core's JS mirror repeats work native does, and every object crosses the bridge to feed it. Estimated crossings per settled R2 frame: game setters 12k, `MatrixWorldPass` 16 to 25k, mirror sync 12k, stability walk 0 to 3 per cube. `Adapter::collect` scans about 25k wrappers per frame (11% of CPU). The KPI metric is fixed here before the next A/B: **thread CPU time per frame excluding Dawn `Present`, measured by the same instrument in both arms (`presentCpuMs`), on the headed real-GPU lane, with the inclusive number published next to it.** Present spins about 32 ms per frame under Xvfb in both arms, so the inclusive ratio there is at most 1.09x whatever the engine does. The 2x target is R5 desktop; R2 is reported and is not the KPI (estimate for R2 excluding present: 1.2 to 1.6x). The target is claimed only if the inclusive real-GPU number agrees. If R5 tops out below 2x, the PRD says so; the metric does not move.
+
+- [ ] Step 0: a per-name crossing histogram (flag-gated, `abi.cpp`) and `presentCpuMs` in both arms' frame report; a 1k-cube budget ctest asserts at most 3.5 crossings per cube (red first). proof: `v8_adapter_test.cpp` ctest, `pnpm bench:engines --pair` showing the new column
+- [ ] Step 1: `Adapter::collect` visits only new or changed wrappers. proof: ctest with 25k wrappers and a steady frame gives 0 visits; the churn test at `v8_adapter_test.cpp:335` stays green
+- [ ] Step 2: native `Object3D.__tnUpdateMatrixWorld(force)` and a `MatrixWorldPass` seam that calls it when the root has it. proof: vitest with a counting stub (red: reads scale with N) and a ctest with constant crossings for 1k and 4k nodes
+- [ ] Step 3: a host projection seam in `renderProjection.ts`: when the root has `__tnProjectionReport`, no mirror is built and the native renderer batches the source scene; `renderer.projection: "js"` forces the mirror and the report names which ran. proof: vitest (`root === source`, zero per-object reads), ctest with crossings constant in N, draw-list and pixel parity against the mirror path, a visual judge on BEFORE/AFTER
+- [ ] Step 4: raw-pointer component accessors for `position`, `rotation`, `quaternion`, `scale` members (plain field write plus Euler/Quaternion sync, owner kept alive). proof: ctest with 3N setters giving a `crossings()` delta of 0 and the existing sync, `revision` and `matrixWorldNeedsUpdate` cases green
+- [ ] Step 5: the A/B on the declared metric, on the real-GPU lane and on Xvfb, tails and load recorded. proof: `pnpm bench:engines --pair tn-desktop,tn-engine-desktop --rounds 3` on R2, R3 and R5
+
+
 ## Cycle v2 — stop wasted work
 
 #### Phase v2.1: No lock per bone or binding
