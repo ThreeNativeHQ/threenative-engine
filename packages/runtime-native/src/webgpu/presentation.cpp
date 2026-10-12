@@ -259,66 +259,10 @@ void configurePresentationSurface(WGPUSurface surface, const WGPUSurfaceConfigur
 #endif
 }
 
-#if defined(__ANDROID__)
-namespace {
-// One sleeping watchdog per host, not a new acquire worker every frame. Surface ownership stays
-// on the render thread. A wedged synchronous driver cannot be cancelled or safely torn down.
-class AcquireDeadline {
-public:
-    AcquireDeadline() : worker_([this] {
-        std::unique_lock lock(mutex_);
-        while (!stopped_) {
-            if (!armed_) {
-                ready_.wait(lock, [this] { return stopped_ || armed_; });
-                continue;
-            }
-            if (ready_.wait_until(lock, deadline_) == std::cv_status::timeout && armed_ &&
-                std::chrono::steady_clock::now() >= deadline_) {
-                __android_log_print(ANDROID_LOG_ERROR, "TN_Player",
-                    "TN_SURFACE_ACQUIRE_TIMEOUT: driver did not return within 2000 ms; exiting without GPU teardown");
-                std::_Exit(2);
-            }
-        }
-    }) {}
-    ~AcquireDeadline() {
-        {
-            std::lock_guard lock(mutex_);
-            stopped_ = true;
-            ready_.notify_all();
-        }
-        worker_.join();
-    }
-    void arm() {
-        std::lock_guard lock(mutex_);
-        deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-        armed_ = true;
-        ready_.notify_all();
-    }
-    void disarm() {
-        std::lock_guard lock(mutex_);
-        armed_ = false;
-        ready_.notify_all();
-    }
-private:
-    std::mutex mutex_;
-    std::condition_variable ready_;
-    bool stopped_ = false;
-    bool armed_ = false;
-    std::chrono::steady_clock::time_point deadline_{};
-    std::thread worker_;
-};
-}  // namespace
-#endif
-
+// ponytail: a plain pass-through. The Android acquire watchdog (exit after 2 s) is a behaviour change
+// and ships with the Android player (PRD-573 slice 9), not in this neutral refactor.
 void acquirePresentationSurface(WGPUSurface surface, WGPUSurfaceTexture* texture) {
-#if defined(__ANDROID__)
-    static AcquireDeadline deadline;
-    deadline.arm();
-#endif
     wgpuSurfaceGetCurrentTexture(surface, texture);
-#if defined(__ANDROID__)
-    deadline.disarm();
-#endif
 }
 #endif
 

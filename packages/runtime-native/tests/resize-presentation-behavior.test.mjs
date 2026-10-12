@@ -12,7 +12,7 @@ const probe = spawnSync(compiler, ["--version"], { encoding: "utf8" });
 const nativeTest = probe.error?.code === "ENOENT" ? test.skip : test;
 
 nativeTest(
-  "shared Android presentation configures latency and stops a wedged acquire at its deadline",
+  "shared Android presentation configures an explicit frame latency and passes the acquire through",
   () => {
     const directory = mkdtempSync(join(tmpdir(), "tn-android-acquire-"));
     try {
@@ -43,7 +43,6 @@ inline int __android_log_print(int, const char*, const char* format, ...) {
 #include <webgpu/wgpu.h>
 #include <chrono>
 #include <thread>
-bool hang = false;
 bool configured = false;
 extern "C" void wgpuSurfaceConfigure(WGPUSurface, const WGPUSurfaceConfiguration* config) {
   const auto* extras = reinterpret_cast<const WGPUSurfaceConfigurationExtras*>(config->nextInChain);
@@ -53,18 +52,14 @@ extern "C" void wgpuSurfaceConfigure(WGPUSurface, const WGPUSurfaceConfiguration
     extras->desiredMaximumFrameLatency == 2;
 }
 extern "C" void wgpuSurfaceGetCurrentTexture(WGPUSurface, WGPUSurfaceTexture*) {
-  while (hang) std::this_thread::sleep_for(std::chrono::milliseconds(10));
 }
-int main(int argc, char**) {
+int main() {
   WGPUSurfaceConfiguration config{};
   config.presentMode = WGPUPresentMode_Immediate;
   mystral::webgpu::configurePresentationSurface(nullptr, &config);
   if (!configured) return 3;
-  hang = argc > 1;
   WGPUSurfaceTexture texture{};
   mystral::webgpu::acquirePresentationSurface(nullptr, &texture);
-  // A returned acquire must disarm the deadline rather than abort during later CPU work.
-  std::this_thread::sleep_for(std::chrono::milliseconds(2100));
 }
 `,
       );
@@ -89,11 +84,6 @@ int main(int argc, char**) {
       assert.equal(built.status, 0, built.error?.message ?? built.stderr);
       const returned = spawnSync(executable, [], { encoding: "utf8", timeout: 5_000 });
       assert.equal(returned.status, 0, returned.error?.message ?? returned.stderr);
-      const begin = Date.now();
-      const wedged = spawnSync(executable, ["hang"], { encoding: "utf8", timeout: 5_000 });
-      assert.equal(wedged.status, 2, wedged.error?.message ?? wedged.stderr);
-      assert.match(wedged.stderr, /TN_SURFACE_ACQUIRE_TIMEOUT/u);
-      assert.ok(Date.now() - begin >= 1900, "acquire must get its two-second allowance");
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

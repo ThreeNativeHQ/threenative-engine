@@ -104,8 +104,9 @@ Cherry-picks of F `c1ef353ca 2007efe12 3d3695197 3b29482a6 504709d17 726df7f5c d
 - [ ] `engine/{shader,assets}` and `packages/assets/src/native-package.ts` land; `assets.nativePackage` defaults off. proof: ctest shader, package and fuzz; Tint and naga validation; assets and config specs
 
 #### Phase v1.4: Shared host services (slice 4)
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (landed; platform proof open)
 - [ ] `src/webgpu/context.cpp` and the `presentation.cpp` split land as a behaviour-neutral refactor, with `ui-layer-host-contract` fixed (`pointer.cpp` `g_resetKeyboard`). proof: `pnpm native:verify:desktop`, the `native-platforms` matrix, Android emulator parity, `pnpm test:playtest`
+  Partial 2026-10-11 (agent run, not rerun by the lead): `pnpm native:build` 410/410; ctest `build/tn-linux` 49/49 with the NVIDIA per-process ICD shim; `ui-layer-host-contract` 2 tests red-green (stub now defines `g_resetKeyboard`; hit-region check reads `runtime.cpp` and `ui_overlay.cpp`); `pnpm native:verify:desktop` exit 0 (300 frames, 1280x720); runtime-native vitest 1611 passed / 2 failed (`native-sbom` receipts, unconfirmed at base). Lead rerun: `presentation` resize spec 2/2, `ci-structure` + `ci-needs` 223, source-list guard. Not run: Android emulator parity, `native-platforms` matrix, `pnpm test:playtest`, Windows/macOS. Dropped as not neutral for legacy: the Android acquire watchdog (`_Exit(2)` after 2 s, moves to slice 9), `audio_context` playbackRate and interpolation changes, the Dawn timestamp-quantization toggle, `wgpuQueueRelease` in `~Context`, the device-lost handler. Box stays open until the matrix and an Android run pass.
 
 #### Phase v1.5: Renderer and world (slice 5, 2–3 commits)
 **Status:** NOT STARTED
