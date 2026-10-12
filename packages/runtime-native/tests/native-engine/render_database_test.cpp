@@ -10,6 +10,7 @@
 #include "engine/renderer/projection/plan.h"
 #include "engine/shader/package.h"
 #include "engine/shader/graph/post_effects.h"
+#include "engine/player/skinned_crowd.h"
 #include "engine/scene/geometries.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu_compat.h"
@@ -1603,8 +1604,118 @@ void batchedVsUnbatched() {
     CHECK(database.diagnostics().empty());
 }
 
-// skinned_crowd, skinned_decline_cadence and skinned_normalized_weights drive the player's
-// SkinnedCrowd scene (src/engine/player). They return with the player in PRD-573 slice 6.
+// PRD-518 box 38: the same animated poses and refusals, with batching on and off, including shadows.
+void skinnedCrowdPixels() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 180);
+    player::SkinnedCrowd crowd;
+    auto* bound = static_cast<SkinnedMesh*>(crowd.scene().getObjectByName("walker-0"));
+    bound->bindMatrix.makeTranslation(0.15, 0, 0);
+    auto* detached = static_cast<SkinnedMesh*>(crowd.scene().getObjectByName("walker-1"));
+    detached->attached = false;
+    crowd.scene().getObjectByName("walker-2")->scale.setScalar(1.2);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    for (int pose = 0; pose < 3; ++pose) {
+        for (int tick = 0; tick < 30; ++tick)
+            crowd.update(1.0 / 60);
+        database.batching = false;
+        database.render(renderer, crowd.scene(), crowd.camera());
+        const auto separate = read(renderer, events);
+        const auto exactStats = renderer.lastFrame();
+        database.batching = true;
+        database.render(renderer, crowd.scene(), crowd.camera());
+        const auto batched = read(renderer, events);
+        const auto stats = renderer.lastFrame();
+        CHECK(!batched.empty() && separate.size() == batched.size());
+        CHECK(stats.triangles == exactStats.triangles);
+        for (const auto& pass : {stats.mainSkinned, stats.shadowSkinned}) {
+            CHECK(pass.batches == 1 && pass.draws == 5 && pass.exactDraws == 4 && pass.instances == 64);
+        }
+        CHECK(exactStats.mainSkinned.draws == 68 && exactStats.shadowSkinned.draws == 68);
+        std::size_t covered = 0, differ = 0;
+        int worst = 0;
+        for (std::size_t p = 0; p + 3 < batched.size() && separate.size() == batched.size(); p += 4) {
+            int delta = 0;
+            for (int channel = 0; channel < 3; ++channel)
+                delta = std::max(delta, std::abs(int(batched[p + channel]) - int(separate[p + channel])));
+            worst = std::max(worst, delta);
+            differ += delta > 2;
+            covered += batched[p] + batched[p + 1] + batched[p + 2] > 0;
+        }
+        std::printf("skinned crowd pose %d: %zu covered, %zu pixels differ >2, worst %d\n", pose, covered, differ,
+                    worst);
+        // CPU f32 world-space palettes (world * bindInverse * bone * bind) round differently
+        // from the exact shader's model/bind transforms, moving a triangle edge across a pixel
+        // centre. The GPU measured 1 pixel >2 levels in each pose; allow at most 4 edge pixels.
+        CHECK(covered > 1000 && differ <= 4);
+        CHECK(database.diagnostics().empty());
+    }
+}
+
+// A settled projection decline re-judges every 60 frames, as core's SceneRenderProjection does
+// (DECLINE_RESCAN_FRAMES): a crowd blocked by a render hook draws exactly, and once the hook leaves
+// it batches on the 60th frame after the declining scan. A projecting decision is re-judged every frame.
+void skinnedDeclineCadence() {
+    player::SkinnedCrowd crowd(false);
+    Mesh hooked(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
+    hooked.onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [](const RenderCallbackArgs&, std::string&) { return true; });
+    crowd.scene().add(hooked);
+    RenderDatabase database;
+    LightState lights;
+    database.prepare(crowd.scene(), crowd.camera(), lights);
+    CHECK(database.lastBatches().first == 0);
+    crowd.scene().remove(hooked);
+    int frames = 0;
+    do {
+        database.prepare(crowd.scene(), crowd.camera(), lights);
+        ++frames;
+    } while (database.lastBatches().first == 0 && frames < 100);
+    std::printf("skinned decline cadence: batched %d frames after the declining scan\n", frames);
+    CHECK(frames == 60);
+    crowd.scene().add(hooked);
+    database.prepare(crowd.scene(), crowd.camera(), lights);
+    CHECK(database.lastBatches().first == 0);
+}
+
+// PRD-526: glTF stores WEIGHTS_0 as normalized unsigned bytes. The shader reads vec4<f32>, so the
+// vertex format must be Unorm8x4: bound as Float32x4 the buffer reads as zeros and the rig vanishes.
+void skinnedNormalizedWeights() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 180);
+    player::SkinnedCrowd crowd;
+    RenderDatabase database;
+    database.batching = false;
+    database.render(renderer, crowd.scene(), crowd.camera());
+    const auto floats = read(renderer, events);
+    auto* walker = static_cast<SkinnedMesh*>(crowd.scene().getObjectByName("walker-0"));
+    const auto weights = walker->geometry->attributes.at("skinWeight");
+    std::vector<double> bytes;
+    for (uint64_t i = 0; i < weights->count() * 4; ++i)
+        bytes.push_back(std::round(weights->getComponent(i / 4, int(i % 4)) * 255));
+    walker->geometry->setAttribute("skinWeight", BufferAttribute::fromDoubles(Scalar::U8, bytes, 4, true));
+    database.render(renderer, crowd.scene(), crowd.camera());
+    const auto normalized = read(renderer, events);
+    CHECK(!floats.empty() && floats.size() == normalized.size());
+    std::size_t covered = 0, differ = 0;
+    for (std::size_t p = 0; p + 3 < floats.size(); p += 4) {
+        int delta = 0;
+        for (int channel = 0; channel < 3; ++channel)
+            delta = std::max(delta, std::abs(int(floats[p + channel]) - int(normalized[p + channel])));
+        differ += delta > 8;
+        covered += floats[p] + floats[p + 1] + floats[p + 2] > 0;
+    }
+    std::printf("normalized skin weights: %zu covered pixels, %zu differ by more than 8 levels\n", covered, differ);
+    // One-in-255 weight rounding moves a few edge pixels; a vanished rig would differ by thousands.
+    CHECK(covered > 1000 && differ <= 40);
+}
 
 // PRD-526: a tangent-space normalMap bends the lit normal along the uv axes (three's perturbNormal2Arb).
 // A plane facing the camera: lit from +x, a map tilting every normal toward +x (red high) brightens it,
@@ -2372,7 +2483,7 @@ void shadowLightsFollowHierarchy() {
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy})
 
 

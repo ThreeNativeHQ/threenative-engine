@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "native-engine-core-v8",
+  "target": "desktop",
+  "subject": "player",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 4,
+  "steps": [
+    { "label": "settled", "waitTicks": 6, "release": true },
+    { "label": "moving", "press": "ArrowUp", "holdTicks": 8, "release": true }
+  ],
+  "assert": {
+    "movement": { "entity": "player", "minAxisDelta": { "axis": "-z", "min": 0.75 } },
+    "resources": [
+      { "id": "profile", "path": "engine", "equals": "native", "allowTrivial": "The native artifact profile is fixed at build time; its constant identity is the property under test." },
+      { "id": "profile", "path": "gameRuntime", "equals": "v8", "allowTrivial": "The V8 artifact profile is fixed at build time; its constant identity is the property under test." }
+    ]
+  }
+}

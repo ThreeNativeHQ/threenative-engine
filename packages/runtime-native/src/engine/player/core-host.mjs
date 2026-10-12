@@ -1,0 +1,113 @@
+// Browser-service compatibility for core's existing seams; time advances on native fixed ticks.
+// The native marker keeps assets/physics/platform selection on the native path, even without DOM.
+import { audio } from "./core-audio.mjs";
+import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
+globalThis.__THREENATIVE_NATIVE__ = { ...globalThis.__THREENATIVE_NATIVE__, platform: globalThis.tn.platform };
+let time = 0;
+let nextId = 0;
+const frames = new Map();
+const timers = new Map();
+const listeners = new Map();
+const held = new Set();
+
+export const canvas = {
+  width: 1280, height: 720, clientWidth: 1280, clientHeight: 720, parentElement: null,
+  addEventListener(type, callback) {
+    if (!listeners.has(type)) listeners.set(type, new Set());
+    listeners.get(type).add(callback);
+  },
+  removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
+};
+// Pointer lock on the canvas core reads input from, as the legacy host gives it (SDL relative mouse
+// mode, __tnPointerCapture): core's captureMouse/releaseMouse, with the pointerlockchange they await.
+const pointerLock = (on) => {
+  globalThis.__tnPointerCapture(on);
+  for (const callback of [...(listeners.get("pointerlockchange") ?? [])]) callback({ type: "pointerlockchange" });
+};
+canvas.requestPointerLock = () => pointerLock(true);
+canvas.exitPointerLock = () => pointerLock(false);
+globalThis.performance = { now: () => time };
+globalThis.console = Object.fromEntries(["log", "info", "warn", "error"].map((name) => [name, (...args) => globalThis.tn.log(...args)]));
+globalThis.requestAnimationFrame = (callback) => {
+  frames.set(++nextId, callback);
+  return nextId;
+};
+globalThis.cancelAnimationFrame = (id) => frames.delete(id);
+globalThis.setTimeout = (callback, delay = 0) => {
+  timers.set(++nextId, { callback, due: time + delay });
+  return nextId;
+};
+globalThis.clearTimeout = (id) => timers.delete(id);
+globalThis.setInterval = (callback, delay) => {
+  if (!Number.isFinite(delay) || delay <= 0) throw new Error("TN_CORE_TIMER: interval must be positive");
+  timers.set(++nextId, { callback, due: time + delay, interval: delay });
+  return nextId;
+};
+globalThis.clearInterval = globalThis.clearTimeout;
+
+const runnerAttached = () => globalThis.TN_PLAYTEST_ENDPOINT !== undefined;
+const flushFrames = (now) => {
+  const pending = [...frames.values()];
+  frames.clear();
+  for (const callback of pending) callback(now);
+};
+globalThis.tn.onFrame((frameMs) => {
+  if (runnerAttached()) flushFrames(frameMs);
+});
+
+globalThis.tn.onUpdate((dt) => {
+  time += dt * 1000;
+  // Every held key by code (KeyW, ArrowUp), as keydown/keyup events with the DOM key beside the code.
+  const now = new Set(globalThis.__tnHeldCodes());
+  const send = (type, code) => {
+    const key = /^Key[A-Z]$/.test(code) ? code[3].toLowerCase() : code;
+    for (const callback of listeners.get(type) ?? []) callback({ code, key });
+  };
+  for (const code of now) if (!held.has(code)) { held.add(code); send("keydown", code); }
+  for (const code of [...held]) if (!now.has(code)) { held.delete(code); send("keyup", code); }
+  for (const [id, timer] of timers) {
+    if (timer.due > time) continue;
+    if (timer.interval === undefined) timers.delete(id);
+    else timer.due += timer.interval;
+    timer.callback();
+  }
+  // Under a playtest runner core freezes its loop, so ticks are the only clock: the legacy host's
+  // mailbox advance calls the bridge's fixed step, and here each native tick is that advance. The
+  // frame callbacks then run once per presented frame on its frame clock (tn.onFrame below), so a
+  // render sample is a real frame time: tick time never satisfies minFps or p95 (owner, 2026-10-08).
+  if (runnerAttached()) {
+    const bridge = globalThis.__THREENATIVE_PLAYTEST_BRIDGE__;
+    if (typeof bridge?.advance === "function") {
+      globalThis.__tnGameSpan?.(GAME_SPANS.playtest, 0);
+      try { void bridge.advance(1); } finally { globalThis.__tnGameSpan?.(GAME_SPANS.playtest, 1); }
+    }
+  } else {
+    flushFrames(time);
+  }
+  audio.updateAudio();
+});
+
+const readSize = () => ({ width: canvas.width, height: canvas.height, aspect: canvas.width / canvas.height });
+export const platform = {
+  input: () => [],
+  inputTarget: canvas,
+  renderer: { createCanvas: () => canvas, hasWebGPU: () => true, readSize: () => [1280, 720], observeResize: () => () => {} },
+  viewport: { readSize, observeResize: () => () => {} },
+  mountCanvas() {},
+  unmountCanvas() {},
+};
+
+if (globalThis.__tnGameSpan !== undefined) {
+  const calls = 100_000;
+  for (let warm = 0; warm < 10_000; warm++) globalThis.__tnGameSpan(-3, 0);
+  for (let batch = 0; batch < 3; batch++) {
+    let checksum = 0;
+    const emptyStart = globalThis.__tnGameSpan(-2, 0);
+    for (let i = 0; i < calls; i++) checksum += i & 1;
+    const emptyMs = globalThis.__tnGameSpan(-2, 0) - emptyStart;
+    const start = globalThis.__tnGameSpan(-2, 0);
+    for (let i = 0; i < calls; i++) { globalThis.__tnGameSpan(-3, 0); checksum += i & 1; }
+    const ms = globalThis.__tnGameSpan(-2, 0) - start;
+    console.log(`TN_GAME_FFI:${JSON.stringify({ calls, ms, emptyMs, netNs: (ms - emptyMs) * 1e6 / calls, checksum })}`);
+  }
+}

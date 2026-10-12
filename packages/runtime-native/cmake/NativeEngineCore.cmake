@@ -410,14 +410,24 @@ target_link_libraries(tn-native-engine-world-tiles-test PRIVATE tn_engine_world)
 target_include_directories(tn-native-engine-world-tiles-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
 # PRD-521 box 37: residency, bounded admission, chunk groups and chain LOD decisions.
 # The test reads its JSON table from disk, which a Wasm test under node cannot; the library still
-# builds for Wasm. (F also registers native_engine_strict_artifact_inspect on this binary; it needs
-# scripts/inspect-js-free.mjs, which lands with the player in slice 6.)
+# builds for Wasm.
+find_program(TN_WORLD_NODE_EXECUTABLE node)
 if(NOT EMSCRIPTEN)
     tn_native_engine_test(tn-native-engine-world-cells-test tests/native-engine/world/world_cells_test.cpp
         native_engine_world_cells=world_cells native_engine_admission_budget=admission_budget)
     target_link_libraries(tn-native-engine-world-cells-test PRIVATE tn_engine_world tn_engine_assets)
     target_compile_definitions(tn-native-engine-world-cells-test PRIVATE
         TN_WORLD_CELLS_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/world_cells_reference.json")
+    if(MSVC)
+        target_link_options(tn-native-engine-world-cells-test PRIVATE "/MAP:$<TARGET_FILE_DIR:tn-native-engine-world-cells-test>/tn-native-engine-world-cells-test.map")
+    endif()
+    # Inspect the real CPU world fixture and its static native closure: no JS engine, no web view.
+    if(TN_WORLD_NODE_EXECUTABLE)
+        add_test(NAME native_engine_strict_artifact_inspect
+            COMMAND ${TN_WORLD_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/inspect-js-free.mjs
+                --binary $<TARGET_FILE:tn-native-engine-world-cells-test> --native-world)
+        set_tests_properties(native_engine_strict_artifact_inspect PROPERTIES LABELS "native-engine")
+    endif()
 endif()
 # PRD-521 phase 1: the ported world.json validator and cellPlacements against world-package.ts.
 tn_native_engine_test(tn-native-engine-world-package-test tests/native-engine/world/world_package_test.cpp
@@ -726,6 +736,16 @@ tn_native_engine_test(tn-native-engine-json-test tests/native-engine/json/json_t
 target_include_directories(tn-native-engine-json-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/json)
 
+# PRD-529 phase 1: the playtest device protocol on the native engine.
+add_library(tn_engine_inspect STATIC src/engine/inspect/endpoint.cpp)
+tn_native_engine_target(tn_engine_inspect)
+target_link_libraries(tn_engine_inspect PUBLIC tn_engine_scene)
+target_include_directories(tn_engine_inspect PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tn_native_engine_test(tn-native-engine-inspect-test tests/native-engine/inspect/inspect_test.cpp
+    native_engine_inspect_protocol=protocol native_engine_inspect_input_tick=input_tick)
+target_link_libraries(tn-native-engine-inspect-test PRIVATE tn_engine_inspect tn_engine_world)
+target_include_directories(tn-native-engine-inspect-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/inspect)
+
 # The native side of the differential fixture runner (PRD-498): run-native.ts spawns the driver.
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
@@ -779,6 +799,7 @@ if(NOT EMSCRIPTEN)
                 "skeleton_reference_current:packages/runtime-native/tests/native-engine/animation/skeleton-reference.ts"
                 "skinned_palette_reference_current:packages/runtime-native/tests/native-engine/animation/skinned-palette-reference.ts"
                 "json_reference_current:packages/runtime-native/tests/native-engine/json/json-reference.ts"
+                "inspect_methods_current:packages/runtime-native/tests/native-engine/inspect/protocol-methods.ts"
                 "projection_plan_reference_current:packages/runtime-native/tests/native-engine/projection/projection-reference.ts"
                 "camera_cull_reference_current:packages/runtime-native/tests/native-engine/visibility/camera-cull-reference.ts"
                 "world_heights_reference_current:packages/runtime-native/tests/native-engine/world/heights-reference.ts"

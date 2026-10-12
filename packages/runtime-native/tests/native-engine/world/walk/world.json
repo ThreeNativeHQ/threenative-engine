@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "extent": {
+    "minX": 0,
+    "minZ": 0,
+    "sizeX": 16,
+    "sizeZ": 4
+  },
+  "cellSize": 4,
+  "terrain": {
+    "heightmap": "heightmap.u16",
+    "columns": 5,
+    "rows": 2,
+    "spacing": 4,
+    "heightMin": 0,
+    "heightMax": 1.4
+  },
+  "assets": {
+    "cell-0": {
+      "glb": "cell-0.tnpk",
+      "bounds": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          4,
+          1.4,
+          4
+        ]
+      }
+    },
+    "cell-1": {
+      "glb": "cell-1.tnpk",
+      "bounds": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          4,
+          1.4,
+          4
+        ]
+      }
+    },
+    "cell-2": {
+      "glb": "cell-2.tnpk",
+      "bounds": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          4,
+          1.4,
+          4
+        ]
+      }
+    },
+    "cell-3": {
+      "glb": "cell-3.tnpk",
+      "bounds": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          4,
+          1.4,
+          4
+        ]
+      }
+    }
+  },
+  "placements": "placements.bin",
+  "cells": [
+    {
+      "x": 0,
+      "z": 0,
+      "runs": [
+        {
+          "asset": "cell-0",
+          "offset": 0,
+          "count": 1
+        }
+      ],
+      "chunks": [
+        "cell-0.tnpk"
+      ]
+    },
+    {
+      "x": 1,
+      "z": 0,
+      "runs": [
+        {
+          "asset": "cell-1",
+          "offset": 1,
+          "count": 1
+        }
+      ],
+      "chunks": [
+        "cell-1.tnpk"
+      ]
+    },
+    {
+      "x": 2,
+      "z": 0,
+      "runs": [
+        {
+          "asset": "cell-2",
+          "offset": 2,
+          "count": 1
+        }
+      ],
+      "chunks": [
+        "cell-2.tnpk"
+      ]
+    },
+    {
+      "x": 3,
+      "z": 0,
+      "runs": [
+        {
+          "asset": "cell-3",
+          "offset": 3,
+          "count": 1
+        }
+      ],
+      "chunks": [
+        "cell-3.tnpk"
+      ]
+    }
+  ]
+}

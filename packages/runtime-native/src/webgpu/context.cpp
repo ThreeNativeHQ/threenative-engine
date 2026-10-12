@@ -745,6 +745,7 @@ bool Context::initializeHeadless() {
         return false;
     }
     device_ = deviceData.device;
+    ++deviceCreations_;
     reportGrantedFeatures(device_);
 
     queue_ = wgpuDeviceGetQueue(device_);
@@ -877,6 +878,7 @@ WGPUSurface Context::makeSurface(void* nativeHandle, int platformType) {
         std::cerr << "[WebGPU] Failed to create surface" << std::endl;
         return nullptr;
     }
+    ++surfaceCreations_;
     std::cout << "[WebGPU] Surface created" << std::endl;
     return created;
 }
@@ -1041,6 +1043,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
         return false;
     }
     device_ = deviceData.device;
+    ++deviceCreations_;
     reportGrantedFeatures(device_);
 
     // Get queue
@@ -1090,6 +1093,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         std::cerr << "[WebGPU] Failed to create surface" << std::endl;
         return false;
     }
+    ++surfaceCreations_;
     std::cout << "[WebGPU] Surface created" << std::endl;
 
     // Now request adapter with surface compatibility
@@ -1215,6 +1219,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         return false;
     }
     device_ = deviceData.device;
+    ++deviceCreations_;
     reportGrantedFeatures(device_);
 
     queue_ = wgpuDeviceGetQueue(device_);

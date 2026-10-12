@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "name": "native-engine-minimal-v8",
+  "target": "desktop",
+  "subject": "player",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "steps": [
+    { "label": "move", "press": "ArrowUp", "holdTicks": 60, "release": true },
+    { "label": "settled", "waitTicks": 240, "release": true, "screenshot": "minimal-v8" }
+  ],
+  "assert": {
+    "movement": { "entity": "player", "minAxisDelta": { "axis": "-z", "min": 0.75 } }
+  }
+}

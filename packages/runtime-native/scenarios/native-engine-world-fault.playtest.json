@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "name": "native-engine-world-fault",
+  "target": "desktop",
+  "subject": "world-beacon",
+  "awaitStartup": false,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "steps": [
+    {
+      "label": "walking",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "world-fault-walking"
+    },
+    {
+      "label": "returning",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "label": "unloaded",
+      "waitTicks": 360,
+      "release": true,
+      "screenshot": "world-fault-unloaded"
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "world",
+        "path": "phase",
+        "equals": "done"
+      },
+      {
+        "id": "world",
+        "path": "walkTicks",
+        "equals": 168
+      },
+      {
+        "id": "world",
+        "path": "walkedMetres",
+        "gte": 23
+      },
+      {
+        "id": "world",
+        "path": "maxCameraX",
+        "equals": 14
+      },
+      {
+        "id": "world",
+        "path": "evictions",
+        "gte": 4
+      },
+      {
+        "id": "world",
+        "path": "renderedWorldFrames",
+        "gte": 30
+      },
+      {
+        "id": "world",
+        "path": "peakResidentCells",
+        "equals": 2
+      },
+      {
+        "id": "world",
+        "path": "residentCells",
+        "equals": 0,
+        "allowTrivial": "The fixture begins unloaded; final phase, completed loads and rendered frames separately prove the complete lifecycle."
+      },
+      {
+        "id": "world",
+        "path": "inFlight",
+        "equals": 0,
+        "allowTrivial": "The fixture begins unloaded; final phase, completed loads and rendered frames separately prove the complete lifecycle."
+      },
+      {
+        "id": "world",
+        "path": "pendingCompletions",
+        "equals": 0,
+        "allowTrivial": "The fixture begins unloaded; final phase, completed loads and rendered frames separately prove the complete lifecycle."
+      },
+      {
+        "id": "world",
+        "path": "pendingDestroyCount",
+        "equals": 0,
+        "allowTrivial": "The fixture begins unloaded; final phase, completed loads and rendered frames separately prove the complete lifecycle."
+      },
+      {
+        "id": "world",
+        "path": "rendererDiagnosticCount",
+        "equals": 0,
+        "allowTrivial": "No renderer diagnostic is allowed on any submitted frame; this includes unsupported features."
+      },
+      {
+        "id": "world",
+        "path": "TN_FRAME_BUDGET.maxAdmissionMs",
+        "lte": 4,
+        "allowTrivial": "A held invariant: cumulative maxima include every driven/rendered admission, including between labeled samples."
+      },
+      {
+        "id": "world",
+        "path": "TN_FRAME_BUDGET.maxAdmissionBytes",
+        "lte": 1024,
+        "allowTrivial": "A held invariant: cumulative maxima include every driven/rendered admission, including between labeled samples."
+      },
+      {
+        "id": "world",
+        "path": "TN_FRAME_BUDGET.violations",
+        "equals": 0,
+        "allowTrivial": "A held invariant: cumulative maxima include every driven/rendered admission, including between labeled samples."
+      },
+      {
+        "id": "world",
+        "path": "TN_FRAME_BUDGET.maxAdmissionBytes",
+        "gte": 88
+      },
+      {
+        "id": "world",
+        "path": "TN_FRAME_BUDGET.maxAdmissionMs",
+        "gte": 1e-6
+      },
+      {
+        "id": "world",
+        "path": "cycles",
+        "equals": 1
+      },
+      {
+        "id": "world",
+        "path": "visitedCells",
+        "equals": 3
+      },
+      {
+        "id": "world",
+        "path": "completedLoads",
+        "gte": 4
+      },
+      {
+        "id": "world",
+        "path": "diagnosticCount",
+        "equals": 1
+      },
+      {
+        "id": "world",
+        "path": "diagnostics.0.code",
+        "equals": "TN_PACKAGE_HASH"
+      },
+      {
+        "id": "world",
+        "path": "diagnostics.0.subsystem",
+        "equals": "assets"
+      },
+      {
+        "id": "world",
+        "path": "diagnostics.0.resource",
+        "textIncludes": "cell-1-corrupt.tnpk"
+      },
+      {
+        "id": "world",
+        "path": "diagnostics.0.recovery",
+        "equals": "skip"
+      },
+      {
+        "id": "world",
+        "path": "skippedCells",
+        "equals": ["1:0"]
+      },
+      {
+        "id": "world",
+        "path": "loadAttempts",
+        "equals": 5
+      }
+    ]
+  }
+}

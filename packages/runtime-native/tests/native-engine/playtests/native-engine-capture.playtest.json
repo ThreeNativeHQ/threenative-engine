@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "name": "native-engine-capture",
+  "target": "desktop",
+  "subject": "beacon",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 8,
+  "steps": [
+    {
+      "label": "settled",
+      "waitTicks": 4,
+      "release": true,
+      "screenshot": "before"
+    },
+    {
+      "label": "settled-again",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "label": "moved",
+      "press": "KeyW",
+      "holdTicks": 8,
+      "release": true,
+      "screenshot": "moved"
+    }
+  ],
+  "assert": {
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": {
+        "axis": "-z",
+        "min": 0.75
+      }
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "playerZ",
+        "atSteps": [
+          {
+            "label": "settled",
+            "equals": 0
+          },
+          {
+            "label": "settled-again",
+            "equals": 0
+          }
+        ],
+        "allowTrivial": "The state snapshot is the subject: two labels with no input between them must read the same player position, which is what stability means here."
+      },
+      {
+        "id": "state",
+        "path": "playerZ",
+        "lte": -0.75
+      }
+    ]
+  }
+}

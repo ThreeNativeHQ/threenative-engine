@@ -720,14 +720,54 @@ if(MYSTRAL_USE_DAWN)
     endif()
 endif()
 
+# The prebuilt Rust Rapier world. The engine's PhysicsSync and the V8 player link it, so it is defined
+# before the engine targets; the legacy host adds its binding source where it assembles its own.
+if(TN_ENABLE_NATIVE_PHYSICS)
+    if(NOT THREENATIVE_PHYSICS_LIBRARY)
+        if(ANDROID_ABI STREQUAL "arm64-v8a")
+            set(THREENATIVE_PHYSICS_TARGET "aarch64-linux-android")
+        elseif(ANDROID_ABI STREQUAL "x86_64")
+            set(THREENATIVE_PHYSICS_TARGET "x86_64-linux-android")
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND CMAKE_OSX_SYSROOT MATCHES "simulator")
+            set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios-sim")
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+            set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios")
+        else()
+            message(FATAL_ERROR "Native physics has no prebuilt target for this platform/architecture")
+        endif()
+        set(THREENATIVE_PHYSICS_LIBRARY
+            "${CMAKE_CURRENT_SOURCE_DIR}/.runtime/physics-target/${THREENATIVE_PHYSICS_TARGET}/release/libthreenative_native_physics.a"
+        )
+    endif()
+    if(NOT EXISTS "${THREENATIVE_PHYSICS_LIBRARY}")
+        message(FATAL_ERROR
+            "Native physics artifact is missing: ${THREENATIVE_PHYSICS_LIBRARY}. "
+            "Run node scripts/build-native-physics.mjs with --android, --ios-simulator, "
+            "or --ios-device as appropriate, or supply -DTHREENATIVE_PHYSICS_LIBRARY."
+        )
+    endif()
+    add_library(threenative-native-physics STATIC IMPORTED)
+    set_target_properties(threenative-native-physics PROPERTIES
+        IMPORTED_LOCATION "${THREENATIVE_PHYSICS_LIBRARY}"
+    )
+endif()
+
 # The JS-free native engine (PRD-573): its GPU-backed targets are configured only on request, so the
 # default (legacy) configure defines no engine target. The portable CPU core has its own switch,
 # TN_ENGINE_CORE_ONLY, near the top of this file.
 option(TN_ENGINE_ONLY "Configure only the JS-free native engine targets" OFF)
+# The V8 player and adapter (PRD-573 slice 6) are JS artifacts above the engine. They are configured
+# only by `-DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF`:
+# the configure then continues far enough to define V8 and the runtime scripts, includes
+# cmake/NativeEngineAdapters.cmake and stops, so the legacy host is never defined.
+option(TN_ENGINE_PLAYER "With TN_ENGINE_ONLY, also configure the V8 engine player (needs MYSTRAL_USE_V8)" OFF)
 if(TN_ENGINE_ONLY)
     include(cmake/NativeEngine.cmake)
-    message(STATUS "TN_ENGINE_ONLY: native engine targets only, no scripting configured")
-    return()
+    if(NOT TN_ENGINE_PLAYER)
+        message(STATUS "TN_ENGINE_ONLY: native engine targets only, no scripting configured")
+        return()
+    endif()
+    message(STATUS "TN_ENGINE_ONLY + TN_ENGINE_PLAYER: native engine targets and the V8 player")
 endif()
 
 # QuickJS-NG (actively maintained fork with MSVC/Windows support)
@@ -1481,6 +1521,11 @@ add_custom_command(
 )
 add_custom_target(threenative-runtime-scripts DEPENDS "${TN_RUNTIME_SCRIPT_HEADER}")
 
+if(TN_ENGINE_ONLY AND TN_ENGINE_PLAYER)
+    include(cmake/NativeEngineAdapters.cmake)
+    return()
+endif()
+
 # Android requires shared library for JNI/SDL loading
 set(MYSTRAL_SOURCES
     src/runtime.cpp
@@ -1529,33 +1574,6 @@ set(MYSTRAL_SOURCES
 )
 
 if(TN_ENABLE_NATIVE_PHYSICS)
-    if(NOT THREENATIVE_PHYSICS_LIBRARY)
-        if(ANDROID_ABI STREQUAL "arm64-v8a")
-            set(THREENATIVE_PHYSICS_TARGET "aarch64-linux-android")
-        elseif(ANDROID_ABI STREQUAL "x86_64")
-            set(THREENATIVE_PHYSICS_TARGET "x86_64-linux-android")
-        elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND CMAKE_OSX_SYSROOT MATCHES "simulator")
-            set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios-sim")
-        elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-            set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios")
-        else()
-            message(FATAL_ERROR "Native physics has no prebuilt target for this platform/architecture")
-        endif()
-        set(THREENATIVE_PHYSICS_LIBRARY
-            "${CMAKE_CURRENT_SOURCE_DIR}/.runtime/physics-target/${THREENATIVE_PHYSICS_TARGET}/release/libthreenative_native_physics.a"
-        )
-    endif()
-    if(NOT EXISTS "${THREENATIVE_PHYSICS_LIBRARY}")
-        message(FATAL_ERROR
-            "Native physics artifact is missing: ${THREENATIVE_PHYSICS_LIBRARY}. "
-            "Run node scripts/build-native-physics.mjs with --android, --ios-simulator, "
-            "or --ios-device as appropriate, or supply -DTHREENATIVE_PHYSICS_LIBRARY."
-        )
-    endif()
-    add_library(threenative-native-physics STATIC IMPORTED)
-    set_target_properties(threenative-native-physics PROPERTIES
-        IMPORTED_LOCATION "${THREENATIVE_PHYSICS_LIBRARY}"
-    )
     list(APPEND MYSTRAL_SOURCES src/physics/native_bindings.cpp)
 endif()
 

@@ -231,6 +231,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_callback=render_callback
         native_engine_renderer_instanced=instanced
         native_engine_batched_vs_unbatched=batched_vs_unbatched
+        native_engine_skinned_batched_vs_unbatched=skinned_crowd
+        native_engine_skinned_decline_cadence=skinned_decline_cadence
+        native_engine_skinned_normalized_weights=skinned_normalized_weights
         native_engine_normal_map_tilt=normal_map_tilt
         native_engine_renderer_gpu_mipmaps=gpu_mipmaps
         native_engine_renderer_msaa_edges=msaa_edges
@@ -245,7 +248,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_frustum_culling=frustum_culling
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy)
-    target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services)
+    # The skinned cases drive the player's SkinnedCrowd scene.
+    target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
         TN_NATIVE_LIT_OUT="${CMAKE_CURRENT_BINARY_DIR}/native-lit-render.rgba")
@@ -391,8 +395,25 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
 endif()
 
-# The render chain's CPU plan (engine/renderer/chain) is not here: its reference table is generated
-# from core's `render/chain.ts` velocity `provision`, an optional core seam that lands with slice 6.
+# PRD-526 phase 1: the render chain's ordering and per-stage decisions as a pure CPU plan. The
+# library builds no GPU resources and links nothing heavy; `native_engine_chain_reference_current`
+# keeps the committed table equal to what chain.ts produces today.
+add_library(tn_engine_chain STATIC src/engine/renderer/chain/plan.cpp)
+tn_native_engine_target(tn_engine_chain)
+target_include_directories(tn_engine_chain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tn_native_engine_test(tn-native-engine-chain-test tests/native-engine/chain/chain_order_test.cpp
+    native_engine_chain_order=chain_order native_engine_chain_unsupported=chain_unsupported)
+target_link_libraries(tn-native-engine-chain-test PRIVATE tn_engine_chain)
+target_include_directories(tn-native-engine-chain-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/chain)
+if(TN_PNPM_EXECUTABLE)
+    add_test(NAME native_engine_chain_reference_current
+        COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+            packages/runtime-native/tests/native-engine/chain/chain-reference.ts --check
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    set_tests_properties(native_engine_chain_reference_current PROPERTIES LABELS "native-engine")
+else()
+    message(WARNING "pnpm not found: native_engine_chain_reference_current is not registered")
+endif()
 
 # PRD-519: discrete LOD selection and its per-frame decision as pure CPU functions. It links the
 # scene classes for Camera and Object3D but owns no GPU resource; `native_engine_model_lod_reference_current`
@@ -486,6 +507,60 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         set_tests_properties(native_engine_gpu_scene_select PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
     endif()
+endif()
+
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    # PRD-529 phase 2: the desktop player the playtest runner drives with --target desktop. The
+    # mailbox, the inspect-demo game and the window/loop (run.cpp) are library code so the scenarios
+    # can name them and a second, V8-linked player (NativeEngineAdapters.cmake) can reuse the loop;
+    # the executable names its game. It reaches no JS engine: inspect-js-free.mjs proves it. The loop
+    # links SDL, never a VM. Neither player is part of the default build (EXCLUDE_FROM_ALL).
+    add_library(tn_engine_player STATIC src/engine/player/mailbox.cpp src/engine/player/demo.cpp
+        src/engine/player/run.cpp src/engine/player/skinned_crowd.cpp src/engine/player/world_walk.cpp
+        src/platform/ui_overlay.cpp)
+    tn_native_engine_target(tn_engine_player)
+    # The UI seam is shared with the legacy host; the web view and CSS backends are not linked here.
+    target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=0)
+    target_link_libraries(tn_engine_player PUBLIC tn_engine_inspect tn_engine_scene tn_engine_world
+        tn_engine_renderer tn_host_services tn_engine_world_admission)
+    target_include_directories(tn_engine_player PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    if(SDL3_STATIC_TARGET)
+        target_link_libraries(tn_engine_player PUBLIC ${SDL3_STATIC_TARGET})
+    elseif(SDL3_LIBRARY)
+        target_link_libraries(tn_engine_player PUBLIC ${SDL3_LIBRARY})
+        target_include_directories(tn_engine_player PUBLIC ${SDL3_INCLUDE_DIR})
+    endif()
+    add_executable(tn-native-engine-player EXCLUDE_FROM_ALL src/engine/player/main.cpp)
+    tn_native_engine_target(tn-native-engine-player)
+    target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player)
+    target_compile_definitions(tn-native-engine-player PRIVATE
+        TN_WORLD_WALK_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/walk")
+    if(MSVC)
+        # PE files have no MSVC symbol table; keep the link's symbols for inspect-js-free.mjs.
+        target_link_options(tn-native-engine-player PRIVATE "/MAP:$<TARGET_FILE_DIR:tn-native-engine-player>/tn-native-engine-player.map")
+    endif()
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-player)
+
+    tn_native_engine_test(tn-native-engine-world-walk-test tests/native-engine/world/world_walk_test.cpp
+        native_engine_world_walk_fixture=world_walk_fixture)
+    target_link_libraries(tn-native-engine-world-walk-test PRIVATE tn_engine_player)
+    target_compile_definitions(tn-native-engine-world-walk-test PRIVATE
+        TN_WORLD_WALK_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/walk")
+    if(TARGET dawn::webgpu AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_compile_definitions(tn-native-engine-world-walk-test PRIVATE TN_WORLD_CPU_NULL=1)
+        foreach(api InstanceCreateSurface InstanceRequestAdapter SurfaceRelease SurfacePresent
+                    SurfaceGetCurrentTexture SurfaceUnconfigure TextureCreateView TextureRelease TextureViewRelease)
+            target_link_options(tn-native-engine-world-walk-test PRIVATE "-Wl,--wrap=wgpu${api}")
+        endforeach()
+        add_test(NAME native_engine_world_cycles_cpu COMMAND tn-native-engine-world-walk-test world_walk_cycles_cpu)
+        add_test(NAME native_engine_surface_lifetime_cpu COMMAND tn-native-engine-world-walk-test surface_lifetime_cpu)
+        set_tests_properties(native_engine_world_cycles_cpu native_engine_surface_lifetime_cpu PROPERTIES LABELS "native-engine"
+            ENVIRONMENT "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1;LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/lsan-dawn-null.supp;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
+    tn_native_engine_test(tn-native-engine-skinned-crowd-test tests/native-engine/animation/skinned_crowd_test.cpp
+        native_engine_skinned_crowd_cpu=crowd_cpu)
+    target_link_libraries(tn-native-engine-skinned-crowd-test PRIVATE tn_engine_player)
 endif()
 
 # PRD-528 boxes 53/54: native Rapier stepped by the engine's FixedStepClock, with every body's

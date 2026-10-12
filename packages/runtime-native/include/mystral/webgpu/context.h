@@ -113,6 +113,9 @@ public:
     bool rebuildSurface(void* nativeHandle, int platformType);
     /** Release only window-bound objects before Android destroys its native window. */
     void releaseSurface();
+    /** How many devices and surfaces this context has built: a lifecycle check can tell a rebuild from a reuse. */
+    uint32_t deviceCreations() const { return deviceCreations_; }
+    uint32_t surfaceCreations() const { return surfaceCreations_; }
 
     /** The native window the live surface was built from, or nullptr. */
     void* getSurfaceNativeHandle() const { return surfaceNativeHandle_; }
@@ -228,6 +231,7 @@ private:
     /** Builds a surface handle for a native window without touching any member state. */
     WGPUSurface makeSurface(void* nativeHandle, int platformType);
 
+    uint32_t deviceCreations_ = 0, surfaceCreations_ = 0;
     WGPUInstance instance_ = nullptr;
     WGPUSurface surface_ = nullptr;
     WGPUTexture surfaceTexture_ = nullptr;
