@@ -1384,6 +1384,21 @@ describe("VirtualShadowNode invalidation coalescing", () => {
     ).toMatchObject({ byAdmission: 0, byEviction: 1 });
   });
 
+  it("should use the region's admission marker unless explicitly overridden", () => {
+    const admitted = { ...CELL, admission: true };
+    expect(pagesOfRedraw((node) => node.invalidateRegion(admitted))).toMatchObject({
+      byAdmission: 1,
+      byEviction: 0,
+    });
+    expect(pagesOfRedraw((node) => node.invalidateRegion(admitted, false))).toMatchObject({
+      byAdmission: 0,
+      byEviction: 1,
+    });
+    expect(
+      pagesOfRedraw((node) => node.invalidateRegion({ ...CELL, admission: false }, true)),
+    ).toMatchObject({ byAdmission: 1, byEviction: 0 });
+  });
+
   it("should mark the whole level for an ask with no region", () => {
     expect(pagesOfRedraw((node) => node.invalidateAll())).toMatchObject({
       byEviction: 1,
@@ -1415,9 +1430,81 @@ describe("VirtualShadowNode invalidation coalescing", () => {
     expect(node.stats.byAdmission - before.byAdmission).toBe(0);
   });
 
-  it("should redraw every page until a partial redraw exists", () => {
-    // Phase 1 only knows which pages are dirty; the render itself is still the whole level.
-    expect(pagesOfRedraw((node) => node.invalidateRegion(CELL, true)).pagesRedrawn).toBe(PAGES);
+  /** What the level-0 shadow camera was aimed at on each render the node took after `ask`. */
+  interface IAimedRender {
+    enabled: boolean;
+    height: number;
+    width: number;
+    x: number;
+    y: number;
+  }
+
+  function aimedRenders(
+    ask: (node: VirtualShadowNode) => void,
+    options: { partialRedraw?: boolean } = {},
+  ): { aimed: IAimedRender[]; node: VirtualShadowNode } {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64, ...options });
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    const aimed: IAimedRender[] = [];
+    const shadowCamera = (node.levelLights[0] as unknown as { shadow: { camera: unknown } }).shadow
+      .camera as unknown as {
+      view: { enabled: boolean; height: number; offsetX: number; offsetY: number; width: number };
+    } | null;
+    (node.levelNodes[0] as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow =
+      () => {
+        const view = shadowCamera?.view;
+        aimed.push({
+          enabled: view?.enabled === true,
+          height: view?.height ?? 0,
+          width: view?.width ?? 0,
+          x: view?.offsetX ?? 0,
+          y: view?.offsetY ?? 0,
+        });
+      };
+    ask(node);
+    for (let step = 0; step < 40 && aimed.length === 0; step += 1) {
+      time += 0.1;
+      node.updateBefore(frameFor(camera, time));
+    }
+    return { aimed, node };
+  }
+
+  it("should aim one rectangle of exactly the dirty pages for an admission", () => {
+    const { aimed, node } = aimedRenders((asked) => asked.invalidateRegion(CELL, true));
+    expect(aimed).toHaveLength(1);
+    const [pass] = aimed as [IAimedRender];
+    expect(pass.enabled).toBe(true);
+    expect(pass.width * pass.height).toBe(node.clipmap.boundsToPageKeys(CELL, 0).length);
+    expect(node.stats.pagesRedrawn).toBe(PAGES + pass.width * pass.height);
+    // The camera is whole again once the render is over, so the receivers sample the full map.
+    const camera = (node.levelLights[0] as unknown as { shadow: { camera: unknown } }).shadow
+      .camera as unknown as { view: { enabled: boolean } };
+    expect(camera.view.enabled).toBe(false);
+  });
+
+  it("should draw an eviction and an admission as two rectangles", () => {
+    const elsewhere = { min: { x: -60, y: 0, z: -60 }, max: { x: -44, y: 8, z: -44 } };
+    const { aimed } = aimedRenders((asked) => {
+      asked.invalidateRegion(CELL, true);
+      asked.invalidateRegion(elsewhere);
+    });
+    expect(aimed).toHaveLength(2);
+    expect(aimed.every((pass) => pass.enabled)).toBe(true);
+  });
+
+  it("should draw the whole level when partial redraw is off", () => {
+    const { aimed } = aimedRenders((asked) => asked.invalidateRegion(CELL, true), {
+      partialRedraw: false,
+    });
+    expect(aimed).toEqual([{ enabled: false, height: 0, width: 0, x: 0, y: 0 }]);
+  });
+
+  it("should draw the whole level when more than half the pages are dirty", () => {
+    const wide = { min: { x: -200, y: 0, z: -200 }, max: { x: 200, y: 8, z: 200 } };
+    const { aimed } = aimedRenders((asked) => asked.invalidateRegion(wide, true));
+    expect(aimed.map((pass) => pass.enabled)).toEqual([false]);
   });
 
   it("should round-trip the page counters through the marker line", () => {

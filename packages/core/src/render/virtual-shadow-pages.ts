@@ -726,6 +726,22 @@ export function pageSpan(
   return { max: Math.max(min, Math.floor((high - EPSILON) / pageWorldSize)), min };
 }
 
+/** Pages in a rectangle. */
+export function pageArea(rect: IPageRect): number {
+  return (rect.maxX - rect.minX + 1) * (rect.maxY - rect.minY + 1);
+}
+
+/** Whether `outer` holds every page of `inner`; false when there is no `outer`. */
+export function containsPages(outer: IPageRect | undefined, inner: IPageRect): boolean {
+  return (
+    outer !== undefined &&
+    outer.minX <= inner.minX &&
+    outer.minY <= inner.minY &&
+    outer.maxX >= inner.maxX &&
+    outer.maxY >= inner.maxY
+  );
+}
+
 /** Grow `into` to hold `rect`, or become a copy of it. Returns the grown rectangle. */
 export function unionPageRect(into: IPageRect | undefined, rect: IPageRect): IPageRect {
   if (into === undefined) return { ...rect };
