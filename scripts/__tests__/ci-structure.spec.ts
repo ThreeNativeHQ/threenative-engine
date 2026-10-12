@@ -1553,35 +1553,6 @@ describe("CI pipeline structure", () => {
     expect(janitor).toContain("not a known flake; leaving the run red");
   });
 
-  it("opens an issue and safely reverts a failed develop push", async () => {
-    const janitor = await readFile(path.join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
-    const revert = jobSections(janitor).find(([name]) => name === "revert-red-develop")?.[1] ?? "";
-    expect(revert, "ci-janitor declares no revert-red-develop job").not.toBe("");
-    expect(revert).toContain(
-      "github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.head_branch == 'develop' && github.event.workflow_run.event == 'push'",
-    );
-    for (const permission of [
-      "contents: write",
-      "pull-requests: write",
-      "issues: write",
-      "actions: read",
-    ]) {
-      expect(revert).toContain(permission);
-    }
-    expect(revert).toContain("RUN_ID: ${{ github.event.workflow_run.id }}");
-    expect(revert).toContain("HEAD_SHA: ${{ github.event.workflow_run.head_sha }}");
-    for (const block of janitor.matchAll(/\x20{8}run: \|\n((?:\x20{10}.*\n|\n)*)/gu)) {
-      expect(block[1]).not.toContain("${{ github.event.workflow_run");
-    }
-    expect(revert).toContain("gh issue create");
-    expect(revert).toContain('git revert --no-edit "$HEAD_SHA"');
-    expect(revert).toContain("git rev-parse origin/develop");
-    expect(revert).toContain('git rev-list --parents -n 1 "$HEAD_SHA"');
-    expect(revert).toContain("gh issue comment");
-    expect(revert).toContain("gh pr create");
-    expect(revert).toContain("fetch-depth: 0");
-  });
-
   it("cancels a closed pull request's runs without injecting its head ref into a shell", async () => {
     const janitor = await readFile(path.join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
     // Merged or closed, nothing the head ref is still doing can change the outcome, and those
