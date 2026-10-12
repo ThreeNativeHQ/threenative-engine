@@ -25,7 +25,8 @@
   .pill { display:inline-block; border-radius:10px; padding:1px 8px; font-size:12px; border:1px solid var(--line); margin:2px 4px 2px 0; }
   .pill.ok { color:var(--good); border-color:var(--good); } .pill.open { color:var(--mute); }
   table { border-collapse:collapse; width:100%; } td { padding:3px 6px 3px 0; vertical-align:top; } td.n { white-space:nowrap; text-align:right; }
-  #charts { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:12px; }
+  #charts, #kpi-charts { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:12px; }
+  #kpi-charts { margin-bottom:12px; }
   .legend span { margin-right:10px; white-space:nowrap; } .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; }
   svg { width:100%; height:auto; display:block; margin-top:6px; }
 </style>
@@ -37,6 +38,8 @@
 </header>
 <nav id="tabs"></nav>
 <div class="row" id="kpis"></div>
+<h2>KPI progress <span class="mute sm">legacy ÷ native CPU per benchmark point, oldest left, newest right. Higher is better: target 2x, parity 1x. Hollow markers: host was loaded (relative only).</span></h2>
+<div id="kpi-charts"></div>
 <div class="row" id="progress"></div>
 <h2>Frame time per workload <span class="mute sm">p50 ms, oldest left, newest right, lower is better. Red ring: more than 30% slower than that series' best (single runs swing about ±30%).</span></h2>
 <div id="charts"></div>
@@ -48,7 +51,7 @@ const color = (k) => colorOf.get(k) ?? (colorOf.set(k, PALETTE[colorOf.size % PA
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
 const groupOf = (r) => `${r.mode} · ${r.objects.toLocaleString()} objects`;
-let cycle = "v1", rows = [], epic = [], lastCount = 0, freshUntil = 0, freshKeys = new Set();
+let cycle = "v1", rows = [], epic = [], points = [], lastCount = 0, freshUntil = 0, freshKeys = new Set();
 
 function chart(series) {
   const W = 320, H = 130, L = 36, B = 14, T = 6, R = 6;
@@ -70,6 +73,46 @@ function chart(series) {
     });
   }
   return out + "</svg>";
+}
+
+// KPI per benchmark point (legacy ÷ native, higher is better), from /api/points in time order.
+const fmtNum = (v) => (v === undefined ? "n/a" : v.toFixed(2));
+const fmtRatio = (v) => (v === undefined ? "n/a" : `${v.toFixed(2)}×`);
+const pointTip = (p) => `${p.label} · ${p.mode} · ${p.objects.toLocaleString()} objects\n${new Date(p.t).toLocaleString()}\ncpu incl. present ${fmtRatio(p.ratioCpu)} (legacy ${fmtNum(p.legacyCpu)}, native ${fmtNum(p.nativeCpu)} ms/frame)\ncpu excl. present (KPI) ${fmtRatio(p.ratioNoPresent)} (legacy ${fmtNum(p.legacyThread)}, native ${fmtNum(p.nativeThread)} ms/frame)\n${p.legacyRuns} legacy + ${p.nativeRuns} native runs${p.invalid ? " · host loaded in some runs (relative only)" : ""}`;
+
+function kpiChart(pts) {
+  const W = 320, H = 190, L = 30, R = 8, T = 10, B = 44;
+  const n = pts.length;
+  const x = (i) => L + (n === 1 ? (W - L - R) / 2 : (i / (n - 1)) * (W - L - R));
+  const top = Math.max(TARGET + 0.2, ...pts.flatMap((p) => [p.ratioCpu ?? 0, p.ratioNoPresent ?? 0])) * 1.05;
+  const y = (v) => T + (1 - v / top) * (H - T - B);
+  let out = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="legacy divided by native CPU per benchmark point">`;
+  for (let v = 0; v <= top; v += 0.5) out += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 4}" y="${y(v) + 3}" font-size="9" text-anchor="end" fill="var(--mute)">${v.toFixed(1)}</text>`;
+  out += `<line x1="${L}" x2="${W - R}" y1="${y(1)}" y2="${y(1)}" stroke="var(--mute)" stroke-opacity=".6"/><text x="${W - R}" y="${y(1) - 3}" font-size="9" text-anchor="end" fill="var(--mute)">parity</text>`;
+  out += `<line x1="${L}" x2="${W - R}" y1="${y(TARGET)}" y2="${y(TARGET)}" stroke="var(--good)" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${W - R}" y="${y(TARGET) - 3}" font-size="9" text-anchor="end" fill="var(--good)">target 2x</text>`;
+  pts.forEach((p, i) => {
+    const tag = p.label.slice(p.label.lastIndexOf("/") + 1);
+    out += `<text x="${x(i)}" y="${H - B + 8}" transform="rotate(-35 ${x(i)} ${H - B + 8})" font-size="9" text-anchor="end" fill="var(--mute)">${esc(tag)}</text>`;
+  });
+  for (const [key, color, width, r] of [["ratioCpu", "var(--mute)", 1.5, 3], ["ratioNoPresent", "var(--accent)", 3, 4.5]]) {
+    const at = pts.flatMap((p, i) => (p[key] === undefined ? [] : [{ p, i }]));
+    if (at.length > 1) out += `<polyline fill="none" stroke="${color}" stroke-width="${width}" points="${at.map(({ p, i }) => `${x(i)},${y(p[key])}`).join(" ")}"/>`;
+    for (const { p, i } of at) out += `<circle cx="${x(i)}" cy="${y(p[key])}" r="${r}" fill="${p.invalid ? "var(--card)" : color}" stroke="${color}" stroke-width="2"><title>${esc(pointTip(p))}</title></circle>`;
+  }
+  return out + "</svg>";
+}
+
+// One chart per workload (mode and object count, as groupOf names them), so runs at different sizes never share a line.
+function kpiCharts(pts) {
+  const groups = new Map();
+  for (const p of pts) { const k = `${p.mode}|${p.objects}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(p); }
+  return [...groups.values()].sort((a, b) => a[0].mode.localeCompare(b[0].mode) || a[0].objects - b[0].objects).map((g) => {
+    const kpi = g.filter((p) => p.ratioNoPresent !== undefined).at(-1);
+    const cpu = g.filter((p) => p.ratioCpu !== undefined).at(-1);
+    return `<div class="card"><h2>${esc(g[0].mode)} · ${g[0].objects.toLocaleString()} objects</h2>
+      <div class="legend mute sm"><span><i class="sw" style="background:var(--mute)"></i>cpu incl. present</span><span><i class="sw" style="background:var(--accent)"></i><b>cpu excl. present (KPI)</b></span></div>${kpiChart(g)}
+      <div class="sm mute">latest KPI ${kpi ? `${fmtRatio(kpi.ratioNoPresent)} at ${esc(kpi.label)}` : "not measured"} · incl. present ${cpu ? `${fmtRatio(cpu.ratioCpu)} at ${esc(cpu.label)}` : "not measured"} · target ${TARGET}×</div></div>`;
+  }).join("") || '<p class="mute">No paired native and legacy run yet.</p>';
 }
 
 // Latest median per series within one workload; the KPI compares engine arms against the legacy arm of the same platform.
@@ -128,6 +171,7 @@ function render() {
     return `<button class="${id === cycle ? "on" : ""}" onclick="cycle='${id}';render()">${id}<span class="pct">${t ? Math.round((d / t) * 100) + "%" : ""}</span></button>`;
   }).join("");
   document.getElementById("kpis").innerHTML = kpis(cycleRows);
+  document.getElementById("kpi-charts").innerHTML = kpiCharts(points);
   document.getElementById("progress").innerHTML = progress();
   const groups = new Map();
   for (const r of cycleRows) { const g = groupOf(r); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); }
@@ -139,14 +183,14 @@ function render() {
 
 async function tick() {
   try {
-    const [r, e] = await Promise.all([fetch("/api/rows", { cache: "no-store" }).then((x) => x.json()), fetch("/api/epic", { cache: "no-store" }).then((x) => x.json())]);
+    const [r, e, p] = await Promise.all([fetch("/api/rows", { cache: "no-store" }).then((x) => x.json()), fetch("/api/epic", { cache: "no-store" }).then((x) => x.json()), fetch("/api/points", { cache: "no-store" }).then((x) => x.json())]);
     if (lastCount && r.rows.length > lastCount) {
       freshKeys = new Set(r.rows.slice(lastCount).map(groupOf));
       freshUntil = Date.now() + 8000;
       document.title = `● new result (${r.rows.length}) · Epic scoreboard`;
     }
     if (Date.now() > freshUntil) freshKeys = new Set();
-    lastCount = r.rows.length; rows = r.rows; epic = e;
+    lastCount = r.rows.length; rows = r.rows; epic = e; points = p;
     render();
     document.getElementById("status").textContent = `${rows.length} points · watching ${r.roots.join(", ")} · ${new Date().toLocaleTimeString()}`;
     document.getElementById("dot").style.background = "var(--good)";

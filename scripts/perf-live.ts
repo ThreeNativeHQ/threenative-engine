@@ -17,8 +17,10 @@ export interface IRow {
   p95: number;
   p99: number;
   hitches: number;
-  /** Whole-process CPU ms per frame, when the arm reports it (the KPI metric). */
+  /** Whole-process CPU ms per frame, when the arm reports it (includes the present call). */
   cpu?: number;
+  /** Main-thread CPU ms per frame without the present call (p50), when the arm reports it: the KPI metric. */
+  threadCpu?: number;
   /** Host load above half the cores: absolutes are not valid, ratios between alternating arms still are. */
   invalid: boolean;
   cycle: string;
@@ -95,11 +97,113 @@ export function rowsOf(report: unknown, file: string, mtime: number): IRow[] {
     p99: s.p99,
     hitches: s.hitches,
     ...(s.cpuMsPerFrame === undefined ? {} : { cpu: s.cpuMsPerFrame }),
+    ...(s.threadCpuP50 === undefined ? {} : { threadCpu: s.threadCpuP50 }),
     invalid: r.hostLoad?.absolutes === "invalid-absolute",
     cycle: /(?:^|[\/_.-])(v[1-5])(?:[\/_.-]|$)/u.exec(file)?.[1] ?? "v1",
     t,
     m: mtime,
   }));
+}
+
+export interface IPoint {
+  /** The report's directory and tag, the root left out: `v111/step2`, `R2`. */
+  label: string;
+  mode: string;
+  objects: number;
+  /** Newest run in the point (the date in the file name when it has one, else mtime). */
+  t: number;
+  /** Newest mtime in the point, to order runs that share a date. */
+  m: number;
+  /** A run in the point had a loaded host: the ratios hold, the absolutes do not. */
+  invalid: boolean;
+  legacyRuns: number;
+  nativeRuns: number;
+  /** Median whole-process CPU ms per frame, per arm. */
+  legacyCpu?: number;
+  nativeCpu?: number;
+  /** legacy ÷ native of the whole-process CPU per frame (includes the present call). */
+  ratioCpu?: number;
+  /** Median main-thread CPU ms per frame without the present call, per arm. */
+  legacyThread?: number;
+  nativeThread?: number;
+  /** legacy ÷ native without the present call: the declared KPI metric. */
+  ratioNoPresent?: number;
+}
+
+const LEGACY_ARM = "tn-desktop";
+const NATIVE_ARM = "tn-engine-desktop";
+const RUN_TAG = /^(.*?)-tn-(?:engine-)?desktop\b/u;
+
+function medianOf(values: readonly number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? (sorted[mid] as number)
+    : ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
+}
+
+/** Median of one arm's values for a field, or undefined when that arm reports none. */
+function armMedian(group: readonly IRow[], arm: string, field: "cpu" | "threadCpu") {
+  return medianOf(
+    group
+      .filter((r) => r.arm === arm)
+      .map((r) => r[field])
+      .filter((v): v is number => v !== undefined),
+  );
+}
+
+/** The point one group of runs makes; undefined when one arm alone ran, since then there is no ratio. */
+function pointOf(key: string, group: readonly IRow[]): IPoint | undefined {
+  const [dir, tag, mode, objects] = JSON.parse(key) as [string, string, string, number];
+  const legacyCpu = armMedian(group, LEGACY_ARM, "cpu");
+  const nativeCpu = armMedian(group, NATIVE_ARM, "cpu");
+  const legacyThread = armMedian(group, LEGACY_ARM, "threadCpu");
+  const nativeThread = armMedian(group, NATIVE_ARM, "threadCpu");
+  const ratioCpu =
+    legacyCpu !== undefined && nativeCpu !== undefined ? legacyCpu / nativeCpu : undefined;
+  const ratioNoPresent =
+    legacyThread !== undefined && nativeThread !== undefined
+      ? legacyThread / nativeThread
+      : undefined;
+  if (ratioCpu === undefined && ratioNoPresent === undefined) return undefined;
+  return {
+    label: dir === "." ? tag : `${dir}/${tag}`,
+    mode,
+    objects,
+    t: Math.max(...group.map((r) => r.t)),
+    m: Math.max(...group.map((r) => r.m)),
+    invalid: group.some((r) => r.invalid),
+    legacyRuns: group.filter((r) => r.arm === LEGACY_ARM).length,
+    nativeRuns: group.filter((r) => r.arm === NATIVE_ARM).length,
+    legacyCpu,
+    nativeCpu,
+    ratioCpu,
+    legacyThread,
+    nativeThread,
+    ratioNoPresent,
+  };
+}
+
+/**
+ * One benchmark point per directory, tag, mode and object count, each arm's median across its repeats.
+ * Objects are in the key: crossing-cuts a1 and c1 carry R2@256 and R2@4096 in one file, and mode alone
+ * would mix them into one median.
+ */
+export function pointsOf(rows: readonly IRow[]): IPoint[] {
+  const groups = new Map<string, IRow[]>();
+  for (const row of rows) {
+    const tag = RUN_TAG.exec(path.basename(row.file))?.[1];
+    if (tag === undefined) continue;
+    const key = JSON.stringify([path.dirname(row.file), tag, row.mode, row.objects]);
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const points: IPoint[] = [];
+  for (const [key, group] of groups) {
+    const point = pointOf(key, group);
+    if (point !== undefined) points.push(point);
+  }
+  return points.sort((a, b) => a.t - b.t || a.m - b.m || a.label.localeCompare(b.label));
 }
 
 async function allRows(): Promise<IRow[]> {
@@ -130,6 +234,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     } else if (req.url?.startsWith("/api/rows")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify({ roots, rows: await allRows() }));
+    } else if (req.url?.startsWith("/api/points")) {
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify(pointsOf(await allRows())));
     } else {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(await readFile(new URL("./perf-live.html", import.meta.url), "utf8"));
