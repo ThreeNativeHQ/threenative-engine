@@ -132,7 +132,7 @@ jobs:
     # at promotion, so this job is skipped rather than spending a runner on inert prose. A reused
     # tree skips it too — every gate it would run here already passed in the run that tested this
     # exact tree, and `!= 'prose'` would otherwise have bought a second full lint.
-    if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'
+    if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -1158,6 +1158,89 @@ jobs:
       selection_plan: ${{ needs.scope.outputs.plan }}
       candidate_sha: ${{ needs.scope.outputs.candidate_sha }}
 
+  # PRD-573 slice 0b. A pull request that touches only the native engine's own tree
+  # (`NATIVE_ENGINE_PATHS` in scripts/ci-change-scope.mjs) skips the 75-minute native-platforms
+  # matrix and is proven here instead; a full board runs it too once the diff touches that tree or
+  # the run qualifies a candidate. The engine core is headless, so this job needs no display, no
+  # JS engine and none of test-native's third-party downloads. Until `NativeEngineCore.cmake`
+  # exists on the branch the job reports a notice and passes, so the required verdict never waits
+  # on a build that has nothing to build. It owns its ccache namespace (a shared prefix is how
+  # sibling lanes restored each other's objects) and a cached emsdk pinned by tag and SDK version.
+  native-engine:
+    needs: scope
+    if: ${{ (needs.scope.outputs.selection == 'native-engine' || needs.scope.outputs.selection == 'full') && fromJSON(needs.scope.outputs.plan).jobs['native-engine'].required }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 30
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_MAXSIZE: 500M
+      CCACHE_COMPRESS: "1"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      TN_EMSDK_VERSION: 6.0.11
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
+      - name: Look for the engine core build
+        id: engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f packages/runtime-native/cmake/NativeEngineCore.cmake ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::packages/runtime-native/cmake/NativeEngineCore.cmake does not exist on this commit; nothing to build"
+          fi
+      - name: Restore the native-engine compiler cache
+        if: steps.engine.outputs.present == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/ccache
+          key: native-ccache-ci-native-engine-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/cmake/NativeEngine*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-ci-native-engine-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/cmake/NativeEngine*.cmake') }}-
+      - name: Restore the emsdk
+        id: emsdk
+        if: steps.engine.outputs.present == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/emsdk
+          key: native-engine-emsdk-${{ runner.os }}-${{ runner.arch }}-${{ env.TN_EMSDK_VERSION }}
+      - name: Install the engine toolchain
+        if: steps.engine.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y ccache ninja-build
+          if [ '${{ steps.emsdk.outputs.cache-hit }}' != true ]; then
+            git clone --depth 1 --branch "$TN_EMSDK_VERSION" https://github.com/emscripten-core/emsdk.git "$GITHUB_WORKSPACE/.cache/emsdk"
+            "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" install "$TN_EMSDK_VERSION"
+          fi
+          "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" activate "$TN_EMSDK_VERSION"
+      - name: Build and test the engine core natively
+        if: steps.engine.outputs.present == 'true'
+        working-directory: packages/runtime-native
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --zero-stats
+          cmake -S . -B build/native-engine -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTN_ENGINE_CORE_ONLY=ON
+          cmake --build build/native-engine --parallel "$(nproc)"
+          ctest --test-dir build/native-engine -L native-engine --no-tests=error --output-on-failure
+          ccache --show-stats
+      - name: Build and test the engine core as Wasm under node
+        if: steps.engine.outputs.present == 'true'
+        working-directory: packages/runtime-native
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.cache/emsdk/emsdk_env.sh"
+          emcmake cmake -S . -B build/native-engine-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release -DTN_ENGINE_CORE_ONLY=ON
+          cmake --build build/native-engine-wasm --parallel "$(nproc)"
+          ctest --test-dir build/native-engine-wasm -L native-engine --no-tests=error --output-on-failure
+
   integration:
     needs: scope
     if: needs.scope.result == 'success' && fromJSON(needs.scope.outputs.plan).jobs.integration.required
@@ -1175,7 +1258,7 @@ jobs:
     # Skipped for Markdown-only PRs: the nightly develop run and promotions still scan the full
     # git history, so an inert prose PR does not spend a runner here. Skipped for a reused tree for
     # the same reason every other gate is: the run that tested this exact tree already scanned it.
-    if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'
+    if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'
     # PR-only until 2026-09-01 (owner call): a push to main skipped the whole job, so the board
     # read a skip where the secrets scan should have been. Pushes now scan the repository's full
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
@@ -1241,7 +1324,7 @@ jobs:
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.
   # Legacy main contexts stay in place until the owner changes protection after full qualification.
   ci-required:
-    needs: [scope, integration, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
+    needs: [scope, integration, native-platforms, native-engine, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
@@ -1288,6 +1371,7 @@ jobs:
       - scope
       - integration
       - native-platforms
+      - native-engine
       - typecheck
       - lint
       - test

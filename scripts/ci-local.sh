@@ -45,7 +45,7 @@ fi
 if ! node scripts/ci-change-scope.mjs "${scope_args[@]}" --format json > "$log_root/selection.json"; then exit 2; fi
 if ! node scripts/ci-change-scope.mjs --validate-plan "$(cat "$log_root/selection.json")"; then exit 2; fi
 selection="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; console.log(JSON.parse(readFileSync(process.argv[1], "utf8")).selection)' "$log_root/selection.json")" || exit 2
-case "$selection" in full|prose|instructions|ci|template) ;; *) echo 'TN_CI_LOCAL_INVALID_SELECTION' >&2; exit 2 ;; esac
+case "$selection" in full|prose|instructions|ci|template|native-engine) ;; *) echo 'TN_CI_LOCAL_INVALID_SELECTION' >&2; exit 2 ;; esac
 
 declare -a names=() cmds=()
 add() { names+=("$1"); cmds+=("$2"); }
