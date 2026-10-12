@@ -219,6 +219,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
   tundra: {
     ...temperate,
     world: "tundra",
+    toneMapping: AgXToneMapping,
     horizon: "plain",
     grassTint: [0.83, 0.88, 0.82],
     stoneTint: [0.7, 0.74, 0.77],

@@ -9,11 +9,13 @@ import {
   Float32BufferAttribute,
   HalfFloatType,
   LinearFilter,
+  MathUtils,
   Mesh,
   MeshStandardMaterial,
   RGBAFormat,
   RepeatWrapping,
   type Texture,
+  Vector3,
 } from "three";
 import {
   abs,
@@ -973,6 +975,26 @@ export function createTerrain(
       groundNormals.getZ(edge),
     );
   }
+  if (biome?.world === "tundra") {
+    // The snow mask reads normals: blend the collar too, rather than only its boundary vertices.
+    const perimeter = (data.resolution - 1) * 4;
+    const normal = new Vector3();
+    const boundary = new Vector3();
+    for (let vertex = perimeter; vertex < edgePositions.count; vertex++) {
+      const distance =
+        Math.max(Math.abs(edgePositions.getX(vertex)), Math.abs(edgePositions.getZ(vertex))) -
+        data.size / 2;
+      if (distance >= 40) break;
+      normal
+        .fromBufferAttribute(edgeNormals, vertex)
+        .lerp(
+          boundary.fromBufferAttribute(edgeNormals, vertex % perimeter),
+          1 - MathUtils.smoothstep(distance, 0, 40),
+        )
+        .normalize();
+      edgeNormals.setXYZ(vertex, normal.x, normal.y, normal.z);
+    }
+  }
   mesh.userData.horizonSeamGap = horizonSeamGap;
   mesh.userData.horizonSeamSamples = (data.resolution - 1) * 4;
   horizonGeometry.setAttribute(
@@ -986,7 +1008,7 @@ export function createTerrain(
   mesh.add(horizon);
   geometry.addEventListener("dispose", () => horizon.geometry.dispose());
 
-  const curvature = buildCurvature(data, field);
+  const curvature = buildCurvature(data, field, biome);
   if (assets !== undefined)
     void loadGroundMaps(
       assets,
@@ -1034,7 +1056,7 @@ export function createTerrain(
  *
  * One curvature binding plus six albedos, four normals and four shadow maps is fifteen.
  */
-function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature {
+function buildCurvature(data: IBakedWorld, field: Heightfield, biome?: IBiome): IGroundCurvature {
   const resolution = data.resolution;
   const heights = data.heights;
   const spacing = data.size / (resolution - 1);
@@ -1140,7 +1162,10 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
   const sampled = texture(cooked, uv);
   // A clamped wet boundary texel must not become a stripe across the continuation mesh.
   const outside = max(abs(positionWorld.x), abs(positionWorld.z));
-  const resident = oneMinus(smoothstep(data.size / 2 - spacing * 2, data.size / 2, outside));
+  const collar = biome?.world === "tundra" ? 40 : 0;
+  const resident = oneMinus(
+    smoothstep(data.size / 2 - Math.max(collar, spacing * 2), data.size / 2 + collar, outside),
+  );
   return {
     node: sampled.r,
     texture: cooked,

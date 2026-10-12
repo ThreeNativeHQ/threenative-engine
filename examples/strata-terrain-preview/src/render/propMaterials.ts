@@ -908,10 +908,12 @@ export async function createPropSurfaces(
     map(assets, NEEDLE_ATLAS, false),
     map(assets, NEEDLE_SURFACE, true),
   ]);
-  const alpineSnow =
-    biome?.world === "alpine" ? await map(assets, biome.maps.snow.diffuse, false) : undefined;
+  const rockSnow =
+    biome?.world === "alpine" || biome?.world === "tundra"
+      ? await map(assets, biome.maps.snow.diffuse, false)
+      : undefined;
   const textures: Texture[] = [
-    ...(alpineSnow ? [alpineSnow] : []),
+    ...(rockSnow ? [rockSnow] : []),
     ...(under ? [under.texture] : []),
     ...(soil ? [soil] : []),
     ...[fernDiffuse, fernAlpha].filter((found): found is Texture => found !== undefined),
@@ -1092,14 +1094,36 @@ export async function createPropSurfaces(
   }
   if (biome?.world === "alpine") {
     const rock = stone.diffuse ? alpineRockAlbedo(stone.diffuse) : vec3(0.42, 0.43, 0.38);
-    const snow = alpineSnow
-      ? texture(alpineSnow, positionWorld.xz.div(12)).rgb
-      : vec3(0.82, 0.86, 0.9);
+    const snow = rockSnow ? texture(rockSnow, positionWorld.xz.div(12)).rgb : vec3(0.82, 0.86, 0.9);
     stoneMaterial.colorNode = mix(
       alpineRockColor(rock),
       snow.mul(vec3(...biome.snowTint)),
       smoothstep(0.12, 0.82, alpineSnowCover()),
     );
+  }
+  if (biome?.world === "tundra") {
+    const cover =
+      biomeWeights(
+        biome,
+        float(1).sub(normalWorldGeometry.y),
+        float(0),
+        mx_noise_float(positionWorld.mul(0.05)),
+      ).snow ?? float(0);
+    const snow = rockSnow ? texture(rockSnow, positionWorld.xz.div(12)).rgb : vec3(0.82, 0.86, 0.9);
+    stoneMaterial.colorNode = mix(
+      stoneMaterial.colorNode as Node<"vec3">,
+      snow.mul(vec3(...biome.snowTint)),
+      cover,
+    );
+    stoneMaterial.normalNode = normalize(
+      mix(
+        (stoneMaterial.normalNode as Node<"vec3"> | null) ??
+          transformNormalToView(normalWorldGeometry),
+        transformNormalToView(normalWorldGeometry),
+        cover,
+      ),
+    );
+    if (skyLight) skyEnvironment(stoneMaterial, skyLight);
   }
   rockGround?.apply(stoneMaterial);
   // The alpha-cut, double-sided surfaces: a needle card, a frond, a petal. Without an image-based
