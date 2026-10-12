@@ -1042,6 +1042,12 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Check before restoring or publishing workspace builds, including the develop warm lane.
+      # The pinned upstream archive is downloaded fresh; cache: pnpm does not cache its npm build.
+      # Bash time reports the download + own-build wall cost and preserves failures (PRD-593 AC-2).
+      - name: Verify the generated Three.js patch has not drifted
+        shell: bash
+        run: time pnpm --filter @threenative/core patch:generate --check
       - uses: ./.github/actions/workspace-dist
       - run: pnpm --filter abyss-framework build
       - name: Enforce entity registry boundaries
@@ -1169,11 +1175,6 @@ jobs:
       - run: pnpm budgets
       - run: pnpm quality
       - run: pnpm sync:agents --check
-      # Fails when a Three.js patch file is edited by hand instead of regenerated. The generator
-      # downloads the pinned upstream archive itself, so this proves the one command a maintainer
-      # runs locally (PRD-593 AC-2).
-      - name: Verify the generated Three.js patch has not drifted
-        run: pnpm --filter @threenative/core patch:generate --check
 
   # The native lane blocks the merge in exactly three cases: a full selection that touches a native
   # path, a pull request into main, and any full selection that is not a clean pull-request diff

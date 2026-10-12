@@ -697,6 +697,25 @@ function classifyScope(
 }
 
 describe("CI pipeline structure", () => {
+  it("checks generated Three.js patches before publishing even cached workspace builds", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const build = requiredJob(ci, "build-artifacts");
+    const step = "Verify the generated Three.js patch has not drifted";
+    expect(build).toContain(`- name: ${step}`);
+    expect(build.indexOf(step)).toBeLessThan(
+      build.indexOf("uses: ./.github/actions/workspace-dist"),
+    );
+    expect(build).toContain("needs.scope.outputs.selection == 'warm'");
+    const check = build.slice(
+      build.indexOf(`      - name: ${step}`),
+      build.indexOf("      - uses: ./.github/actions/workspace-dist"),
+    );
+    expect(check).toContain("shell: bash");
+    expect(check).toContain("run: time pnpm --filter @threenative/core patch:generate --check");
+    expect(check).not.toMatch(/continue-on-error:|if:|\|\||--archive/u);
+    expect(ci.match(/patch:generate --check/gu)).toHaveLength(1);
+  });
+
   it("uses one fail-closed scope decision before expensive CI and native jobs", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const scope = requiredJob(ci, "scope");

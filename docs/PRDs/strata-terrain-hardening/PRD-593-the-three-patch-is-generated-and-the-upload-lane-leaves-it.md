@@ -41,6 +41,7 @@ Core audit of `2d2124792` (2026-10-10):
 
 - [x] AC-1 [local]: One command regenerates both patch files, and the result equals the committed files. proof: `pnpm --filter @threenative/core patch:generate && git diff --exit-code packages/core/patches` — Evidence: passed after commit on 2026-10-10, including default pinned upstream download and own build; both artifacts unchanged. A separate fresh `--check` build also printed `matched`.
 - [ ] AC-2 [shared]: CI fails when a patch file is edited by hand. proof: CI job step in `ci.yml` — Evidence: pending.
+  - Local CI wiring proof (2026-10-11): moved `Verify the generated Three.js patch has not drifted` from `budgets` to `build-artifacts`, before workspace-dist cache restore/build/publication, including develop cache warming. `time pnpm --filter @threenative/core patch:generate --check` reports wall cost and preserves failure; the generator throws on download failure and checks the pinned archive hash. CI caches pnpm, not the fresh upstream archive or its npm build. Clean check: `matched`, exit 0, 54.52 s. Appending one newline to the committed base patch: drift rejection, exit 1, 58.84 s; `git checkout -- packages/core/patches/three@0.185.1.patch` restored it byte-for-byte. Both patches and the generator select the required build job without impact-map or receipt changes. The new placement contract failed before the move and passed afterward; all 12 specs found by `rg -l "ci.yml" scripts/__tests__` passed (458 tests, 20.46 s), including structure, needs, selection and integration receipts. `pnpm check:docs` passed; scoped Biome passed with three existing complexity warnings. AC-2 and the Phase 1 CI box remain unticked pending a real CI run link; no push.
 - [ ] AC-3 [local]: `prepareTextures` uploads compressed textures with the patch's upload-lane hunks removed. proof: `pnpm exec vitest run packages/core/__tests__/three-compressed-upload.spec.ts` plus a WebGPU playtest of the strata preview — Evidence: pending.
   - Open: AC-3 and the Phase 2 box stay unticked. The patch still contains the upload-lane hunks. This PRD stays open.
   - Public proof (2026-10-11): `renderer-texture-preparation.spec.ts` passes 43 of 43 tests. The spec now has 35 existing tests and 8 added tests.
@@ -77,7 +78,7 @@ Core audit of `2d2124792` (2026-10-10):
 **Status:** PARTIAL
 **Files:** `packages/core/scripts/generate-three-patch.mjs` (new), `packages/core/package.json`, `.github/workflows/ci.yml`
 - [x] Regeneration matches. proof: default `pnpm --filter @threenative/core patch:generate && git diff --exit-code packages/core/patches` passed after commit; a separate fresh build with `--check` printed `matched`. Both artifact sha256 unchanged (base `ac74287d…170`, upgrade `721e99cd…e36`).
-- [ ] CI drift check. proof: CI run link — step wired in `ci.yml`; draft CI run OPEN, not ticked.
+- [ ] CI drift check. proof: CI run link — step wired in `ci.yml` in `build-artifacts`; local hand-edit rejection proved on 2026-10-11, real CI run link pending.
 
 #### Phase 2: upload lane out of the patch
 **Status:** NOT STARTED
