@@ -4,7 +4,7 @@
 **Priority:** P2 — All boxes are open: each scale step resizes the drawing buffer and every pass target, so the controller keeps coarse rungs; Phase 1 has not yet measured that hitch.
 **Complexity:** 6 (MEDIUM) — 6–10 files (2), temporal GPU state in the chain stages (+2), native host must draw the same sub-rectangle (+2); risk override: none
 **Owner:** João (decline decision after Phase 1), agent (implementation)
-**Depends on:** [PRD-384](PRD-384-adaptive-resolution-gpu-headroom.md) (the GPU-headroom policy this keeps unchanged). Related: [PRD-549](../../performance/PRD-549-the-engine-holds-60-fps-on-a-weak-gpu.md) (it fixes the scaler's gates and adds an MSAA rung below the floor; this PRD changes what a scale step costs, and duplicates none of its boxes), [PRD-539](PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (a reconstructor needs a scale that can change often and cheaply).
+**Depends on:** [PRD-384](../../done/PRD-384-adaptive-resolution-gpu-headroom.md) (the GPU-headroom policy this keeps unchanged). Related: [PRD-549](../../performance/PRD-549-the-engine-holds-60-fps-on-a-weak-gpu.md) (it fixes the scaler's gates and adds an MSAA rung below the floor; this PRD changes what a scale step costs, and duplicates none of its boxes), [PRD-539](PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (a reconstructor needs a scale that can change often and cheaply).
 
 ## Context
 
