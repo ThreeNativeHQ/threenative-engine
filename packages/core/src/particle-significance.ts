@@ -49,7 +49,10 @@ export class ParticleSignificance {
   }
 
   observe(
-    window: Pick<IFrameBudgetWindow, "frames" | "presented" | "gpuMs" | "gpuCompute" | "targetFps">,
+    window: Pick<
+      IFrameBudgetWindow,
+      "frames" | "presented" | "gpuMs" | "gpuCompute" | "targetFps" | "simulatedSeconds"
+    >,
   ): void {
     const { gpuMs, gpuCompute, targetFps } = window;
     const raw =
@@ -65,7 +68,8 @@ export class ParticleSignificance {
         ? // Render mean plus compute p50 estimates the frame; the pools are reported separately.
           Math.max(0, Math.min(1, (gpuMs + gpuCompute - 1000 / targetFps) / gpuCompute))
         : 0;
-    const elapsed = (window.frames * window.presented.mean) / 1000;
+    // Callers without a loop clock retain elapsed time from presented frames.
+    const elapsed = window.simulatedSeconds ?? (window.frames * window.presented.mean) / 1000;
     const seconds = Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0;
     this.#shed = Math.max(raw, this.#shed - this.#decayPerSecond * seconds);
   }

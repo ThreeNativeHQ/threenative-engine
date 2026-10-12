@@ -268,7 +268,12 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
     return this.#padding ?? 0.5 * this.matrixWorld.getMaxScaleOnAxis();
   }
 
-  process(renderer = this.#renderer, camera?: Camera): void {
+  process(
+    renderer = this.#renderer,
+    camera?: Camera,
+    _covered?: boolean,
+    simulatedSeconds?: number,
+  ): void {
     if (this.#released || !this.emitting) return;
     if (renderer === undefined) throw new Error("GPUParticles3D is not attached to a renderer.");
     const readback = this.#readback;
@@ -292,7 +297,8 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
         // ponytail: bounds lag by boundsEveryFrames; grace delays culling and paused clouds do not move.
         if (frustum.intersectsBox(worldBox)) this.#outsideSince = undefined;
         else {
-          const now = performance.now() / 1000;
+          // Wall time is only for callers without a loop clock.
+          const now = simulatedSeconds ?? performance.now() / 1000;
           this.#outsideSince ??= now;
           if (now - this.#outsideSince >= this.#graceSeconds) reason = "outside-view";
         }

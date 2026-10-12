@@ -585,3 +585,45 @@ it("forwards measured budgets only to live render-cadence candidates before disp
   expect(released.budget.yield).not.toHaveBeenCalled();
   expect(detached.budget.yield).not.toHaveBeenCalled();
 });
+
+it("uses the loop clock for significance grace and forwards seconds without changing startup coverage", () => {
+  const registry = new ComputeDrivenRegistry();
+  const parent = new Group();
+  const probe = Object.assign(new ComputeProbe("render", []), {
+    processCadence: "render" as const,
+    processDuringStartup: true,
+    budget: { significance: () => 1, yield: vi.fn() },
+  });
+  parent.add(probe);
+  registry.add(probe, renderer);
+  const process = vi.spyOn(probe, "process");
+  const wall = vi.spyOn(performance, "now").mockImplementation(() => 0);
+  let tick = 240;
+  const simulation = { tick: () => tick, step: 1 / 60 };
+  const view = new PerspectiveCamera();
+  try {
+    const window = {
+      frames: 3,
+      presented: { samples: 3, mean: 16, p50: 0, p95: 0, p99: 0, max: 0 },
+      gpuMs: 20,
+      gpuCompute: 10,
+      targetFps: 100,
+      simulatedSeconds: 1,
+    };
+    registry.observeBudget(window);
+    registry.processRender(renderer, view, true, simulation);
+    expect(probe.budget.yield).toHaveBeenLastCalledWith(true);
+    expect(process).toHaveBeenLastCalledWith(renderer, view, true, 4);
+    registry.observeBudget({ ...window, gpuMs: 0, simulatedSeconds: 10 });
+    tick = 299;
+    registry.processRender(renderer, view, true, simulation);
+    expect(probe.budget.yield).toHaveBeenCalledTimes(1);
+    tick = 300;
+    registry.processRender(renderer, view, true, simulation);
+    expect(probe.budget.yield).toHaveBeenLastCalledWith(false);
+    expect(process).toHaveBeenLastCalledWith(renderer, view, true, 5);
+    expect(wall).not.toHaveBeenCalled();
+  } finally {
+    wall.mockRestore();
+  }
+});

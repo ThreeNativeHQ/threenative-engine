@@ -1,5 +1,5 @@
 import type { Camera, Object3D } from "three";
-import type { IFrameBudgetWindow } from "./frame-budget.js";
+import type { IFrameBudgetSimulation, IFrameBudgetWindow } from "./frame-budget.js";
 import { type IBudgetCandidate, ParticleSignificance } from "./particle-significance.js";
 import type { IRendererLike } from "./renderer.js";
 
@@ -38,7 +38,12 @@ export interface IComputeDriven {
    * `covered` is true while the startup cover hides the world and readiness is still pending, so
    * a streamed world may spend more of the frame admitting the spawn it is waiting on.
    */
-  process(renderer: IRendererLike, camera?: Camera, covered?: boolean): void;
+  process(
+    renderer: IRendererLike,
+    camera?: Camera,
+    covered?: boolean,
+    simulatedSeconds?: number,
+  ): void;
   detach(): void;
   readonly released: boolean;
 }
@@ -87,7 +92,10 @@ export class ComputeDrivenRegistry {
 
   /** Forward a measured frame window to the particle budget coordinator. */
   observeBudget(
-    window: Pick<IFrameBudgetWindow, "frames" | "presented" | "gpuMs" | "gpuCompute" | "targetFps">,
+    window: Pick<
+      IFrameBudgetWindow,
+      "frames" | "presented" | "gpuMs" | "gpuCompute" | "targetFps" | "simulatedSeconds"
+    >,
   ): void {
     this.#significance.observe(window);
   }
@@ -96,7 +104,14 @@ export class ComputeDrivenRegistry {
    * Dispatch render-cadence objects once with the frame's render camera; detached scene children are
    * released before dispatch.
    */
-  processRender(renderer: IRendererLike, camera?: Camera, startupOnly = false): void {
+  processRender(
+    renderer: IRendererLike,
+    camera?: Camera,
+    startupOnly = false,
+    simulation?: IFrameBudgetSimulation,
+  ): void {
+    const simulatedSeconds =
+      simulation === undefined ? undefined : simulation.tick() * simulation.step;
     if (camera !== undefined) {
       const candidates: IBudgetCandidate[] = [];
       for (const { object, driven } of this.#entries.values()) {
@@ -108,9 +123,10 @@ export class ComputeDrivenRegistry {
         )
           candidates.push(driven.budget);
       }
-      this.#significance.apply(candidates, camera, performance.now() / 1000);
+      // Wall time is only for callers without a loop clock.
+      this.#significance.apply(candidates, camera, simulatedSeconds ?? performance.now() / 1000);
     }
-    this.#process(renderer, "render", camera, startupOnly);
+    this.#process(renderer, "render", camera, startupOnly, simulatedSeconds);
   }
 
   #process(
@@ -118,6 +134,7 @@ export class ComputeDrivenRegistry {
     cadence: "fixed" | "render",
     camera?: Camera,
     startupOnly = false,
+    simulatedSeconds?: number,
   ): void {
     for (const entry of [...this.#entries.values()]) {
       if (entry.driven.released || entry.object.parent === null) {
@@ -126,7 +143,7 @@ export class ComputeDrivenRegistry {
       }
       if ((entry.driven.processCadence ?? "fixed") !== cadence) continue;
       if (startupOnly && entry.driven.processDuringStartup !== true) continue;
-      entry.driven.process(renderer, camera, startupOnly);
+      entry.driven.process(renderer, camera, startupOnly, simulatedSeconds);
     }
   }
 

@@ -545,6 +545,7 @@ export {
 export type {
   FrameBudgetPhase,
   IFrameBudgetOptions,
+  IFrameBudgetSimulation,
   IFrameBudgetPassSummary,
   IFrameBudgetSummary,
   IFrameBudgetWindow,

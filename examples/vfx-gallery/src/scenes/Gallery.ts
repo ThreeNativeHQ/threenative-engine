@@ -173,7 +173,7 @@ const ROW_DEPTH = 3.2;
  * frame still clears the capture gate's bright-pixel floor (20 m measured 0.042 against 0.05).
  */
 const PAN_STEP = 18;
-const RATIO_WINDOW_RENDERS = 60;
+const RATIO_WINDOW_TICKS = 60;
 
 /**
  * The frame target the gallery reports to the engine. `B` switches it at run time so one scenario
@@ -203,7 +203,7 @@ export type GalleryState = {
   readonly outsideViewPaused: number;
   readonly overBudgetPaused: number;
   readonly pausedWithoutReason: number;
-  /** Simulation dispatches per emitter per render over the last 60 renders. */
+  /** Dispatches per emitter per render over the last tick window; 1 means a running emitter dispatched on every render. */
   readonly dispatchRatio: number;
   /** The same ratio over the emitters that were running; 1 means every one still animates. */
   readonly runningDispatchRatio: number;
@@ -504,7 +504,7 @@ export class Gallery extends Scene<GalleryState> {
       });
     }
 
-    // One sample per RATIO_WINDOW_RENDERS draws: what the emitters dispatched, what state they are
+    // One sample per RATIO_WINDOW_TICKS ticks: what the emitters dispatched, what state they are
     // in and why. The playtest reads these numbers; nothing here changes how an emitter behaves.
     const lastDispatches = new Map<GPUParticles3D, number>();
     const lastTransitions = new Map<GPUParticles3D, { count: number; at: number }>();
@@ -516,9 +516,19 @@ export class Gallery extends Scene<GalleryState> {
       overBudget: 0,
       leastFirst: false,
     };
-    let renders = 0;
+    // Fixed steps this scene has run, and the simulated seconds they span. The frame function below
+    // counts them once per step and samples there, so windows, dwell and sampling share one clock.
+    let simulationTicks = 0;
+    let simulatedSeconds = 0;
+    let lastSampleTick = simulationTicks;
+    // Renders since the last sample. An emitter on the render cadence dispatches once per render.
+    let rendersSinceSample = 0;
     ctx.beforeRender(() => {
-      const now = performance.now() / 1000;
+      rendersSinceSample += 1;
+    });
+    const sampleWindow = (): void => {
+      const tick = simulationTicks;
+      const now = simulatedSeconds;
       const emitters = pageEmitters();
       for (const emitter of emitters) {
         const known = lastTransitions.get(emitter);
@@ -531,8 +541,15 @@ export class Gallery extends Scene<GalleryState> {
           known.at = now;
         }
       }
-      renders += 1;
-      if (renders % RATIO_WINDOW_RENDERS !== 0 || emitters.length === 0) return;
+      if (
+        Math.floor(tick / RATIO_WINDOW_TICKS) === Math.floor(lastSampleTick / RATIO_WINDOW_TICKS) ||
+        rendersSinceSample === 0 ||
+        emitters.length === 0
+      )
+        return;
+      const renders = rendersSinceSample;
+      rendersSinceSample = 0;
+      lastSampleTick = tick;
       let delta = 0;
       let runningDelta = 0;
       let running = 0;
@@ -558,8 +575,8 @@ export class Gallery extends Scene<GalleryState> {
         else unnamed += 1;
         if (significance !== undefined) pausedMax = Math.max(pausedMax, significance);
       }
-      latest.ratio = delta / (RATIO_WINDOW_RENDERS * emitters.length);
-      latest.runningRatio = running === 0 ? 0 : runningDelta / (RATIO_WINDOW_RENDERS * running);
+      latest.ratio = delta / (renders * emitters.length);
+      latest.runningRatio = running === 0 ? 0 : runningDelta / (renders * running);
       latest.pausedFraction = (emitters.length - running) / emitters.length;
       latest.overBudget = overBudget;
       latest.leastFirst = pausedMax <= runningMin;
@@ -574,9 +591,12 @@ export class Gallery extends Scene<GalleryState> {
         measuredOverBudgetWindows: budgetKnob.overBudgetWindows,
         shortestDwellSeconds: Number.isFinite(shortestDwell) ? shortestDwell : 0,
       });
-    });
+    };
 
-    return (frameCtx) => {
+    return (frameCtx, dt) => {
+      simulationTicks += 1;
+      simulatedSeconds += dt;
+      sampleWindow();
       const camera = ctx.camera as PerspectiveCamera;
       if (frameCtx.input.justPressed("panLeft") && cullOn) {
         // The cull-on pan, read before the camera returns and the emitters resume.

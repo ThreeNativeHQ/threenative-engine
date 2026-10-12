@@ -233,6 +233,26 @@ describe("particle bounds and culling", () => {
     expect(infinite.visible).toBe(true);
   });
 
+  it("uses simulated seconds for outside-view grace while wall time stays fixed", () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const gpu = renderer([]);
+    const emitter = particles({ bounds: localBounds });
+    const view = camera();
+    emitter.position.set(100, 0, -5);
+    emitter.attachRenderer(gpu);
+    const wallTime = performance.now();
+    emitter.process(gpu, view, false, 4);
+    emitter.process(gpu, view, false, 4.99);
+    expect(emitter.cull.state).toBe("running");
+    emitter.process(gpu, view, false, 5);
+    expect(emitter.cull.reason).toBe("outside-view");
+    expect(emitter.dispatches).toBe(2);
+    expect(performance.now()).toBe(wallTime);
+    emitter.position.x = 0;
+    emitter.process(gpu, view, false, 5);
+    expect(emitter.cull.state).toBe("running");
+  });
+
   it("toggles view culling at runtime and starts a fresh grace period on re-enable", () => {
     vi.useFakeTimers({ toFake: ["performance"] });
     const gpu = renderer([]);

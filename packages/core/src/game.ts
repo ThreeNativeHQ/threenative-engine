@@ -1455,6 +1455,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         ? undefined
         : new FrameBudget({
             ...this.#config.frameBudget,
+            simulation: {
+              tick: () => gameLoop.tick(),
+              get step() {
+                return gameLoop.step;
+              },
+            },
             // The scaler reads the same windows the marker reports, so what it acted on and what
             // the record shows are the same measurement rather than two sampling paths.
             onWindow: (reported) => {
@@ -1618,7 +1624,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // say nothing new.
     const devMetricsEnabled = isDevLaunch();
     let postedVerdict: string | undefined;
-    const gameLoop = new FixedStepLoop({
+    const gameLoop: FixedStepLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
       maxSteps: this.#config.maxSteps,
@@ -1679,6 +1685,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               this.#renderer,
               camera,
               startupCoverActive() && !startupReadiness.ready,
+              gameLoop,
             );
           } finally {
             endSpan(SPANS.compute);

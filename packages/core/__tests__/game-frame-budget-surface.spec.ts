@@ -68,13 +68,14 @@ describe("the frame budget names the surface the game's own loop drew", () => {
         warn.mockClear();
         log.mockClear();
         if (!frame) throw new Error("Game did not start its loop");
-        frame(16.7); // Establish the one-time projection verdict before the measurement windows.
+        const startTime = performance.now();
+        frame(startTime + 16.7); // Establish the one-time projection verdict before the measurement windows.
         windows = 0;
         lines.length = 0;
         info.mockClear();
         warn.mockClear();
         log.mockClear();
-        for (let index = 2; index <= 5; index += 1) frame(index * 16.7);
+        for (let index = 2; index <= 5; index += 1) frame(startTime + index * 16.7);
         expect(windows).toBe(4);
         const projection = (line: unknown) =>
           typeof line === "string" && line.startsWith("TN_PROJECTION:");
@@ -137,7 +138,8 @@ describe("the frame budget names the surface the game's own loop drew", () => {
     try {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
-      for (let index = 1; index <= 4; index += 1) frame(index * 16.7);
+      const startTime = performance.now();
+      for (let index = 1; index <= 4; index += 1) frame(startTime + index * 16.7);
       const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
       expect(marker, "no frame-budget window was reported").toBeDefined();
       const reported = JSON.parse(marker?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}");
@@ -198,8 +200,9 @@ describe("the frame budget names the surface the game's own loop drew", () => {
     try {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
-      frame(16.7);
-      frame(33.4);
+      const startTime = performance.now();
+      frame(startTime + 16.7);
+      frame(startTime + 33.4);
 
       const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
       expect(marker).toBeDefined();
@@ -259,8 +262,9 @@ describe("the frame budget names the surface the game's own loop drew", () => {
     try {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
-      frame(16.7);
-      frame(33.4);
+      const startTime = performance.now();
+      frame(startTime + 16.7);
+      frame(startTime + 33.4);
       await Promise.resolve();
 
       const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));

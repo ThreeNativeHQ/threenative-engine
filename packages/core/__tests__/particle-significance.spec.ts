@@ -5,7 +5,7 @@ import { ParticleSignificance } from "../src/particle-significance.js";
 
 type BudgetWindow = Pick<
   IFrameBudgetWindow,
-  "frames" | "presented" | "gpuMs" | "gpuCompute" | "targetFps"
+  "frames" | "presented" | "gpuMs" | "gpuCompute" | "targetFps" | "simulatedSeconds"
 >;
 function window(overrides: Partial<BudgetWindow> = {}): BudgetWindow {
   return {
@@ -23,6 +23,15 @@ function candidate(score: number | undefined) {
 const camera = new PerspectiveCamera();
 
 describe("ParticleSignificance", () => {
+  it("decays using simulated seconds independently of presented frames, including zero ticks", () => {
+    const budget = new ParticleSignificance();
+    budget.observe(window({ gpuMs: 5 }));
+    budget.observe(window({ gpuMs: 0, frames: 3, simulatedSeconds: 2 }));
+    expect(budget.shed).toBeCloseTo(0.3);
+    budget.observe(window({ gpuMs: 0, frames: 600, simulatedSeconds: 0 }));
+    expect(budget.shed).toBeCloseTo(0.3);
+  });
+
   it("includes the separate compute bucket when render alone is below target", () => {
     const budget = new ParticleSignificance();
     budget.observe(window({ gpuMs: 6, gpuCompute: 15, targetFps: 60 }));
