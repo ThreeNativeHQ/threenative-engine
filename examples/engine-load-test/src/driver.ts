@@ -425,7 +425,7 @@ export async function measureRung(
   const crossingTop =
     censusAtOpen === undefined
       ? undefined
-      : topCrossings(censusAtOpen, census(), measuredFrames, 8);
+      : topCrossings(censusAtOpen, census(), measuredFrames);
   return {
     ...(phases === undefined
       ? {}
