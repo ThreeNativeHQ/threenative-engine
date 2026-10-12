@@ -32,6 +32,7 @@ struct Adapter::Wrapper {
     v8::Global<v8::Object> object;
     std::set<std::string> callbacks;  // JS callbacks set on the object, by name
     bool held = false;                // strong: another engine object references this one
+    bool undecided = false;           // queued in Adapter::undecided_ for the next safe point
 };
 
 
@@ -457,6 +458,7 @@ v8::Local<v8::Value> Adapter::wrap(tn_handle_t handle) {
     auto* w = new Wrapper{this, handle, {}};
     track(w, object);
     wrappers_[k] = w;
+    decideAtNextSafePoint(w);
     return scope.Escape(object);
 }
 
@@ -477,7 +479,7 @@ bool Adapter::unwrapForCall(v8::Local<v8::Value> value, tn_handle_t& out) {
     auto* w = static_cast<Wrapper*>(object->GetAlignedPointerFromInternalField(0));
     if (!w || w->adapter != this) return false;
     out = w->handle;
-    if (!w->callbacks.empty()) strong(w);
+    if (!w->callbacks.empty()) { strong(w); decideAtNextSafePoint(w); }
     return true;
 }
 
@@ -504,16 +506,43 @@ void Adapter::strong(Wrapper* w) {
 
 void Adapter::holdIfCallback(tn_handle_t handle) {
     const auto it = wrappers_.find(key(handle));
-    if (it != wrappers_.end() && !it->second->callbacks.empty()) strong(it->second);
+    if (it != wrappers_.end() && !it->second->callbacks.empty()) {
+        strong(it->second);
+        decideAtNextSafePoint(it->second);
+    }
 }
 
-// ponytail: both passes visit every wrapper; keep a dirty set if wrapper counts make this show in a profile.
+void Adapter::decideAtNextSafePoint(Wrapper* w) {
+    if (w->undecided) return;
+    w->undecided = true;
+    undecided_.push_back(key(w->handle));
+}
+
+void Adapter::visit(Wrapper* w) {
+    ++collectVisits_;
+    w->undecided = false;
+    if (tn::abi::engineReferences(w->handle) > 0) strong(w);
+    else if (w->held) weak(w);
+}
+
+// Which wrappers the engine still holds only changes when it starts or stops holding an object, and the ABI
+// counts those moments (ownershipEpoch). With the epoch unmoved, only a wrapper made or held by a call since
+// the last safe point needs a decision, so a steady frame decides for none of them. Something the epoch cannot
+// see, an engine-side drop with no call and no hierarchy change, is caught by the full pass every
+// kFullEvery safe points, so a wrapper is never kept longer than that by a missed change.
 void Adapter::collect() {
+    constexpr unsigned kFullEvery = 512;
     drainArrayViews();
-    for (auto& [k, w] : wrappers_) {
-        if (tn::abi::engineReferences(w->handle) > 0) strong(w);
-        else if (w->held) weak(w);
+    const uint64_t epoch = tn::abi::ownershipEpoch();
+    if (epoch != ownershipSeen_ || ++safePointsSinceFull_ >= kFullEvery) {
+        ownershipSeen_ = epoch;
+        safePointsSinceFull_ = 0;
+        for (auto& [k, w] : wrappers_) visit(w);
+    } else {
+        for (const uint64_t k : undecided_)
+            if (const auto it = wrappers_.find(k); it != wrappers_.end()) visit(it->second);
     }
+    undecided_.clear();
 }
 
 void Adapter::promote(v8::Isolate*, v8::GCType, v8::GCCallbackFlags, void* data) {

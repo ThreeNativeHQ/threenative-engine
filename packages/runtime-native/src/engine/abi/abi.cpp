@@ -17,6 +17,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <new>
 #include <string_view>
 #include <unordered_map>
@@ -25,6 +26,7 @@
 
 #include "engine/abi/abi_internal.h"
 #include "engine/scene/geometry.h"
+#include "engine/scene/object3d.h"
 #include "engine/abi/tsl_call.h"
 #include "engine/scene/material.h"
 #include "engine/abi/bindings.h"
@@ -34,6 +36,44 @@
 #include <string>
 
 extern "C" uint16_t tn_type_id(const char* name);
+
+namespace {
+
+std::atomic<uint64_t> gOwnership{0};  // see tn::abi::ownershipEpoch
+
+// A constructor given a handle or a container of them may keep it.
+bool givenObjects(const tn_value_t* values, uint32_t count) {
+    for (uint32_t i = 0; i < count; ++i)
+        if (values[i].kind == TN_VALUE_HANDLE || values[i].kind == TN_VALUE_ARRAY || values[i].kind == TN_VALUE_RECORD) return true;
+    return false;
+}
+
+// `scene.fog = null` written every frame drops nothing the second time: only the first clear of a slot, or the
+// first after an object was put there, can release one. Slots by handle and property name; cleared when it grows.
+bool clearsHeldSlot(tn_handle_t self, const char* path, bool clears) {
+    static std::set<std::pair<uint64_t, std::string>> cleared;
+    std::pair<uint64_t, std::string> slot{(uint64_t{self.index} << 32) | self.generation, path};
+    if (!clears) {
+        cleared.erase(slot);
+        return false;
+    }
+    if (cleared.size() > 4096) cleared.clear();
+    return cleared.insert(std::move(slot)).second;
+}
+
+// The pure math classes hold numbers and never another object, so a call on one cannot change who owns what.
+// Every other class is looked at by OwnershipProbe.
+bool holdsObjects(const tn::binding::Object& object) {
+    if (object.holdsObjects < 0) {
+        static constexpr std::string_view kMath[] = {"Vector2", "Vector3", "Vector4", "Matrix3", "Matrix4", "Quaternion",
+                                                     "Euler", "Color", "Box2", "Box3", "Sphere", "Plane", "Ray", "Line3",
+                                                     "Triangle", "Spherical", "Cylindrical", "Frustum"};
+        object.holdsObjects = std::find(std::begin(kMath), std::end(kMath), object.cls) == std::end(kMath);
+    }
+    return object.holdsObjects != 0;
+}
+
+}  // namespace
 
 // A context is also the binding Store of the generic calls: Ref values name handles, objects live
 // in the slot their handle indexes.
@@ -330,6 +370,7 @@ tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t* diagnostic) {
     tn_context* context = contextFor(object.context);
     if (!context) return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_HANDLE_CONTEXT: no live context owns this handle");
     const tn::engine::Handle handle{object.type, object.context, object.index, object.generation};
+    gOwnership.fetch_add(1, std::memory_order_relaxed);  // the object may die and take its holdings with it
     switch (context->objects.release(handle)) {
         case tn::engine::HandleError::None:
             if (object.index < context->values.size()) {
@@ -536,6 +577,44 @@ tn_status_t selfObject(tn_handle_t self, tn_context*& context, tn::binding::Obje
     return TN_OK;
 }
 
+// Watches the objects a method call is given. When the call leaves one of them with a different number of
+// owners, or it was given an array or record of objects (not looked into), the engine started or stopped
+// holding something, and the ownership epoch moves. `setMatrixAt(i, matrix)` reads its matrix and keeps
+// nothing, so it moves nothing; `parent.add(child)` and `parent.remove(child)` do.
+class OwnershipProbe {
+public:
+    OwnershipProbe(tn_context* context, const tn_value_t* args, uint32_t count, bool classHoldsObjects)
+        : context_(context), args_(args), count_(count) {
+        if (!classHoldsObjects) return;
+        for (uint32_t i = 0; i < count; ++i) {
+            if (args[i].kind == TN_VALUE_HANDLE) active_ = true;
+            else if (args[i].kind == TN_VALUE_ARRAY || args[i].kind == TN_VALUE_RECORD) active_ = opaque_ = true;
+        }
+        if (active_ && !opaque_) before_ = owners();
+    }
+    ~OwnershipProbe() {
+        if (active_ && (opaque_ || owners() != before_)) gOwnership.fetch_add(1, std::memory_order_relaxed);
+    }
+    OwnershipProbe(const OwnershipProbe&) = delete;
+    OwnershipProbe& operator=(const OwnershipProbe&) = delete;
+
+private:
+    uint64_t owners() const {
+        uint64_t total = 0;
+        for (uint32_t i = 0; i < count_; ++i) {
+            if (args_[i].kind != TN_VALUE_HANDLE || args_[i].handle.context != context_->objects.context()) continue;
+            if (const auto* held = context_->object(args_[i].handle)) total += uint64_t(held->ptr.use_count());
+        }
+        return total;
+    }
+    tn_context* context_;
+    const tn_value_t* args_;
+    uint32_t count_;
+    bool active_ = false;
+    bool opaque_ = false;
+    uint64_t before_ = 0;
+};
+
 }  // namespace
 
 namespace tn::abi {
@@ -645,6 +724,7 @@ tn_status_t invokeMethod(tn_handle_t self, MethodSlot& slot, const std::string& 
     if (!result || (count && !args)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: method, args or result");
     if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
     const auto& binding = bindingOf(*object);
+    const OwnershipProbe probe(context, args, count, holdsObjects(*object));
     if (slot.binding != &binding) {
         const auto m = binding.methods.find(name);
         if (m == binding.methods.end())
@@ -660,6 +740,8 @@ tn_status_t invokeMethod(tn_handle_t self, MethodSlot& slot, const std::string& 
 }
 
 uint64_t crossings() { return gCrossings.load(std::memory_order_relaxed); }
+
+uint64_t ownershipEpoch() { return gOwnership.load(std::memory_order_relaxed) + engine::Object3D::hierarchyVersion(); }
 
 void crossingHistogramEnable(bool on) {
     const std::lock_guard<std::mutex> hold(gHistogramLock);
@@ -687,6 +769,7 @@ tn_status_t tn_construct(tn_context_t* context, const char* class_name, const tn
         return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: context, class, args or out_object");
     }
     *out_object = tn_handle_t{};
+    if (givenObjects(args, arg_count)) gOwnership.fetch_add(1, std::memory_order_relaxed);
     const auto cls = classRegistry().find(class_name);
     if (cls == classRegistry().end() || !cls->second.ctor) {
         return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, (std::string("TN_NATIVE_UNSUPPORTED class ") + class_name).c_str());
@@ -708,6 +791,7 @@ tn_status_t tn_invoke(tn_handle_t self, const char* method, const tn_value_t* ar
     tn::binding::Object* object = nullptr;
     if (!method || !result || (arg_count && !args)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: method, args or result");
     if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
+    const OwnershipProbe probe(context, args, arg_count, holdsObjects(*object));
     const auto& methods = bindingOf(*object).methods;
     const auto m = methods.find(method);
     if (m == methods.end()) {
@@ -750,6 +834,14 @@ tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, 
     if (!path || !value) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or value");
     if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
     const auto& binding = bindingOf(*object);
+    // An object written to a property is a change only when it gains an owner (the same geometry assigned every
+    // frame does not); a container is not looked into; a clear counts the first time (see clearsHeldSlot).
+    const OwnershipProbe probe(context, value, 1, true);
+    if (value->kind == TN_VALUE_NULL || value->kind == TN_VALUE_UNDEFINED) {
+        if (clearsHeldSlot(self, path, true)) gOwnership.fetch_add(1, std::memory_order_relaxed);
+    } else if (value->kind == TN_VALUE_HANDLE || value->kind == TN_VALUE_ARRAY || value->kind == TN_VALUE_RECORD) {
+        clearsHeldSlot(self, path, false);
+    }
     const auto& setters = binding.setters;
     const auto st = setters.find(path);
     if (st == setters.end()) return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + path + " is not settable").c_str());

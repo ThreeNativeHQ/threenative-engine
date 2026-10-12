@@ -170,6 +170,9 @@ class V8Game {
     int shadowMapType() const { return shadowMapType_; }
     /** The renderer's clear colour and alpha (setClearColor), each frame's and each render target's. */
     std::array<double, 4> clearColor() const { return clear_; }
+    /** Wrappers the adapter's safe points have looked at, and how many are alive (TN_PLAYER_CROSSINGS reports both). */
+    uint64_t collectVisits() const { return adapter_ ? adapter_->collectVisits() : 0; }
+    uint64_t liveWrappers() const { return adapter_ ? adapter_->liveWrappers() : 0; }
 
   private:
     std::unique_ptr<mystral::js::Engine> services_;
@@ -1215,6 +1218,8 @@ int main(int argc, char** argv) {
         for (const auto& [name, count] : tn::abi::crossingHistogram()) names.emplace_back(name, json::Value::makeNumber(double(count)));
         std::printf("TN_PLAYER_CROSSINGS:%s\n", json::stringify(json::Value::makeObject({
             {"total", json::Value::makeNumber(double(tn::abi::crossings()))},
+            {"collectVisits", json::Value::makeNumber(double(game.collectVisits()))},
+            {"liveWrappers", json::Value::makeNumber(double(game.liveWrappers()))},
             {"names", json::Value::makeObject(std::move(names))}})).c_str());
         std::fflush(stdout);
     }

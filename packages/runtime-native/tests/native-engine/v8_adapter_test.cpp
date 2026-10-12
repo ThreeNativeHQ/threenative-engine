@@ -1059,6 +1059,83 @@ void wrapperLifetime() {
     CHECK(adapter.liveWrappers() <= 2);
 }
 
+// PRD-573 v1.11 step 1: a safe point decides only for wrappers made or held by a call since the last one,
+// unless the engine's ownership moved. A steady frame (numbers written, matrices updated, objects read) over
+// 25,000 held wrappers looks at none; a change of who owns what still reaches the wrapper it concerns.
+void collectVisits() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    v8::HandleScope scope(rt.isolate);
+    v8::Local<v8::Context> ctx = v8::Context::New(rt.isolate);
+    v8::Context::Scope contextScope(ctx);
+    adapter.install(ctx, ctx->Global());
+    const auto js = [&](const char* source) {
+        v8::TryCatch tryCatch(rt.isolate);
+        v8::Local<v8::Value> result;
+        if (!v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, source).ToLocalChecked())
+                 .ToLocalChecked()
+                 ->Run(ctx)
+                 .ToLocal(&result)) {
+            v8::String::Utf8Value error(rt.isolate, tryCatch.Exception());
+            return std::string("THROWN ") + (*error ? *error : "?");
+        }
+        v8::String::Utf8Value text(rt.isolate, result);
+        return std::string(*text ? *text : "");
+    };
+    const auto gc = [&] { for (int i = 0; i < 4; ++i) rt.isolate->LowMemoryNotification(); };
+    CHECK(js(R"JS(
+        globalThis.scene = new Group();
+        for (let i = 0; i < 25000; ++i) { const o = new Object3D(); o.hp = i; scene.add(o); }
+        'ok'
+    )JS") == "ok");
+    adapter.collect();
+    CHECK(adapter.liveWrappers() >= 25000);
+    // Warm the member wrappers a frame touches, then settle.
+    const char* frame = R"JS((() => {
+        const kids = scene.children;
+        for (let i = 0; i < kids.length; i += 7) { const k = kids[i]; k.position.x = i; k.position.y = 1; k.rotation.z = 0.5; k.visible = true; }
+        scene.updateMatrixWorld(true);
+        return kids.length;
+    })())JS";
+    CHECK(js(frame) == "25000");
+    adapter.collect();
+    adapter.collect();
+    // The steady frame.
+    const uint64_t before = adapter.collectVisits();
+    const std::string steadyResult = js(frame);
+    if (steadyResult != "25000") std::fprintf(stderr, "steady frame: %s\n", steadyResult.c_str());
+    CHECK(steadyResult == "25000");
+    adapter.collect();
+    const uint64_t steady = adapter.collectVisits() - before;
+    if (steady != 0) std::fprintf(stderr, "a steady frame visited %llu wrappers\n", (unsigned long long)steady);
+    CHECK(steady == 0);
+
+    // A change of ownership is not missed. Removed with the object as the argument:
+    CHECK(js("globalThis.child = scene.children[10]; child.hp = 5; scene.remove(child); globalThis.child = null; 'ok'") == "ok");
+    const size_t held = adapter.liveWrappers();
+    adapter.collect();
+    gc();
+    adapter.collect();
+    CHECK(adapter.liveWrappers() < held);  // the removed child's wrapper went weak and was collected
+    // ... and cleared with no argument at all: every child lets go.
+    CHECK(js("scene.clear(); 'ok'") == "ok");
+    adapter.collect();
+    gc();
+    adapter.collect();
+    if (adapter.liveWrappers() > 200) std::fprintf(stderr, "live wrappers after clear: %zu\n", adapter.liveWrappers());
+    CHECK(adapter.liveWrappers() < 200);
+    // An object the engine holds keeps its JS state through collections that follow a change elsewhere.
+    CHECK(js(R"JS(
+        (() => { const keep = new Object3D(); keep.name = 'keep'; keep.hp = 9; scene.add(keep); })();
+        'ok'
+    )JS") == "ok");
+    adapter.collect();
+    gc();
+    adapter.collect();
+    CHECK(js("(() => { const k = scene.getObjectByName('keep'); return k.hp; })()") == "9");
+}
+
 void raycasterLOD() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
@@ -1330,7 +1407,7 @@ void crossingHistogram() {
 
 }  // namespace
 
-TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram},{"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits},{"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},

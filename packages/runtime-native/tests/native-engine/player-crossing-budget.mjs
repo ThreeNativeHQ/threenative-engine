@@ -29,7 +29,7 @@ await bundleNativeEngine({
     __TN_BENCH_CONFIG__: JSON.stringify({
       animate: true,
       axes: {},
-      frames: 60,
+      frames: Number(process.env.TN_CROSSING_FRAMES ?? 60),
       height: 360,
       ladder: [CUBES],
       modes: ["R2"],
@@ -79,9 +79,9 @@ const perCube = median / CUBES;
 // Where the crossings go (whole run, startup included), for whoever is bringing the number down.
 const histogram = lines.find((line) => line.startsWith("TN_PLAYER_CROSSINGS:"));
 if (histogram !== undefined) {
-  const { total, names } = JSON.parse(histogram.slice("TN_PLAYER_CROSSINGS:".length));
+  const { total, names, collectVisits, liveWrappers } = JSON.parse(histogram.slice("TN_PLAYER_CROSSINGS:".length));
   const top = Object.entries(names).slice(0, 8).map(([name, count]) => `${name} ${count}`).join(", ");
-  console.log(`whole run ${total} crossings; most crossed: ${top}`);
+  console.log(`whole run ${total} crossings, ${collectVisits} wrapper visits over ${liveWrappers} live wrappers; most crossed: ${top}`);
 }
 console.log(`R2@${CUBES}: median ${median} crossings per settled frame, ${perCube.toFixed(2)} per cube (budget ${BUDGET_PER_CUBE})`);
 assert(perCube <= BUDGET_PER_CUBE, `${perCube.toFixed(2)} crossings per cube, over the budget of ${BUDGET_PER_CUBE}`);

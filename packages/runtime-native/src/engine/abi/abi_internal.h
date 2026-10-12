@@ -67,6 +67,14 @@ tn_status_t invokeMethod(tn_handle_t handle, MethodSlot& slot, const std::string
 uint64_t crossings();
 
 /**
+ * A counter that moves whenever the engine may have started or stopped holding an object for the language
+ * side: a handle released, a property or constructor given an object or a null, a method on a class that can
+ * keep objects given an object, or any change to the scene hierarchy. A safe point that sees the same value as
+ * last time can skip deciding again which wrappers the engine still holds (PRD-573 v1.11 step 1).
+ */
+uint64_t ownershipEpoch();
+
+/**
  * The per-name histogram of those crossings (the property, method or class name), for finding which names a
  * frame spends them on. Enabling clears it; while on, its counts sum to the `crossings()` delta since then.
  * Off by default: a crossing then costs one relaxed load more.

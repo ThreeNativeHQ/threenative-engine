@@ -39,6 +39,8 @@ public:
      * does not count, so a detached object, its closures and its wrapper are a plain JS cycle the
      * collector reclaims, and the reclaimed wrapper releases the object. The host calls this
      * between frames; a GC prologue also promotes wrappers the engine took since the last one.
+     * It decides only for wrappers made or held by a call since the last safe point, unless the
+     * engine's ownership epoch moved (tn::abi::ownershipEpoch), when it decides for every wrapper.
      */
     void collect();
     /** An engine object passed into a call is held until the next safe point decides. */
@@ -56,6 +58,8 @@ public:
     tn_context_t* context() const { return context_; }
     v8::Isolate* isolate() const { return isolate_; }
     size_t liveWrappers() const { return wrappers_.size(); }
+    /** Wrappers collect() has looked at, ever: a safe point with nothing new and no ownership change adds none. */
+    uint64_t collectVisits() const { return collectVisits_; }
     /** Calls whose arguments needed the general converter (strings, arrays, objects): the numeric fast path leaves it at rest. */
     uint64_t genericArguments() const { return genericArguments_; }
     void noteGenericArguments() { ++genericArguments_; }
@@ -73,6 +77,8 @@ private:
     struct CallbackData;
     static uint64_t key(tn_handle_t h) { return (uint64_t{h.index} << 32) | h.generation; }
     void forget(uint64_t key);
+    void visit(Wrapper* wrapper);
+    void decideAtNextSafePoint(Wrapper* wrapper);
     void track(Wrapper* wrapper, v8::Local<v8::Object> object);
     void strong(Wrapper* wrapper);
     void weak(Wrapper* wrapper);
@@ -88,6 +94,10 @@ private:
     static bool callListeners(Adapter& a, v8::Local<v8::Object> self, v8::Local<v8::Object> event);
 
     uint64_t genericArguments_ = 0;
+    uint64_t collectVisits_ = 0;
+    uint64_t ownershipSeen_ = 0;          // tn::abi::ownershipEpoch() at the last full decision
+    unsigned safePointsSinceFull_ = 0;
+    std::vector<uint64_t> undecided_;     // wrappers new or held by a call since the last safe point, by key
     std::unique_ptr<Tsl> tsl_;
     v8::Isolate* isolate_;
     tn_context_t* context_;

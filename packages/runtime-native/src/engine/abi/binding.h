@@ -78,6 +78,8 @@ struct Object {
      * Found once by engineReferences and kept, so a safe point does not search a tree per wrapper.
      */
     mutable const void* ownEntry = nullptr;
+    /** Whether a call on this class can make the engine keep or drop another object (-1 unknown, found once). */
+    mutable int8_t holdsObjects = -1;
 };
 
 /** Only registered classes backed by engine::Material may unwrap as that base type. */
