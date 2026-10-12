@@ -138,7 +138,13 @@ const high: IWorldEnvironmentOptions = {
  * The rung in between: the same occlusion at half the directions. Saving unmeasured, and the
  * chain's own antialiasing one notch cheaper.
  */
-const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8, renderChainTier: "medium" };
+// SMAA owns medium edges; another four-sample world resolve adds mobile bandwidth.
+const medium: IWorldEnvironmentOptions = {
+  ...high,
+  gtaoSamples: 8,
+  renderChainTier: "medium",
+  samples: 0,
+};
 
 /** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
 const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
