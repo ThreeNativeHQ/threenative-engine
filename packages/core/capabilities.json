@@ -566,7 +566,7 @@
         "add hundreds of built objects to the scene without one multi-second frame",
         "stream a detail tier in behind a loading curtain without the page looking hung"
       ],
-      "summary": "Attach hundreds of built objects to the scene in slices, presenting a frame between each.",
+      "summary": "Attach hundreds of built objects to the scene in slices with an 8 ms default budget, presenting a frame between each.",
       "supersedes": [],
       "symbol": "addInSlices"
     },

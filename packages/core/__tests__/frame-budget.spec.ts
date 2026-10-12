@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { capabilityDetail } from "../../engine-mcp/src/index.js";
 import {
   FRAME_BUDGET_MARKER,
   FRAME_BUDGET_PHASES,
@@ -132,6 +133,12 @@ function parseWindow(line: string): IFrameBudgetWindow {
 }
 
 describe("FrameBudget", () => {
+  it("documents the default 8 ms addInSlices budget in capability detail", () => {
+    const detail = capabilityDetail("addInSlices", "packages/create-threenative/capabilities.json");
+    expect(detail.summary).toContain("8 ms default budget");
+    expect(detail.overrides?.join(" ")).toContain("8 ms budget unless the game gives `sliceSize`");
+  });
+
   it("reports Long Tasks separately from presentation gaps and disconnects on disposal", () => {
     let deliver!: (list: { getEntries(): { startTime: number; duration: number }[] }) => void;
     const disconnect = vi.fn();
@@ -162,6 +169,7 @@ describe("FrameBudget", () => {
         longestMs: 600,
         afterFirstFrameMs: 75,
       });
+      budget.dispose();
       budget.dispose();
       expect(disconnect).toHaveBeenCalledOnce();
     } finally {

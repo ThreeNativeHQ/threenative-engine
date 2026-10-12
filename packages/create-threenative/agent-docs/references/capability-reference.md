@@ -433,7 +433,7 @@ if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);
 
 ### `addInSlices`
 
-`function` — Attach hundreds of built objects to the scene in slices, presenting a frame between each.
+`function` — Attach hundreds of built objects to the scene in slices with an 8 ms default budget, presenting a frame between each.
 
 ```ts
 export async function addInSlices<T>( objects: Iterable<T>, add: (object: T, index: number) => void, options: IAddInSlicesOptions = { … }
