@@ -1594,6 +1594,20 @@
       "meaningfulReason": "Two admitted cells, backend-observed HLOD swaps, near detail restoration and zero scoped validation errors"
     },
     {
+      "id": "virtual-shadow-first-frame",
+      "title": "virtual shadow first frame GPU submission and texture lifetime",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/virtual-shadow-first-frame.js",
+      "tolerance": { "pixelMismatchRatio": 0.01, "perceptualDeltaE": 3.0 },
+      "browserRecipe": "webgpu",
+      "captureFrames": 2,
+      "nativeFrames": 300,
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "First-frame virtual shadow level submission, completed GPU work and zero validation errors including Destroyed texture"
+    },
+    {
       "id": "compressed-texture-preparation",
       "title": "compressed texture preparation",
       "category": "materials",
