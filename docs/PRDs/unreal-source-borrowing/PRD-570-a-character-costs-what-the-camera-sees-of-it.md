@@ -285,3 +285,14 @@ remain in `artifacts/prd570-functional-16f2173f9/` (`receipt.json`, `before.json
 preview stopped and port 57170 closed. No push, retry, cost series, savings, visual comparison or
 native claim; late-baseline rejection still applies and every PRD gate remains open.
 - **2026-10-11, owner delegated the cost-window grant; Phase 1 series run on a loaded host, NOT accepted as cost evidence:** four headed `--browser-recipe webgpu` runs on NVIDIA/Turing (`artifacts/prd570-cost-series-20261011T213750Z` held/static 128, first animated attempts; `artifacts/prd570-cost-series-20261011T213750Z-rerun` animated 128 and 256 reruns after an Xvfb 10 s start timeout and a window-2 wait timeout at 256 under load). All six reported runs exit 0 or are explained, 120 GPU samples each, draws 3 main / 1 shadow. GPU main/shadow ms: animated-128 1.3/0.2, held-128 1.3/0.1, static-128 0.1/0, animated-256 0.1/0. The 256 arm reading is implausibly below 128 and the host load average was about 44–50, so no box is ticked and no CPU `AnimationPlayer.update`/`SkinnedBatch.write` span values were extracted (the playtest assertions carry frame counts, not span milliseconds). Next: rerun on a quiet host and read spans with `playtest perf`; Phase 2 (policy + `animation-rate.spec.ts` red-green) does not depend on these numbers.
+
+- Shooter template gate (AC-2), 2026-10-12, headed `--browser-recipe webgpu` with the NVIDIA env
+  (`adapterClass: hardware`), policy on (`updateRate: 'auto'`): two full runs passed 33 of 34
+  scenarios, all gameplay and behaviour scenarios included. The one failure each time is
+  `performance.maxFrameMsP95` (limit 33 ms; observed 178.9, 86.7 ms) at host load 11–17. A middle
+  run added two `Instance dropped in popErrorScope` device-loss reds (`crouch-lowers-the-eye`,
+  `enemy-body-is-a-body`) that passed in the other two runs. Three low-load replays of that scenario
+  gave 41.1–45.8 ms. The same scenario on a scaffold without the PRD-570 changes gave 51 ms, an
+  error exit and one pass, so the budget fails on this lane without the policy too. The first
+  gate run used the software adapter (swiftshader) and is void. AC-2 stays open: "stay green" is
+  not met while `performance` is red, and a quiet-host baseline is the missing evidence.
