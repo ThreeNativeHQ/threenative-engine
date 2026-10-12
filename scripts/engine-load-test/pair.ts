@@ -2,7 +2,7 @@
 // `tn-engine-desktop`). Both arms run the same ladder in alternating order, and no ratio is printed unless
 // every facet of "they drew the same scene" holds: the parity guard (`parity.ts`) is the gate, so an arm that
 // drew fewer lights, no bloom or no shadows ends the run with the table of what differs, never with a ratio.
-import { DEFAULT_AXES } from "../../examples/engine-load-test/src/workload.js";
+import { DEFAULT_AXES, isRealisticRung } from "../../examples/engine-load-test/src/workload.js";
 import {
   type Facets,
   type IParityRow,
@@ -70,6 +70,9 @@ export function reportFacets(report: IRunReport): Facets {
   return facets;
 }
 
+/** Crossings per frame (p50) an R-ladder rung may make on the engine player: 4x the measured 62. */
+export const HOST_PROJECTION_CROSSING_BUDGET = 256;
+
 export interface IPairVerdict {
   problem?: string;
   rows: IParityRow[];
@@ -109,6 +112,22 @@ export function pairVerdict(
       });
     }
   });
+  // The 2x on the R ladder stands on host projection: 62 crossings per R5 frame against 17,669 with
+  // core's JS mirror (PRD-573 v1.11 step 3). A run that drifts back towards the mirror is refused here,
+  // on a counter, before its timing can be read as a regression of something else.
+  for (const run of [...left, ...right])
+    for (const rung of run.rungs) {
+      if (!isRealisticRung(rung.mode) || rung.bridgeCalls === undefined) continue;
+      const sorted = [...rung.bridgeCalls].sort((a, b) => a - b);
+      const p50 = sorted[Math.floor(sorted.length / 2)] ?? 0;
+      if (p50 > HOST_PROJECTION_CROSSING_BUDGET)
+        shared.push({
+          facet: `${rungKey(rung.mode, rung.objectCount)} crossings per frame (budget ${HOST_PROJECTION_CROSSING_BUDGET})`,
+          left: String(p50),
+          pass: false,
+          right: `<= ${HOST_PROJECTION_CROSSING_BUDGET}`,
+        });
+    }
   try {
     assertSymmetricSpans(left.flatMap(seriesFamilies), right.flatMap(seriesFamilies), labels);
   } catch {
