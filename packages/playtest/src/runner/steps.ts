@@ -122,6 +122,7 @@ export function buildObservations(candidate: Partial<IPlaytestObservations>): IP
 export function componentObservations(
   before: IPlaytestObservationSnapshot | undefined,
   after: IPlaytestObservationSnapshot | undefined,
+  samples: readonly IPlaytestObservationSnapshot[] = [],
 ): IPlaytestObservations["components"] {
   if (before?.components === undefined && after?.components === undefined) return undefined;
   const entities = new Set([...Object.keys(before?.components ?? {}), ...Object.keys(after?.components ?? {})]);
@@ -129,10 +130,17 @@ export function componentObservations(
     const beforeFields = before?.components?.[entity] ?? {};
     const afterFields = after?.components?.[entity] ?? {};
     const fields = new Set([...Object.keys(beforeFields), ...Object.keys(afterFields)]);
-    return [entity, Object.fromEntries([...fields].map((field) => [field, {
-      ...(beforeFields[field] === undefined ? {} : { before: beforeFields[field] }),
-      ...(afterFields[field] === undefined ? {} : { after: afterFields[field] }),
-    }]))];
+    return [entity, Object.fromEntries([...fields].map((field) => {
+      // Spawned entities need a measured baseline from their lifetime, as movement does.
+      const baseline = beforeFields[field] !== undefined ? beforeFields[field] : samples.find((sample) =>
+        sample.components?.[entity]?.[field] !== undefined
+        && (sample.clock.tick ?? sample.clock.timeMs ?? Infinity)
+          < (after?.clock.tick ?? after?.clock.timeMs ?? -Infinity))?.components?.[entity]?.[field];
+      return [field, {
+        ...(baseline === undefined ? {} : { before: baseline }),
+        ...(afterFields[field] === undefined ? {} : { after: afterFields[field] }),
+      }];
+    }))];
   }));
 }
 

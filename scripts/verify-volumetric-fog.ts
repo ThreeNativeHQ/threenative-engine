@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
+import { compileAssets } from "../packages/assets/dist/index.js";
 import { type IPlaytestScenario, loadPlaytestScenario } from "../packages/playtest/dist/index.js";
 // Use the built public runner: source-runner browser callbacks under tsx may capture __name.
 import {
@@ -726,6 +727,8 @@ async function main(): Promise<void> {
   );
   try {
     if (nativeRuntime !== undefined) {
+      // Stage the asset manifest and run from its root, as packaged native games do.
+      await compileAssets({ cwd: fixture, output: artifacts });
       execFileSync(
         process.execPath,
         [
@@ -786,7 +789,7 @@ async function main(): Promise<void> {
             })
           : await runDesktopPlaytest({
               artifactDirectory: directory,
-              projectPath: fixture,
+              projectPath: artifacts,
               scenarioPath,
               target: "desktop",
               desktop: {

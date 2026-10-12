@@ -228,7 +228,7 @@ export function buildReport(
   const afterPosition = entityPosition(movementAfterSnapshot, entity);
   const beforeRotation = entityRotation(movementBeforeSnapshot, entity);
   const afterRotation = entityRotation(movementAfterSnapshot, entity);
-  const components = componentObservations(beforeSnapshot, afterSnapshot);
+  const components = componentObservations(beforeSnapshot, afterSnapshot, labeledSamples.map(({ snapshot }) => snapshot));
   const movementDelta = beforePosition === undefined || afterPosition === undefined
     ? undefined
     : subtract(afterPosition, beforePosition);
