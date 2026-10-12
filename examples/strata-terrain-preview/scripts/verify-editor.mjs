@@ -420,6 +420,23 @@ try {
       "Only the deliberately rejected GUI imports may produce a console error",
     );
   });
+  // A heavy erosion layer makes the 513 preview build run about 6 s, so the scenario's cancel click
+  // (which arrives roughly 3 s after the build starts, behind the runner's per-step settling) lands mid-build.
+  const cancellationFixture = await controller.snapshot();
+  await controller.commit({
+    baseRevision: cancellationFixture.revision,
+    commands: [
+      {
+        op: "upsert",
+        layer: {
+          id: "worker-cancel-erosion",
+          type: "erode",
+          enabled: true,
+          params: { method: "hydraulic", droplets: 200000, maxSteps: 128 },
+        },
+      },
+    ],
+  });
   const report = await runStandalonePlaytest(config);
   assert(report.assertionResults?.length > 0, "Scenario assertions were not observed");
   assert(

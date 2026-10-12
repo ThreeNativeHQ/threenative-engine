@@ -335,6 +335,40 @@
       "kind": "click",
       "at": {
         "element": {
+          "id": "preview-resolution"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "choose-fast-resolution",
+      "press": "Home",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "choose-129-resolution",
+      "press": "ArrowDown",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "restore-fast-resolution",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
           "id": "viewport"
         }
       },
@@ -698,7 +732,7 @@
         "atSteps": [
           {
             "label": "keyboard-edit-saved",
-            "equals": 2
+            "equals": 3
           }
         ]
       },
