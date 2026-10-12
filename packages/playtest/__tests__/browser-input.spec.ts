@@ -41,9 +41,6 @@ test("multi-pointer browser input releases missing pointers before adding new ar
 });
 
 test("the webgpu recipe asks for Vulkan so the run does not land on SwiftShader", () => {
-  // Chromium answers `requestAdapter` either way, so a missing flag produces no error at all —
-  // it produces a software renderer's results. Measured under Xvfb on an RTX 2080:
-  // `swiftshader / google` without this flag, `turing / nvidia` with it.
   expect(WEBGPU_BROWSER_ARGS).toContain("--enable-features=Vulkan");
 });
 
@@ -52,4 +49,9 @@ test("performance probes can bypass the virtual display compositor cadence", () 
     "--disable-frame-rate-limit",
     "--disable-gpu-vsync",
   ]);
+});
+
+test("the webgpu recipe selects the Vulkan hardware adapter", () => {
+  expect(WEBGPU_BROWSER_ARGS).toContain("--use-angle=vulkan");
+  expect(WEBGPU_BROWSER_ARGS).toContain("--use-vulkan");
 });

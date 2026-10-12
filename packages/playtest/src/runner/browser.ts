@@ -5,12 +5,12 @@ export const WEBGPU_BROWSER_ARGS = [
   "--enable-unsafe-webgpu",
   "--disable-gpu-sandbox",
   "--ignore-gpu-blocklist",
-  // Without this Chromium never reaches the Vulkan driver on Linux and silently serves WebGPU
-  // from SwiftShader, its CPU rasteriser. Nothing errors: the adapter answers, the run
-  // proceeds, and the results are a software renderer's. Measured on an RTX 2080 under Xvfb,
-  // `adapter.info` reads `swiftshader / google` without the flag and `turing / nvidia` with it,
-  // which is the difference between blank captures and a rendered frame.
+  // Measured on an RTX 2080 under Xvfb: these Vulkan flags select `turing / nvidia`;
+  // enabling Vulkan alone leaves `adapter.info` at `swiftshader / google`.
   "--enable-features=Vulkan",
+  "--use-angle=vulkan",
+  "--use-vulkan",
+  "--disable-vulkan-surface",
 ] as const;
 
 /** Allow performance probes to sample render work instead of Xvfb's compositor cadence. */
