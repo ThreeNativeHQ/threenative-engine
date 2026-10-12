@@ -11,8 +11,8 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { WASM_ENGINE_ENTRY, WEB_ENGINE_ID, createWebEnginePlugin } from "../src/web-engine.js";
 
 const roots: string[] = [];
-/** A string only upstream three's own Vector3 carries. */
-const UPSTREAM_VECTOR3 = "THREE.Vector3: index is out of range";
+/** A string only upstream three's own Object3D carries (the binding's JS Vector3 keeps three's messages). */
+const UPSTREAM_OBJECT3D = "Object3D.add: object not an instance of THREE.Object3D.";
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
@@ -191,10 +191,10 @@ describe("createWebEnginePlugin", () => {
     expect(native).toContain("is not available on the Wasm engine");
     expect(native).toContain("createModule");
     expect(native).toContain("__tnTsl");
-    expect(native).not.toContain(UPSTREAM_VECTOR3);
+    expect(native).not.toContain(UPSTREAM_OBJECT3D);
     await rm(path.join(root, "dist"), { recursive: true });
     const legacy = await bundle(root, false);
-    expect(legacy).toContain(UPSTREAM_VECTOR3);
+    expect(legacy).toContain(UPSTREAM_OBJECT3D);
     expect(legacy).not.toContain("is not available on the Wasm engine");
   }, 120_000);
 });
