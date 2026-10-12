@@ -49,7 +49,7 @@ Add the missing specs and the capability-detail note.
 ## Execution Phases
 
 #### Phase 1: native cases
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/runtime-native/conformance/registry.json`, conformance fixtures
 - [ ] WorldCells stream. proof: `pnpm parity`
 - [ ] Texture upload. proof: `pnpm parity`
@@ -64,3 +64,7 @@ Add the missing specs and the capability-detail note.
 **Files:** `packages/core/__tests__/renderer.spec.ts`, `frame-budget.spec.ts`, `packages/core/src/streaming.ts` doc comment
 - [x] TRAA floor spec. proof: `renderer.spec.ts` — 2026-10-11, 43/43 renderer tests; floor 0.61, 30 overloaded windows.
 - [x] Slice default documented, observer released. proof: manifest + `frame-budget.spec.ts` — 2026-10-11, 28/28; two dispose calls, one disconnect; 8 ms detail in regenerated manifest.
+
+## Implementation notes (2026-10-11)
+
+- AC-1: `world-cells-proxy-stream` registers a shared scene that streams cells `0:0` and `2:0`, requires compiled and backend-observed HLOD swaps, restores near detail, and requires a null GPU validation-scope result. Local scene-module and registry contracts: 21/21 passed; registry-related script specs: 21/21 passed; focused Biome and `git diff --check` passed. Web/desktop execution pending coordinator; boxes remain open.

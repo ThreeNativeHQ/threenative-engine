@@ -1580,6 +1580,20 @@
       "required": true
     },
     {
+      "id": "world-cells-proxy-stream",
+      "title": "WorldCells two-cell streaming and observed proxy replacement",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-cells-proxy-stream.js",
+      "tolerance": { "pixelMismatchRatio": 0.01, "perceptualDeltaE": 3.0 },
+      "browserRecipe": "webgpu",
+      "captureFrames": 2,
+      "nativeFrames": 300,
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "Two admitted cells, backend-observed HLOD swaps, near detail restoration and zero scoped validation errors"
+    },
+    {
       "id": "compressed-texture-preparation",
       "title": "compressed texture preparation",
       "category": "materials",
