@@ -38,6 +38,7 @@ import type {
   IRenderProjectionReport,
   SceneRenderProjection,
 } from "../../../packages/core/src/renderProjection.js";
+import { type IPhaseRecorder, PHASE } from "./phases.js";
 import {
   type IFoxMeasurement,
   type IFrameStats,
@@ -100,6 +101,22 @@ export type CollapseFactory = (
 export interface ILoadTestEnginePasses {
   readonly cameraCull: RenderCameraCull;
   readonly matrixWorld: MatrixWorldPass;
+}
+
+/**
+ * Wraps the world-matrix pass so its time is its own phase wherever it is called from: the render projection
+ * calls it inside `reconcile` too, and the exclusive phases then move that time out of `projection`.
+ */
+function timeMatrixWorld(pass: MatrixWorldPass, phases: IPhaseRecorder): void {
+  const apply = pass.apply.bind(pass);
+  pass.apply = (root, force) => {
+    phases.begin(PHASE.matrixWorld);
+    try {
+      return apply(root, force);
+    } finally {
+      phases.end();
+    }
+  };
 }
 
 export interface ILoadTestRung {
@@ -385,7 +402,10 @@ export async function createLoadTestHarness(
   enginePasses?: ILoadTestEnginePasses,
   characters?: ICharacterCrowd,
   readFrame?: () => Promise<Uint8Array>,
+  phases?: IPhaseRecorder,
 ): Promise<ILoadTestHarness> {
+  if (phases !== undefined && enginePasses !== undefined)
+    timeMatrixWorld(enginePasses.matrixWorld, phases);
   const renderer = new WebGPURenderer({ antialias: false, canvas });
   renderer.setPixelRatio(1);
   renderer.setSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, false);
@@ -697,6 +717,7 @@ export async function createLoadTestHarness(
   const step = (frameIndex: number): void => {
     if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
     const startedAt = performance.now();
+    phases?.begin(PHASE.game);
     const pose = cameraPose(frameIndex, state.rung.objectCount);
     camera.position.set(pose.x, pose.y, pose.z);
     camera.lookAt(pose.targetX, pose.targetY, pose.targetZ);
@@ -708,7 +729,9 @@ export async function createLoadTestHarness(
         const at = pointLightPosition(index, frameIndex, extent);
         (pointLights[index] as PointLight).position.set(at.x, at.y, at.z);
       }
+      phases?.begin(PHASE.animation);
       characters?.step(frameIndex);
+      phases?.end();
     }
     // The mutation-rate axis decides which objects are dirty this frame; at the default 1 every
     // transform moves, which is the honest worst case a game with moving actors pays.
@@ -725,15 +748,19 @@ export async function createLoadTestHarness(
       const collapseStartedAt = performance.now();
       // The walk counts the nodes this frame visits, so its count opens before the reconcile that
       // walks the authored scene, as `defineGame` does.
+      phases?.begin(PHASE.projection);
       shippedDefaultPasses()?.matrixWorld.beginFrame();
       state.collapse?.reconcile();
+      phases?.end();
       collapseMs = performance.now() - collapseStartedAt;
       stepMs = performance.now() - startedAt;
+      phases?.end();
       return;
     }
     const instanced = state.instanced;
     if (instanced === undefined) {
       stepMs = performance.now() - startedAt;
+      phases?.end();
       return;
     }
     if (
@@ -743,6 +770,7 @@ export async function createLoadTestHarness(
       instanced.instanceMatrix.needsUpdate = true;
     }
     stepMs = performance.now() - startedAt;
+    phases?.end();
   };
 
   /** One frame of the rung, into whatever target the renderer currently holds. */
@@ -762,13 +790,16 @@ export async function createLoadTestHarness(
     // draws with. A rung without a projection keeps the plain frame: it is the independent cell.
     const passes = shippedDefaultPasses();
     if (passes !== undefined) {
+      phases?.begin(PHASE.projection);
       passes.cameraCull.apply(root, camera, renderer.getDrawingBufferSize(drawingBufferSize).y);
+      phases?.end();
       root.matrixWorldAutoUpdate = false;
       passes.matrixWorld.apply(root);
     }
     // The post chain draws through the pipeline rather than through the renderer, and the pipeline
     // is the one that renders the scene pass, so the two paths never both run for one frame.
     for (let pass = 0; pass < axes.passCount; pass += 1) {
+      phases?.begin(PHASE.render);
       if (postPipeline === undefined) await renderer.render(root, camera);
       else {
         // The pass was built on the authored scene; every other rung draws the projection's root, so
@@ -776,12 +807,15 @@ export async function createLoadTestHarness(
         if (postScenePass !== undefined) postScenePass.scene = root;
         postPipeline.render();
       }
+      phases?.end();
     }
+    phases?.begin(PHASE.projection);
     if (passes !== undefined) passes.cameraCull.restore();
     // The velocity snapshot the colour and velocity passes consume. A no-op unless the render
     // chain allocates per-object velocity, which this arm has none of — a shipped game with no
     // post chain resolves the same way, so L3 pays the same commit a shipped game does.
     state?.collapse?.commit();
+    phases?.end();
   };
 
   return {

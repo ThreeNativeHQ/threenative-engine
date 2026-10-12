@@ -7,6 +7,13 @@ import { SceneRenderProjection } from "../../../packages/core/src/renderProjecti
 import { type ICharacterCrowd, createLoadTestHarness } from "./game.js";
 import { ladderRank } from "./ladder.js";
 import {
+  PHASES,
+  createPhaseRecorder,
+  crossingReader,
+  threadCpuClock,
+  topCrossings,
+} from "./phases.js";
+import {
   type RenderMode,
   isProjectedRung,
   isRealisticRung,
@@ -30,6 +37,8 @@ declare const __TN_BENCH_CONFIG__: Readonly<{
   refreshHz: number;
   ladder: number[];
   modes: RenderMode[];
+  /** Per-frame phase telemetry, which the pair bench turns on for both arms (`TN_BENCH_PHASES=1`). */
+  phases?: boolean;
   repeats: number;
   sourceSha?: string;
   warmup: number;
@@ -83,6 +92,8 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
   // with it, at the same defaults `defineGame` resolves (`renderer.matrixWorld` is `"visible"`,
   // `renderer.minimumProjectedPixels` is 0.5), because an L3 that kept three's own world-matrix
   // walk and no projected-size cull would time a pipeline no ThreeNative game ever draws with.
+  const phases = config.phases === true ? createPhaseRecorder(threadCpuClock()) : undefined;
+  const crossings = phases === undefined ? undefined : crossingReader();
   const harness = await createLoadTestHarness(
     surface,
     "native host surface",
@@ -92,6 +103,7 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
     { cameraCull: new RenderCameraCull(), matrixWorld: new MatrixWorldPass() },
     characters,
     (globalThis as { tn?: { readFrame?: () => Promise<Uint8Array> } }).tn?.readFrame,
+    phases,
   );
   const rungs: unknown[] = [];
 
@@ -142,6 +154,8 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
         // frameMs/stepMs/collapseMs so a budget sample can be joined to the host-gap meter's
         // rafTimestampMs without inferring it from wall time.
         const rafTimestampMs: number[] = [];
+        const phaseMs: number[][] = PHASES.map(() => []);
+        let crossingsAtOpen: Record<string, number> | undefined;
         let ladder: unknown;
         let foxMeasurement: unknown;
         let renderCheck: unknown;
@@ -156,9 +170,15 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
             compilesAtWindowStart = harness.pipelineCompiles();
             // Where the timed window opens: the runner reads the process's CPU time here and at `rung`.
             console.log(`window ${mode}@${objectCount}`);
+            // Phases opened before this frame (the settle, the warmup probe) are not the window's.
+            phases?.take();
+            crossingsAtOpen = crossings?.();
           }
           harness.step(frameIndex);
           await harness.render();
+          const taken = phases?.take();
+          if (taken !== undefined && frameIndex >= config.warmup)
+            taken.forEach((ms, index) => phaseMs[index]?.push(Math.round(ms * 1000) / 1000));
           if (frameIndex === statsFrame) {
             const stats = harness.stats();
             drawCalls = stats.drawCalls;
@@ -183,6 +203,10 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
             rafTimestampMs.push(Math.round(rafTimestamp * 1000) / 1000);
           }
         }
+        const crossingTop =
+          crossingsAtOpen === undefined || crossings === undefined
+            ? undefined
+            : topCrossings(crossingsAtOpen, crossings(), frameMs.length);
         rungs.push({
           collapseMs,
           drawCalls,
@@ -190,6 +214,10 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
           ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
           ...(ladder === undefined ? {} : { ladder }),
           ...(renderCheck === undefined ? {} : { renderCheck }),
+          ...(phases === undefined
+            ? {}
+            : { phases: Object.fromEntries(PHASES.map((name, index) => [name, phaseMs[index]])) }),
+          ...(crossingTop === undefined ? {} : { crossingTop }),
           pipelineCompiles: harness.pipelineCompiles() - compilesAtWindowStart,
           stepMs,
           mode,
