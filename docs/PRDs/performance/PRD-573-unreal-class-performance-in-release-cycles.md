@@ -94,9 +94,10 @@ Cherry-picks of F `c1ef353ca 2007efe12 3d3695197 3b29482a6 504709d17 726df7f5c d
 - [x] `packages/three-native` catalog, generators, fixtures and goldens land (goldens marked `linguist-generated`). proof: `run-reference.ts --check --no-renders`, catalog specs, `pnpm typecheck` Result: `run-reference.ts --check --no-renders` exit 0 (96 fixtures, 2047 observations, 108 renders skipped); 7 specs / 65 tests green; package typecheck exit 0; `pnpm lint` 0 errors; frozen-lockfile install passes. Excluded: `src/browser-*` and addons (slice 7), `run-native`/`fixture-native` (slice 2b), `native-stubs.spec` and `catalog-capabilities.spec` (need PRD-526/531 text and a `native` capabilities section). Renders (108) not run here.
 
 #### Phase v1.2b: CPU engine core (slice 2b)
-**Status:** NOT STARTED
-- [ ] `engine/{foundation,scene,animation}`, `tn_abi.h` and `cmake/NativeEngineCore.cmake` land behind `TN_ENGINE_CORE_ONLY`, fixtures regenerated against develop. proof: `ctest -L native-engine` native, under ASan/UBSan, and as Wasm under node
-- [ ] The legacy build and suite are unchanged. proof: `pnpm native:build` and `pnpm --filter @threenative/runtime-native test`
+**Status:** IN PROGRESS (core landed; legacy-build box open)
+- [x] `engine/{foundation,scene,animation}`, `tn_abi.h` and `cmake/NativeEngineCore.cmake` land behind `TN_ENGINE_CORE_ONLY`, fixtures regenerated against develop. proof: `ctest -L native-engine` native, under ASan/UBSan, and as Wasm under node
+- [ ] The legacy build and suite are unchanged. Partial: the default configure has zero engine targets and the source-list guard passes; `pnpm --filter @threenative/runtime-native test` fails the same 29 tests as base `ef18c6b14` (unbuilt host binaries); `pnpm native:build` not run. proof: `pnpm native:build` and `pnpm --filter @threenative/runtime-native test`
+  Result 2026-10-11: native `-DTN_ENGINE_CORE_ONLY=ON` build + `ctest -L native-engine` 78/78 (rerun by the lead on the epic branch); agent-reported: ASan/UBSan 78/78 plus a 15 s `fuzz_buffers` run with no findings, Wasm under node 53/53 (emsdk 6.0.11). Fixtures regenerated: byte-identical, 108 render goldens not regenerated (need a GPU). Not landed, moves to slice 3: `abi.cpp`, `identity`, `tsl_call` and the `abi_test`/`abi_c11`/`fuzz_abi` tests, `differential.mjs` (they need the shader TSL surface); three animation tests that include renderer or player headers go to slice 5/6. Eight header-only files from later slices ride along so the core links.
 
 #### Phase v1.3: Shader IR, WGSL and TNPK (slice 3)
 **Status:** NOT STARTED
