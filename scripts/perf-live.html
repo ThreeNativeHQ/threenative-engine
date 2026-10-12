@@ -91,6 +91,7 @@
 </main>
 <script>
 const TARGET = 2;
+const WEB_TARGET = 1.3; // owner, 2026-10-12: tn-web p50 ÷ tn-engine-web p50, main-thread wall time
 const STALE_HOURS = 6;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const $ = (id) => document.getElementById(id);
@@ -231,7 +232,7 @@ function renderWeb() {
   const delta = d === undefined ? "" : Math.abs(d) <= 0.1 ? `<span class="delta flat">≈ flat vs ${esc(previous.label)}</span>` : `<span class="delta ${d > 0 ? "up" : "down"}">${d > 0 ? "▲ better" : "▼ worse: regression"} ${(d * 100).toFixed(0)}% vs ${esc(previous.label)} at ${fx(previous.ratioP50)}</span>`;
   const flags = (p) => `${p.invalid ? '<span class="pill" style="color:var(--red)">host loaded: ratios only</span> ' : '<span class="pill">host idle</span> '}${p.software ? '<span class="pill" style="color:var(--red)">software adapter: not real-GPU or visual evidence</span>' : '<span class="pill">real GPU</span>'}`;
   const hero = latest ? `<div class="s-${colorOf(latest.ratioP50)}"><div class="big" style="color:var(--c)">${fx(latest.ratioP50)}</div>
-    <p style="margin:2px 0 8px">${latest.ratioP50 >= 1 ? `The engine page is ${latest.ratioP50.toFixed(2)}× cheaper per frame than three.js on ${esc(latest.mode)}@${latest.objects}.` : `The engine page costs ${(1 / latest.ratioP50).toFixed(2)}× three.js per frame on ${esc(latest.mode)}@${latest.objects}.`}</p></div>
+    <p style="margin:2px 0 8px">${latest.ratioP50 >= 1 ? `The engine page is ${latest.ratioP50.toFixed(2)}× cheaper per frame than three.js on ${esc(latest.mode)}@${latest.objects}.` : `The engine page costs ${(1 / latest.ratioP50).toFixed(2)}× three.js per frame on ${esc(latest.mode)}@${latest.objects}.`} Target ${WEB_TARGET}× cheaper${latest.ratioP50 >= WEB_TARGET ? " (met)" : ` (${latest.ratioP50.toFixed(2)}× of ${WEB_TARGET}×)`}.</p></div>
     <div class="meta">${delta}<span class="mute">${esc(latest.label)}, ${ago(Date.now() - latest.t)}</span></div>
     <p class="sm" style="margin:8px 0 0">Platform web · arms tn-web, tn-engine-web · commit ${miss(latest.commits)} · hardware ${miss(latest.adapters)} · browser ${miss(latest.browsers)} · ${flags(latest)}</p>` : '<p><span class="pill">pending</span> No pair has both arms yet.</p>';
   const arm = (a) => `<td>${fm(a.p50)}</td><td>${fm(a.p95)}</td><td>${fm(a.p99)}</td>`;
