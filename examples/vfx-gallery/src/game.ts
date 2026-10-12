@@ -24,6 +24,7 @@ const game = defineGame<GalleryState>({
         window.gpuMs === undefined || window.gpuCompute === undefined
           ? undefined
           : window.gpuMs + window.gpuCompute;
+      budgetKnob.gpuComputeMs = window.gpuCompute;
       if (
         budgetKnob.maxFps !== undefined &&
         budgetKnob.gpuEstimateMs !== undefined &&

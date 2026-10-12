@@ -35,11 +35,17 @@
     { "kind": "wait", "label": "back-in-view", "waitTicks": 240, "release": true },
     { "kind": "input", "label": "budget-tight", "press": "KeyB", "holdTicks": 1, "release": true },
     {
+      "label": "partially-shed",
+      "waitForResource": { "id": "state", "path": "partialShedding", "equals": true },
+      "timeoutMs": 15000,
+      "screenshot": "partially-shed"
+    },
+    { "kind": "input", "label": "budget-full", "press": "KeyB", "holdTicks": 1, "release": true },
+    {
       "kind": "wait",
       "label": "over-budget",
       "waitTicks": 360,
-      "release": true,
-      "screenshot": "over-budget"
+      "release": true
     },
     {
       "kind": "input",
@@ -48,16 +54,45 @@
       "holdTicks": 1,
       "release": true
     },
-    { "kind": "wait", "label": "recovered", "waitTicks": 900, "release": true }
+    { "kind": "wait", "label": "recovered", "waitTicks": 900, "release": true },
+    {
+      "label": "recovery-gate",
+      "waitForResource": { "id": "state", "path": "overBudgetPaused", "equals": 0 },
+      "timeoutMs": 30000
+    }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
     "resources": [
+      {
+        "id": "state",
+        "path": "partialShedding",
+        "atSteps": [{ "label": "partially-shed", "equals": true }]
+      },
+      {
+        "id": "state",
+        "path": "partialPausedFraction",
+        "gte": 0.000001,
+        "lte": 0.999999,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "partialLeastFirst",
+        "equals": true,
+        "changed": true,
+        "atSteps": [{ "label": "partially-shed", "equals": true }]
+      },
       { "id": "state", "path": "baselineRatio", "gte": 0.99, "changed": true },
       { "id": "state", "path": "culledRatio", "lte": 0.5, "changed": true },
       { "id": "state", "path": "culledRunningRatio", "gte": 0.99, "changed": true },
       { "id": "state", "path": "culledPausedFraction", "gte": 0.5, "changed": true },
-      { "id": "state", "path": "runningDispatchRatio", "gte": 0.99, "changed": true },
+      {
+        "id": "state",
+        "path": "runningDispatchRatio",
+        "gte": 0.99,
+        "allowTrivial": "Running emitters keep dispatching at full rate through every stage. The value starts at 1, so this is a held invariant, not a change."
+      },
       { "id": "state", "path": "yieldedPeak", "gte": 1, "changed": true },
       { "id": "state", "path": "measuredOverBudgetWindows", "gte": 1, "changed": true },
       { "id": "state", "path": "yieldedLeastFirst", "equals": true, "changed": true },

@@ -182,8 +182,9 @@ const RATIO_WINDOW_TICKS = 60;
 export const budgetKnob: {
   maxFps: number | undefined;
   gpuEstimateMs: number | undefined;
+  gpuComputeMs: number | undefined;
   overBudgetWindows: number;
-} = { maxFps: undefined, gpuEstimateMs: undefined, overBudgetWindows: 0 };
+} = { maxFps: undefined, gpuEstimateMs: undefined, gpuComputeMs: undefined, overBudgetWindows: 0 };
 
 export type GalleryState = {
   readonly appliedIds: readonly string[];
@@ -217,6 +218,9 @@ export type GalleryState = {
   readonly yieldedPeak: number;
   readonly measuredOverBudgetWindows: number;
   readonly yieldedLeastFirst: boolean;
+  readonly partialShedding: boolean;
+  readonly partialPausedFraction: number;
+  readonly partialLeastFirst: boolean;
   /** Shortest time any emitter held a cull state before changing it; 0 until one changed twice. */
   readonly shortestDwellSeconds: number;
 };
@@ -250,6 +254,9 @@ const initialState: GalleryState = {
   yieldedPeak: 0,
   measuredOverBudgetWindows: 0,
   yieldedLeastFirst: false,
+  partialShedding: false,
+  partialPausedFraction: 0,
+  partialLeastFirst: false,
   shortestDwellSeconds: 0,
 };
 
@@ -440,6 +447,8 @@ export class Gallery extends Scene<GalleryState> {
     };
 
     let cullOn = true;
+    let budgetStage: "partial" | "full" | undefined;
+    let partialObserved = false;
     const graceSeconds = (): number => (cullOn ? 1 : Number.POSITIVE_INFINITY);
     const pageEmitters = (): GPUParticles3D[] =>
       [...effectEntities.values()].flatMap((entity) =>
@@ -598,6 +607,34 @@ export class Gallery extends Scene<GalleryState> {
       simulatedSeconds += dt;
       sampleWindow();
       const camera = ctx.camera as PerspectiveCamera;
+      if (budgetStage === "partial") {
+        const emitters = pageEmitters();
+        const paused = emitters.filter((emitter) => emitter.cull.state !== "running");
+        const running = emitters.filter((emitter) => emitter.cull.state === "running");
+        const partialShedding =
+          paused.some((emitter) => emitter.cull.reason === "over-budget") && running.length > 0;
+        frameCtx.state.set({ partialShedding });
+        if (partialShedding && !partialObserved) {
+          partialObserved = true;
+          // Stop increasing pressure at the first partial state; normal decay leaves time to capture.
+          budgetKnob.maxFps = undefined;
+        }
+        if (partialShedding) {
+          const pausedRanks = paused.map((emitter) => emitter.budget.significance(camera));
+          const runningRanks = running.map((emitter) => emitter.budget.significance(camera));
+          frameCtx.state.set({
+            partialPausedFraction: paused.length / emitters.length,
+            partialLeastFirst: pausedRanks.every(
+              (rank) =>
+                rank !== undefined &&
+                Number.isFinite(rank) &&
+                runningRanks.every(
+                  (other) => other !== undefined && Number.isFinite(other) && rank < other,
+                ),
+            ),
+          });
+        }
+      }
       if (frameCtx.input.justPressed("panLeft") && cullOn) {
         // The cull-on pan, read before the camera returns and the emitters resume.
         frameCtx.state.set({
@@ -618,13 +655,40 @@ export class Gallery extends Scene<GalleryState> {
         frameCtx.state.set(cullOn ? { cullOn, baselineRatio: latest.ratio } : { cullOn });
       }
       if (frameCtx.input.justPressed("toggleBudget")) {
-        const tightBudget = budgetKnob.maxFps === undefined;
+        const tightBudget = budgetStage !== "full";
         if (tightBudget) {
           const gpuMs = budgetKnob.gpuEstimateMs;
           if (gpuMs === undefined || !Number.isFinite(gpuMs) || gpuMs <= 0)
             throw new Error("Budget probe requires a measured positive GPU frame cost.");
-          budgetKnob.maxFps = 1000 / (gpuMs / 4);
-        } else budgetKnob.maxFps = undefined;
+          if (budgetStage === undefined) {
+            const computeMs = budgetKnob.gpuComputeMs;
+            if (
+              computeMs === undefined ||
+              !Number.isFinite(computeMs) ||
+              computeMs <= 0 ||
+              computeMs > gpuMs
+            )
+              throw new Error(
+                "Partial budget probe requires a measured positive GPU compute cost.",
+              );
+            // Pin the partial target to half the measured compute bucket before full overload.
+            budgetKnob.maxFps = 1000 / (gpuMs - computeMs / 2);
+            budgetStage = "partial";
+            partialObserved = false;
+            frameCtx.state.set({
+              partialShedding: false,
+              partialPausedFraction: 0,
+              partialLeastFirst: false,
+            });
+          } else {
+            budgetKnob.maxFps = 1000 / (gpuMs / 4);
+            budgetStage = "full";
+            frameCtx.state.set({ partialShedding: false });
+          }
+        } else {
+          budgetKnob.maxFps = undefined;
+          budgetStage = undefined;
+        }
         // Relaxing the budget reads what the tight one had yielded, before anything resumes.
         frameCtx.state.set(
           tightBudget
