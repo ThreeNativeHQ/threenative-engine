@@ -1279,6 +1279,13 @@ void skeletal() {
         check(copyMesh.skeleton !== mesh.skeleton && copyMesh.skeleton.bones[0] === copyHip, 'skeleton remapping');
         check(mesh.skeleton.bones[0] === hip && copyMesh.bindMode === 'detached', 'source and bind mode');
         check(copyMesh.bindMatrix !== mesh.bindMatrix && copyMesh.bindMatrix.elements.join() === mesh.bindMatrix.elements.join(), 'bind matrices');
+        // core's projection stand-in (projection-apply copySpecializedState): a fresh SkinnedMesh is handed the
+        // game's skeleton and bind matrices by assignment. A dropped assignment draws an unskinned rig.
+        const stand = new SkinnedMesh(mesh.geometry, mesh.material);
+        stand.skeleton = mesh.skeleton; stand.bindMatrix = new Matrix4().makeTranslation(1, 2, 3); stand.bindMode = mesh.bindMode;
+        check(stand.skeleton !== null && stand.skeleton.bones[0] === hip, 'assigned skeleton');
+        check(stand.bindMatrix.elements[12] === 1 && stand.bindMatrix.elements[13] === 2, 'assigned bind matrix');
+        stand.skeleton = null; check(stand.skeleton === null, 'cleared skeleton');
         copyHip.position.x=3; copy.updateMatrixWorld(true); copyMesh.skeleton.update();
         mesh.skeleton.update();
         check(hip.position.x===0 && copyMesh.skeleton.boneMatrices[12]===3 && mesh.skeleton.boneMatrices[12]===0, 'independent palette');

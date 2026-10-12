@@ -1098,6 +1098,19 @@ void registerSkinnedMesh(ClassBinding& b) {
         const std::shared_ptr<Skeleton>& skeleton = as<SkinnedMesh>(self)->skeleton;
         return skeleton ? store.share("Skeleton", skeleton) : Value{};
     };
+    // three's `skeleton` and bind matrices are plain properties: core's projection stand-in is a fresh SkinnedMesh
+    // handed the game's skeleton by assignment, and a dropped write draws the rig unskinned.
+    b.setters["skeleton"] = [](void* self, const Value& value, Store& store) {
+        if (value.kind != Value::Kind::Ref && value.kind != Value::Kind::Null && value.kind != Value::Kind::Undefined)
+            throw Unsupported{"SkinnedMesh.skeleton must be a Skeleton or null"};
+        as<SkinnedMesh>(self)->skeleton = value.kind == Value::Kind::Ref ? store.shared<Skeleton>(value, "Skeleton") : nullptr;
+    };
+    b.setters["bindMatrix"] = [](void* self, const Value& value, Store& store) {
+        as<SkinnedMesh>(self)->bindMatrix.copy(store.ref<Matrix4>(value, "Matrix4"));
+    };
+    b.setters["bindMatrixInverse"] = [](void* self, const Value& value, Store& store) {
+        as<SkinnedMesh>(self)->bindMatrixInverse.copy(store.ref<Matrix4>(value, "Matrix4"));
+    };
     b.getters["bindMode"] = [](void* self) { return Value{Value::Kind::String, 0, as<SkinnedMesh>(self)->attached ? "attached" : "detached"}; };
     b.setters["bindMode"] = [](void* self, const Value& value) {
         if (value.kind != Value::Kind::String || (value.text != "attached" && value.text != "detached"))
