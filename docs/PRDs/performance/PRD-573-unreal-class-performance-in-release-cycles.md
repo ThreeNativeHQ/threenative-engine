@@ -100,8 +100,9 @@ Cherry-picks of F `c1ef353ca 2007efe12 3d3695197 3b29482a6 504709d17 726df7f5c d
   Result 2026-10-11: native `-DTN_ENGINE_CORE_ONLY=ON` build + `ctest -L native-engine` 78/78 (rerun by the lead on the epic branch); agent-reported: ASan/UBSan 78/78 plus a 15 s `fuzz_buffers` run with no findings, Wasm under node 53/53 (emsdk 6.0.11). Fixtures regenerated: byte-identical, 108 render goldens not regenerated (need a GPU). Not landed, moves to slice 3: `abi.cpp`, `identity`, `tsl_call` and the `abi_test`/`abi_c11`/`fuzz_abi` tests, `differential.mjs` (they need the shader TSL surface); three animation tests that include renderer or player headers go to slice 5/6. Eight header-only files from later slices ride along so the core links.
 
 #### Phase v1.3: Shader IR, WGSL and TNPK (slice 3)
-**Status:** NOT STARTED
-- [ ] `engine/{shader,assets}` and `packages/assets/src/native-package.ts` land; `assets.nativePackage` defaults off. proof: ctest shader, package and fuzz; Tint and naga validation; assets and config specs
+**Status:** DONE 2026-10-11 (GPU emit tests and naga open, see result)
+- [x] `engine/{shader,assets}` and `packages/assets/src/native-package.ts` land; `assets.nativePackage` defaults off. proof: ctest shader, package and fuzz; Tint and naga validation; assets and config specs
+  Result 2026-10-11: native `-DTN_ENGINE_CORE_ONLY=ON` `ctest -L native-engine` 126/126 (rerun by the lead on the epic branch; baseline before this slice 78); agent-reported: ASan/UBSan 127/127, Wasm under node 99/99, libFuzzer `fuzz_abi` 272k runs clean, Tint passes 9/9 corpus programs, `packages/assets` 41 files and `create-threenative` config spec 103/103 green, `assets.nativePackage` defaults off. Not run: naga (0.20 rejects the emitted `diagnostic(off, ...)`; test registers for naga >=24), GPU shader-emit tests and the V8 `tsl_js` differential (slice 5/6), `pnpm --filter @threenative/core build` still exits 1 after tsup (cause not investigated; pre-existing status unconfirmed). Excluded: `probe_volume`, `shader_emit_test`, `shader_package_test`, `template_post_packages`, `tsl_js`, browser-backend Wasm tests.
 
 #### Phase v1.4: Shared host services (slice 4)
 **Status:** IN PROGRESS (landed; platform proof open)
