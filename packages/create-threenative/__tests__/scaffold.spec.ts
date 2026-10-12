@@ -248,7 +248,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
   // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
   // createProject on the merged tree.
-  "action-rpg": "da213af29a136157a80ffea79df06074e65c4abba40c0b328173b22349d68819",
+  // Recomputed 2026-10-12 for PRD-569: the onCull note folds into the VFX paragraph line, keeping
+  // action-rpg under its 100-line cap. Only action-rpg's AGENTS.md and CLAUDE.md changed; measured through createProject.
+  "action-rpg": "7d92d3fdc1ac23ffb54e6abe4945a946de5a65ff516c8d0a97cccb9b9f34769a",
   minimal: "0202ac5dd7ac436e474f55dd9ec2f5f43da3d67c219b2351405e960ca8f1a71e",
   platformer: "edf75a6bfbb3b0ab7513b7e8fc3a8441b9aa41ff5f544ab77c201f1fcd8d8faf",
   puzzle: "c5739a462298a6b1a0c2ba27ebca8c276fa89ccd6464d8b49f43b2da0e9e9f72",
