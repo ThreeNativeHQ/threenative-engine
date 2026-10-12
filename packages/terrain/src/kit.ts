@@ -56,6 +56,7 @@ export interface IBakeKitOptions {
     manifest: IWorldPackageManifest;
     placementCounts: Readonly<Record<string, number>>;
     worldGlb: Uint8Array;
+    worldPackage?: ReturnType<typeof bakeWorldPackage>;
   }>;
 }
 
@@ -150,10 +151,12 @@ export async function bakeKit(
         extraLayers: { table: "terrain-table.json" },
       })
     : undefined;
-  const baked = bakeWorldPackage(state, {
-    assets: cooked?.manifest.assets ?? assets,
-    ...(cooked ? {} : { layers: { table: "terrain-table.json" } }),
-  });
+  const baked =
+    cooked?.worldPackage ??
+    bakeWorldPackage(state, {
+      assets: cooked?.manifest.assets ?? assets,
+      ...(cooked ? {} : { layers: { table: "terrain-table.json" } }),
+    });
   const manifest = cooked?.manifest ?? baked.manifest;
   const { splat, files } = baked;
   const written = new Map<string, number>();

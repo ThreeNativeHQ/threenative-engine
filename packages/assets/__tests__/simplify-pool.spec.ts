@@ -4,6 +4,30 @@ import { describe, expect, it } from "vitest";
 import { createSimplifyPool } from "../src/lod/simplify-pool.js";
 
 describe("terrain LOD CPU pool", () => {
+  it("rejects queued targets when disposed", async () => {
+    const pool = createSimplifyPool(1);
+    const jobs = Array.from({ length: 3 }, () =>
+      pool.simplify(
+        new Uint32Array([0, 1, 2]),
+        new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+        3,
+        new Float32Array(),
+        0,
+        [],
+        null,
+        3,
+        0,
+        [],
+      ),
+    );
+    const settled = Promise.allSettled(jobs);
+    await pool.dispose();
+    expect((await settled).map(({ status }) => status)).toEqual([
+      "rejected",
+      "rejected",
+      "rejected",
+    ]);
+  });
   it("matches serial indices and errors, in target order, across reused workers", async () => {
     await MeshoptSimplifier.ready;
     const geometry = new TorusKnotGeometry(1, 0.4, 64, 16);

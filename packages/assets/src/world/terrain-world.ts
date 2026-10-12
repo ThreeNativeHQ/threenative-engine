@@ -80,6 +80,8 @@ export interface ICookTerrainWorldOptions {
 export interface ICookTerrainWorldResult {
   readonly worldGlb: Uint8Array;
   readonly manifest: IWorldPackageManifest;
+  /** Reuse the validated binary package instead of baking it again for companion files. */
+  readonly worldPackage?: ReturnType<typeof bakeWorldPackage>;
   readonly placementCounts: Readonly<Record<string, number>>;
   /** Every node in the document, across the default and every alternate-LOD scene. */
   readonly nodeCount: number;
@@ -117,7 +119,7 @@ function poseOf(item: IPlacement): {
 
 async function resolveBytes(input: string | Uint8Array): Promise<Uint8Array> {
   if (typeof input === "string") {
-    return new Uint8Array(await readFile(input));
+    return readFile(input);
   }
   return input;
 }
@@ -393,7 +395,7 @@ export async function cookTerrainWorld(
 
   const pool = createSimplifyPool(LOD_ERROR_TARGETS.length);
   try {
-    for (const [speciesId, spec] of Object.entries(species)) {
+    const tasks = Object.entries(species).map(async ([speciesId, spec]) => {
       const lod0 = await resolveBytes(spec.glb);
       const nearDoc = await parseSpecies(lod0);
       assertInstancable(speciesId, nearDoc);
@@ -434,8 +436,6 @@ export async function cookTerrainWorld(
         lods.push({ distance: 40, glb: bytes, filename: `${speciesId}_lod1.glb`, doc });
       }
 
-      speciesFiles.push({ speciesId, lod0, nearDoc, lods });
-
       // The combined world's near meshes need their own index-only chain; streamed files stay authored.
       await generateDiscreteLod(
         nearDoc,
@@ -447,12 +447,22 @@ export async function cookTerrainWorld(
         { preserveVertices: true, simplify: pool.simplify },
       );
 
-      assets[speciesId] = {
+      const asset: IWorldPackageAsset = {
         glb: `models/${speciesId}.glb`,
         bounds: spec.bounds ?? sourceBounds(nearDoc),
-        lods: lods.map((level) => ({ distance: level.distance, glb: `models/${level.filename}` })),
+        lods: lods.map((level) => ({
+          distance: level.distance,
+          glb: `models/${level.filename}`,
+        })),
         ...(spec.maxDistance === undefined ? {} : { maxDistance: spec.maxDistance }),
       };
+      return { speciesId, lod0, nearDoc, lods, asset };
+    });
+    const prepared = await Promise.all(tasks);
+    // Promise.all preserves source order; completion order must not change GLB or manifest bytes.
+    for (const { asset, ...file } of prepared) {
+      speciesFiles.push(file);
+      assets[file.speciesId] = asset;
     }
   } finally {
     await pool.dispose();
@@ -460,11 +470,12 @@ export async function cookTerrainWorld(
 
   // Fail closed before any glTF work or output write: the shared baker validates finite heights,
   // known assets and uniform poses, and hands back the exact binary files this cook writes.
-  const { manifest, files } = bakeWorldPackage(state, {
+  const worldPackage = bakeWorldPackage(state, {
     assets,
     ...(options.cellSize === undefined ? {} : { cellSize: options.cellSize }),
     ...(options.extraLayers === undefined ? {} : { layers: options.extraLayers }),
   });
+  const { manifest, files } = worldPackage;
 
   // Contact check against the bytes the bake actually wrote, not the float grid: decode the
   // quantized uint16 heightmap back to metres and sample that. Tolerance is one uint16 step of the
@@ -664,6 +675,7 @@ export async function cookTerrainWorld(
   return {
     worldGlb,
     manifest,
+    worldPackage,
     placementCounts,
     nodeCount: finalNodes.length,
     instancedMeshCount,

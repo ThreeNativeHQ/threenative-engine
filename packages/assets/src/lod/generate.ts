@@ -558,12 +558,11 @@ function positionsOf(primitive: Primitive): Float32Array | null {
   if (array === null) return null;
   if (array instanceof Float32Array && !position.getNormalized()) return array;
   const floats = new Float32Array(position.getCount() * 3);
-  const element: number[] = [0, 0, 0];
-  for (let vertex = 0; vertex < position.getCount(); vertex += 1) {
-    position.getElement(vertex, element);
-    floats[vertex * 3] = element[0] as number;
-    floats[vertex * 3 + 1] = element[1] as number;
-    floats[vertex * 3 + 2] = element[2] as number;
+  const normalized = position.getNormalized();
+  const componentType = position.getComponentType();
+  for (let index = 0; index < floats.length; index += 1) {
+    const value = array[index] as number;
+    floats[index] = normalized ? MathUtils.decodeNormalizedInt(value, componentType) : value;
   }
   return floats;
 }

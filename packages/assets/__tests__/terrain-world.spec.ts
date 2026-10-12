@@ -1073,6 +1073,9 @@ describe("cookTerrainWorld", () => {
       placementsByteLength: placements.byteLength,
       heightmapByteLength: heightmap.byteLength,
     });
+    expect(result.worldPackage?.manifest).toBe(result.manifest);
+    expect(result.worldPackage?.files["heightmap.u16"]).toEqual(heightmap);
+    expect(result.worldPackage?.files["placements.bin"]).toEqual(placements);
     expect(validation.errors).toEqual([]);
     expect(validation.ok).toBe(true);
 

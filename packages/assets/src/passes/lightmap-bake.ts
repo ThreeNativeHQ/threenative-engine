@@ -1,7 +1,6 @@
 import type { Document, Node, Primitive } from "@gltf-transform/core";
 import type { Light } from "@gltf-transform/extensions";
 import { BufferAttribute, BufferGeometry, DoubleSide, Ray, Vector3 } from "three";
-import { MeshBVH } from "three-mesh-bvh";
 
 type Vec2 = readonly [number, number];
 type Vec3 = readonly [number, number, number];
@@ -235,7 +234,8 @@ interface IOcclusionIndex {
   hits(origin: Vec3, direction: Vec3, maximum: number): boolean;
 }
 
-function buildOcclusionIndex(triangles: readonly ITriangle[]): IOcclusionIndex {
+async function buildOcclusionIndex(triangles: readonly ITriangle[]): Promise<IOcclusionIndex> {
+  const { MeshBVH } = await import("three-mesh-bvh");
   const geometry = new BufferGeometry();
   geometry.setAttribute(
     "position",
@@ -412,12 +412,12 @@ function dilate(
   return filled;
 }
 
-export function bakeStaticLightmap(
+export async function bakeStaticLightmap(
   document: Document,
   width: number,
   height: number,
   padding: number,
-): ILightmapBakeResult {
+): Promise<ILightmapBakeResult> {
   const nodes = reachableNodes(document);
   const triangles = sceneTriangles(document, nodes);
   const lights = sceneLights(nodes);
@@ -426,7 +426,7 @@ export function bakeStaticLightmap(
       "TN_ASSETS_LIGHTMAP_LIGHTS_MISSING: the static scene contains no punctual light.",
     );
   }
-  const occlusion = buildOcclusionIndex(triangles);
+  const occlusion = await buildOcclusionIndex(triangles);
   const raster = rasterize(triangles, lights, occlusion, width, height);
   occlusion.dispose();
   const validTexels = raster.valid.reduce((sum, value) => sum + (value === 1 ? 1 : 0), 0);

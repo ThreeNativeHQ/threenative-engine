@@ -25,7 +25,7 @@ export function createSimplifyPool(targets: number): {
           }
         });
       }).catch(error => { throw error; });`,
-      { eval: true, workerData: import.meta.resolve("meshoptimizer") },
+      { eval: true, workerData: import.meta.resolve("meshoptimizer/simplifier") },
     );
     let failure: Error | undefined;
     let rejectPending: ((error: Error) => void) | undefined;
@@ -62,14 +62,41 @@ export function createSimplifyPool(targets: number): {
     };
     return { worker, run };
   });
-  let next = 0;
+  const available = [...workers];
+  const queued: {
+    args: SimplifyArgs;
+    resolve: (result: SimplifyResult) => void;
+    reject: (error: Error) => void;
+  }[] = [];
+  let disposed = false;
+  const dispatch = () => {
+    while (available.length && queued.length) {
+      const slot = available.shift();
+      const job = queued.shift();
+      if (!slot || !job) break;
+      void slot
+        .run(job.args)
+        .then(job.resolve, job.reject)
+        .finally(() => {
+          if (disposed) return;
+          available.push(slot);
+          dispatch();
+        });
+    }
+  };
   return {
-    simplify: (...args) => {
-      const slot = workers[next % workers.length];
-      next++;
-      return slot ? slot.run(args) : Promise.reject(new Error("No terrain LOD workers"));
-    },
+    // Give the next target to a free worker; slow targets must not hold a private queue.
+    simplify: (...args) =>
+      new Promise<SimplifyResult>((resolve, reject) => {
+        if (disposed) return reject(new Error("Terrain LOD worker exited before replying"));
+        if (!workers.length) return reject(new Error("No terrain LOD workers"));
+        queued.push({ args, resolve, reject });
+        dispatch();
+      }),
     dispose: async () => {
+      disposed = true;
+      for (const job of queued.splice(0))
+        job.reject(new Error("Terrain LOD worker exited before replying"));
       await Promise.all(workers.map(({ worker }) => worker.terminate()));
     },
   };
