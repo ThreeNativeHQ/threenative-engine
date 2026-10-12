@@ -125,6 +125,7 @@ Cherry-picks of F `c1ef353ca 2007efe12 3d3695197 3b29482a6 504709d17 726df7f5c d
 #### Phase v1.9: The scorecard
 **Status:** NOT STARTED
 Today: `perf` has p95, p99 and hitches but no memory or host load; `bench:scoreboard` has medians only; the R-ladder runs only on legacy and Godot arms; `run-godot.ts` has no workloads, so Godot ratios exist only on the ladders; `profile:wasm-page --load` means load phases, not host load; no soak command exists.
+- [x] `pnpm perf:live` serves a page that re-reads every bench report under `artifacts/engine-load-test` every 2 s and plots p50 per workload and arm, with a red ring for a >30% regression against the series best. proof: `pnpm exec vitest run scripts/__tests__/perf-live.spec.ts` (2 passed) and a browser check against the 505 recorded pilot points, 2026-10-11. Cycle tabs, KPI target lines and gate tiles are open (next boxes).
 - [ ] `bench:engines` and `bench:scoreboard` rows carry p95, p99, the hitch count, draw calls and pipeline compiles, and fail closed on a missing counter. proof: a red-green case in the engine-load-test report spec
 - [ ] `perf`, `bench:engines` and `profile:wasm-page` carry `hostLoad` and the core count, and mark absolutes `invalid-absolute` above half the core count. proof: a red-green case per spec with a stubbed load
 - [ ] Memory: `perf --executable` peak RSS (`VmHWM`), `perf --logcat` PSS (`dumpsys meminfo <pid>`), `profile:wasm-page --memory` (Wasm memory, JS heap). proof: red-green cases in `perf.spec.ts` and the profile-wasm-page spec, then one desktop run and one emulator run

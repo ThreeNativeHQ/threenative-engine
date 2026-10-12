@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Perf live</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#15181d; --mute:#6b7280; --line:#e3e6ea; --bad:#d92d20; --good:#12853f; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0f1115; --card:#171a20; --ink:#e8eaee; --mute:#8b93a1; --line:#262b34; --bad:#ff6b5e; --good:#4cc47a; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--ink); font:14px/1.4 system-ui,sans-serif; }
+  header { display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; margin-bottom:12px; }
+  h1 { font-size:18px; margin:0; } .mute { color:var(--mute); } #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--good); margin-right:6px; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
+  .card.fresh { outline:2px solid var(--good); }
+  .card h2 { font-size:14px; margin:0 0 2px; } .big { font-size:22px; font-weight:600; }
+  .legend span { margin-right:10px; white-space:nowrap; } .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; }
+  svg { width:100%; height:auto; display:block; margin-top:6px; } .bad { color:var(--bad); } .good { color:var(--good); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Perf live</h1>
+  <span class="mute"><span id="dot"></span><span id="status">connecting…</span></span>
+  <span class="mute">p50 frame ms per workload, oldest left, newest right. Lower is better. Red ring: &gt;30% slower (single runs swing about ±30%) than that series' best so far.</span>
+</header>
+<div id="grid"></div>
+<script>
+const PALETTE = ["#2f6df6", "#e8590c", "#12853f", "#9333ea", "#0891b2", "#c2255c"];
+const colorOf = new Map();
+const color = (k) => colorOf.get(k) ?? (colorOf.set(k, PALETTE[colorOf.size % PALETTE.length]), colorOf.get(k));
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+let seen = 0, lastCount = 0, freshUntil = 0, freshKeys = new Set();
+
+function chart(series) {
+  const W = 320, H = 130, L = 36, B = 14, T = 6, R = 6;
+  const all = series.flatMap((s) => s.pts.map((p) => p.p50));
+  const max = Math.max(...all) * 1.1, min = Math.min(...all) * 0.9;
+  const n = Math.max(...series.map((s) => s.pts.length));
+  const x = (i) => L + (n === 1 ? (W - L - R) / 2 : (i / (n - 1)) * (W - L - R));
+  const y = (v) => T + (1 - (v - min) / (max - min || 1)) * (H - T - B);
+  let out = `<svg viewBox="0 0 ${W} ${H}" role="img">`;
+  for (const v of [min, (min + max) / 2, max]) out += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 4}" y="${y(v) + 3}" font-size="9" text-anchor="end" fill="var(--mute)">${v.toFixed(1)}</text>`;
+  for (const s of series) {
+    const c = color(s.key);
+    out += `<polyline fill="none" stroke="${c}" stroke-width="1.6" points="${s.pts.map((p, i) => `${x(i)},${y(p.p50)}`).join(" ")}"/>`;
+    let best = Infinity;
+    s.pts.forEach((p, i) => {
+      const bad = p.p50 > best * 1.3;
+      best = Math.min(best, p.p50);
+      out += `<circle cx="${x(i)}" cy="${y(p.p50)}" r="${bad ? 4 : 2.6}" fill="${c}" ${bad ? 'stroke="var(--bad)" stroke-width="2"' : ""}><title>${esc(s.key)} p50 ${p.p50.toFixed(2)} ms, p95 ${p.p95.toFixed(2)} ms\n${new Date(p.m).toLocaleString()}\n${esc(p.file)}</title></circle>`;
+    });
+  }
+  return out + "</svg>";
+}
+
+function render(rows) {
+  const groups = new Map();
+  for (const r of rows) {
+    const g = `${r.mode} · ${r.objects.toLocaleString()} objects`;
+    const sk = `${r.engine}/${r.arm}`;
+    if (!groups.has(g)) groups.set(g, new Map());
+    const m = groups.get(g);
+    if (!m.has(sk)) m.set(sk, { key: sk, engine: r.engine, pts: [] });
+    m.get(sk).pts.push(r);
+  }
+  const html = [];
+  for (const [name, m] of [...groups].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))) {
+    const series = [...m.values()];
+    const latest = series.map((s) => ({ s, p: s.pts[s.pts.length - 1] }));
+    const plat = (l) => (l.s.key.endsWith("desktop") ? "desktop" : "web");
+    const tns = latest.filter((l) => l.s.engine === "threenative").sort((a, b) => plat(a).localeCompare(plat(b)));
+    const tn = tns[0];
+    const head = tn ? `${tn.p.p50.toFixed(2)} ms <span class="mute" style="font-size:12px">${(1000 / tn.p.p50).toFixed(0)} fps · ${esc(tn.s.key)}</span>` : `${latest[0].p.p50.toFixed(2)} ms`;
+    const vs = tns.map((t) => {
+      const o = latest.find((l) => l.s.engine !== "threenative" && l.s.engine !== "three" && plat(l) === plat(t)) ?? latest.find((l) => l.s.engine !== "threenative" && plat(l) === plat(t));
+      if (!o) return "";
+      const ratio = t.p.p50 / o.p.p50;
+      return `<div class="${ratio <= 1 ? "good" : "bad"}">${esc(t.s.key)} vs ${esc(o.s.key)}: ${ratio.toFixed(2)}× frame time (${ratio <= 1 ? "faster" : "slower"})</div>`;
+    }).join("");
+    const newest = Math.max(...latest.map((l) => l.p.m));
+    html.push(`<div class="card${freshKeys.has(name) ? " fresh" : ""}"><h2>${esc(name)}</h2><div class="big">${head}</div>${vs}
+      <div class="legend mute">${series.map((s) => `<span><i class="sw" style="background:${color(s.key)}"></i>${esc(s.key)} (${s.pts.length})</span>`).join("")}</div>
+      ${chart(series)}<div class="mute" style="font-size:12px">last run ${new Date(newest).toLocaleString()}</div></div>`);
+  }
+  document.getElementById("grid").innerHTML = html.join("") || '<p class="mute">No run reports found under the watched roots yet. Run a benchmark.</p>';
+}
+
+async function tick() {
+  try {
+    const { rows, roots } = await (await fetch("/api/rows", { cache: "no-store" })).json();
+    if (lastCount && rows.length > lastCount) {
+      freshKeys = new Set(rows.slice(lastCount).map((r) => `${r.mode} · ${r.objects.toLocaleString()} objects`));
+      freshUntil = Date.now() + 8000;
+      document.title = `● new result (${rows.length}) · Perf live`;
+    }
+    if (Date.now() > freshUntil) freshKeys = new Set();
+    lastCount = rows.length;
+    render(rows);
+    document.getElementById("status").textContent = `${rows.length} points · watching ${roots.join(", ")} · ${new Date().toLocaleTimeString()}`;
+    document.getElementById("dot").style.background = "var(--good)";
+  } catch {
+    document.getElementById("status").textContent = "server not reachable";
+    document.getElementById("dot").style.background = "var(--bad)";
+  }
+}
+tick(); setInterval(tick, 2000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) document.title = "Perf live"; });
+</script>
+</body>
+</html>
