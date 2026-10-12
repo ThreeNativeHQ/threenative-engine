@@ -189,6 +189,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
   // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
   // Measured through all thirteen actual createProject trees on the Oct 4 published-head
@@ -232,25 +233,35 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
   // PRD-560 (2026-10-10): the eleven FogExp2 kits carry height fog (heightFog.ts, sky.ts, AGENTS.md);
-  // rain and tower-defense do not and keep develop's values. Seven kits at the 150 m scale then
+  // rain and tower-defense had no height-fog change in that merge. Seven kits at the 150 m scale then
   // took density 0.0018 so ridges read clearer than low ground (AC-1b).
   // Recomputed through all thirteen actual createProject trees after merging develop 2d2124792
   // into PRD-571; these fingerprints cover both the exposure and landed base changes.
+  // Recomputed 2026-10-11 after merging develop b4e74627f into PRD-563: measured through
+  // createProject on the merged tree, including the GPU-class start tier in every kit.
+  // Recomputed 2026-10-11 for the PRD-563 render-chain tier fix: ten kits' medium presets now request
+  // the medium chain, the four flat-high scenarios gained family and software rows, and every
+  // render-chain scenario names the GPU families. Measured by the same actual-tree test; snow moves not.
+  // Recomputed 2026-10-11 for the PRD-563 grade table upload as half floats: only starter's grade.ts
+  // and postprocessing.ts changed, and the actual-tree test moved only starter.
   // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
-  "action-rpg": "deaf5b9a4e721b3dcee0ddeac7ef72b76daa07387967287d0f6a10be45b0b2b1",
-  minimal: "1e361d4627340268675c86d5f52b1006146070263b00bdf90fa7a1f28dc21d3d",
-  platformer: "33dddd8a9751dff930ce38e3f017218cbe0c897a8440a6d3aa90f3cc73bd94fd",
-  puzzle: "c3653ebc584083067c17eeac3af7d974983670d9b37435f4088e1fc474532a2f",
-  racing: "c2862a5f202c158d6ee8de7b389a2a2747aeb6faff40e8c9844a09316dd32fae",
-  rain: "def90be601552d38a02b8c6b84bc3f17a407e0f570f02d033774be7f2ceb1911",
-  rts: "dcce6dc048264f62478f2b72e20b65e75c89f8e4de96f4280398992d38ec4ac6",
-  runner: "55cbcd1be12dc83f564d938a8301d272e479c78ccc14e09c357ad89f682a07c2",
+  // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
+  // createProject on the merged tree.
+  // PRD-566 merge: measured all thirteen trees; only the shared morph pipeline patch changes bytes.
+  "action-rpg": "8984c4f355d35eb5c1d0958746172f457c9c2ecad615f3bfcd38642533ff8c37",
+  minimal: "8d834289ea3940529d925f53a4946cc718771dc4fb8577c2199ba6a29faf51d4",
+  platformer: "f5d4a0362bd3a6f7bb3f8530178e22d5cbe0bd8625d0c83121b53f8f5aa3a2ec",
+  puzzle: "cdacbec8e3543a394263bd73c42d7482b61c433df6cb60ce42bc8306f91f71e9",
+  racing: "cec5c42b232f5f858fdefae9275b324378c2914d5113185e3ec3a748162caf23",
+  rain: "05027f3370b26deb260e158240a09904ea54e593a8184767eead660810bf7551",
+  rts: "6f331bb87e10340cd33263edbff4f7ce1fc40d24b601ea786a06ea41e1f065a5",
+  runner: "4f7a6b3ace688771a7c96e67062a8b696d0b50c09376183f2f02eead97361c12",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "0af326bf4aa464d1105f8717ddbe8b8adcfebfb6c698a8c1917c2f9379f20653",
-  shooter: "8d70931d643ff48d776038f49d02213d0577be731064a7d80c2e2f4d796cd73b",
-  snow: "c8b7001b47743dfc4a260d43e385f284d475e28894b64cab7ab67c1cc4c04d76",
-  starter: "d65b97dfde5ffbc1eea4436917d17eb0e13d243e79dbcd04ecf8c2de4dee3397",
-  "tower-defense": "27883d18cb72e3463892782bab4fed80a5883c422fa4088ed5b2327c1837935a",
+  sailing: "9c9edb14b880fc446e9b921b60dd99053f45032f053c4fcb5cc820a323c43904",
+  shooter: "699758de47b7642a38b998dad0437b17c6a68df046d8807ddbaf35a61d9f1423",
+  snow: "837eee8058f3bf043eabe5161207e62fbc5accd83cd1353902b79bb55f2dd1cf",
+  starter: "21b5ccb273b27ff8b711c7b2c5f42345adb7ab941fa19e605b64b01626f5aa68",
+  "tower-defense": "95e514738bd04ba2a561f3500d877af1d0c540a9e40fb00829770455006fd14c",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -437,6 +448,7 @@ const PLATFORMER_PATHS = [
   "src/render/postprocessing.ts",
   "src/render/props.ts",
   "src/render/sky.ts",
+  "src/render/skyEnvironment.ts",
   "src/render/scenery.ts",
   "src/render/walkers.ts",
   "src/render/waterfall.ts",
@@ -535,6 +547,9 @@ describe("create-threenative", () => {
         );
         expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
         actual[template] = await scaffoldTreeHash(target);
+        if (template === "platformer") {
+          await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
+        }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
     } finally {
@@ -1113,7 +1128,7 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   it("should parse the no-install and template flags", () => {
     expect(parseArgs(["my-game", "--template", "minimal", "--no-install"])).toEqual({

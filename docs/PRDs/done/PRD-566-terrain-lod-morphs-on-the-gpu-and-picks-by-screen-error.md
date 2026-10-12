@@ -193,3 +193,23 @@ The level itself comes from fixed distances in metres. `lodDistances` defaults t
 - Stopped after two migration-generation attempts: `three-patch-upgrade.spec.ts` retains six failing exact historical-blob assertions. The candidate Three patch fails strict application to stock Three 0.185.1 in its WebGPUBackend hunks; no historical hash expectation, patch, or assertion was changed to hide it.
 - Runtime CI remains unverified: the 11 template lanes, golden platformer, browser/playtest and several integration jobs report `TN_PLAYTEST_CONSOLE_ERROR`, `TN_PLAYTEST_RUNTIME_DIAGNOSTIC`, `TN_PLAYTEST_SOFTWARE_DEVICE_LOST` or `TN_PLAYTEST_RUNNER_FAILED`; browser HMR also times out. This host has a 615.71.09 kernel / 615.78 userspace NVIDIA mismatch. Local matching libraries restore hardware access; that does not establish the cause of every CI failure or repair the runner fleet. Artifact-upload errors are downstream of each job's failed qualification step: native fluid preflight lacks `runtime.network`, exposure runs the failing tone fixtures, and native desktop/UI proofs capture the failed manifest request. Integration jobs depend on their exact-candidate `paths` inventory; native decal/animation/fog children depend on their corresponding qualification jobs, and receipt joins depend on the selected jobs. No workflow or upload policy was changed.
 - Final local verification: `pnpm lint` exit 0; `pnpm typecheck` exit 0, zero `gpuClass` errors; 18 focused specs pass 409/409, fetch shim 15/15, byte-stability contract 1/1; core build/publint and `pnpm ci:fast` exit 0. Six historical migration tests remain stopped as noted above. No full CI green, macOS/Windows rerun, mobile proof, or merge is claimed.
+
+## Conflict review — 2026-10-12
+
+Merged `origin/develop` (`7fa453f2b`) without rebase. The only conflicted file was `packages/create-threenative/__tests__/scaffold.spec.ts`: retained develop’s template updates and PRD-566’s shared morph pipeline patch. The generated-tree assertion stays exact; measured all thirteen merged no-install trees. Red: 1 failed/3 passed; green: 1 passed/65 filtered, exit 0. No lockfile conflict, so no install was run. Hash changes (old develop expectation → measured merged tree), caused solely by the shared Three patch:
+
+| Template | Old SHA-256 | New SHA-256 |
+| --- | --- | --- |
+| action-rpg | `254697940e5805434f380528ea8b69e19613a1548f64497ee23989677b59763c` | `8984c4f355d35eb5c1d0958746172f457c9c2ecad615f3bfcd38642533ff8c37` |
+| minimal | `0202ac5dd7ac436e474f55dd9ec2f5f43da3d67c219b2351405e960ca8f1a71e` | `8d834289ea3940529d925f53a4946cc718771dc4fb8577c2199ba6a29faf51d4` |
+| platformer | `edf75a6bfbb3b0ab7513b7e8fc3a8441b9aa41ff5f544ab77c201f1fcd8d8faf` | `f5d4a0362bd3a6f7bb3f8530178e22d5cbe0bd8625d0c83121b53f8f5aa3a2ec` |
+| puzzle | `c5739a462298a6b1a0c2ba27ebca8c276fa89ccd6464d8b49f43b2da0e9e9f72` | `cdacbec8e3543a394263bd73c42d7482b61c433df6cb60ce42bc8306f91f71e9` |
+| racing | `deff5eb215f9d3be8007f2f0bc4530618035db36418c05aee292791a07ca76a9` | `cec5c42b232f5f858fdefae9275b324378c2914d5113185e3ec3a748162caf23` |
+| rain | `643494c2812208b8db1c24e38c06053d7fe349bb25692802c8acf3511e08dd43` | `05027f3370b26deb260e158240a09904ea54e593a8184767eead660810bf7551` |
+| rts | `8dfd9b5cb3d441463389b842ff2b3cde015d81ed4d86dad089f8cd2e2916f15f` | `6f331bb87e10340cd33263edbff4f7ce1fc40d24b601ea786a06ea41e1f065a5` |
+| runner | `1844ee1b87ef97d51aad6d157715bdc74df39b39a08d822403f92b2d9e4a3302` | `4f7a6b3ace688771a7c96e67062a8b696d0b50c09376183f2f02eead97361c12` |
+| sailing | `a524164861fad5282f55b69a9515529604afb8f73ad25e4bcd51c7b93ce17a82` | `9c9edb14b880fc446e9b921b60dd99053f45032f053c4fcb5cc820a323c43904` |
+| shooter | `816c172e0c9d86fa1be9a866a09b3b377a336f0038e5ed3600d7f153cc753301` | `699758de47b7642a38b998dad0437b17c6a68df046d8807ddbaf35a61d9f1423` |
+| snow | `e4be666568eeb003b274486d791a183867c5b0e176f2888650305475c4dc820a` | `837eee8058f3bf043eabe5161207e62fbc5accd83cd1353902b79bb55f2dd1cf` |
+| starter | `cb2221f6a07dd981fb19be00477e3304fe8add983eb17e0c7066d68164489b30` | `21b5ccb273b27ff8b711c7b2c5f42345adb7ab941fa19e605b64b01626f5aa68` |
+| tower-defense | `54184c2d75fe452ada59a5a3ce00e326e485b9288153b5617320fbcaa88b47fb` | `95e514738bd04ba2a561f3500d877af1d0c540a9e40fb00829770455006fd14c` |

@@ -272,6 +272,9 @@ async function readManifest(url: string): Promise<IAssetManifest | undefined> {
       `Asset manifest '${url}' must be version ${MANIFEST_VERSION} with an 'entries' object.`,
     );
   }
+  // An asset-free build still serves an empty manifest (so nothing 404s); it lists nothing, so it
+  // must not become authoritative over files a project serves verbatim from `public/`.
+  if (Object.keys(parsed.entries).length === 0) return undefined;
   return parsed as unknown as IAssetManifest;
 }
 

@@ -97,6 +97,8 @@ export function setupPost(
   environment: {
     /** The renderer named a software adapter; this game's answer is its `low` tier. */
     software?: boolean;
+    /** The renderer's GPU family (`ctx.renderer.gpuClass?.class`); `quality.ts` maps it to a start tier. */
+    gpuClass?: string;
     /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
     tier?: QualityTier;
     mobile?: boolean;
@@ -104,6 +106,7 @@ export function setupPost(
 ): IStormPost {
   const tier = resolveQualityTier({
     mobile: environment.mobile,
+    gpuClass: environment.gpuClass,
     software: environment.software,
     tier: environment.tier,
   });

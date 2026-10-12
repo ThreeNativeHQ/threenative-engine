@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
+const MAX_ATTEMPTS = 5;
+
 export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_INTEGRATION") {
   if (
     !/^[\w.-]+\/[\w.-]+$/u.test(repository ?? "") ||
@@ -10,7 +12,7 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
   )
     throw new Error(`${prefix}_RUN_IDENTITY: repository, run and attempt are required`);
   let response;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
       response = execFileSync(
         "gh",
@@ -26,15 +28,15 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
     } catch (error) {
       const stderr = String(error.stderr ?? "");
       if (
-        attempt === 2 ||
+        attempt === MAX_ATTEMPTS - 1 ||
         error.status !== 1 ||
         error.signal ||
         !/error connecting to api\.github\.com/iu.test(stderr) ||
         /HTTP (?:401|403|404|429)\b/iu.test(stderr)
       )
         throw error;
-      // Repeat only the same read endpoint; no stale page, receipt or permission fallback.
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200 * (attempt + 1));
+      // Retry only the same read endpoint after 1, 2, 4, 8 seconds; no stale page, receipt or permission fallback.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000 * 2 ** attempt);
     }
   }
   const pages = JSON.parse(response);

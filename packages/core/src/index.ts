@@ -671,6 +671,21 @@ export {
 } from "./profiling/unlit-foliage-warning.js";
 export type { IUnlitFoliageWarning } from "./profiling/unlit-foliage-warning.js";
 /**
+ * Catch scene state that silently loses environment fill or ignores authored opacity.
+ * Printed once after `enter()` as `TN_ENVIRONMENT_TOO_SMALL` or `TN_OPACITY_IGNORED`,
+ * with the fix in the same console error line so playtest `noConsoleErrors` rejects it.
+ * @situation audit an equirectangular sky too narrow for three's WebGPU PMREM
+ * @situation find visible opaque materials whose authored opacity is ignored
+ * @constraint structural scene reads only, one visible-tree walk per entry, at most five material examples
+ * @constraint it changes no scene state; environment and transparency remain the game's decisions
+ * @example renderTrapAudit(ctx.scene); // marker lines with the fixes, or an empty array
+ */
+export {
+  ENVIRONMENT_TOO_SMALL_MARKER,
+  OPACITY_IGNORED_MARKER,
+  renderTrapAudit,
+} from "./profiling/render-trap-audit.js";
+/**
  * Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the
  * subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and
  * `invalidateStatic(object)` announces a write deeper inside one.

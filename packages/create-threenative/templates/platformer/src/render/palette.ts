@@ -13,11 +13,11 @@
 export const palette = {
   grass: 0x5cbb37,
   /** Distance fades into this; also the loading screen's background. */
-  horizon: 0xa8d6f5,
+  horizon: 0xa9dcf7,
   rock: 0xa8927a,
   /** The loading screen's progress track. */
-  skyHigh: 0x2e88e0,
-  skyLow: 0xbfe4fb,
+  skyHigh: 0x0a63c8,
+  skyLow: 0x2b93e8,
   /** The one saturated role: coins, gems, stars, the goal. */
   accent: 0xffd23f,
 } as const;

@@ -15,7 +15,9 @@ import {
   secondHalf,
 } from "./template-assets-compile-cases.js";
 
-describe("shipped templates", () => {
+// The twin of `template-assets-compile-1.spec.ts`, with the same budget for the same reason: a
+// template compile is tens of seconds of real work, not a unit test's 60 s default.
+describe("shipped templates", { timeout: 180_000 }, () => {
   it.each(secondHalf)(
     "%s reaches the uncooked budget with an eligible source probe",
     reachesTheUncookedBudgetWithAnEligibleSourceProbe,
