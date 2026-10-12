@@ -72,6 +72,12 @@ struct Object {
     std::shared_ptr<void> ptr;
     /** The registry entry for `cls`, found once by the ABI on the first call and kept (the registry is immutable). */
     mutable const ClassBinding* binding = nullptr;
+    /**
+     * The context's own-copies record for `ptr`'s control block (a node of a std::map, so stable while the
+     * record exists, which lasts as long as this Object does: the Object's own copy is counted in it).
+     * Found once by engineReferences and kept, so a safe point does not search a tree per wrapper.
+     */
+    mutable const void* ownEntry = nullptr;
 };
 
 /** Only registered classes backed by engine::Material may unwrap as that base type. */

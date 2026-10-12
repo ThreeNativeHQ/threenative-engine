@@ -39,6 +39,25 @@ struct SetterSlot {
 };
 tn_status_t setNumber(tn_handle_t handle, SetterSlot& slot, const std::string& name, double value, tn_diagnostic_t* diagnostic);
 
+/**
+ * The same for a read (`tn_get`): `slot` remembers the getter or member found for the last class, so a
+ * steady read skips both name lookups. Same status, diagnostic and crossing count as tn_get.
+ */
+struct GetterSlot {
+    const void* binding = nullptr;
+    const tn::binding::Getter* getter = nullptr;
+    const tn::binding::Method* member = nullptr;
+};
+tn_status_t getValue(tn_handle_t handle, GetterSlot& slot, const std::string& name, tn_value_t* result, tn_diagnostic_t* diagnostic);
+
+/** The same for a method call (`tn_invoke`). */
+struct MethodSlot {
+    const void* binding = nullptr;
+    const tn::binding::Method* method = nullptr;
+};
+tn_status_t invokeMethod(tn_handle_t handle, MethodSlot& slot, const std::string& name, const tn_value_t* args, uint32_t count,
+                         tn_value_t* result, tn_diagnostic_t* diagnostic);
+
 /** Calls that crossed the C ABI (construct, invoke, get, set) since the process started. */
 uint64_t crossings();
 

@@ -528,8 +528,14 @@ uint32_t engineReferences(tn_handle_t handle) {
     tn_context* context = contextFor(handle.context);
     tn::binding::Object* object = context ? context->object(handle) : nullptr;
     if (!object) return 0;
-    const auto own = context->ownCopies_.find(object->ptr);
-    const long others = object->ptr.use_count() - (own == context->ownCopies_.end() ? 0 : own->second);
+    using Entry = std::pair<const std::weak_ptr<void>, uint32_t>;
+    if (object->ownEntry == nullptr) {
+        const auto own = context->ownCopies_.find(object->ptr);
+        if (own == context->ownCopies_.end()) return object->ptr.use_count() > 0 ? static_cast<uint32_t>(object->ptr.use_count()) : 0;
+        object->ownEntry = &*own;
+    }
+    const auto* entry = static_cast<const Entry*>(object->ownEntry);
+    const long others = entry->first.use_count() - static_cast<long>(entry->second);
     return others > 0 ? static_cast<uint32_t>(others) : 0;
 }
 
@@ -584,6 +590,52 @@ engine::shader::graph::Node tslNode(tn_context_t* context, uint64_t id) {
     if (!context) return nullptr;
     const auto found = context->tslNodes.find(id);
     return found == context->tslNodes.end() ? nullptr : found->second;
+}
+
+tn_status_t getValue(tn_handle_t self, GetterSlot& slot, const std::string& name, tn_value_t* result, tn_diagnostic_t* diagnostic) {
+    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    tn_context* context = nullptr;
+    tn::binding::Object* object = nullptr;
+    if (!result) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or result");
+    if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
+    const tn::binding::ClassBinding& binding = bindingOf(*object);
+    if (slot.binding != &binding) {
+        const auto g = binding.getters.find(name);
+        const auto m = binding.members.find(name);
+        if (g == binding.getters.end() && m == binding.members.end())
+            return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + name).c_str());
+        slot = {&binding, g != binding.getters.end() ? &g->second : nullptr, m != binding.members.end() ? &m->second : nullptr};
+    }
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        void* ptr = object->ptr.get();
+        const auto value = slot.getter ? (*slot.getter)(ptr) : (*slot.member)(ptr, {}, *context);
+        if (value.kind == tn::binding::Value::Kind::ShaderNode)
+            return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, "TN_TSL_NATIVE_BRIDGE: shader graph requires the node adapter");
+        fromBinding(context, self, value, result);
+        return ok(diagnostic);
+    });
+}
+
+tn_status_t invokeMethod(tn_handle_t self, MethodSlot& slot, const std::string& name, const tn_value_t* args, uint32_t count,
+                         tn_value_t* result, tn_diagnostic_t* diagnostic) {
+    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    tn_context* context = nullptr;
+    tn::binding::Object* object = nullptr;
+    if (!result || (count && !args)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: method, args or result");
+    if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
+    const auto& binding = bindingOf(*object);
+    if (slot.binding != &binding) {
+        const auto m = binding.methods.find(name);
+        if (m == binding.methods.end())
+            return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + name + "()").c_str());
+        slot = {&binding, &m->second};
+    }
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        tn::binding::Args in;
+        if (!toBinding(context, args, count, in)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
+        fromBinding(context, self, (*slot.method)(object->ptr.get(), in, *context), result);
+        return ok(diagnostic);
+    });
 }
 
 uint64_t crossings() { return gCrossings.load(std::memory_order_relaxed); }
