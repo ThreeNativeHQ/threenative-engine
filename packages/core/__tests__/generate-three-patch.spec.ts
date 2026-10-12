@@ -177,11 +177,11 @@ describe("assemblePatches", () => {
 
     const { basePatch, upgradePatch } = await assemblePatches({ patchedDir, pin, stockDir });
     expect(Object.keys(pin.baseFinalHashes)).toHaveLength(30);
-    expect(pin.frozenCompatPairs).toHaveLength(31);
+    expect(pin.frozenCompatPairs).toHaveLength(33);
 
     const json = JSON.parse(upgradePatch);
     expect(Object.keys(json.generatedFinalHashes)).toHaveLength(30);
-    expect(json.acceptedLegacyCompatPairs).toHaveLength(31);
+    expect(json.acceptedLegacyCompatPairs).toHaveLength(33);
     expect(Object.keys(json.acceptedLegacyFinalHashes)).toHaveLength(30);
     expect(json.generatedFinalHashes[rel]).toBe(blobHash("// current renderer\n"));
     expect(json.acceptedLegacyFinalHashes[rel]).toBe(pin.baseFinalHashes[rel]);
