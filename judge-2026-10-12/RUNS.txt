@@ -1,0 +1,25 @@
+PRD-569 tick-clock change: visual judge inputs, 2026-10-12
+
+Scenario: examples/vfx-gallery/playtests/emitter-cull.playtest.json
+Flags: --live-clock, the nine explicit Vulkan browser arguments, no recipe.
+Adapter: NVIDIA GeForce RTX 2080 (turing, nvidia) on every run.
+PRE-CHANGE core: packages/core/src at 8f2785625 (six files restored, dist rebuilt).
+POST-CHANGE core: packages/core/src at ca6af69aa (dist rebuilt).
+The gallery is the same committed source in both arms.
+
+The judge read pre-A, pre-B, post-A and post-B (the montages here).
+Runs C and D came after the judge, to test the over-budget result.
+
+run     exit  overBudgetPaused per sample   over-budget windows (end)
+pre-A   1     0x22 9x4 0x2                  5   exit 1: changed-value guard, runningDispatchRatio already 1 before the scenario
+pre-B   0     0x22 9x4 0x2                  6
+pre-C   0     0x22 9x4 0x2                  7
+pre-D   0     0x22 9x4 0x2                  6
+post-A  0     0x22 9x4 0x2                  6
+post-B  0     0x22 6x4 0x2                  3
+post-C  0     0x22 9x4 0x2                  6
+post-D  0     0x22 9x4 0x2                  8
+
+Montages: each PNG is a 2x2 grid. Top row: PRE-CHANGE runs A and B.
+Bottom row: POST-CHANGE runs A and B. Poses: centered, panned-culled,
+over-budget, before (run start) and after (run end).
