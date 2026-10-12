@@ -1201,7 +1201,123 @@ void batched_mesh() {
     CHECK(batch.addInstance(box) == a && batch.getVisibleAt(a) && batch.drawBatches()[0]->count == 2);
 }
 
+// PRD-573 v1.11 step 4b groundwork: a language that views the transform columns in place reads their
+// layout from C++, leases a slot while a view lives, and writes the doubles directly. `updateMatrix`
+// is where such a write is seen: it recomposes, compares bits and counts a changed matrix.
+void transform_layout() {
+    const auto layout = Object3D::transformLayout();
+    Object3D a, b;
+    const auto bytes = [](const void* from, const void* to) {
+        return static_cast<uint32_t>(static_cast<const char*>(to) - static_cast<const char*>(from));
+    };
+    // Consecutive objects take consecutive slots, so the distance between them is each column's stride.
+    CHECK(bytes(&a.position, &b.position) == layout.vectorStride && layout.vectorStride == sizeof(Vector3));
+    CHECK(bytes(&a.scale, &b.scale) == layout.vectorStride);
+    CHECK(bytes(&a.rotation, &b.rotation) == layout.eulerStride && layout.eulerStride == sizeof(SyncedEuler));
+    CHECK(bytes(&a.quaternion, &b.quaternion) == layout.quaternionStride);
+    CHECK(bytes(&a.matrix, &b.matrix) == layout.matrixStride && layout.matrixStride == sizeof(Matrix4));
+    CHECK(bytes(&a.matrixWorld, &b.matrixWorld) == layout.matrixStride);
+    // The columns sit at the offsets the layout says, in one page of `slots` entries each.
+    CHECK(bytes(&a.position, &a.scale) == layout.scales - layout.positions);
+    CHECK(bytes(&a.position, &a.rotation) == layout.rotations - layout.positions);
+    CHECK(bytes(&a.position, &a.quaternion) == layout.quaternions - layout.positions);
+    CHECK(bytes(&a.position, &a.matrix) == layout.matrices - layout.positions);
+    CHECK(bytes(&a.position, &a.matrixWorld) == layout.worlds - layout.positions);
+    CHECK(layout.slots == 256 && layout.positions == 0 && layout.pageBytes >= layout.worlds + layout.matrixStride * layout.slots);
+    // A lease names its column and refuses an address that is no column (the object's own `up`, the stack).
+    CHECK(Object3D::leaseTransform(&a.position) == 0 && Object3D::leaseTransform(&a.scale) == 1);
+    CHECK(Object3D::leaseTransform(&a.rotation) == 2 && Object3D::leaseTransform(&a.quaternion) == 3);
+    CHECK(Object3D::leaseTransform(&a.matrix) == 4 && Object3D::leaseTransform(&a.matrixWorld) == 5);
+    Vector3 onStack;
+    CHECK(Object3D::leaseTransform(&a.up) == -1 && Object3D::leaseTransform(&onStack) == -1);
+    for (const void* column : {static_cast<const void*>(&a.position), static_cast<const void*>(&a.scale),
+                               static_cast<const void*>(&a.rotation), static_cast<const void*>(&a.quaternion),
+                               static_cast<const void*>(&a.matrix), static_cast<const void*>(&a.matrixWorld)})
+        Object3D::unleaseTransform(column);
+}
+
+// A view that outlives its object must not read the next object built in that slot.
+void transform_lease() {
+    auto owner = std::make_unique<Object3D>();
+    Vector3* const position = &owner->position;
+    position->set(4, 5, 6);
+    CHECK(Object3D::leaseTransform(position) == 0);
+    owner.reset();  // the slot is leased, so it is not recycled
+    CHECK(position->x == 4 && position->y == 5 && position->z == 6);  // the page is still there to read
+    std::vector<std::unique_ptr<Object3D>> others;
+    for (int i = 0; i < 600; ++i) {  // more than two pages of objects
+        others.push_back(std::make_unique<Object3D>());
+        CHECK(&others.back()->position != position);
+    }
+    CHECK(position->x == 4);  // nothing wrote over it
+    Object3D::unleaseTransform(position);  // the last lease releases the zombie slot to the free list
+    auto next = std::make_unique<Object3D>();
+    CHECK(&next->position == position);  // LIFO: the freed slot is the next one used
+    CHECK(next->position.x == 0 && next->scale.x == 1);  // and it is reset like any recycled slot
+    // A slot with two leases waits for both.
+    Vector3* const second = &next->position;
+    CHECK(Object3D::leaseTransform(second) == 0 && Object3D::leaseTransform(second) == 0);
+    next.reset();
+    Object3D::unleaseTransform(second);
+    auto stillLeased = std::make_unique<Object3D>();
+    CHECK(&stillLeased->position != second);
+    Object3D::unleaseTransform(second);
+    auto reused = std::make_unique<Object3D>();
+    CHECK(&reused->position == second);
+}
+
+// What a Float64Array over the columns does: write the doubles, then let the engine see them.
+void raw_writes() {
+    Object3D object;
+    object.updateMatrix();
+    const uint64_t settled = object.revision();
+    object.updateMatrix();
+    CHECK(object.revision() == settled);  // a recompose of unchanged values is no change
+    double* const position = &object.position.x;
+    double* const scale = &object.scale.x;
+    double* const quaternion = &static_cast<Quaternion&>(object.quaternion).x;  // the base field: the derived `x` is a notifying proxy
+    position[0] = 1.5; position[1] = -2.25; position[2] = 3;
+    scale[0] = 2; scale[1] = 0.5; scale[2] = 4;
+    quaternion[0] = std::sin(0.3); quaternion[1] = 0; quaternion[2] = 0; quaternion[3] = std::cos(0.3);
+    CHECK(object.revision() == settled);  // nothing is seen until the sync point
+    object.updateMatrix();
+    CHECK(object.revision() == settled + 1);  // one change, however many components were written
+    Matrix4 expected;
+    expected.compose(object.position, object.quaternion, object.scale);
+    CHECK(std::memcmp(object.matrix.elements.data(), expected.elements.data(), sizeof(double) * 16) == 0);
+    CHECK(object.matrixWorldNeedsUpdate);
+    // The world matrix follows through the ordinary update, and a parent's raw write reaches its child.
+    Object3D parent, child;
+    parent.add(child);  // a plain C++ child stays borrowed
+    parent.updateMatrixWorld();
+    const uint64_t childSettled = child.revision();
+    (&parent.position.x)[0] = 7;
+    parent.updateMatrixWorld();
+    CHECK(child.revision() > childSettled && child.matrixWorld.elements[12] == 7);
+}
+
+// A language that writes `matrix` itself, with `matrixAutoUpdate` off, tells the engine through the flag.
+void needs_update_setter() {
+    tn::fixture::Driver driver;
+    tn::binding::registerAll(driver.classes);
+    auto mesh = std::make_shared<Mesh>();
+    const auto& binding = driver.classes.at("Mesh");
+    CHECK(binding.setters.count("matrixWorldNeedsUpdate") == 1);
+    mesh->matrixAutoUpdate = false;
+    mesh->updateMatrixWorld();
+    CHECK(!mesh->matrixWorldNeedsUpdate);
+    mesh->matrix.elements[12] = 9;
+    mesh->updateMatrixWorld();
+    CHECK(mesh->matrixWorld.elements[12] == 0);  // not seen: nothing says the matrix changed
+    binding.setters.at("matrixWorldNeedsUpdate")(mesh.get(), tn::binding::Value::of(true), driver);
+    CHECK(mesh->matrixWorldNeedsUpdate && binding.getters.at("matrixWorldNeedsUpdate")(mesh.get()).flag);
+    mesh->updateMatrixWorld();
+    CHECK(mesh->matrixWorld.elements[12] == 9 && !mesh->matrixWorldNeedsUpdate);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
-             {"rotation_sync", rotation_sync}, {"teardown", teardown}, {"batched_mesh", batched_mesh})
+             {"rotation_sync", rotation_sync}, {"teardown", teardown}, {"batched_mesh", batched_mesh},
+             {"transform_layout", transform_layout}, {"transform_lease", transform_lease},
+             {"raw_writes", raw_writes}, {"needs_update_setter", needs_update_setter})

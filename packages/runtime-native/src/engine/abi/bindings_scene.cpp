@@ -360,6 +360,7 @@ void registerObject3D(ClassBinding& b) {
     b.getters["matrixWorldAutoUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldAutoUpdate); };
     b.setters["matrixWorldAutoUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixWorldAutoUpdate = flag(v); };
     b.getters["matrixWorldNeedsUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldNeedsUpdate); };
+    b.setters["matrixWorldNeedsUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixWorldNeedsUpdate = flag(v); };
     b.getters["id"] = [](void* self) { return Value::of(double(as<Object3D>(self)->id())); };
     b.getters["uuid"] = [](void* self) { return Value{Value::Kind::String, 0, as<Object3D>(self)->uuid}; };
     b.setters["uuid"] = [](void* self, const Value& v) {

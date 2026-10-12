@@ -20,6 +20,10 @@ struct alignas(64) TransformPage {
     std::array<SyncedEuler, size> rotations;
     std::array<SyncedQuaternion, size> quaternions;
     std::array<Matrix4, size> matrices, worlds;
+    // Leases on a slot: a live language view of any of its columns. A slot whose object died while
+    // leased is a zombie (still counted live) until the last lease is returned.
+    std::array<uint16_t, size> leases{};
+    std::array<bool, size> zombie{};
 };
 
 namespace {
@@ -33,6 +37,70 @@ struct TransformPool {
 // Application/VM owners can outlive this lazy singleton during static teardown. Pages are still
 // reclaimed when the last object dies; only the pool bookkeeping has process lifetime.
 TransformPool& transforms() { static auto* pool = new TransformPool; return *pool; }
+}
+
+namespace {
+// Gives a slot back to the free list; the last one out frees the pages. Needs pool.mutex.
+void recycleLocked(TransformPool& pool, TransformPage* page, std::size_t index) {
+    pool.free.emplace_back(page, index);
+    if (--pool.live == 0) { pool.free.clear(); pool.pages.clear(); }
+}
+
+struct Column { uint32_t offset, stride; };
+std::array<Column, 6> columns() { const auto l = Object3D::transformLayout(); return {{
+    {l.positions, l.vectorStride}, {l.scales, l.vectorStride}, {l.rotations, l.eulerStride},
+    {l.quaternions, l.quaternionStride}, {l.matrices, l.matrixStride}, {l.worlds, l.matrixStride}}}; }
+
+// The page slot and column whose storage holds `address`, or a null page. Needs pool.mutex.
+struct Found { TransformPage* page = nullptr; std::size_t index = 0; int column = -1; };
+Found findLocked(TransformPool& pool, const void* address) {
+    const auto at = static_cast<const char*>(address);
+    static const auto layout = columns();
+    for (const auto& page : pool.pages) {
+        const auto base = reinterpret_cast<const char*>(page.get());
+        if (at < base || at >= base + sizeof(TransformPage)) continue;
+        const auto offset = static_cast<uint32_t>(at - base);
+        for (int c = 0; c < 6; ++c) {
+            const auto [start, stride] = layout[c];
+            if (offset >= start && offset < start + stride * TransformPage::size) return {page.get(), (offset - start) / stride, c};
+        }
+    }
+    return {};
+}
+}  // namespace
+
+Object3D::TransformLayout Object3D::transformLayout() {
+    static const TransformLayout layout = [] {
+        const auto page = std::make_unique<TransformPage>();
+        const auto at = [&](const void* column) {
+            return static_cast<uint32_t>(reinterpret_cast<const char*>(column) - reinterpret_cast<const char*>(page.get()));
+        };
+        return TransformLayout{static_cast<uint32_t>(sizeof(TransformPage)), static_cast<uint32_t>(TransformPage::size),
+            at(&page->positions), at(&page->scales), at(&page->rotations), at(&page->quaternions), at(&page->matrices),
+            at(&page->worlds), static_cast<uint32_t>(sizeof(Vector3)), static_cast<uint32_t>(sizeof(SyncedEuler)),
+            static_cast<uint32_t>(sizeof(SyncedQuaternion)), static_cast<uint32_t>(sizeof(Matrix4))};
+    }();
+    return layout;
+}
+
+int Object3D::leaseTransform(const void* address) {
+    auto& pool = transforms();
+    const std::lock_guard lock(pool.mutex);
+    const Found found = findLocked(pool, address);
+    if (found.page == nullptr) return -1;
+    ++found.page->leases[found.index];
+    return found.column;
+}
+
+void Object3D::unleaseTransform(const void* address) {
+    auto& pool = transforms();
+    const std::lock_guard lock(pool.mutex);
+    const Found found = findLocked(pool, address);
+    if (found.page == nullptr || found.page->leases[found.index] == 0) return;
+    if (--found.page->leases[found.index] == 0 && found.page->zombie[found.index]) {
+        found.page->zombie[found.index] = false;
+        recycleLocked(pool, found.page, found.index);
+    }
 }
 
 Object3D::TransformSlot Object3D::acquireTransform() {
@@ -57,8 +125,9 @@ Object3D::TransformSlot Object3D::acquireTransform() {
 void Object3D::releaseTransform() {
     auto& pool = transforms();
     const std::lock_guard lock(pool.mutex);
-    pool.free.emplace_back(transform_.page, transform_.index);
-    if (--pool.live == 0) { pool.free.clear(); pool.pages.clear(); }
+    // A language view still reads this slot: it stays out of reuse (and the pages stay) until unleased.
+    if (transform_.page->leases[transform_.index] > 0) { transform_.page->zombie[transform_.index] = true; return; }
+    recycleLocked(pool, transform_.page, transform_.index);
 }
 
 namespace {

@@ -236,6 +236,27 @@ private:
     void releaseTransform();
     TransformSlot transform_;
 public:
+    /**
+     * Where the transform columns sit in a storage page, in bytes: what a language that views the
+     * columns in place (PRD-573 step 4b) reads instead of hard-coding strides. A column holds `slots`
+     * entries `*Stride` bytes apart, starting `offset` bytes into the page.
+     */
+    struct TransformLayout {
+        uint32_t pageBytes, slots;
+        uint32_t positions, scales, rotations, quaternions, matrices, worlds;
+        uint32_t vectorStride, eulerStride, quaternionStride, matrixStride;
+    };
+    [[nodiscard]] static TransformLayout transformLayout();
+    /**
+     * A language view of a transform column holds a lease on its slot: an object that dies meanwhile
+     * keeps the slot out of reuse (and its page alive) until every lease is returned, so a view never
+     * aliases the next object built there. The result is the column the address is in (0 positions,
+     * 1 scales, 2 rotations, 3 quaternions, 4 matrices, 5 worlds), or -1 when it is no column address
+     * and nothing was leased. Both calls are safe from any thread.
+     */
+    static int leaseTransform(const void* address);
+    static void unleaseTransform(const void* address);
+
     // false suppresses recursive ray traversal, as three's raycast return value does.
     virtual bool raycast(const Raycaster&, std::vector<Intersection>&) { return true; }
     Object3D();
