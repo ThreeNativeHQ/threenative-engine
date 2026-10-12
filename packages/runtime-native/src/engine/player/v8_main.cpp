@@ -821,6 +821,17 @@ bool V8Game::start(const std::string& path, std::string& error) {
 
     ctx->Global()->Set(ctx, v8str(isolate_, "__tnWallMs"), v8::Function::New(ctx,
         [](const v8::FunctionCallbackInfo<v8::Value>& info) { info.GetReturnValue().Set(player::wallMs()); }).ToLocalChecked()).Check();
+    // The bench's phase clock: thread CPU ms, the clock presentCpuMs uses; the legacy host installs the same name.
+    ctx->Global()->Set(ctx, v8str(isolate_, "__tnThreadCpuMs"), v8::Function::New(ctx,
+        [](const v8::FunctionCallbackInfo<v8::Value>& info) { info.GetReturnValue().Set(player::threadCpuMs()); }).ToLocalChecked()).Check();
+    // TN_PLAYER_CROSSINGS=1: the live per-name crossing counts as JSON, so the bench can diff them per rung.
+    if (std::getenv("TN_PLAYER_CROSSINGS") != nullptr)
+        ctx->Global()->Set(ctx, v8str(isolate_, "__tnCrossingHistogram"), v8::Function::New(ctx,
+            [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                std::vector<std::pair<std::string, json::Value>> names;
+                for (const auto& [name, count] : tn::abi::crossingHistogram()) names.emplace_back(name, json::Value::makeNumber(double(count)));
+                info.GetReturnValue().Set(v8str(info.GetIsolate(), json::stringify(json::Value::makeObject(std::move(names)))));
+            }).ToLocalChecked()).Check();
     // Core reads TN_FRAME_SPANS from process.env (Perry has one); this host has none, so it sets the
     // flag core's spansRequested() also accepts and both arms emit the same render-window spans.
     if (const char* frameSpans = std::getenv("TN_FRAME_SPANS");

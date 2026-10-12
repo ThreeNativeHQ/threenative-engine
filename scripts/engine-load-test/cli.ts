@@ -532,6 +532,9 @@ async function runPairCommand(spec: string): Promise<void> {
   const rounds = positiveInteger(flag("rounds"), 3);
   // Both arms print the per-frame thread CPU and present CPU, so the KPI's instrument is the same in each.
   process.env.TN_BENCH_ENGINE_METRICS ??= "1";
+  // And the same per-frame phases (game, animation, matrixWorld, projection, render) on the same clock;
+  // `TN_BENCH_PHASES=0` runs the pair without them, which is how the telemetry's own overhead is measured.
+  process.env.TN_BENCH_PHASES ??= "1";
   const options = ladderOptions();
   const tag =
     flag("tag") ?? `${options.modes.replaceAll(",", "-")}-${options.ladder.replaceAll(",", "-")}`;

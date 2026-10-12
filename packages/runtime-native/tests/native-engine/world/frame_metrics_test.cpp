@@ -17,6 +17,9 @@ void frameTimingFields() {
     CHECK(timed.find("presentCpuMs") == nullptr);  // the swap call's CPU is its own field, and only when measured
     const auto swapped = player::frameTiming(0.5, 0.6, 1.1, 28.5, 42, 61, 1, 0.4, 0.9, 3.25);
     CHECK(swapped.find("presentCpuMs")->number() == 3.25);
+    CHECK(swapped.find("renderCpuMs") == nullptr);  // the database render's CPU is its own field too, only when measured
+    const auto rendered = player::frameTiming(0.5, 0.6, 1.1, 28.5, 42, 61, 1, 0.4, 0.9, 3.25, 1.75);
+    CHECK(rendered.find("renderCpuMs")->number() == 1.75);
 }
 
 // Thread CPU time counts a busy loop and not a sleep: the property that makes it load-proof.

@@ -364,7 +364,8 @@ double threadCpuMs() {
 }
 
 json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double frameMs, uint64_t bridgeCalls,
-                        uint64_t tick, uint64_t updates, double gameCpuMs, double cpuFrameCpuMs, double presentCpuMs) {
+                        uint64_t tick, uint64_t updates, double gameCpuMs, double cpuFrameCpuMs, double presentCpuMs,
+                        double renderCpuMs) {
     using V = json::Value;
     std::vector<std::pair<std::string, V>> members{
         {"gameJsMs", V::makeNumber(gameMs)}, {"renderMs", V::makeNumber(renderMs)},
@@ -374,6 +375,7 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
     if (gameCpuMs >= 0) members.emplace_back("gameJsCpuMs", V::makeNumber(gameCpuMs));
     if (cpuFrameCpuMs >= 0) members.emplace_back("cpuFrameCpuMs", V::makeNumber(cpuFrameCpuMs));
     if (presentCpuMs >= 0) members.emplace_back("presentCpuMs", V::makeNumber(presentCpuMs));
+    if (renderCpuMs >= 0) members.emplace_back("renderCpuMs", V::makeNumber(renderCpuMs));
     return V::makeObject(std::move(members));
 }
 
@@ -589,8 +591,10 @@ int Session::initialize() {
             frameSpans = gameSpanTiming(gameMs);
         }
         const auto renderBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        const double renderCpuBegin = metrics ? threadCpuMs() : -1;
         database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1});
         const double renderMs = metrics ? elapsed(renderBegin) : 0;
+        const double renderCpuMs = renderCpuBegin >= 0 ? threadCpuMs() - renderCpuBegin : -1;
         for (const std::string& diagnostic : database.diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());
         for (const std::string& diagnostic : renderer->diagnostics())
@@ -660,7 +664,7 @@ int Session::initialize() {
                                       (game.bridgeCalls ? game.bridgeCalls() : 0) - previousCrossings,
                                       clock.tick(), updateTicks, gameCpuMs,
                                       cpuFrameBegin >= 0 ? updateCpuMs + threadCpuMs() - cpuFrameBegin - presentCpuMs : -1,
-                                      presentTimed ? presentCpuMs : -1);
+                                      presentTimed ? presentCpuMs : -1, renderCpuMs);
             if (spans) {
                 auto members = sample.members();
                 members.emplace_back("gameSpans", std::move(*frameSpans));

@@ -855,6 +855,14 @@ js::JSValueHandle handleWebGpuPresentedCount(BindingsState* state, BindingDestin
     return state->engine->newNumber(static_cast<double>(state->profiling.presentCount));
 }
 
+js::JSValueHandle handleWebGpuThreadCpuMs(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+    // The bench's phase clock: this thread's CPU time in ms, the clock presentCpuMs and the frame line use,
+    // so a phase and the frame it sits in are on one instrument. The engine player installs the same name.
+    (void)bindingDestination;
+    (void)args;
+    return state->engine->newNumber(static_cast<double>(readRenderThreadCpuNs()) / 1e6);
+}
+
 js::JSValueHandle handleWebGpuPresentationCap(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
     // Read with no argument, set with one. Hz, where 0 means uncapped and is the only way a game
     // presents above the ceiling. This global is a private diagnostic seam; the supported

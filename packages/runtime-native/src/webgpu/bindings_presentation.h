@@ -32,6 +32,10 @@ js::JSValueHandle handleWebGpuPresentationCap(
     BindingsState* state,
     BindingDestination bindingDestination,
     const std::vector<js::JSValueHandle>& args);
+js::JSValueHandle handleWebGpuThreadCpuMs(
+    BindingsState* state,
+    BindingDestination bindingDestination,
+    const std::vector<js::JSValueHandle>& args);
 js::JSValueHandle handleWebGpuPresentedCount(
     BindingsState* state,
     BindingDestination bindingDestination,

@@ -118,6 +118,8 @@ export default defineConfig({
       frames: integer("TN_BENCH_FRAMES", 600),
       ladder: integers("TN_BENCH_LADDER", [256, 1024, 4096, 16384]),
       modes: modes(),
+      // Per-frame phase telemetry (`src/phases.ts`), on for a `--pair` run and off for a shipped build.
+      phases: process.env.TN_BENCH_PHASES === "1",
       repeats: integer("TN_BENCH_REPEATS", 3),
       // Stated by the operator, the same way `refreshHz` is: the native host has no URL to carry
       // `--source-sha` in, so without this a desktop report cannot name the build that produced it,

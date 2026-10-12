@@ -51,6 +51,7 @@ export function engineDefines(
       height: options.height,
       ladder: options.ladder.split(",").map(Number),
       modes: options.modes.split(","),
+      phases: process.env.TN_BENCH_PHASES === "1",
       refreshHz: Number(process.env.TN_BENCH_REFRESH_HZ ?? 60),
       repeats: options.repeats,
       ...(options.sourceSha === undefined ? {} : { sourceSha: options.sourceSha }),
@@ -72,6 +73,8 @@ export function engineEnvironment(
     TN_PLAYER_WIDTH: String(options.width),
     // Per-frame thread CPU is opt-in, and a pair turns it on for both arms: each prints the same line per frame.
     ...metricsEnvironment(env),
+    // The crossing histogram costs a lock and a hash per crossing, so it is its own opt-in beside the phases.
+    ...(env.TN_BENCH_CROSSINGS === "1" ? { TN_PLAYER_CROSSINGS: "1" } : {}),
   };
 }
 
