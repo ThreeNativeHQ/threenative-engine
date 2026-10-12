@@ -93,10 +93,11 @@ export function pairVerdict(
     const other = right[index] ?? right[right.length - 1];
     if (other === undefined) return;
     for (const failure of checkEquivalence(run, other)) {
-      // `TN_BENCH_WAIVE=drawCalls,triangles` names the two facets a host that batches the authored scene
-      // itself (the engine player under host projection) legitimately moves: it submits far fewer draws and
-      // culls batch members per instance. The row stays in the table, marked waived; the fox size, the
-      // placements and the probe frame's pixels still have to match.
+      // `TN_BENCH_WAIVE=drawCalls` names the one facet a host that batches the authored scene itself (the
+      // engine player under host projection) legitimately moves: it submits far fewer draws for the same
+      // triangles. Triangles are not waived: both arms treat the projected cubes as one cull unit and count
+      // effect passes alike, so an R5 pair is 155,919 triangles on each. The row stays in the table, marked
+      // waived; the fox size, the placements and the probe frame still have to match.
       const waived = (process.env.TN_BENCH_WAIVE ?? "")
         .split(",")
         .some((name) => name !== "" && failure.field.startsWith(name));
