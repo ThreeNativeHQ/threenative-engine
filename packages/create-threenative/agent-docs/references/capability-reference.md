@@ -3907,6 +3907,21 @@ export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrame
 assertCaptureNotBlank(png, "first frame");
 ```
 
+### `assertDesktopCaptureNotBlank`
+
+`function` — Fail closed when a desktop-host frame shows no rendered content. A native desktop frame has no HTML overlay, so the browser bright-pixel floor does not apply.
+
+```ts
+export function assertDesktopCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }
+```
+
+- **Use when:** guard a native desktop capture of a 3D scene
+- **Constraints:** keeps the uniform-frame checks and replaces only the bright-pixel floor
+
+```ts
+assertDesktopCaptureNotBlank(png, "panned-culled.png");
+```
+
 ### `assertFrameShowsSomething`
 
 `function` — Fail closed when a screenshot is blank or uniform.

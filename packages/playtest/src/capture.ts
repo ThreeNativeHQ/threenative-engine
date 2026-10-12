@@ -130,10 +130,25 @@ function inspectDecodedFrame(image: PNG): ICaptureFrameStats {
  * @constraint the assertion throws instead of returning a false pass
  * @example assertCaptureNotBlank(png, "first frame");
  */
-export function assertCaptureNotBlank(
+export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats {
+  return assertCaptureSurface(png, label, "browser");
+}
+
+/**
+ * Fail closed when a desktop-host frame shows no rendered content.
+ * A native desktop frame has no HTML overlay, so the browser bright-pixel floor does not apply.
+ * @situation guard a native desktop capture of a 3D scene
+ * @constraint keeps the uniform-frame checks and replaces only the bright-pixel floor
+ * @example assertDesktopCaptureNotBlank(png, "panned-culled.png");
+ */
+export function assertDesktopCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats {
+  return assertCaptureSurface(png, label, "desktop");
+}
+
+function assertCaptureSurface(
   png: Buffer,
   label: string,
-  options: { target: "browser" | "desktop" } = { target: "browser" },
+  target: "browser" | "desktop",
 ): ICaptureFrameStats {
   const stats = inspectFrame(png);
   if (stats.distinctColors < CAPTURE_GUARD_LIMITS.minDistinctColors) {
@@ -150,7 +165,7 @@ export function assertCaptureNotBlank(
       stats,
     );
   }
-  if (options.target === "desktop") {
+  if (target === "desktop") {
     if (!(stats.contentRatio >= CAPTURE_GUARD_LIMITS.desktopMinContentRatio)) {
       throw new CaptureGuardError(
         label,

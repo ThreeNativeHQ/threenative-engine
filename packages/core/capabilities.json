@@ -4943,6 +4943,20 @@
     },
     {
       "aliases": [],
+      "constraints": ["keeps the uniform-frame checks and replaces only the bright-pixel floor"],
+      "example": "assertDesktopCaptureNotBlank(png, \"panned-culled.png\");",
+      "importPath": "@threenative/playtest/capture",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function assertDesktopCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }",
+      "situations": ["guard a native desktop capture of a 3D scene"],
+      "summary": "Fail closed when a desktop-host frame shows no rendered content. A native desktop frame has no HTML overlay, so the browser bright-pixel floor does not apply.",
+      "supersedes": [],
+      "symbol": "assertDesktopCaptureNotBlank"
+    },
+    {
+      "aliases": [],
       "constraints": ["the assertion throws instead of returning a false pass"],
       "example": "assertFrameShowsSomething(png, \"first frame\");",
       "importPath": "@threenative/playtest/capture",

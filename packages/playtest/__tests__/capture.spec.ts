@@ -3,7 +3,12 @@ import { resolve } from "node:path";
 import { PNG } from "pngjs";
 import { expect, test } from "vitest";
 
-import { assertCaptureNotBlank, CAPTURE_GUARD_LIMITS, inspectFrame } from "../src/capture.js";
+import {
+  assertCaptureNotBlank,
+  assertDesktopCaptureNotBlank,
+  CAPTURE_GUARD_LIMITS,
+  inspectFrame,
+} from "../src/capture.js";
 
 function image(colors: readonly (readonly [number, number, number, number])[]): Buffer {
   const png = new PNG({ height: 1, width: colors.length });
@@ -29,12 +34,12 @@ function darkCloud(size: number): Buffer {
 }
 
 test("desktop rejects a uniform frame with TN_CAPTURE_BLANK", () => {
-  expect(() => assertCaptureNotBlank(image([[8, 8, 8, 255]]), "uniform.png", { target: "desktop" }))
+  expect(() => assertDesktopCaptureNotBlank(image([[8, 8, 8, 255]]), "uniform.png"))
     .toThrow("TN_CAPTURE_BLANK");
 });
 
 test("desktop accepts a small bright cloud below the browser bright-pixel floor", () => {
-  const stats = assertCaptureNotBlank(darkCloud(16), "cloud.png", { target: "desktop" });
+  const stats = assertDesktopCaptureNotBlank(darkCloud(16), "cloud.png");
   expect(stats.maxLuminance).toBeGreaterThan(0.5);
   expect(stats.brightPixelRatio).toBeLessThan(0.05);
   expect(stats.contentRatio).toBe(256 / (128 * 128));
@@ -44,12 +49,10 @@ test("desktop accepts a small bright cloud below the browser bright-pixel floor"
 test("browser still rejects the same small cloud with the bright-pixel message", () => {
   const png = darkCloud(16);
   expect(() => assertCaptureNotBlank(png, "cloud.png")).toThrow("bright pixel ratio");
-  expect(() => assertCaptureNotBlank(png, "cloud.png", { target: "browser" }))
-    .toThrow("bright pixel ratio");
 });
 
 test("desktop rejects a 2x2 bright spot below the content floor", () => {
-  expect(() => assertCaptureNotBlank(darkCloud(2), "spot.png", { target: "desktop" }))
+  expect(() => assertDesktopCaptureNotBlank(darkCloud(2), "spot.png"))
     .toThrow("content ratio");
 });
 

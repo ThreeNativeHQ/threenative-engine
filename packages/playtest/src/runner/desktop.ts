@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { assertCaptureNotBlank } from "../capture.js";
+import { assertDesktopCaptureNotBlank } from "../capture.js";
 import type { IDevicePlaytestDriver } from "./androidRunner.js";
 import { SCREENSHOT_TIMEOUT_MS as OVERALL_SCREENSHOT_TIMEOUT_MS } from "./shared.js";
 
@@ -231,7 +231,7 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
 async function tryReadDesktopScreenshot(path: string): Promise<unknown | undefined> {
   try {
     const png = await readFile(path);
-    assertCaptureNotBlank(png, path, { target: "desktop" });
+    assertDesktopCaptureNotBlank(png, path);
     return undefined;
   } catch (error) {
     if (error instanceof Error && error.name === "CaptureGuardError") throw error;
