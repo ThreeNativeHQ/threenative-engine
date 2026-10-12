@@ -17,6 +17,11 @@ export interface IRow {
   p95: number;
   p99: number;
   hitches: number;
+  /** Whole-process CPU ms per frame, when the arm reports it (the KPI metric). */
+  cpu?: number;
+  /** Host load above half the cores: absolutes are not valid, ratios between alternating arms still are. */
+  invalid: boolean;
+  cycle: string;
   /** Run time: the date in the file name when it has one (copied pilots share one mtime), else mtime. */
   t: number;
   /** mtime, to order runs that share a date. */
@@ -29,7 +34,8 @@ const flag = (name: string): string[] =>
 const port = Number(flag("--port")[0] ?? 8765);
 const roots = flag("--root").length
   ? flag("--root")
-  : [path.join(process.cwd(), "artifacts", "engine-load-test")];
+  : [path.join(process.cwd(), "artifacts", "engine-load-test", "prd-573")];
+const prdFile = flag("--prd")[0];
 
 const cache = new Map<string, { mtime: number; rows: IRow[] }>();
 
@@ -39,6 +45,39 @@ async function* walk(dir: string): AsyncGenerator<string> {
     if (e.isDirectory()) yield* walk(full);
     else if (e.name.endsWith(".json")) yield full;
   }
+}
+
+/** Epic progress: cycles and phases with their checkbox counts, read live from the PRD. */
+export function epicOf(markdown: string) {
+  const cycles: {
+    id: string;
+    title: string;
+    phases: {
+      id: string;
+      title: string;
+      done: number;
+      total: number;
+      boxes: { done: boolean; text: string }[];
+    }[];
+  }[] = [];
+  for (const line of markdown.split("\n")) {
+    const c = /^## Cycle (v\d) [—-] (.+)$/u.exec(line);
+    if (c) cycles.push({ id: c[1] as string, title: c[2] as string, phases: [] });
+    const p = /^#### Phase (v\d[\w.]*): (.+)$/u.exec(line);
+    if (p)
+      cycles
+        .at(-1)
+        ?.phases.push({ id: p[1] as string, title: p[2] as string, done: 0, total: 0, boxes: [] });
+    const b = /^- \[([ x])\] (.+)$/u.exec(line);
+    const phase = cycles.at(-1)?.phases.at(-1);
+    if (b && phase) {
+      const done = b[1] === "x";
+      phase.total++;
+      if (done) phase.done++;
+      phase.boxes.push({ done, text: (b[2] as string).split(" proof:")[0]?.slice(0, 160) ?? "" });
+    }
+  }
+  return cycles;
 }
 
 export function rowsOf(report: unknown, file: string, mtime: number): IRow[] {
@@ -55,6 +94,9 @@ export function rowsOf(report: unknown, file: string, mtime: number): IRow[] {
     p95: s.p95,
     p99: s.p99,
     hitches: s.hitches,
+    ...(s.cpuMsPerFrame === undefined ? {} : { cpu: s.cpuMsPerFrame }),
+    invalid: r.hostLoad?.absolutes === "invalid-absolute",
+    cycle: /(?:^|[\/_.-])(v[1-5])(?:[\/_.-]|$)/u.exec(file)?.[1] ?? "v1",
     t,
     m: mtime,
   }));
@@ -82,7 +124,10 @@ async function allRows(): Promise<IRow[]> {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   createServer(async (req, res) => {
-    if (req.url?.startsWith("/api/rows")) {
+    if (req.url?.startsWith("/api/epic")) {
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify(prdFile ? epicOf(await readFile(prdFile, "utf8")) : []));
+    } else if (req.url?.startsWith("/api/rows")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify({ roots, rows: await allRows() }));
     } else {

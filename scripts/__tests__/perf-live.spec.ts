@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { rowsOf } from "../perf-live.js";
+import { epicOf, rowsOf } from "../perf-live.js";
 
 const pilot = "artifacts/engine-load-test/prd-449/pilots/scoreboard-tn-r3-2026-09-28.json";
 
@@ -49,5 +49,18 @@ describe("perf-live", () => {
 
   it("fails closed on a json that is not a run report", () => {
     expect(() => rowsOf({ hello: 1 }, "x.json", 1)).toThrow();
+  });
+
+  it("reads cycles, phases and box counts from the epic PRD", () => {
+    const md =
+      "## Cycle v1 — land it\n#### Phase v1.0: A\n- [x] one proof: x\n- [ ] two\n## Cycle v2 — next\n#### Phase v2.1: B\n- [ ] three\n";
+    const [v1, v2] = epicOf(md);
+    expect([v1?.id, v1?.phases[0]?.done, v1?.phases[0]?.total, v2?.phases[0]?.id]).toEqual([
+      "v1",
+      1,
+      2,
+      "v2.1",
+    ]);
+    expect(v1?.phases[0]?.boxes[0]?.text).toBe("one");
   });
 });

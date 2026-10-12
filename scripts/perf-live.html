@@ -3,34 +3,52 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Perf live</title>
+<title>Epic scoreboard</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --ink:#15181d; --mute:#6b7280; --line:#e3e6ea; --bad:#d92d20; --good:#12853f; }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0f1115; --card:#171a20; --ink:#e8eaee; --mute:#8b93a1; --line:#262b34; --bad:#ff6b5e; --good:#4cc47a; } }
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#15181d; --mute:#6b7280; --line:#e3e6ea; --bad:#d92d20; --good:#12853f; --warn:#b54708; --accent:#2f6df6; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0f1115; --card:#171a20; --ink:#e8eaee; --mute:#8b93a1; --line:#262b34; --bad:#ff6b5e; --good:#4cc47a; --warn:#f5a45a; --accent:#6e9bff; } }
   body { margin:0; padding:16px; background:var(--bg); color:var(--ink); font:14px/1.4 system-ui,sans-serif; }
   header { display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; margin-bottom:12px; }
-  h1 { font-size:18px; margin:0; } .mute { color:var(--mute); } #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--good); margin-right:6px; }
-  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:12px; }
+  h1 { font-size:18px; margin:0; } h2 { font-size:14px; margin:0 0 6px; } .mute { color:var(--mute); } .sm { font-size:12px; }
+  #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--good); margin-right:6px; }
+  nav { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+  nav button { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:6px; padding:6px 12px; cursor:pointer; font:inherit; }
+  nav button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  nav .pct { opacity:.75; font-size:12px; margin-left:6px; }
+  .row { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; margin-bottom:12px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
   .card.fresh { outline:2px solid var(--good); }
-  .card h2 { font-size:14px; margin:0 0 2px; } .big { font-size:22px; font-weight:600; }
+  .big { font-size:28px; font-weight:650; } .good { color:var(--good); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  .bar { height:8px; border-radius:4px; background:var(--line); position:relative; margin:8px 0 4px; }
+  .bar i { position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--accent); }
+  .bar b { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ink); }
+  .pill { display:inline-block; border-radius:10px; padding:1px 8px; font-size:12px; border:1px solid var(--line); margin:2px 4px 2px 0; }
+  .pill.ok { color:var(--good); border-color:var(--good); } .pill.open { color:var(--mute); }
+  table { border-collapse:collapse; width:100%; } td { padding:3px 6px 3px 0; vertical-align:top; } td.n { white-space:nowrap; text-align:right; }
+  #charts { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:12px; }
   .legend span { margin-right:10px; white-space:nowrap; } .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; }
-  svg { width:100%; height:auto; display:block; margin-top:6px; } .bad { color:var(--bad); } .good { color:var(--good); }
+  svg { width:100%; height:auto; display:block; margin-top:6px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Perf live</h1>
+  <h1>Epic scoreboard</h1>
   <span class="mute"><span id="dot"></span><span id="status">connecting…</span></span>
-  <span class="mute">p50 frame ms per workload, oldest left, newest right. Lower is better. Red ring: &gt;30% slower (single runs swing about ±30%) than that series' best so far.</span>
 </header>
-<div id="grid"></div>
+<nav id="tabs"></nav>
+<div class="row" id="kpis"></div>
+<div class="row" id="progress"></div>
+<h2>Frame time per workload <span class="mute sm">p50 ms, oldest left, newest right, lower is better. Red ring: more than 30% slower than that series' best (single runs swing about ±30%).</span></h2>
+<div id="charts"></div>
 <script>
+const TARGET = 2; // v1 KPI: native steady frame CPU is at least 2x legacy
 const PALETTE = ["#2f6df6", "#e8590c", "#12853f", "#9333ea", "#0891b2", "#c2255c"];
 const colorOf = new Map();
 const color = (k) => colorOf.get(k) ?? (colorOf.set(k, PALETTE[colorOf.size % PALETTE.length]), colorOf.get(k));
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-let seen = 0, lastCount = 0, freshUntil = 0, freshKeys = new Set();
+const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+const groupOf = (r) => `${r.mode} · ${r.objects.toLocaleString()} objects`;
+let cycle = "v1", rows = [], epic = [], lastCount = 0, freshUntil = 0, freshKeys = new Set();
 
 function chart(series) {
   const W = 320, H = 130, L = 36, B = 14, T = 6, R = 6;
@@ -48,56 +66,89 @@ function chart(series) {
     s.pts.forEach((p, i) => {
       const bad = p.p50 > best * 1.3;
       best = Math.min(best, p.p50);
-      out += `<circle cx="${x(i)}" cy="${y(p.p50)}" r="${bad ? 4 : 2.6}" fill="${c}" ${bad ? 'stroke="var(--bad)" stroke-width="2"' : ""}><title>${esc(s.key)} p50 ${p.p50.toFixed(2)} ms, p95 ${p.p95.toFixed(2)} ms, p99 ${p.p99.toFixed(2)} ms, ${p.hitches} hitches\n${new Date(p.m).toLocaleString()}\n${esc(p.file)}</title></circle>`;
+      out += `<circle cx="${x(i)}" cy="${y(p.p50)}" r="${bad ? 4 : 2.6}" fill="${c}" ${bad ? 'stroke="var(--bad)" stroke-width="2"' : ""}><title>${esc(s.key)} p50 ${p.p50.toFixed(2)} ms, p95 ${p.p95.toFixed(2)} ms, p99 ${p.p99.toFixed(2)} ms, ${p.hitches} hitches${p.invalid ? " · host loaded (relative only)" : ""}\n${new Date(p.m).toLocaleString()}\n${esc(p.file)}</title></circle>`;
     });
   }
   return out + "</svg>";
 }
 
-function render(rows) {
+// Latest median per series within one workload; the KPI compares engine arms against the legacy arm of the same platform.
+function seriesOf(rs) {
+  const m = new Map();
+  for (const r of rs) {
+    const k = `${r.engine}/${r.arm}`;
+    if (!m.has(k)) m.set(k, { key: k, engine: r.engine, arm: r.arm, pts: [] });
+    m.get(k).pts.push(r);
+  }
+  return [...m.values()];
+}
+const recent = (s) => s.pts.slice(-3);
+const metric = (s) => { const r = recent(s); return r.every((p) => p.cpu !== undefined) ? { v: median(r.map((p) => p.cpu)), unit: "cpu ms/frame" } : { v: median(r.map((p) => p.p50)), unit: "p50 ms" }; };
+
+function kpis(cycleRows) {
   const groups = new Map();
-  for (const r of rows) {
-    const g = `${r.mode} · ${r.objects.toLocaleString()} objects`;
-    const sk = `${r.engine}/${r.arm}`;
-    if (!groups.has(g)) groups.set(g, new Map());
-    const m = groups.get(g);
-    if (!m.has(sk)) m.set(sk, { key: sk, engine: r.engine, pts: [] });
-    m.get(sk).pts.push(r);
+  for (const r of cycleRows) { const g = groupOf(r); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); }
+  const out = [];
+  for (const [name, rs] of [...groups].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))) {
+    const ser = seriesOf(rs);
+    const native = ser.find((s) => s.arm === "tn-engine-desktop");
+    const legacy = ser.find((s) => s.arm === "tn-desktop");
+    if (!native || !legacy) continue;
+    const n = metric(native), l = metric(legacy);
+    const speed = l.v / n.v; // above 1 means native is cheaper
+    const loaded = [...recent(native), ...recent(legacy)].some((p) => p.invalid);
+    const cls = speed >= TARGET ? "good" : speed >= 1 ? "warn" : "bad";
+    const pos = Math.min(100, (speed / (TARGET * 1.25)) * 100), tgt = (TARGET / (TARGET * 1.25)) * 100;
+    out.push(`<div class="card${freshKeys.has(name) ? " fresh" : ""}"><h2>${esc(name)} · native vs legacy</h2>
+      <div class="big ${cls}">${speed.toFixed(2)}×</div>
+      <div class="bar"><i style="width:${pos}%"></i><b style="left:${tgt}%" title="target ${TARGET}×"></b></div>
+      <div class="sm mute">target ${TARGET}× · ${esc(n.unit)}: native ${n.v.toFixed(1)}, legacy ${l.v.toFixed(1)}</div>
+      <div class="sm mute">${loaded ? "host was loaded: read as a ratio of alternating runs, not as absolutes" : "host idle: absolutes valid"}</div></div>`);
   }
-  const html = [];
-  for (const [name, m] of [...groups].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))) {
-    const series = [...m.values()];
-    const latest = series.map((s) => ({ s, p: s.pts[s.pts.length - 1] }));
-    const plat = (l) => (l.s.key.endsWith("desktop") ? "desktop" : "web");
-    const tns = latest.filter((l) => l.s.engine === "threenative").sort((a, b) => plat(a).localeCompare(plat(b)));
-    const tn = tns[0];
-    const head = tn ? `${tn.p.p50.toFixed(2)} ms <span class="mute" style="font-size:12px">${(1000 / tn.p.p50).toFixed(0)} fps · ${esc(tn.s.key)}</span>` : `${latest[0].p.p50.toFixed(2)} ms`;
-    const vs = tns.map((t) => {
-      const o = latest.find((l) => l.s.engine !== "threenative" && l.s.engine !== "three" && plat(l) === plat(t)) ?? latest.find((l) => l.s.engine !== "threenative" && plat(l) === plat(t));
-      if (!o) return "";
-      const ratio = t.p.p50 / o.p.p50;
-      return `<div class="${ratio <= 1 ? "good" : "bad"}">${esc(t.s.key)} vs ${esc(o.s.key)}: ${ratio.toFixed(2)}× frame time (${ratio <= 1 ? "faster" : "slower"})</div>`;
-    }).join("");
-    const newest = Math.max(...latest.map((l) => l.p.m));
-    html.push(`<div class="card${freshKeys.has(name) ? " fresh" : ""}"><h2>${esc(name)}</h2><div class="big">${head}</div>${vs}
-      <div class="legend mute">${series.map((s) => `<span><i class="sw" style="background:${color(s.key)}"></i>${esc(s.key)} (${s.pts.length})</span>`).join("")}</div>
-      ${chart(series)}<div class="mute" style="font-size:12px">last run ${new Date(newest).toLocaleString()}</div></div>`);
-  }
-  document.getElementById("grid").innerHTML = html.join("") || '<p class="mute">No run reports found under the watched roots yet. Run a benchmark.</p>';
+  return out.join("") || '<div class="card mute">No paired native and legacy run for this cycle yet. Run <code>pnpm bench:engines -- --pair tn-desktop,tn-engine-desktop</code>.</div>';
+}
+
+function progress() {
+  const c = epic.find((e) => e.id === cycle);
+  if (!c) return '<div class="card mute">No epic data (start the server with <code>--prd</code>).</div>';
+  const done = c.phases.reduce((a, p) => a + p.done, 0), total = c.phases.reduce((a, p) => a + p.total, 0);
+  const gate = c.phases.find((p) => /KPI and gate/i.test(p.title));
+  const phases = c.phases.map((p) => `<tr><td>${esc(p.id)}</td><td>${esc(p.title)}</td><td class="n ${p.done === p.total && p.total ? "good" : "mute"}">${p.done}/${p.total}</td></tr>`).join("");
+  return `<div class="card"><h2>${esc(c.id)} · ${esc(c.title)}</h2><div class="big">${total ? Math.round((done / total) * 100) : 0}%</div>
+      <div class="bar"><i style="width:${total ? (done / total) * 100 : 0}%"></i></div><div class="sm mute">${done} of ${total} boxes ticked</div></div>
+    ${gate ? `<div class="card"><h2>Gate · ${esc(gate.title)}</h2>${gate.boxes.map((b) => `<div><span class="pill ${b.done ? "ok" : "open"}">${b.done ? "pass" : "open"}</span>${esc(b.text)}</div>`).join("")}</div>` : ""}
+    <div class="card" style="grid-column:1/-1"><h2>Phases</h2><table>${phases}</table></div>`;
+}
+
+function render() {
+  const cycleRows = rows.filter((r) => r.cycle === cycle);
+  document.getElementById("tabs").innerHTML = ["v1", "v2", "v3", "v4", "v5"].map((id) => {
+    const c = epic.find((e) => e.id === id);
+    const d = c?.phases.reduce((a, p) => a + p.done, 0) ?? 0, t = c?.phases.reduce((a, p) => a + p.total, 0) ?? 0;
+    return `<button class="${id === cycle ? "on" : ""}" onclick="cycle='${id}';render()">${id}<span class="pct">${t ? Math.round((d / t) * 100) + "%" : ""}</span></button>`;
+  }).join("");
+  document.getElementById("kpis").innerHTML = kpis(cycleRows);
+  document.getElementById("progress").innerHTML = progress();
+  const groups = new Map();
+  for (const r of cycleRows) { const g = groupOf(r); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); }
+  document.getElementById("charts").innerHTML = [...groups].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })).map(([name, rs]) => {
+    const ser = seriesOf(rs);
+    return `<div class="card"><h2>${esc(name)}</h2><div class="legend mute sm">${ser.map((s) => `<span><i class="sw" style="background:${color(s.key)}"></i>${esc(s.key)} (${s.pts.length})</span>`).join("")}</div>${chart(ser)}</div>`;
+  }).join("") || '<p class="mute">No run reports for this cycle yet.</p>';
 }
 
 async function tick() {
   try {
-    const { rows, roots } = await (await fetch("/api/rows", { cache: "no-store" })).json();
-    if (lastCount && rows.length > lastCount) {
-      freshKeys = new Set(rows.slice(lastCount).map((r) => `${r.mode} · ${r.objects.toLocaleString()} objects`));
+    const [r, e] = await Promise.all([fetch("/api/rows", { cache: "no-store" }).then((x) => x.json()), fetch("/api/epic", { cache: "no-store" }).then((x) => x.json())]);
+    if (lastCount && r.rows.length > lastCount) {
+      freshKeys = new Set(r.rows.slice(lastCount).map(groupOf));
       freshUntil = Date.now() + 8000;
-      document.title = `● new result (${rows.length}) · Perf live`;
+      document.title = `● new result (${r.rows.length}) · Epic scoreboard`;
     }
     if (Date.now() > freshUntil) freshKeys = new Set();
-    lastCount = rows.length;
-    render(rows);
-    document.getElementById("status").textContent = `${rows.length} points · watching ${roots.join(", ")} · ${new Date().toLocaleTimeString()}`;
+    lastCount = r.rows.length; rows = r.rows; epic = e;
+    render();
+    document.getElementById("status").textContent = `${rows.length} points · watching ${r.roots.join(", ")} · ${new Date().toLocaleTimeString()}`;
     document.getElementById("dot").style.background = "var(--good)";
   } catch {
     document.getElementById("status").textContent = "server not reachable";
@@ -105,7 +156,7 @@ async function tick() {
   }
 }
 tick(); setInterval(tick, 2000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) document.title = "Perf live"; });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) document.title = "Epic scoreboard"; });
 </script>
 </body>
 </html>
