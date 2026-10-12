@@ -5,6 +5,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -254,6 +256,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -549,6 +553,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -936,6 +942,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -1622,6 +1630,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -2119,6 +2129,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -2264,6 +2276,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -2633,6 +2647,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -2925,6 +2941,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -3175,6 +3193,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -3510,6 +3530,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -3885,6 +3907,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -4786,6 +4810,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -5008,6 +5034,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -5204,6 +5232,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -5488,6 +5518,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -5949,6 +5981,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -6244,6 +6278,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -6655,6 +6691,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",
@@ -6856,6 +6894,8 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnStructureStamp",
+        "__tnVisibleInWorld",
         "__walk",
         "add",
         "addEventListener",

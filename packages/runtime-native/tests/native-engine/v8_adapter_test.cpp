@@ -338,6 +338,65 @@ void runtimeChurn() {
     CHECK(growthKb < 16 * 1024);  // 40 cycles x 20,000 objects; a per-cycle leak would show here
 }
 
+// The stamp core's projection-stability proof asks for: one call hashes what the proof would read
+// object by object. It must stay put for what the proof ignores (a move) and change for everything
+// it reads, and it must cost a constant number of crossings however large the scene is.
+void structureStamp() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string result = run(rt, adapter, R"JS(
+        const scene = new Scene(), geometry = new BoxGeometry(1, 1, 1);
+        const a = new MeshBasicMaterial(), b = new MeshBasicMaterial();
+        const meshes = [];
+        for (let i = 0; i < 64; ++i) { const m = new Mesh(geometry, a); meshes.push(m); scene.add(m); }
+        globalThis.stampScene = scene;
+        const stamp = () => scene.__tnStructureStamp();
+        const base = stamp();
+        const out = [];
+        const changes = (edit, undo) => { edit(); const moved = stamp() !== base; undo(); return moved && stamp() === base; };
+        out.push(stamp() === base);                                          // stable
+        meshes[5].position.x = 9; meshes[5].rotation.y = 1; meshes[5].updateMatrixWorld(true);
+        out.push(stamp() === base);                                          // a move is not a structure change
+        out.push(changes(() => { meshes[7].visible = false; }, () => { meshes[7].visible = true; }));
+        out.push(changes(() => { meshes[8].material = b; }, () => { meshes[8].material = a; }));
+        out.push(changes(() => { meshes[9].castShadow = true; }, () => { meshes[9].castShadow = false; }));
+        out.push(changes(() => { meshes[10].receiveShadow = true; }, () => { meshes[10].receiveShadow = false; }));
+        out.push(changes(() => { meshes[11].frustumCulled = false; }, () => { meshes[11].frustumCulled = true; }));
+        out.push(changes(() => { meshes[12].renderOrder = 3; }, () => { meshes[12].renderOrder = 0; }));
+        out.push(changes(() => { meshes[13].layers.mask = 2; }, () => { meshes[13].layers.mask = 1; }));
+        out.push(changes(() => { meshes[14].geometry = new BoxGeometry(2, 2, 2); }, () => { meshes[14].geometry = geometry; }));
+        out.push(changes(() => { scene.remove(meshes[15]); }, () => { scene.add(meshes[15]); }) === false); // re-add reorders: the walk order changed
+        const group = new Group(), inner = new Mesh(geometry, a); group.add(inner); scene.add(group);
+        const grouped = stamp();
+        inner.visible = false;
+        out.push(stamp() !== grouped);                                       // a child of a plain group is walked
+        inner.visible = true;
+        const lod = new LOD(), level = new Mesh(geometry, a); lod.addLevel(level, 0); scene.add(lod);
+        const withLod = stamp();
+        level.visible = false;
+        out.push(stamp() === withLod);                                       // the proof does not walk into a LOD
+        out.map(Number).join("")
+    )JS");
+    CHECK(result == "1111111111111");
+    if (result != "1111111111111") std::fprintf(stderr, "stamp %s\n", result.c_str());
+    // Ancestor visibility in one call: false under any hidden ancestor, and after it is shown again true.
+    const std::string visible = run(rt, adapter, R"JS(
+        const root = new Group(), mid = new Group(), leaf = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        root.add(mid); mid.add(leaf);
+        const out = [leaf.__tnVisibleInWorld()];
+        mid.visible = false; out.push(leaf.__tnVisibleInWorld(), mid.__tnVisibleInWorld());
+        mid.visible = true; root.visible = false; out.push(leaf.__tnVisibleInWorld());
+        root.visible = true; leaf.visible = false; out.push(leaf.__tnVisibleInWorld(), mid.__tnVisibleInWorld());
+        out.map(Number).join("")
+    )JS");
+    CHECK(visible == "1000" "01");
+    // One call, however many meshes it covers.
+    const uint64_t before = tn::abi::crossings();
+    run(rt, adapter, "globalThis.stampScene.__tnStructureStamp()");
+    CHECK(tn::abi::crossings() - before <= 2);
+}
+
 // Reports the per-call cost of one property write and one method call through the adapter
 // (PRD-531 phase 3). CP1 reads these to decide whether bulk paths are needed (decision 9).
 void crossingBench() {
@@ -1247,7 +1306,7 @@ void materialSlots() {
 
 }  // namespace
 
-TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp},{"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},

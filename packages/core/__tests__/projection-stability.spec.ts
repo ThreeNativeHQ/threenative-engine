@@ -76,3 +76,72 @@ describe("a host whose `children` is built on every read", () => {
     expect(reads).toBeLessThanOrEqual(6);
   });
 });
+
+describe("a host that stamps the structure it owns", () => {
+  // The native engine hashes the walk, visibility and each mesh's geometry, material and flags in
+  // one call. A matching stamp must skip the per-object reads; a changed one must fall back to the
+  // exact walk, which still decides.
+  function stamped(count: number) {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const meshes: Mesh[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const mesh = new Mesh(geometry, material);
+      meshes.push(mesh);
+      scene.add(mesh);
+    }
+    const stamp = { calls: 0, value: 1 };
+    (scene as unknown as { __tnStructureStamp: () => number }).__tnStructureStamp = () => {
+      stamp.calls += 1;
+      return stamp.value;
+    };
+    const reads = { children: 0 };
+    const real = scene.children;
+    Object.defineProperty(scene, "children", {
+      get() {
+        reads.children += 1;
+        return real;
+      },
+    });
+    return { meshes, reads, scene, stamp };
+  }
+
+  it("holds on a matching stamp without walking the scene", () => {
+    const { scene, reads, stamp } = stamped(50);
+    const stability = new ProjectionStability();
+    stability.record(scene, scanProjection(scene, 4, createProjectionScanWorkspace()));
+    const before = reads.children;
+    expect(stability.holds(scene)).toBe(true);
+    expect(reads.children).toBe(before);
+    expect(stamp.calls).toBeGreaterThanOrEqual(2);
+  });
+
+  it("walks when the stamp changes, and still holds when the walk finds nothing that matters", () => {
+    const { scene, reads, stamp } = stamped(50);
+    const stability = new ProjectionStability();
+    stability.record(scene, scanProjection(scene, 4, createProjectionScanWorkspace()));
+    stamp.value = 2;
+    const before = reads.children;
+    expect(stability.holds(scene)).toBe(true);
+    expect(reads.children).toBeGreaterThan(before);
+  });
+
+  it("drops on a script-side change the stamp cannot see", () => {
+    const { scene, meshes } = stamped(10);
+    const stability = new ProjectionStability();
+    stability.record(scene, scanProjection(scene, 4, createProjectionScanWorkspace()));
+    expect(stability.holds(scene)).toBe(true);
+    (meshes[3] as Mesh).customDepthMaterial = new MeshBasicMaterial();
+    expect(stability.holds(scene)).toBe(false);
+  });
+
+  it("drops when the stamp changes because a mesh really changed", () => {
+    const { scene, meshes, stamp } = stamped(10);
+    const stability = new ProjectionStability();
+    stability.record(scene, scanProjection(scene, 4, createProjectionScanWorkspace()));
+    (meshes[2] as Mesh).visible = false;
+    stamp.value = 3;
+    expect(stability.holds(scene)).toBe(false);
+  });
+});

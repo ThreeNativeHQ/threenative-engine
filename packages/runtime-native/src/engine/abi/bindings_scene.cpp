@@ -33,6 +33,7 @@
 #include "engine/scene/object3d.h"
 
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -205,6 +206,38 @@ void registerObject3DEvents(ClassBinding& b) {
             throw Unsupported{"TN_NATIVE_EVENT_LISTENER: the language adapter keeps EventDispatcher listeners"};
         };
     }
+}
+
+// One number that changes whenever anything the projection's stability proof reads off the engine
+// changes (projection-stability.ts): the walk order, each node's visibility, and for a mesh its
+// geometry, material, flags, render order and layer mask. It walks the way that proof walks, so a
+// light or LOD hides its children. A hash, so a match is a claim at 2^-53 and a mismatch only sends
+// the caller to its own exact walk.
+double structureStamp(Object3D& root) {
+    uint64_t h = 0xcbf29ce484222325ULL;
+    const auto mix = [&h](uint64_t v) {
+        h = (h ^ v) * 0x100000001b3ULL;
+        h ^= h >> 29;
+    };
+    std::vector<const Object3D*> stack(root.children.rbegin(), root.children.rend());
+    while (!stack.empty()) {
+        const Object3D* object = stack.back();
+        stack.pop_back();
+        const auto* mesh = dynamic_cast<const Mesh*>(object);
+        mix(object->id() * 2 + (object->visible() ? 1 : 0));
+        if (mesh != nullptr) {
+            mix(reinterpret_cast<uintptr_t>(mesh->geometry.get()));
+            mix(reinterpret_cast<uintptr_t>(mesh->material.get()));
+            mix(static_cast<uint64_t>(mesh->castShadow()) | static_cast<uint64_t>(mesh->receiveShadow()) << 1 |
+                static_cast<uint64_t>(mesh->frustumCulled) << 2);
+            mix(static_cast<uint64_t>(static_cast<int64_t>(mesh->renderOrder())));
+            mix(std::bit_cast<uint64_t>(mesh->layers().mask));
+        }
+        mix(object->children.size());
+        if (object->isLight() || object->type() == "LOD") continue;
+        for (auto it = object->children.rbegin(); it != object->children.rend(); ++it) stack.push_back(*it);
+    }
+    return static_cast<double>(h & ((1ULL << 53) - 1));
 }
 
 void registerObject3D(ClassBinding& b) {
@@ -427,6 +460,17 @@ void registerObject3D(ClassBinding& b) {
     b.methods["clear"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->clear();
         return chain();
+    };
+    // core's projection-stability proof asks for this where it exists; three has no such method.
+    b.methods["__tnStructureStamp"] = [](void* self, const Args&, Store&) {
+        return Value::of(structureStamp(*as<Object3D>(self)));
+    };
+    // The same, for projection-apply's "does the game want this drawn": every ancestor's flag in one
+    // call, where the script walk costs a call and a wrapper per level.
+    b.methods["__tnVisibleInWorld"] = [](void* self, const Args&, Store&) {
+        for (const Object3D* node = as<Object3D>(self); node != nullptr; node = node->parent)
+            if (!node->visible()) return Value::of(false);
+        return Value::of(true);
     };
     b.methods["updateMatrix"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->updateMatrix();

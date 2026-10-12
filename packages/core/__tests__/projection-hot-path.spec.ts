@@ -536,6 +536,32 @@ describe("projection fast-path guards", () => {
     }
   });
 
+  it("asks a host that can answer for ancestor visibility, and bakes what it says", () => {
+    const { projection, meshes, group } = settledScene(12);
+    try {
+      // The native engine walks the parents in one call; three has no such method. The answer
+      // must be the one the walk gives, and the walk must not run when the host answers.
+      let asked = 0;
+      for (const mesh of meshes) {
+        (mesh as unknown as { __tnVisibleInWorld: () => boolean }).__tnVisibleInWorld = () => {
+          asked += 1;
+          for (let node: Object3D | null = mesh; node !== null; node = node.parent)
+            if (!node.visible) return false;
+          return true;
+        };
+      }
+      group.visible = false;
+      projection.reconcile();
+      expect(asked).toBeGreaterThanOrEqual(meshes.length);
+      expect(baked(projection, meshes[2] as Mesh).visible).toBe(false);
+      group.visible = true;
+      projection.reconcile();
+      expectBaked(projection, meshes[2] as Mesh, true);
+    } finally {
+      projection.dispose();
+    }
+  });
+
   it("re-classifies a swapped material and a swapped geometry", () => {
     const { projection, meshes } = settledScene(12);
     try {
