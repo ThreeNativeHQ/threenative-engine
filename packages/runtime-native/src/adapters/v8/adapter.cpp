@@ -64,17 +64,23 @@ Adapter* adapterOf(const v8::FunctionCallbackInfo<v8::Value>& info) {
     return static_cast<Adapter*>(info.Data().As<v8::External>()->Value());
 }
 
-// The shape of nearly every hot call (`position.set(x, y, z)`, `rotation.x = v`): up to eight plain
-// numbers. They cross as a stack array, with none of the containers the general converter builds.
+// The shape of nearly every hot call (`position.set(x, y, z)`, `rotation.x = v`, `matrix.copy(other)`):
+// up to eight plain numbers or engine objects. They cross as a stack array, with none of the containers
+// the general converter builds.
 constexpr int kFastArguments = 8;
-bool numericArguments(const v8::FunctionCallbackInfo<v8::Value>& info, tn_value_t (&out)[kFastArguments]) {
+bool fastArguments(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, tn_value_t (&out)[kFastArguments]) {
     const int count = info.Length();
     if (count > kFastArguments) return false;
     for (int i = 0; i < count; ++i) {
-        if (!info[i]->IsNumber()) return false;
         out[i] = tn_value_t{};
-        out[i].kind = TN_VALUE_NUMBER;
-        out[i].number = info[i].As<v8::Number>()->Value();
+        if (info[i]->IsNumber()) {
+            out[i].kind = TN_VALUE_NUMBER;
+            out[i].number = info[i].As<v8::Number>()->Value();
+        } else if (a.unwrapForCall(info[i], out[i].handle)) {
+            out[i].kind = TN_VALUE_HANDLE;
+        } else {
+            return false;
+        }
     }
     return true;
 }
@@ -265,12 +271,10 @@ v8::Local<v8::Value> fromValue(Adapter& a, const tn_value_t& v) {
         case TN_VALUE_STRING: return str(isolate, std::string(v.text, v.count));
         case TN_VALUE_HANDLE: return a.wrap(v.handle);
         case TN_VALUE_ARRAY: {
-            auto array = v8::Array::New(isolate, int(v.count));
-            for (uint32_t i = 0; i < v.count; ++i) {
-                const auto written = array->CreateDataProperty(isolate->GetCurrentContext(), i, fromValue(a, v.values[i]));
-                if (written.IsNothing() || !written.FromJust()) return v8::Undefined(isolate);
-            }
-            return array;
+            // One bulk construction: an element-by-element CreateDataProperty dominated the profile of a scene walk.
+            std::vector<v8::Local<v8::Value>> items(v.count);
+            for (uint32_t i = 0; i < v.count; ++i) items[i] = fromValue(a, v.values[i]);
+            return v8::Array::New(isolate, items.data(), items.size());
         }
         case TN_VALUE_RECORD: {
             auto record = v8::Object::New(isolate);
@@ -283,13 +287,15 @@ v8::Local<v8::Value> fromValue(Adapter& a, const tn_value_t& v) {
         }
         case TN_VALUE_NUMBERS: {
             // three exposes `elements` and `toArray()` as plain arrays, so JS gets a plain array.
-            v8::Local<v8::Array> array = v8::Array::New(isolate, static_cast<int>(v.count));
-            v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
-            for (uint64_t k = 0; k < v.count; ++k) {
-                const auto written = array->CreateDataProperty(ctx, static_cast<uint32_t>(k), v8::Number::New(isolate, v.numbers[k]));
-                if (written.IsNothing() || !written.FromJust()) return v8::Undefined(isolate);
+            v8::Local<v8::Value> stack[16];
+            std::vector<v8::Local<v8::Value>> heap;
+            v8::Local<v8::Value>* items = stack;
+            if (v.count > 16) {
+                heap.resize(v.count);
+                items = heap.data();
             }
-            return array;
+            for (uint64_t k = 0; k < v.count; ++k) items[k] = v8::Number::New(isolate, v.numbers[k]);
+            return v8::Array::New(isolate, items, v.count);
         }
         default: return v8::Undefined(isolate);
     }
@@ -304,6 +310,8 @@ struct MethodData {
     bool intersections = false;  // intersectObject(s): the only methods whose third argument is a target array
     int slot = 0;                // a fixed member's internal-field cache slot; 0: none left, use the private key
     tn::abi::SetterSlot setter;  // the numeric write's setter for the class last written
+    tn::abi::GetterSlot getter;  // the read's getter or member for the class last read
+    tn::abi::MethodSlot method;  // the call's method for the class last called
     bool own = false;            // a read-only fixed member: once read, it becomes an own data property of the wrapper, as three defines it
     uint16_t type = 0;           // the catalog type whose wrappers own that slot: a getter borrowed by another class must not read it
     std::string cls;             // the registry class, for a method that reads its binding
@@ -459,6 +467,17 @@ bool Adapter::unwrap(v8::Local<v8::Value> value, tn_handle_t& out) const {
     auto* w = static_cast<Wrapper*>(object->GetAlignedPointerFromInternalField(0));
     if (!w || w->adapter != this) return false;
     out = w->handle;
+    return true;
+}
+
+bool Adapter::unwrapForCall(v8::Local<v8::Value> value, tn_handle_t& out) {
+    if (!value->IsObject()) return false;
+    v8::Local<v8::Object> object = value.As<v8::Object>();
+    if (object->InternalFieldCount() != kWrapperFields) return false;
+    auto* w = static_cast<Wrapper*>(object->GetAlignedPointerFromInternalField(0));
+    if (!w || w->adapter != this) return false;
+    out = w->handle;
+    if (!w->callbacks.empty()) strong(w);
     return true;
 }
 
@@ -781,11 +800,11 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    return;
                                }
                                tn_value_t fast[kFastArguments];
-                               if (!d->intersections && numericArguments(info, fast)) {
+                               if (!d->intersections && fastArguments(*d->adapter, info, fast)) {
                                    tn_value_t result{};
                                    tn_diagnostic_t diagnostic{nullptr, 0};
-                                   if (tn_invoke(h, d->name.c_str(), fast, static_cast<uint32_t>(info.Length()), &result,
-                                                 &diagnostic) != TN_OK) {
+                                   if (tn::abi::invokeMethod(h, d->method, d->name, fast, static_cast<uint32_t>(info.Length()), &result,
+                                                             &diagnostic) != TN_OK) {
                                        throwStatus(isolate, diagnostic);
                                        return;
                                    }
@@ -809,8 +828,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                }
                                tn_value_t result{};
                                tn_diagnostic_t diagnostic{nullptr, 0};
-                               if (tn_invoke(h, d->name.c_str(), args.data(), static_cast<uint32_t>(args.size()), &result,
-                                             &diagnostic) != TN_OK) {
+                               if (tn::abi::invokeMethod(h, d->method, d->name, args.data(), static_cast<uint32_t>(args.size()), &result,
+                                                         &diagnostic) != TN_OK) {
                                    throwStatus(isolate, diagnostic);
                                    return;
                                }
@@ -1016,7 +1035,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                         if (!owner && !d->adapter->unwrap(self, h)) return;
                         tn_value_t result{};
                         tn_diagnostic_t diagnostic{nullptr, 0};
-                        if (tn_get(h, d->name.c_str(), &result, &diagnostic) != TN_OK) {
+                        if (tn::abi::getValue(h, d->getter, d->name, &result, &diagnostic) != TN_OK) {
                             throwStatus(isolate, diagnostic);
                             return;
                         }

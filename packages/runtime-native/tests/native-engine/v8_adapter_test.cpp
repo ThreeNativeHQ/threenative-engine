@@ -104,6 +104,24 @@ void fastPaths() {
     CHECK(got == "11111");
     if (got != "11111") std::fprintf(stderr, "got %s\n", got.c_str());
     CHECK(adapter.genericArguments() - before == baseline);  // 2000 x 5 numeric calls added none
+    // An engine object as an argument (`matrix.copy(other)`, `v.add(w)`, `mesh.add(child)`) crosses on the same
+    // stack array: the scene walk makes tens of thousands of these a frame.
+    const std::string objectSetup = R"JS(
+        const a = new Matrix4(), b = new Matrix4(), v = new Vector3(), w = new Vector3(1, 2, 3);
+        const parent = new Object3D(), child = new Object3D();
+    )JS";
+    const uint64_t setupStart = adapter.genericArguments();
+    run(rt, adapter, objectSetup.c_str());
+    const uint64_t setupArguments = adapter.genericArguments() - setupStart;
+    const uint64_t beforeObjects = adapter.genericArguments();
+    const std::string objects = run(rt, adapter, (objectSetup + R"JS(
+        for (let i = 0; i < 2000; ++i) { a.copy(b); v.add(w); }
+        parent.add(child);
+        [a.elements[0] === 1, v.x === 2000, child.parent === parent, parent.children.length === 1]
+            .map(Number).join("")
+    )JS").c_str());
+    CHECK(objects == "1111");
+    CHECK(adapter.genericArguments() - beforeObjects == setupArguments);  // 4000 handle-argument calls added none
     // A fixed member is the same wrapper on every read, owned by its object: slot-cached per wrapper,
     // never shared between two objects or two members, and a plain object inheriting from a wrapper
     // gets no cache (and no crash).

@@ -48,6 +48,8 @@ public:
     v8::Local<v8::Value> wrap(tn_handle_t handle);
     /** The handle a wrapper holds; false for anything that is not an engine object. */
     bool unwrap(v8::Local<v8::Value> value, tn_handle_t& out) const;
+    /** unwrap, then what holdIfCallback does for the handle, without a second lookup of the wrapper. */
+    bool unwrapForCall(v8::Local<v8::Value> value, tn_handle_t& out);
 
     Tsl& tsl() const { return *tsl_; }
 
