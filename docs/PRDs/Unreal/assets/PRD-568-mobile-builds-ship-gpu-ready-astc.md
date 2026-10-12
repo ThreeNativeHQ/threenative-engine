@@ -4,7 +4,7 @@
 **Priority:** P2 — Mobile ASTC cook, decoder-free admission and the emulator proof are all unbuilt.
 **Complexity:** 4 (MEDIUM) — 1–5 implementation files (`packages/assets` texture pass, `create-threenative` build gate, the asset loader route) (+1); the cook output crosses into the native package (+2); one new output variant (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-VQ-01](../done/PRD-VQ-01-native-asset-capabilities.md) (owns runtime-aware decoder admission; this PRD adds a format that needs no decoder)
+**Depends on:** [PRD-VQ-01](../../done/PRD-VQ-01-native-asset-capabilities.md) (owns runtime-aware decoder admission; this PRD adds a format that needs no decoder)
 
 ## Context
 
@@ -22,7 +22,7 @@ Two costs follow on phones:
 - UE 5.8.3: `Engine/Config/BaseEngine.ini:3309-3314` (`[/Script/AndroidRuntimeSettings.AndroidRuntimeSettings]`). An Android build cooks several GPU formats (ETC2, DXT, ASTC) into the package and ranks them: ASTC 0.9, DXT 0.6, ETC2 0.2. At runtime the device takes the best format it supports. No runtime transcoder is involved.
 - UE 5.8.3: `Engine/Config/BaseEngine.ini:3355-3359` (`[/Script/UnrealEd.CookerSettings]`). The default ASTC block size is chosen for size (6×6), with 4×4 for high-quality textures.
 
-A done PRD made the opposite trade on purpose. [PRD-349](../done/PRD-349-the-cook-is-on-by-default.md) chose one transcodable Basis file over per-platform cooking, and [PRD-448](../done/PRD-448-cross-platform-asset-cooking-and-device-budgets.md) declined automatic native ASTC "now", leaving native decoder work separate. This PRD does not reopen either one. It adds a cook-time transcode for mobile targets only. Web and desktop keep Basis.
+A done PRD made the opposite trade on purpose. [PRD-349](../../done/PRD-349-the-cook-is-on-by-default.md) chose one transcodable Basis file over per-platform cooking, and [PRD-448](../../done/PRD-448-cross-platform-asset-cooking-and-device-budgets.md) declined automatic native ASTC "now", leaving native decoder work separate. This PRD does not reopen either one. It adds a cook-time transcode for mobile targets only. Web and desktop keep Basis.
 
 **Why a decoder is not needed.** Three's `KTX2Loader` (three 0.185.1, `examples/jsm/loaders/KTX2Loader.js:484-489`) sends a KTX2 whose `vkFormat` is defined straight to `createRawTexture` and never initialises the transcoder. Zstd supercompression would bring WASM back (`createRawTexture` loads a `ZSTDDecoder`), so the mobile output is written without supercompression.
 

@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — AC-1 is open: every rig evaluates its full pose every frame, near or far, on screen or off. Phase 1 has not yet measured how much that costs.
 **Complexity:** 5 (MEDIUM) — 1–5 engine files (`animation.ts`, `projection-skinned.ts`, `render-camera-cull.ts`) (+1), skipped-frame accumulation and interpolation state carries across frames (+2), a skin-once compute pass is a new mechanism, gated by Phase 1 (+2); risk override: none
 **Owner:** João
-**Depends on:** None. Coordinate with [PRD-486](../open-world/PRD-486-characters-get-a-lod-chain.md): its posed-bounds rule (Phase 2) is the bound this PRD reads when that lands, and its mannequin crowd is a shared subject.
+**Depends on:** None. Coordinate with [PRD-486](../../open-world/PRD-486-characters-get-a-lod-chain.md): its posed-bounds rule (Phase 2) is the bound this PRD reads when that lands, and its mannequin crowd is a shared subject.
 
 ## Context
 

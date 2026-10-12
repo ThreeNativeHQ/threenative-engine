@@ -62,7 +62,7 @@ Paths are under `Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/`.
   history weight of 0.9 (`VirtualShadowMapArray.cpp:786-807`). The pool defaults to 2048 physical
   pages (`VirtualShadowMapArray.cpp:173-178`). This is the graceful step that Phase 2's first box
   now takes before its fallback. The cached-level path has the same idea in
-  [PRD-549](../performance/PRD-549-the-engine-holds-60-fps-on-a-weak-gpu.md) Phase 3: a level whose
+  [PRD-549](../../performance/PRD-549-the-engine-holds-60-fps-on-a-weak-gpu.md) Phase 3: a level whose
   redraw exceeds its share halves its map.
 - **Residency rules are cheap and already match.** An unrequested page lives at most 1000 frames
   (`VirtualShadowMapCacheManager.cpp:127-133`), and allocation keeps the most recently requested
@@ -72,7 +72,7 @@ Paths are under `Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/`.
   (`VirtualShadowMapCacheManager.cpp:142-147`, `:1767-1800`). Here a game must call `trackCaster`
   for every mover (`packages/core/src/render/virtual-shadow.ts:707`), a manual call that the
   auto-by-default rule disfavors. That is a separate change and is not in this PRD: see
-  [PRD-572](../done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md).
+  [PRD-572](../../done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md).
 - **Soft shadows by shadow-map ray marching** (7 rays of 8 samples for a directional light,
   fewer in fully lit or fully shadowed areas; `VirtualShadowMapArray.cpp:674-678`, `:728-740`)
   are a desktop look option. They are out of scope here.

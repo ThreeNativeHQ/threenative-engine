@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-539 — A lower internal raster reconstructs into a stable full-resolution frame
 
-**Status:** NOT STARTED — successor to [PRD-455](../done/PRD-455-temporal-reconstruction-from-dynamic-resolution.md); no reconstructor has cleared the quality gate (2026-10-07).  
+**Status:** NOT STARTED — successor to [PRD-455](../../done/PRD-455-temporal-reconstruction-from-dynamic-resolution.md); no reconstructor has cleared the quality gate (2026-10-07).  
 **Priority:** P1 — Carried over unchanged from PRD-455, whose own note ranked it the highest-value rendering project; the owner may lower it.  
 **Complexity:** 8 → HIGH. Five candidates failed the same gate on hardware; the next one is a new design, not a parameter change.  
 **Numbering:** filed in #398 as PRD-537; #464 took that number for the far-hills PRD first, so this PRD is PRD-539 (2026-10-08).  

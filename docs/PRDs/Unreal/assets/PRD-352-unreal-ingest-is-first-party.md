@@ -9,7 +9,7 @@ zero shipped bytes on its own.
 
 ## Execution preflight after PRD-349
 
-349 delivered the canonical cook and [real Quarry browser/native desktop proof](../../verification/PRD-349-the-cook.md).
+349 delivered the canonical cook and [real Quarry browser/native desktop proof](../../../verification/PRD-349-the-cook.md).
 Reuse its six props and checked-in scenarios, with final example pins at `1bc083d8` as the
 historical control. Quarry's authored GLBs are now losslessly decoded out of Meshopt; its cooked
 web/desktop asset payload including Basis is **4,569,038 B**. Record the current game/package

@@ -4,7 +4,7 @@
 **Priority:** P2 — All boxes are open: the native host allocates and stores every 4× MSAA attachment in memory; no measurement shows yet what a transient attachment saves on a Mali or Adreno phone.
 **Complexity:** 3 (LOW) — 1–5 host files (1), crosses into the Dawn-on-Android build that PRD-329 owns (+2); risk override: none
 **Owner:** João (device runs), agent (implementation)
-**Depends on:** [PRD-329](../performance/critical/PRD-329-the-native-gpu-frame-matches-chrome-at-matched-pixels.md) Phase 2 (the Dawn-on-Android build). This PRD feeds PRD-329 Phase 3's MSAA arm with one specific lever; it does not repeat that arm's `sampleCount 4` resolve-path pair.
+**Depends on:** [PRD-329](../../performance/critical/PRD-329-the-native-gpu-frame-matches-chrome-at-matched-pixels.md) Phase 2 (the Dawn-on-Android build). This PRD feeds PRD-329 Phase 3's MSAA arm with one specific lever; it does not repeat that arm's `sampleCount 4` resolve-path pair.
 
 ## Context
 

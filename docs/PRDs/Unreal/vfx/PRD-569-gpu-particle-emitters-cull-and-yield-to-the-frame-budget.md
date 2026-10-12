@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — AC-1 and AC-2 are open: every `GPUParticles3D` simulates and draws every frame, on screen or not, and no effect reads the measured budget.
 **Complexity:** 5 (MEDIUM) — 1–5 engine files (`particles.ts`, `render-camera-cull.ts`, a small bounds/significance module) (+1), a measured-bounds reduction is a new mechanism (+2), culled/paused state carries across frames (+2); risk override: none
 **Owner:** João
-**Depends on:** None. It must pass the core-change admission gate of [PRD-316](../rendering/PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md) (§3), because it adds core surface for effects.
+**Depends on:** None. It must pass the core-change admission gate of [PRD-316](PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md) (§3), because it adds core surface for effects.
 
 ## Context
 

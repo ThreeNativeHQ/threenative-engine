@@ -4,7 +4,7 @@
 **Priority:** P2 — Importer drops every unmapped texture as UnsupportedTexture; mapping unbuilt.
 **Complexity:** 3 (LOW) — 1–5 implementation files (+1: two importer files, the cook's path rewrite, the starter's `materials.ts`); the importer is the separate `threenative-asset-mcp` repo, a linked dependency released on its own (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-485](../done/PRD-485-high-quality-assets-go-through-the-cook.md) (the Fab tree cooks by default). Excludes skin and hair, which are [PRD-VQ-14](../rendering/PRD-VQ-14-skin-material-qualification.md) and [PRD-VQ-15](../rendering/PRD-VQ-15-hair-card-material-qualification.md). Must keep [PRD-369](../assets/PRD-369-material-variation-is-data.md)'s program-count discipline.
+**Depends on:** [PRD-485](../../done/PRD-485-high-quality-assets-go-through-the-cook.md) (the Fab tree cooks by default). Excludes skin and hair, which are [PRD-VQ-14](../../rendering/PRD-VQ-14-skin-material-qualification.md) and [PRD-VQ-15](../../rendering/PRD-VQ-15-hair-card-material-qualification.md). Must keep [PRD-369](../../assets/PRD-369-material-variation-is-data.md)'s program-count discipline.
 
 ## Context
 

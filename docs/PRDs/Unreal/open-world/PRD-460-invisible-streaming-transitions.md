@@ -24,7 +24,7 @@ than a missing effect:
 
 Terrain already does this correctly and is the precedent, not the work: a tile's LOD change morphs
 vertex positions over `LOD_TRANSITION_FRAMES = 3` (`packages/core/src/world-tiles.ts:219`).
-[PRD-566](../unreal-source-borrowing/PRD-566-terrain-lod-morphs-on-the-gpu-and-picks-by-screen-error.md) moves that morph to
+[PRD-566](PRD-566-terrain-lod-morphs-on-the-gpu-and-picks-by-screen-error.md) moves that morph to
 the GPU; it stays out of this PRD. Scatter has no equivalent because the mix is per instance and `InstancedBatch` writes
 only `instanceMatrix` (`packages/core/src/instanced-batch.ts:178`).
 

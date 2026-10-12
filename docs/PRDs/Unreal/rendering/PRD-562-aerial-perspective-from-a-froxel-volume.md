@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — AC-1 to AC-3 are open: `Atmosphere.aerialPerspective` mixes every pixel toward one zenith colour, and no template uses the atmosphere at all.
 **Complexity:** 4 (MEDIUM) — 1–5 implementation files (1), a new GPU resource with per-frame view-space state (+2), template adoption (+1); risk override: none
 **Owner:** João
-**Depends on:** None. Builds on the LUT stack that [PRD-248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. Composes with [PRD-560](../done/PRD-560-height-fog-follows-the-ground.md) height fog: this PRD is kilometre-scale air, and PRD-560 is ground mist.
+**Depends on:** None. Builds on the LUT stack that [PRD-248](../../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. Composes with [PRD-560](../../done/PRD-560-height-fog-follows-the-ground.md) height fog: this PRD is kilometre-scale air, and PRD-560 is ground mist.
 
 ## Context
 
@@ -24,7 +24,7 @@ multi-scattering 32×32 and sky-view 192×108 (`luts.ts:34-37`). Its aerial-pers
 
 No template or example constructs `Atmosphere` (`rg "new Atmosphere\("` outside tests and the
 capability manifest, 2026-10-09). The starter mist disables aerial perspective while it lives
-(`templates/starter/src/render/volumetricFog.ts:54`). [PRD-VQ-07](../done/PRD-VQ-07-volumetric-fog.md)
+(`templates/starter/src/render/volumetricFog.ts:54`). [PRD-VQ-07](../../done/PRD-VQ-07-volumetric-fog.md)
 deliberately shipped "no mandatory froxel engine" for local mist. This PRD adds one small
 view-space volume for atmosphere-scale haze only. It is not a general volumetric-fog grid.
 
