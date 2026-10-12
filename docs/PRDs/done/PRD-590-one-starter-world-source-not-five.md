@@ -5,7 +5,7 @@
 **Complexity:** 4 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Epic:** [Strata terrain hardening](README.md)
+**Epic:** [Strata terrain hardening](../strata-terrain-hardening/README.md)
 
 ## Context
 
