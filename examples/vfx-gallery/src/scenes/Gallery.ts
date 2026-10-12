@@ -1,4 +1,4 @@
-import { GPUParticles3D, type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import { GPUParticles3D, GPUReadback, type ICtx, Scene, type SceneFrame } from "@threenative/core";
 import {
   BoxGeometry,
   Color,
@@ -267,6 +267,133 @@ class GalleryEffectEntity {
   }
 }
 
+/** Opt-in (`?burstProbe`): drives the restart-based burst of the action-rpg template and reads it back. */
+function createBurstProbe(ctx: GalleryCtx): () => void {
+  if (typeof location === "undefined" || !new URLSearchParams(location.search).has("burstProbe"))
+    return () => undefined;
+  const option = createImpactSparks(83)[0];
+  if (option === undefined) throw new Error("Burst probe requires an impact-sparks layer.");
+  const particles = ctx.add(new GPUParticles3D(option));
+  particles.name = "burst-probe-sparks";
+  particles.visible = false;
+  const readback = new GPUReadback({
+    attribute: particles.buffers.positions.value,
+    everyFrames: 1,
+  });
+  particles.addEventListener("removed", () => readback.dispose());
+  const metrics = {
+    amount: -1,
+    meanAgeFractionFirstFrame: -1,
+    maxOneFrameMoveAtSecondBurst: -1,
+    secondBurstHiddenAtFrame: -1,
+    firstBurstVisibleFrames: -1,
+    samples: -1,
+    done: false,
+  };
+  ctx.entities.add("burst-probe", { mesh: particles, debug: () => ({ ...metrics }) });
+  let frame = 0;
+  let firstFrame = -1;
+  let secondFrame = -1;
+  let lands = 0;
+  let visibleFrames = 0;
+  let firstHidden = false;
+  let hiddenAtFrame = -1;
+  const draws = new Map<number, { x: number; visible: boolean }>();
+  const samples: {
+    frame: number;
+    staleFrames: number;
+    drawnFrame: number;
+    x: number;
+    visible: boolean;
+    data: Float32Array;
+  }[] = [];
+  const burst = (x: number): void => {
+    particles.position.set(x, 0.5, 0);
+    particles.visible = true;
+    particles.restart();
+    ctx.after(0.45, () => {
+      particles.visible = false;
+    });
+  };
+  ctx.beforeRender(() => {
+    frame += 1;
+    if (firstFrame < 0 || frame > firstFrame + 60) return;
+    draws.set(frame, { x: particles.position.x, visible: particles.visible });
+    if (!firstHidden && particles.visible) visibleFrames += 1;
+    if (!particles.visible && !firstHidden) {
+      firstHidden = true;
+      hiddenAtFrame = frame - secondFrame;
+    }
+    // The render compute has run; staleness identifies the draw that supplied these bytes.
+    readback.request(ctx.renderer);
+    const sample = readback.sample;
+    if (sample === undefined || readback.stats.lands === lands) return;
+    lands = readback.stats.lands;
+    const drawnFrame = frame - sample.staleFrames;
+    const draw = draws.get(drawnFrame);
+    if (draw === undefined) throw new Error("Burst probe readback has no matching draw.");
+    samples.push({
+      frame,
+      staleFrames: sample.staleFrames,
+      drawnFrame,
+      ...draw,
+      data: Float32Array.from(sample.data),
+    });
+  });
+  return () => {
+    if (frame >= 30 && firstFrame < 0) {
+      firstFrame = frame + 1;
+      burst(-2);
+      ctx.after(0.3, () => {
+        secondFrame = frame + 1;
+        burst(2);
+      });
+    }
+    if (frame <= firstFrame + 60 || metrics.done) return;
+    readback.dispose();
+    const a = samples.filter((sample) => sample.drawnFrame < secondFrame);
+    const first = a.find((sample) => sample.staleFrames === 0) ?? a[0];
+    const before = a.at(-1);
+    const after = samples.find((sample) => sample.drawnFrame >= secondFrame);
+    if (!first || !before || !after || hiddenAtFrame < 0)
+      throw new Error("Burst probe window lacks A/B readbacks or the second burst hide.");
+    // Three updates itemSize when WebGPU pads vec3 storage to vec4.
+    const stride = particles.buffers.positions.value.itemSize;
+    if (samples.some(({ data }) => data.length !== particles.amount * stride))
+      throw new Error("Burst probe buffer size does not match its particle count.");
+    const positions = (data: Float32Array): Vector3[] =>
+      Array.from({ length: particles.amount }, (_, i) => new Vector3().fromArray(data, i * stride));
+    const allRadii = a
+      .flatMap(({ data }) => positions(data).map((p) => p.length()))
+      .sort((a, b) => a - b);
+    const rMax = allRadii[Math.ceil(allRadii.length * 0.95) - 1] ?? 0;
+    if (rMax <= 0 || !allRadii.every(Number.isFinite))
+      throw new Error("Burst probe has no positive finite A-window radius.");
+    const previous = positions(before.data);
+    const emitterMove = new Vector3(after.x - before.x, 0, 0);
+    const moves = positions(after.data).map((p, i) =>
+      p.add(emitterMove).distanceTo(previous[i] ?? new Vector3(Number.NaN, 0, 0)),
+    );
+    metrics.amount = particles.amount;
+    metrics.meanAgeFractionFirstFrame =
+      positions(first.data).reduce(
+        (sum, p) => sum + Math.min(1, Math.max(0, p.length() / rMax)),
+        0,
+      ) / particles.amount;
+    metrics.maxOneFrameMoveAtSecondBurst = Math.max(...moves);
+    if (
+      ![metrics.meanAgeFractionFirstFrame, metrics.maxOneFrameMoveAtSecondBurst].every(
+        Number.isFinite,
+      )
+    )
+      throw new Error("Burst probe readback contains nonfinite positions.");
+    metrics.secondBurstHiddenAtFrame = hiddenAtFrame;
+    metrics.firstBurstVisibleFrames = visibleFrames;
+    metrics.samples = samples.length;
+    metrics.done = true;
+  };
+}
+
 type GalleryParticleOptions = ConstructorParameters<typeof GPUParticles3D>[0];
 type GalleryEffectFactory = (seed: number) => readonly GalleryParticleOptions[];
 type GalleryEffectDefinition = {
@@ -367,6 +494,7 @@ export class Gallery extends Scene<GalleryState> {
     ctx.add(camera);
     ctx.scene.background = new Color(0x050a16);
     createGalleryStage(ctx);
+    const updateBurstProbe = createBurstProbe(ctx);
 
     const effectEntities = new Map<string, GalleryEffectEntity>();
     for (const [index, id] of EFFECT_IDS.entries()) {
@@ -438,6 +566,7 @@ export class Gallery extends Scene<GalleryState> {
     }
 
     return (frameCtx) => {
+      updateBurstProbe();
       if (frameCtx.input.justPressed("nextPage")) {
         const page = (frameCtx.state.getState().page + 1) % PAGE_COUNT;
         mountPage(page);
