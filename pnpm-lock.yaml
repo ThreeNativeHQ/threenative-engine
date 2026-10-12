@@ -1394,10 +1394,10 @@ importers:
         version: 0.185.3
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b)
+        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
       typescript:
         specifier: 'catalog:'
-        version: 5.9.3
+        version: '@typescript/typescript6@6.0.2'
 
   packages/ueformat:
     dependencies:

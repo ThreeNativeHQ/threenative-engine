@@ -90,8 +90,8 @@ Cherry-picks of F `c1ef353ca 2007efe12 3d3695197 3b29482a6 504709d17 726df7f5c d
 - [ ] Develop's gates stay green. Partial 2026-10-11: `pnpm lint` exit 0; the five specs pass (158 tests); `pnpm typecheck` has no `packages/core` errors, only unbuilt-workspace imports (`procedural-animals`, `terrain`); `generated-shooter-input.spec.ts` (3 tests) fails identically without these commits, so it is pre-existing; `pnpm test` and `pnpm test:playtest` not rerun on this branch. proof: `pnpm typecheck && pnpm lint && pnpm test` and `pnpm test:playtest`
 
 #### Phase v1.2a: API catalog and reference oracle (slice 2a)
-**Status:** NOT STARTED
-- [ ] `packages/three-native` catalog, generators, fixtures and goldens land (goldens marked `linguist-generated`). proof: `run-reference.ts --check --no-renders`, catalog specs, `pnpm typecheck`
+**Status:** DONE 2026-10-11 (browser backend, Perry and the native runner excluded; see notes)
+- [x] `packages/three-native` catalog, generators, fixtures and goldens land (goldens marked `linguist-generated`). proof: `run-reference.ts --check --no-renders`, catalog specs, `pnpm typecheck` Result: `run-reference.ts --check --no-renders` exit 0 (96 fixtures, 2047 observations, 108 renders skipped); 7 specs / 65 tests green; package typecheck exit 0; `pnpm lint` 0 errors; frozen-lockfile install passes. Excluded: `src/browser-*` and addons (slice 7), `run-native`/`fixture-native` (slice 2b), `native-stubs.spec` and `catalog-capabilities.spec` (need PRD-526/531 text and a `native` capabilities section). Renders (108) not run here.
 
 #### Phase v1.2b: CPU engine core (slice 2b)
 **Status:** NOT STARTED
