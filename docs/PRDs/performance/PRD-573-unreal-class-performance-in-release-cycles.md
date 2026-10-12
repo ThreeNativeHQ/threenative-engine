@@ -1,0 +1,248 @@
+# PRD-573 — Unreal-class performance, in release cycles
+
+**Status:** PARTIAL — slice 0 (charter) landed in this PR; every other slice and cycle is open.
+**Priority:** P1 — the owned engine is not on develop, so no game can opt in and no cycle KPI can be measured (v1 slices 0b–8 open).
+**Complexity:** 9 (HIGH) — 10+ files across core, the engine, the web host and CI (+3), new engine modules (+2), threads and shared frame data (+2), native and Wasm release artifacts (+2); risk override: none
+**Owner:** João
+**Depends on:** None. Engine code is extracted from `origin/feat/native-engine` (F), cited at `68f4b1f7b`.
+**Estimate:** v1 2–3 wk; v2 3 wk; v3 5–6 wk; v4 4–6 wk; v5 4+ wk.
+
+**Update rule:** this is one PRD with one PR (#493). Each slice or cycle step lands as a commit on
+that PR and ticks its box, with the result, in the same commit.
+
+## Goal and route
+
+**Goal:** frame cost and load time of an established engine: first Godot desktop as the measurable
+bar, then Unreal-class. **Route:** one owned C++ engine behind the three.js API, native on Dawn or
+wgpu and Wasm (`tn-native-engine-web`) on the web; game code on V8 or browser JS. A game opts in
+with `engine: "native"`; the legacy host stays the default until the engine is at least 2x and
+stable; then native becomes the default, and the legacy engine is deleted after one clean release
+([PRD-535](../native-engine/PRD-535-n21-the-js-engine-is-deleted.md)).
+
+Midway web when the work opened (native Wasm page against three.js): CPU busy per frame 2.32x
+faster, frame p50 0.24x, first frame 0.48–0.62x, `enter` 0.96–1.09x, `ready` 0.73–1.05x. Engine
+shares: animation about 13%, cull and project about 11%, `Renderer::render` 21%, transforms about 8%.
+
+## Decisions
+
+- 2026-10-11 (owner): Perry is parked. PRD-579, PRD-581, PRD-582 and `tools/native-typescript`
+  stay on F and do not land.
+- 2026-10-12 (owner): charter amendment accepted (`docs/architecture/CHARTER.md`,
+  `NATIVE-ENGINE-DECISION.md`): opt-in engine, legacy default, default switch at 2x or better and
+  stable, then legacy deleted.
+- 2026-10-12 (owner): develop's velocity design wins. The engine's `provision` hook is optional, and
+  F's velocity patch is not applied.
+- 2026-10-12 (owner): one PRD and one PR for the whole epic. Phases are release cycles; v1 phases
+  are the slices. This waives the 3-phase limit (R5) for this file.
+- Deferred, filed again only on scorecard evidence: transform compose skip (if
+  `updateMatrixWorldSelf` is above 2% of the frame), projection reuse and SIMD world matrices (if
+  transforms, cull and project stay at 10% or more), GPU-written indirect arguments (if CPU cull and
+  project stay at 8% or more after v3), the `GPUSceneBVH` subpath move (breaking, its own change).
+
+## Rules for every box
+
+- **Same-run ratio.** Subject and control in one command and one load window, load average
+  recorded. A counter gate (calls, compiles, evaluations) beats a timing gate under host load.
+- **Tails.** A timing box reports p95, p99 and the hitch count beside p50; a worse p99 fails it.
+- **Visual judge** for any change that can alter a pixel, per the root `AGENTS.md`.
+- **Red-green** for every behaviour change. A public binding change regenerates
+  `packages/three-native/api/` in the same commit.
+- **Unreal licence.** Read the design, write new code, copy nothing. `UE 5.8.3: <path>` cites a
+  design reference (UE `release` `396c9f059`).
+
+**Stability gate S** (closes every cycle): `pnpm test:templates` and `pnpm test:playtest` green on
+web; `pnpm native:verify:desktop` green; an 1800+ frame soak with no crash and no RSS growth; while
+the engine is opt-in, default (`engine: "legacy"`) build output byte-identical to the base commit.
+From v2 S adds the Android emulator journey; from v3, a ThreadSanitizer engine run.
+
+```mermaid
+flowchart LR
+  s0[0 charter] --> s2b[2b CPU core]
+  s0b[0b CI scope] --> s2b
+  s2a[2a catalog] --> s2b --> s3[3 shader + TNPK] --> s5[5 renderer + world]
+  s4[4 host services] --> s5 --> s6[6 V8 player] --> s7[7 web opt-in] --> s8[8 templates]
+  s6 --> v2[v2 stop wasted work] --> v3[v3 jobs + GPU scene] --> v4[v4 cull and load]
+  v3 --> v5[v5 web worker]
+```
+
+## Cycle v1 — land the engine
+
+Each slice is one commit series cut from `origin/develop` with Perry files dropped. Engine targets
+stay `EXCLUDE_FROM_ALL` and `engine: "legacy"` stays the default, so every slice is inert or opt-in.
+
+#### Phase v1.0: Charter decision (slice 0)
+**Status:** DONE
+- [x] Charter, `CHARTER-HISTORY.md`, root `AGENTS.md` rule 5 and `NATIVE-ENGINE-DECISION.md` admit one opt-in engine. proof: commit `fc261bbd1` (from PR #494, green: check:docs, `sync:agents --check`, doc-link, primary-docs and ci specs)
+
+#### Phase v1.0b: CI scope for engine paths (slice 0b)
+**Status:** NOT STARTED
+- [ ] `scripts/ci-change-scope.mjs` classifies `src/engine/**`, `src/adapters/**`, `tests/native-engine/**` and `cmake/NativeEngine*` as `native-engine`, and `ci.yml` runs one `native-engine` job with its own ccache key and a cached emsdk. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` and the ci-change-scope spec, plus a `pnpm ci:local --affected` plan dump
+
+#### Phase v1.1: Core fixes that need no engine (slice 1)
+**Status:** NOT STARTED
+Cherry-picks of F `c1ef353ca 2007efe12 3d3695197 3b29482a6 504709d17 726df7f5c dad980723 9400d5872`, each with its spec.
+- [ ] `posedBounds` reads skinned-mesh envelope invariants once per mesh, not per vertex. proof: `pnpm exec vitest run packages/core/__tests__/posed-bounds.spec.ts`
+- [ ] Foot-plant stride reads each bone's world matrix once per frame and still reads a moved ancestor above the rig. proof: `pnpm exec vitest run packages/core/__tests__/animation.spec.ts`
+- [ ] An unsized canvas does not re-scale its drawing buffer when the buffer echoes back. proof: `pnpm exec vitest run packages/core/__tests__/game-pixel-ratio.spec.ts`
+- [ ] A rejecting scene `load()` or `start()` is reported by name instead of stalling the launch. proof: `pnpm exec vitest run packages/core/__tests__/game.spec.ts`
+- [ ] A counted step spends the pending freeze settle. proof: `pnpm exec vitest run packages/core/__tests__/loop.spec.ts`
+- [ ] Develop's gates stay green. proof: `pnpm typecheck && pnpm lint && pnpm test` and `pnpm test:playtest`
+
+#### Phase v1.2a: API catalog and reference oracle (slice 2a)
+**Status:** NOT STARTED
+- [ ] `packages/three-native` catalog, generators, fixtures and goldens land (goldens marked `linguist-generated`). proof: `run-reference.ts --check --no-renders`, catalog specs, `pnpm typecheck`
+
+#### Phase v1.2b: CPU engine core (slice 2b)
+**Status:** NOT STARTED
+- [ ] `engine/{foundation,scene,animation}`, `tn_abi.h` and `cmake/NativeEngineCore.cmake` land behind `TN_ENGINE_CORE_ONLY`, fixtures regenerated against develop. proof: `ctest -L native-engine` native, under ASan/UBSan, and as Wasm under node
+- [ ] The legacy build and suite are unchanged. proof: `pnpm native:build` and `pnpm --filter @threenative/runtime-native test`
+
+#### Phase v1.3: Shader IR, WGSL and TNPK (slice 3)
+**Status:** NOT STARTED
+- [ ] `engine/{shader,assets}` and `packages/assets/src/native-package.ts` land; `assets.nativePackage` defaults off. proof: ctest shader, package and fuzz; Tint and naga validation; assets and config specs
+
+#### Phase v1.4: Shared host services (slice 4)
+**Status:** NOT STARTED
+- [ ] `src/webgpu/context.cpp` and the `presentation.cpp` split land as a behaviour-neutral refactor, with `ui-layer-host-contract` fixed (`pointer.cpp` `g_resetKeyboard`). proof: `pnpm native:verify:desktop`, the `native-platforms` matrix, Android emulator parity, `pnpm test:playtest`
+
+#### Phase v1.5: Renderer and world (slice 5, 2–3 commits)
+**Status:** NOT STARTED
+- [ ] `engine/renderer` (resources, presentation, device loss, draw core, materials, graph) and `engine/world` land, with stale fixtures regenerated (`world_tiles`, `gpu_scene`, `render_vsm`, `target_graph`, `update_scaling`). proof: ctest on a software GPU, render fixtures against browser frames, the device-loss test
+
+#### Phase v1.6: V8 player and core seams (slice 6)
+**Status:** NOT STARTED
+- [ ] `adapters/v8`, `engine/player`, the playtest `--executable` lane and the optional core seams (`render/chain.ts` `provision`, `world-cells.ts`, `profiling/Spans.ts`, the cull engine root from `ebcac38ce`) land, with the 8 develop-drift symbols bound. proof: `native_engine_v8_*` ctest, `native-engine-world-*` playtests, the minimal template on the V8 player
+
+#### Phase v1.7: Web Wasm engine, opt-in (slice 7)
+**Status:** NOT STARTED
+- [ ] `engine/wasm/web_host.cpp`, `three-native/src/browser-*`, `engine: "native"` and `profile:wasm-page` land with `engine: "legacy"` the default. proof: web-engine spec, `wasm-engine-boot` playtests, `pnpm test:templates` unchanged, a web A/B with `--control`
+
+#### Phase v1.8: Template post-node imports (slice 8)
+**Status:** NOT STARTED
+- [ ] The 14 templates import post nodes only from the tier that enables them, pixel-neutral. proof: `pnpm test:templates`, template-quality spec, a visual judge on BEFORE/AFTER captures
+
+#### Phase v1.9: The scorecard
+**Status:** NOT STARTED
+Today: `perf` has p95, p99 and hitches but no memory or host load; `bench:scoreboard` has medians only; the R-ladder runs only on legacy and Godot arms; `run-godot.ts` has no workloads, so Godot ratios exist only on the ladders; `profile:wasm-page --load` means load phases, not host load; no soak command exists.
+- [ ] `bench:engines` and `bench:scoreboard` rows carry p95, p99, the hitch count, draw calls and pipeline compiles, and fail closed on a missing counter. proof: a red-green case in the engine-load-test report spec
+- [ ] `perf`, `bench:engines` and `profile:wasm-page` carry `hostLoad` and the core count, and mark absolutes `invalid-absolute` above half the core count. proof: a red-green case per spec with a stubbed load
+- [ ] Memory: `perf --executable` peak RSS (`VmHWM`), `perf --logcat` PSS (`dumpsys meminfo <pid>`), `profile:wasm-page --memory` (Wasm memory, JS heap). proof: red-green cases in `perf.spec.ts` and the profile-wasm-page spec, then one desktop run and one emulator run
+- [ ] A soak command runs 1800+ frames and fails on a crash or RSS growth. proof: a red-green case with a growing stubbed RSS series, then one run on the legacy desktop host
+- [ ] The R-ladder runs on the `native-v8` arm, and the scorecard carries a `godotRatio` column from `bench:scoreboard` R2, R3 and R5 (no Godot row for a workload Godot cannot run). proof: a red-green case in the engine-load-test spec, then the baseline rows in `docs/verification/runtime-perf-state.md`
+
+#### Phase v1.10: v1 KPI and gate
+**Status:** NOT STARTED
+- [ ] Native steady frame CPU is at least 2x legacy on R5 desktop. proof: `pnpm bench:engines` with `tn-desktop` and `native-v8` on R5 in one invocation, tails and load recorded
+- [ ] Native steady frame CPU is at least 2x three.js on Midway web, frame p50 no worse. proof: `pnpm profile:wasm-page -- --url <native> --control <three.js> --cpu-work`
+- [ ] Stability gate S is green, and native becomes the default. proof: the S commands on the default switch commit
+
+## Cycle v2 — stop wasted work
+
+#### Phase v2.1: No lock per bone or binding
+**Status:** PARTIAL
+- [x] `PropertyBinding` applies without a lock; a binding to a released node is a safe no-op. proof: red-green `native_engine_animation_binding_released` (F `e9d4f1f4c`; `ctest -L native-engine` 290/292, reds only the known `render_vsm`, `update_scaling`); lock self share 3.9% to under 0.7%. Lands with slice 2b.
+- [ ] `Skeleton::bone` (`animation/skinning/skeleton.h:74`, a lock per bone, twice per bone in the palette build `skeleton.cpp:116-119`) uses a bind-time pointer with an expiry check. proof: red-green `native_engine_skinned_crowd_cpu`, then a `profile:wasm-page` A/B with the `__shared_weak_count::lock` share under 0.7%
+
+#### Phase v2.2: One view block per frame
+**Status:** NOT STARTED
+Today `renderer.cpp:2095-2101` writes view, projection and a double `normalMatrix(view * model)` into every draw's block.
+- [ ] View, projection and camera constants go into one per-view block; a camera-only change writes no draw block. proof: a red-green bytes-per-frame counter in `native_engine_batched_vs_unbatched`
+- [ ] Frames match the per-draw path and pass the visual judge; R5 and Midway frame CPU fall with p99 no worse. proof: the same ctest within tolerance, a judge subagent, `bench:engines` and `profile:wasm-page` A/Bs
+
+#### Phase v2.3: Hidden rigs update less, with Unreal's safeguards
+**Status:** NOT STARTED
+`AnimationMixer::update` (`mixer.cpp:724`) evaluates every rig every frame; games call it directly, so the rule lives there. Reference: URO (`SkinnedMeshComponent.cpp:283-370`, 1.0 s window `:1864`, `ShiftBucket` stagger, forced update `:6066-6100`).
+- [ ] Main and shadow passes stamp the drawn frame on the rig root. proof: red-green `native_engine_animation_mixer`
+- [ ] Hidden rigs evaluate about 1 frame in 4, staggered (at most ceil(N/4) per frame), with clip time and `finished` equal to rate 1. proof: a red-green counter in `native_engine_skinned_crowd_cpu`
+- [ ] A rig entering view evaluates at once, a rig with a non-bone child on a bone evaluates every frame, a skip never exceeds the window (start 8 frames or 0.25 s), and `AnimationMixer.updateRate` overrides it. proof: red-green `native_engine_animation_mixer`
+- [ ] Conformance cases opt out with rate 1, and the rate passes the visual judge with p99 no worse. proof: `pnpm parity` unchanged; a judge subagent on rigs entering view
+
+#### Phase v2.4: No draw waits on a compile
+**Status:** PARTIAL
+Today `getAsync` and a 2-worker pool exist (`pipeline_cache.cpp:191`, `.h:118`), wired through `compileAsync` on native and web; a missed key still compiles in-frame, and the engine reports no synchronous creates.
+- [x] On native desktop, `compileAsync` builds missing pipelines on the pool and the next `render` compiles none. proof: red-green `native_engine_renderer_pipeline_compile_async` on Dawn Null, 2026-10-09 (F). Lands with slice 5.
+- [ ] On the web, `compileAsync` uses the async entry and the next frame compiles none. proof: `native_engine_wasm_browser_backend` run in a browser (the stubbed case passes)
+- [ ] The engine enqueues keys for added content itself, skips a draw whose pipeline is pending, and reports synchronous creates and skipped draws per frame. proof: red-green `native_engine_renderer_pipeline_cache` (synchronous creates after first present = 0) and a `perf.spec.ts` case
+- [ ] Skipped draws pass the visual judge, and Midway `ready` beats its base. proof: a judge subagent; `profile:wasm-page --load --gpu-calls` ratio below 1.0
+
+#### Phase v2.5: Pipelines ship and persist
+**Status:** NOT STARTED
+- [ ] The player writes the used key list, the cook step ships it, and a launch with it compiles nothing in-frame. proof: red-green `native_engine_renderer_pipeline_cache`, then `perf --executable` first-frame synchronous creates 0
+- [ ] Dawn's blob cache, hooked in `src/webgpu/context.cpp` and keyed by adapter, driver and generator version, serves a second launch. proof: a fake blob store counting loads and stores, then two launches on a real adapter
+- [ ] The engine persists pipelines on wgpu-native through `WGPUPipelineCache`, reusing PRD-368's identity, and a corrupt cache still launches. proof: PRD-368's corrupt-cache contract, then two emulator launches of the Android engine player
+
+#### Phase v2.6: Android engine player (slice 9), v2 KPI and gate
+**Status:** NOT STARTED
+- [ ] `android/engine-player` and the `native_engine` dispatch input land. proof: android-native-engine spec and an emulator run
+- [ ] Native R5 frame p50 is at least Godot desktop's. proof: `pnpm bench:scoreboard` `godotRatio` at least 1.0 with tails
+- [ ] Android first-launch pipeline compiles fall against the v1 build. proof: emulator `perf --logcat` compile counter
+- [ ] Stability gate S with the emulator journey is green. proof: the S commands
+
+## Cycle v3 — every core and the GPU scene
+
+Six hazards block a render thread: non-atomic `nextObjectId`/`hierarchyRevision` and file-scope scratch (`object3d.cpp:67-77`); a snapshot `shared_ptr` release running a destructor off-thread; renderer state set from JS (`v8_main.cpp:228,575`); `renderReflections` mutating live materials (`render_database.cpp:1405`); single-thread loop glue with no frame-in-flight limit (`run.cpp`); the Android surface-released handshake (`run.cpp:260,525`). A render thread alone caps at 0.68–0.79x of the frame, so jobs come first.
+
+#### Phase v3.1: Jobs on every core
+**Status:** NOT STARTED
+- [ ] The frame report splits `renderMs` into prepare and `Renderer::render`, and `perf` prints stages that sum to frame CPU within 5%. proof: a red-green `perf.spec.ts` case
+- [ ] Mixers and independent transform subtrees run as jobs, bit-equal to one thread, events dispatched after the join, hazard 1 fixed. proof: `native_engine_skinned_crowd_cpu` and `native_engine_static_transform` with 1 and N workers, under ThreadSanitizer
+
+#### Phase v3.2: Recorded passes survive camera motion
+**Status:** NOT STARTED
+Today the bundle key (`renderer.cpp:2702-2722`) moves with depth order (`sortDraws`), plan-order uniform offsets and visible-count batch stores (`render_database.cpp:893`); shadow, normal and velocity passes encode directly (`renderer.cpp:2693,2784,2813`).
+- [ ] Rebuilds by cause and direct encodes by pass are counted, and shadow, normal and velocity passes replay bundles pixel-identically. proof: red-green `native_engine_batched_vs_unbatched`; `profile:wasm-page --gpu-calls` ratio below 1.0
+- [ ] State-first opaque order and a persistent uniform slot per record: a camera turn on an opaque scene rebuilds nothing, and the judge passes. proof: red-green `native_engine_batched_vs_unbatched`; a judge subagent; `--gpu-time` ratio at most 1.0
+- [ ] Capacity-stable stores and `drawIndexedIndirect` (`firstInstance` 0): a culling turn rebuilds nothing, `info.render` matches, and CPU falls on Chrome. proof: `native_engine_camera_cull`; `profile:wasm-page --cpu-work` ratio below 1.0
+
+#### Phase v3.3: An opt-in render thread
+**Status:** NOT STARTED
+- [ ] `Renderer::render` reads only a `FrameSnapshot` (owned bones, morphs, instance data; deferred release on the game thread), and JS renderer settings pass through a command queue. proof: `native_engine_batched_vs_unbatched` pixel-identical, a bytes-copied counter
+- [ ] `--render-thread` (frame-in-flight limit 1) matches one thread to the pixel and runs 600 frames with resize, device loss and surface loss free of races. proof: the ctest in both modes and under ThreadSanitizer
+
+#### Phase v3.4: v3 KPI and gate
+**Status:** NOT STARTED
+- [ ] Native R5 beats Godot desktop by the owner's margin. proof: `pnpm bench:scoreboard` `godotRatio`
+- [ ] Frame CPU scales sub-linearly with object count. proof: `bench:engines --arms native-v8 --objects <sweep>`, jobs against 1 worker
+- [ ] Stability gate S with ThreadSanitizer is green. proof: the S commands
+
+## Cycle v4 — cull and load
+
+#### Phase v4.1: File the v4 work from the candidates
+**Status:** NOT STARTED
+TN today: HZB declined ([PRD-489](../done/PRD-489-gpu-scene-occlusion-culling.md), would-cull 0.013); distance cull, merged chunks and dynamic resolution in core only ([PRD-564](../unreal-source-borrowing/PRD-564-the-resolution-scale-changes-without-reallocating-a-target.md)); mesh LOD and streaming in core plus engine CPU decisions (`renderer/lod/model_lod`, `world/cells`, `world/tiles`); terrain LOD in [PRD-566](../unreal-source-borrowing/PRD-566-terrain-lod-morphs-on-the-gpu-and-picks-by-screen-error.md); async loading via `package_loads`; texture streaming only proposed ([PRD-VQ-10](./PRD-VQ-10-texture-mip-residency.md)); no frame allocator, target pool or async compute.
+- [ ] Engine distance culling, LOD gaps, streaming and a frame allocator are measured on the scorecard and the ones that earn it get boxes here. proof: v1.9 scorecard rows for each candidate
+- [ ] Bigger scenes hold the frame rate, and `ready` and first frame improve; S is green. proof: scorecard A/B against the v3 build, then the S commands
+
+## Cycle v5 — web worker
+
+The game side reads the DOM directly (23 core files read `document.` or `window.`; audio, pointer lock, gamepads, `localStorage`). A worker keeps frame p50; only Wasm threads can cut it.
+
+#### Phase v5.1: Worker mode
+**Status:** NOT STARTED
+- [ ] Core reaches the DOM only through one host-capability layer, and the starter plays through a loopback proxy. proof: a red-green core spec that scans `packages/core/src`; `pnpm test:templates` on the starter
+- [ ] Behind a flag and without COOP/COEP, the game and engine run in a worker on an `OffscreenCanvas`, the harness captures it, and main-thread busy falls below 0.5x with p50 no worse. proof: `pnpm test:templates` with the flag; `profile:wasm-page` worker against main-thread; a judge subagent
+
+#### Phase v5.2: Wasm threads, v5 KPI and gate
+**Status:** NOT STARTED
+- [ ] A `TN_WEB_THREADS` build costs at most 2% on one thread, reports `threads: off` without isolation, and the job pool cuts frame CPU with it. proof: `profile:wasm-page` A/Bs; `native_engine_wasm_browser_backend` for both isolation states
+- [ ] Stability gate S is green on web with and without isolation headers. proof: the S commands
+
+## Blocked on
+
+- The v3 margin over Godot is an owner number, set before v3 starts.
+- Whether engine-only commits may skip `native-platforms` is an owner call (slice 0b).
+- `AnimationMixer.updateRate` adds a non-three property; João confirms the name before v2.3.
+- The worker HUD contract (state out once per frame) needs João's confirmation before v5.1.
+- Android timing rows need the Pixel 8 attached; the emulator holds counter and memory rows.
+- Safari rows need a macOS machine.
+
+## Owned elsewhere
+
+PRD-553 on F (JS-to-Wasm calls, upload bytes);
+[PRD-519](../native-engine/PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) (batching, LOD, GPU-scene kernel);
+[PRD-570](../unreal-source-borrowing/PRD-570-a-character-costs-what-the-camera-sees-of-it.md) (core animation rate);
+[PRD-327](./critical/PRD-327-first-use-pipeline-compilation-leaves-the-main-loop.md),
+[PRD-540](./critical/PRD-540-the-compile-walk-leaves-the-main-thread.md) and
+[PRD-368](../assets/PRD-368-compiled-pipelines-survive-a-relaunch.md) (legacy pipelines);
+[PRD-222](./critical/PRD-222-performance-targets-per-platform.md) (frame-rate floors);
+[PRD-533](../native-engine/PRD-533-n20-platform-qualification-performance-default-promotion.md) (default promotion).
