@@ -125,6 +125,24 @@
         "entity": "world",
         "gte": 1,
         "allowTrivial": "The GPU color attachment held red transmitted-shadow texels before the caster was evicted."
+      },
+      {
+        "component": "shadowPartialAdmissionMatrixMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Receiver matrix after the partial redraw must equal the forced whole-map receiver matrix."
+      },
+      {
+        "component": "shadowPartialMixedMatrixMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Receiver matrix after the partial redraw must equal the forced whole-map receiver matrix."
+      },
+      {
+        "component": "shadowPartialEvictionMatrixMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Receiver matrix after the partial redraw must equal the forced whole-map receiver matrix."
       }
     ]
   }

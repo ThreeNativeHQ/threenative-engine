@@ -1484,6 +1484,39 @@ describe("VirtualShadowNode invalidation coalescing", () => {
     expect(camera.view.enabled).toBe(false);
   });
 
+  it("should preserve the full receiver matrix during GPU-key partial redraws", () => {
+    vi.stubGlobal("__tnShadowGpuKeys", 1);
+    try {
+      const { camera, light, scene } = world();
+      const keys = vi.fn();
+      Object.assign(scene, { tnShadowGpuKeys: keys });
+      const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+      camera.position.set(0, 5, 0);
+      let time = settleOnClock(node, camera);
+      const shadow = (node.levelLights[0] as DirectionalLight).shadow;
+      const full = shadow.matrix.clone();
+      keys.mockClear();
+      const sampled: number[][] = [];
+      (node.levelNodes[0] as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow =
+        () => {
+          expect(shadow.camera.view?.enabled).toBe(true);
+          sampled.push([...shadow.matrix.elements]);
+        };
+      node.invalidateRegion(CELL, true);
+      for (let step = 0; step < 40 && sampled.length === 0; step += 1) {
+        time += 0.1;
+        node.updateBefore(frameFor(camera, time));
+      }
+      expect(keys).toHaveBeenCalled();
+      expect(sampled).toEqual([full.elements]);
+      expect(shadow.camera.view?.enabled).toBe(false);
+      expect(shadow.matrix.elements).toEqual(full.elements);
+      node.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("should draw an eviction and an admission as two rectangles", () => {
     const elsewhere = { min: { x: -60, y: 0, z: -60 }, max: { x: -44, y: 8, z: -44 } };
     const { aimed } = aimedRenders((asked) => {

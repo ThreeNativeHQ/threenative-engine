@@ -1,5 +1,5 @@
 import type { VirtualShadowNode } from "@threenative/core";
-import { BoxGeometry, Mesh, type Scene } from "three";
+import { BoxGeometry, type DirectionalLight, Mesh, type Scene } from "three";
 import { vec4 } from "three/tsl";
 import { MeshStandardNodeMaterial, type RenderTarget, type Renderer } from "three/webgpu";
 
@@ -228,6 +228,9 @@ export class ShadowPartialProbe {
     // The levels redraw on the frame after the change; wait until they have, then until idle.
     while (this.#shadow.stats.rendersTotal === start.rendersTotal) await this.#frames(1);
     await this.#settled();
+    const partialMatrix = (
+      this.#shadow.levelLights[0] as DirectionalLight
+    ).shadow.matrix.elements.slice();
     const partial = await this.#finestDepth();
     const partialColor = await this.#finestColor();
     const now = this.#shadow.stats;
@@ -249,6 +252,10 @@ export class ShadowPartialProbe {
     while (this.#shadow.stats.rendersTotal === mark) await this.#frames(1);
     await this.#settled();
     const whole = await this.#finestDepth();
+    this.results[`shadowPartial${name}MatrixMismatch`] = differing(
+      partialMatrix,
+      (this.#shadow.levelLights[0] as DirectionalLight).shadow.matrix.elements,
+    );
     this.results[`shadowPartial${name}Mismatch`] = differing(partial, whole);
     this.results[`shadowPartial${name}ColorMismatch`] = differing(
       partialColor,

@@ -60,7 +60,7 @@ Layer: mechanism only, `packages/core/src/render/`. Nothing a game sets changes,
 
 ## Acceptance Criteria
 
-- [x] AC-1: a partial redraw produces the same depth texels as a full redraw of the same scene. proof: `pnpm --filter abyss-framework playtest:shadow-partial`. Result: Intel gen-12lp WebGPU run 7, 17/17 assertions passed; admission/mixed/eviction changed 2638/5263/2625 texels, all depth/color mismatch counts and restored mismatch 0, 2625 transmitted texels. The probe compares every texel, inside and outside the dirty rectangle; report: `~/Downloads/prd538/shadow-partial-scissor-run7-report.json`.
+- [x] AC-1: a partial redraw produces the same depth texels as a full redraw of the same scene. proof: `pnpm --filter abyss-framework playtest:shadow-partial`. Result: Intel gen-12lp run 7 passed 17/17 assertions; final RTX 2080 WebGPU run 8 with `tnShadowGpuKeys=1` passed 20/20, including three receiver-matrix comparisons. Admission/mixed/eviction changed 2638/5263/2625 texels; all ten depth/color/matrix/restored mismatch counts were 0, with 2625 transmitted texels. Every texel is compared inside and outside the rectangle. Final report: `~/Downloads/prd538/shadow-partial-keys-run8-report.json`.
 - [ ] AC-2: Machinefall `map-walk` route-window shadow GPU p95 falls against this PRD's base. proof: 3 interleaved live-clock pairs, `TN_FRAME_BUDGET` `gpuShadowP95`, 1500-frame windows.
 - [ ] AC-3: no visual loss. proof: a blind A/B against the base on the 4 `map-walk` and 4 `map-views` poses, plus the `world-capture` pop series.
 
@@ -74,21 +74,23 @@ Layer: mechanism only, `packages/core/src/render/`. Nothing a game sets changes,
 - [x] Stats report pages redrawn per render next to `rendersTotal`, split into admission and eviction redraws. proof: spec reading `stats`. Result: `pagesDirty`, `pagesRedrawn`, `byAdmission`, `byEviction` on `IVirtualShadowStats` and the marker line; admission/eviction and marker round-trip specs green. The render is still the whole level, so `pagesRedrawn` equals the level's page count until Phase 2.
 
 #### Phase 2: Partial redraw
-**Status:** IN PROGRESS
+**Status:** DONE — browser proof complete; native proof is listed under Blocked on.
 **Files:** `packages/core/src/render/virtual-shadow*.ts`, `packages/core/src/world-cells.ts`, core specs, and the abyss-framework shadow-partial probe/scenario.
 
-2026-10-12: admission/eviction plumbing passed 343 focused tests across 18 files. Receiver initialization, transmitted-color reset, nested `NodeFrame` restoration and matching-scissor coverage passed 207 shadow tests; core/example typechecks and focused Biome checks passed. Final Intel GPU evidence is recorded in AC-1. Native parity remains unverified: pinned NVIDIA 615.71.09 acquires the RTX 2080, but the pre-final bundle aborts after 300 frames with `wgpuQueueSubmit: Buffer with '' label is still mapped`; a final-bundle/conformance retry is still required.
+2026-10-12: admission/eviction plumbing passed 343 focused tests across 18 files. Receiver initialization, transmitted-color reset, nested `NodeFrame` restoration and matching-scissor coverage passed 207 shadow tests. A fresh audit found GPU-key dispatch rebaking the narrowed receiver matrix; guarding that rebake reproduced red, then passed 144 focused specs plus root/example typechecks, Biome and budgets. Final RTX GPU evidence is recorded in AC-1. Commit `1177b1813` passed pre-push agents/docs/lint/drift checks. Native proof was retried with the scissor/frame-restoration bundle and pinned NVIDIA libraries; its remaining failure is recorded under Blocked on.
 
-- [x] An admission-only redraw renders only the dirty rectangle (`setViewOffset` after `updateMatrices`, matching viewport and scissor, no clear, casters culled to the sub-frustum); eviction rectangles reset depth/color before redrawing, and region-less invalidations keep the full redraw. proof: AC-1's depth-equivalence scenario with admission, mixed and eviction cases. Result: GPU run 7 passed all 17 assertions; 207 shadow specs passed, including scissor and shared-frame restoration on throws.
-- [ ] The native host draws the same rectangle. proof: a native conformance case or a `--target desktop` playtest of a streamed world (repository rule: a web-only path is unfinished).
+- [x] An admission-only redraw renders only the dirty rectangle (`setViewOffset` after `updateMatrices`, matching viewport and scissor, no clear, casters culled to the sub-frustum); eviction rectangles reset depth/color before redrawing, and region-less invalidations keep the full redraw. proof: AC-1's depth-equivalence scenario with admission, mixed and eviction cases. Result: final RTX GPU run 8 passed all 20 assertions with GPU keys enabled; 207 shadow specs and the later 144-spec matrix-regression run passed, including scissor/shared-frame restoration on throws.
 
 #### Phase 3: Measure on Machinefall
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** none in the engine
+
+2026-10-12: exact base `934de90ad` was built from a matching 143-file core snapshot. First baseline walk/view captures were produced under `~/Downloads/prd538/captures/`; repeated baseline capture and pop-series diagnosis are running. Earlier candidate captures are explicitly obsolete because they predate the final render-state fixes. Interleaved timing, admission/eviction counts and a fresh visual judge are not yet verified.
 
 - [ ] AC-2's timing pairs. proof: `TN_FRAME_BUDGET` windows, recorded here.
 - [ ] AC-3's blind A/B and pop series. proof: sheets on the PR.
 
 ## Blocked on
 
+- Phase 2 native rectangle equivalence remains unverified. The final bundle (SHA256 `b6458dbe2c7968a3bf33fc2de892d02d3b29003dca3e3fbc0d1cb4f20073afe6`, including frame/scissor restoration) acquires the RTX 2080 with `~/.cache/nvidia-615.71.09/env.sh`, then aborts in `wgpuQueueSubmit`: `Buffer with '' label is still mapped`. The unlimited-file-size direct retry exited 1/SIGABRT; log `/tmp/prd538-native-final-unlimited.log`. Native playtest attempts evaluated no partial assertions. Conformance 33/64 each rendered 300 frames and exited 0, but test configuration/CPU projection rather than GPU rectangle equivalence; their runner also lacked browser references. Unblock by repairing native readback/unmap behavior and rerunning the same `--target desktop` shadow-partial scenario or adding a GPU depth-equivalence conformance case. No native parity is claimed.
 - Final timing needs the desktop RTX 2080 at low load. On 2026-10-07/08 it sat at load 6–33 because of other sessions.

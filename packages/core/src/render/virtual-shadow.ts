@@ -2124,7 +2124,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (keys === undefined) return;
     const shadow = level.shadow;
     // quality-allow: the light's own shadow owns this update, and the stock node calls it too.
-    shadow.updateMatrices(level.light as unknown as DirectionalLight);
+    // #aim already baked the full receiver matrix before narrowing a partial camera.
+    if (level.pass === undefined) shadow.updateMatrices(level.light as unknown as DirectionalLight);
     _shadowProjection.multiplyMatrices(
       shadow.camera.projectionMatrix,
       shadow.camera.matrixWorldInverse,
