@@ -1685,6 +1685,20 @@ test.each([
   expect(result.pass).toBe(entry.pass);
 });
 
+test("runner keeps the pre-scenario baseline for final-value component assertions", () => {
+  const snapshot = (present: boolean, tick: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick },
+    components: present ? { tower: { shots: 2 } } : {},
+  });
+  const result = buildReport(
+    CONFIG, scenario({ components: [{ entity: "tower", component: "shots", gte: 1 }] }),
+    snapshot(false, 0), snapshot(true, 2), [], [], undefined, {}, true, undefined,
+    [{ label: "placed", signals: [], snapshot: snapshot(true, 1) }],
+  );
+  expect(result.observations?.components?.tower?.shots?.before).toBeUndefined();
+  expect(result.pass).toBe(true);
+});
+
 test("runner preserves physics debug series for contact and settled assertions", () => {
   const currentScenario = scenario({
     contacts: [{ atStep: "contact", entity: "player", kind: "contact", minCount: 1, with: "solid-body" }],

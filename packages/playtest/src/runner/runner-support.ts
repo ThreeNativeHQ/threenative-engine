@@ -228,7 +228,18 @@ export function buildReport(
   const afterPosition = entityPosition(movementAfterSnapshot, entity);
   const beforeRotation = entityRotation(movementBeforeSnapshot, entity);
   const afterRotation = entityRotation(movementAfterSnapshot, entity);
-  const components = componentObservations(beforeSnapshot, afterSnapshot, labeledSamples.map(({ snapshot }) => snapshot));
+  const components = componentObservations(beforeSnapshot, afterSnapshot);
+  for (const assertion of scenario.assert?.components ?? []) {
+    const observed = components?.[assertion.entity]?.[assertion.component];
+    if (assertion.changed === undefined || observed === undefined || observed.before !== undefined) continue;
+    // Only temporal assertions use a spawned entity's measured lifetime; final-value guards keep the run baseline.
+    const baseline = labeledSamples.find(({ snapshot }) =>
+      snapshot.components?.[assertion.entity]?.[assertion.component] !== undefined
+      && (snapshot.clock.tick ?? snapshot.clock.timeMs ?? Number.POSITIVE_INFINITY)
+        < (afterSnapshot?.clock.tick ?? afterSnapshot?.clock.timeMs ?? Number.NEGATIVE_INFINITY))
+      ?.snapshot.components?.[assertion.entity]?.[assertion.component];
+    if (baseline !== undefined) observed.before = baseline;
+  }
   const movementDelta = beforePosition === undefined || afterPosition === undefined
     ? undefined
     : subtract(afterPosition, beforePosition);
