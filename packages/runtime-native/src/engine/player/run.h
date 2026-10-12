@@ -86,9 +86,12 @@ struct Game {
 };
 
 /** The same CPU split for every host: game callbacks, database render, CPU excluding present.
- * bridgeCalls counts the shared C ABI entries since the previous rendered frame. */
+ * bridgeCalls counts the shared C ABI entries since the previous rendered frame. presentCpuMs is the thread
+ * CPU inside the surface present call (the legacy host reports the same field around wgpuSurfacePresent);
+ * cpuFrameCpuMs excludes it. */
 json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double frameMs, uint64_t bridgeCalls,
-                        uint64_t tick = 0, uint64_t updates = 0, double gameCpuMs = -1, double cpuFrameCpuMs = -1);
+                        uint64_t tick = 0, uint64_t updates = 0, double gameCpuMs = -1, double cpuFrameCpuMs = -1,
+                        double presentCpuMs = -1);
 
 /** CPU time of the calling thread in ms (CLOCK_THREAD_CPUTIME_ID), or -1 off Linux/Android. One clock for
  * every arm: unlike wall time it does not count the thread's time off-CPU under host load. frameTiming

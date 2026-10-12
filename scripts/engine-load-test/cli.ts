@@ -530,6 +530,8 @@ async function runPairCommand(spec: string): Promise<void> {
       1,
     );
   const rounds = positiveInteger(flag("rounds"), 3);
+  // Both arms print the per-frame thread CPU and present CPU, so the KPI's instrument is the same in each.
+  process.env.TN_BENCH_ENGINE_METRICS ??= "1";
   const options = ladderOptions();
   const tag =
     flag("tag") ?? `${options.modes.replaceAll(",", "-")}-${options.ladder.replaceAll(",", "-")}`;

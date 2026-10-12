@@ -4,6 +4,11 @@
 // hands a game's scene to the renderer). Not part of the C ABI: nothing outside this repository's
 // own executables may include it.
 
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "engine/abi/binding.h"
 #include "threenative/abi/tn_abi.h"
 
@@ -60,6 +65,14 @@ tn_status_t invokeMethod(tn_handle_t handle, MethodSlot& slot, const std::string
 
 /** Calls that crossed the C ABI (construct, invoke, get, set) since the process started. */
 uint64_t crossings();
+
+/**
+ * The per-name histogram of those crossings (the property, method or class name), for finding which names a
+ * frame spends them on. Enabling clears it; while on, its counts sum to the `crossings()` delta since then.
+ * Off by default: a crossing then costs one relaxed load more.
+ */
+void crossingHistogramEnable(bool on);
+std::vector<std::pair<std::string, uint64_t>> crossingHistogram();  // most crossed first
 
 }  // namespace tn::abi
 

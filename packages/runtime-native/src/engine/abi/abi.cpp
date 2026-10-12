@@ -11,10 +11,12 @@
 #include "engine/shader/wgsl.h"
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <atomic>
 #include <deque>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <string_view>
 #include <unordered_map>
@@ -508,6 +510,25 @@ tn_status_t guarded(tn_diagnostic_t* diagnostic, Call call) {
 
 std::atomic<uint64_t> gCrossings{0};  // relaxed: a meter, not a synchronisation point
 
+// The per-name histogram (PRD-573 v1.11 step 0): off, a crossing costs one relaxed load beyond the counter.
+struct NameHash {
+    using is_transparent = void;
+    size_t operator()(std::string_view name) const { return std::hash<std::string_view>{}(name); }
+};
+std::atomic<bool> gHistogramOn{false};
+std::mutex gHistogramLock;
+std::unordered_map<std::string, uint64_t, NameHash, std::equal_to<>> gHistogram;
+
+void crossed(std::string_view name) {
+    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    if (!gHistogramOn.load(std::memory_order_relaxed)) return;
+    const std::lock_guard<std::mutex> hold(gHistogramLock);
+    const auto found = gHistogram.find(name);
+    if (found != gHistogram.end()) ++found->second;
+    else gHistogram.emplace(std::string(name), 1);
+}
+std::string_view nameOf(const char* name) { return name ? std::string_view(name) : std::string_view("(null)"); }
+
 tn_status_t selfObject(tn_handle_t self, tn_context*& context, tn::binding::Object*& object, tn_diagnostic_t* diagnostic) {
     context = contextFor(self.context);
     object = context ? context->object(self) : nullptr;
@@ -547,7 +568,7 @@ tn_handle_t shareObject(tn_context_t* context, std::string cls, std::shared_ptr<
 }
 
 tn_status_t setNumber(tn_handle_t handle, SetterSlot& slot, const std::string& name, double value, tn_diagnostic_t* diagnostic) {
-    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    crossed(name);
     tn_context* context = nullptr;
     tn::binding::Object* object = nullptr;
     if (const tn_status_t s = selfObject(handle, context, object, diagnostic); s != TN_OK) return s;
@@ -593,7 +614,7 @@ engine::shader::graph::Node tslNode(tn_context_t* context, uint64_t id) {
 }
 
 tn_status_t getValue(tn_handle_t self, GetterSlot& slot, const std::string& name, tn_value_t* result, tn_diagnostic_t* diagnostic) {
-    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    crossed(name);
     tn_context* context = nullptr;
     tn::binding::Object* object = nullptr;
     if (!result) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or result");
@@ -618,7 +639,7 @@ tn_status_t getValue(tn_handle_t self, GetterSlot& slot, const std::string& name
 
 tn_status_t invokeMethod(tn_handle_t self, MethodSlot& slot, const std::string& name, const tn_value_t* args, uint32_t count,
                          tn_value_t* result, tn_diagnostic_t* diagnostic) {
-    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    crossed(name);
     tn_context* context = nullptr;
     tn::binding::Object* object = nullptr;
     if (!result || (count && !args)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: method, args or result");
@@ -640,13 +661,28 @@ tn_status_t invokeMethod(tn_handle_t self, MethodSlot& slot, const std::string& 
 
 uint64_t crossings() { return gCrossings.load(std::memory_order_relaxed); }
 
+void crossingHistogramEnable(bool on) {
+    const std::lock_guard<std::mutex> hold(gHistogramLock);
+    if (on) gHistogram.clear();
+    gHistogramOn.store(on, std::memory_order_relaxed);
+}
+
+std::vector<std::pair<std::string, uint64_t>> crossingHistogram() {
+    const std::lock_guard<std::mutex> hold(gHistogramLock);
+    std::vector<std::pair<std::string, uint64_t>> counts(gHistogram.begin(), gHistogram.end());
+    std::sort(counts.begin(), counts.end(), [](const auto& a, const auto& b) {
+        return a.second != b.second ? a.second > b.second : a.first < b.first;
+    });
+    return counts;
+}
+
 }  // namespace tn::abi
 
 extern "C" {
 
 tn_status_t tn_construct(tn_context_t* context, const char* class_name, const tn_value_t* args, uint32_t arg_count,
                          tn_handle_t* out_object, tn_diagnostic_t* diagnostic) {
-    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    crossed(nameOf(class_name));
     if (!context || !class_name || !out_object || (arg_count && !args)) {
         return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: context, class, args or out_object");
     }
@@ -667,7 +703,7 @@ tn_status_t tn_construct(tn_context_t* context, const char* class_name, const tn
 
 tn_status_t tn_invoke(tn_handle_t self, const char* method, const tn_value_t* args, uint32_t arg_count, tn_value_t* result,
                       tn_diagnostic_t* diagnostic) {
-    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    crossed(nameOf(method));
     tn_context* context = nullptr;
     tn::binding::Object* object = nullptr;
     if (!method || !result || (arg_count && !args)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: method, args or result");
@@ -687,7 +723,7 @@ tn_status_t tn_invoke(tn_handle_t self, const char* method, const tn_value_t* ar
 }
 
 tn_status_t tn_get(tn_handle_t self, const char* path, tn_value_t* result, tn_diagnostic_t* diagnostic) {
-    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    crossed(nameOf(path));
     tn_context* context = nullptr;
     tn::binding::Object* object = nullptr;
     if (!path || !result) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or result");
@@ -708,7 +744,7 @@ tn_status_t tn_get(tn_handle_t self, const char* path, tn_value_t* result, tn_di
 }
 
 tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, tn_diagnostic_t* diagnostic) {
-    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    crossed(nameOf(path));
     tn_context* context = nullptr;
     tn::binding::Object* object = nullptr;
     if (!path || !value) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or value");
@@ -733,7 +769,7 @@ tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, 
 
 tn_status_t tn_set_callback(tn_handle_t self, const char* name, tn_object_callback_t invoke, void* callback_context,
                             tn_release_t release, tn_diagnostic_t* diagnostic) {
-    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    crossed(nameOf(name));
     tn_context* context = nullptr;
     tn::binding::Object* object = nullptr;
     if (!name) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: name");

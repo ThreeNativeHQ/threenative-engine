@@ -3710,12 +3710,33 @@ describe("the runner's host CPU reading", () => {
     const recorder = recorderFor([1000, 1480]);
     recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":9}');
     recorder.line("window R2@4096");
-    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":2.5}');
-    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":3.5}');
+    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":2.5,"presentCpuMs":30,"bridgeCalls":900}');
+    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":3.5,"presentCpuMs":31}');
     recorder.line("rung R2@4096 frame p50 3.00 | step p50 1.00");
     expect(recorder.windows).toEqual([
-      { begin: 1000, cpuMs: 480, key: "R2@4096", threadFrameMs: [2.5, 3.5] },
+      {
+        begin: 1000,
+        cpuMs: 480,
+        crossingsPerFrame: [900],
+        key: "R2@4096",
+        presentFrameMs: [30, 31],
+        threadFrameMs: [2.5, 3.5],
+      },
     ]);
+  });
+
+  it("carries the present call's CPU and the crossings onto the rung, for either arm's lines", () => {
+    const recorder = recorderFor([0, 40]);
+    recorder.line("window R2@4096");
+    for (const present of [30.0004, 32])
+      recorder.line(`TN_PLAYER_FRAME:{"cpuFrameCpuMs":4,"presentCpuMs":${present}}`);
+    recorder.line("rung R2@4096 frame p50 1 | step");
+    const page = { rungs: [{ frameMs: series(1, 2), mode: "R2", objectCount: 4096 }] };
+    const stamped = withHostCpu(page, recorder, true) as {
+      rungs: Array<{ bridgeCalls?: number[]; presentCpuMs: number[]; threadCpuMs: number[] }>;
+    };
+    expect(stamped.rungs[0]).toMatchObject({ presentCpuMs: [30, 32], threadCpuMs: [4, 4] });
+    expect(stamped.rungs[0]?.bridgeCalls).toBeUndefined();
   });
 
   it("adds cpuMsPerFrame to the matching rung and refuses windows that do not pair with rungs", () => {
@@ -3732,6 +3753,23 @@ describe("the runner's host CPU reading", () => {
       /TN_BENCH_CPU_WINDOWS/u,
     );
     expect(() => withHostCpu(page, recorder, true)).toThrow(/player frame samples/u);
+  });
+
+  it("round-trips the present series, summarizes it and rejects an empty one", () => {
+    const withPresent = report({
+      rungs: [
+        rung({ bridgeCalls: [10, 20, 30], presentCpuMs: [30, 32, 31], threadCpuMs: [1, 2, 3] }),
+      ],
+    });
+    const parsed = parseRunReport(JSON.parse(JSON.stringify(withPresent)));
+    expect(summarize(parsed)[0]).toMatchObject({
+      crossingsP50: 20,
+      presentCpuP50: 31,
+      threadCpuP50: 2,
+    });
+    expect(() =>
+      parseRunReport({ ...withPresent, rungs: [{ ...withPresent.rungs[0], presentCpuMs: [] }] }),
+    ).toThrow(/presentCpuMs/u);
   });
 
   it("fails when the host process cannot be found at a marker", () => {
@@ -3818,6 +3856,8 @@ describe("the same-run pair guard", () => {
       labels,
     );
     expect(markdown).toContain("9.0!");
+    expect(markdown).toContain("present cpu p50");
+    expect(markdown).toContain("ratio thread cpu");
   });
 
   it("refuses a ratio when the engine drew fewer lights or no bloom, and names what differs", () => {

@@ -127,8 +127,15 @@ export interface IRunReportRung {
   positionHash: string;
   repeat: number;
   stepMs?: number[];
-  /** The engine player's main-thread CPU ms per drawn frame (CLOCK_THREAD_CPUTIME_ID), when the run asked for it. */
+  /**
+   * Main-thread CPU ms per drawn frame without the surface present call (CLOCK_THREAD_CPUTIME_ID), when the run
+   * asked for it. Both desktop arms print it.
+   */
   threadCpuMs?: number[];
+  /** Thread CPU ms inside the surface present call per frame; the same instrument and clock in both desktop arms. */
+  presentCpuMs?: number[];
+  /** C ABI crossings per frame; only the owned engine player counts them. */
+  bridgeCalls?: number[];
   triangles: number;
   visibleObjects: number;
 }
@@ -205,8 +212,12 @@ export interface IRungSummary {
   pipelineCompiles?: number;
   repeats: number;
   sampleCount: number;
-  /** Median across repeats of the player's main-thread CPU p50 per frame; undefined when no repeat carried it. */
+  /** Median across repeats of the main-thread CPU p50 per frame without the present call; undefined when no repeat carried it. */
   threadCpuP50?: number;
+  /** Median across repeats of the thread CPU p50 spent inside the present call; undefined when no repeat carried it. */
+  presentCpuP50?: number;
+  /** Median across repeats of the crossings p50 per frame; undefined unless the arm counts them. */
+  crossingsP50?: number;
   triangles: number;
   visibleObjects: number;
 }
@@ -648,6 +659,8 @@ export function parseRunReport(value: unknown): IRunReport {
         "TN_BENCH_BAD_SHAPE",
         `${path}.threadCpuMs must be a non-empty array of non-negative numbers when present`,
       );
+    const presentCpuMs = optionalSeries(rung, "presentCpuMs", path);
+    const bridgeCalls = optionalSeries(rung, "bridgeCalls", path);
     const initialPlacementSha256 = rung.initialPlacementSha256;
     if (
       initialPlacementSha256 !== undefined &&
@@ -760,6 +773,8 @@ export function parseRunReport(value: unknown): IRunReport {
       ...parseCompletedWork(rung, path, frameMs.length),
       ...(cpuMsPerFrame === undefined ? {} : { cpuMsPerFrame }),
       ...(threadCpuMs === undefined ? {} : { threadCpuMs: threadCpuMs as number[] }),
+      ...(presentCpuMs === undefined ? {} : { presentCpuMs }),
+      ...(bridgeCalls === undefined ? {} : { bridgeCalls }),
       drawCalls: requireNumber(rung, "drawCalls", path),
       ...(pipelineCompiles === undefined ? {} : { pipelineCompiles }),
       frameMs: frameMs as number[],
@@ -883,6 +898,26 @@ export function scoreboardRows(report: IRunReport): IRungSummary[] {
   return summarize(report);
 }
 
+/** A per-frame series a rung may carry: a non-empty array of non-negative numbers, or absent. */
+function optionalSeries(
+  rung: Record<string, unknown>,
+  field: string,
+  path: string,
+): number[] | undefined {
+  const series = rung[field];
+  if (series === undefined) return undefined;
+  if (
+    !Array.isArray(series) ||
+    series.length === 0 ||
+    series.some((sample) => typeof sample !== "number" || !Number.isFinite(sample) || sample < 0)
+  )
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.${field} must be a non-empty array of non-negative numbers when present`,
+    );
+  return series as number[];
+}
+
 export function summarize(report: IRunReport): IRungSummary[] {
   const groups = new Map<string, IRunReportRung[]>();
   for (const rung of report.rungs) {
@@ -897,12 +932,26 @@ export function summarize(report: IRunReport): IRungSummary[] {
     const compiles = bucket.map((rung) => rung.pipelineCompiles);
     const cpu = bucket.map((rung) => rung.cpuMsPerFrame);
     const thread = bucket.map((rung) => rung.threadCpuMs);
+    const present = bucket.map((rung) => rung.presentCpuMs);
+    const crossings = bucket.map((rung) => rung.bridgeCalls);
     summaries.push({
       ...(cpu.every((value) => value !== undefined)
         ? { cpuMsPerFrame: median(cpu as number[]) }
         : {}),
       ...(thread.every((series) => series !== undefined)
         ? { threadCpuP50: median((thread as number[][]).map((series) => percentile(series, 0.5))) }
+        : {}),
+      ...(present.every((series) => series !== undefined)
+        ? {
+            presentCpuP50: median((present as number[][]).map((series) => percentile(series, 0.5))),
+          }
+        : {}),
+      ...(crossings.every((series) => series !== undefined)
+        ? {
+            crossingsP50: median(
+              (crossings as number[][]).map((series) => percentile(series, 0.5)),
+            ),
+          }
         : {}),
       drawCalls: median(bucket.map((rung) => rung.drawCalls)),
       hitches: median(bucket.map((rung) => countHitches(rung.frameMs))),

@@ -14,8 +14,15 @@ export interface IWindowCpu {
   key: string;
   /** CPU milliseconds the process spent between the two markers; undefined while the window is open. */
   cpuMs?: number;
-  /** The engine player's per-frame main-thread CPU (`cpuFrameCpuMs`), when the run asked for TN_PLAYER_METRICS. */
+  /**
+   * Per-frame main-thread CPU without the swap call (`cpuFrameCpuMs`), when the run asked for TN_PLAYER_METRICS.
+   * Both arms print it, on CLOCK_THREAD_CPUTIME_ID.
+   */
   threadFrameMs: number[];
+  /** The thread CPU inside the surface present call (`presentCpuMs`), same lines, same clock, both arms. */
+  presentFrameMs: number[];
+  /** C ABI crossings per frame (`bridgeCalls`); only the engine player counts them. */
+  crossingsPerFrame: number[];
 }
 
 /** Fields 14 and 15 (utime, stime) and the process group (field 5) of a /proc/<pid>/stat line. */
@@ -97,7 +104,13 @@ export class HostCpuRecorder {
           "TN_BENCH_CPU_UNREADABLE",
           "the host process was not found at a window marker",
         );
-      this.open = { begin, key: opened[1] as string, threadFrameMs: [] };
+      this.open = {
+        begin,
+        crossingsPerFrame: [],
+        key: opened[1] as string,
+        presentFrameMs: [],
+        threadFrameMs: [],
+      };
       return;
     }
     const closed = /(?:^|\s)rung (\S+@\d+) frame /u.exec(text);
@@ -120,9 +133,17 @@ export class HostCpuRecorder {
     }
     const frame = /TN_PLAYER_FRAME:(\{.*\})/u.exec(text);
     if (frame !== null && this.open !== undefined) {
-      const sample = JSON.parse(frame[1] as string) as { cpuFrameCpuMs?: unknown };
+      const sample = JSON.parse(frame[1] as string) as {
+        bridgeCalls?: unknown;
+        cpuFrameCpuMs?: unknown;
+        presentCpuMs?: unknown;
+      };
       if (typeof sample.cpuFrameCpuMs === "number")
         this.open.threadFrameMs.push(sample.cpuFrameCpuMs);
+      if (typeof sample.presentCpuMs === "number")
+        this.open.presentFrameMs.push(sample.presentCpuMs);
+      if (typeof sample.bridgeCalls === "number")
+        this.open.crossingsPerFrame.push(sample.bridgeCalls);
     }
   }
 }
@@ -173,6 +194,12 @@ export function withHostCpu(
         ...(thread.length === 0
           ? {}
           : { threadCpuMs: thread.map((value) => Math.round(value * 1000) / 1000) }),
+        ...(window.presentFrameMs.length === 0
+          ? {}
+          : {
+              presentCpuMs: window.presentFrameMs.map((value) => Math.round(value * 1000) / 1000),
+            }),
+        ...(window.crossingsPerFrame.length === 0 ? {} : { bridgeCalls: window.crossingsPerFrame }),
       };
     }),
   };

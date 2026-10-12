@@ -120,7 +120,7 @@ export interface IPairRow {
   key: string;
   left: IRungSummary;
   /** left over right: above 1 means the right arm is cheaper. */
-  ratio: { cpu?: number; p50: number; p95: number; p99: number };
+  ratio: { cpu?: number; p50: number; p95: number; p99: number; threadCpu?: number };
   right: IRungSummary;
 }
 
@@ -141,6 +141,8 @@ function pooled(runs: readonly IRunReport[]): Map<string, IRungSummary> {
     const first = list[0] as IRungSummary;
     const cpu = list.map((item) => item.cpuMsPerFrame);
     const thread = list.map((item) => item.threadCpuP50);
+    const present = list.map((item) => item.presentCpuP50);
+    const crossings = list.map((item) => item.crossingsP50);
     const compiles = list.map((item) => item.pipelineCompiles);
     out.set(key, {
       ...first,
@@ -158,6 +160,12 @@ function pooled(runs: readonly IRunReport[]): Map<string, IRungSummary> {
       repeats: list.reduce((sum, item) => sum + item.repeats, 0),
       ...(thread.every((value) => value !== undefined)
         ? { threadCpuP50: medianOf(thread as number[]) }
+        : {}),
+      ...(present.every((value) => value !== undefined)
+        ? { presentCpuP50: medianOf(present as number[]) }
+        : {}),
+      ...(crossings.every((value) => value !== undefined)
+        ? { crossingsP50: medianOf(crossings as number[]) }
         : {}),
       triangles: medianOf(list.map((item) => item.triangles)),
     });
@@ -191,6 +199,10 @@ export function pairRows(
           p50: l.p50 / r.p50,
           p95: l.p95 / r.p95,
           p99: l.p99 / r.p99,
+          // The v1.11 KPI: thread CPU without the present call, the same instrument in both arms.
+          ...(l.threadCpuP50 !== undefined && r.threadCpuP50 !== undefined && r.threadCpuP50 > 0
+            ? { threadCpu: l.threadCpuP50 / r.threadCpuP50 }
+            : {}),
         },
         right: r,
       };
@@ -221,8 +233,8 @@ export function renderPairMarkdown(
     `- host load (1 min, \`!\` = invalid-absolute above half the cores): ${labels[0]} ${load(left)}; ${labels[1]} ${load(right)}`,
     `- ratio is ${labels[0]} over ${labels[1]}: above 1 means ${labels[1]} is cheaper`,
     "",
-    "| rung | arm | p50 ms | p95 ms | p99 ms | hitches | draws | compiles | cpu ms/frame | thread cpu p50 | ratio p50 | ratio cpu |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| rung | arm | p50 ms | p95 ms | p99 ms | hitches | draws | compiles | cpu ms/frame (inclusive) | thread cpu p50 (no present) | present cpu p50 | crossings p50 | ratio p50 | ratio cpu | ratio thread cpu |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   for (const row of rows) {
     for (const [label, summary] of [
@@ -230,7 +242,7 @@ export function renderPairMarkdown(
       [labels[1], row.right],
     ] as const)
       lines.push(
-        `| ${row.key} | ${label} | ${f(summary.p50)} | ${f(summary.p95)} | ${f(summary.p99)} | ${summary.hitches} | ${summary.drawCalls} | ${summary.pipelineCompiles ?? "n/a"} | ${f(summary.cpuMsPerFrame)} | ${f(summary.threadCpuP50)} | ${label === labels[1] ? f(row.ratio.p50) : ""} | ${label === labels[1] ? f(row.ratio.cpu) : ""} |`,
+        `| ${row.key} | ${label} | ${f(summary.p50)} | ${f(summary.p95)} | ${f(summary.p99)} | ${summary.hitches} | ${summary.drawCalls} | ${summary.pipelineCompiles ?? "n/a"} | ${f(summary.cpuMsPerFrame)} | ${f(summary.threadCpuP50)} | ${f(summary.presentCpuP50)} | ${summary.crossingsP50 ?? "n/a"} | ${label === labels[1] ? f(row.ratio.p50) : ""} | ${label === labels[1] ? f(row.ratio.cpu) : ""} | ${label === labels[1] ? f(row.ratio.threadCpu) : ""} |`,
       );
   }
   return lines.join("\n");

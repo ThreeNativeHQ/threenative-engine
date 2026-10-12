@@ -1304,9 +1304,33 @@ void materialSlots() {
     if (got != "true,true") std::fprintf(stderr, "material slots: %s\n", got.c_str());
 }
 
+// PRD-573 v1.11 step 0: the per-name histogram counts every crossing by the name it crossed with, and its sum
+// is the crossings() delta. Off, it counts nothing.
+void crossingHistogram() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    // The wrapper is made before the counted loop; each run() is its own context.
+    const char* work = "const p = new Mesh().position; let sink = 0; for (let i = 0; i < 100; ++i) { p.x = i; p.y = i; sink += p.z; p.set(1, 2, 3); } 0";
+    tn::abi::crossingHistogramEnable(false);
+    run(rt, adapter, work);
+    CHECK(tn::abi::crossingHistogram().empty());  // off: nothing recorded
+    tn::abi::crossingHistogramEnable(true);
+    const uint64_t before = tn::abi::crossings();
+    run(rt, adapter, work);
+    const uint64_t crossed = tn::abi::crossings() - before;
+    uint64_t sum = 0;
+    std::map<std::string, uint64_t> byName;
+    for (const auto& [name, count] : tn::abi::crossingHistogram()) { sum += count; byName[name] = count; }
+    tn::abi::crossingHistogramEnable(false);
+    CHECK(crossed > 0 && sum == crossed);
+    CHECK(byName["x"] == 100 && byName["y"] == 100 && byName["z"] == 100 && byName["set"] == 100);
+    if (sum != crossed) std::fprintf(stderr, "histogram sum %llu, crossings %llu\n", (unsigned long long)sum, (unsigned long long)crossed);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp},{"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram},{"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},

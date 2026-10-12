@@ -266,6 +266,14 @@ export function desktopTimeoutMs(options: IDesktopLadder): number {
   return Math.max(600_000, cells * options.frames * 500);
 }
 
+/**
+ * Per-frame thread CPU is opt-in (`TN_BENCH_ENGINE_METRICS=1`, which `--pair` sets): each host then prints one
+ * `TN_PLAYER_FRAME` line per frame with `cpuFrameCpuMs` and `presentCpuMs`, on the same clock in both arms.
+ */
+export function metricsEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return env.TN_BENCH_ENGINE_METRICS === "1" ? { TN_PLAYER_METRICS: "1" } : {};
+}
+
 export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): Promise<unknown> {
   const example = path.join(repoRoot, "examples/engine-load-test");
   const fox = resolveFoxAsset(repoRoot, options.modes);
@@ -321,6 +329,7 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
   // The runner reads the host's CPU at the page's window markers (`host-cpu.ts`).
   let source: ReturnType<typeof procCpuSource> | undefined;
   const recorder = new HostCpuRecorder({ read: () => source?.read() });
+  const metrics = metricsEnvironment(process.env);
   const capture = {
     cwd: repoRoot,
     onLine: (line: string) => recorder.line(line),
@@ -336,18 +345,24 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
     return withHostCpu(
       await runCapturing(binary, hostArgs, {
         ...capture,
-        env: { ...x11Environment(), DISPLAY: display },
+        env: { ...x11Environment(), ...metrics, DISPLAY: display },
       }),
       recorder,
+      metrics.TN_PLAYER_METRICS === "1",
     );
   }
   // `scripts/xvfb.sh`, never `xvfb-run`: the wrapper's cleanup kill can replace the run's own status.
   return withHostCpu(
     await runCapturing("sh", [path.join(repoRoot, "scripts/xvfb.sh"), binary, ...hostArgs], {
       ...capture,
-      env: { ...x11Environment(), TN_XVFB_SCREEN: `${options.width}x${options.height + 180}x24` },
+      env: {
+        ...x11Environment(),
+        ...metrics,
+        TN_XVFB_SCREEN: `${options.width}x${options.height + 180}x24`,
+      },
     }),
     recorder,
+    metrics.TN_PLAYER_METRICS === "1",
   );
 }
 

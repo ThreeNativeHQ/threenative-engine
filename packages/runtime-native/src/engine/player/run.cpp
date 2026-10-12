@@ -362,7 +362,7 @@ double threadCpuMs() {
 }
 
 json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double frameMs, uint64_t bridgeCalls,
-                        uint64_t tick, uint64_t updates, double gameCpuMs, double cpuFrameCpuMs) {
+                        uint64_t tick, uint64_t updates, double gameCpuMs, double cpuFrameCpuMs, double presentCpuMs) {
     using V = json::Value;
     std::vector<std::pair<std::string, V>> members{
         {"gameJsMs", V::makeNumber(gameMs)}, {"renderMs", V::makeNumber(renderMs)},
@@ -371,6 +371,7 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
         {"tick", V::makeNumber(double(tick))}, {"updates", V::makeNumber(double(updates))}};
     if (gameCpuMs >= 0) members.emplace_back("gameJsCpuMs", V::makeNumber(gameCpuMs));
     if (cpuFrameCpuMs >= 0) members.emplace_back("cpuFrameCpuMs", V::makeNumber(cpuFrameCpuMs));
+    if (presentCpuMs >= 0) members.emplace_back("presentCpuMs", V::makeNumber(presentCpuMs));
     return V::makeObject(std::move(members));
 }
 
@@ -547,6 +548,7 @@ int Session::initialize() {
         const double cpuFrameBegin = metrics ? threadCpuMs() : -1;
         if (spans) gameSpan(kHostFrameSpan, 0);
         double presentMs = 0, presentCpuMs = 0, gameCpuMs = -1;
+        bool presentTimed = false;
         std::optional<json::Value> frameSpans;
         const auto elapsed = [](auto begin) {
             return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
@@ -597,12 +599,14 @@ int Session::initialize() {
             // The page's newest frame goes over the world in the same blit (PRD-554).
             if (game.uiDraw) game.uiDraw(*renderer);
             const auto presentBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-            const double presentCpuBegin = metrics ? threadCpuMs() : -1;
             if (presenter->begin(target)) {
                 // The window carries the very frame the render database just built.
                 renderer->blitTo(context->getQueue(), target.color,
                                 static_cast<WGPUTextureFormat>(context->getPreferredFormat()));
+                // The swap call alone, on the clock the legacy host uses around wgpuSurfacePresent.
+                const double presentCpuBegin = metrics ? threadCpuMs() : -1;
                 presenter->present();
+                if (presentCpuBegin >= 0) { presentCpuMs = threadCpuMs() - presentCpuBegin; presentTimed = true; }
 #if defined(__ANDROID__)
                 mystral::webgpu::paceToPresentationCap();
 #endif
@@ -619,7 +623,6 @@ int Session::initialize() {
                 firstFrame = false;
             }
             if (metrics) presentMs = elapsed(presentBegin);
-            if (presentCpuBegin >= 0) presentCpuMs = threadCpuMs() - presentCpuBegin;
         }
 
         // A screenshot answer is a real frame of this loop, so it is read back from the renderer the
@@ -654,7 +657,8 @@ int Session::initialize() {
             auto sample = frameTiming(gameMs, renderMs, duration - presentMs, duration,
                                       (game.bridgeCalls ? game.bridgeCalls() : 0) - previousCrossings,
                                       clock.tick(), updateTicks, gameCpuMs,
-                                      cpuFrameBegin >= 0 ? updateCpuMs + threadCpuMs() - cpuFrameBegin - presentCpuMs : -1);
+                                      cpuFrameBegin >= 0 ? updateCpuMs + threadCpuMs() - cpuFrameBegin - presentCpuMs : -1,
+                                      presentTimed ? presentCpuMs : -1);
             if (spans) {
                 auto members = sample.members();
                 members.emplace_back("gameSpans", std::move(*frameSpans));

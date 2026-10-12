@@ -13,6 +13,7 @@ import { BenchError } from "./report.js";
 import {
   type IDesktopLadder,
   desktopTimeoutMs,
+  metricsEnvironment,
   resolveFoxAsset,
   runCapturing,
   x11Environment,
@@ -69,9 +70,8 @@ export function engineEnvironment(
     TN_PLAYER_HEIGHT: String(options.height),
     TN_PLAYER_VSYNC: env.TN_BENCH_VSYNC === "on" ? "1" : "0",
     TN_PLAYER_WIDTH: String(options.width),
-    // Per-frame thread CPU is opt-in: the player prints one line per frame, which the legacy arm has no
-    // counterpart for, so the paired timing runs leave it off.
-    ...(env.TN_BENCH_ENGINE_METRICS === "1" ? { TN_PLAYER_METRICS: "1" } : {}),
+    // Per-frame thread CPU is opt-in, and a pair turns it on for both arms: each prints the same line per frame.
+    ...metricsEnvironment(env),
   };
 }
 

@@ -28,7 +28,7 @@ add_executable(tn-native-engine-v8-test EXCLUDE_FROM_ALL tests/native-engine/v8_
 target_link_libraries(tn-native-engine-v8-test PRIVATE tn_adapter_v8)
 target_include_directories(tn-native-engine-v8-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
 tn_adapter_v8_executable(tn-native-engine-v8-test)
-foreach(case handles fast_paths structure_stamp unsupported gc_release runtime_churn crossing_bench scene raycaster_lod catalog_coverage callback_cycle wrapper_lifetime tsl_api uniform_value node_materials skeletal attribute_arrays geometry_lifecycle material_slots)
+foreach(case handles fast_paths structure_stamp crossing_histogram unsupported gc_release runtime_churn crossing_bench scene raycaster_lod catalog_coverage callback_cycle wrapper_lifetime tsl_api uniform_value node_materials skeletal attribute_arrays geometry_lifecycle material_slots)
     add_test(NAME native_engine_v8_${case} COMMAND tn-native-engine-v8-test ${case})
     set_tests_properties(native_engine_v8_${case} PROPERTIES LABELS "native-engine")
 endforeach()
@@ -232,6 +232,12 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-batched-mesh.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_batched_mesh PROPERTIES LABELS "native-engine")
+    # PRD-573 v1.11: a settled R2 frame of 1,024 cubes costs at most 3.5 crossings per cube. It is red until
+    # steps 3 and 4 land, so it carries `tn-known-red` and not `native-engine`; move it to `native-engine` then.
+    add_test(NAME native_engine_player_crossing_budget
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-crossing-budget.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_crossing_budget PROPERTIES LABELS "tn-known-red" TIMEOUT 300)
 endif()
 
 # One target builds every V8 artifact: `cmake --build <dir> --target tn-native-engine-v8`.

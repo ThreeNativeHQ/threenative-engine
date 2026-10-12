@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <mutex>
@@ -663,6 +664,22 @@ void setOffscreenTexture(BindingsState* state, void* texture, void* textureView)
  * is idempotent within a frame (see the canvas `getCurrentTexture` binding) and the present
  * happens here, so both passes land on one image and that image is presented once.
  */
+// TN_PLAYER_METRICS=1: one `TN_PLAYER_FRAME` line per presented frame, the engine player's own marker and
+// fields, so the pair bench reads both arms alike. presentCpuMs is the thread CPU inside the swap call;
+// cpuFrameCpuMs is the thread CPU since the previous line, without it. Same clock (CLOCK_THREAD_CPUTIME_ID)
+// as the player. The first frame has no previous line and prints nothing.
+static void emitPlayerFrameMetrics(uint64_t presentCpuNs, uint64_t presentEndCpuNs) {
+    static const bool enabled = std::getenv("TN_PLAYER_METRICS") != nullptr;
+    static uint64_t previousCpuNs = 0;
+    if (!enabled) return;
+    if (previousCpuNs != 0 && presentEndCpuNs >= previousCpuNs + presentCpuNs) {
+        const double frameCpuMs = double(presentEndCpuNs - previousCpuNs - presentCpuNs) / 1e6;
+        std::cout << "TN_PLAYER_FRAME:{\"cpuFrameCpuMs\":" << frameCpuMs << ",\"presentCpuMs\":" << double(presentCpuNs) / 1e6
+                  << "}" << std::endl;
+    }
+    previousCpuNs = readRenderThreadCpuNs();
+}
+
 void presentPendingSurface(BindingsState* state) {
     // Exactly one acquire and one release per frame, whether or not anything was presented.
     // Returning early without releasing would strand the acquired swapchain image, and because
@@ -690,6 +707,7 @@ void presentPendingSurface(BindingsState* state) {
         state->profiling.lastPresentNs = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - presentStart)
                 .count());
+        emitPlayerFrameMetrics(state->profiling.lastPresentThreadCpuNs, presentThreadCpuEnd);
 #if TN_ANDROID_JS_PROFILE
         state->profiling.presentReportedSinceLastPresent = false;
 #endif

@@ -1205,5 +1205,18 @@ int main(int argc, char** argv) {
         if (bound > 0) { scene = game.scene(); camera = game.camera(); }
         return bound;
     };
-    return player::run(configured);
+    // TN_PLAYER_CROSSINGS=1: after the run, the bridge crossings by name, most crossed first (the names sum to
+    // the total), for finding which names a frame spends them on.
+    const bool histogram = std::getenv("TN_PLAYER_CROSSINGS") != nullptr;
+    if (histogram) tn::abi::crossingHistogramEnable(true);
+    const int status = player::run(configured);
+    if (histogram) {
+        std::vector<std::pair<std::string, json::Value>> names;
+        for (const auto& [name, count] : tn::abi::crossingHistogram()) names.emplace_back(name, json::Value::makeNumber(double(count)));
+        std::printf("TN_PLAYER_CROSSINGS:%s\n", json::stringify(json::Value::makeObject({
+            {"total", json::Value::makeNumber(double(tn::abi::crossings()))},
+            {"names", json::Value::makeObject(std::move(names))}})).c_str());
+        std::fflush(stdout);
+    }
+    return status;
 }
