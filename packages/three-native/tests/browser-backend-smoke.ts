@@ -378,6 +378,38 @@ engine.collect();
   );
   abi._free?.(grown);
 }
+// An object's rotation is written in place and its quaternion synced in JS (PRD-573 web cut 4): no engine
+// call, and the same quaternion and world matrix the engine computes for that Euler.
+{
+  const { Euler: EngineEuler } = engine.classes as unknown as typeof THREE;
+  const turned = new Mesh(new BoxGeometry(1, 1, 1), material);
+  const reference = new Mesh(new BoxGeometry(1, 1, 1), material);
+  void turned.rotation;
+  void turned.quaternion; // kept members: their one get is not a per-frame cost
+  const counts = new Map<string, number>();
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = counts;
+  turned.rotation.x = 0.3;
+  turned.rotation.y = -1.1;
+  turned.rotation.set(0.3, -1.1, 0.7);
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = undefined;
+  const rotationCalls = [...counts].filter(([key]) => !key.endsWith(".__address"));
+  check(
+    rotationCalls.length === 0,
+    `rotation writes cross no engine call: ${JSON.stringify(rotationCalls)}`,
+  );
+  reference.quaternion.setFromEuler(new EngineEuler(0.3, -1.1, 0.7));
+  const [a, b] = [turned.quaternion, reference.quaternion];
+  check(
+    Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z) + Math.abs(a.w - b.w) < 1e-12,
+    `in-place rotation syncs the quaternion: ${[a.x, a.y, a.z, a.w].join()} vs ${[b.x, b.y, b.z, b.w].join()}`,
+  );
+  turned.updateMatrixWorld();
+  reference.updateMatrixWorld();
+  check(
+    turned.matrixWorld.equals(reference.matrixWorld),
+    "in-place rotation reaches the world matrix",
+  );
+}
 // The host projection report on the web back end (PRD-573 web cut 3), as v8_adapter_test's projectionReport:
 // one call a frame answers the native scene's batching, the same crossings for 1,000 and 4,000 cubes.
 {

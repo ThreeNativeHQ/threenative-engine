@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { Euler, Quaternion } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -222,6 +223,56 @@ describe("three's math values on the browser back end", () => {
     bone.getWorldPosition({});
     expect(bone.name).toBe("hip");
     expect(engineReads).toBe(1);
+  });
+
+  it("writes an object's rotation in place and syncs its quaternion as three does", () => {
+    const { runtime, calls, heap } = memoryRuntime();
+    const bytes = new Uint8Array(heap.buffer);
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      readByte: (address) => bytes[address] as number,
+      invoke(self, method, args) {
+        if (method !== "set") return runtime.invoke(self, method, args);
+        calls.push("invoke set");
+        return self;
+      },
+      get(self, property) {
+        if (property === "rotation") return runtime.construct("Euler", []);
+        if (property === "quaternion") return runtime.construct("Quaternion", [0, 0, 0, 1]);
+        return runtime.get(self, property);
+      },
+    });
+    interface IRotation {
+      x: number;
+      y: number;
+      z: number;
+      set(x: number, y: number, z: number, order?: string): IRotation;
+    }
+    const group = new (
+      classes.Group as new () => {
+        rotation: IRotation;
+        quaternion: { x: number; y: number; z: number; w: number };
+      }
+    )();
+    const [orderOffset = -1] = registry.classes.Euler?.fields?.__order ?? [];
+    const orders = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"] as const;
+    const rotation = group.rotation;
+    orders.forEach((order, i) => {
+      bytes[64 + orderOffset] = i; // the Euler is the second object
+      rotation.y = 0.5 + i;
+      rotation.z = -1;
+      expect(rotation.set(0.25, rotation.y, 2 - i, i % 2 ? order : undefined)).toBe(rotation);
+      const { x, y, z, w } = group.quaternion;
+      const expected = new Quaternion().setFromEuler(new Euler(0.25, 0.5 + i, 2 - i, order));
+      expect([x, y, z, w]).toEqual([expected.x, expected.y, expected.z, expected.w]);
+    });
+    expect(calls.filter((call) => /^(set|invoke) /u.test(call))).toEqual([]);
+    rotation.set(0, 0, 0, "XYZ"); // a new order: the engine reorders and syncs
+    expect(calls.at(-1)).toBe("invoke set");
+    // An Euler no object owns still crosses, so its own callback (if any) runs in the engine.
+    const free = new (classes.Euler as new () => IRotation)();
+    free.x = 1;
+    expect(calls.at(-1)).toBe("set x");
   });
 
   it("keeps a mesh's geometry and an attribute's shape until they are set", () => {

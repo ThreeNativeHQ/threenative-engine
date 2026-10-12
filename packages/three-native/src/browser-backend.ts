@@ -284,6 +284,8 @@ export function defineBrowserClasses(
   // Writes still go through the engine's setters, which it reacts to.
   const addresses = new WeakMap<object, number>();
   const kept = new WeakMap<object, Map<string, unknown>>();
+  // Each object's kept `rotation` Euler -> the object, whose quaternion a rotation write syncs.
+  const rotations = new WeakMap<object, object>();
   // Properties only the object's own setter or methods change: `name` and `type` (read per track and
   // per bone while a game binds animations), an attribute's shape (read per merge), a mesh's
   // geometry and material. The answer is kept until JS sets it or calls a method on that object.
@@ -322,8 +324,11 @@ export function defineBrowserClasses(
           members = new Map();
           kept.set(this, members);
         }
-        if (!members.has(property))
-          members.set(property, fromEngine(runtime.get(refOf(this), property)));
+        if (!members.has(property)) {
+          const member = fromEngine(runtime.get(refOf(this), property));
+          members.set(property, member);
+          if (property === "rotation") rotations.set(member as object, this);
+        }
         return members.get(property);
       };
     return undefined;
@@ -737,6 +742,74 @@ export function defineBrowserClasses(
                 },
               }
             : {}),
+      });
+    }
+    // Games turn objects every frame: an object's `rotation` is written in place (the transform page's
+    // rotation column), and its quaternion follows here, as three's onRotationChange does. Any other
+    // Euler, or a set with a new order, still crosses, callback and all. Ported from feat/native-engine
+    // 07297c986 and 5ef18a54f.
+    const order = binding.fields?.__order;
+    const quaternion = registry.classes.Quaternion?.fields;
+    const readLane = runtime.readDoubles;
+    const readByte = runtime.readByte;
+    if (name === "Euler" && order && quaternion && readLane && readByte && write) {
+      const angles = ["x", "y", "z"].map((lane) => binding.fields?.[lane]?.[0] ?? 0);
+      const targets = ["x", "y", "z", "w"].map((lane) => quaternion[lane]?.[0] ?? 0);
+      // three's setFromEuler: each order only signs the second terms, in the engine enum's order.
+      const names = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"];
+      const signs = [
+        [1, -1, 1, -1],
+        [1, -1, -1, 1],
+        [-1, 1, 1, -1],
+        [-1, 1, -1, 1],
+        [1, 1, -1, -1],
+        [-1, -1, 1, 1],
+      ];
+      const sync = (euler: object, owner: object) => {
+        const at = addressOf(euler);
+        const [x = 0, y = 0, z = 0] = angles.map((offset) => readLane(at + offset, 1) as number);
+        const [sx = 1, sy = 1, sz = 1, sw = 1] = signs[readByte(at + (order[0] ?? 0))] ?? [];
+        const c1 = Math.cos(x / 2);
+        const c2 = Math.cos(y / 2);
+        const c3 = Math.cos(z / 2);
+        const s1 = Math.sin(x / 2);
+        const s2 = Math.sin(y / 2);
+        const s3 = Math.sin(z / 2);
+        const q = addressOf((owner as { quaternion: object }).quaternion);
+        const [qx = 0, qy = 0, qz = 0, qw = 0] = targets;
+        write(q + qx, s1 * c2 * c3 + sx * c1 * s2 * s3);
+        write(q + qy, c1 * s2 * c3 + sy * s1 * c2 * s3);
+        write(q + qz, c1 * c2 * s3 + sz * s1 * s2 * c3);
+        write(q + qw, c1 * c2 * c3 + sw * s1 * s2 * s3);
+      };
+      angles.forEach((offset, i) => {
+        const lane = "xyz"[i] as string;
+        const crossing = Object.getOwnPropertyDescriptor(prototype, lane);
+        Object.defineProperty(prototype, lane, {
+          ...crossing,
+          set(this: object, value: number) {
+            const owner = rotations.get(this);
+            if (owner === undefined) return crossing?.set?.call(this, value);
+            write(addressOf(this) + offset, value);
+            sync(this, owner);
+          },
+        });
+      });
+      const set = prototype.set as (...args: unknown[]) => unknown;
+      Object.defineProperty(prototype, "set", {
+        configurable: true,
+        writable: true,
+        value(this: object, ...args: unknown[]) {
+          const owner = rotations.get(this);
+          if (owner === undefined) return set.apply(this, args);
+          const at = addressOf(this);
+          // Games pass their one order on every set; only a new order goes to the engine.
+          if (args[3] !== undefined && args[3] !== names[readByte(at + (order[0] ?? 0))])
+            return set.apply(this, args);
+          angles.forEach((offset, i) => write(at + offset, args[i] as number));
+          sync(this, owner);
+          return this;
+        },
       });
     }
     // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
