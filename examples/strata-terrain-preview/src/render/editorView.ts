@@ -118,6 +118,7 @@ const initialState = {
   editorUnsentRetry: false,
   editorUnsentDiscard: false,
   editorStaleWriteConflicts: 0,
+  editorCommitWrites: "",
   editorWorkerBusy: false,
   editorBuildCancelled: false,
   editorRebuiltAfterCancel: false,
@@ -713,6 +714,9 @@ export async function createEditorView(
             '#not-saved-list button[data-save-action="discard"]',
           ),
           editorStaleWriteConflicts: Number(document.body.dataset.staleWriteConflicts ?? 0),
+          editorCommitWrites: Object.values(
+            JSON.parse(document.body.dataset.commitWrites ?? "{}"),
+          ).join(","),
           editorPersistedStrokes: persistedStrokes,
           editorPersistenceError: persistenceError,
           editorBrushCaptured: document.getElementById("viewport")?.hasPointerCapture(1) ?? false,

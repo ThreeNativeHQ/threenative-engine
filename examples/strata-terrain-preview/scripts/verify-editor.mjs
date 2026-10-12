@@ -443,6 +443,39 @@ try {
     ],
   });
   const report = await runStandalonePlaytest(config);
+  const strokeTicks = report.observations?.resourceSeries
+    ?.filter((sample) => ["brush-apply", "second-stroke-50ms"].includes(sample.label))
+    .map(({ label, tick }) => ({ label, tick }));
+  console.log(
+    JSON.stringify({
+      editorAssertions: report.assertionResults?.filter((result) =>
+        /editor(PersistedStrokes|Announcement|Focus|Tool)/u.test(result.id),
+      ),
+      strokeTicks,
+    }),
+  );
+  assert.equal(strokeTicks?.length, 2, "Both stroke boundaries must be observed");
+  assert.equal(
+    strokeTicks[1].tick - strokeTicks[0].tick,
+    3,
+    "Stroke boundaries must be 50 ms apart in fixed time",
+  );
+  const diskStrokes = JSON.parse(readFileSync(path, "utf8")).recipe.layers.filter(
+    (layer) => layer.name === "Sculpt stroke",
+  ).length;
+  const snapshotStrokes = (await controller.snapshot()).document.recipe.layers.filter(
+    (layer) => layer.name === "Sculpt stroke",
+  ).length;
+  assert.equal(diskStrokes, snapshotStrokes, "world.json must contain every acknowledged stroke");
+  const initialStrokes = cancellationFixture.document.recipe.layers.filter(
+    (layer) => layer.name === "Sculpt stroke",
+  ).length;
+  assert.equal(
+    diskStrokes - initialStrokes,
+    4,
+    "world.json must retain the three keyboard strokes and recovery edit",
+  );
+  console.log(JSON.stringify({ diskStrokes, snapshotStrokes, initialStrokes }));
   assert(report.assertionResults?.length > 0, "Scenario assertions were not observed");
   assert(
     report.assertionResults.every((result) => result.pass),
@@ -451,6 +484,31 @@ try {
   assert(
     !report.diagnostics.some((diagnostic) => diagnostic.severity === "error"),
     JSON.stringify(report.diagnostics),
+  );
+  const conflictReport = await runStandalonePlaytest({
+    ...config,
+    scenarioPath: resolve("playtests/editor-conflict.playtest.json"),
+    url: new URL("conflict.html", activation.editorUrl).href,
+    artifactDirectory: resolve("artifacts/playtest/editor-conflict"),
+  });
+  assert.deepEqual(
+    conflictReport.observations?.console
+      .filter((message) => message.type === "error")
+      .map((message) => message.text),
+    Array(4).fill("Failed to load resource: the server responded with a status of 409 (Conflict)"),
+    "Only the four injected stale writes may produce conflict-lane console errors",
+  );
+  assert(conflictReport.assertionResults?.length > 0, "Conflict assertions were not observed");
+  assert(
+    conflictReport.assertionResults.every((result) => result.pass),
+    JSON.stringify({
+      results: conflictReport.assertionResults,
+      diagnostics: conflictReport.diagnostics,
+    }),
+  );
+  assert(
+    !conflictReport.diagnostics.some((diagnostic) => diagnostic.severity === "error"),
+    JSON.stringify(conflictReport.diagnostics),
   );
 } finally {
   await server.close();

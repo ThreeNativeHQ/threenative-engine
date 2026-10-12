@@ -4,7 +4,7 @@
 **Priority:** P2 — Browser proof of the mechanics move, keyboard access and a single export encoder remain open in AC-3, AC-4 and AC-6.
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-587](PRD-587-the-terrain-editor-never-drops-an-edit.md) (lands its save model first, so the port moves settled code)
+**Depends on:** [PRD-587](../done/PRD-587-the-terrain-editor-never-drops-an-edit.md) (lands its save model first, so the port moves settled code)
 **Parent:** [PRD-467](../done/PRD-467-strata-live-terrain-editor.md)
 **Epic:** [Strata terrain hardening](README.md)
 
@@ -40,7 +40,7 @@ cook covers its contract. React is not required by this PRD; decide it after the
 
 - [x] AC-1 [local]: `src/editor/` has no `.js` source and passes `tsc` strict. proof: `pnpm --filter @threenative/terrain typecheck` — Evidence: exit 0 after dependency builds; source spec 3/3 passed (2026-10-11).
 - [x] AC-2 [local]: No `innerHTML` assignment remains in `src/editor/`. proof: `editor-source.spec.ts` greps the source — Evidence: 3/3 passed, including no JS and no HTML sinks (2026-10-11).
-- [ ] AC-3 [local]: Every tool is reachable and usable by keyboard, and errors are announced through an `aria-live` region. proof: `editor.playtest.json` keyboard steps — Evidence: pending.
+- [x] AC-3 [local]: Every tool is reachable and usable by keyboard, and errors are announced through an `aria-live` region. proof: `editor.playtest.json` keyboard steps — Evidence: 2026-10-12, NVIDIA Turing, private Xvfb, full `test:terrain:editor` lane green. Ten tools already had Tab and Enter steps; the lane now also tabs back (Shift+Tab) to the eleventh, sculpt, and activates it with Space (`editorFocus` and `editorTool` assert `sculpt`). `editorAnnouncement` asserts the exact validator text (`Unexpected token 'x', "x" is not valid JSON`) at `error-announced`, in the single polite `aria-live` region. Red run: a wrong announcement string is rejected.
 - [ ] AC-4 [local]: Picking, gizmo and brush mechanics live in the package; the example keeps only appearance. proof: `pnpm tsx scripts/count-loc.ts` before/after plus `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: picking and landform transform math moved; brush stamping/falloff already use package operations. Mechanics spec 5/5 passed; example strict typecheck exit 0. Browser editor proof remains assigned to the coordinator (2026-10-11).
 - [x] AC-5 [local]: Small routes reject a 10 MiB body with 413, and error responses carry no document snapshot. proof: `editor-document.spec.ts` cases — Evidence: 17/17 passed, including five 10 MiB route bodies, chunked uploads and slim 409 responses; rejected uploads drain without parsing (2026-10-11).
 - [x] AC-6 [local]: The editor's export uses `cookTerrainWorld`, and `exportWorldGLB` is deleted or names its remaining caller. proof: `pnpm --filter strata-terrain-preview test:terrain:export` — Evidence: 2026-10-11, EPIC `744329a1b`: `pnpm --filter strata-terrain-preview test:terrain:export` exit 0. The editor view prepares the world glTF and POSTs it to `api/export`, where the server runs `cookTerrainWorld`: 18,396,992 bytes in 2.1 s, revision `85e82faa…`, 100 placement ids and the river; the isolated vanilla Three.js project loaded it (202 meshes). `exportWorldGLB` remains only for `scripts/fixtures/consumer-world.mjs`, named beside it.
@@ -61,5 +61,5 @@ cook covers its contract. React is not required by this PRD; decide it after the
 
 #### Phase 3: keyboard, one encoder
 **Status:** NOT STARTED
-- [ ] Keyboard and `aria-live`. proof: `editor.playtest.json`
+- [x] Keyboard and `aria-live`. proof: `editor.playtest.json` — green 2026-10-12, see AC-3 evidence.
 - [ ] One encoder. proof: `test:terrain:export`

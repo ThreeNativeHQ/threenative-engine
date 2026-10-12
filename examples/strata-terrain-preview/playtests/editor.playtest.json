@@ -204,9 +204,25 @@
       "kind": "click",
       "at": {
         "element": {
-          "selector": "[data-tool=\"sculpt\"]"
+          "selector": "[data-tool=\"smooth\"]"
         }
       },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shift-tab-sculpt",
+      "press": ["Shift", "Tab"],
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-sculpt",
+      "press": "Space",
+      "holdTicks": 1,
       "waitTicks": 3,
       "release": true
     },
@@ -244,7 +260,8 @@
         }
       },
       "waitTicks": 3,
-      "release": true
+      "release": true,
+      "label": "viewport-sculpt-stroke"
     },
     {
       "kind": "input",
@@ -267,7 +284,7 @@
       "label": "brush-apply",
       "press": "Enter",
       "holdTicks": 1,
-      "waitTicks": 2,
+      "waitTicks": 1,
       "release": true
     },
     {
@@ -275,7 +292,7 @@
       "label": "second-stroke-50ms",
       "press": "Enter",
       "holdTicks": 1,
-      "waitTicks": 2,
+      "waitTicks": 1,
       "release": true
     },
     {
@@ -589,6 +606,10 @@
           {
             "label": "activate-select",
             "equals": "select"
+          },
+          {
+            "label": "activate-sculpt",
+            "equals": "sculpt"
           }
         ]
       },
@@ -635,6 +656,10 @@
           {
             "label": "tab-select",
             "equals": "select"
+          },
+          {
+            "label": "shift-tab-sculpt",
+            "equals": "sculpt"
           }
         ]
       },
@@ -700,7 +725,13 @@
       {
         "id": "GameState",
         "path": "editorAnnouncement",
-        "changed": true
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "error-announced",
+            "textIncludes": "Unexpected token 'x', \"x\" is not valid JSON"
+          }
+        ]
       },
       {
         "id": "GameState",
@@ -731,8 +762,24 @@
         "path": "editorPersistedStrokes",
         "atSteps": [
           {
+            "label": "viewport-sculpt-stroke",
+            "equals": 1
+          },
+          {
+            "label": "brush-apply",
+            "equals": 2
+          },
+          {
+            "label": "second-stroke-50ms",
+            "equals": 3
+          },
+          {
             "label": "keyboard-edit-saved",
             "equals": 3
+          },
+          {
+            "label": "edit-after-worker-termination",
+            "equals": 4
           }
         ]
       },
