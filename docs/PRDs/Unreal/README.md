@@ -98,6 +98,47 @@ earlier wave unless the "Waits on" column says so.
 | 3 | [PRD-568](./assets/PRD-568-mobile-builds-ship-gpu-ready-astc.md) | Mobile builds ship GPU-ready ASTC, not RGBA8 | 4 MEDIUM | [PRD-VQ-01](../done/PRD-VQ-01-native-asset-capabilities.md) |
 | 3 | [PRD-565](./performance/PRD-565-multisampled-targets-stay-in-tile-memory-on-android.md) | MSAA attachments stay in tile memory on the Android host | 3 LOW | [PRD-329](../performance/critical/PRD-329-the-native-gpu-frame-matches-chrome-at-matched-pixels.md) Phase 2 (Dawn on Android) |
 
+## Parity PRDs for Nanite, Lumen, World Partition and Niagara (filed 2026-10-12)
+
+Each one compares a shipped ThreeNative system with its Unreal 5.8.3 counterpart and takes the
+largest gap that fits WebGPU and ThreeNative's rules. Each opens with a measurement that can
+decline the rest. The gaps checked and not filed are listed below the table.
+
+| Unreal system | PRD | Outcome | Waits on |
+| --- | --- | --- | --- |
+| Nanite | [PRD-600](rendering/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md) | A clustered mesh submits only the clusters the view holds | — |
+| Nanite | [PRD-601](rendering/PRD-601-far-clusters-keep-the-shading-of-the-source-mesh.md) | Far clusters keep the shading of the source mesh | — |
+| Nanite | [PRD-602](rendering/PRD-602-a-clustered-shadow-caster-draws-what-its-shadow-texel-resolves.md) | A clustered shadow caster draws what its shadow texel resolves | PRD-600 (optional) |
+| Lumen | [PRD-603](rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) | Probes refresh by tracing the packed scene, not by six raster captures | — |
+| Lumen | [PRD-604](rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md) | A surface is lit only by probes that can see it (no leaks through walls) | — |
+| Lumen | [PRD-605](rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md) | The probe field follows the camera in nested rings | PRD-603, PRD-604 (phases 2–3) |
+| World Partition | [PRD-606](open-world/PRD-606-a-fast-travel-destination-is-ready-before-the-cover-lifts.md) | A fast-travel destination is ready before the cover lifts | — |
+| World Partition | [PRD-607](open-world/PRD-607-streaming-reports-when-a-hole-is-near-and-spends-more-to-close-it.md) | Streaming reports when a hole is near and spends more to close it | — |
+| Niagara | [PRD-609](vfx/PRD-609-a-gpu-burst-starts-where-and-when-it-is-asked-and-live-particles-stay-put.md) | A GPU burst starts where and when it is asked, and live particles stay put | — |
+| Niagara | [PRD-610](vfx/PRD-610-sparks-bounce-off-the-surfaces-the-camera-can-see.md) | Sparks bounce off the surfaces the camera can see | PRD-609 (phase 3) |
+| Niagara | [PRD-611](vfx/PRD-611-a-gpu-effect-that-starts-hidden-draws-its-first-frame-with-its-pipeline-built.md) | A GPU effect that starts hidden draws its first frame with its pipeline built | — |
+
+PRD-608 was reserved for World Partition and not used.
+
+Gaps checked on 2026-10-12 and not filed. Each one needs new evidence before it is filed again:
+
+- **Nanite.** Persistent-thread culling is off by default in Unreal, and WebGPU gives no forward-progress
+  guarantee between workgroups. Two-pass occlusion was declined on measurement (PRD-284, PRD-489).
+  Software rasterization needs 64-bit image atomics and a visibility buffer that owns shading. Page
+  streaming saves little because vertex data is about 74% of resident bytes (PRD-285). Tessellation
+  and displacement are a material look decision.
+- **Lumen.** Global and mesh distance fields: `GPUSceneBVH` already gives a GPU trace (PRD-603 revisits
+  this if its gate fails). Surface cache cards are too large for one PRD. Screen-probe gather waits on
+  PRD-267. Reflections belong to PRD-VQ-03. Hardware ray tracing needs an API WebGPU lacks.
+- **World Partition.** Data layers have no consumer, and two `WorldCells` instances already cover
+  the case. Several streaming sources would need a terrain rewrite, because `TerrainTiles` holds
+  one focus. Loaded-but-inactive cells save no draw. HLOD layers belong to PRD-456. Unreal doubles
+  the HLOD range per level (`WorldPartitionRuntimeHashSet.cpp:290`), which is a note for PRD-456.
+- **Niagara.** GPU ribbons are covered by the `vfx-compute` conformance row and `IComputeDriven`.
+  On-death spawn needs atomic appends with no consumer, and Unreal counts event spawns on the CPU
+  too. Grid smoke ships as `fluid-field.ts`. Particle lights have no consumer. Sorting belongs to
+  PRD-VQ-12, and culling and budget belong to PRD-569.
+
 ## Existing PRDs amended from the same read
 
 These keep their numbering. Each one gained an Unreal section, and sometimes reworded boxes and a
