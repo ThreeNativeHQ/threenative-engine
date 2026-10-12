@@ -21,7 +21,7 @@ function createRestartProbe(ctx: ICtx<GalleryState>): () => void {
   if (option === undefined) throw new Error("Burst probe requires an impact-sparks layer.");
   const particles = ctx.add(new GPUParticles3D(option));
   particles.name = "burst-probe-sparks";
-  particles.visible = false;
+  particles.visible = false; // engine-override: the restart arm reproduces the shipped hide-until-burst pattern it measures
   const readback = new GPUReadback({
     attribute: particles.buffers.positions.value,
     everyFrames: 1,
@@ -58,7 +58,7 @@ function createRestartProbe(ctx: ICtx<GalleryState>): () => void {
     particles.visible = true;
     particles.restart();
     ctx.after(0.45, () => {
-      particles.visible = false;
+      particles.visible = false; // engine-override: the restart arm reproduces the shipped hide-after-burst pattern it measures
     });
   };
   ctx.beforeRender(() => {
