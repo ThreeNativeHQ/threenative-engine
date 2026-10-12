@@ -50,6 +50,7 @@ export function workerURL(c: EditorSession): URL {
 export function newWorker(c: EditorSession): Worker {
   const w = new Worker(c.workerURL(), { type: "module" });
   w.onmessage = async ({ data }: MessageEvent<EditorWorkerReply>) => {
+    if (c.disposed || c.worker !== w) return;
     if (data.type === "progress") {
       if (data.id === c.sequence)
         $("busy-text").textContent = `Evaluating ${data.progress.index + 1}/${data.progress.total}`;
@@ -59,6 +60,7 @@ export function newWorker(c: EditorSession): Worker {
     // placement that names an asset still on its way. The worker stays busy meanwhile.
     if (data.id === c.sequence && data.type === "evaluated")
       await c.view.assetsReady?.().catch(() => {});
+    if (c.disposed || c.worker !== w) return;
     c.workerBusy = false;
     if (data.id === c.sequence) {
       if (data.type === "error") {
@@ -92,10 +94,14 @@ export function newWorker(c: EditorSession): Worker {
   };
   w.onerror = (e) => {
     e.preventDefault();
+    if (c.disposed || c.worker !== w) return;
+    w.terminate();
+    c.worker = null;
     c.workerBusy = false;
-    c.pending = null;
-    c.setBusy(false);
-    c.toast(`Worker failed: ${e.message}. Serve the source over HTTP or use the standalone HTML.`);
+    $("save-status").textContent = "Worker failed · last preview retained";
+    c.toast(`Worker failed: ${e.message}. The next edit will restart terrain evaluation.`);
+    if (c.pending) c.dispatch();
+    else c.setBusy(false);
   };
   return w;
 }
@@ -110,6 +116,8 @@ export function dispatch(c: EditorSession): void {
     c.worker.postMessage(job);
     c.evaluationRequests++;
   } catch (e) {
+    c.worker?.terminate();
+    c.worker = null;
     c.workerBusy = false;
     c.setBusy(false);
     c.toast(errorMessage(e));

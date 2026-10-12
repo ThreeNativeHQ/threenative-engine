@@ -7,6 +7,10 @@ const tempCreatorPattern = /\bmkdtemp(?:Sync)?\s*\(/u;
 
 const allowedProductionCreators = new Map<string, string>([
   [
+    "packages/terrain/src/kit-assets.ts",
+    "The starter-asset archive extracts into a sibling scratch directory renamed into the cache and removed in finally.",
+  ],
+  [
     "packages/assets/src/watch.ts",
     "The dev watcher stages each changed input through a scratch project removed in finally.",
   ],

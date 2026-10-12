@@ -115,6 +115,9 @@ const initialState = {
   editorUnsentRetry: false,
   editorUnsentDiscard: false,
   editorStaleWriteConflicts: 0,
+  editorWorkerBusy: false,
+  editorBuildCancelled: false,
+  editorRebuiltAfterCancel: false,
 
   vertexCount: 0,
   heightSum: 0,
@@ -178,6 +181,7 @@ export async function createEditorView(
   ).length;
   let persistedStrokes = 0;
   let persistenceError = "";
+  let stateAtCancellation: ITerrainState | null = null;
   let authoring: IAuthoringDocument | undefined;
   let renderedRecipe: string | undefined;
   let groundAt: PropGroundQuery | undefined;
@@ -615,8 +619,21 @@ export async function createEditorView(
             ) ?? 0,
         });
         const focused = document.activeElement as HTMLElement | null;
+        const cancelled =
+          document.getElementById("save-status")?.textContent?.startsWith("Build cancelled") ??
+          false;
+        // The editor page publishes its API on `window.strata`; this view reads two fields of it.
+        const strata = (
+          window as {
+            strata?: { state?: NonNullable<typeof stateAtCancellation>; workerBusy?: boolean };
+          }
+        ).strata;
+        if (cancelled && strata?.state) stateAtCancellation ??= strata.state;
         ctx.state.set({
           renderedFrames: ctx.state.getState().renderedFrames + 1,
+          editorWorkerBusy: strata?.workerBusy ?? false,
+          editorBuildCancelled: cancelled,
+          editorRebuiltAfterCancel: !!stateAtCancellation && strata?.state !== stateAtCancellation,
           editorTool: document.body.dataset.terrainTool ?? "",
           editorUnsentVisible:
             !!document.getElementById("not-saved") && !document.getElementById("not-saved")?.hidden,

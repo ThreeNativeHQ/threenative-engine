@@ -189,6 +189,6 @@ describe("editor save integration", () => {
         "utf8",
       ),
     );
-    expect(() => validatePlaytestScenario(scenario)).not.toThrow();
+    expect(() => validatePlaytestScenario(scenario, `${name}.playtest.json`)).not.toThrow();
   });
 });

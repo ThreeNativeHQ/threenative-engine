@@ -7,6 +7,16 @@
       "kind": "click",
       "at": {
         "element": {
+          "selector": "[data-tool=\"select\"]"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
           "id": "viewport"
         }
       },

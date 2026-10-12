@@ -275,6 +275,71 @@
       "screenshot": "editor-keyboard-edit"
     },
     {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "preview-resolution"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "start-high-resolution-build",
+      "press": "End",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "label": "terminate-mid-build",
+      "at": {
+        "element": {
+          "id": "cancel-build"
+        }
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "selector": "[data-tool=\"select\"]"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "viewport"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "edit-after-worker-termination",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 360,
+      "release": true,
+      "screenshot": "worker-restarted"
+    },
+    {
       "kind": "input",
       "label": "brush-drag",
       "pointerPosition": {
@@ -624,6 +689,44 @@
         "path": "editorPersistenceError",
         "equals": "",
         "allowTrivial": "An authoritative document GET must succeed; fetch errors are observed here."
+      },
+      {
+        "id": "GameState",
+        "path": "editorWorkerBusy",
+        "atSteps": [
+          {
+            "label": "start-high-resolution-build",
+            "equals": true
+          },
+          {
+            "label": "terminate-mid-build",
+            "equals": false
+          },
+          {
+            "label": "edit-after-worker-termination",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorBuildCancelled",
+        "atSteps": [
+          {
+            "label": "terminate-mid-build",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorRebuiltAfterCancel",
+        "atSteps": [
+          {
+            "label": "edit-after-worker-termination",
+            "equals": true
+          }
+        ]
       }
     ]
   },
