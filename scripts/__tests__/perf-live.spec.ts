@@ -12,6 +12,7 @@ import {
   sentenceOf,
   staleReason,
   valueColor,
+  webOf,
 } from "../perf-live.js";
 
 const pilot = "artifacts/engine-load-test/prd-449/pilots/scoreboard-tn-r3-2026-09-28.json";
@@ -292,5 +293,136 @@ describe("perf-live", () => {
       nativePhases: p?.nativePhases,
     };
     expect(heroOf([r5 as IPoint], 3).phases?.gap).toEqual({ phase: "game", native: 8, legacy: 4 });
+  });
+
+  describe("the web comparison", () => {
+    const webRun = (
+      arm: "tn-web" | "tn-engine-web",
+      p50: number,
+      extra: { adapter?: string; loaded?: boolean; identity?: object; web?: object } = {},
+    ) => ({
+      arm,
+      build: { notes: "", type: "release" },
+      device: { battery: null, label: "d" },
+      display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
+      driver: { adapter: extra.adapter ?? "intel / gen-12lp", renderer: "r" },
+      engine: { name: "threenative", version: "w" },
+      ...(extra.loaded
+        ? { hostLoad: { cores: 16, load1: 12, absolutes: "invalid-absolute" } }
+        : {}),
+      ...(extra.identity ? { identity: extra.identity } : {}),
+      ...(extra.web ? { web: extra.web } : {}),
+      rungs: [
+        {
+          drawCalls: 116,
+          frameMs: [p50, p50, p50],
+          mode: "L1",
+          objectCount: 4096,
+          positionHash: "h",
+          repeat: 0,
+          triangles: 1,
+          visibleObjects: 4096,
+        },
+      ],
+    });
+    const web = {
+      startup: { entryMs: 100, firstFrameMs: 500, wasmInstantiateMs: [10, 6] },
+      memory: { jsHeapUsedBytes: 4e7, wasmMemoryBytes: 1e8 },
+      artifact: { jsBytes: 1, jsGzipBytes: 2, wasmBytes: 3, wasmGzipBytes: 4 },
+    };
+
+    it("carries the adapter, the identity and the web block into a row, and flags a software adapter", () => {
+      const [row] = rowsOf(
+        webRun("tn-engine-web", 20, {
+          identity: { sourceSha: "abc123", browser: "Chrome 140" },
+          web,
+        }),
+        "web/x-tn-engine-web-r1.json",
+        1,
+      );
+      expect(row).toMatchObject({
+        adapter: "intel / gen-12lp",
+        software: false,
+        commit: "abc123",
+        browser: "Chrome 140",
+        web: { firstFrameMs: 500, wasmInstantiateMs: 16, wasmMemoryBytes: 1e8, wasmGzipBytes: 4 },
+      });
+      const [soft] = rowsOf(webRun("tn-web", 5, { adapter: "google / swiftshader" }), "w.json", 1);
+      expect(soft?.software).toBe(true);
+      expect(soft?.commit).toBeUndefined();
+    });
+
+    it("pairs tn-web with tn-engine-web apart from the desktop KPI, and marks a one-armed pair pending", () => {
+      const rows = [
+        ...rowsOf(webRun("tn-web", 4, { web }), "web/base-tn-web-r1.json", 1),
+        ...rowsOf(webRun("tn-web", 6), "web/base-tn-web-r2.json", 2),
+        ...rowsOf(
+          webRun("tn-engine-web", 20, { loaded: true, web }),
+          "web/base-tn-engine-web-r1.json",
+          3,
+        ),
+        ...rowsOf(webRun("tn-engine-web", 30), "web/base-tn-engine-web-r2.json", 4),
+        ...rowsOf(webRun("tn-engine-web", 25), "web/next-tn-engine-web-r1.json", 5),
+      ];
+      // The desktop KPI never takes a web run.
+      expect(pointsOf(rows)).toEqual([]);
+      const { pairs } = webOf(rows);
+      expect(pairs.map((p) => [p.label, p.status])).toEqual([
+        ["web/base", "measured"],
+        ["web/next", "pending"],
+      ]);
+      const [base] = pairs;
+      expect(base?.legacy.p50).toBe(5);
+      expect(base?.native.p50).toBe(25);
+      expect(base?.ratioP50).toBeCloseTo(0.2);
+      expect(base?.invalid).toBe(true);
+      expect(base?.commits).toEqual([]);
+      expect(base?.native.web?.wasmMemoryBytes).toBe(1e8);
+      expect(pairs[1]?.ratioP50).toBeUndefined();
+    });
+
+    it("judges an alternating A/B: a win, a regression, the noise and a pending side", () => {
+      const ab = (tag: string, a: number[], b: number[]) => [
+        ...a.flatMap((p50, i) =>
+          rowsOf(webRun("tn-engine-web", p50), `web/${tag}-A${i * 2 + 1}.json`, i),
+        ),
+        ...b.flatMap((p50, i) =>
+          rowsOf(webRun("tn-engine-web", p50), `web/${tag}-B${i * 2 + 2}.json`, i),
+        ),
+      ];
+      const { cuts } = webOf([
+        ...ab("win", [28, 29, 30], [25, 26, 27]),
+        ...ab("worse", [25, 26], [27, 28]),
+        ...ab("noise", [25, 27], [26, 28]),
+        ...ab("half", [25], []),
+      ]);
+      const verdicts = Object.fromEntries(cuts.map((c) => [c.label, c.verdict]));
+      expect(verdicts).toEqual({
+        "web/win": "win",
+        "web/worse": "regression",
+        "web/noise": "inconclusive",
+        "web/half": "pending",
+      });
+      expect(cuts.find((c) => c.label === "web/win")?.ratio).toBeCloseTo(26 / 29);
+    });
+
+    it("lists the runs that counted crossings", () => {
+      const counted = webRun("tn-engine-web", 20) as ReturnType<typeof webRun> & {
+        rungs: { bridgeCalls?: number[] }[];
+      };
+      (counted.rungs[0] as { bridgeCalls?: number[] }).bridgeCalls = [100, 120, 110];
+      const { census } = webOf(rowsOf(counted, "web/census.json", 1));
+      expect(census).toEqual([
+        { label: "web/census", mode: "L1", objects: 4096, crossings: 110, t: 1 },
+      ]);
+    });
+
+    it("draws the web card from /api/web, with pending, missing and regression labels", async () => {
+      const html = await readFile(new URL("../perf-live.html", import.meta.url), "utf8");
+      expect(html).toContain('get("/api/web")');
+      expect(html).toContain('id="web"');
+      for (const label of ["pending", "missing", "regression", "software adapter"])
+        expect(html).toContain(label);
+    });
   });
 });

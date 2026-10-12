@@ -19,7 +19,7 @@
   } }
   * { box-sizing:border-box; }
   body { margin:0; padding:20px 16px 48px; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  main { max-width:860px; margin:0 auto; display:grid; gap:20px; }
+  main { max-width:860px; margin:0 auto; display:grid; gap:20px; } main > * { min-width:0; }
   header { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:baseline; justify-content:space-between; }
   h1 { font-size:17px; margin:0; font-weight:650; }
   h2 { font-size:15px; margin:0 0 4px; font-weight:650; }
@@ -80,6 +80,7 @@
 
 <section class="card" id="trend"></section>
 <section class="card" id="frame" hidden></section>
+<section class="card" id="web"></section>
 <section class="card" id="epic"></section>
 
 <details id="details">
@@ -104,7 +105,7 @@ function ago(ms) {
   if (s < 48 * 3600) return `${Math.round(s / 3600)} h ago`;
   return `${Math.round(s / 86400)} days ago`;
 }
-let hero = { status: "none" }, points = [], epic = [], rows = [];
+let hero = { status: "none" }, points = [], epic = [], rows = [], web = { pairs: [], cuts: [], census: [] };
 
 // ---- 1. Hero -------------------------------------------------------------------------------------------
 function renderHero() {
@@ -196,6 +197,40 @@ function renderFrame() {
     ${ph.native.present !== undefined && ph.legacy.present !== undefined ? `<p class="fine">Screen present, not counted in the KPI: native ${fm(ph.native.present)}, legacy ${fm(ph.legacy.present)} per frame.</p>` : ""}`;
 }
 
+// ---- 3b. Web: tn-web vs tn-engine-web, never mixed into the desktop KPI ---------------------------------
+const miss = (list) => (list.length ? list.map(esc).join(", ") : '<span class="pill">missing</span>');
+const fb = (v) => (v === undefined ? '<span class="mute">missing</span>' : v >= 1048576 ? `${(v / 1048576).toFixed(1)} MB` : `${(v / 1024).toFixed(0)} KB`);
+const fmm = (v) => (v === undefined ? '<span class="mute">missing</span>' : `${v.toFixed(1)} ms`);
+const VERDICT = { win: ["green", "win"], regression: ["red", "regression"], inconclusive: ["grey", "inside the noise"], pending: ["grey", "pending"] };
+function renderWeb() {
+  const el = $("web"), { pairs, cuts, census } = web;
+  const head = `<h2>Web: tn-web vs tn-engine-web <span class="mute sm">browser WebGPU, separate from the desktop KPI</span></h2>`;
+  if (!pairs.length && !cuts.length) { el.innerHTML = `${head}<p><span class="pill">pending</span> No web run yet. Run <code>pnpm bench:engines --pair tn-web,tn-engine-web --production --browser-recipe webgpu</code>.</p>`; return; }
+  const measured = pairs.filter((p) => p.status === "measured" && p.ratioP50 !== undefined);
+  const latest = measured.at(-1);
+  const previous = latest ? measured.filter((p) => p !== latest && p.mode === latest.mode && p.objects === latest.objects).at(-1) : undefined;
+  const d = latest && previous ? (latest.ratioP50 - previous.ratioP50) / previous.ratioP50 : undefined;
+  const delta = d === undefined ? "" : Math.abs(d) <= 0.1 ? `<span class="delta flat">≈ flat vs ${esc(previous.label)}</span>` : `<span class="delta ${d > 0 ? "up" : "down"}">${d > 0 ? "▲ better" : "▼ worse: regression"} ${(d * 100).toFixed(0)}% vs ${esc(previous.label)} at ${fx(previous.ratioP50)}</span>`;
+  const flags = (p) => `${p.invalid ? '<span class="pill" style="color:var(--red)">host loaded: ratios only</span> ' : '<span class="pill">host idle</span> '}${p.software ? '<span class="pill" style="color:var(--red)">software adapter: not real-GPU or visual evidence</span>' : '<span class="pill">real GPU</span>'}`;
+  const hero = latest ? `<div class="s-${colorOf(latest.ratioP50)}"><div class="big" style="color:var(--c)">${fx(latest.ratioP50)}</div>
+    <p style="margin:2px 0 8px">${latest.ratioP50 >= 1 ? `The engine page is ${latest.ratioP50.toFixed(2)}× cheaper per frame than three.js on ${esc(latest.mode)}@${latest.objects}.` : `The engine page costs ${(1 / latest.ratioP50).toFixed(2)}× three.js per frame on ${esc(latest.mode)}@${latest.objects}.`}</p></div>
+    <div class="meta">${delta}<span class="mute">${esc(latest.label)}, ${ago(Date.now() - latest.t)}</span></div>
+    <p class="sm" style="margin:8px 0 0">Platform web · arms tn-web, tn-engine-web · commit ${miss(latest.commits)} · hardware ${miss(latest.adapters)} · browser ${miss(latest.browsers)} · ${flags(latest)}</p>` : '<p><span class="pill">pending</span> No pair has both arms yet.</p>';
+  const arm = (a) => `<td>${fm(a.p50)}</td><td>${fm(a.p95)}</td><td>${fm(a.p99)}</td>`;
+  el.innerHTML = `${head}${hero}
+    <h3 class="sm" style="margin:14px 0 2px">Pairs (alternating rounds; ratio = tn-web ÷ tn-engine-web p50, above 1 the engine is cheaper)</h3>
+    <div class="scroll"><table><tr><th>Point</th><th>Rung</th><th>web p50</th><th>p95</th><th>p99</th><th>engine p50</th><th>p95</th><th>p99</th><th>Ratio p50</th><th>Ratio main thread</th><th>Runs</th><th>Host</th><th>Visual</th></tr>
+    ${[...pairs].reverse().map((p) => `<tr><td>${esc(p.label)}${p.status === "pending" ? ' <span class="pill">pending</span>' : ""}</td><td>${esc(p.mode)}@${p.objects}</td>${arm(p.legacy)}${arm(p.native)}<td>${fx(p.ratioP50)}</td><td>${fx(p.ratioThread)}</td><td>${p.legacy.runs}+${p.native.runs}</td><td>${p.invalid ? "loaded" : "idle"}</td><td>${p.software ? "software" : "real GPU"}</td></tr>`).join("")}</table></div>
+    ${latest ? `<h3 class="sm" style="margin:14px 0 2px">Startup, bytes and memory (${esc(latest.label)})</h3>
+    <div class="scroll"><table><tr><th>Arm</th><th>First frame</th><th>Wasm compile+instantiate</th><th>JS gzip</th><th>Wasm gzip</th><th>Wasm memory</th><th>JS heap</th></tr>
+    ${[["tn-web", latest.legacy], ["tn-engine-web", latest.native]].map(([n, a]) => `<tr><td>${n}</td><td>${fmm(a.web?.firstFrameMs)}</td><td>${n === "tn-web" && a.web?.wasmInstantiateMs === undefined ? '<span class="mute">none</span>' : fmm(a.web?.wasmInstantiateMs)}</td><td>${fb(a.web?.jsGzipBytes)}</td><td>${fb(a.web?.wasmGzipBytes)}</td><td>${n === "tn-web" && a.web?.wasmMemoryBytes === undefined ? '<span class="mute">none</span>' : fb(a.web?.wasmMemoryBytes)}</td><td>${fb(a.web?.jsHeapUsedBytes)}</td></tr>`).join("")}</table></div>` : ""}
+    <h3 class="sm" style="margin:14px 0 2px">Engine-web changes, alternating A/B (B is the change; B ÷ A below 1 is cheaper)</h3>
+    ${cuts.length ? `<div class="scroll"><table><tr><th>Change</th><th>Rung</th><th>A p50</th><th>B p50</th><th>B ÷ A</th><th>Runs A+B</th><th>Verdict</th><th>Host</th><th>Visual</th></tr>
+    ${[...cuts].reverse().map((c) => { const [col, word] = VERDICT[c.verdict]; return `<tr><td>${esc(c.label)}</td><td>${esc(c.mode)}@${c.objects}</td><td>${fm(c.aP50)}</td><td>${fm(c.bP50)}</td><td>${c.ratio === undefined ? "n/a" : c.ratio.toFixed(3)}</td><td>${c.aRuns}+${c.bRuns}</td><td><span class="pill" style="color:var(--${col})">${word}</span></td><td>${c.invalid ? "loaded" : "idle"}</td><td>${c.software ? "software" : "real GPU"}</td></tr>`; }).join("")}</table></div>` : '<p class="mute sm"><span class="pill">pending</span> No A/B yet.</p>'}
+    ${census.length ? `<h3 class="sm" style="margin:14px 0 2px">JS-to-Wasm crossings per frame (counted runs, not timed)</h3><div class="scroll"><table><tr><th>Run</th><th>Rung</th><th>Crossings p50</th></tr>${[...census].reverse().map((c) => `<tr><td>${esc(c.label)}</td><td>${esc(c.mode)}@${c.objects}</td><td>${c.crossings.toLocaleString()}</td></tr>`).join("")}</table></div>` : ""}
+    <p class="fine">Win: every B run below every A run. Regression: every B run above every A run. Main-thread ms on the web is page wall time (performance.now()); a page has no thread CPU clock. "missing" means the run did not record that field.</p>`;
+}
+
 // ---- 4. Epic progress ----------------------------------------------------------------------------------
 const sums = (c) => ({ d: c.phases.reduce((a, p) => a + p.done, 0), t: c.phases.reduce((a, p) => a + p.total, 0) });
 const pct = (c) => { const { d, t } = sums(c); return t ? Math.round((d / t) * 100) : 0; };
@@ -254,7 +289,7 @@ function renderDetails() {
 }
 
 function render() {
-  renderHero(); renderTrend(); renderFrame(); renderEpic();
+  renderHero(); renderTrend(); renderFrame(); renderWeb(); renderEpic();
   if ($("details").open) renderDetails();
 }
 $("details").addEventListener("toggle", () => $("details").open && renderDetails());
@@ -262,8 +297,8 @@ $("details").addEventListener("toggle", () => $("details").open && renderDetails
 async function tick() {
   try {
     const get = (u) => fetch(u, { cache: "no-store" }).then((x) => x.json());
-    const [h, p, e, r] = await Promise.all([get("/api/hero"), get("/api/points"), get("/api/epic"), get("/api/rows")]);
-    hero = h; points = p; epic = e; rows = r.rows;
+    const [h, p, e, r, w] = await Promise.all([get("/api/hero"), get("/api/points"), get("/api/epic"), get("/api/rows"), get("/api/web")]);
+    hero = h; points = p; epic = e; rows = r.rows; web = w;
     render();
     $("status").textContent = `live · ${points.length} points · updated ${new Date().toLocaleTimeString()}`;
     $("dot").style.background = "var(--green)";
