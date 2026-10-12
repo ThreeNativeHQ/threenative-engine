@@ -79,14 +79,14 @@ stay `EXCLUDE_FROM_ALL` and `engine: "legacy"` stays the default, so every slice
 - [ ] `scripts/ci-change-scope.mjs` classifies `src/engine/**`, `src/adapters/**`, `tests/native-engine/**` and `cmake/NativeEngine*` as `native-engine`, and `ci.yml` runs one `native-engine` job with its own ccache key and a cached emsdk. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` and the ci-change-scope spec, plus a `pnpm ci:local --affected` plan dump
 
 #### Phase v1.1: Core fixes that need no engine (slice 1)
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (5 of 6 boxes; develop gates partial)
 Cherry-picks of F `c1ef353ca 2007efe12 3d3695197 3b29482a6 504709d17 726df7f5c dad980723 9400d5872`, each with its spec.
-- [ ] `posedBounds` reads skinned-mesh envelope invariants once per mesh, not per vertex. proof: `pnpm exec vitest run packages/core/__tests__/posed-bounds.spec.ts`
-- [ ] Foot-plant stride reads each bone's world matrix once per frame and still reads a moved ancestor above the rig. proof: `pnpm exec vitest run packages/core/__tests__/animation.spec.ts`
-- [ ] An unsized canvas does not re-scale its drawing buffer when the buffer echoes back. proof: `pnpm exec vitest run packages/core/__tests__/game-pixel-ratio.spec.ts`
-- [ ] A rejecting scene `load()` or `start()` is reported by name instead of stalling the launch. proof: `pnpm exec vitest run packages/core/__tests__/game.spec.ts`
-- [ ] A counted step spends the pending freeze settle. proof: `pnpm exec vitest run packages/core/__tests__/loop.spec.ts`
-- [ ] Develop's gates stay green. proof: `pnpm typecheck && pnpm lint && pnpm test` and `pnpm test:playtest`
+- [x] `posedBounds` reads skinned-mesh envelope invariants once per mesh, not per vertex. proof: `pnpm exec vitest run packages/core/__tests__/posed-bounds.spec.ts`
+- [x] Foot-plant stride reads each bone's world matrix once per frame and still reads a moved ancestor above the rig. proof: `pnpm exec vitest run packages/core/__tests__/animation.spec.ts`
+- [x] An unsized canvas does not re-scale its drawing buffer when the buffer echoes back. proof: `pnpm exec vitest run packages/core/__tests__/game-pixel-ratio.spec.ts`
+- [x] A rejecting scene `load()` or `start()` is reported by name instead of stalling the launch. proof: `pnpm exec vitest run packages/core/__tests__/game.spec.ts`
+- [x] A counted step spends the pending freeze settle. proof: `pnpm exec vitest run packages/core/__tests__/loop.spec.ts`
+- [ ] Develop's gates stay green. Partial 2026-10-11: `pnpm lint` exit 0; the five specs pass (158 tests); `pnpm typecheck` has no `packages/core` errors, only unbuilt-workspace imports (`procedural-animals`, `terrain`); `generated-shooter-input.spec.ts` (3 tests) fails identically without these commits, so it is pre-existing; `pnpm test` and `pnpm test:playtest` not rerun on this branch. proof: `pnpm typecheck && pnpm lint && pnpm test` and `pnpm test:playtest`
 
 #### Phase v1.2a: API catalog and reference oracle (slice 2a)
 **Status:** NOT STARTED
