@@ -12,26 +12,26 @@ Props pop in on Machinefall's 2 km map in two ways, and both are hard switches i
 than a missing effect:
 
 - **Arrival and cull.** 134 of the 218 assets carry `maxDistance` 70 m, and each is culled hard at
-  `maxDistance − maxDistance/8` (`packages/core/src/world-cells.ts:3140`). An instance at the cull
+  `maxDistance − maxDistance/8` (`cullDistance`, `packages/core/src/world-cells.ts:3456`). An instance at the cull
   distance is in one frame and gone the next.
 - **LOD switch.** The packaged `lods` switch at 60 m is a rebuild into the other level's batch. The
   source says so: *"ponytail: a hard switch, no crossfade — a placement crosses a level boundary by
   being rebuilt into the other level's batch, so the swap pops. A blend needs a per-instance mix the
-  InstancedBatch has no slot for"* (`packages/core/src/world-cells.ts:6131`), and the guide repeats it
-  (`docs/guides/world-streaming.md:136`).
+  InstancedBatch has no slot for"* (`packages/core/src/world-cells.ts:6774`), and the guide repeats it
+  (`docs/guides/world-streaming.md:208`).
 - **Cells at the ring edge** appear at the residency boundary, so a 25-cell ring puts a visible seam
   of new geometry at the edge of view.
 
 Terrain already does this correctly and is the precedent, not the work: a tile's LOD change morphs
-vertex positions over `LOD_TRANSITION_FRAMES = 3` (`packages/core/src/world-tiles.ts:219`).
+vertex positions over `LOD_TRANSITION_FRAMES = 3` (`packages/core/src/world-tiles.ts:229`).
 [PRD-566](PRD-566-terrain-lod-morphs-on-the-gpu-and-picks-by-screen-error.md) moves that morph to
 the GPU; it stays out of this PRD. Scatter has no equivalent because the mix is per instance and `InstancedBatch` writes
-only `instanceMatrix` (`packages/core/src/instanced-batch.ts:178`).
+only `instanceMatrix` (`packages/core/src/instanced-batch.ts:236-238`).
 
 Three constraints decide the mechanism:
 
 1. **The mix is the engine's; the appearance is the game's.** `InstancedBatch` decides nothing about
-   how a batch looks (`packages/core/src/instanced-batch.ts:57`), so the engine ships a per-instance
+   how a batch looks (`packages/core/src/instanced-batch.ts:68`), so the engine ships a per-instance
    attribute and a timeline, and the game ships the material that reads it.
 2. **The shader must be TSL.** Raw GLSL `ShaderMaterial` is excluded under WebGPU
    (`packages/runtime-native/conformance/registry.json`, `raw-glsl-shader-material-webgpu`), so a
@@ -49,15 +49,23 @@ Three constraints decide the mechanism:
   The shader computes each instance's opacity from its own distance
   (`Engine/Source/Runtime/Engine/Private/InstancedStaticMesh.cpp:1372-1390`). Nothing is timed and
   nothing waits for a release.
-- **A LOD or arrival fade is a short timed ramp held per object.** The default is 0.25 s
-  (`r.LODFadeTime`, `Engine/Source/Runtime/Renderer/Private/SceneVisibility.cpp:307-308`). Each fading
-  primitive keeps a linear scale and bias and an end time (`SceneVisibility.cpp:1112-1134`).
+- **A whole-object distance-cull or arrival fade is a short timed ramp held per object per view.**
+  The default is 0.25 s (`r.LODFadeTime`, `Engine/Source/Runtime/Renderer/Private/SceneVisibility.cpp:307-308`).
+  Only primitives that opt in (`IsUsingDistanceCullFade`) get it (`SceneVisibility.cpp:521`). Each
+  fading primitive keeps a linear scale and bias and an end time (`SceneVisibility.cpp:1112-1134`).
+- **A mesh LOD crossfade is not per object.** The view keeps two samples of its own origin and
+  picks each mesh's LOD from both. One shared transition value, from 0 to 1 across the lag
+  (`lod.TemporalLag`, default 0.5 s), dithers between the two picks
+  (`Engine/Source/Runtime/Engine/Private/SceneManagement.cpp:28-32` and `:96-105`). No per-object
+  state exists, so a re-crossing needs no reversal there.
 - **A re-crossing mid-fade reverses direction and keeps the current opacity.** The bias is solved
-  so that the opacity is continuous, and the end time is recomputed (`SceneVisibility.cpp:1140-1160`).
+  so that the opacity is continuous, and the end time is recomputed (`SceneVisibility.cpp:1139-1160`).
 - **Only nearby movement fades.** A fade starts only inside a travel band
-  (`r.DistanceFadeMaxTravel`, 10 m, `SceneVisibility.cpp:310-311`, used at `:492`). A camera cut
-  or a large camera move disables distance fades (`SceneVisibility.cpp:5574-5585`, read at `:864`),
-  so a teleport pops instead of fading everything at once.
+  (`r.DistanceFadeMaxTravel`, default 1000 Unreal units, which is 10 m, `SceneVisibility.cpp:310-311`,
+  used at `:492`). A camera cut, a large camera move or a long gap since the last render disables
+  distance fades (`SceneVisibility.cpp:5568-5585`, read at `:864` and `:1188`), so a teleport pops
+  instead of fading everything at once. The LOD lag path honors the same flag
+  (`SceneManagement.cpp:108-111`).
 - **Stencil LOD dither is off by default.** `r.StencilForLODDither` (default 0,
   `Engine/Source/Runtime/Renderer/Private/DepthRendering.cpp:67-71`) trades `clip()`, which disables
   early-Z, for a stencil test in a full depth prepass. Three's WebGPU path draws no such prepass, so
@@ -79,17 +87,17 @@ a crossing placement drawn by both levels at complementary mixes.
    game's material computes the instance's mix from distance, so a cull needs no per-instance
    timeline and no held release. An instance is released only beyond the band's far end, where its
    mix is already 0. **Arrivals** (a newly admitted or rebuilt batch) ramp 0 → 1 over a
-   game-supplied `fadeMs`, and the guide cites Unreal's 0.25 s as a reference value, not as a
-   default. An arrival fades only when the follow point moved less than one cell since the last
+   game-supplied `fadeMs`, and the guide cites Unreal's 0.25 s (cull and arrival) and 0.5 s (LOD lag) as reference values, not
+   as defaults. An arrival fades only when the follow point moved less than one cell since the last
    update. A jump, which PRD-459's admission already detects, admits without a fade. Culling and
    LOD switching keep **hysteresis**: the gate re-arms only past half the band, so an instance on
    the gate does not flicker.
 3. **A level switch crossfades instead of rebuilding.** A placement that crosses a level boundary
    is drawn by both levels for `fadeMs` with complementary mixes (summing to 1), then the old level's
    copy is dropped. A placement that re-crosses mid-crossfade **reverses from its current mix**:
-   the ramp's bias is re-solved so the mix is continuous, as Unreal does. It never restarts from 0
+   the ramp's bias is re-solved so the mix is continuous, as Unreal does for its per-object cull fade. It never restarts from 0
    or 1. This replaces the rebuild-into-the-other-level path at the hard-switch note
-   (`packages/core/src/world-cells.ts:6131`).
+   (`packages/core/src/world-cells.ts:6774`).
 4. **The dither material is generated game source.** The screen-door threshold, the pattern, the
    colour and the duration are the game's; the example's `src/render/` carries the reference
    implementation the guide points at.
@@ -120,7 +128,7 @@ draws — only how a drawable arrives and leaves.
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 | --- | --- | --- | --- |
-| Per-instance mix slot | A game builds a batch with `InstancedBatch`; the attribute is bound by the game's TSL material | No per-instance channel existed; the hard-switch `ponytail:` note at `world-cells.ts:855` is retired | AC-1, AC-3 |
+| Per-instance mix slot | A game builds a batch with `InstancedBatch`; the attribute is bound by the game's TSL material | No per-instance channel existed; the hard-switch `ponytail:` note at `world-cells.ts:6774` is retired | AC-1, AC-3 |
 | Fade timeline | Cell admission, `maxDistance` cull and `lods` switching, all inside `WorldCells.update` | Hard cull and hard level swap | AC-1, AC-3, AC-4 |
 | Dither material | Generated source in `templates/*/src/render/` for a template that streams a world, plus the reference copy in `examples/abyss-framework/src/render/` and the guide | Nothing; a game's own appearance, kept in game source | AC-2, AC-6 |
 | Playtest capture check | The scenario's `steps` + screenshots, asserted through the entity's reported counters | New | AC-6 |
@@ -134,6 +142,7 @@ draws — only how a drawable arrives and leaves.
 - 2026-10-09 (João, via the same request): stencil LOD dither is not adopted. Unreal ships it off by
   default, and it needs a full depth prepass that three's WebGPU renderer does not draw. The dither
   stays a `discard` in the game's material; Phase 3 measures its cost.
+- 2026-10-12 (Unreal source review): Unreal's 0.25 s `r.LODFadeTime` ramp is the per-object distance-cull and arrival fade. Its mesh LOD dither is a different mechanism with one shared 0.5 s lag per view and no per-object state. This PRD keeps a per-placement mix and a reversal for the level crossfade, because ThreeNative has no shared two-origin scheme. The reversal rule is therefore ThreeNative's own design, taken from the cull path. Line numbers for repo files were refreshed.
 
 ## Execution Phases
 

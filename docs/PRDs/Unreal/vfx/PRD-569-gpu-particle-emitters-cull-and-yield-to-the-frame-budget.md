@@ -17,10 +17,10 @@ Every instance costs a compute dispatch and a draw every frame, whether or not t
 
 - The constructor sets `this.frustumCulled = false` (`particles.ts:57`). The sprite draws its whole
   pool (`this.count = options.amount`, `particles.ts:56`).
-- `render-camera-cull.ts:277-283` reads `frustumCulled = false` as "the bounds cannot be trusted" and
+- `render-camera-cull.ts:276-283` reads `frustumCulled = false` as "the bounds cannot be trusted" and
   keeps the object drawn. The comment names the particle batches as the reason for that rule.
-- `ComputeDrivenRegistry.processRender` (`compute-driven.ts:78-90`) hands the render camera to every
-  render-cadence object. `GPUParticles3D.process(renderer)` (`particles.ts:74-78`) ignores the
+- `ComputeDrivenRegistry.processRender` (`compute-driven.ts:79-86`) hands the render camera to every
+  render-cadence object. `GPUParticles3D.process(renderer)` (`particles.ts:75-79`) ignores the
   camera, so the simulation runs regardless of view. It only stops when the game clears `emitting`.
 - Three cannot cull a GPU particle sprite for us. A `Sprite` is frustum-tested as a unit quad around
   its own position, and every `Sprite` shares one module-level quad geometry
@@ -41,8 +41,10 @@ bucket for each window, which the render chain and the resolution scaler already
 - **GPU emitters cannot measure their own bounds on the CPU.** Niagara offers three bounds modes:
   `Dynamic`, which is "only available for CPU emitters", `Fixed`, and `Programmable`
   (`UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Classes/NiagaraEmitter.h:128-136`). The
-  default fixed box is 2 m on a side (`NiagaraEmitter.h:449`). View-frustum culling "requires fixed
-  bounds" (`Classes/NiagaraEffectType.h:156-183`).
+  default fixed box is 2 m on a side (`NiagaraEmitter.h:449`). Only Niagara's own view-frustum
+  pre-culling "requires fixed bounds". The separate cull-when-not-rendered check needs no bounds,
+  because it reads the renderer's visibility feedback (`Classes/NiagaraEffectType.h:156-183`). Three
+  gives no such feedback for a sprite, so this PRD needs the measured bound.
 - **Culling waits before it acts.** An effect is culled only after it stays out of the frustum, or
   goes unrendered, for longer than `MaxTimeOutsideViewFrustum` / `MaxTimeWithoutRender`. Both
   default to 1 s, and all visibility culls default to off
@@ -58,9 +60,13 @@ bucket for each window, which the render chain and the resolution scaler already
   scales `MaxDistance` and the instance caps down through a linear ramp. The default ramp is 1.0 at
   usage 0.5 and 0.5 at usage 1.0. Effects are culled above `MaxGlobalBudgetUsage`, default 1.0
   (`Classes/NiagaraEffectType.h:115-139`, `Private/NiagaraEffectType.cpp:201-213`). The budget
-  defaults to 2 ms per thread. Its adjusted usage decays at 0.1 per second, so effects do not flip
+  measures CPU thread time and defaults to 2 ms per thread. This PRD reads the GPU `compute`
+  bucket instead, because the particles here cost GPU time. Its adjusted usage decays at 0.1 per second, so effects do not flip
   on and off. The whole budget is **off by default** (`FFXBudget::bEnabled = false`)
   (`UE 5.8.3: Engine/Source/Runtime/Engine/Private/Particles/FXBudget.cpp:10, 26, 69, 285`).
+- **Scalability does not run every frame.** The default check frequency of an effect type is
+  spawn-only. The other choices re-check every 1.0, 0.5 or 0.25 s, or every frame
+  (`Classes/NiagaraEffectType.h:38-50`, default at `Private/NiagaraEffectType.cpp:22`).
 - Niagara also draws only the live count through GPU-written indirect arguments
   (`Classes/NiagaraGPUInstanceCountManager.h:101`). See Decisions for why this PRD does not port
   that.
@@ -82,18 +88,19 @@ culled" decision, stays in the game.
    - The emitter no longer sets `frustumCulled = false`. Instead it publishes the measured bound to
      `render-camera-cull.ts`, which tests it like any other object and keeps its existing reporting.
      An emitter with neither a sample nor an override stays exempt and is counted as
-     `exemptWithoutBounds`. The rule at `render-camera-cull.ts:277-283` stays as written: a game that
+     `exemptWithoutBounds`. The rule at `render-camera-cull.ts:276-283` stays as written: a game that
      sets `frustumCulled = false` itself still opts out.
    - While an emitter is culled for longer than the grace time (Unreal's 1 s), `process` skips its
      dispatch. The emitter applies its `onCull` reaction: `"pause"`, the default, keeps the buffers
      and resumes where it left off; `"clear"` restarts on return. The reaction is game-owned. The
      template `src/render/` file that builds the effect sets it.
-2. **Significance against the measured compute budget.** One ranking pass per frame orders the live
+2. **Significance against the measured compute budget.** One ranking pass, at most every 0.25 s as Unreal's fastest timed check does, orders the live
    emitters by projected size, the same measure the camera cull already computes. When the
    frame-budget window reports `compute` over its share, the least significant emitters take their
    `onCull` reaction first. Every cull and every resume reports a reason, as `TN_RENDER_CHAIN` does.
-   Damping follows Unreal: usage decays at a fixed rate and an emitter must stay admissible for the
-   grace time before it resumes. The engine sets no effect-count cap. The game may set a
+   Damping follows Unreal: a rise in usage applies at once, a fall decays at a fixed rate
+   (`FXBudget.cpp:167-181`), and an emitter must stay admissible for the grace time before it
+   resumes. The engine sets no effect-count cap. The game may set a
    `maxInstances` per effect kind as a named override.
 
 Integration: `ctx.add(new GPUParticles3D(...))` → `ComputeDrivenRegistry.processRender(renderer,
@@ -123,6 +130,8 @@ camera)` → `GPUParticles3D.process(renderer, camera)` → skip or dispatch. Th
 - 2026-10-09 (João, via the Unreal review request): bounds are measured, not declared. Unreal
   declares GPU bounds because it cannot measure them. This engine can, so the declared box is the
   named override, not the default.
+
+- 2026-10-12 (Unreal source review): the ranking pass now runs on a timer, not every frame, because Unreal checks scalability at 0.25 s at the fastest unless a type asks for every frame. Unreal's budget measures CPU thread time. This PRD keeps the GPU `compute` bucket on purpose. Cited line numbers in the repo were refreshed.
 
 ## Execution Phases
 
