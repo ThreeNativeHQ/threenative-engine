@@ -134,8 +134,8 @@ export function componentObservations(
       // Spawned entities need a measured baseline from their lifetime, as movement does.
       const baseline = beforeFields[field] !== undefined ? beforeFields[field] : samples.find((sample) =>
         sample.components?.[entity]?.[field] !== undefined
-        && (sample.clock.tick ?? sample.clock.timeMs ?? Infinity)
-          < (after?.clock.tick ?? after?.clock.timeMs ?? -Infinity))?.components?.[entity]?.[field];
+        && (sample.clock.tick ?? sample.clock.timeMs ?? Number.POSITIVE_INFINITY)
+          < (after?.clock.tick ?? after?.clock.timeMs ?? Number.NEGATIVE_INFINITY))?.components?.[entity]?.[field];
       return [field, {
         ...(baseline === undefined ? {} : { before: baseline }),
         ...(afterFields[field] === undefined ? {} : { after: afterFields[field] }),
