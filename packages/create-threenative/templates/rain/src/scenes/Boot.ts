@@ -125,6 +125,7 @@ export class Coast extends Scene<GameState> {
     const post = setupPost(ctx.renderer, ctx.scene, camera, {
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     this.#rain = rain;
     this.#post = post;

@@ -71,13 +71,14 @@ describe("GPU exposure lifecycle", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("reduces the existing colour and retains its 1x1 ping-pong history across resize", () => {
+  it("reduces to 16x16 blocks, tiles then bins a 64x1 histogram and retains its 1x1 ping-pong history across resize", () => {
     const { node, frame, targets, resize } = harness();
     node.updateBefore(frame);
     expect(targets.map(({ width, height }) => [width, height])).toEqual([
       [5, 2],
       [2, 1],
-      [1, 1],
+      [64, 64],
+      [64, 1],
       [1, 1],
     ]);
     const firstHistory = targets.at(-1);
@@ -89,6 +90,8 @@ describe("GPU exposure lifecycle", () => {
     expect(targets.map(({ width, height }) => [width, height])).toEqual([
       [2, 1],
       [1, 1],
+      [64, 64],
+      [64, 1],
       [1, 1],
     ]);
     expect(targets.at(-1)).not.toBe(firstHistory);
@@ -104,7 +107,7 @@ describe("GPU exposure lifecycle", () => {
     expect(node.getObservation()).toEqual({ measured: false, applied: false });
     node.updateBefore(frame);
     await Promise.resolve();
-    expect(targets).toHaveLength(4);
+    expect(targets).toHaveLength(5);
     expect(node.getObservation()).toMatchObject({
       measured: true,
       applied: false,
@@ -174,13 +177,13 @@ describe("GPU exposure lifecycle", () => {
     const { node, frame, settings } = harness();
     settings.rateUp = 99999; // A caller mutation cannot replace the validated shader policy.
     node.updateBefore(frame);
-    expect(generated).toHaveLength(4);
+    expect(generated).toHaveLength(5);
     expect(generated[0]?.match(/textureLoad\(/gu)).toHaveLength(16);
     expect(generated[1]?.match(/textureLoad\(/gu)).toHaveLength(16);
-    expect(generated[3]).toContain("log2(");
-    expect(generated[3]).toContain("smoothstep(");
-    expect(generated[3]).toContain("exp(");
-    expect(generated[3]).not.toContain("99999");
+    expect(generated[4]).toContain("log2(");
+    expect(generated[4]).toContain("smoothstep(");
+    expect(generated[4]).toContain("exp(");
+    expect(generated[4]).not.toContain("99999");
     expect(generated.join("\n")).not.toContain("textureSample(");
     node.dispose();
   });

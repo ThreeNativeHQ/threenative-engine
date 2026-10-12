@@ -8,11 +8,29 @@ import {
   MeshBasicMaterial,
   type Scene,
   SphereGeometry,
+  Vector3,
 } from "three";
+import { HEIGHT_FOG, type HeightFogParams, heightFogDepth, heightFogNode } from "./heightFog.js";
 import { palette } from "./palette.js";
 
 const CLEAR_FOG = new Color(palette.skyLow);
 const STORM_FOG = new Color(0xafc3d1);
+
+/** The look this fog replaced: FogExp2 at 0.016, measured at 40 m from 2 m up. */
+const EYE_LEVEL = { density: 0.016, distance: 40, cameraHeight: 2 };
+
+/**
+ * The distance term's density that, with the height term, keeps the old eye-level haze: at
+ * `EYE_LEVEL.distance` along the horizon from `EYE_LEVEL.cameraHeight` the two together transmit what
+ * FogExp2 at `EYE_LEVEL.density` did. The distance term is lowered, never removed, so the ground
+ * still ends in fog at a kilometre.
+ */
+function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
+  const { distance, density, cameraHeight } = EYE_LEVEL;
+  const old = (density * distance) ** 2;
+  const height = heightFogDepth(p, cameraHeight, cameraHeight, distance) * Math.LN2;
+  return Math.sqrt(Math.max(0, old - height)) / distance;
+}
 
 /** A graded dome with a warm sun glow, plus the haze; returns how to darken both for a storm. */
 export function setupSky(scene: Scene): (storm: number) => void {
@@ -46,12 +64,13 @@ export function setupSky(scene: Scene): (storm: number) => void {
   dome.renderOrder = -100;
   scene.background = bottom;
   scene.add(dome);
-  const fog = new FogExp2(CLEAR_FOG.getHex(), 0.016);
+  const fog = new FogExp2(CLEAR_FOG.getHex(), distanceDensity());
   scene.fog = fog;
+  scene.fogNode = heightFogNode(fog, HEIGHT_FOG, new Vector3(sun.x, sun.y, sun.z));
   return (storm) => {
     fog.color.copy(CLEAR_FOG).lerp(STORM_FOG, storm);
     // Thick enough to swallow the far forest, thin enough that the explorer stays readable.
-    fog.density = 0.016 + storm * 0.05;
+    fog.density = distanceDensity() + storm * 0.05;
     material.color.setScalar(1 - storm * 0.3);
   };
 }

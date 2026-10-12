@@ -130,6 +130,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
         this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
       mobile,
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     const loading = createLoadingScreen(ctx);
     const camera = ctx.camera as PerspectiveCamera;

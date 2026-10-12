@@ -3,7 +3,13 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { readAttemptJobs } from "./ci-attempt-receipts.mjs";
-import { currentRun, sourceVerdict, validateEventPlan, validatePlan } from "./ci-change-scope.mjs";
+import {
+  assertMergeParentCandidate,
+  currentRun,
+  sourceVerdict,
+  validateEventPlan,
+  validatePlan,
+} from "./ci-change-scope.mjs";
 import { readIntegrationJobs } from "./ci-integration-receipts.mjs";
 import {
   integrationCandidatePreflight,
@@ -33,7 +39,6 @@ try {
     forceFull: process.env.TN_CI_FORCE_FULL === "true",
   });
   if (process.env.TN_CI_EVENT === "pull_request") {
-    const { TN_CI_BASE_SHA: base, TN_CI_HEAD_SHA: head } = process.env;
     // The candidate is frozen by the exact base/head parent assertion below, not by the head
     // branch's name. A `promotion/<head-sha>` ref restated a SHA that check already verifies.
     if (
@@ -42,19 +47,12 @@ try {
       plan.selection !== "full"
     )
       throw new Error("CI_REQUIRED_MAIN_FULL: main requires complete verification");
-    const commit = spawnSync("git", ["cat-file", "-p", "HEAD"], { encoding: "utf8" });
-    const headers = commit.stdout?.split("\n\n", 1)[0] ?? "";
-    const parents = [...headers.matchAll(/^parent ([0-9a-f]{40})$/gmu)].map((match) => match[1]);
-    if (
-      commit.status !== 0 ||
-      !/^[0-9a-f]{40}$/u.test(base ?? "") ||
-      !/^[0-9a-f]{40}$/u.test(head ?? "") ||
-      JSON.stringify(parents) !== JSON.stringify([base, head])
-    ) {
-      throw new Error(
-        "CI_REQUIRED_PR_CANDIDATE_MISMATCH: expected the exact proposed base/head merge; changed inputs require fresh verification",
-      );
-    }
+    assertMergeParentCandidate(
+      process.cwd(),
+      "HEAD",
+      process.env.TN_CI_BASE_SHA,
+      process.env.TN_CI_HEAD_SHA,
+    );
   }
   if (process.env.TN_CI_EVENT === "merge_group") {
     const base = process.env.TN_CI_BASE_SHA ?? "";

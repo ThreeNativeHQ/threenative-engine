@@ -87,7 +87,7 @@ Read in UE 5.8.3 for the Unreal review request (ideas only, no code copied). Pat
 The differences that remain are new work, not this repair: steps that reallocate nothing, a
 continuous fraction and a minimum change period are
 [PRD-564](../unreal-source-borrowing/PRD-564-the-resolution-scale-changes-without-reallocating-a-target.md); a start point
-from the GPU family is [PRD-563](../unreal-source-borrowing/PRD-563-the-first-frame-starts-at-the-tier-the-gpu-family-holds.md);
+from the GPU family is [PRD-563](../done/PRD-563-the-first-frame-starts-at-the-tier-the-gpu-family-holds.md);
 a weak GPU's late timestamps and the MSAA rung are
 [PRD-549](./PRD-549-the-engine-holds-60-fps-on-a-weak-gpu.md).
 

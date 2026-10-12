@@ -51,6 +51,7 @@ import {
   formatValidationReport,
   renderListValidationRequested,
 } from "./profiling/render-list-validate.js";
+import { renderTrapAudit } from "./profiling/render-trap-audit.js";
 import {
   describeSceneShape,
   describeSceneWarning,
@@ -81,7 +82,7 @@ import {
   type RendererKind,
   createRenderer,
 } from "./renderer.js";
-import { ResolutionScaler } from "./resolution-scaler.js";
+import { RESOLUTION_SCALER, ResolutionScaler } from "./resolution-scaler.js";
 import type {
   ICtx,
   IStartupStatus,
@@ -893,6 +894,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#scene !== scene) return false;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
+    for (const line of renderTrapAudit(ctx.scene)) console.error(line);
     // Cutout PBR with no image-based light renders as cardboard, and the compensating tint the
     // author reaches for is invisible in a screenshot review. Once per scene entry, right after
     // `enter()`: `load()` and `enter()` are where the game builds its meshes and sets its own
@@ -1413,6 +1415,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // Phones keep the device ladder; a desktop stops before its bottom, where a picture
             // with nothing reconstructing it stops being a faster frame and becomes a blur.
             minScale: resolvePlatformResolutionFloor(getPlatform().os),
+            // The adapter family picks the first rung; the first eligible window still decides.
+            start:
+              renderer.gpuClass === undefined
+                ? undefined
+                : RESOLUTION_SCALER.startScaleByGpuClass[renderer.gpuClass.class],
             targetFps: initialTarget.targetFps,
             // No floor lift from motion data: consuming velocity is not upscaling. Three's TRAA
             // accumulates at the canvas's own size, so lifting the floor for it let a forest frame
@@ -1420,6 +1427,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // display-resolution frame may pass `temporalUpscale`, and none ships today.
           })
         : undefined;
+    // A class that starts below the ceiling must draw there from the first frame; the scaler only
+    // reports a scale, and nothing else would apply it until a window steps.
+    if (scaler !== undefined && scaler.scale !== 1)
+      renderer.setResolutionScale(scaler.scale, scaler.scaleSource);
     // The panel's own rate, once a window of presented frames can say it. The native host's
     // present counter is the only series there that counts displays rather than loop iterations;
     // on the web one rAF callback is one vblank, so the median presented interval is the period.

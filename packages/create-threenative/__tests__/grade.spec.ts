@@ -1,11 +1,21 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
+import {
+  type Data3DTexture,
+  DataUtils,
+  FloatType,
+  HalfFloatType,
+  LinearFilter,
+  UnsignedByteType,
+} from "three";
+import { LUTCubeLoader } from "three/addons/loaders/LUTCubeLoader.js";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import {
   type IGradeSettings,
   type IGradeTable,
+  filterableTable,
   gradeStages,
 } from "../templates/starter/src/render/grade.js";
 import {
@@ -33,34 +43,35 @@ function writeTable(...flags: readonly string[]): string {
 }
 
 /**
- * `LUTCubeLoader.parse` in the shape `grade.ts` loads it — `setType(FloatType)` — reduced to what it
- * decides: the edge length, and four floats per texel in x, y, z order holding the file's own
- * numbers (`scale` is 1 on this path, so nothing is quantised on the way in). The four-bytes-per-
- * texel stride is load-bearing for every read below, and so is the fact that a 3D texture is
- * sampled, not indexed: the loader also defaults to `UnsignedByteType`, which *truncates*
- * `value * 255` into a `Uint8Array` and is what this path exists to avoid.
+ * The table as the GPU receives it. `LUTCubeLoader.parse` runs in the shape `postprocessing.ts`
+ * loads it — `setType(FloatType)`, which keeps the file's own numbers where the default
+ * `UnsignedByteType` *truncates* `value * 255` into a `Uint8Array` — and `filterableTable` uploads
+ * the result as half floats. `bytes` decodes those half floats back to numbers, four per texel in
+ * x, y, z order: the values the hardware filters, and the stride every read below depends on.
+ * `floats` is the parser's own output, kept to measure what the upload costs.
  */
-function loadTable(source: string): { size: number; bytes: Float32Array } {
-  const declared = /LUT_3D_SIZE +(\d+)/u.exec(source)?.[1];
-  const size = Number(declared);
-  if (!Number.isInteger(size) || size < 2) throw new Error("no LUT_3D_SIZE");
-  const bytes = new Float32Array(size ** 3 * 4);
-  let texels = 0;
-  for (const [, r, g, b] of source.matchAll(/^([\d.e+-]+) +([\d.e+-]+) +([\d.e+-]+) *$/gmu)) {
-    const at = texels * 4;
-    bytes[at] = Number(r);
-    bytes[at + 1] = Number(g);
-    bytes[at + 2] = Number(b);
-    bytes[at + 3] = 1;
-    texels += 1;
-  }
-  if (texels !== size ** 3) throw new Error(`parsed ${texels} texels, expected ${size ** 3}`);
-  return { bytes, size };
+function loadTable(source: string): {
+  bytes: Float32Array;
+  floats: Float32Array;
+  size: number;
+  texture: Data3DTexture;
+} {
+  const parsed = new LUTCubeLoader().setType(FloatType).parse(source);
+  const texels = Array.from(source.matchAll(/^([\d.e+-]+) +([\d.e+-]+) +([\d.e+-]+) *$/gmu)).length;
+  if (texels !== parsed.size ** 3)
+    throw new Error(`parsed ${texels} texels, expected ${parsed.size ** 3}`);
+  const floats = parsed.texture3D.image.data;
+  if (!(floats instanceof Float32Array)) throw new Error("setType(FloatType) did not parse floats");
+  const texture = filterableTable(parsed.texture3D);
+  const half = texture.image.data;
+  if (!(half instanceof Uint16Array)) throw new Error("filterableTable did not upload half floats");
+  const bytes = Float32Array.from(half, (word) => DataUtils.fromHalfFloat(word));
+  return { bytes, floats, size: parsed.size, texture };
 }
 
 /**
  * What `lut3D` does to one channel: pull in by half a texel so the sample starts at the centre of
- * the edge texels, then filter the uploaded values.
+ * the edge texels, then filter the uploaded half floats.
  *
  * The grid is separable — every texel's red depends only on x, green only on y, blue only on z —
  * so the hardware's trilinear filter collapses to one linear interpolation along this channel's own
@@ -77,9 +88,58 @@ function sampled(bytes: Float32Array, size: number, value: number, channel: numb
   return at(low) * (1 - frac) + at(low + 1) * frac;
 }
 
+const IDENTITY_SOURCE = writeTable("--identity");
 /** The shipped table read back through the loader, so a change in the file cannot pass unnoticed. */
 const shipped = loadTable(readFileSync(SHIPPED, "utf8"));
-const identity = loadTable(writeTable("--identity"));
+const identity = loadTable(IDENTITY_SOURCE);
+
+/**
+ * `float32-filterable` is an optional device feature. Without it three samples a float32 3D texture
+ * without filtering, and a nine-cell table then posterises the frame. So the table is uploaded as
+ * half floats, which every device filters, and these tests run the loader's own output through
+ * `filterableTable` and read back the words that would reach the GPU.
+ */
+describe("starter grade table upload", () => {
+  it("refuses an incomplete grid rather than measuring loader zero-fill", () => {
+    const incomplete = IDENTITY_SOURCE.trimEnd().split("\n").slice(0, -1).join("\n");
+    expect(() => loadTable(incomplete)).toThrow(/parsed 728 texels, expected 729/u);
+  });
+  it("uploads half floats a GPU can filter and leaves the grid and its filters alone", () => {
+    const parsed = new LUTCubeLoader().setType(FloatType).parse(IDENTITY_SOURCE).texture3D;
+    // The loader's own output is the float32 texture that sampled nearest without the feature.
+    expect(parsed.type).toBe(FloatType);
+    expect(parsed.image.data).toBeInstanceOf(Float32Array);
+    const version = parsed.version;
+    const texture = filterableTable(parsed);
+    expect(texture.type).toBe(HalfFloatType);
+    expect(texture.image.data).toBeInstanceOf(Uint16Array);
+    expect(texture.image.data).toHaveLength(9 ** 3 * 4);
+    expect([texture.image.width, texture.image.height, texture.image.depth]).toEqual([9, 9, 9]);
+    expect([texture.magFilter, texture.minFilter]).toEqual([LinearFilter, LinearFilter]);
+    expect(texture.version).toBeGreaterThan(version);
+  });
+
+  it("keeps every number of the shipped table within a quarter of an 8-bit step", () => {
+    // A half float has ten mantissa bits, so a number from 0 to 1 moves by under 2^-10, which is
+    // 0.249 of a code. The file's six decimals are not exact eighths, so this is the real cost.
+    let worst = 0;
+    shipped.floats.forEach((authored, lane) => {
+      worst = Math.max(worst, Math.abs(authored - (shipped.bytes[lane] ?? Number.NaN)) * 255);
+    });
+    expect(worst).toBeLessThan(0.25);
+  });
+
+  it("rejects a table it would have to reinterpret instead of converting its bytes", () => {
+    // The default load holds 0 to 255, which would become a table 255 times too bright. A table
+    // that is already half floats would be converted twice. Neither is touched.
+    const eightBit = new LUTCubeLoader().parse(IDENTITY_SOURCE).texture3D;
+    expect(eightBit.type).toBe(UnsignedByteType);
+    expect(() => filterableTable(eightBit)).toThrow(/Uint8Array/u);
+    expect(eightBit.image.data).toBeInstanceOf(Uint8Array);
+    expect(() => filterableTable(identity.texture)).toThrow(/Uint16Array/u);
+    expect(identity.texture.type).toBe(HalfFloatType);
+  });
+});
 
 /**
  * The starter's colour grade is generated source, so its claim is proved here rather than only in a
@@ -88,9 +148,9 @@ const identity = loadTable(writeTable("--identity"));
  * frame; this is the arithmetic underneath it, over every value the frame can hold.
  *
  * It is a claim about the seat the stage takes, not about a fitted curve. `grade.ts` grades after
- * the output transform, where a `.cube` and an 8-bit texture already share one domain, so the
- * table's own quantisation is the whole of the error. Mapping scene-referred light onto that domain
- * and back was measured and dropped: the best two-parameter shaper cost 2.0 steps per channel, and
+ * the output transform, where a `.cube` and an 8-bit frame already share one domain, so the
+ * table's own precision (parsed floats, uploaded as half floats) is the whole of the error. Mapping
+ * scene-referred light onto that domain and back was measured and dropped: the best two-parameter shaper cost 2.0 steps per channel, and
  * `(x/W)^g / (1 + (x/W)^g)` at `W = 4, g = 1/2.2` cost 4.3, against one here.
  */
 describe("starter grade table", () => {
@@ -111,9 +171,10 @@ describe("starter grade table", () => {
         samples += 1;
       }
     }
-    // A float table stores the file's own numbers, so the round trip is the box's one step rather
-    // than the truncation an 8-bit load made of it — and it is not biased low, which is what the
-    // measured frame half saw at a signed mean of −0.5737 codes.
+    // The parse keeps the file's own numbers, and the identity table's eighths are exact half
+    // floats, so the upload adds nothing. The round trip is the box's one step rather than the
+    // truncation an 8-bit load made of it — and it is not biased low, which is what the measured
+    // frame half saw at a signed mean of −0.5737 codes.
     expect(worst, `worst ${at}`).toBeLessThanOrEqual(1);
     expect(
       Math.abs(signed / samples),
@@ -178,8 +239,9 @@ describe("the shipped grade is a default, not a look", () => {
 
   it("moves concrete and sky by at most one 8-bit step of hue", () => {
     // The two surfaces the judge named. The warm spread is this r/b distance, and the shipped
-    // table stores 8-bit codes, so the claim is a count of codes — which also absorbs the 9³
-    // interpolation's own sub-step noise. The table this replaced moved concrete by 12.
+    // table stores six decimals, so the claim is a count of codes — which also absorbs the 9³
+    // interpolation's own sub-step noise and the half-float upload's rounding. The table this
+    // replaced moved concrete by 12.
     for (const [surface, value] of [
       ["concrete", 0.35],
       ["sky", 0.9],
