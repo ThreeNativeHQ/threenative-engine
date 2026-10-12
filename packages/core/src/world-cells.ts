@@ -4141,7 +4141,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #velocityZ = 0;
   #lastSample: { readonly x: number; readonly z: number; readonly t: number } | undefined;
   readonly #ring: number;
-  readonly #terrain: TerrainTiles | undefined;
+  #terrain: TerrainTiles | undefined;
   readonly #hasColliders: boolean;
   readonly #lodHysteresis: number;
   readonly #placementLevels: Uint32Array | undefined;
@@ -4530,8 +4530,16 @@ export class WorldCells extends Group implements IComputeDriven {
   /** Every candidate is settled, so the idle pump can stop scanning the map; see `#pumpFarAcquisition`. */
   #farExhausted = false;
 
+  /** What `clone` rebuilds from: the load's resolved options, shared read-only data included. */
+  readonly #init: IWorldCellsInit;
+  /** Children the streaming itself added (terrain, chunks, batches, bundles); the rest are authored. */
+  readonly #streamed = new WeakSet<Object3D>();
+  /** A clone's copies of its source's streamed children, kept until the first update replaces them. */
+  #snapshotChildren: Object3D[] = [];
+
   private constructor(init: IWorldCellsInit) {
     super();
+    this.#init = { ...init };
     this.#budgets = {
       bytes: positiveInteger(init.budgets.bytes, "budgets.bytes"),
       instances: positiveInteger(init.budgets.instances, "budgets.instances"),
@@ -4695,7 +4703,7 @@ export class WorldCells extends Group implements IComputeDriven {
       tileResolution: init.terrain?.tileResolution ?? DEFAULT_TILE_RESOLUTION,
       tileSize: init.terrain?.tileSize ?? this.#cellSize,
     });
-    this.add(this.#terrain);
+    this.#stream(this.#terrain);
   }
 
   static async load(options: IWorldCellsLoadOptions): Promise<WorldCells> {
@@ -4849,6 +4857,39 @@ export class WorldCells extends Group implements IComputeDriven {
     });
   }
 
+  /** Adds what the streaming owns, so `clone` can tell it from what the game added. */
+  #stream(child: Object3D): void {
+    this.#streamed.add(child);
+    this.add(child);
+  }
+
+  /** Fresh streaming state; the visible snapshot is replaced on the first update. Owned caches are independent. */
+  override clone(recursive = true): this {
+    const copy = new WorldCells({
+      ...this.#init,
+      assets: this.#ownsLoader ? createAssetLoader() : this.#loader,
+      ownsAssets: this.#ownsLoader,
+    }).copy(this, false);
+    if (recursive) {
+      // The copy built its own terrain; the source's clone (its visible tiles) takes its place.
+      const fresh = copy.#terrain;
+      if (fresh !== undefined) {
+        copy.remove(fresh);
+        fresh.detach();
+      }
+      for (const child of this.children) {
+        const clonedChild = child.clone();
+        copy.add(clonedChild);
+        if (child === this.#terrain) copy.#terrain = clonedChild as TerrainTiles;
+        if (this.#streamed.has(child)) {
+          copy.#streamed.add(clonedChild);
+          if (child !== this.#terrain) copy.#snapshotChildren.push(clonedChild);
+        }
+      }
+    }
+    return copy as this;
+  }
+
   get released(): boolean {
     return this.#released;
   }
@@ -4893,6 +4934,8 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   update(renderer?: IRendererLike, camera?: Camera): void {
     if (this.#released) return;
+    for (const child of this.#snapshotChildren) this.remove(child);
+    this.#snapshotChildren.length = 0;
     // Kept for the chunk warm-up below: a chunk is loaded asynchronously and compiled when it
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#renderer = renderer;
@@ -7263,7 +7306,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (shared.bundlable === false) {
       if (shared.bundled) this.#bundleOut(shared);
       // A previously culled key may already be detached. Refusal still owes its live source draw.
-      if (shared.mesh.parent !== this) this.add(shared.mesh);
+      if (shared.mesh.parent !== this) this.#stream(shared.mesh);
       return;
     }
     const group = this.#shardOf(shared);
@@ -7371,7 +7414,7 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #addChunk(cell: IResidentCell, chunk: Object3D): void {
     if (this.#bundlesWanted === false) {
-      this.add(chunk);
+      this.#stream(chunk);
       return;
     }
     // What the record can hold, and whether anything had to be left behind. A chunk whose every draw
@@ -7381,14 +7424,14 @@ export class WorldCells extends Group implements IComputeDriven {
     const draws = chunkDraws(chunk);
     const recorded = draws.filter((mesh) => bundleSafe(mesh));
     if (recorded.length === 0) {
-      this.add(chunk);
+      this.#stream(chunk);
       return;
     }
     let entry = this.#chunkBundles.get(cell.key);
     if (entry === undefined) {
       const group = new BundleGroup();
       group.name = `${CHUNK_NAME}-bundles:${cell.key}`;
-      this.add(group);
+      this.#stream(group);
       entry = { cluster: clusterOf(cell.x, cell.z, this.#cellsPerCullCell), group };
       this.#chunkBundles.set(cell.key, entry);
     }
@@ -7398,7 +7441,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // The chunk keeps its own hierarchy around whatever it could not record, and each recorded
       // draw is attached rather than added so it keeps the world transform it was merged at. The root
       // it came out of travels with it, because that is what releases the draw again.
-      this.add(chunk);
+      this.#stream(chunk);
       for (const mesh of recorded) {
         mesh.userData.tnChunkRoot = chunk;
         entry.group.attach(mesh);
@@ -7449,7 +7492,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (group === undefined) {
       group = new BundleGroup();
       group.name = "world-main-bundles";
-      this.add(group);
+      this.#stream(group);
       this.#bundles.set(shard, group);
     }
     return group;
@@ -7472,7 +7515,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // flag onto it. See `bundled`.
     shared.mesh.userData.tnBundled = shared.bundled;
     if (shared.bundled === true) this.#shardOf(shared).add(shared.mesh);
-    else this.add(shared.mesh);
+    else this.#stream(shared.mesh);
     // A record holds the object it was cut from, so a mesh that arrived by a rebind or a grow is not
     // the one the last record named: one re-record, and the record counts this mesh from here.
     if (shared.bundled === true) {
@@ -7653,6 +7696,7 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #seat(old: InstancedMesh, next: InstancedMesh): void {
     const parent = old.parent;
+    this.#streamed.add(next);
     if (parent === null) this.add(next);
     else {
       const at = parent.children.indexOf(old);
@@ -8807,7 +8851,7 @@ export class WorldCells extends Group implements IComputeDriven {
       mesh.castShadow = true;
       mesh.receiveShadow = false;
     }
-    this.add(mesh);
+    this.#stream(mesh);
     return mesh;
   }
 
@@ -9497,7 +9541,7 @@ export class WorldCells extends Group implements IComputeDriven {
       state.bytes = prepared.bytes;
       prepared.root.name = `world-cell-proxy:${state.cell.key}`;
       for (const mesh of prepared.meshes) mesh.receiveShadow = this.#receiveShadow;
-      this.add(prepared.root);
+      this.#stream(prepared.root);
     } catch {
       state.cancelled = true;
       this.#hlodRefused++;

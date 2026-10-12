@@ -419,6 +419,45 @@ describe("render camera cull", () => {
     );
   });
 
+  it("lets an engine root cull with its own frustum and reports its counters", () => {
+    const counts = [9, 4, 1, 0, 2, 1, 0, 1];
+    const root = {
+      traverseVisible: vi.fn(),
+      __cullProjected: vi.fn(() => counts),
+      __restoreCull: vi.fn(),
+    };
+    const view = camera();
+    const matrix = view.projectionMatrix;
+    const projection = vi.fn(() => matrix);
+    Object.defineProperty(view, "projectionMatrix", { get: projection });
+    const cull = new RenderCameraCull();
+    cull.apply(root, view, 720);
+    // The JS frustum and camera position serve only the JS walk (asserted before the argument
+    // match below, whose deep compare reads every camera property).
+    expect(projection).not.toHaveBeenCalled();
+    expect(root.traverseVisible).not.toHaveBeenCalled();
+    expect(root.__cullProjected).toHaveBeenCalledWith(
+      view,
+      true,
+      expect.any(Number),
+      DEFAULT_MINIMUM_PROJECTED_PIXELS,
+      true,
+    );
+    const report = cull.report;
+    expect([
+      report.considered,
+      report.culled,
+      report.exemptCameraAttached,
+      report.exemptMarked,
+      report.exemptShadowCasters,
+      report.exemptWithoutBounds,
+      report.exemptDynamicBounds,
+      report.exemptFrustumCulled,
+    ]).toEqual(counts);
+    cull.restore();
+    expect(root.__restoreCull).toHaveBeenCalledOnce();
+  });
+
   it("does not allocate per object per frame", () => {
     const scene = new Scene();
     const group = new Group();

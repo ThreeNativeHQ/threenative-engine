@@ -130,6 +130,37 @@ export interface IRenderCameraCullReport {
  */
 export function alwaysRender(object: Object3D, enabled = true): void {
   object.userData[ALWAYS_RENDER_KEY] = enabled;
+  // The native engine runs this cull itself and cannot read userData: it reads its own marker.
+  if (ENGINE_MARKER in object)
+    // quality-allow: the native engine player reads __alwaysRender directly off the object; not in Three.Object3D types.
+    (object as unknown as Record<string, boolean>)[ENGINE_MARKER] = enabled;
+}
+
+/** The native engine's alwaysRender marker, mirrored by {@link alwaysRender}. */
+const ENGINE_MARKER = "__alwaysRender";
+
+/**
+ * A scene root the native engine walks itself (scene/projected_cull.h): the same rule in one call
+ * instead of a walk that reads every object's bounds, matrices and flags across the boundary.
+ * Optional: a root without these members takes the JS walk below, unchanged.
+ */
+interface IEngineCullRoot {
+  __cullProjected(
+    camera: Camera,
+    cameraResolved: boolean,
+    scale: number,
+    minimumPixels: number,
+    enabled: boolean,
+  ): readonly number[];
+  __restoreCull(): void;
+}
+
+function engineCullRoot(root: unknown): IEngineCullRoot | undefined {
+  const candidate = root as Partial<IEngineCullRoot> | null;
+  return typeof candidate?.__cullProjected === "function" &&
+    typeof candidate.__restoreCull === "function"
+    ? (candidate as IEngineCullRoot)
+    : undefined;
 }
 
 /**
@@ -165,6 +196,8 @@ export class RenderCameraCull {
   #exemptWithoutBounds = 0;
   #exemptDynamicBounds = 0;
   #exemptFrustumCulled = 0;
+  /** The engine root the last apply() culled through, restored by restore(). */
+  #engineRoot: IEngineCullRoot | undefined;
 
   constructor(options: IRenderCameraCullOptions = {}) {
     const requested = options.minimumPixels ?? DEFAULT_MINIMUM_PROJECTED_PIXELS;
@@ -223,6 +256,7 @@ export class RenderCameraCull {
     // its measurement off, so a disabled gate still reports what it considered and would have
     // skipped. Only the hide below is gated by `#enabled`.
     const perspective = camera as Camera & { isPerspectiveCamera?: boolean; fov?: number };
+    const engine = engineCullRoot(root);
     if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
       this.#cameraResolved = false;
     } else if (
@@ -238,6 +272,29 @@ export class RenderCameraCull {
       if (camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
       this.#camera = camera;
       this.#scale = viewportHeight / (2 * Math.tan((perspective.fov * Math.PI) / 360));
+    }
+    if (engine !== undefined) {
+      // The engine walks with its own camera position and frustum; it answers the eight counters.
+      const counts = engine.__cullProjected(
+        camera,
+        this.#cameraResolved,
+        this.#scale,
+        this.#minimumPixels,
+        this.#enabled,
+      );
+      // Indexed, not destructured: a destructuring assignment runs the iterator protocol.
+      this.#considered = counts[0] as number;
+      this.#culled = counts[1] as number;
+      this.#exemptCameraAttached = counts[2] as number;
+      this.#exemptMarked = counts[3] as number;
+      this.#exemptShadowCasters = counts[4] as number;
+      this.#exemptWithoutBounds = counts[5] as number;
+      this.#exemptDynamicBounds = counts[6] as number;
+      this.#exemptFrustumCulled = counts[7] as number;
+      this.#engineRoot = engine;
+      return;
+    }
+    if (this.#camera !== undefined) {
       const elements = camera.matrixWorld.elements;
       this.#cameraX = elements[12] as number;
       this.#cameraY = elements[13] as number;
@@ -252,6 +309,8 @@ export class RenderCameraCull {
 
   /** Undoes every hide this gate made, leaving the authored scene as the game left it. */
   restore(): void {
+    this.#engineRoot?.__restoreCull();
+    this.#engineRoot = undefined;
     for (let index = 0; index < this.#hiddenCount; index += 1) {
       (this.#hidden[index] as Object3D).visible = true;
     }

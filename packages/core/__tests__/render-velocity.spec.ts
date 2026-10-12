@@ -23,6 +23,7 @@ import * as projectionPlan from "../src/projection-plan.js";
 import { readBatchedMeshPreviousMatrices } from "../src/render/batched-velocity.js";
 import { type IRenderChainRenderer, RenderChain } from "../src/render/chain.js";
 import {
+  type IVelocityProvision,
   VELOCITY_PREVIOUS_INSTANCE_MATRICES,
   VelocityTracker,
   readVelocityPreviousBoneMatrices,
@@ -596,6 +597,36 @@ describe("velocity provisioning on the shipped path", () => {
 
     const velocity = (output as { value?: { velocity?: unknown } }).value?.velocity;
     expect(velocity).toBeInstanceOf(VelocityNode);
+  });
+
+  it("builds and hands velocity through an optional host provision instead of core's own", () => {
+    // A host whose scene pass owns the velocity output another way (the native engine) passes its
+    // own `provision`; leaving it out keeps core's MRT route, which the tests above pin.
+    const scenePass = pass(new Scene(), new PerspectiveCamera());
+    const texture = scenePass.getTextureNode("output");
+    const attached: unknown[] = [];
+    const attach = vi.fn((node: unknown, source: Node) => {
+      attached.push(source);
+      return node;
+    });
+    const provision: IVelocityProvision = {
+      texture: vi.fn(() => texture),
+      attach: attach as IVelocityProvision["attach"],
+    };
+    const chain = new RenderChain({
+      renderer: stubRenderer(),
+      input: scenePass.getTextureNode("output"),
+      request: { stages: ["traa"], velocity: { pass: scenePass, provision } },
+      stages: [{ build: (input) => input ?? {}, name: "traa" }],
+      report: () => undefined,
+    });
+
+    expect(chain.applied.stages).toEqual(["traa"]);
+    expect(provision.texture).toHaveBeenCalledWith(scenePass);
+    expect(attach).toHaveBeenCalledOnce();
+    expect(attached).toEqual([texture]);
+    // Core's own route did not run: the pass has no velocity target.
+    expect(scenePass.getMRT()?.has("velocity") ?? false).toBe(false);
   });
 
   it("does not allocate velocity for temporal stages dropped by tier or provider checks", () => {

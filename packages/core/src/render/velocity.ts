@@ -114,6 +114,26 @@ export function withVelocityContext<T>(node: T, source: Node): T {
 }
 
 /**
+ * How the render chain provisions the MRT velocity a temporal stage reads. The chain defaults to
+ * {@link mrtVelocity}; a host that provisions velocity another way (an engine whose scene pass owns
+ * the output) passes its own as `request.velocity.provision`.
+ */
+export interface IVelocityProvision {
+  /** Ensures `pass` writes velocity and returns its texture node. */
+  texture(pass: IVelocityRenderPass): Node;
+  /** Hands the velocity source through the composed graph; `source` is the node `texture` returned. */
+  attach<T>(node: T, source: Node): T;
+}
+
+/**
+ * Core's own provision: the scene pass's MRT output, with the TSL `velocity` accessor as the context
+ * source temporal nodes jitter.
+ */
+export function mrtVelocity(): IVelocityProvision {
+  return { texture: velocityTexture, attach: (node) => withVelocityContext(node, velocity) };
+}
+
+/**
  * Captures instance matrices at the framework's pre-render boundary and enables previous data on
  * every renderable in the graph. The previous snapshot is never the array the game writes next.
  * @situation retain previous transforms for animated and instanced renderables

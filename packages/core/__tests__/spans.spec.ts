@@ -163,3 +163,22 @@ describe("spansRequested", () => {
     }
   });
 });
+
+it("routes span boundaries to the native monotonic sink without reading simulation time", () => {
+  setSpanRecorder(undefined);
+  const now = vi.spyOn(performance, "now");
+  const sink = vi.fn();
+  vi.stubGlobal("__tnGameSpan", sink);
+  try {
+    beginSpan(SPANS.sceneUpdate);
+    endSpan(SPANS.sceneUpdate);
+    expect(sink.mock.calls).toEqual([
+      [SPANS.sceneUpdate, 0],
+      [SPANS.sceneUpdate, 1],
+    ]);
+    expect(now).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+    now.mockRestore();
+  }
+});
