@@ -337,6 +337,47 @@ engine.collect();
   lit.onBeforeCompile = () => {};
   check(lit.onBeforeCompile !== base.onBeforeCompile, "a game's onBeforeCompile is its own");
 }
+// A Matrix4's copy and equals between engine matrices run over the engine's memory (PRD-573 web cut 2): no
+// engine call once both addresses are known, and still right after the Wasm memory grows (the heap view
+// is re-read, never kept).
+{
+  const { Matrix4: EngineMatrix4 } = engine.classes as unknown as typeof THREE;
+  const source = new Mesh(new BoxGeometry(1, 1, 1), material);
+  source.position.set(1, 2, 3);
+  source.updateMatrixWorld();
+  const kept = new EngineMatrix4();
+  kept.copy(source.matrixWorld);
+  kept.equals(source.matrixWorld);
+  const counts = new Map<string, number>();
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = counts;
+  const same = kept.equals(source.matrixWorld);
+  source.position.set(4, 5, 6);
+  source.updateMatrixWorld();
+  const differs = !kept.equals(source.matrixWorld);
+  kept.copy(source.matrixWorld);
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = undefined;
+  const matrixCalls = [...counts].filter(([key]) => /\.(copy|equals)$/u.test(key));
+  check(same && differs, "Matrix4.equals answers over memory");
+  check(
+    kept.elements[12] === 4 && kept.elements[14] === 6,
+    `Matrix4.copy over memory: ${kept.elements[12]}`,
+  );
+  check(
+    matrixCalls.length === 0,
+    `Matrix4 copy/equals cross no engine call: ${JSON.stringify(matrixCalls)}`,
+  );
+  const before = abi.HEAPF64.buffer.byteLength;
+  const grown = abi._malloc(256 * 1024 * 1024);
+  check(abi.HEAPF64.buffer.byteLength > before, "the Wasm memory grew");
+  source.position.set(7, 8, 9);
+  source.updateMatrixWorld();
+  kept.copy(source.matrixWorld);
+  check(
+    kept.elements[12] === 7 && kept.equals(source.matrixWorld),
+    "Matrix4.copy after memory growth",
+  );
+  abi._free?.(grown);
+}
 // three's InstancedMesh/BatchedMesh.dispose, which core's projection mirror calls on a retired batch: the
 // engine frees instance buffers with the object, so the call releases nothing (as core-three.mjs).
 {

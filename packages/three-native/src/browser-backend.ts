@@ -63,6 +63,11 @@ export interface IBrowserRuntime {
   engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
   /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
   readDoubles?(address: number, count: number): number | number[];
+  /**
+   * The engine's memory as doubles, current: Emscripten replaces the view when the memory grows, so a caller
+   * reads it per operation and never keeps it. Wasm only.
+   */
+  heapF64?(): Float64Array;
   /** The byte at `address` in the engine's memory; Wasm only. A registry field `[offset, 0]` is a byte flag. */
   readByte?(address: number): number;
   /** Writes one double at `address` in the engine's memory; Wasm only. */
@@ -589,6 +594,50 @@ export function defineBrowserClasses(
           if (query)
             labels.get(this)?.set(key, result) ?? labels.set(this, new Map([[key, result]]));
           return result;
+        },
+      });
+    }
+    // A transform matrix (`mesh.matrixWorld`, a projection's kept copy) is 16 doubles at an engine address:
+    // copy and equals between two engine matrices run over that memory, not as engine calls (PRD-573 web
+    // cut 2, the web side of the desktop's TransformPage views). Anything else takes the engine method.
+    const elements = binding.fields?.elements;
+    const heapF64 = runtime.heapF64;
+    if (elements !== undefined && heapF64 !== undefined && binding.methods.includes("copy")) {
+      const [offset = 0, count = 0] = elements;
+      const engineCopy = prototype.copy as (this: object, other: unknown) => object;
+      const engineEquals = prototype.equals as (this: object, other: unknown) => boolean;
+      Object.defineProperties(prototype, {
+        copy: {
+          configurable: true,
+          writable: true,
+          value(this: object, other: unknown) {
+            if (
+              other === null ||
+              typeof other !== "object" ||
+              Object.getPrototypeOf(other) !== prototype
+            )
+              return engineCopy.call(this, other);
+            const from = (addressOf(other) + offset) / 8;
+            heapF64().copyWithin((addressOf(this) + offset) / 8, from, from + count);
+            return this;
+          },
+        },
+        equals: {
+          configurable: true,
+          writable: true,
+          value(this: object, other: unknown) {
+            if (
+              other === null ||
+              typeof other !== "object" ||
+              Object.getPrototypeOf(other) !== prototype
+            )
+              return engineEquals.call(this, other);
+            const heap = heapF64();
+            const a = (addressOf(this) + offset) / 8;
+            const b = (addressOf(other) + offset) / 8;
+            for (let i = 0; i < count; i++) if (heap[a + i] !== heap[b + i]) return false;
+            return true;
+          },
         },
       });
     }
@@ -1505,6 +1554,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     writeDouble: (address, value) => {
       abi.HEAPF64[address / 8] = value;
     },
+    heapF64: () => abi.HEAPF64,
     readDoubles: (address, count) => {
       const at = address / 8;
       return count === 1
