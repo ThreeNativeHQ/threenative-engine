@@ -63,8 +63,8 @@ export class TerrainEvaluator {
     validateDocument(doc);
     validateConfig({ ...doc.config, resolution });
     const keys: string[] = [];
-    let key = JSON.stringify({ ...doc.config, resolution });
-    for (const layer of doc.layers) {
+    let key = this.limit > 0 ? JSON.stringify({ ...doc.config, resolution }) : "";
+    for (const layer of this.limit > 0 ? doc.layers : []) {
       key += `|${JSON.stringify(layer)}`;
       keys.push(key);
     }

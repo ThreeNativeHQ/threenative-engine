@@ -6,7 +6,12 @@ import { starterAssetsDir } from "./kit-assets.js";
 export { starterAssetsDir } from "./kit-assets.js";
 import type { ITerrainState } from "./core/types.js";
 import type { IWorldPackageAsset, IWorldPackageManifest } from "./core/world-package.js";
-import { Terrain, applyPlacementOverrides, bakeWorldPackage, decodeRAW16 } from "./index.js";
+import {
+  TerrainEvaluator,
+  applyPlacementOverrides,
+  bakeWorldPackage,
+  decodeRAW16,
+} from "./index.js";
 
 type KitAsset = {
   readonly near: string;
@@ -97,7 +102,7 @@ export async function bakeKit(
   const surface = JSON.parse(await readFile(join(here, "surface.json"), "utf8"));
 
   const state = applyPlacementOverrides(
-    Terrain.fromJSON(recipe.recipe).evaluate(),
+    new TerrainEvaluator({ cacheMB: 0 }).evaluate(recipe.recipe),
     recipe.placementOverrides ?? {},
   );
 

@@ -329,7 +329,14 @@ export function hydraulic(
       }
       dx = dx * inertia - old.dx * oneMinusInertia;
       dz = dz * inertia - old.dz * oneMinusInertia;
-      let length = Math.hypot(dx, dz);
+      // Scale before squaring, retaining hypot's two-component arithmetic without its varargs path.
+      const largest = Math.max(Math.abs(dx), Math.abs(dz));
+      const scaledX = Math.abs(dx) / largest;
+      const scaledZ = Math.abs(dz) / largest;
+      let length =
+        largest === 0 || largest === Number.POSITIVE_INFINITY
+          ? largest
+          : Math.sqrt(scaledX * scaledX + scaledZ * scaledZ) * largest;
       if (length < 1e-9) {
         const angle = rnd() * Math.PI * 2;
         dx = Math.cos(angle);

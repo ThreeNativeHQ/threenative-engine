@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   Mask,
   Terrain,
+  TerrainEvaluator,
   bakeMesh,
   bakeTerrain,
   decodeRAW16,
@@ -22,6 +23,7 @@ describe("public terrain consumer", () => {
       .erode({ id: "rain", method: "hydraulic", droplets: 3000, erosion: 0.15 })
       .erode({ id: "talus", method: "thermal", iterations: 12, talus: 25 });
     const state = terrain.evaluate();
+    expect(new TerrainEvaluator({ cacheMB: 0 }).evaluate(terrain.toJSON())).toEqual(state);
     expect(state.erosion).toBeDefined();
     for (const values of Object.values(state.erosion ?? {})) {
       expect(values.length).toBe(state.height.length);
