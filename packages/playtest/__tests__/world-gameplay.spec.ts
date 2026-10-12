@@ -179,6 +179,13 @@ test("rejects a resident-tile topology that is smaller than the declared measure
   ).toBe(true);
 });
 
+test("retains terrain walk frame times for the blend-tail measurement", () => {
+  const scenario = JSON.parse(
+    readFileSync(path.resolve("examples/abyss-framework/playtests/terrain.playtest.json"), "utf8"),
+  );
+  expect(scenario.assert.performance).toEqual({ minFps: 1 });
+});
+
 test("requires the terrain scenario to prove an LOD transition after its baseline", () => {
   const scenario = JSON.parse(
     readFileSync(path.resolve("examples/abyss-framework/playtests/terrain.playtest.json"), "utf8"),
