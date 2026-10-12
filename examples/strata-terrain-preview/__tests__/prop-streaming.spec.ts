@@ -13,7 +13,6 @@ import {
   Vector3,
 } from "three";
 import { expect, it, vi } from "vitest";
-import { spawnReadinessSnapshot } from "../src/render/loading.js";
 import {
   type IPropPreparationProgress,
   createStreamedProps,
@@ -66,29 +65,17 @@ it("reports an outstanding world load before the factory returns or attaches it"
       progress = value;
     },
   });
+  let settled = false;
+  void work.then(() => {
+    settled = true;
+  });
   await resolving;
   let streamed: Awaited<typeof work>;
   try {
     expect(progress?.phase).toBe("world-load");
     expect(progress?.bucket).toBe("horizon:true");
     expect(progress?.worlds).toHaveLength(0);
-    const receipt = spawnReadinessSnapshot({
-      reason: "world load still outstanding before the factory returns or attaches",
-      atMs: performance.now(),
-      world: "forest",
-      sceneUuid: "controlled-scene",
-      released: false,
-      gate: { ready: false, error: "" },
-      stage: "streaming",
-      propsSettled: false,
-      preparation: progress,
-      assets: assets.progress,
-      startup: { phase: "collapsing", progress: 0.95, compileSettled: true, timeline: {} },
-    });
-    expect(receipt.gate).toEqual({ ready: false, error: "" });
-    expect(receipt.preparation.phase).toBe("world-load");
-    expect(receipt.preparation.worldCount).toBe(0);
-    expect(receipt.released).toBe(false);
+    expect(settled).toBe(false);
     release();
     streamed = await work;
     expect(progress?.phase).toBe("complete");
@@ -96,7 +83,7 @@ it("reports an outstanding world load before the factory returns or attaches it"
     expect(streamed?.worlds[0]?.parent).toBeNull();
     expect(streamed?.worlds[0]?.released).toBe(false);
     expect(progress?.prewarmedWorlds).toBe(0);
-    expect(receipt.preparation.worldCount).toBe(0);
+    expect(settled).toBe(true);
   } finally {
     release();
     streamed ??= await work;
@@ -266,18 +253,28 @@ it("retains every unlimited canopy placement and keeps prewarm pending until sce
     },
   });
   if (!streamed) throw new Error("cancelled");
+  let ready = false;
+  void Promise.all([
+    ...streamed.worlds.map((world) => world.whenSpawnReady({ x: 0, z: 0 }, 60)),
+    ...streamed.worlds.map((world) => world.prewarmed),
+  ]).then(
+    () => {
+      ready = true;
+    },
+    () => undefined,
+  );
   try {
-    expect(streamed.ready).toBe(false);
+    expect(ready).toBe(false);
     expect(preparation?.prewarmedWorlds).toBe(0);
     for (let frame = 0; frame < 200; frame++) {
       for (const world of streamed.worlds) world.update();
       await Promise.resolve();
     }
     expect(streamed.meshes.reduce((n, m) => n + m.count, 0)).toBe(placements.length);
-    expect(streamed.ready).toBe(false);
+    expect(ready).toBe(false);
     expect(streamed.stats().pendingPrewarm).toBeGreaterThan(0);
     new Group().add(...streamed.worlds);
-    for (let frame = 0; frame < 200 && !streamed.ready; frame++) {
+    for (let frame = 0; frame < 200 && !ready; frame++) {
       for (const world of streamed.worlds) {
         world.update();
         world.traverse((node) => {
@@ -294,7 +291,13 @@ it("retains every unlimited canopy placement and keeps prewarm pending until sce
       }
       await Promise.resolve();
     }
-    expect(streamed.ready).toBe(true);
+    expect(ready).toBe(true);
+    expect(streamed.stats().loadedCells).toBe(streamed.stats().residentCells);
+    expect(streamed.stats()).toMatchObject({
+      loadsInFlight: 0,
+      loadsQueued: 0,
+      admissionBacklog: 0,
+    });
     expect(preparation?.prewarmedWorlds).toBe(streamed.worlds.length);
     expect(streamed.stats().pendingPrewarm).toBe(0);
     for (const x of [4000, 0]) {
@@ -736,9 +739,19 @@ it("settles an editor stream without caster layers when no shadow renderer exist
     bundles: false,
   });
   assert(streamed);
+  let ready = false;
+  void Promise.all([
+    ...streamed.worlds.map((world) => world.whenSpawnReady({ x: 0, z: 0 }, 60)),
+    ...streamed.worlds.map((world) => world.prewarmed),
+  ]).then(
+    () => {
+      ready = true;
+    },
+    () => undefined,
+  );
   new Group().add(...streamed.worlds);
   try {
-    for (let frame = 0; frame < 100 && !streamed.ready; frame++) {
+    for (let frame = 0; frame < 100 && !ready; frame++) {
       for (const world of streamed.worlds) {
         world.update();
         world.traverse((node) => {
@@ -749,7 +762,13 @@ it("settles an editor stream without caster layers when no shadow renderer exist
       }
       await Promise.resolve();
     }
-    expect(streamed.ready).toBe(true);
+    expect(ready).toBe(true);
+    expect(streamed.stats().loadedCells).toBe(streamed.stats().residentCells);
+    expect(streamed.stats()).toMatchObject({
+      loadsInFlight: 0,
+      loadsQueued: 0,
+      admissionBacklog: 0,
+    });
     expect(streamed.meshes.reduce((count, mesh) => count + mesh.count, 0)).toBe(1);
     expect(streamed.stats().failures).toBe(0);
   } finally {

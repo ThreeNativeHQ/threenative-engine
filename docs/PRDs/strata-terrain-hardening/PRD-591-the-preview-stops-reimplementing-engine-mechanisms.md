@@ -42,7 +42,7 @@ both material paths.
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: The editor draws props through the streamed path, and `levelFor`/`setLevels` are deleted. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` plus `count-loc.ts` — Evidence: 2026-10-12, NVIDIA Turing, private Xvfb. The editor view draws through `createStreamedProps`; `levelFor`, the `propWork` ladder, `createProps` and `createPropsInSlices` are deleted from `props.ts` (10 files, 641 lines removed, 412 added, net -229). `test:terrain:editor` passes before and after (terrain edits 707 to 747 ms). The editor viewport is pixel-identical in four views (mean absolute RGB difference below 2e-6, 0% of pixels over 8; 100 placements, 200 parts, 390,800 triangles each), so no pixel reached the screen differently and no visual judge ran. 88 of 88 preview tests pass; typecheck and Biome pass; `count-loc.ts --check` passes. `check-temperate.mts:45` keeps one tree-scale assertion that already failed before this change, and its streamed section passes on its own.
-- [ ] AC-2 [local]: `WorldCells.whenSpawnReady` gates the preview's spawn, and the example's readiness module is deleted. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-data.spec.ts` plus `test:terrain:web` — Evidence: pending.
+- [x] AC-2 [local]: `WorldCells.whenSpawnReady` gates the preview's spawn, and the example's readiness module is deleted. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-data.spec.ts` plus `test:terrain:web` Evidence: 2026-10-12, NVIDIA Turing, private Xvfb. `spawnReadinessSnapshot` and its helpers are deleted from `render/loading.ts` (112 lines) and prop streaming's `readinessAt` and `ready` are gone (22 lines); `game.ts` gates on `WorldCells.whenSpawnReady(spawn, 60)` for nearby prop cells and on prewarm for drawing, and terrain plus its collider exist before preparation starts. Seven files, 147 added and 263 removed (net -116). A deliberately premature gate failed the new regression in `world-cells-data.spec.ts` and `strata-loading.spec.ts`, then passed; terrain and preview suites pass 445 of 445. Forest `test:terrain:web` is 41 of 44 before and after: the only failures are the known budgets `afterFirstFrameTaskMs`, `timeToReadyMs` and `maxViewGpuMs`; the spawn assertions pass (6 of 6 spawn cells, grounding, empty loading error).
 - [ ] AC-3 [local]: Scatter runs in the bake, and `enter` does no scatter work. proof: `test:terrain:web` asserting no long task over 50 ms during `enter` — Evidence: pending.
 - [ ] AC-4 [local]: Ground plumbing uses `loadTerrainSplat`, and height bands come from the world's measured range. proof: `test:terrain:web` — Evidence: pending.
 - [ ] AC-5 [local]: A fresh visual judge rates the before/after captures of all five kits NEUTRAL or IMPROVEMENT (same pose, headed WebGPU, two runs per arm). proof: judge verdict and images on the PR — Evidence: pending.
@@ -55,7 +55,7 @@ both material paths.
 
 #### Phase 2: readiness and scatter
 **Status:** PARTIAL
-- [ ] Spawn readiness in `WorldCells`. proof: spec + web playtest
+- [x] Spawn readiness in `WorldCells`. proof: spec + web playtest Done 2026-10-12, see AC-2 evidence.
   - Engine helper implemented; caller and native closure remain open: `WorldCells.whenSpawnReady(position, radius = 0, timeoutMs = 120_000)` in
     `packages/core/src/world-cells.ts`, built on `readinessAt` as the only authority. It snapshots
     the position, observes held waiters at the end of the existing `update` after admissions, and

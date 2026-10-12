@@ -17,7 +17,7 @@ import {
   Vector3,
 } from "three";
 import { BIOMES, type WorldName } from "./render/biomes.js";
-import { createLoadingScreen, spawnReadinessSnapshot } from "./render/loading.js";
+import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { type ICanopyComparison, loadPack, loadSkyLight } from "./render/pack.js";
 import { loadPreparedProps } from "./render/prepared.js";
@@ -298,17 +298,23 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       const data = this.#data;
       if (!data) throw new Error(`World ${world} was not loaded`);
       // ctx.goto carries state; camera names from the outgoing biome must not carry with it.
-      ctx.state.set({ view: "player", worldReady: false, loadingError: "" });
+      ctx.state.set({
+        view: "player",
+        worldReady: false,
+        loadingError: "",
+        spawnCellsRequired: 0,
+        spawnCellsLoaded: 0,
+      });
       let released = false;
       const textureUploads = new AbortController();
       let propsStage = "waiting-for-physics";
-      let propsSettled = false;
       let preparation: IPropPreparationProgress | undefined;
       let completedPropsWork = 0;
       // One scene-local spawn gate: a single deadline taken here, settled once by the world readiness
       // join, a failure or teardown. `WorldCells.whenSpawnReady` is the data authority and each
       // streamed world's `prewarmed` is the draw gate; no frame polls either.
       const deadlineAt = performance.now() + 120_000;
+      let spawnCells = { required: 0, loaded: 0 };
       let spawnReady = false;
       let spawnError = "";
       let spawnSettled = false;
@@ -351,22 +357,11 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       );
       function captureSpawnFailure(reason: string): void {
         console.error(
-          `TN_STRATA_SPAWN_FAILURE ${JSON.stringify(
-            spawnReadinessSnapshot({
-              reason,
-              atMs: performance.now(),
-              world,
-              sceneUuid: ctx.scene.uuid,
-              released,
-              gate: { ready: spawnReady, error: spawnError },
-              stage: propsStage,
-              propsSettled,
-              ...(preparation === undefined ? {} : { preparation }),
-              coverage: props?.readinessAt(spawn),
-              assets: ctx.assets.progress,
-              startup: ctx.startup,
-            }),
-          )}`,
+          `TN_STRATA_SPAWN_FAILURE ${JSON.stringify({
+            reason: reason.slice(0, 256),
+            world,
+            stage: (preparation?.phase ?? propsStage).slice(0, 64),
+          })}`,
         );
       }
       if (ctx.startup.phase !== "ready")
@@ -807,10 +802,17 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           failSpawn("Strata spawn admission exceeded 120000 ms");
         } else {
           void Promise.all([
-            ...props.worlds.map((stream) => stream.whenSpawnReady(spawn, 60, remaining)),
+            Promise.all(props.worlds.map((stream) => stream.whenSpawnReady(spawn, 60, remaining))),
             ...props.worlds.map((stream) => stream.prewarmed),
           ]).then(
-            () => settleSpawn(),
+            ([regions]) => {
+              if (released || spawnSettled) return;
+              spawnCells = {
+                required: regions.reduce((sum, region) => sum + region.requiredCells, 0),
+                loaded: regions.reduce((sum, region) => sum + region.loadedCells, 0),
+              };
+              settleSpawn();
+            },
             (reason) => failSpawn(reason),
           );
         }
@@ -980,18 +982,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           building = true;
           const work = buildProps();
           if (ctx.startup.phase !== "ready") ctx.startup.hold("strata-props", work);
-          void work.then(
-            () => {
-              propsSettled = true;
-            },
-            (error) => {
-              propsSettled = true;
-              if (!released) {
-                failSpawn(error);
-                ctx.state.set({ worldReady: spawnReady, loadingError: spawnError });
-              }
-            },
-          );
+          void work.catch((error) => {
+            if (!released) {
+              failSpawn(error);
+              ctx.state.set({ worldReady: spawnReady, loadingError: spawnError });
+            }
+          });
         }
         frames++;
         // `props.meshes` walks every streamed world; three walks per fixed step were 8.3 s of a
@@ -1008,10 +1004,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           };
         }
         const streaming = props?.stats();
-        const region = props?.readinessAt(spawn);
         const worldReady = spawnReady;
-        if (region)
-          ctx.state.set({ spawnCellsRequired: region.required, spawnCellsLoaded: region.loaded });
         if (spawnError) ctx.state.set({ loadingError: spawnError });
         if (
           worldReady &&
@@ -1065,6 +1058,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           world,
           groundBiome: (mesh.material as MeshStandardMaterial).userData.biome ?? "baked",
           worldReady,
+          spawnCellsRequired: spawnCells.required,
+          spawnCellsLoaded: spawnCells.loaded,
           streamingResidentCells: streaming?.residentCells ?? 0,
           streamingLoadedCells: streaming?.loadedCells ?? 0,
           streamingEvictions: streaming?.evictions ?? 0,

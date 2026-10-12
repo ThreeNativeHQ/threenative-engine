@@ -12,7 +12,7 @@ import {
 } from "three";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
-import { createLoadingScreen, spawnReadinessSnapshot } from "../src/render/loading.js";
+import { createLoadingScreen } from "../src/render/loading.js";
 
 const GAME_URL = new URL("../src/game.ts", import.meta.url);
 const GATE_NAMES = [
@@ -130,10 +130,19 @@ it.each(["attached", "cancelled", "released"] as const)(
     const controllerHost = host(new Promise<void>(() => undefined));
     controllerHost.canvasLayer.opaque = true;
     controllerHost.canvasLayer.renderWorldDuringStartup = false;
+    let admit: () => void = () => undefined;
+    let draw: () => void = () => undefined;
     const world = {
-      prewarmed: Promise.resolve(),
+      prewarmed: new Promise<void>((resolve) => {
+        draw = resolve;
+      }),
       update: () => undefined,
-      whenSpawnReady: () => Promise.resolve({}),
+      whenSpawnReady: vi.fn(
+        () =>
+          new Promise<{ requiredCells: number; loadedCells: number }>((resolve) => {
+            admit = () => resolve({ requiredCells: 1, loadedCells: 1 });
+          }),
+      ),
     };
     const attachments: boolean[] = [];
     let entered: () => void = () => undefined;
@@ -150,12 +159,14 @@ it.each(["attached", "cancelled", "released"] as const)(
       exports: {} as { Controller?: new () => { run(): Promise<void> } },
       performance,
       deadlineAt: performance.now() + 120_000,
-      settleSpawn: () => undefined,
+      settleSpawn: vi.fn(),
+      spawnSettled: false,
+      spawnCells: { required: 0, loaded: 0 },
       failSpawn: () => undefined,
       ctx: {
         ...controllerHost,
         assets: undefined,
-        state: { getState: () => ({}) },
+        state: { getState: () => ({}), set: vi.fn() },
         entities: { add: () => undefined },
         add: () => {
           attachments.push(controllerHost.canvasLayer.keepWorldRendering);
@@ -245,75 +256,48 @@ it.each(["attached", "cancelled", "released"] as const)(
     expect(attachments).toEqual(outcome === "attached" ? [false] : []);
     expect(controllerHost.canvasLayer.keepWorldRendering).toBe(outcome === "attached");
     expect(disposed).toBe(outcome === "released");
+    expect(scope.settleSpawn).not.toHaveBeenCalled();
+    expect(scope.spawnCells).toEqual({ required: 0, loaded: 0 });
+    draw();
+    for (let turn = 0; turn < 5; turn++) await Promise.resolve();
+    expect(scope.settleSpawn).not.toHaveBeenCalled();
+    admit();
+    for (let turn = 0; turn < 5; turn++) await Promise.resolve();
+    expect(scope.settleSpawn).toHaveBeenCalledTimes(outcome === "attached" ? 1 : 0);
+    if (outcome === "attached") {
+      expect(scope.spawnCells).toEqual({ required: 1, loaded: 1 });
+      expect(scope.ctx.state.set).not.toHaveBeenCalled();
+      expect(world.whenSpawnReady).toHaveBeenCalledWith(scope.spawn, 60, expect.any(Number));
+    }
   },
 );
 
 it.each(["世界", "\u0000", "\uD800"])(
   "bounds failure receipts for %j without retaining scene objects or resident key arrays",
   (text) => {
-    const stats = {
-      residentCells: 16,
-      loadedCells: 12,
-      loadsInFlight: 1,
-      loadsQueued: 2,
-      pendingPrewarm: 3,
-      prewarmMinted: 4,
-      failures: 0,
-      admission: { spentMs: 1.5, deferred: 2, backlog: 5 },
-      residentKeys: ["must-not-copy"],
-    };
-    const stream = {
-      uuid: "generation".repeat(100),
-      name: text.repeat(1_000),
-      parent: { uuid: "scene".repeat(100) },
-      released: false,
-      stats: () => stats,
-    };
-    const receipt = spawnReadinessSnapshot({
-      reason: text.repeat(10_000),
-      atMs: 120_000,
+    const error = vi.fn();
+    runInNewContext(
+      ts.transpileModule(
+        `${gameDeclarations(["captureSpawnFailure"])}; captureSpawnFailure(reason);`,
+        { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+      ).outputText,
+      {
+        console: { error },
+        reason: text.repeat(10_000),
+        world: "forest",
+        propsStage: "streaming",
+        preparation: { phase: "world-load" },
+      },
+    );
+    expect(error).toHaveBeenCalledTimes(1);
+    const encoded = error.mock.calls[0]?.[0] as string;
+    expect(Buffer.byteLength(encoded)).toBeLessThan(2048);
+    const receipt = JSON.parse(encoded.slice("TN_STRATA_SPAWN_FAILURE ".length));
+    expect(receipt).toEqual({
+      reason: text.repeat(10_000).slice(0, 256),
       world: "forest",
-      sceneUuid: "scene-generation",
-      released: false,
-      gate: { ready: false, error: "" },
-      stage: "streaming",
-      propsSettled: false,
-      preparation: {
-        phase: "world-load",
-        bucket: text.repeat(1_000),
-        added: 0,
-        total: 213_968,
-        prewarmedWorlds: 3,
-        worlds: Array.from({ length: 20 }, () => stream) as never,
-      },
-      assets: {
-        requested: 323,
-        settled: 300,
-        requestedBytes: 500,
-        settledBytes: 450,
-        pending: Array.from({ length: 20 }, () => text.repeat(10_000)),
-      },
-      startup: {
-        phase: "collapsing",
-        progress: 0.95,
-        compileSettled: true,
-        timeline: { enteredMs: 10, compileSettledMs: 50 },
-      },
-      coverage: { required: 16, loaded: 12, failures: 0, ready: false },
+      stage: "world-load",
     });
-    const encoded = JSON.stringify(receipt);
-    expect(Buffer.byteLength(encoded)).toBeLessThan(16_384);
-    expect(receipt.preparation.worldCount).toBe(20);
-    expect(receipt.preparation.prewarmedWorlds).toBe(3);
-    expect(receipt.coverage).toEqual({ required: 16, loaded: 12, failures: 0, ready: false });
-    expect(receipt.worlds).toHaveLength(4);
-    expect(receipt.assets.pendingCount).toBe(20);
-    expect(receipt.assets.pending).toHaveLength(4);
-    expect(encoded).not.toContain("must-not-copy");
-    stats.pendingPrewarm = 0;
-    stream.released = true;
-    expect(receipt.worlds[0]?.pendingPrewarm).toBe(3);
-    expect(receipt.worlds[0]?.released).toBe(false);
   },
 );
 

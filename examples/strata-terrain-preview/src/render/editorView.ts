@@ -177,6 +177,7 @@ export async function createEditorView(
   // editor shows is what the GLB carries rather than two shapes that only agree sometimes.
   let waterSurfaces: IWaterSurface[] = [];
   let props: Awaited<ReturnType<typeof createStreamedProps>> | undefined;
+  let prewarmedProps: typeof props;
   // The loop's settling frame can tick before the surfaces exist; the view answers when it can.
   // biome-ignore lint/style/useConst: the settling frame reads this before the line that assigns it.
   let propSurfaces: Awaited<ReturnType<typeof createPropSurfaces>> | undefined;
@@ -297,6 +298,9 @@ export async function createEditorView(
     }
     props = next;
     for (const world of props.worlds) ctx.add(world);
+    void Promise.all(next.worlds.map((world) => world.prewarmed)).then(() => {
+      if (!disposed && props === next) prewarmedProps = next;
+    });
   }
   function streamFailure(error: unknown): void {
     const status = document.getElementById("save-status");
@@ -737,12 +741,19 @@ export async function createEditorView(
           editorLiveMode:
             document.getElementById("editor-announcements")?.getAttribute("aria-live") ?? "",
         });
+        const streaming = props?.stats();
         if (
           !requestedRevision ||
           seen === requestedRevision ||
           streamPending ||
           propsDirty ||
-          !props?.ready
+          !streaming ||
+          prewarmedProps !== props ||
+          streaming.loadsInFlight !== 0 ||
+          streaming.loadsQueued !== 0 ||
+          streaming.admissionBacklog !== 0 ||
+          streaming.pendingPrewarm !== 0 ||
+          streaming.failures !== 0
         )
           return;
         seen = requestedRevision;

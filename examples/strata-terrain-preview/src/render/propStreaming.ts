@@ -393,28 +393,6 @@ export async function createStreamedProps(options: IStreamOptions) {
     byId,
     stats,
     compileSlices,
-    readinessAt(position: { readonly x: number; readonly z: number }, radius = 60) {
-      const regions = worlds.map((world) => world.readinessAt(position, radius));
-      const required = regions.reduce((n, r) => n + r.requiredCells, 0);
-      const loaded = regions.reduce((n, r) => n + r.loadedCells, 0);
-      return {
-        required,
-        loaded,
-        failures: regions.reduce((n, r) => n + r.failures, 0),
-        ready: warmed.size === worlds.length && regions.every((r) => r.ready),
-      };
-    },
-    get ready() {
-      const s = stats();
-      return (
-        warmed.size === worlds.length &&
-        s.loadsInFlight === 0 &&
-        s.loadsQueued === 0 &&
-        s.admissionBacklog === 0 &&
-        s.pendingPrewarm === 0 &&
-        s.failures === 0
-      );
-    },
     get meshes() {
       const meshes: InstancedMesh[] = [];
       for (const world of worlds)

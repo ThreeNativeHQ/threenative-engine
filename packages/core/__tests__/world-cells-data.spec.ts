@@ -748,13 +748,22 @@ it("settles a whenSpawnReady waiter on a later update that admits the spawn regi
     void ready.then(() => {
       settled = true;
     });
+    await Promise.resolve();
+    await Promise.resolve();
     expect(settled).toBe(false);
+    expect(world.readinessAt({ x: 32, z: 32 }).loadedCells).toBe(0);
     for (let frame = 0; frame < 100 && !settled; frame++) {
       world.update();
       await Promise.resolve();
+      if (settled) expect(world.readinessAt({ x: 32, z: 32 }).ready).toBe(true);
     }
     expect(settled).toBe(true);
-    await expect(ready).resolves.toMatchObject({ ready: true, failures: 0 });
+    await expect(ready).resolves.toMatchObject({
+      ready: true,
+      failures: 0,
+      requiredCells: 1,
+      loadedCells: 1,
+    });
     expect(clearSpy).toHaveBeenCalled();
   } finally {
     clearSpy.mockRestore();
