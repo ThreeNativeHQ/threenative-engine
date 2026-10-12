@@ -75,7 +75,7 @@ const result = await compileAssets({ source: "assets", output: "public" });
 `function` — Bake evaluated terrain and static species into an instanced GLB and streaming world package.
 
 ```ts
-export async function cookTerrainWorld( options: ICookTerrainWorldOptions, ): Promise<ICookTerrainWorldResult> { … }
+export function cookTerrainWorld( options: IPreparedTerrainWorldOptions, ): Promise< { … }
 ```
 
 - **Use when:** bake a terrain world headlessly into a GLB with instanced trees and rocks
@@ -6437,6 +6437,22 @@ export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBEx
 
 ```ts
 const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });
+```
+
+### `prepareWorldGLTF`
+
+`function` — Prepare the game's validated, frozen portable scene; the server cook owns GLB encoding.
+
+```ts
+export async function prepareWorldGLTF(input: IWorldGLBInput): Promise< { … }
+```
+
+- **Use when:** prepare the terrain editor's resolved world for headless portable GLB cooking
+- **Constraints:** browser authoring FileReader/canvas; all appearance and coherent water come from the game
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const prepared = await prepareWorldGLTF(input);
 ```
 
 ## `@threenative/terrain/kit`

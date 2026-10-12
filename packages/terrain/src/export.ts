@@ -209,7 +209,30 @@ function staticModel(source: Object3D, name: string, terrain = false): Object3D 
  * @example const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });
  * @override actual static models, final matrices and baked PBR maps are supplied by the game
  */
+// Remaining browser-only caller: scripts/fixtures/consumer-world.mjs builds an in-memory
+// consumer world without an editor server. The editor sends prepared JSON to cookTerrainWorld.
 export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> {
+  return serializeWorld(input, true) as Promise<IWorldGLBExport>;
+}
+
+/**
+ * Prepare the game's validated, frozen portable scene; the server cook owns GLB encoding.
+ * @requires npm i -D @threenative/terrain
+ * @situation prepare the terrain editor's resolved world for headless portable GLB cooking
+ * @constraint browser authoring FileReader/canvas; all appearance and coherent water come from the game
+ * @example const prepared = await prepareWorldGLTF(input);
+ */
+export async function prepareWorldGLTF(input: IWorldGLBInput): Promise<{
+  json: Record<string, unknown>;
+  report: IWorldGLBExport["report"];
+}> {
+  return serializeWorld(input, false) as Promise<{
+    json: Record<string, unknown>;
+    report: IWorldGLBExport["report"];
+  }>;
+}
+
+async function serializeWorld(input: IWorldGLBInput, asBinary: boolean) {
   const { state } = input;
   if (!/^[a-f0-9]{64}$/.test(input.revision) || !Number.isFinite(input.snapshotTime))
     throw new Error("World export requires a content revision and finite snapshot time");
@@ -385,7 +408,7 @@ export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBEx
     });
     root.updateMatrixWorld(true);
     binary = await new GLTFExporter().parseAsync(root, {
-      binary: true,
+      binary: asBinary,
       onlyVisible: true,
       includeCustomExtensions: false,
     });
@@ -393,6 +416,25 @@ export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBEx
     for (const value of geometries.values()) value.dispose();
     for (const value of materials.values()) value.dispose();
     for (const value of textures.values()) value.dispose();
+  }
+  const report: IWorldGLBExport["report"] = {
+    revision: input.revision,
+    resolution: n,
+    snapshotTime: input.snapshotTime,
+    placementIds: [...ids],
+    waterIds: [...waterIds],
+    receivingGameSupplies: [
+      "lighting",
+      "sky/environment",
+      "fog",
+      "exposure",
+      "post-processing",
+      "live water/wind",
+    ],
+  };
+  if (!asBinary) {
+    if (binary instanceof ArrayBuffer) throw new Error("Expected prepared glTF JSON");
+    return { json: binary, report };
   }
   if (!(binary instanceof ArrayBuffer)) throw new Error("GLTFExporter did not return a GLB");
   const header = new DataView(binary);
@@ -415,20 +457,6 @@ export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBEx
     name: "world.glb",
     mime: "model/gltf-binary",
     bytes: new Uint8Array(binary),
-    report: {
-      revision: input.revision,
-      resolution: n,
-      snapshotTime: input.snapshotTime,
-      placementIds: [...ids],
-      waterIds: [...waterIds],
-      receivingGameSupplies: [
-        "lighting",
-        "sky/environment",
-        "fog",
-        "exposure",
-        "post-processing",
-        "live water/wind",
-      ],
-    },
+    report,
   };
 }

@@ -268,6 +268,7 @@ export type {
   ICookTerrainWorldMaterialLayer,
   ICookTerrainWorldOptions,
   ICookTerrainWorldResult,
+  IPreparedTerrainWorldOptions,
   ISpeciesLODSpec,
   ISpeciesSpec,
   IWorldPackageAsset,

@@ -43,6 +43,9 @@ interface ISurface {
 
 /** The slice of `@threenative/assets` this cook calls; the module is loaded from the game project. */
 interface ICooker {
+  cookTerrainWorld(options: { preparedWorld: Record<string, unknown> }): Promise<{
+    worldGlb: Uint8Array;
+  }>;
   cookTerrainWorld(options: Record<string, unknown>): Promise<{
     worldGlb: Uint8Array;
     manifest: { assets: unknown };

@@ -566,7 +566,11 @@ export function createPropSelection(
   window.addEventListener(
     "keydown",
     (event) => {
-      if (!active || ["INPUT", "TEXTAREA", "SELECT"].includes((event.target as Element).tagName))
+      if (
+        !active ||
+        (event.key !== "Escape" &&
+          ["INPUT", "TEXTAREA", "SELECT"].includes((event.target as Element).tagName))
+      )
         return;
       if (event.key === "Escape") {
         cancelled = true;

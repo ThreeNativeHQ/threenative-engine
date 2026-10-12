@@ -7,6 +7,7 @@ import { validatePlacementOverrides } from "../core/placements.js";
 import { type PatchCommand, Terrain, TerrainEvaluator } from "../core/terrain.js";
 import type { ITerrainDocument } from "../core/types.js";
 import type { IPlacementOverride } from "../core/types.js";
+import { loadCooker } from "../mcp/cook.js";
 import { AssetStore } from "./assetStore.js";
 import {
   type IAssetLimits,
@@ -437,6 +438,33 @@ export function terrainEditor(options: {
             }
             if (request.method === "GET" && path === `${PREFIX}api/document`) {
               json(response, 200, document.snapshot());
+              return;
+            }
+            if (request.method === "POST" && path === `${PREFIX}api/export`) {
+              const input = (await body(request, MAX_BYTES)) as {
+                baseRevision?: unknown;
+                preparedWorld?: Record<string, unknown>;
+              };
+              const snapshot = document.snapshot();
+              if (snapshot.diagnostic)
+                throw new EditorError(409, "Cannot export an invalid disk save");
+              if (!input || input.baseRevision !== snapshot.revision)
+                throw new EditorError(409, "Stale export revision");
+              if (
+                !input.preparedWorld ||
+                typeof input.preparedWorld !== "object" ||
+                Array.isArray(input.preparedWorld)
+              )
+                throw new Error("Expected preparedWorld glTF JSON");
+              const cooker = await loadCooker(vite.config.root);
+              const cooked = await cooker.cookTerrainWorld({ preparedWorld: input.preparedWorld });
+              if (document.snapshot().revision !== snapshot.revision)
+                throw new EditorError(409, "World changed while exporting");
+              response.writeHead(200, {
+                "content-type": "model/gltf-binary",
+                "cache-control": "no-store",
+              });
+              response.end(cooked.worldGlb);
               return;
             }
             if (request.method === "POST" && path === `${PREFIX}api/reload`) {

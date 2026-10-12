@@ -398,4 +398,26 @@ describe("project terrain editor document", () => {
     await server.listen();
     await expect(editor.activate()).rejects.toThrow("not ready");
   });
+  it("rejects stale and malformed export requests before resolving the project cook", async () => {
+    const { base, get } = await api();
+    const snapshot = await get();
+    const send = (value: unknown) =>
+      fetch(`${base}export`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(value),
+      });
+    const stale = await send({ baseRevision: "stale", preparedWorld: {} });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({ code: 409, error: "Stale export revision" });
+    const malformed = await send({ baseRevision: snapshot.revision, preparedWorld: [] });
+    expect(malformed.status).toBe(400);
+    expect(await malformed.json()).toEqual({
+      code: 400,
+      error: "Expected preparedWorld glTF JSON",
+    });
+    const missing = await send({ baseRevision: snapshot.revision, preparedWorld: {} });
+    expect(missing.status).toBe(400);
+    expect((await missing.json()).error).toContain("@threenative/assets");
+  });
 });

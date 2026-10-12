@@ -104,6 +104,7 @@ export class EditorSession {
   exportWorker!: Worker | null;
   exportReject!: ((reason: Error) => void) | null;
   timer!: ReturnType<typeof setTimeout> | null;
+  announce!: (message: string, blocking?: boolean) => void;
   toastTimer!: ReturnType<typeof setTimeout> | null;
   assetSignature!: string;
   revision!: string;

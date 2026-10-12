@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   Document,
   Extension,
+  type GLTF,
   type Buffer as GltfBuffer,
   type Mesh,
   type Node,
@@ -292,9 +293,45 @@ function addInstancedSpeciesNode(
   targetScene.addChild(instancedNode);
 }
 
-export async function cookTerrainWorld(
+/** A portable editor scene with embedded data URIs, already frozen by the game. */
+export interface IPreparedTerrainWorldOptions {
+  readonly preparedWorld: Record<string, unknown>;
+}
+export function cookTerrainWorld(
+  options: IPreparedTerrainWorldOptions,
+): Promise<{ worldGlb: Uint8Array }>;
+export function cookTerrainWorld(
   options: ICookTerrainWorldOptions,
-): Promise<ICookTerrainWorldResult> {
+): Promise<ICookTerrainWorldResult>;
+export async function cookTerrainWorld(
+  options: ICookTerrainWorldOptions | IPreparedTerrainWorldOptions,
+): Promise<ICookTerrainWorldResult | { worldGlb: Uint8Array }> {
+  if ("preparedWorld" in options) {
+    const json = options.preparedWorld as unknown as GLTF.IGLTF;
+    if (json.asset?.version !== "2.0" || !json.scenes?.length || !json.meshes?.length)
+      throw new Error("Prepared world requires a nonempty glTF 2.0 scene");
+    if (
+      json.cameras?.length ||
+      json.animations?.length ||
+      json.extensionsRequired?.some((name) => !name.startsWith("KHR_"))
+    )
+      throw new Error("Prepared world contains nonportable scene content");
+    for (const resource of [...(json.buffers ?? []), ...(json.images ?? [])]) {
+      if (resource.uri && !/^data:[^,]*;base64,[A-Za-z0-9+/]*={0,2}$/.test(resource.uri))
+        throw new Error("Prepared world resources must be embedded base64 data URIs");
+    }
+    const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+    const doc = await io.readJSON({ json, resources: {} });
+    if (
+      !doc
+        .getRoot()
+        .listScenes()
+        .some((scene) => scene.listChildren().length)
+    )
+      throw new Error("Prepared world has no scene nodes");
+    await doc.transform(unpartition(), dedup({ propertyTypes: [PropertyType.TEXTURE] }));
+    return { worldGlb: await io.writeBinary(doc) };
+  }
   const { state, species, out } = options;
   if (!state || typeof state.size !== "number" || typeof state.resolution !== "number") {
     throw new Error("cookTerrainWorld: state with size and resolution is required");

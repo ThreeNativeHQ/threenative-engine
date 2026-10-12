@@ -16,8 +16,10 @@ import type { IAuthoringDocument, IEditorSnapshot } from "../server.js";
 import { inspectSpatial } from "../spatialInspector.js";
 import type { EditorWorkerReply } from "../worker.js";
 import { $, errorMessage } from "./dom.js";
+import { AnnouncementQueue } from "./keyboard.js";
 import type { EditorSession } from "./session.js";
-export function toast(c: EditorSession, message: string): void {
+export function toast(c: EditorSession, message: string, blocking = false): void {
+  c.announce(message, blocking);
   clearTimeout(c.toastTimer ?? undefined);
   $("toast").textContent = message;
   $("toast").classList.remove("hidden");
@@ -237,7 +239,7 @@ export async function changed(c: EditorSession): Promise<void> {
     $("save-status").textContent = `Requested ${c.revision.slice(0, 8)} · building`;
     c.build();
   } catch (error) {
-    c.toast(errorMessage(error));
+    c.toast(errorMessage(error), true);
     const next = await c.getSnapshot();
     c.saved = next;
     c.revision = next.revision;
@@ -255,6 +257,67 @@ export async function changed(c: EditorSession): Promise<void> {
 export function installEvaluation(c: EditorSession) {
   c.abort = new AbortController();
   c.disposed = false;
+  const live = document.createElement("div");
+  live.id = "editor-announcements";
+  live.setAttribute("role", "status");
+  live.setAttribute("aria-live", "polite");
+  live.setAttribute("aria-atomic", "true");
+  live.style.cssText =
+    "position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap";
+  document.body.append(live);
+  const queue = new AnnouncementQueue();
+  let announcementTimer: ReturnType<typeof setTimeout> | undefined;
+  const deliver = () => {
+    const next = queue.shift();
+    if (!next) {
+      announcementTimer = undefined;
+      return;
+    }
+    live.textContent = "";
+    live.setAttribute("aria-live", next.blocking ? "assertive" : "polite");
+    announcementTimer = setTimeout(() => {
+      live.textContent = next.message;
+      announcementTimer = setTimeout(deliver, 1000);
+    }, 50);
+  };
+  c.announce = (message, blocking = false) => {
+    queue.push(message, blocking);
+    if (announcementTimer === undefined) deliver();
+  };
+  const errors = new MutationObserver((records) => {
+    const changed = new Set<Element>();
+    for (const record of records) {
+      const node = record.target instanceof Element ? record.target : record.target.parentElement;
+      const error = node?.closest('[id$="-error"], #placement-status');
+      if (error) changed.add(error);
+    }
+    for (const error of changed) if (error.textContent) c.announce(error.textContent);
+    // A modal makes outside content inert; keep the one live region inside the active dialog.
+    const parent = document.querySelector("dialog[open]") ?? document.body;
+    if (live.parentElement !== parent) parent.append(live);
+  });
+  errors.observe(document.body, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["open"],
+  });
+  c.abort.signal.addEventListener(
+    "abort",
+    () => {
+      errors.disconnect();
+      clearTimeout(announcementTimer);
+      live.remove();
+    },
+    { once: true },
+  );
+  $("toast").removeAttribute("role");
+  const focusStyle = document.createElement("style");
+  focusStyle.textContent =
+    ":focus-visible{outline:2px solid var(--accent)!important;outline-offset:3px}";
+  document.head.append(focusStyle);
+  c.abort.signal.addEventListener("abort", () => focusStyle.remove(), { once: true });
   c.tools = [
     ["sculpt", "Sculpt", "Raise the ground. Hold Shift to lower."],
     ["smooth", "Smooth", "Soften spikes and blend transitions."],
@@ -264,7 +327,11 @@ export function installEvaluation(c: EditorSession) {
     ["erode", "Erode", "Run a local thermal or hydraulic erosion pass."],
     ["paint", "Paint", "Paint a material or a named biome mask."],
     ["scatter", "Scatter", "Place deterministic assets inside the brush."],
-    ["spline", "Spline", "Click control points. Enter finishes the road or river."],
+    [
+      "spline",
+      "Spline",
+      "Click control points, or use viewport arrows and Space. Ctrl+Enter finishes the road or river.",
+    ],
     ["water", "Water", "Flood a connected basin from the clicked point."],
     [
       "select",

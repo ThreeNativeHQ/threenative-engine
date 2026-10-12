@@ -24,7 +24,7 @@ import {
   pickEditorSurface,
 } from "@threenative/terrain/editor";
 import type { IAuthoringDocument } from "@threenative/terrain/editor/server";
-import { type IWorldGLBExport, exportWorldGLB } from "@threenative/terrain/export";
+import { type IWorldGLBExport, prepareWorldGLTF } from "@threenative/terrain/export";
 import {
   Box3,
   BufferAttribute,
@@ -97,6 +97,17 @@ const initialState = {
   renderedRevision: "",
   renderedCount: 0,
   renderedFrames: 0,
+  editorTool: "",
+  editorFocus: "",
+  editorRadius: 0,
+  editorLayerCount: 0,
+  editorPointCount: 0,
+  editorLiveRegionCount: 0,
+  editorLiveMode: "",
+  editorAnnouncement: "",
+  editorFocusVisible: false,
+  editorBrushCaptured: false,
+
   vertexCount: 0,
   heightSum: 0,
   evaluationMs: 0,
@@ -589,7 +600,27 @@ export async function createEditorView(
               0,
             ) ?? 0,
         });
-        ctx.state.set({ renderedFrames: ctx.state.getState().renderedFrames + 1 });
+        const focused = document.activeElement as HTMLElement | null;
+        ctx.state.set({
+          renderedFrames: ctx.state.getState().renderedFrames + 1,
+          editorTool: document.body.dataset.terrainTool ?? "",
+          editorBrushCaptured: document.getElementById("viewport")?.hasPointerCapture(1) ?? false,
+          editorFocus: focused?.dataset.tool ?? focused?.id ?? "",
+          editorFocusVisible:
+            !!focused?.matches(":focus-visible") &&
+            Number.parseFloat(getComputedStyle(focused).outlineWidth) > 0,
+          editorAnnouncement: document.getElementById("editor-announcements")?.textContent ?? "",
+          editorRadius: Number(
+            (document.getElementById("brush-radius") as HTMLInputElement | null)?.value ?? 0,
+          ),
+          editorLayerCount: authoring?.recipe.layers.length ?? 0,
+          editorPointCount: Number(
+            document.getElementById("spline-count")?.textContent?.split(" ")[0] ?? 0,
+          ),
+          editorLiveRegionCount: document.querySelectorAll("[aria-live]").length,
+          editorLiveMode:
+            document.getElementById("editor-announcements")?.getAttribute("aria-live") ?? "",
+        });
         if (!requestedRevision || seen === requestedRevision) return;
         seen = requestedRevision;
         mesh.userData.revision = seen;
@@ -956,7 +987,7 @@ export async function createEditorView(
         staleFrames: 0,
       }));
       try {
-        return await exportWorldGLB({
+        const prepared = await prepareWorldGLTF({
           revision: accepted.revision,
           snapshotTime: elapsed,
           state: applyPlacementOverrides(terrain, accepted.document.placementOverrides ?? {}),
@@ -965,6 +996,21 @@ export async function createEditorView(
           transforms,
           ...(water.length ? { water } : {}),
         });
+        const response = await fetch(new URL("export", controller.baseUrl), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ baseRevision: accepted.revision, preparedWorld: prepared.json }),
+        });
+        if (!response.ok) {
+          const error = (await response.json()) as { error?: string };
+          throw new Error(error.error ?? `World cook failed (${response.status})`);
+        }
+        return {
+          name: "world.glb",
+          mime: "model/gltf-binary",
+          bytes: new Uint8Array(await response.arrayBuffer()),
+          report: prepared.report,
+        };
       } finally {
         geometry.dispose();
         material.dispose();

@@ -92,7 +92,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/assets",
-      "signature": "export async function cookTerrainWorld( options: ICookTerrainWorldOptions, ): Promise<ICookTerrainWorldResult> { … }",
+      "signature": "export function cookTerrainWorld( options: IPreparedTerrainWorldOptions, ): Promise< { … }",
       "situations": ["bake a terrain world headlessly into a GLB with instanced trees and rocks"],
       "summary": "Bake evaluated terrain and static species into an instanced GLB and streaming world package.",
       "supersedes": [],
@@ -7704,6 +7704,25 @@
       "summary": "Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.",
       "supersedes": [],
       "symbol": "exportWorldGLB"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "browser authoring FileReader/canvas; all appearance and coherent water come from the game"
+      ],
+      "example": "const prepared = await prepareWorldGLTF(input);",
+      "importPath": "@threenative/terrain/export",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function prepareWorldGLTF(input: IWorldGLBInput): Promise< { … }",
+      "situations": [
+        "prepare the terrain editor's resolved world for headless portable GLB cooking"
+      ],
+      "summary": "Prepare the game's validated, frozen portable scene; the server cook owns GLB encoding.",
+      "supersedes": [],
+      "symbol": "prepareWorldGLTF"
     },
     {
       "aliases": [],

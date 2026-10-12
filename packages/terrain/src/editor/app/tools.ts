@@ -163,8 +163,10 @@ export function selectTool(c: EditorSession, id: string): void {
     id === "select" ? "Select a prop or landform" : `${tool[1]} terrain`;
   $("brush-desc").textContent = tool[2];
   $("tool-key").textContent = id === "select" ? "Q" : String((i + 1) % 10);
-  for (const button of document.querySelectorAll<HTMLElement>(".tool-button"))
+  for (const button of document.querySelectorAll<HTMLElement>(".tool-button")) {
     button.classList.toggle("active", button.dataset.tool === id);
+    button.setAttribute("aria-pressed", String(button.dataset.tool === id));
+  }
   c.renderOptions();
   $("canvas-help").replaceChildren(
     icon("mouse"),
@@ -218,8 +220,10 @@ export function installTools(c: EditorSession): void {
     ["brush-spacing", "spacing-value", (v) => `${Math.round(v * 100)}%`],
     ["brush-jitter", "jitter-value", (v) => `${Math.round(v * 100)}%`],
   ];
-  for (const [id, out, format] of fields)
+  for (const [id, out, format] of fields) {
+    $(id).setAttribute("aria-label", id.replace("brush-", "Brush "));
     $(id).oninput = () => {
       $(out).textContent = format(Number($(id).value));
     };
+  }
 }

@@ -23,11 +23,22 @@ export function renderLayers(c: EditorSession): void {
   if (!layers.some((l) => l.id === c.selected)) c.selected = layers.at(-1)?.id;
   $("layer-count").textContent = String(layers.length);
   const list = $("layer-list");
+  const focusedId = document.activeElement?.closest<HTMLElement>(".layer-row")?.dataset.id;
   list.replaceChildren();
   layers.forEach((l, i) => {
     const row = document.createElement("div");
     row.className = `layer-row${l.id === c.selected ? " selected" : ""}${l.enabled === false ? " disabled" : ""}`;
     row.draggable = true;
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-label", `Select layer ${l.id}`);
+    row.onkeydown = (event) => {
+      if (event.target === row && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        event.stopPropagation();
+        row.click();
+      }
+    };
     row.dataset.id = l.id;
     const index = document.createElement("span");
     index.className = "layer-index";
@@ -69,6 +80,7 @@ export function renderLayers(c: EditorSession): void {
       if (id) c.attempt(() => c.terrain.move(id, i));
     };
     list.append(row);
+    if (focusedId === l.id) row.focus();
   });
   c.renderInspector();
   c.updateHistory();

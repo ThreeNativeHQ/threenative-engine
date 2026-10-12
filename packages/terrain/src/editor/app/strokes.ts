@@ -12,6 +12,7 @@ import { fillIcons, icon } from "../icons.js";
 import { PRESETS, createPreset } from "../presets.js";
 import { inspectSpatial } from "../spatialInspector.js";
 import { $, errorMessage } from "./dom.js";
+import { editorKeyAction } from "./keyboard.js";
 import type { EditorSession } from "./session.js";
 export function addStroke(c: EditorSession, path: [number, number][], lower: boolean): void {
   if (!path[0]) return;
@@ -137,6 +138,7 @@ export function installStrokes(c: EditorSession): void {
       (!(e.target instanceof Element) || !e.target.classList.contains("render-canvas"))
     )
       return;
+    c.host.focus();
     if (e.button !== 0 || e.altKey || c.navigation) return;
     if (c.active === "select") return;
     const hit = c.view.pick(e.clientX, e.clientY);
@@ -190,34 +192,72 @@ export function installStrokes(c: EditorSession): void {
     c.points = [];
     c.showPoints();
   };
+  c.host.tabIndex = 0;
+  c.host.setAttribute(
+    "aria-label",
+    "Terrain viewport. Arrows move the brush; Enter or Space applies; Shift lowers; Ctrl+Enter finishes a spline; Escape cancels.",
+  );
+  let cursor: [number, number] | undefined;
   c.keydown = (e) => {
-    if (c.saving) return;
-    if (e.target instanceof Element && ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName))
-      return;
-    if (c.active === "select" && (e.ctrlKey || e.metaKey || e.key === "Escape")) return;
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-      e.preventDefault();
-      e.shiftKey ? c.terrain.redo() : c.terrain.undo();
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
-      e.preventDefault();
-      c.terrain.redo();
-      return;
-    }
-    if (document.querySelector("dialog[open]")) return;
-    if (/^[0-9]$/.test(e.key)) {
-      const tool = c.tools[(Number(e.key) + 9) % 10];
-      if (tool) c.selectTool(tool[0]);
-    }
-    if (e.key.toLowerCase() === "q") c.selectTool("select");
-    if (e.key.toLowerCase() === "v") $("navigate-btn").click();
-    if (e.key.toLowerCase() === "f") c.view.frame();
-    if (e.key === "Enter") c.finishSpline();
-    if (e.key === "Escape") {
-      c.points = [];
+    const target = e.target instanceof Element ? e.target : undefined;
+    const action = editorKeyAction(e, target?.tagName, target === c.host);
+    if (!action) return;
+    if (action === "cancel") {
+      if (c.stroke && c.host.hasPointerCapture(c.stroke.pointer))
+        c.host.releasePointerCapture(c.stroke.pointer);
       c.stroke = null;
+      c.points = [];
       c.showPoints();
+      c.view.setBrush(null);
+      return;
+    }
+    if (c.saving || document.querySelector("dialog[open]")) return;
+    if (c.active === "select" && (action === "undo" || action === "redo")) return;
+    e.preventDefault();
+    if (action === "undo") c.terrain.undo();
+    else if (action === "redo") c.terrain.redo();
+    else if (action.startsWith("tool:")) {
+      const tool = c.tools[Number(action.slice(5))];
+      if (tool) c.selectTool(tool[0]);
+    } else if (action === "select") c.selectTool("select");
+    else if (action === "navigate") $("navigate-btn").click();
+    else if (action === "frame") c.view.frame();
+    else if (action === "finish") c.finishSpline();
+    else if (!c.navigation && c.active !== "select") {
+      const rect = c.host.getBoundingClientRect();
+      cursor ??= [rect.width / 2, rect.height / 2];
+      if (action === "arrowleft") cursor[0] -= 20;
+      if (action === "arrowright") cursor[0] += 20;
+      if (action === "arrowup") cursor[1] -= 20;
+      if (action === "arrowdown") cursor[1] += 20;
+      cursor = [
+        Math.max(0, Math.min(rect.width - 1, cursor[0])),
+        Math.max(0, Math.min(rect.height - 1, cursor[1])),
+      ];
+      const hit = c.view.pick(rect.left + cursor[0], rect.top + cursor[1]);
+      if (!hit) {
+        c.view.setBrush(null);
+        return;
+      }
+      c.view.setBrush({ ...c.brush(), at: [hit[0], hit[2]] });
+      if (action !== "apply") return;
+      if (c.active === "spline" || c.active === "ramp") {
+        c.points.push(hit);
+        c.showPoints();
+        if (c.active === "ramp" && c.points.length === 2) c.finishSpline();
+      } else c.attempt(() => c.addStroke([[hit[0], hit[2]]], e.shiftKey));
     }
   };
+  c.host.addEventListener(
+    "keydown",
+    (event) => {
+      // Ctrl/Enter commits a keyboard-authored spline without stealing native button activation.
+      if (event.ctrlKey && event.key === "Enter" && c.points.length >= 2) {
+        event.preventDefault();
+        event.stopPropagation();
+        c.finishSpline();
+      }
+    },
+    { signal: c.abort.signal },
+  );
 }
