@@ -1,7 +1,7 @@
 import { Box3, BoxGeometry, MeshBasicMaterial, Object3D } from "three";
 import { describe, expect, it } from "vitest";
-import { CellPrewarm, type ICellPrewarmHost } from "../src/world-cell-prewarm.js";
 import type { IAssetState } from "../src/world-cell-models.js";
+import { CellPrewarm, type ICellPrewarmHost } from "../src/world-cell-prewarm.js";
 
 function host(built: (key: string) => boolean): ICellPrewarmHost {
   const parent = new Object3D();

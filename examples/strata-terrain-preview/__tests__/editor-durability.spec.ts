@@ -1,13 +1,13 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { installStaleWrites } from "../scripts/fixtures/editor-conflict.js";
-import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { validatePlaytestScenario } from "../../../packages/playtest/src/scenario.js";
 import { changed, installSaveQueue } from "../../../packages/terrain/src/editor/app/evaluation.js";
 import type { EditorSession } from "../../../packages/terrain/src/editor/app/session.js";
 import { TerrainEditorDocument } from "../../../packages/terrain/src/editor/server.js";
 import { Terrain } from "../../../packages/terrain/src/index.js";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+import { installStaleWrites } from "../scripts/fixtures/editor-conflict.js";
 
 function session() {
   const terrain = new Terrain({ size: 32, resolution: 17, seed: 73 });
