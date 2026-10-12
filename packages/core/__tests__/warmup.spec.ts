@@ -540,10 +540,14 @@ describe("scene warm-up", () => {
     // A diamond chain: every node lists the next one twice, so a walk without a visited set makes
     // 2^20 calls. TSL graphs share nodes like this all over a terrain material.
     let calls = 0;
-    let tail: unknown = { isNode: true, getChildren: () => (calls++, []) };
+    const children = (list: unknown[]) => {
+      calls += 1;
+      return list;
+    };
+    let tail: unknown = { isNode: true, getChildren: () => children([]) };
     for (let level = 0; level < 20; level += 1) {
       const next = tail;
-      tail = { isNode: true, getChildren: () => (calls++, [next, next]) };
+      tail = { isNode: true, getChildren: () => children([next, next]) };
     }
     const material = { isNodeMaterial: true, colorNode: tail };
     const renderer = {
