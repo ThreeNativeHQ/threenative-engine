@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "name": "terrain-editor-save-conflict",
+  "inputDelivery": "focused-dom",
+  "steps": [
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "viewport"
+        }
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "refused-stroke",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "not-saved-list"
+    },
+    {
+      "kind": "click",
+      "label": "retry-refused-edit",
+      "at": {
+        "element": {
+          "selector": "#not-saved-list button[data-save-action=\"retry\"]"
+        }
+      },
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "retry-saved"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "editorUnsentVisible",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": true
+          },
+          {
+            "label": "retry-refused-edit",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorUnsentCount",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": 1
+          },
+          {
+            "label": "retry-refused-edit",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorUnsentRetry",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorUnsentDiscard",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorStaleWriteConflicts",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorPersistedStrokes",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": 0
+          },
+          {
+            "label": "retry-refused-edit",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorUnsentText",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "textIncludes": "rejected: 409: Stale base revision"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,7 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { installStaleWrites } from "../../../examples/strata-terrain-preview/scripts/fixtures/editor-conflict.js";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+import { validatePlaytestScenario } from "../../playtest/src/scenario.js";
 import { changed, installSaveQueue } from "../src/editor/app/evaluation.js";
 import type { EditorSession } from "../src/editor/app/session.js";
 import { TerrainEditorDocument } from "../src/editor/server.js";
@@ -12,14 +14,51 @@ function session() {
   const path = join(makeTempDirSync("editor-durability-"), "world.json");
   writeFileSync(path, JSON.stringify({ version: 1, recipe: terrain.toJSON() }));
   const authority = new TerrainEditorDocument(path);
-  const nodes = new Map<string, { textContent: string }>();
-  vi.stubGlobal("document", {
-    body: { dataset: {} },
-    getElementById: (id: string) => {
-      if (!nodes.has(id)) nodes.set(id, { textContent: "" });
-      return nodes.get(id);
-    },
-  });
+  class DomNode {
+    children: (DomNode | string)[] = [];
+    attributes: Record<string, string> = {};
+    hidden = false;
+    style = { cssText: "" };
+    dataset: Record<string, string> = {};
+    onclick?: () => void;
+    constructor(readonly tagName: string) {}
+    setAttribute(key: string, value: string) {
+      this.attributes[key] = value;
+      if (key === "id") nodes.set(value, this);
+    }
+    append(...children: (DomNode | string)[]) {
+      this.children.push(...children);
+    }
+    replaceChildren(...children: (DomNode | string)[]) {
+      this.children = children;
+    }
+    get textContent(): string {
+      return this.children
+        .map((node) => (typeof node === "string" ? node : node.textContent))
+        .join("");
+    }
+    set textContent(text: string) {
+      this.children = [text];
+    }
+    contains(node: unknown): boolean {
+      return (
+        node === this ||
+        this.children.some((child) => typeof child !== "string" && child.contains(node))
+      );
+    }
+    focus() {
+      dom.activeElement = this;
+    }
+  }
+  const nodes = new Map<string, DomNode>();
+  nodes.set("save-status", new DomNode("span"));
+  const dom = {
+    body: new DomNode("body"),
+    activeElement: null as DomNode | null,
+    getElementById: (id: string) => nodes.get(id),
+    createElement: (tag: string) => new DomNode(tag),
+  };
+  vi.stubGlobal("document", dom);
   const c = {
     terrain,
     saved: authority.snapshot(),
@@ -40,7 +79,7 @@ function session() {
   } as unknown as EditorSession;
   installSaveQueue(c);
   terrain.subscribe(() => void changed(c));
-  return { c, authority, path, nodes };
+  return { c, authority, path, nodes, dom };
 }
 
 afterEach(() => {
@@ -74,5 +113,82 @@ describe("editor save integration", () => {
     ]);
     expect(c.terrain.layers.map((layer) => layer.id)).toEqual(["first", "second"]);
     expect(c.toast).not.toHaveBeenCalled();
+  });
+  it("renders a real stale-revision 409 in the not-saved list and retries through its button", async () => {
+    const { c, authority, nodes, dom } = session();
+    c.commit = async (input) => authority.commit({ ...input, baseRevision: "stale" });
+    c.terrain.sculpt({ id: "refused", points: [[0, 0]], radius: 4, strength: 1 });
+    await c.saveQueue.flush();
+    const panel = nodes.get("not-saved");
+    expect(panel?.hidden).toBe(false);
+    expect(panel?.textContent).toContain("Not saved");
+    expect(panel?.textContent).toContain("Stale base revision");
+    expect(c.terrain.layers.map((layer) => layer.id)).toEqual(["refused"]);
+    const id = c.saveQueue.unsent[0]?.id;
+    const retry = nodes.get(`retry-${id}`);
+    expect(retry?.tagName).toBe("button");
+    expect(retry?.attributes.type).toBe("button");
+    expect(nodes.get(`discard-${id}`)?.tagName).toBe("button");
+    expect(c.toast).toHaveBeenCalledWith(expect.stringContaining("Stale base revision"), true);
+    retry?.focus();
+    c.commit = async (input) => authority.commit(input);
+    retry?.onclick?.();
+    await c.saveQueue.flush();
+    expect(authority.snapshot().document.recipe.layers.map((layer) => layer.id)).toEqual([
+      "refused",
+    ]);
+    expect(panel?.hidden).toBe(true);
+    expect(c.saving).toBe(false);
+    expect(dom.activeElement).toBe(nodes.get("save-status"));
+  });
+
+  it("discards one rendered refusal while retaining its sibling and editable terrain", async () => {
+    const { c, authority, nodes } = session();
+    c.commit = async (input) => authority.commit({ ...input, baseRevision: "stale" });
+    for (const id of ["first", "second"]) {
+      c.terrain.sculpt({ id, points: [[0, 0]], radius: 4, strength: 1 });
+      await c.saveQueue.flush();
+    }
+    const first = c.saveQueue.unsent[0]?.id;
+    nodes.get(`discard-${first}`)?.onclick?.();
+    expect(c.saveQueue.unsent).toHaveLength(1);
+    expect(c.terrain.layers.map((layer) => layer.id)).toEqual(["second"]);
+    expect(authority.snapshot().document.recipe.layers).toHaveLength(0);
+    expect(nodes.get("not-saved")?.hidden).toBe(false);
+  });
+  it("forces exactly two real server conflicts without mocking 409 responses", async () => {
+    const { c, authority, dom } = session();
+    vi.stubGlobal("location", { href: "http://127.0.0.1:5173/terrain-editor/conflict.html" });
+    vi.stubGlobal("fetch", async (_input: unknown, init: RequestInit) => {
+      try {
+        return Response.json(authority.commit(JSON.parse(String(init.body))));
+      } catch (error) {
+        return Response.json(
+          { error: String(error) },
+          { status: (error as { status: number }).status },
+        );
+      }
+    });
+    installStaleWrites();
+    const input = { baseRevision: c.revision, commands: [] };
+    const post = () =>
+      fetch("/terrain-editor/api/document", { method: "POST", body: JSON.stringify(input) });
+    expect((await post()).status).toBe(409);
+    expect((await post()).status).toBe(409);
+    expect((await post()).status).toBe(200);
+    expect(dom.body.dataset.staleWriteConflicts).toBe("2");
+  });
+
+  it.each(["editor", "editor-conflict"])("uses existing harness vocabulary in %s", (name) => {
+    const scenario = JSON.parse(
+      readFileSync(
+        new URL(
+          `../../../examples/strata-terrain-preview/playtests/${name}.playtest.json`,
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    expect(() => validatePlaytestScenario(scenario)).not.toThrow();
   });
 });

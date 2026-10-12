@@ -109,6 +109,12 @@ const initialState = {
   editorBrushCaptured: false,
   editorPersistedStrokes: -1,
   editorPersistenceError: "",
+  editorUnsentVisible: false,
+  editorUnsentCount: 0,
+  editorUnsentText: "",
+  editorUnsentRetry: false,
+  editorUnsentDiscard: false,
+  editorStaleWriteConflicts: 0,
 
   vertexCount: 0,
   heightSum: 0,
@@ -612,6 +618,17 @@ export async function createEditorView(
         ctx.state.set({
           renderedFrames: ctx.state.getState().renderedFrames + 1,
           editorTool: document.body.dataset.terrainTool ?? "",
+          editorUnsentVisible:
+            !!document.getElementById("not-saved") && !document.getElementById("not-saved")?.hidden,
+          editorUnsentCount: document.querySelectorAll("#not-saved-list > li").length,
+          editorUnsentText: document.getElementById("not-saved")?.textContent ?? "",
+          editorUnsentRetry: !!document.querySelector(
+            '#not-saved-list button[data-save-action="retry"]',
+          ),
+          editorUnsentDiscard: !!document.querySelector(
+            '#not-saved-list button[data-save-action="discard"]',
+          ),
+          editorStaleWriteConflicts: Number(document.body.dataset.staleWriteConflicts ?? 0),
           editorPersistedStrokes: persistedStrokes,
           editorPersistenceError: persistenceError,
           editorBrushCaptured: document.getElementById("viewport")?.hasPointerCapture(1) ?? false,

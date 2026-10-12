@@ -17,7 +17,7 @@ import type { ISaveDocument, ISaveSnapshot } from "../saveQueue.js";
 import type { IAuthoringDocument, IEditorSnapshot } from "../server.js";
 import { inspectSpatial } from "../spatialInspector.js";
 import type { EditorWorkerReply } from "../worker.js";
-import { $, errorMessage } from "./dom.js";
+import { $, element, errorMessage } from "./dom.js";
 import { AnnouncementQueue } from "./keyboard.js";
 import type { EditorSession } from "./session.js";
 export function toast(c: EditorSession, message: string, blocking = false): void {
@@ -219,7 +219,51 @@ export function useSnapshot(c: EditorSession, snapshot: IEditorSnapshot): void {
   c.build();
 }
 
+export function renderUnsent(c: EditorSession): void {
+  const panel = $("not-saved");
+  const list = $("not-saved-list");
+  const signature = JSON.stringify(c.saveQueue.unsent);
+  if (signature === c.unsentSignature) return;
+  c.unsentSignature = signature;
+  const hadFocus = list.contains(document.activeElement);
+  list.replaceChildren();
+  for (const edit of c.saveQueue.unsent) {
+    const retry = element(
+      "button",
+      { id: `retry-${edit.id}`, type: "button", "data-save-action": "retry" },
+      "Retry",
+    );
+    const discard = element(
+      "button",
+      { id: `discard-${edit.id}`, type: "button", "data-save-action": "discard" },
+      "Discard",
+    );
+    retry.onclick = () => c.saveQueue.retry(edit);
+    discard.onclick = () => {
+      c.saveQueue.discard(edit);
+      c.toast("Not-saved edit discarded");
+    };
+    list.append(element("li", {}, element("p", {}, edit.label), retry, discard));
+  }
+  panel.hidden = c.saveQueue.unsent.length === 0;
+  if (hadFocus) {
+    $("save-status").tabIndex = -1;
+    $("save-status").focus();
+  }
+}
+
 export function installSaveQueue(c: EditorSession): void {
+  const panel = element(
+    "section",
+    { id: "not-saved", "aria-label": "Not saved", class: "panel-scroll" },
+    element("h2", {}, "Not saved"),
+    element("ul", { id: "not-saved-list" }),
+  );
+  panel.hidden = true;
+  panel.style.cssText =
+    "position:fixed;bottom:24px;right:24px;z-index:60;max-width:420px;max-height:40vh;background:var(--panel);border:1px solid var(--accent)";
+  document.body.append(panel);
+  c.unsentSignature = "";
   c.saveQueue = new SaveQueue({
     base: c.saved as unknown as ISaveSnapshot,
     commit: async (transaction) =>
@@ -246,10 +290,23 @@ export function installSaveQueue(c: EditorSession): void {
       c.build();
     },
     onNotify: (message) => {
-      if (!c.disposed) c.toast(message, true);
+      if (!c.disposed) c.toast(`Edit not saved: ${message}`, true);
     },
     onChange: () => {
       if (c.disposed) return;
+      const local = c.saveQueue.localDocument;
+      if (JSON.stringify(c.terrain.toJSON()) !== JSON.stringify(local.recipe)) {
+        c.loading = true;
+        try {
+          c.terrain.loadJSON(local.recipe as never);
+        } finally {
+          c.loading = false;
+        }
+        c.renderLayers();
+        c.build();
+      }
+      c.view.setDocument(local as unknown as IAuthoringDocument, c.revision);
+      renderUnsent(c);
       c.saving = c.saveQueue.hasPending();
       if (c.saving) document.body.dataset.saving = "true";
       else delete document.body.dataset.saving;
@@ -265,11 +322,10 @@ export function installSaveQueue(c: EditorSession): void {
 export async function changed(c: EditorSession): Promise<void> {
   c.renderLayers();
   if (c.loading || c.disposed) return;
-  if (!c.saveQueue.hasLocalIntent()) c.saveQueue.adopt(c.saved as unknown as ISaveSnapshot);
-  c.saveQueue.record({
-    ...c.saved.document,
-    recipe: c.terrain.toJSON(),
-  } as unknown as ISaveDocument);
+  const next = { ...c.saved.document, recipe: c.terrain.toJSON() } as unknown as ISaveDocument;
+  if (!c.saveQueue.hasLocalIntent() && c.saveQueue.revision !== c.saved.revision)
+    c.saveQueue.adopt(c.saved as unknown as ISaveSnapshot);
+  c.saveQueue.record(next);
   c.view.setDocument(c.saveQueue.localDocument as unknown as IAuthoringDocument, c.revision);
   c.build();
   await c.saveQueue.flush();

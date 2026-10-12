@@ -111,6 +111,7 @@ export class EditorSession {
   revision!: string;
   renderedRevision!: string | null;
   saveQueue!: SaveQueue;
+  unsentSignature!: string;
   saving!: boolean;
   loading!: boolean;
   saved!: IEditorSnapshot;
