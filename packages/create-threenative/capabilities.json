@@ -7274,6 +7274,55 @@
     {
       "aliases": [],
       "constraints": [
+        "the caller supplies the TransformControls, proxy, controller and every drawing callback"
+      ],
+      "example": "const selection = createEditorSelection({ gizmo, proxy, controller, grounding, surface, defaultFootprintSize, refreshPose, drawFootprint, restorePlacement, previewPlacement, setSaving, selectedChanged, setNavigation, message });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function createEditorSelection( { … }",
+      "situations": ["drive terrain-editor selection, gizmo drags, undo and saved transactions"],
+      "summary": "Gesture and transaction mechanics; the caller owns the controls, proxy and all rendering.",
+      "supersedes": [],
+      "symbol": "createEditorSelection"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the point is multiplied in place; the pose needs finite position, quaternion and scale"
+      ],
+      "example": "const centre = editorPlacementCenter(localCentre.clone(), placement);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function editorPlacementCenter(point: Vector3, pose: IPlacementOverride): Vector3 { … }",
+      "situations": ["find the world-space centre of a placed terrain-editor instance"],
+      "summary": "Transform the caller's measured geometry centre into the evaluated placement's world space.",
+      "supersedes": [],
+      "symbol": "editorPlacementCenter"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the point is projected in place; pass a clone to keep the original"],
+      "example": "const [x, y] = editorPointToClient(point.clone(), camera, canvas.getBoundingClientRect());",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function editorPointToClient( point: Vector3, camera: Camera, box: { … }",
+      "situations": ["convert a terrain-editor world point to viewport client pixels"],
+      "summary": "Project an injected world point to client pixels in the caller's viewport.",
+      "supersedes": [],
+      "symbol": "editorPointToClient"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the supplied mesh and raycast determine the surface; missing intersections return undefined"
       ],
       "example": "const height = editorSurfaceHeight(ctx, terrainMesh, x, z);",
@@ -7378,6 +7427,25 @@
       "summary": "Mount recovered terrain controls around the project-owned ThreeNative view.",
       "supersedes": [],
       "symbol": "mountTerrainEditor"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the caller supplies the raycast context, terrain mesh, instanced meshes and evaluated placements"
+      ],
+      "example": "const id = pickEditorPlacement(ctx, terrainMesh, meshes, placements, event.clientX, event.clientY);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function pickEditorPlacement( ctx: Parameters<typeof pickEditorSurface>[0], terrain: Mesh, meshes: readonly Object3D[], placements: Iterable< { … }",
+      "situations": [
+        "pick a placed instance in the terrain editor from viewport client coordinates"
+      ],
+      "summary": "A foreground terrain hit occludes placements; matching uses the evaluated world position.",
+      "supersedes": [],
+      "symbol": "pickEditorPlacement"
     },
     {
       "aliases": [],

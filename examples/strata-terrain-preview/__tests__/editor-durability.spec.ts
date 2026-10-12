@@ -170,7 +170,28 @@ describe("editor save integration", () => {
       }
     });
     installStaleWrites();
-    const input = { baseRevision: c.revision, commands: [] };
+    // The conflict fixture counts one sculpt intent per commit, so post a real stroke.
+    const stroke = {
+      enabled: true,
+      id: "sculpt-conflict",
+      name: "Sculpt stroke",
+      opacity: 1,
+      params: {
+        falloff: 0.65,
+        jitter: 0,
+        points: [[0, 0]],
+        radius: 4,
+        rotation: 0,
+        shape: "circle",
+        spacing: 0.15,
+        strength: 1,
+      },
+      type: "sculpt",
+    };
+    const input = {
+      baseRevision: c.revision,
+      commands: [{ layer: stroke, op: "upsert" }],
+    };
     const post = () =>
       fetch("/terrain-editor/api/document", { method: "POST", body: JSON.stringify(input) });
     expect((await post()).status).toBe(409);

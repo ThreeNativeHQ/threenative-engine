@@ -6031,6 +6031,54 @@ export function checkEnvironmentAssets( environment: IEnvironment, assets: reado
 checkEnvironmentAssets({ sky: { image: "dusk" } }, document.assets ?? []);
 ```
 
+### `createEditorSelection`
+
+`function` — Gesture and transaction mechanics; the caller owns the controls, proxy and all rendering.
+
+```ts
+export function createEditorSelection( { … }
+```
+
+- **Use when:** drive terrain-editor selection, gizmo drags, undo and saved transactions
+- **Constraints:** the caller supplies the TransformControls, proxy, controller and every drawing callback
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const selection = createEditorSelection({ gizmo, proxy, controller, grounding, surface, defaultFootprintSize, refreshPose, drawFootprint, restorePlacement, previewPlacement, setSaving, selectedChanged, setNavigation, message });
+```
+
+### `editorPlacementCenter`
+
+`function` — Transform the caller's measured geometry centre into the evaluated placement's world space.
+
+```ts
+export function editorPlacementCenter(point: Vector3, pose: IPlacementOverride): Vector3 { … }
+```
+
+- **Use when:** find the world-space centre of a placed terrain-editor instance
+- **Constraints:** the point is multiplied in place; the pose needs finite position, quaternion and scale
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const centre = editorPlacementCenter(localCentre.clone(), placement);
+```
+
+### `editorPointToClient`
+
+`function` — Project an injected world point to client pixels in the caller's viewport.
+
+```ts
+export function editorPointToClient( point: Vector3, camera: Camera, box: { … }
+```
+
+- **Use when:** convert a terrain-editor world point to viewport client pixels
+- **Constraints:** the point is projected in place; pass a clone to keep the original
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const [x, y] = editorPointToClient(point.clone(), camera, canvas.getBoundingClientRect());
+```
+
 ### `editorSurfaceHeight`
 
 `function` — Query the rendered heightfield, including its triangulation rather than an interpolated bake.
@@ -6129,6 +6177,22 @@ export async function mountTerrainEditor(options: { … }
 
 ```ts
 await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });
+```
+
+### `pickEditorPlacement`
+
+`function` — A foreground terrain hit occludes placements; matching uses the evaluated world position.
+
+```ts
+export function pickEditorPlacement( ctx: Parameters<typeof pickEditorSurface>[0], terrain: Mesh, meshes: readonly Object3D[], placements: Iterable< { … }
+```
+
+- **Use when:** pick a placed instance in the terrain editor from viewport client coordinates
+- **Constraints:** the caller supplies the raycast context, terrain mesh, instanced meshes and evaluated placements
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const id = pickEditorPlacement(ctx, terrainMesh, meshes, placements, event.clientX, event.clientY);
 ```
 
 ### `pickEditorSurface`

@@ -22,6 +22,7 @@ import {
   editorSurfaceHeight,
   focusCamera,
   landformPose,
+  pickEditorPlacement,
   pickEditorSurface,
 } from "@threenative/terrain/editor";
 import type { IAuthoringDocument } from "@threenative/terrain/editor/server";
@@ -38,7 +39,7 @@ import {
   Line,
   LineBasicMaterial,
   LinearToneMapping,
-  Matrix4,
+  type Matrix4,
   Mesh,
   type MeshStandardMaterial,
   NoToneMapping,
@@ -813,17 +814,7 @@ export async function createEditorView(
     () => groundAt,
     (x, y) => {
       if (!props || !mesh) return undefined;
-      const hit = pickEditorSurface(ctx, [mesh, ...props.meshes], x, y);
-      if (hit?.instanceId === undefined) return undefined;
-      const matrix = new Matrix4();
-      (hit.object as import("three").InstancedMesh).getMatrixAt(hit.instanceId, matrix);
-      const position = new Vector3().setFromMatrixPosition(
-        matrix.premultiply(hit.object.matrixWorld),
-      );
-      return [...props.byId.values()].find(
-        (instance) =>
-          new Vector3().setFromMatrixPosition(instance.pose).distanceToSquared(position) < 1e-6,
-      )?.placement.id;
+      return pickEditorPlacement(ctx, mesh, props.meshes, props.byId.values(), x, y);
     },
     (x, z) => {
       if (!mesh) return undefined;
