@@ -6454,6 +6454,8 @@
       ],
       "setters": [
         "__alwaysRender",
+        "bindMatrix",
+        "bindMatrixInverse",
         "bindMode",
         "boundingBox",
         "castShadow",
@@ -6547,6 +6549,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "skeleton",
         "up.x",
         "up.y",
         "up.z",
