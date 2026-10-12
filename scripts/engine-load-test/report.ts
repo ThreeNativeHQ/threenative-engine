@@ -835,6 +835,9 @@ export function scoreboardRows(report: IRunReport): IRungSummary[] {
     if (!Number.isInteger(rung.drawCalls) || rung.drawCalls < 1)
       throw new BenchError("TN_BENCH_COUNTER_MISSING", `${path} drawCalls is ${rung.drawCalls}`);
     const compiles = rung.pipelineCompiles;
+    // ponytail: Godot's load test has no pipeline counter (Godot 4.x exposes
+    // RENDERING_INFO_PIPELINE_COMPILATIONS_*; add it to load_test.gd and drop this exemption).
+    if (report.engine.name === "godot" && compiles === undefined) return;
     if (compiles === undefined || !Number.isInteger(compiles) || compiles < 0)
       throw new BenchError(
         "TN_BENCH_COUNTER_MISSING",

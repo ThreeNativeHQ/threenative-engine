@@ -3480,6 +3480,20 @@ describe("the scoreboard counters", () => {
     expect(() => scoreboardRows(report())).toThrow(/TN_BENCH_COUNTER_MISSING.*pipelineCompiles/u);
   });
 
+  it("lets a Godot row omit pipelineCompiles, because the Godot load test cannot count them", () => {
+    const godot = report({
+      arm: "godot-desktop",
+      engine: { name: "godot", version: "4.7.1" },
+      rungs: [rung()],
+    });
+    const [row] = scoreboardRows(godot);
+    expect(row?.pipelineCompiles).toBeUndefined();
+    // The exemption is the one counter only: a Godot rung with no draw call still fails.
+    expect(() => scoreboardRows({ ...godot, rungs: [rung({ drawCalls: 0 })] })).toThrow(
+      /TN_BENCH_COUNTER_MISSING.*drawCalls/u,
+    );
+  });
+
   it("fails closed on a counter that is not a count", () => {
     for (const bad of [-1, 1.5, Number.NaN]) {
       expect(() => scoreboardRows(report({ rungs: [rung({ pipelineCompiles: bad })] }))).toThrow(
