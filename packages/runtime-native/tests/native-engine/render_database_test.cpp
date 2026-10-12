@@ -2572,11 +2572,49 @@ void recordsSurviveSiblings() {
     CHECK(drawn() == 11 && database.rebuilds() == built + 1);
 }
 
+// The R5 render cut (PRD-573 v1.11): off the flat lane a steady frame finds every record by its scene slot and
+// sweeps nothing, so a frame of 4,096 cubes hashes no object. A mesh that leaves costs one sweep.
+void steadyFrameHashesNoRecord() {
+    for (const bool batching : {false, true}) {
+        Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+        database.batching = batching;
+        camera.position.set(0, 0, 30);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+        Group group;  // a child with children keeps the scene off the flat lane
+        Object3D leaf;
+        group.add(leaf);
+        scene.add(group);
+        const auto geometry = makeBoxGeometry();
+        const auto material = std::make_shared<Material>(MaterialType::Standard);
+        std::vector<std::shared_ptr<Mesh>> meshes;
+        for (int i = 0; i < 64; ++i) {
+            meshes.push_back(std::make_shared<Mesh>(geometry, material));
+            meshes.back()->position.set((i % 8) - 4.0, (i / 8) - 4.0, 0);
+            scene.add(*meshes.back());
+        }
+        const auto frame = [&] { database.prepare(scene, camera, lights); };
+        frame();
+        frame();
+        const uint64_t lookups = database.recordLookups(), sweeps = database.recordSweeps();
+        for (int i = 0; i < 3; ++i) frame();
+        CHECK(database.recordLookups() == lookups);
+        CHECK(database.recordSweeps() == sweeps);
+        scene.remove(*meshes[3]);
+        frame();
+        CHECK(database.recordSweeps() == sweeps + 1);
+        frame();  // the slots refill once after the sweep
+        const uint64_t settled = database.recordLookups();
+        frame();
+        CHECK(database.recordLookups() == settled && database.recordSweeps() == sweeps + 1);
+    }
+}
+
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord})
 
 
 
