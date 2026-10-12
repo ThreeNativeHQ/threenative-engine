@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ILadderArm, MeasurementClock } from "../../examples/engine-load-test/src/driver.js";
+import { drawnFrameReader } from "../../examples/engine-load-test/src/frame-read.js";
 import {
   type ILoadTestHarness,
   countPipelineCreates,
@@ -4164,5 +4165,24 @@ describe("the same-run pair guard", () => {
   it("refuses to compare when an arm has no runs", () => {
     expect(() => pairVerdict([], [arm("tn-engine-desktop")], labels)).toThrow(/TN_BENCH_PARITY/u);
     expect(reportFacets(arm("tn-desktop"))["R2@4096 frames"]).toBe("8");
+  });
+});
+
+describe("the probe's read-back on a host that draws after the frame callback", () => {
+  it("reads the frame the callback stepped, not the one before it", async () => {
+    const stepped = 4;
+    let drawn = 3; // the player draws what a callback left only once that callback returns
+    let wake: (() => void) | undefined;
+    const nextFrame = (): Promise<void> =>
+      new Promise((resolve) => {
+        wake = resolve;
+      });
+    const read = async (): Promise<number> => drawn;
+    // Inside the callback that stepped frame 4, a plain read sees frame 3: the lag the probe picture had.
+    expect(await read()).toBe(3);
+    const result = drawnFrameReader(nextFrame, read)();
+    drawn = stepped; // the callback returns and the player draws frame 4
+    wake?.();
+    expect(await result).toBe(4);
   });
 });

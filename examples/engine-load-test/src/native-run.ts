@@ -4,6 +4,7 @@
 import { MatrixWorldPass } from "../../../packages/core/src/matrix-world.js";
 import { RenderCameraCull } from "../../../packages/core/src/render-camera-cull.js";
 import { SceneRenderProjection } from "../../../packages/core/src/renderProjection.js";
+import { drawnFrameReader } from "./frame-read.js";
 import { type ICharacterCrowd, createLoadTestHarness } from "./game.js";
 import { ladderRank } from "./ladder.js";
 import {
@@ -96,6 +97,8 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
   // walk and no projected-size cull would time a pipeline no ThreeNative game ever draws with.
   const phases = config.phases === true ? createPhaseRecorder(threadCpuClock()) : undefined;
   const crossings = phases === undefined ? undefined : crossingReader();
+  const readDrawn = (globalThis as { tn?: { readFrame?: () => Promise<Uint8Array> } }).tn
+    ?.readFrame;
   const harness = await createLoadTestHarness(
     surface,
     "native host surface",
@@ -108,7 +111,7 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
       ),
     { cameraCull: new RenderCameraCull(), matrixWorld: new MatrixWorldPass() },
     characters,
-    (globalThis as { tn?: { readFrame?: () => Promise<Uint8Array> } }).tn?.readFrame,
+    readDrawn === undefined ? undefined : drawnFrameReader(nextFrame, readDrawn),
     phases,
   );
   const rungs: unknown[] = [];
