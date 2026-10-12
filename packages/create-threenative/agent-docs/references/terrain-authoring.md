@@ -125,7 +125,8 @@ atomic JSON saves also update the shared view. Invalid disk saves retain the las
 valid preview and show a diagnostic; restore a valid save before submitting more
 patches. Editor imports, workers, watchers and the document stay out of the game
 runtime. Bake committed data before handing it to the game. The editor's GLB action and
-`exportWorldGLB` from `@threenative/terrain/export` write the whole resolved world (terrain,
+`prepareWorldGLTF` from `@threenative/terrain/export` prepares the resolved world for
+Node `cookTerrainWorld({ preparedWorld: prepared.json })` from `@threenative/assets` (terrain,
 props, final transforms, embedded PBR maps); the root `encodeGLB` stays terrain-only. The full
 operation list, units and patch rules ship in `node_modules/@threenative/terrain/AGENT_GUIDE.md`.
 

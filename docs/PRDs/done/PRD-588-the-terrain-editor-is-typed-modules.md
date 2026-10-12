@@ -6,7 +6,7 @@
 **Owner:** ThreeNative maintainers
 **Depends on:** [PRD-587](../done/PRD-587-the-terrain-editor-never-drops-an-edit.md) (lands its save model first, so the port moves settled code)
 **Parent:** [PRD-467](../done/PRD-467-strata-live-terrain-editor.md)
-**Epic:** [Strata terrain hardening](README.md)
+**Epic:** [Strata terrain hardening](../strata-terrain-hardening/README.md)
 
 ## Context
 
@@ -62,4 +62,4 @@ cook covers its contract. React is not required by this PRD; decide it after the
 #### Phase 3: keyboard, one encoder
 **Status:** NOT STARTED
 - [x] Keyboard and `aria-live`. proof: `editor.playtest.json` — green 2026-10-12, see AC-3 evidence.
-- [ ] One encoder. proof: `test:terrain:export`
+- [x] One encoder. proof: `test:terrain:export` Done 2026-10-12, NVIDIA Turing, private Xvfb: `cookTerrainWorld` is the only static-world GLB encoder. The browser `exportWorldGLB` and its binary branch are deleted from `packages/terrain/src/export.ts` (7 added, 53 removed), the consumer fixtures now call `prepareWorldGLTF` in the browser and cook in node, and the API surface, capability manifest, agent guide and changelog are updated. `test:terrain:export` passes, `CONSUMER_GAME=skip test:consumer` passes for five worlds, terrain and engine-mcp suites pass 409 of 409. The export lane asserts the decoded GLB structure (100 placements, 202 meshes, 404 PBR maps, 56,668 triangles, 4 materials) unchanged. Not measured: pixel equivalence of consumer renders; the exported file sizes and the saved editor export hash changed because the writer changed. Known and untouched: `@threenative/assets` typecheck fails at `terrain-world.spec.ts:471` (`unknown` passed as `number`), which is outside this change. Deleting a public export is breaking; the package is pre-1.0 and PRD-583 and this PRD both require it.

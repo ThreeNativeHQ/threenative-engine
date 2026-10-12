@@ -169,11 +169,11 @@ panel that calls the same code. A write names `baseRevision`; a stale one is a 4
 
 ## Resolved static-world GLB
 
-Import `exportWorldGLB` from `@threenative/terrain/export` in browser authoring source. Its import is DOM-free; encoding requires FileReader and canvas. Root and `/three` remain headless. This entry uses the installed Three.js GLTFExporter rather than a terrain-specific loader format.
+Import `prepareWorldGLTF` from `@threenative/terrain/export` in browser authoring source. Its import is DOM-free; scene preparation requires FileReader and canvas. Root and `/three` remain headless. This entry uses the installed Three.js GLTFExporter to prepare glTF JSON; the Node assets cook owns GLB encoding.
 
 ```ts
-import { exportWorldGLB } from '@threenative/terrain/export';
-const output = await exportWorldGLB({
+import { prepareWorldGLTF } from '@threenative/terrain/export';
+const prepared = await prepareWorldGLTF({
   revision,             // accepted document's 64-character content hash
   snapshotTime,         // finite seconds, pinned across all baked deformations
   state,                // evaluated committed recipe with applied override records
@@ -182,7 +182,10 @@ const output = await exportWorldGLB({
   transforms,           // Map<placementId, Matrix4>: actual final grounded root matrices
   water,                // [{ id, object, time: snapshotTime, staleFrames: 0 }]
 });
-// output.bytes is the self-contained world.glb; persist only after success.
+// Send prepared.json to your Node authoring process, then:
+// import { cookTerrainWorld } from '@threenative/assets';
+// const { worldGlb } = await cookTerrainWorld({ preparedWorld: prepared.json });
+// worldGlb is the self-contained world.glb; persist only after success.
 ```
 
 Game source owns all geometry, materials and images. The terrain needs albedo `map`, `normalMap`, `roughnessMap` and `aoMap`; vertex colours alone are insufficient. MeshStandardMaterial metallic/roughness surfaces are supported. Colour/emissive images are sRGB, data maps are NoColorSpace. Supply decoded byte images (at most 16 megapixels); DataTexture images need complete RGBA bytes. Bake alpha into the colour image. Bake displacement, bump/light maps, node shaders, skinning/morphing and wind into the supplied static geometry/material first. Use tangent-space normal maps with equal X/Y scale magnitudes; bake object-space/anisotropic maps first. MeshPhysicalMaterial extensions are outside this bounded encoder's contract.

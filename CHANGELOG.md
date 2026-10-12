@@ -30,6 +30,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `@threenative/terrain/export` removes `exportWorldGLB`. Prepare the browser scene with
+  `prepareWorldGLTF`, then encode it in Node with `cookTerrainWorld({ preparedWorld: prepared.json })`
+  from `@threenative/assets`; the editor already uses this shared cook.
+
 - `@threenative/assets`'s `cookTerrainWorld` declaration adds a prepared-world JSON overload
   for the terrain editor's portable GLB export. Existing state/species/out calls remain valid;
   the new overload embeds the game's frozen scene without instancing or filesystem output.

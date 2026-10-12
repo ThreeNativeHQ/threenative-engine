@@ -6486,23 +6486,6 @@ const document = new TerrainEditorDocument("/project/terrain/world.json"); const
 
 ## `@threenative/terrain/export`
 
-### `exportWorldGLB`
-
-`function` — Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.
-
-```ts
-export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }
-```
-
-- **Use when:** export terrain, resolved models and final manual placement transforms as a portable GLB · export the whole terrain world as one glb for another three.js project
-- **Constraints:** browser authoring (FileReader/canvas); caller supplies all appearance and coherent baked water; root and /three remain headless
-- **Requires:** npm i -D @threenative/terrain
-- **Overrides:** actual static models, final matrices and baked PBR maps are supplied by the game
-
-```ts
-const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });
-```
-
 ### `prepareWorldGLTF`
 
 `function` — Prepare the game's validated, frozen portable scene; the server cook owns GLB encoding.
@@ -6511,7 +6494,7 @@ const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain,
 export async function prepareWorldGLTF(input: IWorldGLBInput): Promise< { … }
 ```
 
-- **Use when:** prepare the terrain editor's resolved world for headless portable GLB cooking
+- **Use when:** export the terrain as a glb for another three.js project via the headless cook · prepare the terrain editor's resolved world for headless portable GLB cooking
 - **Constraints:** browser authoring FileReader/canvas; all appearance and coherent water come from the game
 - **Requires:** npm i -D @threenative/terrain
 

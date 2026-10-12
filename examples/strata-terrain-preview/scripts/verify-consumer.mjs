@@ -117,7 +117,7 @@ try {
     const queries = [
       ["request", "a walkable island with seeded noise hills, rivers and scattered trees", "Terrain", "@threenative/terrain"],
       ["mechanic", "procedural heightmap landscape for the game", "Terrain", "@threenative/terrain"],
-      ["mechanic", "export the terrain as a glb for another three.js project", "exportWorldGLB", "@threenative/terrain/export"],
+      ["mechanic", "export the terrain as a glb for another three.js project", "prepareWorldGLTF", "@threenative/terrain/export"],
       ["mechanic", "open the terrain brush and layer GUI around game-owned rendering", "mountTerrainEditor", "@threenative/terrain/editor"],
     ];
     const found = queries.map(([scope, situation, symbol, importPath]) => {
@@ -189,7 +189,7 @@ try {
   for (const required of [
     "npm install --save-dev @threenative/terrain",
     "@threenative/terrain/editor/server",
-    "exportWorldGLB",
+    "prepareWorldGLTF",
     "node_modules/@threenative/terrain/AGENT_GUIDE.md",
   ])
     assert(workflow.includes(required), `The shipped terrain workflow lacks: ${required}`);
@@ -471,7 +471,7 @@ try {
       "stale conflict",
       "validatePlacementOverrides/applyPlacementOverrides",
       "toGeometry",
-      "exportWorldGLB",
+      "prepareWorldGLTF",
     ],
     glbBytes: handoff.glbBytes,
     polished: {

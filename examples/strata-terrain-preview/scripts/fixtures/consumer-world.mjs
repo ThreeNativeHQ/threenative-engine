@@ -1,9 +1,9 @@
 // What an ordinary game does with an authored document, in a browser page that only has the packed
 // `@threenative/terrain`, `three` and a plain GLTFLoader: re-evaluate the saved recipe, dress it in
 // the game's OWN appearance (1x1 stand-in maps, boxes for models, a quad for water), export the whole
-// world, and load the file back with the vanilla loader. It imports no editor or server module.
+// world via the Node cook bridge, and load it with the vanilla loader. No editor imports.
 import { Terrain, applyPlacementOverrides, bakeMesh } from "@threenative/terrain";
-import { exportWorldGLB } from "@threenative/terrain/export";
+import { prepareWorldGLTF } from "@threenative/terrain/export";
 import { toGeometry } from "@threenative/terrain/three";
 import {
   BoxGeometry,
@@ -63,7 +63,7 @@ export async function exportAndLoad(document, revision, sampleIndices, withBytes
     time: 0,
     staleFrames: 0,
   }));
-  const output = await exportWorldGLB({
+  const prepared = await prepareWorldGLTF({
     revision,
     snapshotTime: 0,
     state,
@@ -72,6 +72,11 @@ export async function exportAndLoad(document, revision, sampleIndices, withBytes
     transforms,
     water,
   });
+  const glbBase64 = await window.cookPreparedWorld(prepared.json);
+  const output = {
+    report: prepared.report,
+    bytes: Uint8Array.from(atob(glbBase64), (character) => character.charCodeAt(0)),
+  };
   const bytes = output.bytes.slice().buffer;
   const gltf = await new Promise((resolve, reject) =>
     new GLTFLoader().parse(bytes, "", resolve, reject),

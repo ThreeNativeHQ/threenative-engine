@@ -447,7 +447,6 @@
         "@threenative/terrain/editor#validateEnvironment": "export function validateEnvironment(input: unknown): IEnvironment { … }",
         "@threenative/terrain/editor#validateSpatialReference": "export function validateSpatialReference(input: unknown): ISavedSpatialReference { … }",
         "@threenative/terrain/editor#validateSurfaces": "export function validateSurfaces( input: unknown, assets: readonly IProjectAsset[], ): ISurfaceMappings { … }",
-        "@threenative/terrain/export#exportWorldGLB": "export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }",
         "@threenative/terrain/export#prepareWorldGLTF": "export async function prepareWorldGLTF(input: IWorldGLBInput): Promise< { … }",
         "@threenative/terrain/kit#bakeKit": "export async function bakeKit( url: string, { … }",
         "@threenative/terrain/kit#starterAssetsDir": "export async function starterAssetsDir(): Promise<string> { … }",
