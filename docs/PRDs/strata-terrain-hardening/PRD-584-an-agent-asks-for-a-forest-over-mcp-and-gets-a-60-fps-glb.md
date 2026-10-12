@@ -72,7 +72,7 @@ sequenceDiagram
 
 - [x] AC-1 [local]: `tools/list` on the shipped shim lists `terrain_generate` and `terrain_patch`. proof: stdio spec beside the sculpt shim's `tools/list` test in `packages/core/__tests__` — Evidence: 2026-10-11 `mcp-install.spec.ts` 34/34 passed; shipped terrain shim lists both tools (377 ms).
 - [x] AC-2 [local]: `terrain_generate({ request: "a pine forest" })` writes a `world.glb` that `GLTFLoader` loads, cold, within 60 s on the reference CPU. proof: `packages/terrain/__tests__/terrain-mcp.spec.ts` with timing — Evidence: 2026-10-11 cold shipped-server call + vanilla GLTFLoader passed, 18,058.2 ms < 60,000 ms; AMD Ryzen 9 5900X 12-Core Processor; 1/1 focused case. Full suite rerun: 39/39 passed, fresh tool child + loader 7,741.1 ms on the same CPU.
-- [ ] AC-3 [local]: `engine_search_capabilities` ranks the terrain tool or `cookTerrainWorld` first for "generate a forest for my game". proof: a case in the PRD-297 capability-recall gate — Evidence: pending.
+- [x] AC-3 [local]: `engine_search_capabilities` ranks the terrain tool or `cookTerrainWorld` first for "generate a forest for my game". proof: a case in the PRD-297 capability-recall gate — Evidence (2026-10-11): corpus row `request.terrain-forest-world` ("generate a forest for my game", scope request) returns `cookTerrainWorld` at rank 1 of 2 results. The stale not-owned `procedural-vegetation` situation "generate a forest of trees" became "grow procedural tree meshes" (tree-mesh growth stays game-owned; forest worlds are the terrain cook's), and `cookTerrainWorld` gained `@situation generate a forest world for my game`. `pnpm caps:recall` exits 0: recall@k 0.908 → 0.909 (80/88), zero-result rate 0.0575 → 0.0568, reject hits 16 → 16; capability-recall and capability-manifest specs 44/44.
 - [ ] AC-4 [local]: The starter template loads the generated forest and holds p95 frame time ≤ 16.7 ms over a 300-frame walk on a named real GPU (WebGPU, `adapter.info` recorded). proof: `node packages/playtest/dist/runner/cli.js <terrain-forest>.playtest.json --browser-recipe webgpu` — Evidence: pending.
 - [ ] AC-5 [local]: The same scenario holds p95 ≤ 16.7 ms on the native desktop host. proof: same scenario `--target desktop` — Evidence: pending.
 
@@ -110,7 +110,7 @@ sequenceDiagram
 **Status:** NOT STARTED
 **Files:** `packages/terrain` capability entries, `packages/create-threenative/capabilities.json` (generated), template `AGENTS.md` terrain line
 **Implementation:** capability entry with situation "generate a forest/terrain/world for my game"; template `AGENTS.md` names the tool.
-- [ ] Search ranks the tool first. proof: capability-recall gate case
+- [x] Search ranks the tool first. proof: capability-recall gate case — 2026-10-11: see AC-3; `pnpm caps:recall` exit 0, rank 1.
 
 #### Phase 3: a stock game holds 60 fps on it
 **Status:** NOT STARTED

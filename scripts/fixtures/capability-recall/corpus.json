@@ -747,6 +747,14 @@
       "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
       "expect": ["VehicleBody3D"],
       "reject": []
+    },
+    {
+      "id": "request.terrain-forest-world",
+      "query": "generate a forest for my game",
+      "scope": "request",
+      "source": "template:starter#Budget real time for the look \u2014 see `node_modules/create-threenative/agent-docs/references/dream-loop.md`",
+      "expect": ["cookTerrainWorld"],
+      "reject": []
     }
   ]
 }

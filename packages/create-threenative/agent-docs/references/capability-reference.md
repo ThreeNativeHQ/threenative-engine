@@ -78,7 +78,7 @@ const result = await compileAssets({ source: "assets", output: "public" });
 export function cookTerrainWorld( options: IPreparedTerrainWorldOptions, ): Promise< { … }
 ```
 
-- **Use when:** bake a terrain world headlessly into a GLB with instanced trees and rocks
+- **Use when:** bake a terrain world headlessly into a GLB with instanced trees and rocks · generate a forest world for my game
 
 ```ts
 await cookTerrainWorld({ state, species, out: "assets/world" });

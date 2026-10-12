@@ -261,6 +261,7 @@ export type { IContentCensus } from "./content/census.js";
 /**
  * Bake evaluated terrain and static species into an instanced GLB and streaming world package.
  * @situation bake a terrain world headlessly into a GLB with instanced trees and rocks
+ * @situation generate a forest world for my game
  * @example await cookTerrainWorld({ state, species, out: "assets/world" });
  */
 export { cookTerrainWorld } from "./world/terrain-world.js";

@@ -93,7 +93,10 @@
       "overrides": [],
       "package": "@threenative/assets",
       "signature": "export function cookTerrainWorld( options: IPreparedTerrainWorldOptions, ): Promise< { … }",
-      "situations": ["bake a terrain world headlessly into a GLB with instanced trees and rocks"],
+      "situations": [
+        "bake a terrain world headlessly into a GLB with instanced trees and rocks",
+        "generate a forest world for my game"
+      ],
       "summary": "Bake evaluated terrain and static species into an instanced GLB and streaming world package.",
       "supersedes": [],
       "symbol": "cookTerrainWorld"
@@ -8604,7 +8607,7 @@
         "procedural trees",
         "swaying trees",
         "tree foliage wind sway",
-        "generate a forest of trees"
+        "grow procedural tree meshes"
       ]
     },
     {
