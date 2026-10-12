@@ -1,4 +1,14 @@
-import { BufferAttribute, BufferGeometry, LOD, type Matrix4, Mesh, Object3D, Vector3 } from "three";
+import {
+  Box3,
+  BufferAttribute,
+  BufferGeometry,
+  LOD,
+  type Matrix4,
+  Mesh,
+  Object3D,
+  Sphere,
+  Vector3,
+} from "three";
 import type { InterleavedBufferAttribute } from "three";
 import type { IAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
@@ -217,6 +227,8 @@ interface ISeamObservation {
 const MAX_RAW_TOPOLOGY_SAMPLES = 10_000;
 const LOD_POP_THRESHOLD = 16;
 const LOD_TRANSITION_FRAMES = 3;
+/** Maximum sampled vertices or quads in one terrain-construction admission unit. */
+const CONSTRUCTION_CHUNK_SAMPLES = 256;
 /** Tiles per side in a merged super-tile block. Small, because a block is culled as one object. */
 const TERRAIN_MERGE_BLOCK = 4;
 const TERRAIN_MERGE_FLAG = "TN_TERRAIN_MERGE";
@@ -486,7 +498,7 @@ function appendQuad(
  * the field's own border. One grid serves every level of the tile, because a level's vertices are
  * every `lodFactor`-th of the field's.
  */
-function fieldHeightGrid(field: Heightfield): Float32Array {
+function* fieldHeightGrid(field: Heightfield, chunked: boolean): Generator<void, Float32Array> {
   const columns = field.columns + 2;
   const cellWidth = field.width / (field.columns - 1);
   const cellDepth = field.depth / (field.rows - 1);
@@ -498,6 +510,7 @@ function fieldHeightGrid(field: Heightfield): Float32Array {
     for (let column = 0; column < columns; column += 1) {
       const x = minimumX + Math.min(field.columns - 1, Math.max(0, column - 1)) * cellWidth;
       grid[row * columns + column] = field.heightAt(x, z);
+      if (chunked && (row * columns + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
     }
   }
   return grid;
@@ -528,13 +541,38 @@ function terrainMesh(mesh: Mesh): Mesh {
   return mesh;
 }
 
-function buildLevel(
+/** Three's box/sphere arithmetic, over the same float32 positions, in admission-sized scans. */
+function* levelBounds(
+  positions: Float32Array,
+  chunked: boolean,
+): Generator<void, { box: Box3; sphere: Sphere }> {
+  const box = new Box3();
+  const point = new Vector3();
+  for (let index = 0; index < positions.length; index += 3) {
+    point.fromArray(positions, index);
+    box.expandByPoint(point);
+    if (chunked && (index / 3 + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
+  }
+  const sphere = new Sphere();
+  box.getCenter(sphere.center);
+  let radiusSquared = 0;
+  for (let index = 0; index < positions.length; index += 3) {
+    point.fromArray(positions, index);
+    radiusSquared = Math.max(radiusSquared, sphere.center.distanceToSquared(point));
+    if (chunked && (index / 3 + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
+  }
+  sphere.radius = Math.sqrt(radiusSquared);
+  return { box, sphere };
+}
+
+function* buildLevel(
   field: Heightfield,
   resolution: number,
   skirtDepth: number,
   surface: MeshSurface,
   grid: Float32Array,
-): ILevelGeometry {
+  chunked: boolean,
+): Generator<void, ILevelGeometry> {
   const positions: number[] = [];
   const normals: number[] = [];
   const heights: number[] = [];
@@ -574,6 +612,7 @@ function buildLevel(
         ((row1 - row0) * fieldCellDepth);
       normal.set(-slopeX, 1, -slopeZ).normalize();
       normals.push(normal.x, normal.y, normal.z);
+      if (chunked && (row * resolution + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
     }
   }
   const indices: number[] = [];
@@ -581,6 +620,8 @@ function buildLevel(
     for (let column = 0; column < resolution - 1; column += 1) {
       const topLeft = row * resolution + column;
       appendQuad(indices, topLeft, topLeft + resolution, topLeft + 1, topLeft + resolution + 1);
+      if (chunked && (row * (resolution - 1) + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0)
+        yield;
     }
   }
 
@@ -608,12 +649,14 @@ function buildLevel(
     }
   }
 
+  const positionArray = Float32Array.from(positions);
+  const bounds = yield* levelBounds(positionArray, chunked);
   const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(Float32Array.from(positions), 3));
+  geometry.setAttribute("position", new BufferAttribute(positionArray, 3));
   geometry.setAttribute("normal", new BufferAttribute(Float32Array.from(normals), 3));
   geometry.setIndex(new BufferAttribute(Uint32Array.from(indices), 1));
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
+  geometry.boundingBox = bounds.box;
+  geometry.boundingSphere = bounds.sphere;
   const skirt = inspectSkirtGeometry(geometry, resolution, edges);
   return {
     edgeSamples: edgeSamplesFor(heights, resolution),
@@ -1356,11 +1399,21 @@ function updateLodTransitionGeometry(
   normalAttribute.needsUpdate = true;
 }
 
-function surfaceHeights(level: ILevelGeometry): Float32Array {
+function* surfaceHeightChunks(
+  level: ILevelGeometry,
+  chunked: boolean,
+): Generator<void, Float32Array> {
   const position = level.geometry.getAttribute("position");
   const heights = new Float32Array(level.resolution * level.resolution);
-  for (let index = 0; index < heights.length; index += 1) heights[index] = position.getY(index);
+  for (let index = 0; index < heights.length; index += 1) {
+    heights[index] = position.getY(index);
+    if (chunked && (index + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
+  }
   return heights;
+}
+
+function surfaceHeights(level: ILevelGeometry): Float32Array {
+  return surfaceHeightChunks(level, false).next().value as Float32Array;
 }
 
 function interpolatedSamplesHeight(
@@ -1386,11 +1439,12 @@ function interpolatedSamplesHeight(
   return upper + (lower - upper) * rowMix;
 }
 
-function surfaceDeltaFromSamples(
+function* surfaceDeltaChunks(
   samples: Float32Array,
   resolution: number,
   level: ILevelGeometry,
-): number {
+  chunked: boolean,
+): Generator<void, number> {
   const sampleCount = Math.max(resolution, level.resolution);
   const position = level.geometry.getAttribute("position") as BufferAttribute;
   let maximum = 0;
@@ -1405,9 +1459,18 @@ function surfaceDeltaFromSamples(
             interpolatedLevelHeight(level, position, x, z),
         ),
       );
+      if (chunked && (row * sampleCount + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
     }
   }
   return maximum;
+}
+
+function surfaceDeltaFromSamples(
+  samples: Float32Array,
+  resolution: number,
+  level: ILevelGeometry,
+): number {
+  return surfaceDeltaChunks(samples, resolution, level, false).next().value as number;
 }
 
 /**
@@ -1418,7 +1481,10 @@ function surfaceDeltaFromSamples(
  * surface it replaced than the bound between any two selectable levels. A cliff therefore keeps
  * its tile at a finer level instead of throwing out of the frame.
  */
-function coarsestSelectableLevel(levels: readonly ILevelGeometry[]): number {
+function* coarsestSelectableLevel(
+  levels: readonly ILevelGeometry[],
+  chunked: boolean,
+): Generator<void, number> {
   let coarsest = 0;
   for (let index = 1; index < levels.length; index += 1) {
     const level = levels[index];
@@ -1429,7 +1495,12 @@ function coarsestSelectableLevel(levels: readonly ILevelGeometry[]): number {
       if (finer === undefined) break;
       error = Math.max(
         error,
-        surfaceDeltaFromSamples(surfaceHeights(finer), finer.resolution, level),
+        yield* surfaceDeltaChunks(
+          yield* surfaceHeightChunks(finer, chunked),
+          finer.resolution,
+          level,
+          chunked,
+        ),
       );
     }
     if (error > LOD_POP_THRESHOLD) break;
@@ -1826,6 +1897,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #topologyBytes: number;
   readonly #worldPasses: IHeightfieldWorldPassOptions | undefined;
   readonly #resident = new Map<string, IResidentTile>();
+  #construction: { key: string; work: Generator<void, IResidentTile> } | undefined;
   #topologyMetrics: ReturnType<typeof summarizeWorldTopology> | undefined;
   #focus: IWorldTilesFollowPosition | undefined;
   #peakBytes = 0;
@@ -2124,10 +2196,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /**
    * Move residency to the followed point: admit, evict and re-level every tile.
    *
-   * `budget` caps what one call may admit. A tile the budget refuses is not resident this pass and
-   * costs nothing to try again, because `follow` recomputes the wanted set on every call — which is
-   * what makes this safe to defer: the tile was not drawn before either, so a refused admission
-   * leaves a gap rather than a hole. Omitted, a call admits everything it wants, as it always did.
+   * `budget` caps construction chunks as well as completed admissions. An unfinished tile stays
+   * outside residency and resumes on a later call while it remains wanted. Moving it outside the
+   * selected ring cancels and releases that work. Omitted, a call drains synchronously as before.
    */
   follow(
     position: IWorldTilesFollowPosition | Pick<Vector3, "x" | "z">,
@@ -2166,34 +2237,42 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     wanted.sort((a, b) => a.distance - b.distance || a.tileZ - b.tileZ || a.tileX - b.tileX);
     const selected = wanted.slice(0, this.residentTileBudget);
     const selectedKeys = new Set(selected.map(({ tileX, tileZ }) => keyFor(tileX, tileZ)));
+    if (this.#construction !== undefined && !selectedKeys.has(this.#construction.key))
+      this.#cancelConstruction();
     for (const tile of [...this.#resident.values()]) {
       if (!selectedKeys.has(tile.key)) this.#evict(tile);
     }
     const targets = new Map<IResidentTile, number>();
-    // Tiles built by this pass, so the first one is forced past the budget. A budget that is
-    // already spent when `follow` runs admits nothing, and a ring that never converges is a hole
-    // that never closes; one tile per pass is the floor that closes it, and `selected` is sorted
-    // nearest first, so the forced one is the nearest tile still missing.
-    let built = 0;
+    const missing: typeof selected = [];
     for (const candidate of selected) {
-      const key = keyFor(candidate.tileX, candidate.tileZ);
-      const resident = this.#resident.get(key);
-      if (resident !== undefined) {
+      const resident = this.#resident.get(keyFor(candidate.tileX, candidate.tileZ));
+      if (resident !== undefined)
         targets.set(resident, lodLevelForDistance(candidate.distance, this.#lodDistances));
-        continue;
-      }
+      // A selected tile keeps its construction progress when sub-tile camera motion changes the
+      // distance order. Only leaving the wanted set cancels it; otherwise a jittering camera could
+      // restart two equally near tiles forever.
+      else if (keyFor(candidate.tileX, candidate.tileZ) === this.#construction?.key)
+        missing.unshift(candidate);
+      else missing.push(candidate);
+    }
+    // Even an already-spent allowance advances one chunk of pending work, starting nearest first.
+    // The progress floor closes the ring without forcing an entire tile through one frame.
+    let built = 0;
+    for (const candidate of missing) {
+      const key = keyFor(candidate.tileX, candidate.tileZ);
       const estimate = estimatedTileBytes(this.tileResolution, this.#factors, this.#worldPasses);
       if (this.residentBytes + estimate > this.residentByteBudget) {
+        if (this.#construction?.key === key) this.#cancelConstruction();
         if (candidate.tileX === centerX && candidate.tileZ === centerZ)
           throw new TerrainTileBudgetError(
             "TerrainTiles residentByteBudget cannot fit the followed tile.",
           );
         continue;
       }
-      // One tile is one unit: every level is built and the collider made inside it. A refused tile
-      // is wanted again by the next `follow`, so it is deferred, never dropped.
+      // Keep incomplete work out of the scene; later calls resume it under the same allowance.
       const tile = this.#admitCandidate(candidate, centerX, centerZ, budget, built === 0);
-      if (tile === undefined) continue;
+      if (tile === undefined) break;
+      this.#selectLod(tile, candidate.distance, false);
       built += 1;
       if (this.residentBytes + tile.bytes > this.residentByteBudget) {
         this.#disposeTile(tile);
@@ -2257,6 +2336,34 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#reportTileMarker();
   }
 
+  /** Completed render tiles intersecting a square in world metres; pending builds do not count. */
+  readinessAt(
+    position: IWorldTilesFollowPosition,
+    radius = 0,
+  ): { required: number; loaded: number } {
+    if (
+      !Number.isFinite(position.x) ||
+      !Number.isFinite(position.z) ||
+      !Number.isFinite(radius) ||
+      radius < 0
+    )
+      throw new Error(
+        "TerrainTiles readiness requires finite coordinates and a nonnegative radius.",
+      );
+    const lowX = Math.floor((position.x - radius + this.tileSize / 2) / this.tileSize);
+    const highX = Math.floor((position.x + radius + this.tileSize / 2) / this.tileSize);
+    const lowZ = Math.floor((position.z - radius + this.tileSize / 2) / this.tileSize);
+    const highZ = Math.floor((position.z + radius + this.tileSize / 2) / this.tileSize);
+    let loaded = 0;
+    const required = (highX - lowX + 1) * (highZ - lowZ + 1);
+    if (!Number.isSafeInteger(required))
+      throw new Error("TerrainTiles readiness region is too large.");
+    for (const tile of this.#resident.values())
+      if (tile.tileX >= lowX && tile.tileX <= highX && tile.tileZ >= lowZ && tile.tileZ <= highZ)
+        loaded++;
+    return { required, loaded };
+  }
+
   debug(): Record<string, unknown> {
     const topologyField = this.#topologyField;
     const topology =
@@ -2308,6 +2415,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       residentKeys: this.residentKeys,
       residentTiles: this.residentTileCount,
       residentTileBudget: this.residentTileBudget,
+      pendingConstruction: this.#construction?.key,
       topologyBytes: this.#topologyBytes,
       lodTransitions: this.#lodTransitions,
       terrainTiles: this.terrainTiles,
@@ -2331,6 +2439,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#released = true;
     this.#renderer = undefined;
     this.#jobs.dispose();
+    this.#cancelConstruction();
     this.#topologyField?.detach();
     for (const key of [...this.#blocks.keys()]) this.#dissolveBlock(key);
     for (const tile of [...this.#resident.values()]) this.#evict(tile);
@@ -2338,7 +2447,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.removeFromParent();
   }
 
-  #createField(origin: IHeightfieldOrigin): Heightfield {
+  *#createField(origin: IHeightfieldOrigin, chunked: boolean): Generator<void, Heightfield> {
     const sampler: IHeightfieldSamplerOptions = {
       columns: this.tileResolution,
       depth: this.tileSize,
@@ -2348,15 +2457,33 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       width: this.tileSize,
       ...(this.#worldPasses === undefined ? {} : { worldPasses: this.#worldPasses }),
     };
-    return Heightfield.fromSampler(sampler);
+    if (!chunked) return Heightfield.fromSampler(sampler);
+    const heights = new Float32Array(this.tileResolution ** 2);
+    const minimumX = origin.x - this.tileSize / 2;
+    const minimumZ = origin.z - this.tileSize / 2;
+    const cellSize = this.tileSize / (this.tileResolution - 1);
+    for (let row = 0; row < this.tileResolution; row += 1) {
+      const z = minimumZ + row * cellSize;
+      for (let column = 0; column < this.tileResolution; column += 1) {
+        const index = row * this.tileResolution + column;
+        heights[index] = finite(
+          this.#sampleHeight(minimumX + column * cellSize, z),
+          "sampleHeight result",
+        );
+        if ((index + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
+      }
+    }
+    // The same canonical field as fromSampler; only the sampler loop changes cadence.
+    return new Heightfield({ ...sampler, heights });
   }
 
-  #createTile(
+  *#createTile(
     tileX: number,
     tileZ: number,
     distance: number,
     withCollider: boolean,
-  ): IResidentTile {
+    chunked: boolean,
+  ): Generator<void, IResidentTile> {
     const origin = { x: tileX * this.tileSize, z: tileZ * this.tileSize };
     const assetKey =
       this.#assetKey === undefined
@@ -2366,21 +2493,24 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
           : this.#assetKey;
     if (assetKey !== undefined && (typeof assetKey !== "string" || assetKey.trim().length === 0))
       throw new Error("TerrainTiles assetKey must resolve to a non-empty string.");
-    const field = this.#createField(origin);
+    let field: Heightfield | undefined;
     const levels: ILevelGeometry[] = [];
     let lod: LOD | undefined;
     let collider: IWorldTileCollider | undefined;
+    let completed = false;
     try {
+      field = yield* this.#createField(origin, chunked);
       // One grid of the field's own heights for the whole tile, read before any level is built.
-      const grid = fieldHeightGrid(field);
+      const grid = yield* fieldHeightGrid(field, chunked);
       for (const factor of this.#factors)
         levels.push(
-          buildLevel(
+          yield* buildLevel(
             field,
             resolutionFor(this.tileResolution, factor),
             this.skirtDepth,
             this.#surface,
             grid,
+            chunked,
           ),
         );
       lod = new LOD();
@@ -2392,6 +2522,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         mesh.frustumCulled = true;
         mesh.receiveShadow = this.#receiveShadow;
       });
+      const maxLodLevel = yield* coarsestSelectableLevel(levels, chunked);
       collider =
         this.#createCollider === undefined
           ? new EmptyCollider()
@@ -2410,7 +2541,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         lod,
         lodLevel: 0,
         levels,
-        maxLodLevel: coarsestSelectableLevel(levels),
+        maxLodLevel,
         object: lod,
         origin,
         skirtVertexCount: levels.reduce((total, level) => total + level.skirtVertexCount, 0),
@@ -2419,13 +2550,15 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         tileZ,
       };
       this.#selectLod(tile, distance, false);
+      completed = true;
       return tile;
-    } catch (error) {
-      collider?.dispose();
-      lod?.removeFromParent();
-      for (const level of levels) level.geometry.dispose();
-      field.detach();
-      throw error;
+    } finally {
+      if (!completed) {
+        collider?.dispose();
+        lod?.removeFromParent();
+        for (const level of levels) level.geometry.dispose();
+        field?.detach();
+      }
     }
   }
 
@@ -2437,12 +2570,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /**
    * Build one wanted tile, if this frame's admission budget has room for it.
    *
-   * The whole of a tile's cost is inside `#createTile` — every LOD level built, the `LOD` assembled
-   * and the game's `createCollider` called — so one tile is one unit of a frame's budget. A refused
-   * tile is `undefined`, and the next `follow` wants it again: it was not drawn before either, so
-   * deferring it leaves a gap rather than a hole.
+   * Large fields, levels, bounds and LOD safety scans yield in chunks. Only a completed tile is
+   * published; a refused chunk remains owned here until a later follow, a move or disposal.
+   * Small tiles fit one unit, and a follow without an allowance drains synchronously as before.
    *
-   * `forced` is the pass's first tile, which the budget may not refuse: see the call site.
+   * `forced` grants the first chunk progress even when another system spent the allowance.
    */
   #admitCandidate(
     candidate: { distance: number; tileX: number; tileZ: number },
@@ -2451,21 +2583,52 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     budget: IAdmissionBudget | undefined,
     forced = false,
   ): IResidentTile | undefined {
-    let tile: IResidentTile | undefined;
-    const created = (): void => {
-      tile = this.#createTile(
+    let progressOwed = forced;
+    const key = keyFor(candidate.tileX, candidate.tileZ);
+    if (this.#construction !== undefined && this.#construction.key !== key)
+      this.#cancelConstruction();
+    const construction = this.#construction ?? {
+      key,
+      work: this.#createTile(
         candidate.tileX,
         candidate.tileZ,
         candidate.distance,
         this.#wantsCollider(candidate.tileX, candidate.tileZ, centerX, centerZ),
-      );
+        budget !== undefined && this.tileResolution ** 2 > CONSTRUCTION_CHUNK_SAMPLES,
+      ),
     };
-    if (budget === undefined || forced) created();
-    else if (!budget.admit(created)) {
-      this.#deferredAdmissions = 1;
-      return undefined;
+    this.#construction = construction;
+    let tile: IResidentTile | undefined;
+    const advance = (): void => {
+      try {
+        const result = construction.work.next();
+        if (result.done) {
+          tile = result.value;
+          this.#construction = undefined;
+        }
+      } catch (error) {
+        this.#construction = undefined;
+        throw error;
+      }
+    };
+    while (tile === undefined) {
+      if (budget === undefined) advance();
+      else if (budget.admit(advance)) progressOwed = false;
+      else if (progressOwed) {
+        // Progress is one chunk, never an entire high-resolution tile outside the allowance.
+        advance();
+        progressOwed = false;
+      } else {
+        this.#deferredAdmissions = 1;
+        return undefined;
+      }
     }
     return tile;
+  }
+
+  #cancelConstruction(): void {
+    this.#construction?.work.return(undefined as never);
+    this.#construction = undefined;
   }
 
   /**

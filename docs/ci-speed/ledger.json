@@ -1,0 +1,2050 @@
+{
+  "schemaVersion": 1,
+  "goals": [
+    {
+      "key": "lastPushToMergeMedianMin",
+      "short": "Push→merge p50",
+      "label": "Last push to merge, median",
+      "unit": "min",
+      "goal": 30,
+      "better": "lower"
+    },
+    {
+      "key": "lastPushToMergeP90Min",
+      "short": "Push→merge p90",
+      "label": "Last push to merge, p90",
+      "unit": "min",
+      "goal": 45,
+      "better": "lower"
+    },
+    {
+      "key": "firstAttemptSuccessPct",
+      "short": "First attempt",
+      "label": "Merge queue passes on the first attempt",
+      "unit": "%",
+      "goal": 90,
+      "better": "higher"
+    },
+    {
+      "key": "boardWallMedianMin",
+      "short": "Board wall",
+      "label": "Merge-group board wall time, median",
+      "unit": "min",
+      "goal": 15,
+      "better": "lower"
+    },
+    {
+      "key": "queueWaitP90Min",
+      "short": "Queue wait p90",
+      "label": "Runner queue wait, p90",
+      "unit": "min",
+      "goal": 3,
+      "better": "lower"
+    }
+  ],
+  "iterations": [
+    {
+      "id": 1,
+      "at": "2026-10-09T05:09:15.030Z",
+      "commit": "11cafc003",
+      "label": "baseline: exhaustive board on every merge group",
+      "notes": "Before PRD-550. 2026-10-08 to 2026-10-09 window, same period as the PRD Context.",
+      "decision": "baseline",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-08",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 280.4,
+        "lastPushToMergeP90Min": 838.3,
+        "firstAttemptSuccessPct": 33.3,
+        "boardWallMedianMin": 77.8,
+        "queueWaitP90Min": 41.4
+      },
+      "extra": {
+        "prCount": 12,
+        "mergeGroupRuns": 45,
+        "mergeGroupRunSuccessPct": 24.2,
+        "enqueueToMergeMedianMin": 432.7,
+        "queueWaitJobs": 2759
+      },
+      "prs": [
+        {
+          "number": 467,
+          "title": "docs(prds): renumber the low-resolution temporal PRD to 539",
+          "lastPushToMergeMin": 58.7,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 466,
+          "title": "docs(prd): point asset-mcp and sculpt-mcp links at ThreeNativeHQ",
+          "lastPushToMergeMin": 103.9,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 465,
+          "title": "docs(guides): list native-css-support.md in the guides index",
+          "lastPushToMergeMin": 134.5,
+          "enqueueToMergeMin": 131.9,
+          "attempts": 3,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test"
+        },
+        {
+          "number": 464,
+          "title": "docs(prds): file PRD-537 and PRD-538",
+          "lastPushToMergeMin": 7.5,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 462,
+          "title": "PRD-210: Android continue stays desktop-only, PRD done",
+          "lastPushToMergeMin": 307.8,
+          "enqueueToMergeMin": 242.9,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (1/4)"
+        },
+        {
+          "number": 461,
+          "title": "PRD-210: Pixel 8 audio-suspend rung and relaunch cycles pass",
+          "lastPushToMergeMin": 111.4,
+          "enqueueToMergeMin": 104.2,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "build-artifacts"
+        },
+        {
+          "number": 457,
+          "title": "PRD-210: native host survives backgrounding and crashes — device proofs",
+          "lastPushToMergeMin": 436,
+          "enqueueToMergeMin": 432.7,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / auto-exposure"
+        },
+        {
+          "number": 456,
+          "title": "docs(prd-211): Android APK boots from real Ogg assets — close PRD-211",
+          "lastPushToMergeMin": 764.7,
+          "enqueueToMergeMin": 892.1,
+          "attempts": 9,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": "test-native"
+        },
+        {
+          "number": 455,
+          "title": "fix(PRD-196): a clean machine builds Android from npm; hosted clean room proves it",
+          "lastPushToMergeMin": 846.5,
+          "enqueueToMergeMin": 626.9,
+          "attempts": 3,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / auto-exposure"
+        },
+        {
+          "number": 449,
+          "title": "Bake procedural wolves and follow accepted physics",
+          "lastPushToMergeMin": 870.6,
+          "enqueueToMergeMin": 593.9,
+          "attempts": 7,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / Linux native locomotion correctness"
+        },
+        {
+          "number": 448,
+          "title": "feat(avbd): prototype bounded secondary ropes and sails",
+          "lastPushToMergeMin": 349.2,
+          "enqueueToMergeMin": 116.8,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "integration / auto-exposure"
+        },
+        {
+          "number": 398,
+          "title": "feat(render): consolidate motion history and temporal reconstruction (PRDs 269, 455)",
+          "lastPushToMergeMin": 252.9,
+          "enqueueToMergeMin": 545.7,
+          "attempts": 4,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / auto-exposure",
+          "count": 8
+        },
+        {
+          "job": "test",
+          "count": 3
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 2
+        },
+        {
+          "job": "budgets",
+          "count": 1
+        },
+        {
+          "job": "build-artifacts",
+          "count": 1
+        },
+        {
+          "job": "integration / Linux native fluid correctness",
+          "count": 1
+        },
+        {
+          "job": "integration / Linux native locomotion correctness",
+          "count": 1
+        },
+        {
+          "job": "integration / velocity",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "test-native",
+          "count": 1
+        },
+        {
+          "job": "test-unit (4/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "at": "2026-10-09T05:47:36.259Z",
+      "commit": "90dee0c83",
+      "label": "no change landed: the queue still runs the exhaustive board",
+      "notes": "Window since 2026-10-09. 0 PRs merged, so push->merge, p90 and first-attempt are n/a; board wall and queue wait measure the exhaustive merge-group board this change removes. Iteration #1 stays the baseline. Re-measure once 5 or more PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": null,
+        "lastPushToMergeP90Min": null,
+        "firstAttemptSuccessPct": null,
+        "boardWallMedianMin": 119.1,
+        "queueWaitP90Min": 50.9
+      },
+      "extra": {
+        "prCount": 0,
+        "mergeGroupRuns": 7,
+        "mergeGroupRunSuccessPct": 50,
+        "enqueueToMergeMedianMin": null,
+        "queueWaitJobs": 462
+      },
+      "prs": [],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "at": "2026-10-09T07:02:02.167Z",
+      "commit": "a47851026",
+      "label": "phase 1 in review",
+      "notes": "Same window as iteration 2: 0 PRs merged, 9 merge-group runs, board median 113.3 min, queue wait p90 49.9 min. Named cost: integration / velocity was the first failing job in 2 of 4 red merge groups, because its cost arm priced shared-runner load as render cost. The change is PRD-550 phase 1 (481824f3c, a47851026) on PR 476. It moves that arm to a scheduled lane and widens two compile budgets. The compile specs pass locally, 40 of 40 in 220 s. Re-measure after it merges. The PR head also shows an intermittent iOS simulator red, seen in 2 of 10 recent runs with different errors, on code this branch does not change.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": null,
+        "lastPushToMergeP90Min": null,
+        "firstAttemptSuccessPct": null,
+        "boardWallMedianMin": 113.3,
+        "queueWaitP90Min": 49.9
+      },
+      "extra": {
+        "prCount": 0,
+        "mergeGroupRuns": 9,
+        "mergeGroupRunSuccessPct": 42.9,
+        "enqueueToMergeMedianMin": null,
+        "queueWaitJobs": 602
+      },
+      "prs": [],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 2
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "at": "2026-10-09T08:09:52.392Z",
+      "commit": "6ec34f52c",
+      "label": "PR 476 green on phase 1 head",
+      "notes": "Same window: 0 PRs merged, 12 merge-group runs. PR 476 head 6ec34f52c is green: 69 checks pass and 12 skip, and merge state is CLEAN. integration / velocity passes on that head, and the iOS simulator job passes there too, so the iOS red from iteration 3 did not recur. Merge-group metrics do not move until phase 1 reaches develop. Named costs still on develop: integration / velocity and test-unit (3/4), each first in 2 red merge groups. The compile-spec budget change (a47851026) targets the test-unit timeouts. Re-measure after the merge.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": null,
+        "lastPushToMergeP90Min": null,
+        "firstAttemptSuccessPct": null,
+        "boardWallMedianMin": 113.3,
+        "queueWaitP90Min": 46.9
+      },
+      "extra": {
+        "prCount": 0,
+        "mergeGroupRuns": 12,
+        "mergeGroupRunSuccessPct": 33.3,
+        "enqueueToMergeMedianMin": null,
+        "queueWaitJobs": 774
+      },
+      "prs": [],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 2
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 2
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "at": "2026-10-09T09:15:07.994Z",
+      "commit": "3ca761875",
+      "label": "hourly refresh",
+      "notes": "One PR merged since the last tick: 458, last push to merge 474.3 min, first attempt failed at test-unit (2/4). The window now has 13 merge-group runs, board median 111.6 min, and queue wait p90 47.2 min over 885 jobs. First failing job in the red groups: integration / velocity 2, test-unit (3/4) 2, test-unit (2/4) 1, integration / capture 1, test-playtest 1. PR 476 is still open, so phase 1 is not on develop yet. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 474.3,
+        "lastPushToMergeP90Min": 474.3,
+        "firstAttemptSuccessPct": 0,
+        "boardWallMedianMin": 111.6,
+        "queueWaitP90Min": 47.2
+      },
+      "extra": {
+        "prCount": 1,
+        "mergeGroupRuns": 13,
+        "mergeGroupRunSuccessPct": 36.4,
+        "enqueueToMergeMedianMin": 143.1,
+        "queueWaitJobs": 886
+      },
+      "prs": [
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 2
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 2
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "at": "2026-10-09T10:16:15.565Z",
+      "commit": "7789bf328",
+      "label": "hourly refresh",
+      "notes": "One new PR merged since the last tick, 470, after 4 merge-group attempts. Its first failing job was integration / velocity. The window now has 2 merged PRs, 470 and 458. Last push to merge median 475.9 min, p90 477.1 min. First attempt merge 50 percent. 16 merge-group runs, board median 109.9 min, queue wait p90 45 min over 1086 jobs. First failing job in the red groups: integration / velocity 2, test-unit (3/4) 2, integration / capture 1, template-nonvisual platformer 1. PR 476 is still open, so phase 1 is not on develop yet. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 109.9,
+        "queueWaitP90Min": 45
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 16,
+        "mergeGroupRunSuccessPct": 35.7,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 1086
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 2
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 2
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-browser",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "at": "2026-10-09T11:15:40.652Z",
+      "commit": "aa13e02c1",
+      "label": "hourly refresh",
+      "notes": "No new PR merged since the last tick. The window still has 2 merged PRs, 470 and 458. It now has 18 merge-group runs, up from 16. Board median 109.9 min. Queue wait p90 42.9 min over 1227 jobs. Run success fell to 31.3 percent. First failing job in the 8 red groups: integration / velocity 4, test-unit (3/4) 2, integration / capture 1, template-nonvisual platformer 1. integration / velocity is the largest named cost, and phase 1 on PR 476 targets it. PR 476 is still open, so phase 1 is not on develop yet. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 109.9,
+        "queueWaitP90Min": 42.9
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 18,
+        "mergeGroupRunSuccessPct": 31.3,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 1228
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 4
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 2
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-browser",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "at": "2026-10-09T12:15:46.448Z",
+      "commit": "9f36ac3c8",
+      "label": "hourly refresh",
+      "notes": "No new PR merged since the last tick. The window still has 2 merged PRs, 470 and 458. It now has 20 merge-group runs, up from 18. Run success fell to 27.8 percent. Board median 109.9 min. Queue wait p90 41.6 min over 1376 jobs. First failing job in the red groups: integration / velocity 4, test-unit (3/4) 3, test-browser 2, integration / capture 1. test-browser is new in this list. integration / velocity is still the largest named cost, and phase 1 on PR 476 targets it. PR 476 is still open. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 109.9,
+        "queueWaitP90Min": 41.5
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 21,
+        "mergeGroupRunSuccessPct": 26.3,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 1379
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 4
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 3
+        },
+        {
+          "job": "test-browser",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "at": "2026-10-09T13:16:32.659Z",
+      "commit": "cbd2e662e",
+      "label": "hourly refresh",
+      "notes": "No new PR merged since the last tick. The window still has 2 merged PRs, 470 and 458. It now has 24 merge-group runs, up from 20. Run success fell to 23.8 percent. Board median 109.9 min. Queue wait p90 41.2 min over 1579 jobs. First failing job in the red groups: integration / velocity 4, test-unit (3/4) 4, test-browser 2, integration / auto-exposure cold boot 1. integration / velocity and test-unit (3/4) are tied as the largest named costs. Phase 1 on PR 476 targets integration / velocity, and its compile-spec budget change targets test-unit timeouts. PR 476 is still open. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 109.9,
+        "queueWaitP90Min": 40.7
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 24,
+        "mergeGroupRunSuccessPct": 23.8,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 1610
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 4
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 4
+        },
+        {
+          "job": "test-browser",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "at": "2026-10-09T14:16:12.255Z",
+      "commit": "2e100adc4",
+      "label": "hourly refresh",
+      "notes": "No new PR merged since the last tick. The window still has 2 merged PRs, 470 and 458. It now has 26 merge-group runs, up from 24. Run success fell to 20.8 percent, the fourth straight drop. Board median 109.9 min. Queue wait p90 39 min over 1785 jobs, down from 41.2. First failing job in the red groups: test-unit (3/4) 5, integration / velocity 4, test-browser 2, integration / auto-exposure cold boot 1. test-unit (3/4) is now the largest named cost. Phase 1 on PR 476 includes a compile-spec budget change for test-unit timeouts, and it is not on develop yet. PR 476 is still open. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 109.9,
+        "queueWaitP90Min": 39
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 26,
+        "mergeGroupRunSuccessPct": 20.8,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 1787
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "integration / velocity",
+          "count": 4
+        },
+        {
+          "job": "test-browser",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "at": "2026-10-09T15:17:36.022Z",
+      "commit": "f9a01bbe4",
+      "label": "hourly refresh",
+      "notes": "No new PR merged since the last tick. The window still has 2 merged PRs, 470 and 458. It now has 29 merge-group runs, up from 26. Run success is 22.2 percent, up from 20.8. Board median is 102.5 min, down from 109.9. Queue wait p90 is 38.4 min over 1993 jobs. First failing job in the 12 red groups: test-unit (3/4) 5, integration / velocity 4, test-browser 2, golden-path template platformer 1. The named costs are unchanged. A separate develop push run at b12b257f1 failed in test-native, and it is not counted in these groups. PR 476 is still open. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 102.5,
+        "queueWaitP90Min": 38.9
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 29,
+        "mergeGroupRunSuccessPct": 22.2,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 1994
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "integration / velocity",
+          "count": 4
+        },
+        {
+          "job": "test-browser",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 1
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "at": "2026-10-09T16:04:17.913Z",
+      "commit": "f1e868d47",
+      "label": "hourly refresh",
+      "notes": "Catch-up tick after the 09:00 stop. No new PR merged. The window still has 2 merged PRs, 470 and 458. It now has 31 merge-group runs, up from 29. Run success is 24.1 percent, up from 22.2. Board median is 95.1 min, down from 102.5. Queue wait p90 is 38.7 min over 2118 jobs. First failing job in the 13 red groups: test-unit (3/4) 5, integration / velocity 4, test-browser 2, test-unit (1/4) 2. test-unit (1/4) is new in this list. The named costs are unchanged. PR 476 is still open. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 95.1,
+        "queueWaitP90Min": 38.7
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 31,
+        "mergeGroupRunSuccessPct": 24.1,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 2118
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "integration / velocity",
+          "count": 4
+        },
+        {
+          "job": "test-browser",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 1
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "at": "2026-10-09T17:18:18.223Z",
+      "commit": "1310367b6",
+      "label": "hourly refresh",
+      "notes": "No new PR merged since the last tick. The window still has 2 merged PRs, 470 and 458. It now has 33 merge-group runs, up from 31. Run success is 22.6 percent, down from 24.1. Board median is 95.1 min, unchanged. Queue wait p90 is 38.5 min over 2258 jobs. First failing job in the 14 red groups: integration / velocity 5, test-unit (3/4) 5, test-browser 2, test-unit (1/4) 2. integration / velocity rose by one. PR 476 is still open. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 95.1,
+        "queueWaitP90Min": 38.5
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 33,
+        "mergeGroupRunSuccessPct": 22.6,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 2259
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-browser",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 1
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "at": "2026-10-09T18:19:50.825Z",
+      "commit": "6639a5baf",
+      "label": "hourly refresh",
+      "notes": "No new PR merged since the last tick. The window still has 2 merged PRs, 470 and 458. It now has 35 merge-group runs, up from 33. Run success is 21.2 percent, down from 22.6. Board median is 95.1 min, unchanged. Queue wait p90 is 38.7 min over 2396 jobs. First failing job in the 15 red groups: integration / velocity 5, test-unit (3/4) 5, test-unit (2/4) 3, integration / auto-exposure cold boot 2. The list changed: test-unit (2/4) and auto-exposure cold boot appear, and test-browser and test-unit (1/4) drop out. The first attempt hit a transient GitHub 502, and the rerun succeeded. Develop still sits at b12b257f1, so the queue has no new merges. PR 476 is still open. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 95.1,
+        "queueWaitP90Min": 38.7
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 35,
+        "mergeGroupRunSuccessPct": 21.2,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 2396
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 3
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "test-browser",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "at": "2026-10-09T19:18:15.486Z",
+      "commit": "4c1bbd890",
+      "label": "hourly refresh",
+      "notes": "No new PR merged since the last tick. The window still has 2 merged PRs, 470 and 458. Develop still sits at b12b257f1, so the queue has no new merges. It now has 36 merge-group runs, up from 35. Run success is 20 percent, down from 21.2. Board median is 95.1 min, unchanged. Queue wait p90 is 38.6 min over 2476 jobs. First failing job in the 16 red groups: integration / velocity 5, test-unit (3/4) 5, test-browser 3, test-unit (2/4) 3. test-browser is back in the list. PR 476 is still open. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 95.1,
+        "queueWaitP90Min": 38.6
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 36,
+        "mergeGroupRunSuccessPct": 20,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 2476
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-browser",
+          "count": 3
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 3
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "at": "2026-10-09T20:30:36.009Z",
+      "commit": "4d81de73c",
+      "label": "hourly refresh",
+      "notes": "The window merged five PRs, which are 458, 470, 471, 473, and 468, and this matches the merged PR line that shows 5 PRs. The window held 42 merge group runs, with a run success of 19.4 percent and a first attempt merge of 40 percent. The merge group board median wall was 95.1 minutes, and the last push to merge median was 477.4 minutes with a p90 of 1023.9 minutes. The runner queue wait p90 was 36.9 minutes over 2845 jobs. The first failing job counts, largest first, were 5 for integration / velocity, 5 for test-unit (3/4), 4 for test-unit (2/4), 3 for test-browser, 2 for integration / auto-exposure, 2 for integration / auto-exposure cold boot, 2 for test-unit (1/4), and 1 for each of golden-path-template (platformer), integration / capture, native-platforms / iOS simulator runtime and no-Xcode consumer handoff, native-platforms / macOS desktop core, template-nonvisual (platformer), and test-playtest. Develop moved from b12b257f1 to 6b18d913e, and its CI run on that head was still queued when this row was written. None of these PRs carries the phase 1 change on PR 476, which is still open, so this window cannot judge that change, and the decision is inconclusive.",
+      "decision": "inconclusive",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 477.4,
+        "lastPushToMergeP90Min": 1023.9,
+        "firstAttemptSuccessPct": 40,
+        "boardWallMedianMin": 95.1,
+        "queueWaitP90Min": 36.9
+      },
+      "extra": {
+        "prCount": 5,
+        "mergeGroupRuns": 42,
+        "mergeGroupRunSuccessPct": 19.4,
+        "enqueueToMergeMedianMin": 454.8,
+        "queueWaitJobs": 2846
+      },
+      "prs": [
+        {
+          "number": 473,
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "lastPushToMergeMin": 317.9,
+          "enqueueToMergeMin": 454.8,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        },
+        {
+          "number": 471,
+          "title": "fix(capabilities): every manifest import resolves in every scaffolded template (PRD-354)",
+          "lastPushToMergeMin": 1011.6,
+          "enqueueToMergeMin": 1015.5,
+          "attempts": 8,
+          "firstAttempt": "success",
+          "firstFailingJob": "test-playtest"
+        },
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 468,
+          "title": "feat(core): ship threenative-sculpt-mcp 0.2.1",
+          "lastPushToMergeMin": 1032.1,
+          "enqueueToMergeMin": 631.5,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-browser"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 4
+        },
+        {
+          "job": "test-browser",
+          "count": 3
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "at": "2026-10-09T21:26:04.973Z",
+      "commit": "0a4ce848c",
+      "label": "hourly refresh",
+      "notes": "Merged into develop since 2026-10-09 are 5 PRs, 473, 471, 470, 468 and 458. The merge-group run count is 42 and the run success percent is 18.4 with the first-attempt merge percent at 40. The board median wall is 95.1 minutes, and the last push to merge median is 477.4 minutes and p90 is 1023.9 minutes. The queue wait p90 is 40.4 minutes over 2873 jobs. The first failing job counts are 6 for integration / velocity, 5 for test-unit (2/4), 5 for test-unit (3/4), 3 for test-browser, 2 for integration / auto-exposure, 2 for integration / auto-exposure cold boot, 2 for test-unit (1/4), and 1 each for golden-path-template (platformer), integration / capture, native-platforms / iOS simulator runtime and no-Xcode consumer handoff, native-platforms / macOS desktop core, template-nonvisual (platformer) and test-playtest. Develop head is 6b18d913e and its CI run has finished with success. None of these PRs carry the phase 1 change on PR 476, which is still open, so this window cannot judge that change, and local commit 0a4ce848c adds a test only diagnostic and does not change any merge-group result, giving an inconclusive decision.",
+      "decision": "inconclusive",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 477.4,
+        "lastPushToMergeP90Min": 1023.9,
+        "firstAttemptSuccessPct": 40,
+        "boardWallMedianMin": 95.1,
+        "queueWaitP90Min": 41.5
+      },
+      "extra": {
+        "prCount": 5,
+        "mergeGroupRuns": 42,
+        "mergeGroupRunSuccessPct": 18.4,
+        "enqueueToMergeMedianMin": 454.8,
+        "queueWaitJobs": 2877
+      },
+      "prs": [
+        {
+          "number": 473,
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "lastPushToMergeMin": 317.9,
+          "enqueueToMergeMin": 454.8,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        },
+        {
+          "number": 471,
+          "title": "fix(capabilities): every manifest import resolves in every scaffolded template (PRD-354)",
+          "lastPushToMergeMin": 1011.6,
+          "enqueueToMergeMin": 1015.5,
+          "attempts": 8,
+          "firstAttempt": "success",
+          "firstFailingJob": "test-playtest"
+        },
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 468,
+          "title": "feat(core): ship threenative-sculpt-mcp 0.2.1",
+          "lastPushToMergeMin": 1032.1,
+          "enqueueToMergeMin": 631.5,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-browser"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 6
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-browser",
+          "count": 3
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "at": "2026-10-10T05:58:22.141Z",
+      "commit": "1652670ee",
+      "label": "PR476 unmerged baseline refresh",
+      "notes": "PR476 remains unmerged. This is a fresh observation of develop, not a measured effect of PR476. Candidate CI run 38025989864 failed sailing diagnostics; ci-required correctly rejected it.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 744.5,
+        "lastPushToMergeP90Min": 1130.1,
+        "firstAttemptSuccessPct": 33.3,
+        "boardWallMedianMin": 107.9,
+        "queueWaitP90Min": 42.3
+      },
+      "extra": {
+        "prCount": 6,
+        "mergeGroupRuns": 43,
+        "mergeGroupRunSuccessPct": 23.8,
+        "enqueueToMergeMedianMin": 543.2,
+        "queueWaitJobs": 2963
+      },
+      "prs": [
+        {
+          "number": 473,
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "lastPushToMergeMin": 317.9,
+          "enqueueToMergeMin": 454.8,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        },
+        {
+          "number": 472,
+          "title": "PRD-297: capability recall is a gated number, PRD done",
+          "lastPushToMergeMin": 1228.1,
+          "enqueueToMergeMin": 1160.9,
+          "attempts": 12,
+          "firstAttempt": "failure",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 471,
+          "title": "fix(capabilities): every manifest import resolves in every scaffolded template (PRD-354)",
+          "lastPushToMergeMin": 1011.6,
+          "enqueueToMergeMin": 1015.5,
+          "attempts": 8,
+          "firstAttempt": "success",
+          "firstFailingJob": "test-playtest"
+        },
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 468,
+          "title": "feat(core): ship threenative-sculpt-mcp 0.2.1",
+          "lastPushToMergeMin": 1032.1,
+          "enqueueToMergeMin": 631.5,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-browser"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 7
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-browser",
+          "count": 3
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "at": "2026-10-10T07:20:48.411Z",
+      "commit": "77bb0ee57",
+      "label": "PR476 candidate 77bb in CI — unmerged baseline",
+      "notes": "Fresh develop baseline while PR476 remains unmerged. CI run38033595736 targets candidate77bb; verification is pending. This audit does not measure PR476 effect.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 1090.9,
+        "firstAttemptSuccessPct": 25,
+        "boardWallMedianMin": 107.9,
+        "queueWaitP90Min": 42
+      },
+      "extra": {
+        "prCount": 8,
+        "mergeGroupRuns": 44,
+        "mergeGroupRunSuccessPct": 23.8,
+        "enqueueToMergeMedianMin": 409.4,
+        "queueWaitJobs": 3035
+      },
+      "prs": [
+        {
+          "number": 479,
+          "title": "PRD-567: terrain layers blend by their own height, and the game owns the curve",
+          "lastPushToMergeMin": 66.4,
+          "enqueueToMergeMin": 64.9,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 477,
+          "title": "feat(core): shadow casters sort themselves into static and moving (PRD-572)",
+          "lastPushToMergeMin": 91.8,
+          "enqueueToMergeMin": 56.5,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 473,
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "lastPushToMergeMin": 317.9,
+          "enqueueToMergeMin": 454.8,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        },
+        {
+          "number": 472,
+          "title": "PRD-297: capability recall is a gated number, PRD done",
+          "lastPushToMergeMin": 1228.1,
+          "enqueueToMergeMin": 1160.9,
+          "attempts": 12,
+          "firstAttempt": "failure",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 471,
+          "title": "fix(capabilities): every manifest import resolves in every scaffolded template (PRD-354)",
+          "lastPushToMergeMin": 1011.6,
+          "enqueueToMergeMin": 1015.5,
+          "attempts": 8,
+          "firstAttempt": "success",
+          "firstFailingJob": "test-playtest"
+        },
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 468,
+          "title": "feat(core): ship threenative-sculpt-mcp 0.2.1",
+          "lastPushToMergeMin": 1032.1,
+          "enqueueToMergeMin": 631.5,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-browser"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 7
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-browser",
+          "count": 3
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "at": "2026-10-10T12:55:25.811Z",
+      "commit": "77bb0ee57",
+      "label": "Current queue comparison — PR476 still unmerged",
+      "notes": "Refreshed after user requested current queue comparison and continued speed work. PR476 remains unmerged; no measured impact attribution.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 474.3,
+        "lastPushToMergeP90Min": 1071.3,
+        "firstAttemptSuccessPct": 22.2,
+        "boardWallMedianMin": 95.1,
+        "queueWaitP90Min": 39.6
+      },
+      "extra": {
+        "prCount": 9,
+        "mergeGroupRuns": 50,
+        "mergeGroupRunSuccessPct": 27.7,
+        "enqueueToMergeMedianMin": 454.8,
+        "queueWaitJobs": 3449
+      },
+      "prs": [
+        {
+          "number": 479,
+          "title": "PRD-567: terrain layers blend by their own height, and the game owns the curve",
+          "lastPushToMergeMin": 66.4,
+          "enqueueToMergeMin": 64.9,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 477,
+          "title": "feat(core): shadow casters sort themselves into static and moving (PRD-572)",
+          "lastPushToMergeMin": 91.8,
+          "enqueueToMergeMin": 56.5,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 473,
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "lastPushToMergeMin": 317.9,
+          "enqueueToMergeMin": 454.8,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        },
+        {
+          "number": 472,
+          "title": "PRD-297: capability recall is a gated number, PRD done",
+          "lastPushToMergeMin": 1228.1,
+          "enqueueToMergeMin": 1160.9,
+          "attempts": 12,
+          "firstAttempt": "failure",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 471,
+          "title": "fix(capabilities): every manifest import resolves in every scaffolded template (PRD-354)",
+          "lastPushToMergeMin": 1011.6,
+          "enqueueToMergeMin": 1015.5,
+          "attempts": 8,
+          "firstAttempt": "success",
+          "firstFailingJob": "test-playtest"
+        },
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 469,
+          "title": "fix(shooter): clear ADS sight window, remove GTAO square behind smoke",
+          "lastPushToMergeMin": 125.9,
+          "enqueueToMergeMin": 1091.6,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        },
+        {
+          "number": 468,
+          "title": "feat(core): ship threenative-sculpt-mcp 0.2.1",
+          "lastPushToMergeMin": 1032.1,
+          "enqueueToMergeMin": 631.5,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-browser"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 7
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-browser",
+          "count": 3
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

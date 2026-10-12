@@ -659,7 +659,8 @@ export async function perfCommand(argv: readonly string[]): Promise<number> {
     // as the command's failure with its TN_PERF_ code — never as a stack trace, never as an
     // empty success.
     const message = error instanceof Error ? error.message : String(error);
-    const code = message.startsWith("TN_PERF_") ? (message.split(":")[0] ?? "TN_PERF_SOURCE_UNREADABLE") : "TN_PERF_SOURCE_UNREADABLE";
+    const namedFailure = message.startsWith("TN_PERF_") || message.startsWith("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE:");
+    const code = namedFailure ? (message.split(":")[0] ?? "TN_PERF_SOURCE_UNREADABLE") : "TN_PERF_SOURCE_UNREADABLE";
     process.stderr.write(`${JSON.stringify({ diagnostics: [{ code, message, severity: "error" }], pass: false }, null, 2)}\n`);
     process.exitCode = 2;
     return 2;

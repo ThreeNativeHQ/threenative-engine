@@ -271,6 +271,19 @@ describe("TerrainTiles merge under a walk", () => {
         blended += merged.blendingTiles === 0 ? 0 : 1;
         failures.push(...frameFailures(frame, merged, plain));
       }
+      // Six construction chunks no longer mean six whole tiles. Keep checking every draw while
+      // the same bounded allowance finishes the last stationary ring, without raising it.
+      for (
+        let frame = FRAMES;
+        frame < FRAMES + 10_000 && merged.deferredAdmissions > 0;
+        frame += 1
+      ) {
+        for (const tiles of [merged, plain]) {
+          tiles.follow(path(FRAMES - 1), frameBudget());
+          tiles.process();
+        }
+        failures.push(...frameFailures(frame, merged, plain));
+      }
       marker.mockRestore();
       // The walk has to stream, re-level and blend, or the invariants below prove nothing.
       expect({ blended, resident: merged.residentTileCount }).toEqual({

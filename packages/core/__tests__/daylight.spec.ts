@@ -1,4 +1,12 @@
-import { AgXToneMapping, Color, FogExp2, Object3D, Scene, Vector3 } from "three";
+import {
+  ACESFilmicToneMapping,
+  AgXToneMapping,
+  Color,
+  FogExp2,
+  Object3D,
+  Scene,
+  Vector3,
+} from "three";
 import { describe, expect, it } from "vitest";
 import { Daylight, type IDaylightOptions } from "../src/render/daylight.js";
 import type { VirtualShadowNode } from "../src/render/virtual-shadow.js";
@@ -48,6 +56,23 @@ describe("Daylight", () => {
     daylight.detach();
     expect(scene.fog).toBeNull();
     expect(daylight.released).toBe(true);
+  });
+
+  it("uses the game's tone curve when it names one", () => {
+    const daylight = new Daylight({
+      ...options(new Object3D()),
+      toneMapping: ACESFilmicToneMapping,
+    });
+    const raw = { shadowMap: { enabled: false }, toneMapping: 0, toneMappingExposure: 1 };
+    daylight.attachRenderer({ raw } as never);
+    expect(raw.toneMapping).toBe(ACESFilmicToneMapping);
+  });
+
+  it("keeps its own sky out of its own haze", () => {
+    // The dome sits half a sky size from the eye; at any useful haze density that distance is fully
+    // fogged, and a fogged dome is a flat haze-coloured sky instead of the physical one.
+    const daylight = new Daylight(options(new Object3D()));
+    expect((daylight.sky.material as { fog: boolean }).fog).toBe(false);
   });
 
   it("gives every shadow level the game's map size, and the light's own when it names none", () => {

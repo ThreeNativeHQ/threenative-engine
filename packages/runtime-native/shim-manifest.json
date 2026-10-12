@@ -53,6 +53,10 @@
       "reason": "Asset loading probes Image as an optional browser decoder and falls back to the native createImageBitmap path when it is absent."
     },
     {
+      "name": "PerformanceObserver",
+      "reason": "FrameBudget probes the browser-only Long Tasks API and reports it unavailable when native has no observer."
+    },
+    {
       "name": "ResizeObserver",
       "reason": "The renderer probes this optional browser API and falls back to the native window resize event when the host does not install it."
     }

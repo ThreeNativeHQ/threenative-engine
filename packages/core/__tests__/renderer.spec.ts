@@ -15,6 +15,33 @@ function testCanvas(): HTMLCanvasElement {
 }
 
 describe("createRenderer", () => {
+  it("keeps its browser-created canvas layout independent of drawing-buffer scale", async () => {
+    const canvas = testCanvas();
+    const style = { width: "", height: "" };
+    Object.defineProperty(canvas, "style", { value: style });
+    const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { createElement: () => canvas },
+    });
+    let renderer: Awaited<ReturnType<typeof createRenderer>> | undefined;
+    try {
+      renderer = await createRenderer({
+        preferWebGPU: false,
+        resolutionScale: 0.5,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      expect(style).toEqual({ width: "100%", height: "100%" });
+    } finally {
+      renderer?.dispose();
+      if (documentDescriptor) Object.defineProperty(globalThis, "document", documentDescriptor);
+      else Reflect.deleteProperty(globalThis, "document");
+    }
+  });
   it("reports the age of the resolved GPU frame without treating a repeated duration as fresh", async () => {
     const canvas = testCanvas();
     const info = { frame: 10, render: { timestamp: 6.25 } };
@@ -44,6 +71,37 @@ describe("createRenderer", () => {
       timestampFrames = [309];
       Reflect.deleteProperty(info, "frame");
       expect(renderer.gpuFrameAge?.()).toBeUndefined();
+    } finally {
+      renderer.dispose();
+    }
+  });
+
+  it("keeps reading its own frame id when three's animation loop overwrites info.frame", async () => {
+    // Three's Renderer.init starts its own rAF loop, which writes `info.frame = nodeFrame.frameId`
+    // every animation frame. The timestamp queries are keyed by the engine's counter, so a sample
+    // must stay readable when that loop has just written a smaller number.
+    const canvas = testCanvas();
+    const info = { frame: 0, render: { timestamp: 4.5 } };
+    let timestampFrames: number[] = [];
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        info,
+        backend: { getTimestampFrames: () => timestampFrames },
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const scene = new Scene();
+      const camera = new PerspectiveCamera();
+      for (let frame = 0; frame < 20; frame += 1) renderer.render(scene, camera);
+      timestampFrames = [16];
+      info.frame = 9;
+      expect(renderer.gpuFrameSample?.()).toEqual({ frame: 16, ms: 4.5 });
+      expect(renderer.gpuFrameAge?.()).toBe(3);
     } finally {
       renderer.dispose();
     }
@@ -705,6 +763,61 @@ describe("createRenderer", () => {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
       else Object.defineProperty(globalThis, "navigator", descriptor);
     }
+  });
+
+  it("classifies the adapter and prints TN_GPU_CLASS once with the rule and raw fields", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const info = {
+      architecture: "bifrost",
+      description: "Mali-G52 MC2",
+      device: "",
+      vendor: "arm",
+    };
+    const requestAdapter = vi.fn(async () => ({ info }));
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: { requestAdapter } },
+    });
+    const lines: string[] = [];
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        report: (line) => lines.push(line),
+        webgpuFactory: () => ({
+          backend: { gpu: { requestAdapter } },
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+
+      expect(renderer.gpuClass).toEqual({ class: "mobile-low", fields: info, rule: "mali-model" });
+      expect(lines.filter((line) => line.startsWith("TN_GPU_CLASS:"))).toEqual([
+        `TN_GPU_CLASS:${JSON.stringify(renderer.gpuClass)}`,
+      ]);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("reports no gpuClass when the renderer fell back to WebGL2", async () => {
+    const canvas = testCanvas();
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    expect(renderer.gpuClass).toBeUndefined();
+    renderer.dispose();
   });
 
   it("reports no software adapter for a hardware one rather than claiming a proof", async () => {

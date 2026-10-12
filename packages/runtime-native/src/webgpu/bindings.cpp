@@ -2059,11 +2059,16 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                     , device}}))) return state->engine->newUndefined();
                     // device.lost - Promise that resolves when the device is lost
                     // Required by Three.js WebGPU renderer during init
-                    // We create a Promise that never resolves (device never lost in normal operation)
-                    auto deviceLostPromise = state->engine->evalWithResult(
-                        "new Promise(function(resolve) { globalThis.__mystral_device_lost_resolve = resolve; })",
+                    // We create a Promise that never resolves (device never lost in normal operation).
+                    // evalWithResult evaluates a module, whose result is the module's own evaluation
+                    // promise: it resolves at once, so returning it made every `device.lost` consumer
+                    // see a lost device. Keep the real promise on the global and read it back.
+                    state->engine->evalWithResult(
+                        "globalThis.__mystral_device_lost = new Promise(function(resolve) { globalThis.__mystral_device_lost_resolve = resolve; });",
                         "device.lost"
                     );
+                    auto deviceLostPromise =
+                        state->engine->getProperty(state->engine->getGlobal(), "__mystral_device_lost");
                     state->engine->setProperty(device, "lost", deviceLostPromise);
                     if (!state->profiling.disableFrameOpStreamForTesting) {
                         // Install the production frame recorder after every native method exists.

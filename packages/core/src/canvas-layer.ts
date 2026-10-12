@@ -7,6 +7,10 @@ export class CanvasLayer {
   readonly camera = new OrthographicCamera();
   /** Declares that this layer covers the framebuffer, allowing the world pass to be skipped. */
   opaque = false;
+  /** Keep preparing/drawing the world behind an opaque loading cover, including scene changes. */
+  keepWorldRendering = false;
+  /** Allow first-use world draws during startup; render-cadence admission runs independently. */
+  renderWorldDuringStartup = true;
   #stopResize: () => void;
   #resizeListeners = new Set<(size: IViewportSize) => void>();
 

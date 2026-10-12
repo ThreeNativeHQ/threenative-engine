@@ -727,6 +727,7 @@ export type {
   IWorldAssetBounds,
   IWorldAssetLod,
   IWorldCell,
+  IWorldCellProxy,
   IWorldExtent,
   IWorldPackage,
   IWorldPackageError,
@@ -763,4 +764,5 @@ export type {
   IWorldCellsLoadOptions,
   IWorldCellsStats,
   IWorldCellsTerrainOptions,
+  IWorldRegionReadiness,
 } from "./world-cells.js";

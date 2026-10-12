@@ -504,15 +504,25 @@ function withComputeReport(report: IWarmUpReport, compute: IComputeWarmUpReport)
  *
  * So the warm-up asks for no frame at all: it yields the thread and lets the host's own loop do
  * what it was already going to do. On the native runtime — the platform where the 24.5 second
- * stall this exists for actually lives — one macrotask is exactly one loop iteration, which runs
- * the animation-frame callbacks and presents. Nothing is registered, nothing is waited on, and
- * the loop's frame sequence is the one the loop authored.
+ * stall this exists for actually lives — the host drains `scheduler.yield` continuations in a
+ * bounded slice between frames, so frames keep presenting. Nothing is registered, nothing is
+ * waited on, and the loop's frame sequence is the one the loop authored.
  */
-/** @internal Shared with `streaming.ts`, whose slices and lanes want the same yield. */
-export const yieldToHost = (): Promise<void> =>
-  new Promise((resolve) => {
+/**
+ * `scheduler.yield` first, where the host has it. A nested `setTimeout(0)` is clamped to 4 ms in
+ * Chrome (4.56 ms measured, against 0.009 ms), which left an 8 ms slice idle a third of the time.
+ * The native host installs `scheduler.yield` and drains it between frames, while its timer queue
+ * is frame-coupled, so a timer yield there costs one whole frame per slice.
+ *
+ * @internal Shared with `streaming.ts`, whose slices and lanes want the same yield.
+ */
+export const yieldToHost = (): Promise<void> => {
+  const host = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+  if (typeof host?.yield === "function") return host.yield();
+  return new Promise((resolve) => {
     setTimeout(resolve, 0);
   });
+};
 
 /**
  * Collects every renderable object in traversal order.

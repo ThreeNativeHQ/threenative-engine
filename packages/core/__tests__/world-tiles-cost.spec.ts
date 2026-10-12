@@ -1,5 +1,6 @@
 import {
   Box3,
+  BufferAttribute,
   BufferGeometry,
   InterleavedBufferAttribute,
   Mesh,
@@ -7,7 +8,7 @@ import {
   Object3D,
   Vector3,
 } from "three";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TerrainTiles } from "../src/world-tiles.js";
 import { terrainValidationRequested } from "../src/world-validate.js";
 import { Heightfield } from "../src/world.js";
@@ -29,6 +30,141 @@ const BLOCK_PREFIX = "tn-terrain-block:";
 
 const sampleHeight = (x: number, z: number): number =>
   Math.sin(x * 0.017) * 12 + Math.cos(z * 0.013) * 9 + Math.sin((x + z) * 0.007) * 4;
+
+describe("TerrainTiles construction admission", () => {
+  afterEach(() => vi.restoreAllMocks());
+  function construction(sampler = sampleHeight, streamRadius = 0): TerrainTiles {
+    return new TerrainTiles({
+      mergeTiles: false,
+      residentByteBudget: 100_000_000,
+      residentTileBudget: (streamRadius * 2 + 1) ** 2,
+      sampleHeight: sampler,
+      streamRadius,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 65,
+      tileSize: 64,
+    });
+  }
+
+  it("bounds even the progress floor instead of forcing a whole high-resolution tile", () => {
+    let samples = 0;
+    const tiles = construction((x, z) => {
+      samples += 1;
+      return sampleHeight(x, z);
+    });
+    tiles.follow({ x: 0, z: 0 }, { admit: () => false });
+    expect(samples).toBeLessThanOrEqual(256);
+    expect(tiles.residentTileCount).toBe(0);
+    expect(tiles.deferredAdmissions).toBe(1);
+    tiles.dispose();
+  });
+
+  it("bounds grid and LOD error reads while converging to identical geometry", () => {
+    const synchronous = construction();
+    synchronous.follow({ x: 0, z: 0 });
+    const chunked = construction();
+    const heightReads = vi.spyOn(Heightfield.prototype, "heightAt");
+    const vertexReads = vi.spyOn(BufferAttribute.prototype, "getY");
+    let frames = 0;
+    while (chunked.residentTileCount === 0 && frames < 2000) {
+      heightReads.mockClear();
+      vertexReads.mockClear();
+      chunked.follow({ x: 0, z: 0 }, { admit: () => false });
+      expect(heightReads.mock.calls.length).toBeLessThanOrEqual(256);
+      expect(vertexReads.mock.calls.length).toBeLessThanOrEqual(2048);
+      frames += 1;
+    }
+    expect(frames).toBeGreaterThan(1);
+    expect(chunked.residentTileCount).toBe(1);
+    heightReads.mockRestore();
+    vertexReads.mockRestore();
+    const expected = synchronous.getTile("0:0");
+    const actual = chunked.getTile("0:0");
+    expect(actual?.field.heights).toEqual(expected?.field.heights);
+    expect(actual?.lodLevel).toBe(expected?.lodLevel);
+    expect(actual?.skirtVertexCount).toBe(expected?.skirtVertexCount);
+    const meshes = residentLevelMeshes(synchronous);
+    for (const [index, mesh] of residentLevelMeshes(chunked).entries()) {
+      const reference = meshes[index];
+      expect(mesh.geometry.getAttribute("position").array).toEqual(
+        reference?.geometry.getAttribute("position").array,
+      );
+      expect(mesh.geometry.getAttribute("normal").array).toEqual(
+        reference?.geometry.getAttribute("normal").array,
+      );
+      expect(mesh.geometry.getIndex()?.array).toEqual(reference?.geometry.getIndex()?.array);
+      expect(mesh.geometry.boundingBox).toEqual(reference?.geometry.boundingBox);
+      expect(mesh.geometry.boundingSphere).toEqual(reference?.geometry.boundingSphere);
+    }
+    expect(chunked.residentBytes).toBe(synchronous.residentBytes);
+    chunked.dispose();
+    synchronous.dispose();
+  });
+
+  it("cancels unfinished geometry when the camera jumps or the world is disposed", () => {
+    const tiles = construction();
+    const disposed = vi.spyOn(BufferGeometry.prototype, "dispose");
+    const created = vi.spyOn(BufferGeometry.prototype, "setIndex");
+    const budget = { admit: () => false };
+    const partiallyBuild = (x: number): void => {
+      created.mockClear();
+      for (let frame = 0; frame < 1000 && created.mock.calls.length === 0; frame += 1)
+        tiles.follow({ x, z: 0 }, budget);
+      expect(created).toHaveBeenCalled();
+      expect(tiles.residentTileCount).toBe(0);
+    };
+    // A fine-level geometry exists, but the remaining LOD work has not made its tile resident.
+    partiallyBuild(0);
+    expect(tiles.residentTileCount).toBe(0);
+    tiles.follow({ x: 256, z: 0 }, budget);
+    expect(disposed).toHaveBeenCalled();
+    partiallyBuild(256);
+    const before = disposed.mock.calls.length;
+    tiles.dispose();
+    expect(disposed.mock.calls.length).toBeGreaterThan(before);
+    expect(tiles.children).toHaveLength(0);
+    expect(tiles.residentTileCount).toBe(0);
+    disposed.mockRestore();
+  });
+
+  it("finishes selected pending tiles when small camera motion changes nearest priority", () => {
+    const tiles = construction(sampleHeight, 1);
+    const budget = { admit: () => false };
+    for (let frame = 0; frame < 2000 && tiles.residentTileCount === 0; frame += 1)
+      tiles.follow({ x: 0, z: 0 }, budget);
+    expect(tiles.getTile("0:0")).toBeDefined();
+    for (let frame = 0; frame < 4000 && tiles.residentTileCount < 9; frame += 1)
+      tiles.follow({ x: frame % 2 === 0 ? 0.1 : -0.1, z: 0 }, budget);
+    expect(tiles.residentTileCount).toBe(9);
+    expect(tiles.deferredAdmissions).toBe(0);
+    tiles.dispose();
+  });
+
+  it.skipIf(!bench)("reports CPU construction slices for the same terrain and camera", () => {
+    const tiles = construction();
+    const slices: number[] = [];
+    for (let frame = 0; frame < 2000; frame += 1) {
+      const start = performance.now();
+      tiles.follow(
+        { x: 0, z: 0 },
+        {
+          admit(work) {
+            if (performance.now() - start >= 2) return false;
+            work();
+            return true;
+          },
+        },
+      );
+      slices.push(performance.now() - start);
+      if (tiles.residentTileCount === 1) break;
+    }
+    console.log(
+      JSON.stringify({ terrainConstruction: { frames: slices.length, slicesMs: slices } }),
+    );
+    expect(tiles.residentTileCount).toBe(1);
+    tiles.dispose();
+  });
+});
 
 /**
  * Every position the main pass submits for terrain levels, so "unchanged" is a number and not a

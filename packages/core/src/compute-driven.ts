@@ -19,6 +19,8 @@ export interface IComputeDriven {
    * existing behavior of consumers whose simulation is intentionally tied to presentation.
    */
   readonly processCadence?: "fixed" | "render";
+  /** Render admission needed to settle a startup hold, after initial compilation. */
+  readonly processDuringStartup?: boolean;
   /**
    * Yield simulation work in order of projected size when measured GPU compute exceeds budget.
    * @situation Let the render loop pause low-significance particle emitters under GPU pressure.
@@ -32,8 +34,11 @@ export interface IComputeDriven {
    * the view — a streamed world narrowing its instanced windows to what the frustum covers — can do
    * it from the driver that runs every frame rather than from a draw three will not submit. An
    * implementation that does not need it simply declares one parameter.
+   *
+   * `covered` is true while the startup cover hides the world and readiness is still pending, so
+   * a streamed world may spend more of the frame admitting the spawn it is waiting on.
    */
-  process(renderer: IRendererLike, camera?: Camera): void;
+  process(renderer: IRendererLike, camera?: Camera, covered?: boolean): void;
   detach(): void;
   readonly released: boolean;
 }
@@ -91,7 +96,7 @@ export class ComputeDrivenRegistry {
    * Dispatch render-cadence objects once with the frame's render camera; detached scene children are
    * released before dispatch.
    */
-  processRender(renderer: IRendererLike, camera?: Camera): void {
+  processRender(renderer: IRendererLike, camera?: Camera, startupOnly = false): void {
     if (camera !== undefined) {
       const candidates: IBudgetCandidate[] = [];
       for (const { object, driven } of this.#entries.values()) {
@@ -105,17 +110,23 @@ export class ComputeDrivenRegistry {
       }
       this.#significance.apply(candidates, camera, performance.now() / 1000);
     }
-    this.#process(renderer, "render", camera);
+    this.#process(renderer, "render", camera, startupOnly);
   }
 
-  #process(renderer: IRendererLike, cadence: "fixed" | "render", camera?: Camera): void {
+  #process(
+    renderer: IRendererLike,
+    cadence: "fixed" | "render",
+    camera?: Camera,
+    startupOnly = false,
+  ): void {
     for (const entry of [...this.#entries.values()]) {
       if (entry.driven.released || entry.object.parent === null) {
         this.remove(entry.driven);
         continue;
       }
       if ((entry.driven.processCadence ?? "fixed") !== cadence) continue;
-      entry.driven.process(renderer, camera);
+      if (startupOnly && entry.driven.processDuringStartup !== true) continue;
+      entry.driven.process(renderer, camera, startupOnly);
     }
   }
 

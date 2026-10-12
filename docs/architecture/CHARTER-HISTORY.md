@@ -13,3 +13,4 @@ Charter itself can state the current rule without carrying its own diff history.
 | 2026-08-31 (PRD-314) | §5b | Pose conformance measurement is named as mechanism, on the same footing as the tracer and instancing entries. |
 | 2026-09-02 | all | Condensed. Rationale that had been restated across sections is stated once; open work and known limitations move to [`CURRENT-CHALLENGES.md`](../CURRENT-CHALLENGES.md). No rule changed. |
 | 2026-09-05 | §1 | Added the out-of-the-box principle: ordinary games work without configuration pain, and configuration remains an escape hatch rather than a prerequisite. |
+| 2026-09-30 (PRDs 466–468) | §2, §9a, §11.5 | Owner-approved optional Strata terrain-authoring addon, editable terrain documents and terrain-only authoring companions; baked runtime data and game-owned appearance, with no general game editor or runtime recipe/scene format. |

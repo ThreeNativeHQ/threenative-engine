@@ -107,6 +107,16 @@ thesis: each spends the training-data advantage to buy a surface the model then 
 > An LLM's greatest strength is writing code in languages already in its weights. Its greatest
 > weakness is discovering bespoke API surfaces.
 
+**Narrow terrain-authoring allowance (owner, 2026-09-30).** `@threenative/terrain` may
+recover the supplied Strata authoring implementation, editable terrain starter documents,
+and terrain-only authoring companions for live inspection, gizmos, controller cameras,
+atmosphere and project asset imports (PRDs 466–468). This optional dependency boundary also
+qualifies under the package rule: ordinary games inherit none of its authoring code or tooling.
+Recipes compile into ordinary arrays, assets and game-owned render source; they are not a
+runtime scene format. The addon creates no renderer or physics world, owns no game appearance,
+and does no authoring work during steady play. This allowance admits neither a general game
+editor nor a genre/preset system; the closed list and the appearance veto otherwise remain binding.
+
 **This is the founding constraint.** Everything below is downstream of it.
 
 ---

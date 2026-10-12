@@ -250,6 +250,15 @@ export interface IFrameBudgetPassSummary {
  * it were a player's — `threenative-playtest perf` refuses to (`TN_PERF_VIRTUAL_DISPLAY`).
  */
 export interface IFrameBudgetWindow {
+  /** Browser Long Tasks, independent of vsync/GPU waits. Unavailable on hosts without this API. */
+  readonly longTasks:
+    | { readonly available: false }
+    | {
+        readonly available: true;
+        readonly count: number;
+        readonly longestMs: number;
+        readonly afterFirstFrameMs: number;
+      };
   /** 1 for the first reported window, incrementing thereafter. */
   readonly window: number;
   /** Loop frames counted in this window, hitches excluded — one per present on the web. */
@@ -352,6 +361,8 @@ export interface IFrameBudgetWindow {
    * one series rather than a second instantaneous read.
    */
   readonly gpuMs?: number;
+  /** Resolved renderer-frame range behind this window; unavailable for unframed samples. */
+  readonly gpuFrames?: { readonly first: number; readonly last: number };
   /** Age of the most recent resolved GPU timestamp in Three.js frame IDs; absent means unobservable. */
   readonly gpuAgeFrames?: number;
   /**
@@ -574,6 +585,10 @@ function round1(value: number): number {
  * exception is `addSimulation`, which reports simulation that ran outside any frame — see it.
  */
 export class FrameBudget {
+  #taskObserver: PerformanceObserver | undefined;
+  #taskCount = 0;
+  #longestTaskMs = 0;
+  #afterFirstFrameTaskMs = 0;
   readonly reportEvery: number;
   readonly hitchMs: number;
   #report: (line: string) => void;
@@ -617,6 +632,10 @@ export class FrameBudget {
   // previous window's resolved frame.
   #lastGpuFrame: number | undefined;
   #gpuThisFrame: number | undefined;
+  #gpuFrameThisFrame: number | undefined;
+  #gpuFirstFrame = Number.POSITIVE_INFINITY;
+  #gpuLastFrame = Number.NEGATIVE_INFINITY;
+  #gpuUnframed = false;
   #gpuStaleThisFrame = false;
   #gpuStaleInWindow = 0;
   #open = false;
@@ -641,6 +660,7 @@ export class FrameBudget {
   #lastPresentCount: number | undefined;
   #presentsInWindow = 0;
   #firstFrameStart: number | undefined;
+  #firstTaskFrameStart: number | undefined;
 
   constructor(options: IFrameBudgetOptions = {}) {
     this.reportEvery = requirePositiveInteger(
@@ -658,6 +678,20 @@ export class FrameBudget {
     this.#readPresentCount = options.readPresentCount ?? hostPresentCountReader();
     this.#readGpuAgeFrames = options.readGpuAgeFrames;
     this.#readGpuTally = options.readGpuTally;
+    if (globalThis.PerformanceObserver?.supportedEntryTypes.includes("longtask")) {
+      this.#taskObserver = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          this.#taskCount++;
+          this.#longestTaskMs = Math.max(this.#longestTaskMs, entry.duration);
+          if (
+            this.#firstTaskFrameStart !== undefined &&
+            entry.startTime >= this.#firstTaskFrameStart
+          )
+            this.#afterFirstFrameTaskMs = Math.max(this.#afterFirstFrameTaskMs, entry.duration);
+        }
+      });
+      this.#taskObserver.observe({ type: "longtask", buffered: true });
+    }
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
     this.#frame = new Ring(capacity);
@@ -711,18 +745,25 @@ export class FrameBudget {
    *   clock, which is not the same as `nowMs` and is what the interval between frames comes from.
    * @param nowMs the monotonic clock at callback entry.
    */
+  dispose(): void {
+    this.#taskObserver?.disconnect();
+    this.#taskObserver = undefined;
+  }
+
   beginFrame(timestampMs: number, nowMs: number): void {
     if (this.#open)
       throw new Error("FrameBudget.beginFrame called before the previous frame ended.");
     this.#open = true;
     this.#frameStart = nowMs;
     if (this.#firstFrameStart === undefined) this.#firstFrameStart = nowMs;
+    this.#firstTaskFrameStart ??= nowMs;
     this.#simulationEnd = undefined;
     this.#renderMs = 0;
     this.#overlayMs = 0;
     this.#uiMs = 0;
     this.#substepCount = 0;
     this.#gpuThisFrame = undefined;
+    this.#gpuFrameThisFrame = undefined;
     this.#gpuStaleThisFrame = false;
     this.#gpuBucketThisFrame = {};
     this.#gpuShadowPassesThisFrame = undefined;
@@ -824,6 +865,7 @@ export class FrameBudget {
       this.#lastGpuFrame = frame;
     }
     this.#gpuThisFrame = ms;
+    this.#gpuFrameThisFrame = frame;
   }
 
   /** Record one freshly resolved pyramid build, independently of the render pool's cadence. */
@@ -979,12 +1021,18 @@ export class FrameBudget {
     this.#phaseRings.ui.push(this.#uiMs);
     if (this.#gpuThisFrame !== undefined) {
       this.#gpu.push(this.#gpuThisFrame);
+      if (this.#gpuFrameThisFrame === undefined) this.#gpuUnframed = true;
+      else {
+        this.#gpuFirstFrame = Math.min(this.#gpuFirstFrame, this.#gpuFrameThisFrame);
+        this.#gpuLastFrame = Math.max(this.#gpuLastFrame, this.#gpuFrameThisFrame);
+      }
       if (this.#targetFrameMs !== undefined && this.#gpuThisFrame > this.#targetFrameMs)
         this.#gpuOverTarget += 1;
     }
     for (const bucket of FRAME_GPU_BUCKETS) {
       const ms = this.#gpuBucketThisFrame[bucket];
-      if (ms !== undefined) this.#gpuBucketRings[bucket].push(ms);
+      if (ms !== undefined && this.#gpuThisFrame !== undefined)
+        this.#gpuBucketRings[bucket].push(ms);
     }
     // The shadow tail over frames that actually rendered a shadow, separate from the known-zero
     // frames the ring above also holds: only the producer's count says a render happened, because a
@@ -1120,6 +1168,15 @@ export class FrameBudget {
         ? 1_000 / resolvedTarget.targetFps
         : undefined;
     return {
+      longTasks:
+        this.#taskObserver === undefined
+          ? { available: false }
+          : {
+              available: true,
+              count: this.#taskCount,
+              longestMs: this.#longestTaskMs,
+              afterFirstFrameMs: this.#afterFirstFrameTaskMs,
+            },
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
       frames: this.#framesInWindow,
@@ -1150,6 +1207,9 @@ export class FrameBudget {
       ...(gpu === undefined ? {} : { gpu }),
       gpuStale: this.#gpuStaleInWindow,
       ...(gpu === undefined ? {} : { gpuMs: gpu.mean }),
+      ...(gpu === undefined || this.#gpuUnframed
+        ? {}
+        : { gpuFrames: { first: this.#gpuFirstFrame, last: this.#gpuLastFrame } }),
       ...(gpuAgeFrames === undefined ? {} : { gpuAgeFrames }),
       ...(resolvedTarget === undefined
         ? {}
@@ -1224,6 +1284,9 @@ export class FrameBudget {
     this.#frame.reset();
     this.#substeps.reset();
     this.#gpu.reset();
+    this.#gpuFirstFrame = Number.POSITIVE_INFINITY;
+    this.#gpuLastFrame = Number.NEGATIVE_INFINITY;
+    this.#gpuUnframed = false;
     this.#gpuPyramid.reset();
     for (const bucket of FRAME_GPU_BUCKETS) this.#gpuBucketRings[bucket].reset();
     this.#gpuShadowRendered.reset();

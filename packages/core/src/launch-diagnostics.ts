@@ -55,6 +55,8 @@ export function reportLaunchFailure(failure: ILaunchFailure): void {
 export interface IStallWatchOptions {
   /** 0..1, monotonic — `ctx.startup.progress`. */
   readonly progress: () => number;
+  /** Monotonic completed work units, independent of the displayed percentage. Never elapsed time. */
+  readonly workProgress?: () => number;
   /** What is still loading, so the report names it rather than saying "something". */
   readonly pending: () => readonly string[];
   /** How long progress may stand still before this is a failure. */
@@ -80,13 +82,16 @@ export function watchStartupStall(options: IStallWatchOptions): () => void {
     throw new Error(`TN_STARTUP_STALL_MS_INVALID: stallMs must be > 0, got ${options.stallMs}`);
   }
   let lastProgress = options.progress();
+  let lastWork = options.workProgress?.() ?? 0;
   let lastMovedAt = now();
   const began = lastMovedAt;
   const handle = start(
     () => {
       const progress = options.progress();
-      if (progress > lastProgress) {
-        lastProgress = progress;
+      const work = options.workProgress?.() ?? 0;
+      if (progress > lastProgress || (Number.isFinite(work) && work > lastWork)) {
+        lastProgress = Math.max(lastProgress, progress);
+        if (Number.isFinite(work)) lastWork = Math.max(lastWork, work);
         lastMovedAt = now();
         return;
       }
@@ -94,12 +99,14 @@ export function watchStartupStall(options: IStallWatchOptions): () => void {
       if (stillMs < options.stallMs) return;
       const waiting = options.pending();
       const named =
-        waiting.length === 0 ? "nothing — no asset is outstanding" : waiting.slice(0, 8).join(", ");
+        waiting.length === 0
+          ? "nothing — no asset or startup hold is outstanding"
+          : waiting.slice(0, 8).join(", ");
       const more = waiting.length > 8 ? ` (+${waiting.length - 8} more)` : "";
       reportLaunchFailure({
         kind: "stalled",
         message:
-          `The game stopped loading. Progress has stood at ${(progress * 100).toFixed(1)}% for ` +
+          `The game stopped loading. No startup work has advanced at ${(progress * 100).toFixed(1)}% for ` +
           `${Math.round(stillMs / 1000)}s, ${Math.round((now() - began) / 1000)}s into the launch.\n` +
           `Still loading: ${named}${more}`,
       });

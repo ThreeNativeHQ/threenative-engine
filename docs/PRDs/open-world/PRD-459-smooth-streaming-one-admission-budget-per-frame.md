@@ -25,7 +25,7 @@ Three of the four admission paths have no time ceiling at all. Verified in this 
 | Cost | Where | Bounded by |
 | --- | --- | --- |
 | Model loads | `ModelLoadLimiter` — `packages/core/src/world-cells.ts:360`, default 6 (`:490`, `packages/core/src/streaming.ts:132`) | loads in flight |
-| Chunk attach | `addInSlices` — `packages/core/src/world-cells.ts:997`, 256 objects/frame (`packages/core/src/streaming.ts:131`) | object count, not ms |
+| Chunk attach | `addInSlices` — `packages/core/src/world-cells.ts:997`, 8 ms/slice unless the game gives `sliceSize` (`packages/core/src/streaming.ts:131`) | elapsed time, not objects |
 | Cell-asset batch build | `#buildBatch` — `packages/core/src/world-cells.ts:825`: one `InstancedBatch` per level (`:835`), a synchronous pass over **every** placement in the run (`:837`), `build()` in the same call (`:859`) | nothing |
 | `InstancedBatch.build` | `packages/core/src/instanced-batch.ts:173`: `new InstancedMesh` (`:178`), one `setMatrixAt` per instance (`:180`), `needsUpdate` (`:183`), `computeBoundingSphere` (`:188`) | nothing |
 | Refilter | `#updateMaxDistance` — `packages/core/src/world-cells.ts:936` | `rebuildsPerUpdate`, a count (16 by default, `:485`) |

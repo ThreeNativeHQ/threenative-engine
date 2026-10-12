@@ -301,6 +301,29 @@ describe("a logcat buffer that holds an earlier launch", () => {
 });
 
 describe("perfCommand", () => {
+  it("exits 2 preserving an explicit host-display failure before starting the executable", async () => {
+    const errors: string[] = [];
+    const errSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      errors.push(String(chunk));
+      return true;
+    });
+    vi.stubGlobal("process", {
+      ...process,
+      env: { ...process.env, DISPLAY: undefined, TN_PLAYTEST_HOST_DISPLAY: "1" },
+      platform: "linux",
+    });
+    try {
+      const code = await perfCommand(["--executable", "/must-not-launch"]);
+      expect(code).toBe(2);
+      const report = JSON.parse(errors.join(""));
+      expect(report.pass).toBe(false);
+      expect(report.diagnostics[0].code).toBe("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE");
+    } finally {
+      vi.unstubAllGlobals();
+      errSpy.mockRestore();
+    }
+  });
+
   it("exits 0 on a passing file source and prints the report as JSON", async () => {
     const dir = await makeTempDir("tn-perf-");
     const path = join(dir, "host.log");

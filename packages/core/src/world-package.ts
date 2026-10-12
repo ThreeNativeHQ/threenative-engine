@@ -66,11 +66,26 @@ export interface IWorldRun {
   readonly count: number;
 }
 
+export interface IWorldCellProxy {
+  readonly glb: string;
+  /** Conservative world-space simplification error bound, in metres. */
+  readonly error: number;
+  readonly triangles: number;
+  readonly materialGroups: number;
+  /** Older records without scope cover chunks only. */
+  readonly scope?: "cell" | "chunks";
+  readonly bounds?: IWorldAssetBounds;
+  readonly sourceTriangles?: number;
+  /** Cook census only: runtime compares the currently active shared batches. */
+  readonly sourcePrimitives?: number;
+}
+
 export interface IWorldCell {
   readonly x: number;
   readonly z: number;
   readonly runs: readonly IWorldRun[];
   readonly chunks?: readonly string[];
+  readonly proxy?: IWorldCellProxy;
 }
 
 export interface IWorldPackage {
@@ -335,6 +350,51 @@ export function validateWorldPackage(
           cell.chunks.some((chunk) => typeof chunk !== "string" || chunk.length === 0)
         )
           malformed(`${path}.chunks`, `${path}.chunks must be an array of non-empty strings.`);
+      }
+      if (cell.proxy !== undefined) {
+        const proxyPath = `${path}.proxy`;
+        if (!isRecord(cell.proxy)) malformed(proxyPath, `${proxyPath} must be an object.`);
+        else {
+          const proxy = cell.proxy;
+          text(proxy.glb, `${proxyPath}.glb`);
+          const error = finite(proxy.error, `${proxyPath}.error`);
+          if (error !== undefined && error < 0)
+            malformed(`${proxyPath}.error`, "Proxy error must be non-negative.");
+          for (const name of [
+            "triangles",
+            "materialGroups",
+            "sourceTriangles",
+            "sourcePrimitives",
+          ] as const) {
+            if (
+              proxy[name] === undefined &&
+              (name === "sourceTriangles" || name === "sourcePrimitives")
+            )
+              continue;
+            const value = positiveInteger(proxy[name], `${proxyPath}.${name}`);
+            if (value !== undefined && !Number.isSafeInteger(value))
+              malformed(`${proxyPath}.${name}`, "Proxy counts must be safe integers.");
+          }
+          if (proxy.scope !== undefined && proxy.scope !== "cell" && proxy.scope !== "chunks")
+            malformed(`${proxyPath}.scope`, "Proxy scope must be cell or chunks.");
+          if (proxy.bounds !== undefined) {
+            if (
+              !isRecord(proxy.bounds) ||
+              !Array.isArray(proxy.bounds.min) ||
+              !Array.isArray(proxy.bounds.max) ||
+              proxy.bounds.min.length !== 3 ||
+              proxy.bounds.max.length !== 3
+            )
+              malformed(`${proxyPath}.bounds`, "Proxy bounds must contain min and max triples.");
+            else
+              for (let axis = 0; axis < 3; axis += 1) {
+                const low = finite(proxy.bounds.min[axis], `${proxyPath}.bounds.min[${axis}]`);
+                const high = finite(proxy.bounds.max[axis], `${proxyPath}.bounds.max[${axis}]`);
+                if (low !== undefined && high !== undefined && low > high)
+                  malformed(`${proxyPath}.bounds`, "Proxy bounds are inverted.");
+              }
+          }
+        }
       }
       if (!Array.isArray(cell.runs)) {
         malformed(`${path}.runs`, `${path}.runs is required and must be an array.`);

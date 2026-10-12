@@ -762,19 +762,21 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     if (this.#gpuWarmupStarted) return;
     const projectionTarget = this.#projectionTarget;
     const projectionMaterial = this.#projectionMaterial;
+    const atlasTarget = this.#atlasTarget;
     const repackMaterials = this.#repackMaterials;
     if (
       projectionTarget === undefined ||
       projectionMaterial === undefined ||
+      atlasTarget === undefined ||
       repackMaterials === undefined
     )
       throw new Error("ProbeVolume warm-up resources were not initialized.");
     this.#gpuWarmupStarted = true;
-    // `attachRenderer()` runs while the game is entering its scene. One private projection draw
-    // pays the expensive first-use graph build before a presented frame; the seven small repack
-    // variants share that graph and are compiled by the first bounded slices.
+    // First-use shader work belongs to scene entry, before bounded bake slices are presented.
     this.#renderQuad(projectionTarget, projectionMaterial);
-    void repackMaterials;
+    repackMaterials.forEach((material, index) => {
+      this.#renderQuad(atlasTarget, material, index * this.paddedSlices);
+    });
   }
 
   /** Compile every scene material through the six cube-camera views before the first capture. */

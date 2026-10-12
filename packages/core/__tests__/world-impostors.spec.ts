@@ -3,9 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   BoxGeometry,
+  type BufferAttribute,
   type BufferGeometry,
   Group,
+  InstancedInterleavedBuffer,
   InstancedMesh,
+  type InterleavedBufferAttribute,
   type Material,
   Matrix4,
   Mesh,
@@ -16,6 +19,15 @@ import {
   Texture,
   Vector3,
 } from "three";
+import { getCurrentStack, setCurrentStack, stack } from "three/tsl";
+import {
+  BufferAttributeNode,
+  EventNode,
+  type Node,
+  NodeBuilder,
+  type NodeMaterial,
+  NodeUpdateType,
+} from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -43,6 +55,80 @@ import { type IImpostorRawRenderer, WorldImpostorAtlas } from "../src/render/wor
 import type { IRendererLike } from "../src/renderer.js";
 import { type IWorldAsset, type IWorldRun, cellPlacements } from "../src/world-package.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
+
+// Exercise the installed renderer's actual upload decision; its private module has no declarations.
+interface ITestAttributes {
+  update(attribute: BufferAttribute | InterleavedBufferAttribute, type: number): void;
+}
+const { default: ThreeAttributes } = (await import(
+  import.meta.resolve("three/src/renderers/common/Attributes.js")
+)) as { default: new (backend: object, info: object) => ITestAttributes };
+const { AttributeType } = (await import(
+  import.meta.resolve("three/src/renderers/common/Constants.js")
+)) as { AttributeType: { readonly VERTEX: number } };
+
+function attributeUploads(attribute: BufferAttribute | InterleavedBufferAttribute) {
+  const copies: number[][] = [];
+  const backend = {
+    createAttribute: vi.fn(),
+    updateAttribute: vi.fn((written: BufferAttribute | InterleavedBufferAttribute) => {
+      copies.push(Array.from(written.array));
+    }),
+  };
+  const attributes = new ThreeAttributes(backend, { createAttribute: vi.fn() });
+  const submit = () => attributes.update(attribute, AttributeType.VERTEX);
+  submit(); // Initial allocation/upload is required even if nothing changed afterward.
+  return { backend, copies, submit };
+}
+
+/** Build only the real surface's CPU column bindings, not a GPU shader or a mirrored usage branch. */
+function farMatrixRoute(mesh: InstancedMesh) {
+  const material = mesh.material as NodeMaterial;
+  const body = (
+    material.positionNode as unknown as {
+      node: { shaderNode: { jsFunc: (inputs: unknown, builder: { object: Object3D }) => Node } };
+    }
+  ).node.shaderNode.jsFunc;
+  const previous = getCurrentStack();
+  const scope = stack();
+  const columns = new Set<BufferAttributeNode<unknown>>();
+  const events = new Set<EventNode>();
+  const collect = (node: Node) => {
+    if (node instanceof EventNode) events.add(node);
+    if (
+      node instanceof BufferAttributeNode &&
+      node.value instanceof InstancedInterleavedBuffer &&
+      node.value.array === mesh.instanceMatrix.array
+    )
+      columns.add(node);
+  };
+  setCurrentStack(scope);
+  try {
+    body([], { object: mesh }).traverse(collect);
+    scope.traverse(collect);
+  } finally {
+    setCurrentStack(previous);
+  }
+  expect(columns.size).toBe(4);
+  // The installed JS base implements attribute setup; its declarations require a shader subclass.
+  // No shader generation or renderer/backend method is invoked by this CPU binding setup.
+  const AttributeBuilder = NodeBuilder as unknown as new (
+    object: InstancedMesh,
+    renderer: null,
+    parser: null,
+  ) => NodeBuilder;
+  const builder = new AttributeBuilder(mesh, null, null);
+  for (const column of columns) column.setup(builder);
+  const attribute = [...columns][0]?.attribute as InterleavedBufferAttribute;
+  expect(attribute.data.array).toBe(mesh.instanceMatrix.array);
+  expect(events.size).toBe(1);
+  const event = [...events][0];
+  if (event === undefined) throw new Error("Production far matrix FRAME sync was not observed.");
+  expect(event.updateType).toBe(NodeUpdateType.FRAME);
+  const sync = () => event.update({} as never);
+  sync();
+  return { attribute, sync };
+}
 
 /**
  * The automatic runtime impostor path, on the real streaming class over the committed package.
@@ -1388,6 +1474,103 @@ describe("WorldCells far impostor residency", () => {
     world.dispose();
   });
 
+  it.each(["source", "shader-columns"] as const)(
+    "uploads no unchanged far %s buffer over 60 frames or camera-only movement",
+    async (route) => {
+      const follow = { position: { x: -32, z: -32 } };
+      const world = await loadPineEverywhere(follow);
+      try {
+        const far = farMeshes(world)[0] as InstancedMesh;
+        const columns = farMatrixRoute(far);
+        const tracked = attributeUploads(
+          route === "source" ? far.instanceMatrix : columns.attribute,
+        );
+        const version = far.instanceMatrix.version;
+        for (let frame = 0; frame < 60; frame++) {
+          world.update();
+          columns.sync();
+          tracked.submit();
+        }
+        expect(tracked.backend.createAttribute).toHaveBeenCalledTimes(1);
+        expect(tracked.backend.updateAttribute).not.toHaveBeenCalled();
+        const camera = new PerspectiveCamera(60, 1, 0.1, 2000);
+        for (let frame = 0; frame < 10; frame++) {
+          camera.position.set(frame * 20, 3, 200);
+          camera.lookAt(0, 0, 0);
+          camera.updateMatrixWorld();
+          world.update(rendererStub(), camera);
+          columns.sync();
+          tracked.submit();
+        }
+        expect(far.instanceMatrix.version).toBe(version);
+        expect(tracked.backend.updateAttribute).not.toHaveBeenCalled();
+      } finally {
+        world.dispose();
+      }
+    },
+  );
+  it.each(["source", "shader-columns"] as const)(
+    "uploads real near/far handoffs once to the %s route and preserves cull/disposal",
+    async (route) => {
+      const follow = { position: { x: -32, z: -32 } };
+      const world = await loadPineEverywhere(follow);
+      try {
+        const far = farMeshes(world)[0] as InstancedMesh;
+        const columns = farMatrixRoute(far);
+        const tracked = attributeUploads(
+          route === "source" ? far.instanceMatrix : columns.attribute,
+        );
+        const cull = far.geometry.getAttribute(IMPOSTOR_FAR_CULL_ATTRIBUTE) as BufferAttribute;
+        expect(cull).toBeDefined();
+        const cullUploads = attributeUploads(cull);
+        const version = far.instanceMatrix.version;
+        const initial = Array.from(far.instanceMatrix.array);
+        expect(farLive(far)).toBe(263);
+        follow.position.x = 100_000;
+        follow.position.z = 100_000;
+        world.update();
+        await flushed(world);
+        columns.sync();
+        tracked.submit();
+        cullUploads.submit();
+        expect(far.instanceMatrix.version).toBeGreaterThan(version);
+        expect(tracked.backend.updateAttribute).toHaveBeenCalledTimes(1);
+        expect(tracked.copies[0]).toEqual(Array.from(far.instanceMatrix.array));
+        expect(tracked.copies[0]).not.toEqual(initial);
+        expect(farLive(far)).toBe(799);
+        expect(cullUploads.backend.updateAttribute).toHaveBeenCalledTimes(1);
+        for (let frame = 0; frame < 20; frame++) {
+          world.update();
+          columns.sync();
+          tracked.submit();
+          cullUploads.submit();
+        }
+        expect(tracked.backend.updateAttribute).toHaveBeenCalledTimes(1);
+        expect(cullUploads.backend.updateAttribute).toHaveBeenCalledTimes(1);
+        follow.position.x = -32;
+        follow.position.z = -32;
+        world.update();
+        await flushed(world);
+        for (let frame = 0; frame < 32; frame++) world.update();
+        columns.sync();
+        tracked.submit();
+        expect(tracked.backend.updateAttribute).toHaveBeenCalledTimes(2);
+        expect(tracked.copies[1]).toEqual(Array.from(far.instanceMatrix.array));
+        expect(farLive(far)).toBe(263);
+        const disposal = vi.fn();
+        far.addEventListener("dispose", disposal);
+        world.dispose();
+        world.update();
+        world.dispose();
+        expect(disposal).toHaveBeenCalledTimes(1);
+        expect(far.parent).toBeNull();
+        expect(farMeshes(world)).toHaveLength(0);
+      } finally {
+        world.dispose();
+      }
+    },
+  );
+
   it("draws the far mesh from CPU instance matrices with the GPU scene off", async () => {
     const follow = { position: { x: -32, z: -32 } };
     stubManifestFetch(pineEverywhere());
@@ -1829,6 +2012,12 @@ describe("WorldCells far impostor cohorts", () => {
     expect(world.stats().impostor.far.aggregates).toBe(1);
     expect(world.stats().impostor.far.instances).toBe(85);
     expect(farMeshes(world).some((mesh) => mesh.name === "tn-far:alpha_b")).toBe(false);
+    const original = farMeshes(world)[0] as InstancedMesh;
+    const originalColumns = farMatrixRoute(original);
+    const originalMatrixUploads = attributeUploads(original.instanceMatrix);
+    const originalColumnUploads = attributeUploads(originalColumns.attribute);
+    const originalDisposed = vi.fn();
+    original.addEventListener("dispose", originalDisposed);
 
     // Leaving the ring frees alpha_a's near allocation; the retry grows the one existing aggregate.
     follow.position.x = 100_000;
@@ -1841,6 +2030,30 @@ describe("WorldCells far impostor cohorts", () => {
     expect(world.stats().impostor.far.instances).toBe(86);
     const grown = farMeshes(world)[0] as InstancedMesh;
     expect(grown.name).toBe("tn-far:alpha_a");
+    expect(grown).not.toBe(original);
+    expect(grown.instanceMatrix).not.toBe(original.instanceMatrix);
+    expect(originalDisposed).toHaveBeenCalledTimes(1);
+    expect(original.parent).toBeNull();
+    expect(farLive(grown)).toBe(86);
+    const grownColumns = farMatrixRoute(grown);
+    expect(grownColumns.attribute.data).not.toBe(originalColumns.attribute.data);
+    expect(Array.from(grown.instanceMatrix.array).slice(0, 85 * 16)).toEqual(
+      Array.from(original.instanceMatrix.array),
+    );
+    const grownMatrixUploads = attributeUploads(grown.instanceMatrix);
+    const grownColumnUploads = attributeUploads(grownColumns.attribute);
+    for (let frame = 0; frame < 20; frame++) {
+      world.update();
+      grownColumns.sync();
+      grownMatrixUploads.submit();
+      grownColumnUploads.submit();
+    }
+    expect(grownMatrixUploads.backend.createAttribute).toHaveBeenCalledTimes(1);
+    expect(grownColumnUploads.backend.createAttribute).toHaveBeenCalledTimes(1);
+    expect(grownMatrixUploads.backend.updateAttribute).not.toHaveBeenCalled();
+    expect(grownColumnUploads.backend.updateAttribute).not.toHaveBeenCalled();
+    expect(originalMatrixUploads.backend.updateAttribute).not.toHaveBeenCalled();
+    expect(originalColumnUploads.backend.updateAttribute).not.toHaveBeenCalled();
     // The aggregate's own surface was reused by the grow, never disposed: the grown mesh still draws
     // it. Only the two near terminal surfaces and alpha_b's unused deferred surface are gone.
     expect(disposed.some((surface) => surface.geometry === grown.geometry)).toBe(false);

@@ -25,6 +25,60 @@ const MIN_X = manifest.extent.minX;
 const MIN_Z = manifest.extent.minZ;
 const surface = new MeshBasicMaterial();
 const budgets = { bytes: 1_000_000_000, instances: 1_000_000, residentCells: 64 };
+it("reports completed spawn coverage separately from reserved cells and distant work", async () => {
+  const { world, follow } = await makeWorld({ admissionBudgetMs: 2, priced: true });
+  const at = { ...follow.position };
+  try {
+    expect(world.readinessAt(at, 0).ready).toBe(false);
+    world.update();
+    expect(world.stats().residentCells).toBeGreaterThan(0);
+    expect(world.stats().loadedCells).toBe(0);
+    await flush();
+    for (let i = 0; i < 4000 && !world.readinessAt(at, 0).ready; i++) world.update();
+    const local = world.readinessAt(at, 0);
+    expect(
+      local,
+      JSON.stringify({ local, stats: world.stats(), terrain: terrainOf(world).debug() }),
+    ).toMatchObject({ ready: true });
+    expect(local.loadedCells).toBe(local.requiredCells);
+    expect(local.loadedTerrainTiles).toBe(local.requiredTerrainTiles);
+    expect(terrainOf(world).residentTileCount).toBeLessThan(terrainOf(world).residentTileBudget);
+    world.dispose();
+    expect(world.readinessAt(at, 0).cancelled).toBe(true);
+    expect(world.readinessAt(at, 0).ready).toBe(false);
+  } finally {
+    world.dispose();
+  }
+});
+
+it("keeps a failed spawn pending and reports its model failure by region", async () => {
+  stubFixtureFetch();
+  const at = cellCenter(1, 1);
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const world = await WorldCells.load({
+    url: "/world/world.json",
+    surface,
+    follow: followAt(at.x, at.z),
+    terrain: false,
+    ring: 0,
+    budgets,
+    loadModel: async () => {
+      throw new Error("missing spawn model");
+    },
+  });
+  try {
+    world.update();
+    await flush();
+    world.update();
+    expect(world.readinessAt(at).failures).toBeGreaterThan(0);
+    expect(world.readinessAt(at).ready).toBe(false);
+    expect(world.stats().loadedCells).toBe(0);
+    expect(() => world.readinessAt({ x: Number.NaN, z: 0 })).toThrow("finite");
+  } finally {
+    world.dispose();
+    warning.mockRestore();
+  }
+});
 /** What one unit of admission work costs on the injected clock: `admit` reads it twice per unit. */
 const UNIT_MS = 1;
 
@@ -139,7 +193,9 @@ interface IWorldUnderTest {
  * work at exactly `UNIT_MS` — the deliberately slow unit the ceiling is measured against.
  */
 async function makeWorld(options: {
-  readonly admissionBudgetMs: number;
+  readonly admissionBudgetMs?: number;
+  readonly coveredAdmissionBudgetMs?: number;
+  readonly freshMeshesPerUpdate?: number;
   readonly priced?: boolean;
   readonly ring?: number;
 }): Promise<IWorldUnderTest> {
@@ -147,12 +203,20 @@ async function makeWorld(options: {
   const follow = followAt(cellCenter(1, 1).x, cellCenter(1, 1).z);
   let elapsed = 0;
   const world = await WorldCells.load({
-    admissionBudgetMs: options.admissionBudgetMs,
+    ...(options.admissionBudgetMs === undefined
+      ? {}
+      : { admissionBudgetMs: options.admissionBudgetMs }),
+    ...(options.coveredAdmissionBudgetMs === undefined
+      ? {}
+      : { coveredAdmissionBudgetMs: options.coveredAdmissionBudgetMs }),
     // The fresh-mesh allowance is its own ceiling; these tests measure the time budget, so an
     // unbounded world is unbounded in both.
     ...(options.admissionBudgetMs === Number.POSITIVE_INFINITY
       ? { freshMeshesPerUpdate: Number.MAX_SAFE_INTEGER }
       : {}),
+    ...(options.freshMeshesPerUpdate === undefined
+      ? {}
+      : { freshMeshesPerUpdate: options.freshMeshesPerUpdate }),
     budgets,
     follow,
     loadModel: async () => model(),
@@ -172,10 +236,11 @@ async function makeWorld(options: {
 }
 
 /** Update until nothing is queued, returning every frame's admission spend. */
-function drain(world: WorldCells, limit = 4000): number[] {
+function drain(world: WorldCells, limit = 4000, covered = false): number[] {
   const spent: number[] = [];
   for (let frame = 0; frame < limit; frame += 1) {
-    world.update();
+    if (covered) world.process(undefined, undefined, true);
+    else world.update();
     const { backlog, deferred, spentMs } = world.stats().admission;
     spent.push(spentMs);
     // Deferred terrain work counts as owed: a tile the budget refused is wanted again next pass,
@@ -230,6 +295,62 @@ describe("WorldCells admission budget", () => {
     expect(cells.stats().admission).toMatchObject({ backlog: 0, deferred: 0 });
     expect(cells.stats().admission.spentMs).toBeLessThanOrEqual(BUDGET_MS);
     expect(cells.stats().failures).toBe(0);
+    cells.dispose();
+  });
+
+  it("admits up to one 60 Hz frame per update behind the startup cover, and 2 ms after it", async () => {
+    const { world: open } = await makeWorld({ priced: true });
+    open.update();
+    await step(open);
+    const openSpent = drain(open);
+    for (const frame of openSpent) expect(frame).toBeLessThanOrEqual(2 + UNIT_MS);
+
+    const { world: covered } = await makeWorld({ priced: true });
+    covered.update();
+    await step(covered);
+    const coveredSpent = drain(covered, 4000, true);
+    for (const frame of coveredSpent) expect(frame).toBeLessThanOrEqual(16 + UNIT_MS);
+    expect(Math.max(...coveredSpent)).toBeGreaterThan(2 + UNIT_MS);
+    expect(coveredSpent.length).toBeLessThan(openSpent.length);
+    expect(covered.stats().failures).toBe(0);
+    open.dispose();
+    covered.dispose();
+  });
+
+  it("scales a game's own budget behind the startup cover", async () => {
+    const { world: cells } = await makeWorld({ admissionBudgetMs: 1, priced: true });
+    cells.update();
+    await step(cells);
+    const spent = drain(cells, 4000, true);
+    for (const frame of spent) expect(frame).toBeLessThanOrEqual(8 + UNIT_MS);
+    expect(Math.max(...spent)).toBeGreaterThan(1 + UNIT_MS);
+    cells.dispose();
+  });
+
+  it("admits more fresh batches per update behind the startup cover", async () => {
+    // The time budget is unpriced and large, so the fresh-mesh allowance alone gates each update.
+    const frames = async (covered: boolean): Promise<number> => {
+      const { world } = await makeWorld({ admissionBudgetMs: 1000, freshMeshesPerUpdate: 1 });
+      world.update();
+      await flush();
+      const count = drain(world, 4000, covered).length;
+      world.dispose();
+      return count;
+    };
+    const open = await frames(false);
+    const covered = await frames(true);
+    expect(covered).toBeLessThan(open);
+  });
+
+  it("keeps a named covered budget behind the startup cover", async () => {
+    const { world: cells } = await makeWorld({
+      admissionBudgetMs: 2,
+      coveredAdmissionBudgetMs: 2,
+      priced: true,
+    });
+    cells.update();
+    await step(cells);
+    for (const frame of drain(cells, 4000, true)) expect(frame).toBeLessThanOrEqual(2 + UNIT_MS);
     cells.dispose();
   });
 
@@ -342,16 +463,17 @@ describe("WorldCells admission budget", () => {
   });
 
   it("admits terrain tiles and colliders on the same budget, and still converges", async () => {
-    // 50 µs a frame is a budget no 129-resolution tile with three LOD levels fits inside, so the
-    // ground arrives over several frames instead of all in the first one.
-    const { world: cells } = await makeWorld({ admissionBudgetMs: 0.05 });
+    // A priced chunk costs more than the allowance: even the nearest tile must span updates.
+    const { world: cells } = await makeWorld({ admissionBudgetMs: 0.05, priced: true });
     const terrain = terrainOf(cells);
     cells.update();
-    const first = terrain.residentTileCount;
-    expect(first).toBeGreaterThan(0);
-    expect(first).toBeLessThan(9);
-
-    for (let frame = first; frame < 9; frame += 1) cells.update();
+    expect(terrain.residentTileCount).toBe(0);
+    expect(terrain.deferredAdmissions).toBe(1);
+    expect(terrain.debug().pendingConstruction).toBeDefined();
+    for (let frame = 0; frame < 10_000 && terrain.residentTileCount < 9; frame += 1) {
+      cells.update();
+      expect(cells.stats().admission.spentMs).toBeLessThanOrEqual(UNIT_MS);
+    }
     expect(terrain.residentTileCount).toBe(9);
     expect(cells.stats().failures).toBe(0);
     cells.dispose();

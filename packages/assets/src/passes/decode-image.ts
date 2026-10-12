@@ -10,9 +10,10 @@ import { parsePng } from "../png.js";
  * never silently ships uncompressed.
  */
 export async function decodeImageBytes(
-  bytes: Buffer,
+  input: Buffer,
   logicalPath: string,
 ): Promise<{ data: Uint8Array; height: number; width: number }> {
+  const bytes = withoutGlbPadding(input);
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     const { decode } = await import("jpeg-js");
     const image = decode(bytes, { useTArray: true });
@@ -47,6 +48,24 @@ export async function decodeImageBytes(
   throw new Error(
     `TN_ASSETS_TEXTURE_CONTAINER: '${logicalPath}' is not a PNG, JPEG or WebP the KTX2 encoder can read; convert it to .png or .jpg.`,
   );
+}
+
+/**
+ * A glTF buffer view is padded to four bytes and three's GLTFExporter counts the padding inside the
+ * image's own view, so an embedded PNG can end in up to three zero bytes after IEND (the chunk's
+ * last twelve bytes). Those are not part of the image; any other trailing byte still is corruption.
+ */
+function withoutGlbPadding(bytes: Buffer): Buffer {
+  for (let pad = 1; pad <= 3; pad += 1) {
+    const end = bytes.length - pad;
+    if (
+      bytes.length > 12 + pad &&
+      bytes.toString("ascii", end - 8, end - 4) === "IEND" &&
+      bytes.subarray(end).every((byte) => byte === 0)
+    )
+      return bytes.subarray(0, end);
+  }
+  return bytes;
 }
 
 function assertRgba(length: number, width: number, height: number, logicalPath: string): void {

@@ -1,4 +1,4 @@
-import type { BufferGeometry, Camera, DepthTexture, Object3D } from "three";
+import type { BufferGeometry, Camera, DepthTexture, Object3D, Texture } from "three";
 import {
   type PassNode,
   ReadbackBuffer,
@@ -7,6 +7,12 @@ import {
 } from "three/webgpu";
 import { ComputeTimingScopes, type IComputeTimingReceipt } from "./compute-timing.js";
 import type { IFrameSurfaceState } from "./frame-budget.js";
+import {
+  GPU_CLASS_MARKER,
+  type IGpuClassification,
+  SOFTWARE_ADAPTER,
+  classifyGpu,
+} from "./gpu-class.js";
 import {
   GpuFrameObservation,
   type IGpuFrameObservation,
@@ -191,6 +197,16 @@ export interface IRendererLike {
    * exposes the same four `adapter.info` fields, so the same read works on every target.
    */
   readonly softwareAdapter?: string;
+  /**
+   * The GPU family the adapter belongs to, the rule that named it and the four raw `adapter.info`
+   * fields it was read from; absent when no adapter reported (a WebGL2 fallback).
+   *
+   * A fact about the machine, like `softwareAdapter`, and the better input for a start tier: it
+   * tells a Mali-G52 from a Mali-G715 and an iGPU from a discrete card, where `mobile` and
+   * `software` cannot. `unknown` means no rule matched; treat it as the behaviour before this
+   * existed. Measurement still outranks it, and the class only picks where the first window starts.
+   */
+  readonly gpuClass?: IGpuClassification;
   /** Advances the GPU sample once before a presented frame's simulation and render passes. */
   beginFrame?(): void;
   compute(node: unknown, span?: "depthPyramid"): void;
@@ -227,6 +243,21 @@ export interface IRendererLike {
    * absent or throwing answers 0, so the first draw uploads exactly as it did before.
    */
   uploadTextures?(object: Object3D): number;
+  /**
+   * Prepares unique cold compressed textures before their first compile or draw. WebGPU uses
+   * one upload lane, a measured 2 ms budget and at most 64 KiB per write; one final write may
+   * overshoot the time budget. Await this gate before exposing the textures to rendering.
+   * Original Texture/GPUTexture identities, formats and mip levels are retained. Cancellation
+   * releases this caller's interest; another caller of the same texture may still complete.
+   * Ordinary textures and the WebGL fallback retain their existing paths and report no work.
+   * `onProgress` receives the completed unique compressed texture count after each preparation
+   * promise resolves; queued textures and writes that have not settled receive no credit.
+   */
+  prepareTextures?(
+    textures: Iterable<Texture>,
+    signal?: AbortSignal,
+    onProgress?: (completed: number) => void,
+  ): Promise<number>;
   /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
    *
@@ -437,6 +468,10 @@ type RendererInstance = IStorageBufferSource & {
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
+  prepareTextureAsync?: (
+    texture: Texture,
+    options: { budgetMs: number; maxBytesPerWrite: number; signal: AbortSignal },
+  ) => Promise<void>;
   compute?: (node: unknown) => void;
   getArrayBufferAsync?: (
     attribute: unknown,
@@ -513,6 +548,7 @@ function wrapRenderer(
   timestampCapable: boolean,
   timestampFrameInterval: number,
   softwareAdapter?: string,
+  gpuClass?: IGpuClassification,
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
   // Keep caller identity separately: RenderPipeline may wrap its public output node.
@@ -523,6 +559,7 @@ function wrapRenderer(
   let activeCompiles = 0;
   let compileCount = 0;
   let disposed = false;
+  const texturePreparations = new Set<AbortController>();
   const storageBuffers = new StorageBufferLeases(() => raw);
   let computeTimings: ComputeTimingScopes | undefined;
   let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
@@ -552,8 +589,15 @@ function wrapRenderer(
    * same lagged sample every frame. `backend.getTimestampFrames("render")` is Three's tracked
    * resolved-frame list; its last entry is the sample, matching `gpuFrameAge`.
    */
+  /**
+   * The engine's own frame id once it has rendered. Three's `init()` starts its own rAF loop, which
+   * writes `info.frame = nodeFrame.frameId` every animation frame, so `info.frame` read between
+   * renders can be that smaller counter while the timestamp queries carry this one.
+   */
+  const currentFrame = (): number | undefined =>
+    timestampFrame >= 0 ? timestampFrame : raw.info?.frame;
   const gpuFrameSample = (): { frame: number; ms: number } | undefined => {
-    const frame = raw.info?.frame;
+    const frame = currentFrame();
     const frames = raw.backend?.getTimestampFrames?.("render");
     const sampled = frames?.[frames.length - 1];
     const timestamp = raw.info?.render?.timestamp;
@@ -648,7 +692,7 @@ function wrapRenderer(
     gpuFrameMs: () => gpuFrameSample()?.ms,
     gpuFrameAge: () => {
       const sample = gpuFrameSample();
-      const frame = raw.info?.frame;
+      const frame = currentFrame();
       if (sample === undefined || frame === undefined || !Number.isInteger(frame)) return undefined;
       // A fulfilled resolve may return the pool's lastValue on failure. The successful query's
       // frame ID, not the promise or a changed duration, is the evidence of freshness.
@@ -744,6 +788,7 @@ function wrapRenderer(
     surfaceDrawingBufferHeight: () => applied.height,
     alphaAntialiasing: () => alphaAntialiasing.report(),
     ...(softwareAdapter === undefined ? {} : { softwareAdapter }),
+    ...(gpuClass === undefined ? {} : { gpuClass }),
     domElement: raw.domElement,
     kind,
     raw,
@@ -903,6 +948,40 @@ function wrapRenderer(
       }
       return created;
     },
+    prepareTextures: async (textures, signal, onProgress) => {
+      if (disposed) throw new Error("Renderer disposed during texture preparation.");
+      if (kind !== "webgpu") return 0;
+      const unique = new Set(
+        [...textures].filter(
+          (texture) => "isCompressedTexture" in texture && texture.isCompressedTexture === true,
+        ),
+      );
+      if (unique.size === 0) return 0;
+      if (typeof raw.prepareTextureAsync !== "function")
+        throw new Error("WebGPU renderer lacks bounded compressed texture preparation.");
+      const controller = new AbortController();
+      const abort = () => controller.abort(signal?.reason);
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
+      texturePreparations.add(controller);
+      let completed = 0;
+      try {
+        for (const texture of unique) {
+          if (controller.signal.aborted) throw controller.signal.reason;
+          await raw.prepareTextureAsync(texture, {
+            budgetMs: 2,
+            maxBytesPerWrite: 65_536,
+            signal: controller.signal,
+          });
+          completed += 1;
+          onProgress?.(completed);
+        }
+        return unique.size;
+      } finally {
+        texturePreparations.delete(controller);
+        signal?.removeEventListener("abort", abort);
+      }
+    },
     scenePassDepth: () => {
       // Three's implicit depth is in Textures.updateRenderTarget's data, not target.depthTexture.
       // Never fall through to presentation depth: the output blit does not draw the world there.
@@ -1005,6 +1084,9 @@ function wrapRenderer(
         return;
       }
       disposed = true;
+      for (const preparation of texturePreparations)
+        preparation.abort(new Error("Renderer disposed during texture preparation."));
+      texturePreparations.clear();
       gpuObservation?.dispose();
       gpuObservation = undefined;
       pendingScale = undefined;
@@ -1236,16 +1318,6 @@ async function createWebGpuPipelineCensus(
 }
 
 /**
- * Which field of `adapter.info` names a CPU rasteriser.
- *
- * Every field is searched because which one carries the giveaway depends on the platform: Linux
- * Dawn puts `swiftshader` in `architecture`, Mesa reports `llvmpipe` in `description`, and a
- * headless Windows run says `Microsoft Basic Render Driver` in `device`.
- */
-const SOFTWARE_ADAPTER =
-  /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/i;
-
-/**
  * The adapters `navigator.gpu` has handed this page, kept for the life of the module.
  *
  * A local `const adapter = await requestAdapter()` is the shape every WebGPU sample uses, and it is
@@ -1271,6 +1343,8 @@ interface IWebGpuAdapterFacts {
   readonly identity?: string;
   /** The field value that names a CPU rasteriser; absent when none of them does. */
   readonly software?: string;
+  /** The family the four fields classify as; absent when the adapter reported no info at all. */
+  readonly gpuClass?: IGpuClassification;
 }
 
 async function readWebGpuAdapterFacts(raw: RendererInstance): Promise<IWebGpuAdapterFacts> {
@@ -1306,6 +1380,11 @@ async function readWebGpuAdapterFacts(raw: RendererInstance): Promise<IWebGpuAda
         ? {}
         : { identity: `webgpu:${entries.map(([field, value]) => `${field}=${value}`).join("|")}` }),
       ...(software === undefined ? {} : { software }),
+      gpuClass: classifyGpu(
+        Object.fromEntries(
+          fields.map((field) => [field, typeof info[field] === "string" ? info[field] : ""]),
+        ),
+      ),
     };
   } catch {
     return {};
@@ -1372,6 +1451,13 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     throw new Error("renderer.resolutionScale must be finite and positive.");
   const applied = { height: 1, width: 1 };
   const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
+  // An intrinsic canvas follows its width/height attributes. Scaling that buffer then changes
+  // clientWidth, so ResizeObserver scales it again until it is one pixel. Own the layout only
+  // for the browser canvas we created; supplied canvases and platform surfaces own theirs.
+  if (options.canvas === undefined && source === undefined && canvas.style !== undefined) {
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+  }
   const preferWebGPU = options.preferWebGPU ?? true;
   // `trackTimestamp` is on so GPU time is measured, not inferred from wall clock; it is inert on an
   // adapter without `timestamp-query`, and `gpuTimestampFrameInterval` samples it (PRD-446).
@@ -1418,7 +1504,10 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
         timestampCapable,
         gpuTimestampFrameInterval,
         adapter.software,
+        adapter.gpuClass,
       );
+      if (adapter.gpuClass !== undefined)
+        report(`${GPU_CLASS_MARKER}:${JSON.stringify(adapter.gpuClass)}`);
     } catch {
       renderer = undefined;
     }

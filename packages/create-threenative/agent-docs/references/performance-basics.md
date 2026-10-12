@@ -39,8 +39,9 @@ revisit later is the engine's job, not yours.
   how many objects it actually drops. Shadow casters are never dropped on the main view alone, so a
   scene of small casters stays expensive — `castShadow = false` on props the cut would otherwise
   drop is the game's call.
-- **Resolution.** `render.resolutionScale` defaults to `"auto"`: it holds GPU headroom and never
-  lowers resolution on a CPU overrun; `TN_FRAME_BUDGET` reports the scale actually used. A number
+- **Resolution.** `render.resolutionScale` defaults to `"auto"`: it starts at 0.85 for
+  `mobile-low`, otherwise 1, then measured windows adapt it. `TN_GPU_CLASS` reports the WebGPU
+  family once per launch. It holds GPU headroom and never lowers resolution on a CPU overrun; `TN_FRAME_BUDGET` reports the scale actually used. A number
   is the named pin override.
 - **Quality.** Each template ships `src/render/quality.ts` (three tiers, platform default,
   `TN_QUALITY_TIER`) and `adaptiveQuality.ts` (measured frame windows). Use the tiers; do not invent

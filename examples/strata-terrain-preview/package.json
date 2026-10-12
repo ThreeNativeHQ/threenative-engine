@@ -1,0 +1,36 @@
+{
+  "name": "strata-terrain-preview",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bake": "node scripts/bake.mjs",
+    "dev": "pnpm bake && vite",
+    "build": "pnpm bake && vite build",
+    "build:desktop": "pnpm bake && node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/strata-terrain-native.js",
+    "typecheck": "pnpm bake && tsc --noEmit -p tsconfig.json",
+    "test:terrain:web": "node ../../packages/playtest/dist/runner/cli.js playtests/terrain.playtest.json --url 'http://127.0.0.1:5196/?showcase=1' --server-command 'pnpm dev --host 127.0.0.1 --port 5196 --strictPort' --browser-recipe webgpu --headed --artifacts artifacts/playtest/web && node scripts/verify-ocean.mjs artifacts/playtest/web",
+    "test:terrain:desktop": "node scripts/stage-native-assets.mjs && pnpm build:desktop && node ../../packages/playtest/dist/runner/cli.js playtests/terrain.playtest.json --target desktop --executable ../../packages/runtime-native/build/tn-linux/mystral --host-arg run --host-arg dist/strata-terrain-native.js --artifacts artifacts/playtest/desktop && node scripts/verify-ocean.mjs artifacts/playtest/desktop && sh ../../scripts/xvfb.sh ../../packages/runtime-native/build/tn-linux/mystral run dist/strata-terrain-native.js --headless --frames 300 --screenshot artifacts/playtest/desktop/terrain-300frames.png",
+    "test:terrain:editor": "node scripts/verify-editor.mjs",
+    "test:consumer": "node scripts/verify-consumer.mjs",
+    "test:kit": "node scripts/verify-starter-kit.mjs",
+    "test:terrain:authored": "node scripts/verify-authored-world.mjs",
+    "test:terrain:custom": "node scripts/verify-custom-assets.mjs",
+    "test:terrain:export": "node scripts/verify-world-export.mjs",
+    "test:terrain:export:desktop": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/render/exportConsumer.ts --target desktop --output dist/strata-export-native.js && node ../../packages/playtest/dist/runner/cli.js playtests/export.playtest.json --target desktop --executable ../../packages/runtime-native/build/tn-linux/mystral --host-arg run --host-arg dist/strata-export-native.js --artifacts artifacts/playtest/world-export-native"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@threenative/terrain": "workspace:*",
+    "@types/three": "catalog:",
+    "geotiff": "^3.0.5",
+    "proj4": "^2.22.0",
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:",
+    "vite": "catalog:"
+  }
+}

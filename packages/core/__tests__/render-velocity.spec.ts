@@ -23,6 +23,7 @@ import * as projectionPlan from "../src/projection-plan.js";
 import { readBatchedMeshPreviousMatrices } from "../src/render/batched-velocity.js";
 import { type IRenderChainRenderer, RenderChain } from "../src/render/chain.js";
 import {
+  VELOCITY_PREVIOUS_INSTANCE_MATRICES,
   VelocityTracker,
   readVelocityPreviousBoneMatrices,
   readVelocityPreviousMatrices,
@@ -574,6 +575,29 @@ describe("velocity provisioning on the shipped path", () => {
     expect(renderer.velocityEnabled).toBe(true);
   });
 
+  it("gives temporal nodes the scene-side velocity node, not its texture, through the context", () => {
+    // Three's TRAANode reads `builder.context.velocity` and jitters it with setProjectionMatrix;
+    // handing it the pass texture threw on every frame of every game that requested `traa`.
+    const scenePass = pass(new Scene(), new PerspectiveCamera());
+    let output: unknown;
+    const renderer = {
+      ...stubRenderer(),
+      setOutputNode: (node: unknown) => {
+        output = node;
+      },
+    };
+    new RenderChain({
+      renderer,
+      input: scenePass.getTextureNode("output"),
+      request: { stages: ["traa"], velocity: { pass: scenePass } },
+      stages: [{ build: (input) => input ?? {}, name: "traa" }],
+      report: () => undefined,
+    });
+
+    const velocity = (output as { value?: { velocity?: unknown } }).value?.velocity;
+    expect(velocity).toBeInstanceOf(VelocityNode);
+  });
+
   it("does not allocate velocity for temporal stages dropped by tier or provider checks", () => {
     const tierOffPass = pass(new Scene(), new PerspectiveCamera());
     const tierOffChain = new RenderChain({
@@ -779,5 +803,77 @@ describe("velocity provisioning on the shipped path", () => {
     expect(missingRejection).toBeDefined();
     expect(missingRejection).toBeGreaterThan(correctRejection);
     expect(missingRejection).toBeGreaterThan(pinnedThreshold);
+  });
+});
+
+describe("VelocityTracker instance history", () => {
+  // The Strata forest tracks 218,809 instances; a fresh Float32Array per instanced mesh per frame
+  // was ~14 MB of garbage every frame and produced multi-second collector stalls (PRD-541).
+  it("alternates two history buffers per instanced mesh and keeps the committed matrices", () => {
+    const scene = new Scene();
+    const mesh = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial(), 3);
+    scene.add(mesh);
+    const tracker = new VelocityTracker();
+    const previous = () =>
+      (mesh as unknown as Record<symbol, Float32Array | undefined>)[
+        VELOCITY_PREVIOUS_INSTANCE_MATRICES
+      ];
+    const move = (x: number) => {
+      mesh.setMatrixAt(0, new Matrix4().makeTranslation(x, 0, 0));
+      mesh.instanceMatrix.needsUpdate = true;
+    };
+
+    tracker.update(scene);
+    tracker.commit(scene);
+    tracker.update(scene);
+    const first = previous();
+    if (first === undefined) throw new Error("no instance history was scheduled");
+
+    // Two buffers alternate: the one scheduled for the frame that just rendered is never rewritten
+    // by the commit that follows it, and nothing new is allocated after the second frame.
+    move(1);
+    tracker.commit(scene);
+    tracker.update(scene);
+    const second = previous();
+    expect(second).not.toBe(first);
+    expect(second?.[12]).toBe(1);
+    expect(first[12]).toBe(0);
+    move(2);
+    tracker.commit(scene);
+    tracker.update(scene);
+    expect(previous()).toBe(first);
+    expect(first[12]).toBe(2);
+    expect(second?.[12]).toBe(1);
+    move(3);
+    tracker.commit(scene);
+    tracker.update(scene);
+    expect(previous()).toBe(second);
+    tracker.clear();
+  });
+
+  it("skips the copy for an instanced mesh whose matrices did not change", () => {
+    const scene = new Scene();
+    const mesh = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial(), 2);
+    scene.add(mesh);
+    const tracker = new VelocityTracker();
+    const previous = () =>
+      (mesh as unknown as Record<symbol, Float32Array | undefined>)[
+        VELOCITY_PREVIOUS_INSTANCE_MATRICES
+      ];
+    tracker.update(scene);
+    tracker.commit(scene);
+    tracker.update(scene);
+    const held = previous();
+    tracker.commit(scene);
+    tracker.update(scene);
+    // Unchanged version: no rotation, the same history stays scheduled.
+    expect(previous()).toBe(held);
+    mesh.setMatrixAt(1, new Matrix4().makeTranslation(4, 0, 0));
+    mesh.instanceMatrix.needsUpdate = true;
+    tracker.commit(scene);
+    tracker.update(scene);
+    expect(previous()).not.toBe(held);
+    expect(previous()?.[16 + 12]).toBe(4);
+    tracker.clear();
   });
 });

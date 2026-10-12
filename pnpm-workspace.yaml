@@ -8,6 +8,9 @@ confirmModulesPurge: false
 catalog:
   '@pmndrs/labs': 0.9.0
   three: 0.185.1
+  '@types/node': 20.19.43
+  '@types/three': 0.185.3
+  tsup: 8.5.1
   procedural-animals: https://codeload.github.com/majidmanzarpour/threejs-procedural-animals/tar.gz/c95ae49346aa8e140a924376cec6cf0073d99512
   '@jridgewell/trace-mapping': 0.3.31
   '@gltf-transform/core': 4.4.2

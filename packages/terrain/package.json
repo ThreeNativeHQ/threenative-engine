@@ -1,0 +1,81 @@
+{
+  "name": "@threenative/terrain",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Headless terrain authoring \u2014 noise, erosion, sculpting, roads, rivers, material splats and scatter \u2014 evaluated into ordinary typed arrays and indexed Three.js geometry.",
+  "keywords": ["threenative", "terrain", "heightfield", "three", "threejs", "procedural", "webgpu"],
+  "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
+  "bugs": {
+    "url": "https://github.com/ThreeNativeHQ/threenative/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "directory": "packages/terrain"
+  },
+  "type": "module",
+  "files": [
+    "dist",
+    "starter",
+    "starter-assets",
+    "README.md",
+    "AGENT_GUIDE.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./three": {
+      "types": "./dist/three.d.ts",
+      "import": "./dist/three.js"
+    },
+    "./export": {
+      "types": "./dist/export.d.ts",
+      "import": "./dist/export.js"
+    },
+    "./package.json": "./package.json",
+    "./editor/server": {
+      "types": "./dist/editor/server.d.ts",
+      "import": "./dist/editor/server.js"
+    },
+    "./editor": {
+      "types": "./dist/editor/index.d.ts",
+      "import": "./dist/editor/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && publint",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm run build && vitest run --root ../.. terrain/__tests__ && publint --strict"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/three": "catalog:",
+    "publint": "catalog:",
+    "three": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:",
+    "vite": "catalog:",
+    "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*"
+  },
+  "peerDependencies": {
+    "three": ">=0.185.0 <0.186.0",
+    "vite": ">=7.0.0 <9.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  }
+}

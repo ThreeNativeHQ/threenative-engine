@@ -182,26 +182,86 @@ const BUG_REPORT_SKILL_PATHS = [
 // PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
-// Recomputed 2026-10-08 for the shooter fix. The normal target now uses the material blend mode
-// in every kit's worldEnvironment.ts. The shooter Rifle.ts gained a scope alpha test and a reticle.
-// All thirteen generated trees changed.
+// PR381 color/depth attachment caches: all thirteen actual createProject trees change only in the
+// copied Three patch. Restoring the previous patch bytes recovers every published fingerprint.
+// PR381 bounded compressed uploads: all thirteen actual trees change only in the copied
+// Three patch. Restoring the previous patch recovers every prior fingerprint.
+// Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
+// package patch embedded by every scaffold. No template, capability or appearance change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed on develop 07bcdf8d2 with the shooter fix and PRD-572 merged in; PRD-572 changes
-  // the starter instructions, so only its fingerprint moved from the shooter-fix values.
-  // PRD-569 adds the template's onCull reactions and culling instructions.
-  "action-rpg": "238f79be333915fbaa49fab868cc7b91c277e9eb886aadd996d02bda85853da4",
-  minimal: "18d511d041161e706b450496e8b05cd2be8ad7224b75848da463b79ddc88b1f5",
-  platformer: "c31ad80077d41a7ecfcd497f78b36029ee872fe6249f9c71e04da10dff161cb1",
-  puzzle: "90bbb8d0ac5c969fca75ec879301a3adcc2f9cbf65ba52f82835905f07fb50de",
-  racing: "b82ec29cc1dffbdbd2664e396c1406e7d3ec1bfc09fabe1f59193b46163a98fb",
-  rain: "2640179c398fd265363845ffe4c60251658374fcdca5c57320608a5c5432d09a",
-  rts: "6666aea6a03027eec5ffd69fd732b38797afa0c9905ed0512aefdeeeddb5b154",
-  runner: "22b52899b6ba85b9efda315f3a7faea8da4c3d6d4273dcb492c42685eab97230",
-  sailing: "eff0c4b20bffbd1225afa033754d6d3df9cf375e7e9fa8f47e278412cc0ef571",
-  shooter: "91546efa42e694ee61bc1fffc309b4af33e007d94ea7195bb3446fd938addbff",
-  snow: "7e0963fb36ddd4c801c12207178c59a4f03f074a25fd2ed0d3b6fe81f78bed59",
-  starter: "00bb17d96e721f2e8ec977a644b51a0b5ae9b843e2ed34251e779f7ef5364e13",
-  "tower-defense": "0f49ea561767830611cf509c68efa024fab48337ec6e5ba66a729e99d59a1cd5",
+  // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
+  // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
+  // Measured by the actual thirteen-tree createProject equality test on the Oct 6
+  // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
+  // Measured through all thirteen actual createProject trees on the Oct 4 published-head
+  // merge with develop 15adf350; preserves Strata instructions and develop template changes.
+  // Recomputed 2026-10-01 on merging develop (#375, #376) into the PRD-466/467/468 branch: every
+  // template AGENTS/CLAUDE pair keeps the optional terrain reference sentence. Values are the
+  // observed no-install createProject trees of the merged tree.
+  // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
+  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
+  // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
+  // the first gave each quality.ts a software adapter policy; the second found ten of eleven
+  // setupPost callers never forwarded the adapter fact to it; the third found no template but
+  // `starter` set `renderChainTier`, so a low preset still ran the high render chain. The same ten
+  // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
+  // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
+  // Values measured through createProject by the spec that asserts them, not by hand.
+  // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
+  // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
+  // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
+  // beside it. Only the two sailing template files changed, so only this one tree moves.
+  // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
+  // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
+  // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
+  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
+  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
+  // all thirteen trees, rain and snow included, were re-measured through createProject.
+  // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
+  // threenative-assets skill ships in every scaffold, so all thirteen trees move.
+  // Recomputed 2026-10-02 on the merge of develop 114e268ef into the strata branch
+  // (PRD-466/467/468): the merged tree carries both sides' template bytes, so eleven trees were
+  // re-measured through createProject. Rain and snow carry none of this branch's template changes
+  // and kept develop's values.
+  // Measured through actual createProject trees after exposure/fog consolidation and restamping,
+  // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
+  // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
+  // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
+  // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
+  // merged Three patch changes every kit; starter also carries the merged render source.
+  // Recomputed 2026-10-09 on the merge of develop (31 commits, PRD-494 sharded bundles) into the
+  // strata branch: measured through createProject on the merged tree.
+  // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
+  // the merged tree, including its latest template changes.
+  // PRD-560 (2026-10-10): the eleven FogExp2 kits carry height fog (heightFog.ts, sky.ts, AGENTS.md);
+  // rain and tower-defense had no height-fog change in that merge. Seven kits at the 150 m scale then
+  // took density 0.0018 so ridges read clearer than low ground (AC-1b).
+  // Recomputed through all thirteen actual createProject trees after merging develop 2d2124792
+  // into PRD-571; these fingerprints cover both the exposure and landed base changes.
+  // Recomputed 2026-10-11 after merging develop b4e74627f into PRD-563: measured through
+  // createProject on the merged tree, including the GPU-class start tier in every kit.
+  // Recomputed 2026-10-11 for the PRD-563 render-chain tier fix: ten kits' medium presets now request
+  // the medium chain, the four flat-high scenarios gained family and software rows, and every
+  // render-chain scenario names the GPU families. Measured by the same actual-tree test; snow moves not.
+  // Recomputed 2026-10-11 for the PRD-563 grade table upload as half floats: only starter's grade.ts
+  // and postprocessing.ts changed, and the actual-tree test moved only starter.
+  // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
+  // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
+  // createProject on the merged tree.
+  "action-rpg": "da213af29a136157a80ffea79df06074e65c4abba40c0b328173b22349d68819",
+  minimal: "0202ac5dd7ac436e474f55dd9ec2f5f43da3d67c219b2351405e960ca8f1a71e",
+  platformer: "edf75a6bfbb3b0ab7513b7e8fc3a8441b9aa41ff5f544ab77c201f1fcd8d8faf",
+  puzzle: "c5739a462298a6b1a0c2ba27ebca8c276fa89ccd6464d8b49f43b2da0e9e9f72",
+  racing: "deff5eb215f9d3be8007f2f0bc4530618035db36418c05aee292791a07ca76a9",
+  rain: "643494c2812208b8db1c24e38c06053d7fe349bb25692802c8acf3511e08dd43",
+  rts: "8dfd9b5cb3d441463389b842ff2b3cde015d81ed4d86dad089f8cd2e2916f15f",
+  runner: "1844ee1b87ef97d51aad6d157715bdc74df39b39a08d822403f92b2d9e4a3302",
+  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
+  sailing: "a524164861fad5282f55b69a9515529604afb8f73ad25e4bcd51c7b93ce17a82",
+  shooter: "816c172e0c9d86fa1be9a866a09b3b377a336f0038e5ed3600d7f153cc753301",
+  snow: "e4be666568eeb003b274486d791a183867c5b0e176f2888650305475c4dc820a",
+  starter: "cb2221f6a07dd981fb19be00477e3304fe8add983eb17e0c7066d68164489b30",
+  "tower-defense": "54184c2d75fe452ada59a5a3ce00e326e485b9288153b5617320fbcaa88b47fb",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -388,6 +448,7 @@ const PLATFORMER_PATHS = [
   "src/render/postprocessing.ts",
   "src/render/props.ts",
   "src/render/sky.ts",
+  "src/render/skyEnvironment.ts",
   "src/render/scenery.ts",
   "src/render/walkers.ts",
   "src/render/waterfall.ts",
@@ -486,6 +547,9 @@ describe("create-threenative", () => {
         );
         expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
         actual[template] = await scaffoldTreeHash(target);
+        if (template === "platformer") {
+          await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
+        }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
     } finally {
@@ -1064,7 +1128,7 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   it("should parse the no-install and template flags", () => {
     expect(parseArgs(["my-game", "--template", "minimal", "--no-install"])).toEqual({

@@ -1,9 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { Document, NodeIO, type Primitive } from "@gltf-transform/core";
+import { Document, NodeIO, type Primitive, type Scene } from "@gltf-transform/core";
 import {
   ALL_EXTENSIONS,
   EXTMeshGPUInstancing,
+  KHRMaterialsTransmission,
   KHRNodeVisibility,
 } from "@gltf-transform/extensions";
 import { getBounds } from "@gltf-transform/functions";
@@ -913,4 +914,360 @@ describe("cookWorldProxies", () => {
     expect(result.declined).toEqual([{ reason: "missing-chunk", x: 0, z: 0 }]);
     expect(formatWorldHlod("world/world.json", result)).toContain("declined=1:0_0@missing-chunk");
   });
+});
+
+describe("scatter cell HLOD", () => {
+  function scatterWorld(records = 2, maxDistance?: number) {
+    const raw = JSON.parse(worldJson([{ chunks: [], x: 0, z: 0 }]).toString());
+    raw.assets = {
+      pine: {
+        glb: "pine.glb",
+        bounds: { min: [0, 0, 0], max: [8, 0, 8] },
+        ...(maxDistance === undefined ? {} : { maxDistance }),
+      },
+    };
+    raw.cells[0].runs = [{ asset: "pine", offset: 0, count: records }];
+    return readWorldPackage(Buffer.from(JSON.stringify(raw))) as NonNullable<
+      ReturnType<typeof readWorldPackage>
+    >;
+  }
+
+  it("cooks scatter-only cells with placements, authored cutouts and explicit full-cell coverage", async () => {
+    const source = await denseChunk(8);
+    const records = Buffer.from(
+      new Float32Array([10, 0, 0, 0, 0, 0, 1, 1, 30, 0, 0, 0, 0, 0, 1, 2]).buffer,
+    );
+    const world = scatterWorld();
+    const files = new Map([
+      ["world/pine.glb", source.buffer],
+      ["world/placements.bin", records],
+    ]);
+    const result = await cookWorldProxies({
+      read: async (logical) => files.get(logical) as Buffer,
+      world,
+      worldLogical: "world/world.json",
+    });
+    expect(result.declined).toEqual([]);
+    expect(result.proxies).toHaveLength(1);
+    const proxy = result.proxies[0] as NonNullable<(typeof result.proxies)[0]>;
+    const metadata = JSON.parse(applyProxiesToWorld(world, result.proxies).toString()).cells[0]
+      .proxy;
+    expect(metadata.scope).toBe("cell");
+    expect(metadata.sourceTriangles).toBe(source.opaqueTriangles * 4);
+    expect(proxy.triangles).toBeLessThan(metadata.sourceTriangles);
+    const document = await new NodeIO().readBinary(new Uint8Array(proxy.buffer));
+    const bounds = getBounds(document.getRoot().listScenes()[0] as Scene);
+    expect(bounds.min[0]).toBe(10);
+    expect(bounds.max[0]).toBe(32);
+    expect(bounds.min[1]).toBeCloseTo(-0.8);
+    expect(bounds.max[1]).toBeCloseTo(0.8);
+    expect(bounds.max[2]).toBe(2);
+    expect(metadata.bounds).toEqual(bounds);
+    const cutoutTriangles = document
+      .getRoot()
+      .listMeshes()
+      .flatMap((mesh) => mesh.listPrimitives())
+      .filter((primitive) => primitive.getMaterial()?.getAlphaMode() === "MASK")
+      .reduce((sum, primitive) => sum + (primitive.getIndices()?.getCount() ?? 0) / 3, 0);
+    expect(cutoutTriangles).toBe(source.opaqueTriangles * 2);
+  });
+
+  it("compiles scatter through the existing overlay and emits deterministic proxy bytes", async () => {
+    const root = await makeTempDir("threenative-hlod-scatter-");
+    const source = await denseChunk(8);
+    const world = scatterWorld(1);
+    const records = Buffer.from(new Float32Array([0, 0, 0, 0, 0, 0, 1, 1]).buffer);
+    const raw = Buffer.from(JSON.stringify(world.json));
+    await mkdir(path.join(root, "assets", "world"), { recursive: true });
+    await writeFile(path.join(root, "assets", "world", "pine.glb"), source.buffer);
+    await writeFile(path.join(root, "assets", "world", "placements.bin"), records);
+    await writeFile(path.join(root, "assets", "world", "world.json"), raw);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    await compileAssets({ cwd: root, config: NONE });
+    const manifest = await readManifest(root);
+    const first = await outputBytes(root, manifest, "world/world.cell_0_0.proxy.glb");
+    const emitted = JSON.parse((await outputBytes(root, manifest, "world/world.json")).toString());
+    expect(emitted.cells[0].proxy.scope).toBe("cell");
+    await compileAssets({ cwd: root, config: NONE });
+    expect(
+      await outputBytes(root, await readManifest(root), "world/world.cell_0_0.proxy.glb"),
+    ).toEqual(first);
+    expect(await readFile(path.join(root, "assets", "world", "world.json"))).toEqual(raw);
+  });
+
+  it.each([
+    "blend",
+    "invisible",
+    "alternate-scene",
+    "orphan",
+    "no-reduction",
+    "node-budget",
+    "nested-instancing",
+    "shear",
+  ])("declines %s scatter without emitting a partial proxy", async (kind) => {
+    let bytes = (await denseChunk(8)).buffer;
+    if (kind === "blend")
+      bytes = await chunkGlb([{ alphaMode: "BLEND", material: "glass", translation: [0, 0, 0] }]);
+    if (kind === "invisible") bytes = await invisibleChunk();
+    if (kind === "nested-instancing") bytes = await instancedChunk();
+    if (kind === "shear") {
+      const doc = await new NodeIO().readBinary(new Uint8Array(bytes));
+      const scene = doc.getRoot().listScenes()[0] as Scene;
+      const parent = doc.createNode("nonuniform").setScale([2, 1, 1]);
+      for (const node of [...scene.listChildren()]) {
+        node.setRotation([0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)]);
+        parent.addChild(node);
+      }
+      scene.addChild(parent);
+      bytes = Buffer.from(await new NodeIO().writeBinary(doc));
+    }
+    if (kind === "no-reduction")
+      bytes = await chunkGlb([{ alphaMode: "MASK", material: "leaves", translation: [0, 0, 0] }]);
+    if (kind === "alternate-scene" || kind === "orphan") {
+      const doc = await new NodeIO().readBinary(new Uint8Array(bytes));
+      if (kind === "alternate-scene") doc.createScene("alternate");
+      else doc.createNode("unseen").setMesh(doc.getRoot().listMeshes()[0] ?? null);
+      bytes = Buffer.from(await new NodeIO().writeBinary(doc));
+    }
+    const repetitions = kind === "node-budget" ? 8000 : 1;
+    const records = Buffer.alloc(repetitions * 32);
+    for (let at = 0; at < records.length; at += 32) {
+      records.writeFloatLE(1, at + 24);
+      records.writeFloatLE(1, at + 28);
+    }
+    const result = await cookWorldProxies({
+      world: scatterWorld(repetitions),
+      worldLogical: "world/world.json",
+      read: async (logical) => (logical.endsWith("placements.bin") ? records : bytes),
+    });
+    expect(result.proxies).toHaveLength(0);
+    expect(result.declined).toHaveLength(1);
+    const expected = {
+      blend: "scatter-material",
+      invisible: "extension",
+      "alternate-scene": "scatter-scenes",
+      orphan: "scatter-orphans",
+      "no-reduction": "no-triangle-reduction",
+      "node-budget": "node-budget",
+      "nested-instancing": "scatter-instancing",
+      shear: "scatter-shear",
+    };
+    expect(result.declined[0]?.reason).toBe(expected[kind as keyof typeof expected]);
+  });
+  it.each(["alternate-scene", "orphan", "transmission", "tangent", "shear"])(
+    "declines %s in chunks when the proxy covers the full scatter cell",
+    async (kind) => {
+      const source = await denseChunk(8);
+      const writer = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+      const doc = await writer.readBinary(new Uint8Array(source.buffer));
+      if (kind === "alternate-scene") doc.createScene("alternate");
+      if (kind === "shear") {
+        const scene = doc.getRoot().listScenes()[0] as Scene;
+        const parent = doc.createNode("nonuniform").setScale([2, 1, 1]);
+        for (const node of [...scene.listChildren()]) {
+          node.setRotation([0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)]);
+          parent.addChild(node);
+        }
+        scene.addChild(parent);
+      }
+      if (kind === "orphan")
+        doc.createNode("unseen").setMesh(doc.getRoot().listMeshes()[0] ?? null);
+      if (kind === "transmission") {
+        const extension = doc.createExtension(KHRMaterialsTransmission);
+        doc
+          .getRoot()
+          .listMaterials()[0]
+          ?.setExtension(
+            "KHR_materials_transmission",
+            extension.createTransmission().setTransmissionFactor(1),
+          );
+      }
+      if (kind === "tangent") {
+        const primitive = doc.getRoot().listMeshes()[0]?.listPrimitives()[0] as Primitive;
+        primitive.setAttribute(
+          "TANGENT",
+          doc
+            .createAccessor()
+            .setType("VEC4")
+            .setBuffer(doc.getRoot().listBuffers()[0] ?? null)
+            .setArray(
+              new Float32Array((primitive.getAttribute("POSITION")?.getCount() ?? 0) * 4).fill(0.5),
+            ),
+        );
+      }
+      const chunk = Buffer.from(await writer.writeBinary(doc));
+      const world = scatterWorld(1);
+      const cell = world.cells[0];
+      if (cell !== undefined) cell.raw.chunks = ["chunk.glb"];
+      const parsed = readWorldPackage(Buffer.from(JSON.stringify(world.json))) as NonNullable<
+        ReturnType<typeof readWorldPackage>
+      >;
+      const records = Buffer.from(new Float32Array([0, 0, 0, 0, 0, 0, 1, 1]).buffer);
+      const result = await cookWorldProxies({
+        world: parsed,
+        worldLogical: "world/world.json",
+        read: async (logical) =>
+          logical.endsWith("placements.bin")
+            ? records
+            : logical.endsWith("chunk.glb")
+              ? chunk
+              : source.buffer,
+      });
+      expect(result.proxies).toHaveLength(0);
+      expect(result.declined[0]?.reason).toBe(
+        kind === "transmission"
+          ? "scatter-material"
+          : kind === "tangent"
+            ? "scatter-tangents"
+            : kind === "shear"
+              ? "scatter-shear"
+              : kind === "orphan"
+                ? "scatter-orphans"
+                : "scatter-scenes",
+      );
+    },
+  );
+
+  it("preserves cancelling rotations through sheared non-mesh chunk ancestors", async () => {
+    const source = await denseChunk(8);
+    const io = new NodeIO();
+    const doc = await io.readBinary(new Uint8Array(source.buffer));
+    const scene = doc.getRoot().listScenes()[0] as Scene;
+    const scale = doc.createNode("scale").setScale([2, 1, 1]);
+    const rotate = doc
+      .createNode("rotate")
+      .setRotation([0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)]);
+    scale.addChild(rotate);
+    for (const node of [...scene.listChildren()]) {
+      node.setRotation([0, -Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)]);
+      rotate.addChild(node);
+    }
+    scene.addChild(scale);
+    const chunk = Buffer.from(await io.writeBinary(doc));
+    const world = scatterWorld(1);
+    const cell = world.cells[0];
+    if (cell !== undefined) cell.raw.chunks = ["chunk.glb"];
+    const parsed = readWorldPackage(Buffer.from(JSON.stringify(world.json))) as NonNullable<
+      ReturnType<typeof readWorldPackage>
+    >;
+    const records = Buffer.from(new Float32Array([10, 0, 0, 0, 0, 0, 1, 1]).buffer);
+    const result = await cookWorldProxies({
+      world: parsed,
+      worldLogical: "world/world.json",
+      read: async (logical) =>
+        logical.endsWith("placements.bin")
+          ? records
+          : logical.endsWith("chunk.glb")
+            ? chunk
+            : source.buffer,
+    });
+    expect(result.declined).toEqual([]);
+    const output = await io.readBinary(new Uint8Array(result.proxies[0]?.buffer as Buffer));
+    const bounds = getBounds(output.getRoot().listScenes()[0] as Scene);
+    expect(bounds.min[0]).toBeCloseTo(0, 6);
+    expect(bounds.min[2]).toBeCloseTo(0, 6);
+    expect(bounds.max[0]).toBeCloseTo(11, 6);
+    expect(bounds.max[2]).toBeCloseTo(1, 6);
+    const card = output
+      .getRoot()
+      .listMeshes()
+      .flatMap((mesh) => mesh.listPrimitives())
+      .find((primitive) => primitive.getMaterial()?.getAlphaMode() === "MASK") as Primitive;
+    // Both intact cutout grids retain their source world positions, even at the chunk's +X edge.
+    const positions = card.getAttribute("POSITION") as NonNullable<
+      ReturnType<Primitive["getAttribute"]>
+    >;
+    const node = output
+      .getRoot()
+      .listNodes()
+      .find((entry) => entry.getMesh()?.listPrimitives().includes(card));
+    const matrix = new Matrix4().fromArray(node?.getWorldMatrix() ?? []);
+    const point = new Vector3();
+    const xs: number[] = [];
+    for (let index = 0; index < positions.getCount(); index += 1)
+      xs.push(point.fromArray(positions.getElement(index, [0, 0, 0])).applyMatrix4(matrix).x);
+    expect(xs.some((value) => Math.abs(value - 2) < 1e-6)).toBe(true);
+  });
+
+  it("keeps the published error conservative for rotated, scaled local geometry", async () => {
+    const source = await denseChunk(24);
+    const io = new NodeIO();
+    const doc = await io.readBinary(new Uint8Array(source.buffer));
+    for (const node of doc.getRoot().listNodes())
+      node.setScale([100, 1, 1]).setRotation([0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)]);
+    const bytes = Buffer.from(await io.writeBinary(doc));
+    const world = readWorldPackage(
+      worldJson([{ chunks: ["chunk.glb"], x: 0, z: 0 }]),
+    ) as NonNullable<ReturnType<typeof readWorldPackage>>;
+    const result = await cookWorldProxies({
+      world,
+      worldLogical: "world/world.json",
+      read: async () => bytes,
+    });
+    expect(result.declined).toEqual([]);
+    expect(result.proxies[0]?.triangles).toBeLessThan(source.opaqueTriangles * 2);
+    // Meshopt's local scale is 1m; the retained node stretches it by 100 before rotation.
+    expect(result.proxies[0]?.error).toBeGreaterThanOrEqual(1);
+  });
+
+  it("accepts ordinary Float32 rotations without silently losing transform error", async () => {
+    const source = await denseChunk(8);
+    const half = 0.43;
+    const sin = Math.sin(half) / Math.sqrt(3);
+    const records = Buffer.from(
+      new Float32Array([10, 2, -3, sin, sin, sin, Math.cos(half), 2]).buffer,
+    );
+    const result = await cookWorldProxies({
+      world: scatterWorld(1),
+      worldLogical: "world/world.json",
+      read: async (logical) => (logical.endsWith("placements.bin") ? records : source.buffer),
+    });
+    expect(result.declined).toEqual([]);
+    expect(result.proxies).toHaveLength(1);
+    expect(result.proxies[0]?.error).toBeGreaterThan(0);
+  });
+
+  it("bounds cumulative staged placements before allocating overlapping runs", async () => {
+    const world = scatterWorld(700000);
+    (world.cells[0]?.raw.runs as { asset: string; offset: number; count: number }[]).push(
+      { asset: "pine", offset: 0, count: 700000 },
+      { asset: "pine", offset: 0, count: 700000 },
+    );
+    const parsed = readWorldPackage(Buffer.from(JSON.stringify(world.json))) as NonNullable<
+      ReturnType<typeof readWorldPackage>
+    >;
+    const read = vi.fn(async () => Buffer.alloc(0));
+    const result = await cookWorldProxies({
+      world: parsed,
+      worldLogical: "world/world.json",
+      read,
+    });
+    expect(result.declined[0]?.reason).toBe("placement-budget");
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it.each(["non-finite", "short", "distance-filter", "excluded"])(
+    "declines an entire scatter cell for %s, retaining its source path",
+    async (kind) => {
+      const world = scatterWorld(1, kind === "distance-filter" ? 50 : undefined);
+      const source = await denseChunk(8);
+      const records = Buffer.from(
+        new Float32Array([kind === "non-finite" ? Number.NaN : 0, 0, 0, 0, 0, 0, 1, 1]).buffer,
+      );
+      const result = await cookWorldProxies({
+        included: (logical) => kind !== "excluded" || logical !== "world/pine.glb",
+        read: async (logical) =>
+          logical.endsWith("placements.bin")
+            ? kind === "short"
+              ? Buffer.alloc(0)
+              : records
+            : source.buffer,
+        world,
+        worldLogical: "world/world.json",
+      });
+      expect(result.proxies).toHaveLength(0);
+      expect(result.declined).toHaveLength(1);
+      expect(world.cells[0]?.raw.proxy).toBeUndefined();
+    },
+  );
 });

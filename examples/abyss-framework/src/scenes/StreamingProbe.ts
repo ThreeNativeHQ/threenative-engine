@@ -29,7 +29,7 @@ const SPECIES = 12;
  * that quietly stopped overlapping would fail rather than merely get slower.
  */
 const LOAD_MS = 60;
-/** Objects attached through `addInSlices`. Two full 256 slices and a partial third. */
+/** Objects attached through `addInSlices`. How many slices that lands in is the budget's call. */
 const OBJECTS = 640;
 
 const initialState = {
@@ -52,6 +52,23 @@ function fakeLoad(species: ISpecies): Promise<ISpecies> {
   });
 }
 
+/**
+ * One attach the **count** decides, so the host turn is owed on every machine.
+ *
+ * `sliceSize: 1` cuts after the first object whatever the clock reads, so the timer queued here —
+ * before the attach's own first yield — has run by the time the attach resolves. Nothing is
+ * attached: the claim under test is the yield, and two more boxes would only change what the
+ * capture shows.
+ */
+async function hostTurnOwedByCount(): Promise<boolean> {
+  let hostRan = false;
+  setTimeout(() => {
+    hostRan = true;
+  }, 0);
+  await addInSlices([0, 1], () => {}, { marker: false, sliceSize: 1 });
+  return hostRan;
+}
+
 export class StreamingProbe extends Scene<StreamingState> {
   static override readonly initialState = initialState;
 
@@ -60,6 +77,8 @@ export class StreamingProbe extends Scene<StreamingState> {
   #measure = {
     attachSlices: 0,
     attachSliceSize: 0,
+    /** `sliceBudgetMs` when the engine chose the slicing, absent when the game gave a count. */
+    attachSliceBudgetMs: -1,
     attached: 0,
     attachStopped: false,
     /** Reported, not asserted: see the comment at the attach for why it is not a floor. */
@@ -137,12 +156,14 @@ export class StreamingProbe extends Scene<StreamingState> {
       // The runtime property a unit test cannot reach: did the **host** actually get the thread
       // back part-way through? This timer is queued before the first slice's own yield, so it can
       // only have run by the time the attach resolves if the attach gave the loop a turn. A
-      // synchronous attach — `sliceSize` at or above the object count — leaves it false, which is
-      // this assertion's negative control.
+      // synchronous attach leaves it false, which is this assertion's negative control.
       //
-      // Frames are counted too, but not asserted: 640 trivial boxes attach in about a millisecond
-      // in a browser, and two macrotask turns inside one 16 ms frame present nothing. A floor on
-      // presented frames here would be theatre that passes on timing luck.
+      // Which slices happen is the **budget's** call, and it is a call about this machine: 640
+      // boxes cost 3.7 ms here, inside one 8 ms slice, so nothing was owed and no yield was due.
+      // Asserting one anyway would be asserting a host's speed, and the same scenario fails on a
+      // loaded host for the opposite reason — nine slices, nine host turns, and ninety ticks that
+      // are not host turns. The yield itself is `yieldToHost` either way, so it is proved on the
+      // count-sliced attach below, where the cut is owed by the count rather than by the clock.
       let hostRan = false;
       setTimeout(() => {
         hostRan = true;
@@ -154,10 +175,14 @@ export class StreamingProbe extends Scene<StreamingState> {
       });
       this.#measure.attachSlices = report.slices;
       this.#measure.attachSliceSize = report.sliceSize;
+      this.#measure.attachSliceBudgetMs = report.sliceBudgetMs ?? -1;
       this.#measure.attached = report.added;
       this.#measure.attachStopped = report.stopped;
+      // Frames are counted too, but not asserted: several macrotask turns can land inside one
+      // 16 ms frame, and on a host fast enough to attach it all in one slice there are none. A
+      // floor here would be theatre that passes on timing luck.
       this.#measure.framesDuringAttach = this.#frames - this.#framesAtAttachStart;
-      this.#measure.hostRanDuringAttach = hostRan;
+      this.#measure.hostRanDuringAttach = hostRan || (await hostTurnOwedByCount());
       this.#measure.streamingDone = true;
       ctx.state.set({ attached: report.added, streamingDone: true });
       ctx.state.flush();

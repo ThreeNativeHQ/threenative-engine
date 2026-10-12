@@ -1,0 +1,31 @@
+{
+  "site": "Setting Hen Butte — Valley of the Gods, Utah",
+  "size": 512,
+  "resolution": 257,
+  "spacing": 2,
+  "encoding": "int16-le-decimetres-relative-to-elevationOffset",
+  "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
+  "crs": "EPSG:26912",
+  "verticalCRS": "NAVD88 metres",
+  "sourceCRS": "EPSG:26912",
+  "center": [605770, 4125630],
+  "bbox": [605514, 4125374, 606026, 4125886],
+  "bboxWGS84": [-109.80994864099199, 37.26890841573218, -109.80410214959602, 37.273580778370714],
+  "elevationOffset": 1420,
+  "relativeElevationRange": [1.2, 134.9],
+  "tileIds": ["USGS_1M_12_x60y413_UT_WestEast_B22"],
+  "acquisitionDate": {
+    "begin": "2022-06-04",
+    "end": "2023-10-04",
+    "basis": "USGS project metadata temporal extent"
+  },
+  "acquisitionDateNote": "Project temporal extent, not a claim that every crop pixel was flown on one day.",
+  "downloadURL": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/UT_WestEast_B22/TIFF/USGS_1M_12_x60y413_UT_WestEast_B22.tif",
+  "metadataURL": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/UT_WestEast_B22/metadata/USGS_1M_12_x60y413_UT_WestEast_B22.xml",
+  "accessed": "2026-10-03",
+  "filter": "2×2 1 m area/box filter at each 2 m vertex; rounded to 0.1 m; no vertical exaggeration",
+  "sha256": "af06648d9cedf577d6ff867e7badf42fd5153c95f0d31728d52f7299aceb71c3",
+  "citation": "U.S. Geological Survey, 3D Elevation Program (3DEP), The National Map, 1 meter and 1/3 arc-second Digital Elevation Models, accessed October 3, 2026. Cropped, filtered, translated vertically and quantized by this example; not endorsed by USGS.",
+  "license": "U.S. Government public domain",
+  "licenseURL": "https://data.usgs.gov/datacatalog/data/USGS:77ae0551-c61e-4979-aedd-d797abdcde0e"
+}

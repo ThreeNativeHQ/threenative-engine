@@ -122,6 +122,8 @@ jobs:
           shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
+      - name: Generate the terrain example's ignored world source
+        run: pnpm --filter strata-terrain-preview bake
       - run: pnpm typecheck
 
   lint:
@@ -270,6 +272,9 @@ jobs:
           shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
+      - name: Generate the terrain example's ignored world source
+        if: needs.scope.outputs.selection == 'full'
+        run: pnpm --filter strata-terrain-preview bake
       - uses: ./.github/actions/playwright-chromium
         if: needs.scope.outputs.selection == 'full'
       - name: Run impacted unit contracts

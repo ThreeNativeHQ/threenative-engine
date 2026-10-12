@@ -1,10 +1,10 @@
-// PRD-473 AC-4, asset-cook half: turn each hand-placed world cell's authored chunks into one
+// PRD-473 AC-4, asset-cook half: turn supported world-cell chunks and static scatter into one
 // merged, simplified, material-grouped proxy GLB and name it on the cell manifest.
 //
 // The cook owns only the *bytes*: it writes the proxy as an ordinary model input beside the
 // world package and rewrites the world JSON with an optional `cell.proxy` record
 // (`{ glb, error, triangles, materialGroups }`). The runtime half that swaps a chunk for its
-// proxy is core's, and is deliberately absent here.
+// proxy is core's; this cook never selects a runtime representation.
 //
 // Everything a cell needs already ships in the repository — glTF-Transform for reading, merging,
 // flattening, joining, un-instancing, welding and simplifying, with `meshoptimizer` as the
@@ -13,8 +13,15 @@
 // would silently drop scenery.
 
 import path from "node:path";
-import { Document, NodeIO, PropertyType, type Scene } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import {
+  Document,
+  type Mesh,
+  type Node,
+  NodeIO,
+  PropertyType,
+  type Scene,
+} from "@gltf-transform/core";
+import { ALL_EXTENSIONS, type InstancedMesh as GltfInstances } from "@gltf-transform/extensions";
 import {
   dedup,
   flatten,
@@ -28,24 +35,24 @@ import {
   weld,
 } from "@gltf-transform/functions";
 import { MeshoptSimplifier } from "meshoptimizer";
+import { Matrix4, Quaternion, Vector3 } from "three";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
+import { deforming, primitiveTriangleCount } from "../lod/eligibility.js";
 import { TNDiscreteLod } from "../lod/extension.js";
 import { TNVirtualGeometry } from "../virtual/extension.js";
 
-/**
- * The proxy's requested simplification error, as a fraction of the merged cell's world extent.
- * glTF-Transform's simplifier takes `error` as exactly this kind of relative bound and stops
- * before exceeding it, so the published `error` is that bound lifted into metres — a conservative
- * world-space bound, never a measurement.
- *
- * It bounds *opaque* geometry only: an alpha-tested card is a hole you can see, so MASK and BLEND
- * primitives are merged but never reduced, and the published bound is the coarsest opaque group's
- * requested error. 1% of a cell's extent is roughly one pixel at the distance the proxy takes over.
+/** Requested Meshopt local-space error ratio, lifted through each retained node's world scale.
+ * MASK and BLEND primitives keep every triangle. Published error includes Float32 TRS roundoff,
+ * and is a conservative requested bound, never a measured visual result.
  */
 const HLOD_ERROR_RATIO = 0.01;
 
 /** `Primitive.Mode.TRIANGLES`, without importing the static for one constant. */
 const TRIANGLES = 4;
+// Bound expansion before joining and the finished upload separately. Oversize cells keep detail.
+const MAX_EXPANDED_BYTES = 64 * 1024 * 1024;
+const MAX_PROXY_BYTES = 4 * 1024 * 1024;
+const MAX_PROXY_NODES = 4096;
 
 /** A parsed v1 world package, as this cook understands it; anything else is left untouched. */
 export interface IWorldPackageSource {
@@ -57,6 +64,7 @@ export interface IWorldPackageSource {
 export interface IWorldSourceCell {
   /** Package-relative chunk GLB paths, exactly as authored; empty when the cell has none. */
   readonly chunks: readonly string[];
+  readonly runs: readonly { asset: string; offset: number; count: number }[];
   /** The cell's own JSON node, so a proxy is attached in place without rebuilding the file. */
   readonly raw: Record<string, unknown>;
   readonly x: number;
@@ -64,11 +72,16 @@ export interface IWorldSourceCell {
 }
 
 export interface IWorldProxy {
+  readonly bounds?: { min: number[]; max: number[] };
+  /** Absent on older records, which cover chunks only. */
+  readonly scope?: "cell" | "chunks";
+  readonly sourceTriangles?: number;
+  /** Standalone cell primitives; shared-batch runtime draw savings must be measured separately. */
+  readonly sourcePrimitives?: number;
   readonly buffer: Buffer;
   /**
-   * Conservative bound on the merged opaque geometry's world-space error, in metres: the requested
-   * simplification error as a fraction of the cell's world extent. A bound the simplifier is
-   * guaranteed to honour, not a measured value.
+   * Conservative requested bound in metres, using each primitive's local simplifier scale and
+   * retained world transform, plus placement TRS roundoff. Never a measured visual result.
    */
   readonly error: number;
   readonly logical: string;
@@ -135,6 +148,19 @@ export function readWorldPackage(input: Buffer): IWorldPackageSource | undefined
     if (!isRecord(cell)) return undefined;
     if (!Number.isInteger(cell.x) || !Number.isInteger(cell.z)) return undefined;
     if (!Array.isArray(cell.runs)) return undefined;
+    const runs: { asset: string; offset: number; count: number }[] = [];
+    for (const run of cell.runs) {
+      if (
+        !isRecord(run) ||
+        typeof run.asset !== "string" ||
+        !Number.isSafeInteger(run.offset) ||
+        !Number.isSafeInteger(run.count) ||
+        (run.offset as number) < 0 ||
+        (run.count as number) < 0
+      )
+        return undefined;
+      runs.push({ asset: run.asset, offset: run.offset as number, count: run.count as number });
+    }
     let chunks: string[] = [];
     if (cell.chunks !== undefined) {
       if (
@@ -147,6 +173,7 @@ export function readWorldPackage(input: Buffer): IWorldPackageSource | undefined
     cells.push({
       chunks,
       raw: cell,
+      runs,
       x: cell.x as number,
       z: cell.z as number,
     });
@@ -200,6 +227,7 @@ function unsupportedReason(document: Document): string | undefined {
     if (mesh === null) continue;
     for (const primitive of mesh.listPrimitives()) {
       if (primitive.listTargets().length > 0) return "morph";
+      if (deforming(primitive, false)) return "skinned";
       if (primitive.getMode() !== TRIANGLES) return "topology";
     }
   }
@@ -279,7 +307,77 @@ function clearExtras(document: Document): void {
   }
 }
 
+/** Full-cell coverage must match GLTFLoader's default scene and preserve supported surfaces. */
+function fullCellEligibility(document: Document): string | undefined {
+  const root = document.getRoot();
+  const scene = root.getDefaultScene() ?? root.listScenes()[0];
+  if (scene === undefined) return "empty-cell";
+  if (root.listScenes().length !== 1) return "scatter-scenes";
+  const nodes = new Set<Node>();
+  scene.traverse((node) => {
+    if (node.getMesh() !== null) nodes.add(node);
+  });
+  if (nodes.size !== root.listNodes().filter((node) => node.getMesh() !== null).length)
+    return "scatter-orphans";
+  for (const mesh of root.listMeshes())
+    for (const primitive of mesh.listPrimitives()) {
+      // Installed join's tangent transform mutates components in place. Retain source rather
+      // than let differently rotated normal-map directions be baked incorrectly.
+      if (primitive.getAttribute("TANGENT") !== null) return "scatter-tangents";
+      const material = primitive.getMaterial();
+      if (
+        material?.getAlphaMode() === "BLEND" ||
+        material
+          ?.listExtensions()
+          .some((extension) => extension.extensionName !== "KHR_materials_unlit")
+      )
+        return "scatter-material";
+    }
+  return undefined;
+}
+
+/** Conservative positional roundoff bound; a genuine shear is not representable by glTF TRS. */
+function placementRoundoff(node: Node, matrix: Matrix4): number | undefined {
+  const stored = node.getMatrix();
+  if (
+    !stored.every(
+      (value, axis) =>
+        Math.abs(value - (matrix.elements[axis] as number)) <=
+        1e-6 * Math.max(1, Math.abs(value), Math.abs(matrix.elements[axis] as number)),
+    )
+  )
+    return undefined;
+  let error = 0;
+  for (const primitive of node.getMesh()?.listPrimitives() ?? []) {
+    const position = primitive.getAttribute("POSITION");
+    if (position === null) continue;
+    const low = position.getMinNormalized([0, 0, 0]);
+    const high = position.getMaxNormalized([0, 0, 0]);
+    const extent = low.map((value, axis) =>
+      Math.max(Math.abs(value), Math.abs(high[axis] as number)),
+    );
+    const errors = [0, 1, 2].map(
+      (row) =>
+        Math.abs((stored[12 + row] as number) - (matrix.elements[12 + row] as number)) +
+        extent.reduce(
+          (sum, value, axis) =>
+            sum +
+            value *
+              Math.abs(
+                (stored[axis * 4 + row] as number) - (matrix.elements[axis * 4 + row] as number),
+              ),
+          0,
+        ),
+    );
+    error = Math.max(error, Math.hypot(...errors));
+  }
+  return error;
+}
+
 interface ICellBuild {
+  readonly bounds: { min: number[]; max: number[] };
+  readonly sourceTriangles: number;
+  readonly sourcePrimitives: number;
   readonly buffer: Buffer;
   readonly error: number;
   readonly materialGroups: number;
@@ -291,7 +389,7 @@ interface ICellBuild {
  * for anything the merge cannot reproduce faithfully.
  */
 async function buildCellProxy(
-  chunkBuffers: readonly Buffer[],
+  sources: readonly { buffer: Buffer; records?: Float32Array }[],
 ): Promise<ICellBuild | { readonly decline: string }> {
   const writer = new NodeIO().registerExtensions([
     ...ALL_EXTENSIONS,
@@ -300,7 +398,16 @@ async function buildCellProxy(
   ]);
   const target = new Document();
   target.createScene("proxy");
-  for (const bytes of chunkBuffers) {
+  let sourceTriangles = 0;
+  let sourcePrimitives = 0;
+  let expandedBytes = 0;
+  let inputBytes = 0;
+  let expandedNodes = 0;
+  let transformError = 0;
+  const coversScatter = sources.some((source) => source.records !== undefined);
+  for (const { buffer: bytes, records } of sources) {
+    inputBytes += bytes.length;
+    if (inputBytes > MAX_EXPANDED_BYTES) return { decline: "source-budget" };
     let document: Document;
     try {
       const io = await createGltfReader(bytes);
@@ -310,22 +417,95 @@ async function buildCellProxy(
     }
     const reason = unsupportedReason(document);
     if (reason !== undefined) return { decline: reason };
-    // GPU instancing draws one Mesh at N authored transforms, and `join` would skip the batch
-    // node silently. Expanding it is installed support: each instance becomes an ordinary child
-    // node, so the merge keeps every instance. Done on the source, where the extension property
-    // definitely lives, before the document is merged.
-    await document.transform(uninstance());
-    // A malformed chunk is refused before it reaches the merge: the whole cell is declined, so
-    // no half-merged proxy can carry non-finite geometry forward.
+    const fullCellReason = coversScatter ? fullCellEligibility(document) : undefined;
+    if (fullCellReason !== undefined) return { decline: fullCellReason };
     if (!finiteGeometry(document)) return { decline: "malformed-geometry" };
-    mergeInto(target, document);
+    const repetitions = records === undefined ? 1 : records.length / 8;
+    const chunkTransforms: { node: Node; matrix: Matrix4 }[] = [];
+    for (const node of document.getRoot().listNodes()) {
+      const instances = node.getExtension<GltfInstances>("EXT_mesh_gpu_instancing");
+      // Current scatter adoption uses each loaded mesh's base shape, not its inner instance matrices.
+      if (coversScatter && instances !== null) return { decline: "scatter-instancing" };
+      if (coversScatter && records === undefined && node.getMesh() !== null) {
+        // Flatten also decomposes inherited matrices. Check chunk world transforms before it,
+        // just as placement transforms are checked below, without changing the source hierarchy.
+        const matrix = new Matrix4().fromArray(node.getWorldMatrix());
+        const probe = document.createNode().setMesh(node.getMesh()).setMatrix(matrix.toArray());
+        const roundoff = placementRoundoff(probe, matrix);
+        probe.dispose();
+        if (roundoff === undefined) return { decline: "scatter-shear" };
+        transformError = Math.max(transformError, roundoff);
+        chunkTransforms.push({ node, matrix });
+      }
+      const copies = (instances?.listAttributes()[0]?.getCount() ?? 1) * repetitions;
+      if (node.getMesh() !== null) expandedNodes += copies;
+      if (expandedNodes > MAX_PROXY_NODES) return { decline: "node-budget" };
+      for (const primitive of node.getMesh()?.listPrimitives() ?? []) {
+        sourceTriangles += primitiveTriangleCount(primitive) * copies;
+        sourcePrimitives += 1;
+        for (const semantic of primitive.listSemantics())
+          expandedBytes += (primitive.getAttribute(semantic)?.getArray()?.byteLength ?? 0) * copies;
+        expandedBytes += (primitive.getIndices()?.getArray()?.byteLength ?? 0) * copies;
+      }
+    }
+    if (expandedBytes > MAX_EXPANDED_BYTES) return { decline: "expansion-budget" };
+    // Snapshot first, then root-attach: flatten must never decompose an intermediate ancestor
+    // whose shear cancels out again at a drawn descendant.
+    const chunkScene = document.getRoot().getDefaultScene() ?? document.getRoot().listScenes()[0];
+    for (const { node, matrix } of chunkTransforms) {
+      node.setMatrix(matrix.toArray());
+      chunkScene?.addChild(node);
+    }
+    // The cap above precedes both embedded GPU-instance expansion and outer placement expansion.
+    try {
+      await document.transform(uninstance());
+    } catch {
+      return { decline: "malformed-instancing" };
+    }
+    if (!finiteGeometry(document)) return { decline: "malformed-geometry" };
+    if (records === undefined) mergeInto(target, document);
+    else {
+      const scene = document.getRoot().getDefaultScene() ?? document.getRoot().listScenes()[0];
+      if (scene === undefined) return { decline: "empty-cell" };
+      const nodes: Node[] = [];
+      scene.traverse((node) => {
+        if (node.getMesh() !== null) nodes.push(node);
+      });
+      const mapped = mergeDocuments(target, document);
+      const destination = target.getRoot().listScenes()[0] as Scene;
+      const placement = new Matrix4();
+      const position = new Vector3();
+      const rotation = new Quaternion();
+      const scale = new Vector3();
+      for (let at = 0; at < records.length; at += 8) {
+        placement.compose(
+          position.fromArray(records, at),
+          rotation.fromArray(records, at + 3),
+          scale.setScalar(records[at + 7] as number),
+        );
+        for (const node of nodes) {
+          const matrix = placement.clone().multiply(new Matrix4().fromArray(node.getWorldMatrix()));
+          const placed = target
+            .createNode()
+            .setMesh(mapped.get(node.getMesh() as Mesh) as Mesh)
+            .setMatrix(matrix.toArray());
+          const roundoff = placementRoundoff(placed, matrix);
+          if (roundoff === undefined) return { decline: "scatter-shear" };
+          transformError = Math.max(transformError, roundoff);
+          destination.addChild(placed);
+        }
+      }
+      // Copied source nodes/scenes must not add another unplaced copy of the asset.
+      for (const node of document.getRoot().listNodes()) mapped.get(node)?.dispose();
+      for (const sourceScene of document.getRoot().listScenes()) mapped.get(sourceScene)?.dispose();
+    }
   }
   try {
     // Geometry keeps its authored node matrices: join moves each primitive into the destination
     // node's space through glTF-Transform's `transformPrimitive`, which reverses winding for a
     // mirroring matrix and applies the normal matrix for a nonuniform scale. A mirrored or
-    // nonuniform authored transform therefore keeps its visible face winding, normal/tangent
-    // orientation and material sidedness without forcing `DoubleSide`.
+    // nonuniform authored transform keeps its face winding, normal orientation and sidedness.
+    // Full-cell tangent-bearing sources were declined before reaching this transform.
     await target.transform(dedup({ propertyTypes: [PropertyType.MATERIAL, PropertyType.TEXTURE] }));
     await target.transform(flatten());
     await target.transform(join());
@@ -344,7 +524,7 @@ async function buildCellProxy(
   if (!Number.isFinite(extent)) return { decline: "malformed-geometry" };
 
   await MeshoptSimplifier.ready;
-  let error = 0;
+  let error = transformError;
   for (const mesh of target.getRoot().listMeshes()) {
     for (const primitive of mesh.listPrimitives()) {
       const alphaMode = primitive.getMaterial()?.getAlphaMode();
@@ -352,6 +532,22 @@ async function buildCellProxy(
       const before =
         primitive.getIndices()?.getCount() ?? primitive.getAttribute("POSITION")?.getCount() ?? 0;
       if (before < 3) return { decline: "degenerate-primitive" };
+      const position = primitive.getAttribute("POSITION");
+      if (position === null) return { decline: "malformed-geometry" };
+      const low = position.getMinNormalized([0, 0, 0]);
+      const high = position.getMaxNormalized([0, 0, 0]);
+      // Meshopt normalizes by the largest local axis span. Frobenius norm bounds every retained
+      // world transform's operator norm, including rotation and nonuniform/mirrored scale.
+      const localScale = Math.max(...high.map((value, axis) => value - (low[axis] as number)));
+      let worldScale = 0;
+      for (const node of target.getRoot().listNodes()) {
+        if (node.getMesh() !== mesh) continue;
+        const matrix = node.getWorldMatrix();
+        worldScale = Math.max(
+          worldScale,
+          Math.hypot(...[0, 1, 2, 4, 5, 6, 8, 9, 10].map((axis) => matrix[axis] as number)),
+        );
+      }
       simplifyPrimitive(primitive, {
         simplifier: MeshoptSimplifier,
         error: HLOD_ERROR_RATIO,
@@ -361,7 +557,8 @@ async function buildCellProxy(
       const after = primitive.getIndices()?.getCount() ?? 0;
       // Never silently drop a primitive that was visible: a degenerate result declines the cell.
       if (after < 3) return { decline: "degenerate-primitive" };
-      if (after < before) error = Math.max(error, HLOD_ERROR_RATIO * extent);
+      if (after < before)
+        error = Math.max(error, transformError + HLOD_ERROR_RATIO * localScale * worldScale);
     }
   }
   await target.transform(prune());
@@ -381,13 +578,16 @@ async function buildCellProxy(
   if (materialGroups === 0) return { decline: "empty-cell" };
   return {
     buffer: Buffer.from(await writer.writeBinary(target)),
+    bounds: getBounds(scene as Scene),
+    sourceTriangles,
+    sourcePrimitives,
     error,
     materialGroups,
     triangles,
   };
 }
 
-/** Cooks every eligible cell of one world package; cells without chunks are skipped silently. */
+/** Cooks eligible populated cells. Scatter scopes cover all runs and chunks or decline whole. */
 export async function cookWorldProxies(
   options: IWorldProxyCookOptions,
 ): Promise<IWorldProxyResult> {
@@ -395,8 +595,13 @@ export async function cookWorldProxies(
   const proxies: IWorldProxy[] = [];
   const declined: IWorldProxyDecline[] = [];
   for (const cell of world.cells) {
-    if (cell.chunks.length === 0) continue;
-    const buffers: Buffer[] = [];
+    if (cell.chunks.length === 0 && cell.runs.every((run) => run.count === 0)) continue;
+    const sources: { buffer: Buffer; records?: Float32Array }[] = [];
+    if (cell.runs.reduce((bytes, run) => bytes + run.count * 32, 0) > MAX_EXPANDED_BYTES) {
+      declined.push({ reason: "placement-budget", x: cell.x, z: cell.z });
+      continue;
+    }
+    let stagedSourceBytes = 0;
     let reason: string | undefined;
     for (const chunk of cell.chunks) {
       const logical = resolveChunkLogical(worldLogical, chunk);
@@ -409,22 +614,120 @@ export async function cookWorldProxies(
         break;
       }
       try {
-        buffers.push(await read(logical));
+        const buffer = await read(logical);
+        stagedSourceBytes += buffer.length;
+        if (stagedSourceBytes > MAX_EXPANDED_BYTES) {
+          reason = "source-budget";
+          break;
+        }
+        sources.push({ buffer });
       } catch {
         reason = "missing-chunk";
         break;
+      }
+    }
+    if (reason === undefined && cell.runs.some((run) => run.count > 0)) {
+      const placementsLogical =
+        typeof world.json.placements === "string"
+          ? resolveChunkLogical(worldLogical, world.json.placements)
+          : undefined;
+      let placements: Buffer | undefined;
+      if (
+        placementsLogical === undefined ||
+        (included !== undefined && !included(placementsLogical))
+      )
+        reason = "excluded-placements";
+      else
+        try {
+          placements = await read(placementsLogical);
+        } catch {
+          reason = "missing-placements";
+        }
+      for (const run of cell.runs) {
+        if (reason !== undefined) break;
+        if (run.count === 0) continue;
+        if (run.count > MAX_EXPANDED_BYTES / 64) {
+          reason = "placement-budget";
+          break;
+        }
+        const definition = isRecord(world.json.assets) ? world.json.assets[run.asset] : undefined;
+        if (!isRecord(definition) || typeof definition.glb !== "string") {
+          reason = "unknown-scatter-asset";
+          break;
+        }
+        if (definition.maxDistance !== undefined) {
+          reason = "scatter-distance-filter";
+          break;
+        }
+        const logical = resolveChunkLogical(worldLogical, definition.glb);
+        if (logical === undefined || (included !== undefined && !included(logical))) {
+          reason = "excluded-scatter";
+          break;
+        }
+        if (placements === undefined || (run.offset + run.count) * 32 > placements.length) {
+          reason = "malformed-placements";
+          break;
+        }
+        const records = new Float32Array(run.count * 8);
+        for (let at = run.offset * 32; at < (run.offset + run.count) * 32; at += 32) {
+          const record = Array.from({ length: 8 }, (_, index) =>
+            (placements as Buffer).readFloatLE(at + index * 4),
+          );
+          if (
+            !record.every(Number.isFinite) ||
+            Math.abs(Math.hypot(...record.slice(3, 7)) - 1) > 0.0001 ||
+            record[7] === 0
+          ) {
+            reason = "malformed-placements";
+            break;
+          }
+          records.set(record, (at - run.offset * 32) / 4);
+        }
+        if (reason !== undefined) break;
+        try {
+          const buffer = await read(logical);
+          stagedSourceBytes += buffer.length;
+          if (stagedSourceBytes > MAX_EXPANDED_BYTES) {
+            reason = "source-budget";
+            break;
+          }
+          sources.push({ buffer, records });
+        } catch {
+          reason = "missing-scatter";
+        }
       }
     }
     if (reason !== undefined) {
       declined.push({ reason, x: cell.x, z: cell.z });
       continue;
     }
-    const built = await buildCellProxy(buffers);
+    let built: Awaited<ReturnType<typeof buildCellProxy>>;
+    try {
+      built = await buildCellProxy(sources);
+    } catch {
+      built = { decline: "proxy-build-failed" };
+    }
     if ("decline" in built) {
       declined.push({ reason: built.decline, x: cell.x, z: cell.z });
       continue;
     }
+    const coversScatter = cell.runs.some((run) => run.count > 0);
+    if (
+      built.buffer.length > MAX_PROXY_BYTES ||
+      (coversScatter && built.triangles >= built.sourceTriangles)
+    ) {
+      declined.push({
+        reason: built.buffer.length > MAX_PROXY_BYTES ? "proxy-budget" : "no-triangle-reduction",
+        x: cell.x,
+        z: cell.z,
+      });
+      continue;
+    }
     proxies.push({
+      bounds: built.bounds,
+      scope: coversScatter ? "cell" : "chunks",
+      sourceTriangles: built.sourceTriangles,
+      sourcePrimitives: built.sourcePrimitives,
       buffer: built.buffer,
       error: built.error,
       logical: proxyLogicalFor(worldLogical, cell.x, cell.z),
@@ -450,6 +753,10 @@ export function applyProxiesToWorld(
     cell.raw.proxy = {
       error: proxy.error,
       glb: proxy.reference,
+      ...(proxy.bounds === undefined ? {} : { bounds: proxy.bounds }),
+      ...(proxy.scope === undefined ? {} : { scope: proxy.scope }),
+      ...(proxy.sourceTriangles === undefined ? {} : { sourceTriangles: proxy.sourceTriangles }),
+      ...(proxy.sourcePrimitives === undefined ? {} : { sourcePrimitives: proxy.sourcePrimitives }),
       materialGroups: proxy.materialGroups,
       triangles: proxy.triangles,
     };
