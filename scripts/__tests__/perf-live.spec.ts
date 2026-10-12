@@ -22,6 +22,31 @@ describe("perf-live", () => {
     },
   );
 
+  it("carries p99 and the hitch count into each row, so the tooltip can show them", () => {
+    const run = {
+      arm: "tn-web",
+      build: { notes: "", type: "release" },
+      device: { battery: null, label: "d" },
+      display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
+      driver: { adapter: "a", renderer: "r" },
+      engine: { name: "threenative", version: "w" },
+      rungs: [
+        {
+          drawCalls: 5,
+          frameMs: [10, 10, 10, 10, 10, 10, 10, 10, 10, 50],
+          mode: "L1",
+          objectCount: 4,
+          positionHash: "h",
+          repeat: 0,
+          triangles: 1,
+          visibleObjects: 4,
+        },
+      ],
+    };
+    const [row] = rowsOf(run, "x.json", 1);
+    expect(row).toMatchObject({ hitches: 1, p50: 10, p99: 50 });
+  });
+
   it("fails closed on a json that is not a run report", () => {
     expect(() => rowsOf({ hello: 1 }, "x.json", 1)).toThrow();
   });

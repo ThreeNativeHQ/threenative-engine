@@ -81,6 +81,8 @@ export interface IRungReport {
   ladder?: ILadderCounts;
   /** PRD-464: what the rung's own read-back frame said about itself, sampled on the last warmup frame. */
   renderCheck?: IFrameStats;
+  /** Pipelines created inside the measured window; warmup compiles are not counted. */
+  pipelineCompiles: number;
   stageReport?: unknown;
   stepMs?: number[];
   mode: RenderMode;
@@ -281,6 +283,7 @@ export async function measureRung(
   let submitMs = 0;
   const completion = queueCompletion(harness.renderer);
   let windowStart: number | undefined;
+  let compilesAtWindowStart = 0;
   let previous = clock.now();
   const statsFrame = Math.floor((knobs.frames + knobs.warmup) / 2);
   const hooks =
@@ -298,6 +301,7 @@ export async function measureRung(
       // wall window and the legacy frame-interval series. It is untimed work in neither.
       windowStart = clock.now();
       previous = windowStart;
+      compilesAtWindowStart = harness.pipelineCompiles();
     }
     const submittedAt = clock.now();
     harness.step(frameIndex);
@@ -353,6 +357,7 @@ export async function measureRung(
     ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
     ...(ladder === undefined ? {} : { ladder }),
     ...(renderCheck === undefined ? {} : { renderCheck }),
+    pipelineCompiles: harness.pipelineCompiles() - compilesAtWindowStart,
     stageReport,
     stepMs,
     mode: rung.mode,

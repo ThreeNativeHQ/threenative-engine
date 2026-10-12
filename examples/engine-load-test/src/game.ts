@@ -152,6 +152,8 @@ export interface ILoadTestHarness {
    * fails instead of comparing two differently-sized scenes.
    */
   foxMeasurement(): IFoxMeasurement | undefined;
+  /** Render and compute pipelines this renderer has created so far; the driver reads the window's delta. */
+  pipelineCompiles(): number;
   positionHash: string;
   /**
    * PRD-464: render the rung's current frame into a readable target and report what the pixels say.
@@ -351,6 +353,26 @@ export function writeInstanceMatrices(
   return changed;
 }
 
+/**
+ * Counts every pipeline three asks its backend to create. `Pipelines` calls these two methods only on
+ * a cache miss, so the count is the number of compiles. A backend without them (a moved seam) throws:
+ * the scoreboard refuses a missing counter, and a silent zero would pass it.
+ */
+export function countPipelineCreates(renderer: WebGPURenderer): () => number {
+  const backend = (renderer as unknown as { backend?: Record<string, unknown> }).backend;
+  let count = 0;
+  for (const method of ["createRenderPipeline", "createComputePipeline"]) {
+    const original = backend?.[method];
+    if (backend === undefined || typeof original !== "function")
+      throw new Error(`TN_BENCH_NO_PIPELINE_COUNTER:${method}`);
+    backend[method] = function (this: unknown, ...args: unknown[]) {
+      count += 1;
+      return original.apply(this, args);
+    };
+  }
+  return () => count;
+}
+
 export async function createLoadTestHarness(
   canvas: HTMLCanvasElement,
   adapterLabel = "unknown",
@@ -364,6 +386,7 @@ export async function createLoadTestHarness(
   renderer.setPixelRatio(1);
   renderer.setSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, false);
   await renderer.init();
+  const pipelineCompiles = countPipelineCreates(renderer);
   // three's own rAF clears the per-frame counters even when no animation loop is set, so a
   // harness that reads them after yielding reads zero. This harness owns the reset.
   renderer.info.autoReset = false;
@@ -783,6 +806,7 @@ export async function createLoadTestHarness(
       enginePasses?.matrixWorld.dispose();
       renderer.dispose();
     },
+    pipelineCompiles,
     get positionHash() {
       return positionHash(state?.placements ?? []);
     },

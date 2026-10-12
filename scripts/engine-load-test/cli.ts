@@ -32,9 +32,12 @@ import {
   laneForId,
   parsePerformanceLaneManifest,
   parseRunReport,
+  readHostLoad,
   renderArmMarkdown,
   renderComparisonMarkdown,
   renderPerformanceCheck,
+  scoreboardRows,
+  withHostLoad,
 } from "./report.js";
 import { runAndroidArm } from "./run-android.js";
 import { desktopTimeoutMs, runGodotDesktop, runTnDesktop } from "./run-desktop.js";
@@ -354,21 +357,25 @@ async function runArmCommand(arm: string, options: ILadderOptions): Promise<void
       `${path.relative(repoRoot, file)} already exists; choose a new --out to retain every attempt`,
       1,
     );
-  const report =
+  const measured =
     arm === "plain-three-webgpu"
       ? await runPlainThreeWebProduction(options)
       : await runRequestedArm(arm, options);
-  if (report.arm !== arm) {
+  if (measured.arm !== arm) {
     throw new BenchError(
       "TN_BENCH_ARM_MISMATCH",
-      `asked for ${arm}, the run reported ${report.arm}. Check the build's platform stamp.`,
+      `asked for ${arm}, the run reported ${measured.arm}. Check the build's platform stamp.`,
     );
   }
+  // Read after the run, so the load that gets recorded is the load the timed window ran under.
+  const report = withHostLoad(measured, readHostLoad());
   await writeFile(
     file,
     `${JSON.stringify(report, null, 2)}\n`,
     immutable ? { flag: "wx" } : undefined,
   );
+  // The report is kept either way; a row with a counter missing is not published as a result.
+  scoreboardRows(report);
   process.stdout.write(`${renderArmMarkdown(report)}\n\nwrote ${path.relative(repoRoot, file)}\n`);
 
   // The control is a pilot, not a qualified run: it has no paired-block baseline, so it is written

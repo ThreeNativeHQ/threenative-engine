@@ -2,6 +2,7 @@
 // were not the same scene, and only then compute a knee. A missing field, a wrong type, or an
 // empty sample array is an error here — never a default, never a skip.
 
+import os from "node:os";
 import {
   FRAME_STAT_KEYS,
   type IFoxMeasurement,
@@ -112,6 +113,11 @@ export interface IRunReportRung {
   objectCount: number;
   /** Optional on legacy/native reports; every initial built placement on new browser reports. */
   initialPlacementSha256?: string;
+  /**
+   * Pipelines the renderer created inside the measured window (the warmup's are excluded). Optional
+   * so reports from before the counter still parse; `scoreboardRows` refuses a rung without it.
+   */
+  pipelineCompiles?: number;
   positionHash: string;
   repeat: number;
   stepMs?: number[];
@@ -139,9 +145,23 @@ export interface IRunReport {
   display: { height: number; refreshHz: number; vsync: boolean; width: number };
   driver: { adapter: string; renderer: string };
   engine: { name: EngineName; version: string };
+  /** Host load when the run finished, stamped by the CLI; see `withHostLoad`. */
+  hostLoad?: IHostLoad;
   identity?: IPerformanceIdentity;
   provisional?: string[];
   rungs: IRunReportRung[];
+}
+
+/**
+ * The one-minute load average and the core count of the machine that ran the bench. Absolute
+ * milliseconds measured while more than half the cores were busy are somebody else's contention.
+ */
+export interface IHostLoadReading {
+  cores: number;
+  load1: number;
+}
+export interface IHostLoad extends IHostLoadReading {
+  absolutes: "invalid-absolute" | "valid";
 }
 
 /** Identity fields that make a timed result comparable to its accepted baseline. */
@@ -164,10 +184,15 @@ export interface IPerformanceIdentity {
 
 export interface IRungSummary {
   drawCalls: number;
+  /** Frames over `HITCH_FACTOR` times the rung's own p50, median across repeats. */
+  hitches: number;
   mode: RenderMode;
   objectCount: number;
   p50: number;
   p95: number;
+  p99: number;
+  /** Median across repeats; undefined when no repeat carried the counter. */
+  pipelineCompiles?: number;
   repeats: number;
   sampleCount: number;
   triangles: number;
@@ -686,9 +711,21 @@ export function parseRunReport(value: unknown): IRunReport {
         `${path}.ladder, .renderCheck and .foxMeasurement are only meaningful on a realistic-scene rung, not on ${mode}`,
       );
     }
+    const pipelineCompiles = rung.pipelineCompiles;
+    if (
+      pipelineCompiles !== undefined &&
+      (typeof pipelineCompiles !== "number" ||
+        !Number.isInteger(pipelineCompiles) ||
+        pipelineCompiles < 0)
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.pipelineCompiles must be a non-negative integer when present`,
+      );
     return {
       ...parseCompletedWork(rung, path, frameMs.length),
       drawCalls: requireNumber(rung, "drawCalls", path),
+      ...(pipelineCompiles === undefined ? {} : { pipelineCompiles }),
       frameMs: frameMs as number[],
       ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
       ...(ladder === undefined ? {} : { ladder }),
@@ -724,14 +761,87 @@ export function parseRunReport(value: unknown): IRunReport {
       name: engineName as EngineName,
       version: requireString(engine, "version", "report.engine"),
     },
+    ...(root.hostLoad === undefined ? {} : { hostLoad: parseHostLoad(root.hostLoad) }),
     ...(root.identity === undefined ? {} : { identity: parseReportIdentity(root.identity) }),
     ...(provisional === undefined ? {} : { provisional }),
     rungs,
   };
 }
 
+/** Absolutes are invalid once the one-minute load passes half the cores. */
+export function absolutesVerdict(reading: IHostLoadReading): IHostLoad["absolutes"] {
+  return reading.load1 > reading.cores / 2 ? "invalid-absolute" : "valid";
+}
+
+export interface IHostLoadSource {
+  cores(): number;
+  loadavg(): number[];
+}
+
+/** Defaults to this machine; a spec passes a stub. */
+export function readHostLoad(
+  source: IHostLoadSource = { cores: () => os.availableParallelism(), loadavg: os.loadavg },
+): IHostLoadReading {
+  const cores = source.cores();
+  const load1 = source.loadavg()[0];
+  if (!Number.isInteger(cores) || cores < 1 || load1 === undefined || !Number.isFinite(load1))
+    throw new BenchError(
+      "TN_BENCH_HOST_LOAD_UNREADABLE",
+      `cannot read host load (load1 ${String(load1)}, cores ${String(cores)}); an unmeasured load cannot vouch for absolutes`,
+    );
+  return { cores, load1 };
+}
+
+export function withHostLoad(run: IRunReport, reading: IHostLoadReading): IRunReport {
+  return { ...run, hostLoad: { ...reading, absolutes: absolutesVerdict(reading) } };
+}
+
+function parseHostLoad(value: unknown): IHostLoad {
+  const source = requireObject(value, "report.hostLoad");
+  const reading = {
+    cores: requireNumber(source, "cores", "report.hostLoad"),
+    load1: requireNumber(source, "load1", "report.hostLoad"),
+  };
+  // Recomputed, never trusted: a report that says "valid" above half the cores is lying.
+  const absolutes = absolutesVerdict(reading);
+  if (source.absolutes !== absolutes)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `report.hostLoad.absolutes is ${String(source.absolutes)} but load ${reading.load1} on ${reading.cores} cores is ${absolutes}`,
+    );
+  return { ...reading, absolutes };
+}
+
 export function rungKey(mode: RenderMode, objectCount: number): string {
   return `${mode}@${objectCount}`;
+}
+
+/** A hitch is a frame slower than this many times the rung's own median: a missed deadline. */
+export const HITCH_FACTOR = 2;
+
+function countHitches(frameMs: readonly number[]): number {
+  const limit = HITCH_FACTOR * percentile(frameMs, 0.5);
+  return frameMs.filter((sample) => sample > limit).length;
+}
+
+/**
+ * The scoreboard's rows: `summarize` plus the refusal to publish a row with a counter missing. The
+ * percentiles, hitches and draw calls come from the frame series, so the only counter a driver can
+ * leave out is `pipelineCompiles`, and a rung that did not report one is a hole, never a zero.
+ */
+export function scoreboardRows(report: IRunReport): IRungSummary[] {
+  report.rungs.forEach((rung, index) => {
+    const path = `report.rungs[${index}] (${rung.mode}@${rung.objectCount})`;
+    if (!Number.isInteger(rung.drawCalls) || rung.drawCalls < 1)
+      throw new BenchError("TN_BENCH_COUNTER_MISSING", `${path} drawCalls is ${rung.drawCalls}`);
+    const compiles = rung.pipelineCompiles;
+    if (compiles === undefined || !Number.isInteger(compiles) || compiles < 0)
+      throw new BenchError(
+        "TN_BENCH_COUNTER_MISSING",
+        `${path} reported no pipelineCompiles (${String(compiles)}); a scoreboard row needs the counter, not a default`,
+      );
+  });
+  return summarize(report);
 }
 
 export function summarize(report: IRunReport): IRungSummary[] {
@@ -745,12 +855,18 @@ export function summarize(report: IRunReport): IRungSummary[] {
   const summaries: IRungSummary[] = [];
   for (const bucket of groups.values()) {
     const first = bucket[0] as IRunReportRung;
+    const compiles = bucket.map((rung) => rung.pipelineCompiles);
     summaries.push({
       drawCalls: median(bucket.map((rung) => rung.drawCalls)),
+      hitches: median(bucket.map((rung) => countHitches(rung.frameMs))),
       mode: first.mode,
       objectCount: first.objectCount,
       p50: median(bucket.map((rung) => percentile(rung.frameMs, 0.5))),
       p95: median(bucket.map((rung) => percentile(rung.frameMs, 0.95))),
+      p99: median(bucket.map((rung) => percentile(rung.frameMs, 0.99))),
+      ...(compiles.every((count) => count !== undefined)
+        ? { pipelineCompiles: median(compiles as number[]) }
+        : {}),
       repeats: bucket.length,
       sampleCount: first.frameMs.length,
       triangles: median(bucket.map((rung) => rung.triangles)),
@@ -1452,6 +1568,12 @@ export function checkPerformance(
       `${report.arm} report is provisional (${report.provisional.join(", ")}); a provisional number cannot clear a performance baseline.`,
     );
   }
+  if (report.hostLoad?.absolutes === "invalid-absolute") {
+    throw new BenchError(
+      "TN_BENCH_INVALID_ABSOLUTE",
+      `${report.arm} ran at load ${report.hostLoad.load1} on ${report.hostLoad.cores} cores; its absolute milliseconds cannot clear a performance baseline.`,
+    );
+  }
   if (!Number.isFinite(tolerance) || tolerance < 0) {
     throw new BenchError(
       "TN_BENCH_BAD_TOLERANCE",
@@ -1819,9 +1941,16 @@ export function renderArmMarkdown(report: IRunReport): string {
     `- adapter: ${report.driver.adapter}`,
     `- device: ${report.device.label}, ${report.display.width}×${report.display.height} @ ${report.display.refreshHz} Hz, vsync ${report.display.vsync ? "on" : "off"}`,
     "",
-    "| mode | N | p50 ms | p95 ms | draws | tris | visible | repeats × samples |",
-    "|---|---|---|---|---|---|---|---|",
+    "| mode | N | p50 ms | p95 ms | p99 ms | hitches | draws | compiles | tris | visible | repeats × samples |",
+    "|---|---|---|---|---|---|---|---|---|---|---|",
   ];
+  if (report.hostLoad !== undefined) {
+    lines.splice(
+      6,
+      0,
+      `- host load: ${report.hostLoad.load1.toFixed(2)} on ${report.hostLoad.cores} cores, absolutes ${report.hostLoad.absolutes}`,
+    );
+  }
   if (report.deviceCondition !== undefined) {
     lines.splice(
       6,
@@ -1838,7 +1967,7 @@ export function renderArmMarkdown(report: IRunReport): string {
   }
   for (const summary of summaries) {
     lines.push(
-      `| ${summary.mode} | ${summary.objectCount} | ${summary.p50.toFixed(2)} | ${summary.p95.toFixed(2)} | ${summary.drawCalls} | ${summary.triangles} | ${summary.visibleObjects} | ${summary.repeats} × ${summary.sampleCount} |`,
+      `| ${summary.mode} | ${summary.objectCount} | ${summary.p50.toFixed(2)} | ${summary.p95.toFixed(2)} | ${summary.p99.toFixed(2)} | ${summary.hitches} | ${summary.drawCalls} | ${summary.pipelineCompiles ?? "n/a"} | ${summary.triangles} | ${summary.visibleObjects} | ${summary.repeats} × ${summary.sampleCount} |`,
     );
   }
   lines.push(

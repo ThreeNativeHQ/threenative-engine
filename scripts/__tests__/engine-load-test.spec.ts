@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ILadderArm, MeasurementClock } from "../../examples/engine-load-test/src/driver.js";
 import {
   type ILoadTestHarness,
+  countPipelineCreates,
   initInstanceMatrices,
   writeInstanceMatrices,
 } from "../../examples/engine-load-test/src/game.js";
@@ -59,8 +60,11 @@ import {
   knee,
   looksVsyncPinned,
   parseRunReport,
+  readHostLoad,
   renderArmMarkdown,
+  scoreboardRows,
   summarize,
+  withHostLoad,
 } from "../engine-load-test/report.js";
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
 import { KILL_GRACE_MS, runCapturing } from "../engine-load-test/run-desktop.js";
@@ -3298,6 +3302,7 @@ describe("the completed-work measurement boundary", () => {
       dispose: () => {},
       foxMeasurement: () => undefined,
       ladderCounts: () => undefined,
+      pipelineCompiles: () => 0,
       placementBytes: new Uint8Array(8),
       positionHash: "00000000",
       // The stub draws no pixels; the driver only probes a rung that asked to be a ladder rung, and
@@ -3420,5 +3425,158 @@ describe("the completed-work measurement boundary", () => {
         /TN_BENCH_WARMUP_GE_FRAMES/u,
       );
     }
+  });
+
+  it("records the pipelines the measured window compiled, not the warmup's", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock();
+    let frame = 0;
+    // Four pipelines compile while warming up (frames 0-1) and two more inside the window.
+    const harness: ILoadTestHarness = {
+      ...stubHarness(undefined, advance),
+      pipelineCompiles: () => (frame < 2 ? 4 : frame < 3 ? 5 : 6),
+      step: (index) => {
+        frame = index;
+      },
+    };
+    const result = await measureRung(
+      harness,
+      ARM,
+      { mode: "L1", objectCount: 64 },
+      0,
+      KNOBS,
+      clock,
+    );
+    expect(result.pipelineCompiles).toBe(2);
+  });
+});
+
+describe("the scoreboard counters", () => {
+  // Eight frames at 10 ms and two spikes: a hitch is a frame over twice the rung's own p50.
+  const spiky = [...series(10, 8), 25, 40];
+
+  it("carries p95, p99, the hitch count, draw calls and pipeline compiles on every row", () => {
+    const [row] = scoreboardRows(
+      report({ rungs: [rung({ frameMs: spiky, pipelineCompiles: 3 })] }),
+    );
+    expect(row).toMatchObject({
+      drawCalls: 4097,
+      hitches: 2,
+      mode: "L1",
+      objectCount: 4096,
+      p50: 10,
+      p95: 40,
+      p99: 40,
+      pipelineCompiles: 3,
+    });
+  });
+
+  it("counts no hitch on a flat series", () => {
+    const [row] = scoreboardRows(report({ rungs: [rung({ pipelineCompiles: 0 })] }));
+    expect(row?.hitches).toBe(0);
+  });
+
+  it("fails closed on a rung whose pipeline-compile counter is missing", () => {
+    expect(() => scoreboardRows(report())).toThrow(/TN_BENCH_COUNTER_MISSING.*pipelineCompiles/u);
+  });
+
+  it("fails closed on a counter that is not a count", () => {
+    for (const bad of [-1, 1.5, Number.NaN]) {
+      expect(() => scoreboardRows(report({ rungs: [rung({ pipelineCompiles: bad })] }))).toThrow(
+        /TN_BENCH_COUNTER_MISSING/u,
+      );
+    }
+  });
+
+  it("fails closed on a rung that submitted no draw call", () => {
+    expect(() =>
+      scoreboardRows(report({ rungs: [rung({ drawCalls: 0, pipelineCompiles: 0 })] })),
+    ).toThrow(/TN_BENCH_COUNTER_MISSING.*drawCalls/u);
+  });
+
+  it("still parses a report from before the counter existed, and rejects a malformed one", () => {
+    expect(() => parseRunReport(JSON.parse(JSON.stringify(report())))).not.toThrow();
+    const bad = JSON.parse(JSON.stringify(report({ rungs: [rung({ pipelineCompiles: 2 })] })));
+    bad.rungs[0].pipelineCompiles = "two";
+    expect(() => parseRunReport(bad)).toThrow(/TN_BENCH_BAD_SHAPE.*pipelineCompiles/u);
+  });
+
+  it("prints the new columns in the arm table", () => {
+    const text = renderArmMarkdown(
+      report({ rungs: [rung({ frameMs: spiky, pipelineCompiles: 3 })] }),
+    );
+    expect(text).toContain("| p99 ms | hitches |");
+    expect(text).toContain("| compiles |");
+  });
+});
+
+describe("the pipeline-compile counter", () => {
+  it("counts each pipeline the backend is asked to create, and still creates it", () => {
+    const created: string[] = [];
+    const backend = {
+      createComputePipeline: (name: string) => created.push(name),
+      createRenderPipeline: (name: string) => created.push(name),
+    };
+    const count = countPipelineCreates({ backend } as never);
+    backend.createRenderPipeline("a");
+    backend.createRenderPipeline("b");
+    backend.createComputePipeline("c");
+    expect(count()).toBe(3);
+    expect(created).toEqual(["a", "b", "c"]);
+  });
+
+  it("fails closed on a backend that moved the seam", () => {
+    expect(() => countPipelineCreates({ backend: {} } as never)).toThrow(
+      /TN_BENCH_NO_PIPELINE_COUNTER/u,
+    );
+    expect(() => countPipelineCreates({} as never)).toThrow(/TN_BENCH_NO_PIPELINE_COUNTER/u);
+  });
+});
+
+describe("the host-load verdict", () => {
+  const source = (load1: number, cores: number) => ({
+    cores: () => cores,
+    loadavg: () => [load1, 0, 0],
+  });
+  const baseline = {
+    evidence: "docs/verification/prd-130-phase-6-2026-08-16.md",
+    rungs: { "L1@4096": 10 },
+  };
+
+  it("reads the one-minute load and the core count from its source", () => {
+    expect(readHostLoad(source(3.5, 12))).toEqual({ cores: 12, load1: 3.5 });
+  });
+
+  it("keeps absolutes valid at or below half the core count", () => {
+    const stamped = withHostLoad(report(), readHostLoad(source(6, 12)));
+    expect(stamped.hostLoad).toEqual({ absolutes: "valid", cores: 12, load1: 6 });
+  });
+
+  it("marks absolutes invalid-absolute above half the core count", () => {
+    const stamped = withHostLoad(report(), readHostLoad(source(6.01, 12)));
+    expect(stamped.hostLoad?.absolutes).toBe("invalid-absolute");
+    expect(renderArmMarkdown(stamped)).toContain("invalid-absolute");
+  });
+
+  it("fails closed on a load source that reports nothing usable", () => {
+    expect(() => readHostLoad(source(Number.NaN, 12))).toThrow(/TN_BENCH_HOST_LOAD_UNREADABLE/u);
+    expect(() => readHostLoad(source(1, 0))).toThrow(/TN_BENCH_HOST_LOAD_UNREADABLE/u);
+  });
+
+  it("round-trips through the parser and rejects a verdict that disagrees with its numbers", () => {
+    const stamped = withHostLoad(report(), readHostLoad(source(20, 12)));
+    expect(parseRunReport(JSON.parse(JSON.stringify(stamped))).hostLoad).toEqual(stamped.hostLoad);
+    const lying = JSON.parse(JSON.stringify(stamped));
+    lying.hostLoad.absolutes = "valid";
+    expect(() => parseRunReport(lying)).toThrow(/TN_BENCH_BAD_SHAPE.*hostLoad/u);
+  });
+
+  it("keeps a loaded run out of an absolute baseline gate, and lets a quiet one through", () => {
+    const loaded = withHostLoad(report(), readHostLoad(source(20, 12)));
+    expect(() => checkPerformance(loaded, { "tn-web": baseline })).toThrow(
+      /TN_BENCH_INVALID_ABSOLUTE/u,
+    );
+    const quiet = withHostLoad(report(), readHostLoad(source(1, 12)));
+    expect(checkPerformance(quiet, { "tn-web": baseline })?.regressions).toEqual([]);
   });
 });

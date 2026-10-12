@@ -135,8 +135,10 @@ async function main(): Promise<void> {
         let triangles = 0;
         let visibleObjects = 0;
         let previous = performance.now();
+        let compilesAtWindowStart = 0;
         const statsFrame = Math.floor((config.frames + config.warmup) / 2);
         for (let frameIndex = 0; frameIndex < config.frames; frameIndex += 1) {
+          if (frameIndex === config.warmup) compilesAtWindowStart = harness.pipelineCompiles();
           harness.step(frameIndex);
           await harness.render();
           if (frameIndex === statsFrame) {
@@ -170,6 +172,7 @@ async function main(): Promise<void> {
           ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
           ...(ladder === undefined ? {} : { ladder }),
           ...(renderCheck === undefined ? {} : { renderCheck }),
+          pipelineCompiles: harness.pipelineCompiles() - compilesAtWindowStart,
           stepMs,
           mode,
           objectCount,

@@ -15,6 +15,8 @@ export interface IRow {
   objects: number;
   p50: number;
   p95: number;
+  p99: number;
+  hitches: number;
   /** Run time: the date in the file name when it has one (copied pilots share one mtime), else mtime. */
   t: number;
   /** mtime, to order runs that share a date. */
@@ -51,6 +53,8 @@ export function rowsOf(report: unknown, file: string, mtime: number): IRow[] {
     objects: s.objectCount,
     p50: s.p50,
     p95: s.p95,
+    p99: s.p99,
+    hitches: s.hitches,
     t,
     m: mtime,
   }));

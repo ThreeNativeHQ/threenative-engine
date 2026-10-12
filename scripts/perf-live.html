@@ -48,7 +48,7 @@ function chart(series) {
     s.pts.forEach((p, i) => {
       const bad = p.p50 > best * 1.3;
       best = Math.min(best, p.p50);
-      out += `<circle cx="${x(i)}" cy="${y(p.p50)}" r="${bad ? 4 : 2.6}" fill="${c}" ${bad ? 'stroke="var(--bad)" stroke-width="2"' : ""}><title>${esc(s.key)} p50 ${p.p50.toFixed(2)} ms, p95 ${p.p95.toFixed(2)} ms\n${new Date(p.m).toLocaleString()}\n${esc(p.file)}</title></circle>`;
+      out += `<circle cx="${x(i)}" cy="${y(p.p50)}" r="${bad ? 4 : 2.6}" fill="${c}" ${bad ? 'stroke="var(--bad)" stroke-width="2"' : ""}><title>${esc(s.key)} p50 ${p.p50.toFixed(2)} ms, p95 ${p.p95.toFixed(2)} ms, p99 ${p.p99.toFixed(2)} ms, ${p.hitches} hitches\n${new Date(p.m).toLocaleString()}\n${esc(p.file)}</title></circle>`;
     });
   }
   return out + "</svg>";
