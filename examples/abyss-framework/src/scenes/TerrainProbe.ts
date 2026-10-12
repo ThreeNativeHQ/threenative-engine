@@ -50,6 +50,25 @@ const initialState = {
   playerX: 0,
 };
 
+interface ITerrainBlendFrame {
+  readonly frame: number;
+  readonly startedAt: number;
+  readonly blendingTiles: number;
+  frameMs?: number;
+}
+
+export function retainTerrainBlendFrame(
+  entries: ITerrainBlendFrame[],
+  startedAt: number,
+  blendingTiles: number,
+): void {
+  const previous = entries.at(-1);
+  // The interval ends at the next draw; it belongs to the draw that just completed.
+  if (previous !== undefined) previous.frameMs = startedAt - previous.startedAt;
+  entries.push({ frame: (previous?.frame ?? -1) + 1, startedAt, blendingTiles });
+  if (entries.length > 1_024) entries.shift();
+}
+
 export type TerrainState = typeof initialState;
 type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
 
@@ -108,7 +127,7 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
   #capabilities: IWorldCapabilities | undefined;
   #maxBlendingTiles = 0;
   #frameBlendingTiles = 0;
-  #blendFrames: number[] = [];
+  #blendFrames: ITerrainBlendFrame[] = [];
   #lodEligibilityTrace: Record<string, unknown>[] = [];
   #lodEligibilityOverflow = 0;
   #sceneUpdateTick = 0;
@@ -198,6 +217,7 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
       // Observe before process removes completed transitions, including their final blend frame.
       this.#frameBlendingTiles = tiles.blendingTiles;
       this.#maxBlendingTiles = Math.max(this.#maxBlendingTiles, this.#frameBlendingTiles);
+      retainTerrainBlendFrame(this.#blendFrames, performance.now(), this.#frameBlendingTiles);
       const view = this.#view(ctx);
       process(renderer, camera, covered, view);
       reference.process(renderer, camera, covered, view);
@@ -208,9 +228,6 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
       this.#gpuSurfaceFailure = undefined;
       if (failure !== undefined) throw failure;
       this.#observeGpuSurface(ctx);
-      // One entry per world draw; join the steady tail to runtime.performance's 1,024-frame tail.
-      this.#blendFrames.push(this.#frameBlendingTiles);
-      if (this.#blendFrames.length > 1_024) this.#blendFrames.shift();
       if (this.#lodEligibilityTrace.length >= 1_024) {
         this.#lodEligibilityOverflow++;
       } else {
@@ -251,7 +268,8 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
           rasterHeight: ctx.renderer.domElement.height,
         },
         maxBlendingTiles: this.#maxBlendingTiles,
-        blendFrames: [...this.#blendFrames],
+        // The newest draw has no ending timestamp yet; expose only completed intervals.
+        blendFrames: this.#blendFrames.slice(0, -1).map((entry) => ({ ...entry })),
         lodEligibilityTrace: {
           sampling: "beforeRender; sceneUpdateTick is a scene-local update ordinal",
           overflow: this.#lodEligibilityOverflow,
