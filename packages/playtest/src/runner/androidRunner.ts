@@ -657,7 +657,8 @@ async function captureDeviceScreenshot(
 ): Promise<void> {
   await target.driver.screenshot(path);
   const png = await readFile(path);
-  // Only the native desktop host has no HTML overlay, so only it takes the content floor.
+  // The browser bright-pixel floor rejected the native desktop frame panned-culled.png (PRD-569).
+  // Its content ratio is at least 0.0044, so desktop takes the content floor.
   const stats = target.name === "desktop" ? assertDesktopCaptureNotBlank(png, path) : assertCaptureNotBlank(png, path);
   if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
 }
