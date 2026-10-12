@@ -1,13 +1,13 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { installStaleWrites } from "../../../examples/strata-terrain-preview/scripts/fixtures/editor-conflict.js";
+import { installStaleWrites } from "../scripts/fixtures/editor-conflict.js";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
-import { validatePlaytestScenario } from "../../playtest/src/scenario.js";
-import { changed, installSaveQueue } from "../src/editor/app/evaluation.js";
-import type { EditorSession } from "../src/editor/app/session.js";
-import { TerrainEditorDocument } from "../src/editor/server.js";
-import { Terrain } from "../src/index.js";
+import { validatePlaytestScenario } from "../../../packages/playtest/src/scenario.js";
+import { changed, installSaveQueue } from "../../../packages/terrain/src/editor/app/evaluation.js";
+import type { EditorSession } from "../../../packages/terrain/src/editor/app/session.js";
+import { TerrainEditorDocument } from "../../../packages/terrain/src/editor/server.js";
+import { Terrain } from "../../../packages/terrain/src/index.js";
 
 function session() {
   const terrain = new Terrain({ size: 32, resolution: 17, seed: 73 });
@@ -181,13 +181,7 @@ describe("editor save integration", () => {
 
   it.each(["editor", "editor-conflict"])("uses existing harness vocabulary in %s", (name) => {
     const scenario = JSON.parse(
-      readFileSync(
-        new URL(
-          `../../../examples/strata-terrain-preview/playtests/${name}.playtest.json`,
-          import.meta.url,
-        ),
-        "utf8",
-      ),
+      readFileSync(new URL(`../playtests/${name}.playtest.json`, import.meta.url), "utf8"),
     );
     expect(() => validatePlaytestScenario(scenario, `${name}.playtest.json`)).not.toThrow();
   });
