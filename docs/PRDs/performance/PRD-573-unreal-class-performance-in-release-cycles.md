@@ -122,8 +122,11 @@ Cherry-picks of F `c1ef353ca 2007efe12 3d3695197 3b29482a6 504709d17 726df7f5c d
   Known limits, not silent: `scene.fogNode` ignored on native (prints `TN_NATIVE_FOG_NODE_IGNORED`); blend modes recorded, not applied; `context` and `velocity` throw on native, so TRAA and motion blur are unsupported on the engine path until the velocity design lands (the engine's velocity patch was not applied); `readback` fails by name. Not run: Android, Windows, macOS, `pnpm test`, `test:playtest`, `test:templates`, a 1800-frame soak, root `pnpm lint` (4 errors in `examples/procedural-animals/.../quadruped.js`, untouched, base not compared).
 
 #### Phase v1.7: Web Wasm engine, opt-in (slice 7)
-**Status:** NOT STARTED
+**Status:** PARTIAL
 - [ ] `engine/wasm/web_host.cpp`, `three-native/src/browser-*`, `engine: "native"` and `profile:wasm-page` land with `engine: "legacy"` the default. proof: web-engine spec, `wasm-engine-boot` playtests, `pnpm test:templates` unchanged, a web A/B with `--control`
+  Partial 2026-10-12: merged in 9ba8a8794 (vitest 241/241 in the worker, root tsc 0). Bridge cuts 1-4 ported to the browser back end, with crossings at 38,308 -> 52 per frame. `wasm-engine-boot` and `pnpm test:templates` not run.
+- [ ] The web engine page is at least 1.3x cheaper than three.js: tn-web p50 ÷ tn-engine-web p50 on main-thread wall time (performance.now(), not a CPU clock), R5@4096, real GPU, same pair guard. Target set by the owner on 2026-10-12. proof: a 3+3 `bench:engines` pair, `artifacts/engine-load-test/prd-573/web/`
+  Now 0.92x (web-final-2 at cb4ecdb82, Intel gen-12lp laptop). Render is the gap: 3.9 ms on the engine vs 2.0 ms on tn-web.
 
 #### Phase v1.8: Template post-node imports (slice 8)
 **Status:** NOT STARTED
