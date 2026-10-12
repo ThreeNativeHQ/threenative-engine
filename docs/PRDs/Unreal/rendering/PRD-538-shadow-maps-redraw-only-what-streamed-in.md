@@ -1,6 +1,6 @@
 # PRD-538 — Shadow maps redraw only what streamed in
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P2 — Open: streaming invalidations re-render a whole 4096² shadow map 68–79 times per walk; each render costs 4–6 ms of GPU.
 **Complexity:** 6 (MEDIUM) — one engine module family (`render/virtual-shadow*.ts`), a partial render path through three's shadow pass, and a pixel-equivalence proof
 **Owner:** João
@@ -65,11 +65,11 @@ Layer: mechanism only, `packages/core/src/render/`. Nothing a game sets changes,
 ## Execution Phases
 
 #### Phase 1: Dirty pages
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/render/virtual-shadow.ts`, `virtual-shadow-pages.ts`; `packages/core/__tests__/`
 
-- [ ] `invalidateRegion` marks the pages of each level the region overlaps; a redraw with no region, a window move, or more than half the pages dirty marks the whole level. proof: red-green spec on the dirty-page set.
-- [ ] Stats report pages redrawn per render next to `rendersTotal`, split into admission and eviction redraws. proof: spec reading `stats`.
+- [x] `invalidateRegion` marks the pages of each level the region overlaps; a redraw with no region, a window move, or more than half the pages dirty marks the whole level. proof: red-green spec on the dirty-page set. Result: 5 specs in `virtual-shadow.spec.ts` (exact page count against `boundsToPageKeys`, no region, over half, window move) were red on missing `pagesDirty`, green after; `pnpm exec vitest run packages/core/__tests__/virtual-shadow*.spec.ts` 156 passed.
+- [x] Stats report pages redrawn per render next to `rendersTotal`, split into admission and eviction redraws. proof: spec reading `stats`. Result: `pagesDirty`, `pagesRedrawn`, `byAdmission`, `byEviction` on `IVirtualShadowStats` and the marker line; admission/eviction and marker round-trip specs green. The render is still the whole level, so `pagesRedrawn` equals the level's page count until Phase 2.
 
 #### Phase 2: Partial redraw
 **Status:** NOT STARTED

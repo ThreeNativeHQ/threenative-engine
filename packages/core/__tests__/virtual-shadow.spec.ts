@@ -1320,6 +1320,118 @@ describe("VirtualShadowNode invalidation coalescing", () => {
   });
 
   /**
+   * One 500 m level of 64² pages, settled, and the render that follows `ask` on the next frame
+   * past its delay. Returns what that one render added to the page counters.
+   */
+  function pagesOfRedraw(ask: (node: VirtualShadowNode) => void): {
+    byAdmission: number;
+    byEviction: number;
+    pagesDirty: number;
+    pagesRedrawn: number;
+  } {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    const renders = countRenders(node);
+    const before = { ...node.stats };
+    ask(node);
+    for (let step = 0; step < 40 && renders[0] === 0; step += 1) {
+      time += 0.1;
+      node.updateBefore(frameFor(camera, time));
+    }
+    expect(renders[0]).toBe(1);
+    const after = node.stats;
+    return {
+      byAdmission: after.byAdmission - before.byAdmission,
+      byEviction: after.byEviction - before.byEviction,
+      pagesDirty: after.pagesDirty - before.pagesDirty,
+      pagesRedrawn: after.pagesRedrawn - before.pagesRedrawn,
+    };
+  }
+
+  /** A streamed cell near the camera: a few pages of the level's 64 x 64. */
+  const CELL = { min: { x: 20, y: 0, z: 20 }, max: { x: 36, y: 8, z: 36 } };
+  const PAGES = 64 * 64;
+
+  it("should mark exactly the pages a region overlaps dirty", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    settleOnClock(node, camera);
+    const expected = node.clipmap.boundsToPageKeys(CELL, 0).length;
+    expect(expected).toBeGreaterThan(0);
+    expect(expected).toBeLessThan(PAGES / 2);
+    const redraw = pagesOfRedraw((asked) => asked.invalidateRegion(CELL, true));
+    expect(redraw.pagesDirty).toBe(expected);
+  });
+
+  it("should split admission redraws from eviction redraws", () => {
+    expect(pagesOfRedraw((node) => node.invalidateRegion(CELL, true))).toMatchObject({
+      byAdmission: 1,
+      byEviction: 0,
+    });
+    expect(pagesOfRedraw((node) => node.invalidateRegion(CELL))).toMatchObject({
+      byAdmission: 0,
+      byEviction: 1,
+    });
+    // One eviction among admissions makes the redraw an eviction one.
+    expect(
+      pagesOfRedraw((node) => {
+        node.invalidateRegion(CELL, true);
+        node.invalidateRegion(CELL);
+      }),
+    ).toMatchObject({ byAdmission: 0, byEviction: 1 });
+  });
+
+  it("should mark the whole level for an ask with no region", () => {
+    expect(pagesOfRedraw((node) => node.invalidateAll())).toMatchObject({
+      byEviction: 1,
+      pagesDirty: PAGES,
+    });
+  });
+
+  it("should mark the whole level when more than half the pages are dirty", () => {
+    const wide = { min: { x: -200, y: 0, z: -200 }, max: { x: 200, y: 8, z: 200 } };
+    expect(pagesOfRedraw((node) => node.invalidateRegion(wide, true)).pagesDirty).toBe(PAGES);
+  });
+
+  it("should redraw the whole level when its window moved", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    const renders = countRenders(node);
+    const before = { ...node.stats };
+    node.invalidateRegion(CELL, true);
+    camera.position.set(400, 5, 0);
+    for (let step = 0; step < 40 && renders[0] === 0; step += 1) {
+      time += 0.1;
+      node.updateBefore(frameFor(camera, time));
+    }
+    expect(renders[0]).toBe(1);
+    expect(node.stats.pagesDirty - before.pagesDirty).toBe(PAGES);
+    expect(node.stats.byMove - before.byMove).toBe(1);
+    expect(node.stats.byAdmission - before.byAdmission).toBe(0);
+  });
+
+  it("should redraw every page until a partial redraw exists", () => {
+    // Phase 1 only knows which pages are dirty; the render itself is still the whole level.
+    expect(pagesOfRedraw((node) => node.invalidateRegion(CELL, true)).pagesRedrawn).toBe(PAGES);
+  });
+
+  it("should round-trip the page counters through the marker line", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    settleOnClock(node, camera);
+    const parsed = readVirtualShadowMarker(
+      `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify(node.stats)}`,
+    );
+    expect(parsed).toMatchObject({ byAdmission: 0, byEviction: 0, pagesDirty: PAGES });
+  });
+
+  /**
    * One 500 m level, as Machinefall runs it, whose last redraw resolved at `redrawMs` of GPU. Returns
    * how long after the first of a stream of asks (one a frame) the level redrew for them.
    */

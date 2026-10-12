@@ -55,9 +55,13 @@ import {
   DirectionalClipmap,
   type IBoundsLike,
   type IClipWindow,
+  type IPageRect,
   type IVector3Like,
   ShadowInvalidationTracker,
+  pageSpan,
+  parsePageKey,
   projectBounds,
+  unionPageRect,
 } from "./virtual-shadow-pages.js";
 
 /** One clipmap axis' view of a world region, as the interval it covers in light space. */
@@ -282,6 +286,14 @@ export interface IVirtualShadowStats {
   readonly windowSteps: number;
   /** Of those, the renders taken because an invalidation asked and its level's delay had passed. */
   readonly byInvalidation: number;
+  /** Of the renders taken for an invalidation (`byInvalidation`), those whose dirty set held only streamed-in casters. */
+  readonly byAdmission: number;
+  /** Of the renders taken for an invalidation, those whose dirty set held anything else: a removed caster, a region-less ask, a caster flag change. */
+  readonly byEviction: number;
+  /** Pages the dirty set held at each render, summed over the node's lifetime. A window move counts the whole level. */
+  readonly pagesDirty: number;
+  /** Pages each render actually drew, summed over the node's lifetime. Equals pagesDirty once a partial redraw exists. */
+  readonly pagesRedrawn: number;
   /**
    * Invalidation asks that cost no render of their own, over the node's lifetime: absorbed by a
    * render the level was taking anyway for its window, or merged into an ask already waiting out
@@ -596,6 +608,15 @@ interface ILevel {
    */
   dirty: boolean;
   /**
+   * The pages the asks since this level's last render touched, in the clipmap's absolute page
+   * coordinates, or undefined while none did. Meaningless while {@link dirtyAll} is set.
+   */
+  dirtyRect: IPageRect | undefined;
+  /** An ask named no pages, or none inside the window, so the whole level is dirty. */
+  dirtyAll: boolean;
+  /** Every ask since the last render was a caster streaming in, which only adds depth. */
+  dirtyAdmission: boolean;
+  /**
    * The engine frame clock's reading when this level last rendered, in seconds. A dirty level
    * re-renders for the invalidation no sooner than `invalidationDelay` after this. `-Infinity`
    * until the first render, so a level invalidated before it holds a map is due immediately.
@@ -875,9 +896,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #levels: ILevel[] = [];
   #invalidateAll = false;
   /** Regions handed to `invalidateRegion`, read and cleared by the next `updateBefore`. */
-  #regions: Array<IBoundsLike & { urgent?: true }> = [];
+  #regions: Array<IBoundsLike & { admission?: true; urgent?: true }> = [];
   /** The same regions, resolved onto the clipmap's axes; scratch, so a frame allocates nothing. */
-  #projectedRegions: { u: ILightAxisRange; urgent: boolean; v: ILightAxisRange }[] | undefined;
+  #projectedRegions:
+    | { admission: boolean; u: ILightAxisRange; urgent: boolean; v: ILightAxisRange }[]
+    | undefined;
   #casters = new Map<string, Object3D>();
   #casterChildren = new Map<string, Set<Object3D>>();
   /** Per caster mesh, what the motion scan remembers; entries live as long as the mesh does. */
@@ -912,6 +935,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #byMove = 0;
   #windowSteps = 0;
   #byInvalidation = 0;
+  #byAdmission = 0;
+  #byEviction = 0;
+  #pagesDirty = 0;
+  #pagesRedrawn = 0;
   #coalesced = 0;
   /** Read from the URL once, for the `?tnShadowStats=1` marker cadence. */
   #statsRequested: boolean | undefined;
@@ -999,7 +1026,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     };
     if (mesh.isMesh === true && (mesh.castShadow !== true || mesh.userData?.tnShadowSwap === true))
       return;
-    this.#askAboutCaster(child);
+    this.#askAboutCaster(child, event.type === "childadded");
   };
   /** Casters the current level's size gate hid, restored the moment that render is over. */
   #hidden: Object3D[] = [];
@@ -1149,6 +1176,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       receiverPlaneBias: options.receiverPlaneBias ?? true,
     };
     this.#stats = {
+      byAdmission: 0,
+      byEviction: 0,
       byInvalidation: 0,
       byMove: 0,
       cached: 0,
@@ -1164,6 +1193,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       autoMovers: 0,
       autoScanMs: 0,
       autoTransitions: 0,
+      pagesDirty: 0,
+      pagesRedrawn: 0,
       perLevel: this.#perLevel,
       rendered: 0,
       rendersTotal: 0,
@@ -1294,10 +1325,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * `bounds` is `{ min: {x,y,z}, max: {x,y,z} }`, a plain object so a game can hand one over without
    * importing three. Regions are consumed by the next `updateBefore`; one that arrives before the
    * levels exist is dropped, because their first frame renders all of them anyway.
+   *
+   * `admission` says the region only gained casters. An added caster can only bring a texel's depth
+   * closer, so a redraw for admissions alone never has to clear what the map already holds. The
+   * default is the safe answer: anything that removed or moved a caster is not an admission.
    */
-  invalidateRegion(bounds: IBoundsLike): void {
+  invalidateRegion(bounds: IBoundsLike, admission = false): void {
     if (this.#levels.length === 0) return;
     this.#regions.push({
+      ...(admission ? { admission: true as const } : {}),
       max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
       min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
     });
@@ -1543,7 +1579,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /** Ask the levels covering one changed caster to redraw. */
-  #askAboutCaster(object: Object3D): void {
+  #askAboutCaster(object: Object3D, admission = false): void {
     if (this.#levels.length === 0) return;
     // Nothing that casts: the level lights this node parents into the scene are `Object3D`s with a
     // shadow slot and no geometry, and asking for all three levels redraws on their arrival. A group
@@ -1552,7 +1588,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if ((object as { isMesh?: boolean }).isMesh !== true && object.children.length === 0) return;
     const bounds = this.#casterBounds(object);
     if (bounds === undefined) this.invalidateAll();
-    else this.invalidateRegion(bounds);
+    else this.invalidateRegion(bounds, admission);
   }
 
   /**
@@ -2346,6 +2382,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
         depthFar: this.options.lightDistance + this.options.depthRange,
         depthNear: 1,
         dirty: false,
+        dirtyAdmission: true,
+        dirtyAll: false,
+        dirtyRect: undefined,
         eye: this.options.lightDistance,
         extent,
         extentUniform: uniform(extent).setGroup(renderGroup),
@@ -2630,7 +2669,16 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const invalidateAll = this.#invalidateAll;
     const invalidatedKeys = this.tracker.consumeInvalidatedKeys();
     const invalidatedLevels = new Set<number>();
-    for (const key of invalidatedKeys) invalidatedLevels.add(Number(key.split(":")[0]));
+    // The tracker's pages, per level, as the one rectangle that holds them.
+    const keyedPages = new Map<number, IPageRect>();
+    for (const key of invalidatedKeys) {
+      const { level, x, y } = parsePageKey(key);
+      invalidatedLevels.add(level);
+      keyedPages.set(
+        level,
+        unionPageRect(keyedPages.get(level), { maxX: x, maxY: y, minX: x, minY: y }),
+      );
+    }
     // The regions `invalidateRegion` was handed, resolved once onto the two axes every level's
     // window is built on. The per-level test below is then four comparisons, not a projection per
     // level per region per frame.
@@ -2639,6 +2687,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     projected.length = 0;
     for (const region of this.#regions) {
       projected.push({
+        admission: region.admission === true,
         u: projectBounds(region, this.clipmap.basisU),
         urgent: region.urgent === true,
         v: projectBounds(region, this.clipmap.basisV),
@@ -2693,6 +2742,20 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // The same ask, when a fragment of the old spot is read from *this* level: a finer level's
         // guarded window did not take all of it, so the finer map being redrawn does not clear it.
         let urgentSelected = false;
+        // The pages the regions that reach this level cover, clipped to its window, and whether
+        // any of them was more than a caster streaming in.
+        let regionPages: IPageRect | undefined;
+        let regionEvicts = false;
+        let regionWhole = false;
+        const clip = (rect: IPageRect): IPageRect | undefined => {
+          const clipped = {
+            maxX: Math.min(rect.maxX, window.maxX - 1),
+            maxY: Math.min(rect.maxY, window.maxY - 1),
+            minX: Math.max(rect.minX, window.minX),
+            minY: Math.max(rect.minY, window.minY),
+          };
+          return clipped.minX <= clipped.maxX && clipped.minY <= clipped.maxY ? clipped : undefined;
+        };
         for (const region of projected) {
           if (
             region.u.low <= cu + level.extent &&
@@ -2701,6 +2764,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
             region.v.high >= cv - level.extent
           ) {
             regionDirty = true;
+            if (!region.admission) regionEvicts = true;
+            const spanX = pageSpan(region.u.low, region.u.high, window.pageWorldSize);
+            const spanY = pageSpan(region.v.low, region.v.high, window.pageWorldSize);
+            const pages = clip({
+              maxX: spanX.max,
+              maxY: spanY.max,
+              minX: spanX.min,
+              minY: spanY.min,
+            });
+            if (pages === undefined) regionWhole = true;
+            else regionPages = unionPageRect(regionPages, pages);
             if (region.urgent) {
               urgent = true;
               urgentSelected ||= !finer.some(
@@ -2728,6 +2802,26 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // how much a streaming world's once-a-second invalidation actually cost.
           if (level.dirty) this.#coalesced += 1;
           level.dirty = true;
+          // Which pages the ask named. An ask that names none inside the window dirties them all,
+          // and so does one the tracker or `needsUpdate` made, which carry no admission claim.
+          const keyed = keyedPages.get(index);
+          const keyedPagesInWindow = keyed === undefined ? undefined : clip(keyed);
+          if (
+            invalidateAll ||
+            source.shadow.needsUpdate ||
+            regionWhole ||
+            (keyed !== undefined && keyedPagesInWindow === undefined)
+          ) {
+            level.dirtyAll = true;
+          }
+          if (regionPages !== undefined)
+            level.dirtyRect = unionPageRect(level.dirtyRect, regionPages);
+          if (keyedPagesInWindow !== undefined)
+            level.dirtyRect = unionPageRect(level.dirtyRect, keyedPagesInWindow);
+          if (level.dirtyRect === undefined) level.dirtyAll = true;
+          if (regionEvicts || level.dirtyAll || keyed !== undefined || !regionDirty) {
+            level.dirtyAdmission = false;
+          }
         }
         // A window that moved is never delayed. A dirty level waits `invalidationDelay` after its
         // *own* last render, so a burst spanning that delay is one render and a lone ask is one
@@ -2762,6 +2856,18 @@ export class VirtualShadowNode extends ShadowBaseNode {
           level.pending = REASON_NONE;
           level.lastRender = now;
           this.#rendersTotal += 1;
+          // A window that moved, a region-less ask, or more than half the pages dirty is the whole
+          // level; anything else is the rectangle the asks named.
+          const levelPages = this.clipmap.pagesPerAxis ** 2;
+          const rect = level.dirtyRect;
+          const rectPages =
+            rect === undefined || level.dirtyAll
+              ? levelPages
+              : (rect.maxX - rect.minX + 1) * (rect.maxY - rect.minY + 1);
+          this.#pagesDirty +=
+            reason === REASON_MOVE || rectPages * 2 > levelPages ? levelPages : rectPages;
+          // The render itself is still the whole level; a partial redraw lands in the next phase.
+          this.#pagesRedrawn += levelPages;
           if (reason === REASON_MOVE) {
             this.#byMove += 1;
             // The render was already going to happen for the window, so the invalidation rode
@@ -2769,10 +2875,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
             if (level.dirty) this.#coalesced += 1;
           } else {
             this.#byInvalidation += 1;
+            if (level.dirtyAdmission) this.#byAdmission += 1;
+            else this.#byEviction += 1;
           }
           // A render of any reason answers whatever asked, so a movement render clears the dirty
           // flag too and the coalesced level is not redrawn a frame later for nothing.
           level.dirty = false;
+          level.dirtyAdmission = true;
+          level.dirtyAll = false;
+          level.dirtyRect = undefined;
           rendered += 1;
           budgetSpent = true;
         } else if (due) {
@@ -2866,6 +2977,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#served += this.#levels.length - rendered;
     const total = this.#rendered + this.#served;
     this.#stats = {
+      byAdmission: this.#byAdmission,
+      byEviction: this.#byEviction,
       byInvalidation: this.#byInvalidation,
       byMove: this.#byMove,
       cached: this.#levels.length - rendered,
@@ -2881,6 +2994,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       autoMovers: this.#autoMovers.size,
       autoScanMs: this.#autoScanTotalMs / this.#frame,
       autoTransitions: this.#autoTransitions,
+      pagesDirty: this.#pagesDirty,
+      pagesRedrawn: this.#pagesRedrawn,
       perLevel: this.#perLevel,
       rendered,
       rendersTotal: this.#rendersTotal,
@@ -2958,6 +3073,8 @@ const VIRTUAL_SHADOW_STAT_FIELDS = [
   "autoMovers",
   "autoScanMs",
   "autoTransitions",
+  "byAdmission",
+  "byEviction",
   "byInvalidation",
   "byMove",
   "cached",
@@ -2970,6 +3087,8 @@ const VIRTUAL_SHADOW_STAT_FIELDS = [
   "moved",
   "moverRenders",
   "movers",
+  "pagesDirty",
+  "pagesRedrawn",
   "rendered",
   "rendersTotal",
   "reuseRatio",
