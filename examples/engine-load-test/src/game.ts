@@ -269,6 +269,10 @@ function buildAuthoredCubes(
       placement.z,
     );
     if (index < shadowCasterCount) cube.castShadow = true;
+    // Where the projection batches the cubes, three culls the batch as one object while the engine's host
+    // batching culls each member against the view, which is 21k fewer triangles in the R5 frame. One cull
+    // unit on both arms, as L2's batch and the characters already are, so both submit the same work.
+    if (mode === "L3" || isRealisticRung(mode)) cube.frustumCulled = false;
     parent.add(cube);
     cubes.push(cube);
   }
