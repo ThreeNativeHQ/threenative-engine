@@ -5,7 +5,8 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
-import { parseRunReport, summarize } from "./engine-load-test/report.js";
+import { softwareAdapterName } from "../packages/playtest/src/runner/browser.js";
+import { type IRunReport, parseRunReport, summarize } from "./engine-load-test/report.js";
 
 export interface IRow {
   arm: string;
@@ -25,6 +26,17 @@ export interface IRow {
   phases?: Record<string, number>;
   /** Host load above half the cores: absolutes are not valid, ratios between alternating arms still are. */
   invalid: boolean;
+  /** The GPU adapter the run read (`vendor / architecture` on the web). */
+  adapter: string;
+  /** A software rasteriser drew the run: no real-GPU or visual evidence. */
+  software: boolean;
+  /** The measured source commit and the browser, when the run recorded its identity (`--source-sha`). */
+  commit?: string;
+  browser?: string;
+  /** C ABI crossings per frame (p50), when the run counted them. */
+  crossings?: number;
+  /** A web run's startup, bytes and memory (`report.web`). */
+  web?: IWebRow;
   cycle: string;
   /** Run time: the date in the file name when it has one (copied pilots share one mtime), else mtime. */
   t: number;
@@ -95,10 +107,36 @@ function medianByKey(records: readonly Record<string, number>[]): Record<string,
   );
 }
 
+export interface IWebRow {
+  firstFrameMs?: number;
+  wasmInstantiateMs?: number;
+  jsGzipBytes?: number;
+  wasmGzipBytes?: number;
+  wasmMemoryBytes?: number;
+  jsHeapUsedBytes?: number;
+}
+
+/** The web block's numbers the dashboard shows; a null or absent field stays absent ("missing" on the page). */
+function webRowOf(web: IRunReport["web"]): IWebRow | undefined {
+  if (web === undefined) return undefined;
+  const out: IWebRow = {};
+  const put = (key: keyof IWebRow, value: number | null | undefined) => {
+    if (typeof value === "number") out[key] = value;
+  };
+  put("firstFrameMs", web.startup?.firstFrameMs);
+  put("wasmInstantiateMs", web.startup?.wasmInstantiateMs.reduce((a, b) => a + b, 0) || undefined);
+  put("jsGzipBytes", web.artifact?.jsGzipBytes);
+  put("wasmGzipBytes", web.artifact?.wasmGzipBytes);
+  put("wasmMemoryBytes", web.memory?.wasmMemoryBytes);
+  put("jsHeapUsedBytes", web.memory?.jsHeapUsedBytes);
+  return out;
+}
+
 export function rowsOf(report: unknown, file: string, mtime: number): IRow[] {
   const day = /(\d{4}-\d{2}-\d{2})/u.exec(file)?.[1];
   const t = day ? Date.parse(`${day}T12:00:00Z`) : mtime;
   const r = parseRunReport(report);
+  const web = webRowOf(r.web);
   return summarize(r).map((s) => {
     // The bench parser already pools per-frame phase arrays into p50s (render includes the host draw).
     const phases = s.phases
@@ -118,6 +156,14 @@ export function rowsOf(report: unknown, file: string, mtime: number): IRow[] {
       ...(s.threadCpuP50 === undefined ? {} : { threadCpu: s.threadCpuP50 }),
       ...(phases === undefined ? {} : { phases }),
       invalid: r.hostLoad?.absolutes === "invalid-absolute",
+      adapter: r.driver.adapter,
+      software:
+        softwareAdapterName({ adapter: r.driver.adapter }) !== undefined ||
+        /SOFTWARE ADAPTER/u.test(r.build.notes),
+      ...(r.identity?.sourceSha === undefined ? {} : { commit: r.identity.sourceSha }),
+      ...(r.identity?.browser === undefined ? {} : { browser: r.identity.browser }),
+      ...(s.crossingsP50 === undefined ? {} : { crossings: s.crossingsP50 }),
+      ...(web === undefined ? {} : { web }),
       cycle: /(?:^|[\/_.-])(v[1-5])(?:[\/_.-]|$)/u.exec(file)?.[1] ?? "v1",
       t,
       m: mtime,
@@ -237,6 +283,197 @@ export function pointsOf(rows: readonly IRow[]): IPoint[] {
     if (point !== undefined) points.push(point);
   }
   return points.sort((a, b) => a.t - b.t || a.m - b.m || a.label.localeCompare(b.label));
+}
+
+/** One web arm's medians across its runs in a pair. */
+export interface IWebArm {
+  runs: number;
+  p50?: number;
+  p95?: number;
+  p99?: number;
+  /** Main-thread ms per frame without present (page wall time: a page has no thread CPU clock). */
+  thread?: number;
+  crossings?: number;
+  phases?: Record<string, number>;
+  web?: IWebRow;
+}
+
+/** A `--pair tn-web,tn-engine-web` point: kept apart from the desktop KPI, never mixed into it. */
+export interface IWebPair {
+  label: string;
+  mode: string;
+  objects: number;
+  t: number;
+  m: number;
+  /** "pending" while one arm has no run in the point. */
+  status: "measured" | "pending";
+  invalid: boolean;
+  software: boolean;
+  adapters: string[];
+  browsers: string[];
+  commits: string[];
+  legacy: IWebArm;
+  native: IWebArm;
+  /** tn-web ÷ tn-engine-web p50 frame time: above 1 means the engine is cheaper. */
+  ratioP50?: number;
+  ratioThread?: number;
+}
+
+/** An alternating A/B of one engine-web change (`<tag>-A1`, `<tag>-B2`, ...): B is the change. */
+export interface IWebCut {
+  label: string;
+  mode: string;
+  objects: number;
+  t: number;
+  m: number;
+  aRuns: number;
+  bRuns: number;
+  aP50?: number;
+  bP50?: number;
+  /** B ÷ A median p50: below 1 means the change is cheaper. */
+  ratio?: number;
+  /** win: every B run below every A run; regression: every B above every A; else inconclusive or pending. */
+  verdict: "win" | "regression" | "inconclusive" | "pending";
+  invalid: boolean;
+  software: boolean;
+  adapters: string[];
+}
+
+const WEB_LEGACY = "tn-web";
+const WEB_NATIVE = "tn-engine-web";
+const WEB_PAIR_TAG = /^(.*?)-tn-(?:engine-)?web-r\d+\.json$/u;
+const WEB_CUT_TAG = /^(.*)-([AB])\d+\.json$/u;
+const uniq = (values: readonly (string | undefined)[]) =>
+  [...new Set(values.filter((v): v is string => v !== undefined))].sort();
+
+function webArmOf(group: readonly IRow[], arm: string): IWebArm {
+  const runs = group.filter((r) => r.arm === arm);
+  const pick = (f: (r: IRow) => number | undefined) =>
+    medianOf(runs.map(f).filter((v): v is number => v !== undefined));
+  const out: IWebArm = { runs: runs.length };
+  const put = <K extends keyof IWebArm>(key: K, value: IWebArm[K] | undefined) => {
+    if (value !== undefined) out[key] = value;
+  };
+  put(
+    "p50",
+    pick((r) => r.p50),
+  );
+  put(
+    "p95",
+    pick((r) => r.p95),
+  );
+  put(
+    "p99",
+    pick((r) => r.p99),
+  );
+  put(
+    "thread",
+    pick((r) => r.threadCpu),
+  );
+  put(
+    "crossings",
+    pick((r) => r.crossings),
+  );
+  put("phases", armPhases(group, arm));
+  const webs = runs.flatMap((r) => (r.web ? [r.web as Record<string, number>] : []));
+  if (webs.length > 0) put("web", medianByKey(webs) as IWebRow);
+  return out;
+}
+
+const groupBy = (rows: readonly IRow[], tagOf: (base: string) => string | undefined) => {
+  const groups = new Map<string, IRow[]>();
+  for (const row of rows) {
+    const tag = tagOf(path.basename(row.file));
+    if (tag === undefined) continue;
+    const key = JSON.stringify([path.dirname(row.file), tag, row.mode, row.objects]);
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  return [...groups].map(([key, group]) => {
+    const [dir, tag, mode, objects] = JSON.parse(key) as [string, string, string, number];
+    return {
+      label: dir === "." ? tag : `${dir}/${tag}`,
+      mode,
+      objects,
+      group,
+      t: Math.max(...group.map((r) => r.t)),
+      m: Math.max(...group.map((r) => r.m)),
+      invalid: group.some((r) => r.invalid),
+      software: group.some((r) => r.software),
+      adapters: uniq(group.map((r) => r.adapter)),
+    };
+  });
+};
+
+/** The web comparison: tn-web against tn-engine-web pairs, and the alternating A/B of each engine-web cut. */
+export function webOf(rows: readonly IRow[]): {
+  pairs: IWebPair[];
+  cuts: IWebCut[];
+  census: { label: string; mode: string; objects: number; crossings: number; t: number }[];
+} {
+  const web = rows.filter((r) => r.arm === WEB_LEGACY || r.arm === WEB_NATIVE);
+  const order = (a: { t: number; m: number; label: string }, b: typeof a) =>
+    a.t - b.t || a.m - b.m || a.label.localeCompare(b.label);
+  const pairs = groupBy(web, (base) => WEB_PAIR_TAG.exec(base)?.[1]).map(
+    ({ group, ...point }): IWebPair => {
+      const legacy = webArmOf(group, WEB_LEGACY);
+      const native = webArmOf(group, WEB_NATIVE);
+      const ratio = (a?: number, b?: number) => (a !== undefined && b ? a / b : undefined);
+      const ratioP50 = ratio(legacy.p50, native.p50);
+      const ratioThread = ratio(legacy.thread, native.thread);
+      return {
+        ...point,
+        status: legacy.runs > 0 && native.runs > 0 ? "measured" : "pending",
+        browsers: uniq(group.map((r) => r.browser)),
+        commits: uniq(group.map((r) => r.commit)),
+        legacy,
+        native,
+        ...(ratioP50 === undefined ? {} : { ratioP50 }),
+        ...(ratioThread === undefined ? {} : { ratioThread }),
+      };
+    },
+  );
+  const cuts = groupBy(
+    web.filter((r) => r.arm === WEB_NATIVE),
+    (base) => WEB_CUT_TAG.exec(base)?.[1],
+  ).map(({ group, ...point }): IWebCut => {
+    const side = (v: "A" | "B") =>
+      group.filter((r) => WEB_CUT_TAG.exec(path.basename(r.file))?.[2] === v).map((r) => r.p50);
+    const [a, b] = [side("A"), side("B")];
+    const [aP50, bP50] = [medianOf(a), medianOf(b)];
+    const verdict: IWebCut["verdict"] =
+      a.length === 0 || b.length === 0
+        ? "pending"
+        : Math.max(...b) < Math.min(...a)
+          ? "win"
+          : Math.min(...b) > Math.max(...a)
+            ? "regression"
+            : "inconclusive";
+    return {
+      ...point,
+      aRuns: a.length,
+      bRuns: b.length,
+      ...(aP50 === undefined ? {} : { aP50 }),
+      ...(bP50 === undefined ? {} : { bP50 }),
+      ...(aP50 === undefined || bP50 === undefined ? {} : { ratio: bP50 / aP50 }),
+      verdict,
+    };
+  });
+  // The runs that counted JS-to-Wasm crossings (TN_BENCH_CROSSINGS=1): the census perturbs timing, so it
+  // runs apart from the timed pairs.
+  const census = web.flatMap((r) =>
+    r.arm === WEB_NATIVE && r.crossings !== undefined
+      ? [
+          {
+            label: r.file.replace(/\.json$/u, ""),
+            mode: r.mode,
+            objects: r.objects,
+            crossings: r.crossings,
+            t: r.t,
+          },
+        ]
+      : [],
+  );
+  return { pairs: pairs.sort(order), cuts: cuts.sort(order), census };
 }
 
 /** The KPI target: native costs at most half the legacy CPU per frame. */
@@ -384,6 +621,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     } else if (req.url?.startsWith("/api/hero")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(heroOf(pointsOf(await allRows()), Date.now())));
+    } else if (req.url?.startsWith("/api/web")) {
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify(webOf(await allRows())));
     } else if (req.url?.startsWith("/api/points")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(pointsOf(await allRows())));
