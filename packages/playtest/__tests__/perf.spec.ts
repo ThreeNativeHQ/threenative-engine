@@ -5,14 +5,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
+  absolutesVerdict,
   assessPerfMarkers,
   formatPerfReport,
   newestProcessLines,
   parsePerformanceMarkers,
   parsePerfArgs,
+  parseProcStatusMemory,
+  parseTotalPssMb,
   perfCommand,
   rankExactReasons,
+  readHostLoad,
+  SOAK_MIN_FRAMES,
+  soakVerdict,
   type IFrameBudgetWindowJson,
+  type ISoakSample,
 } from "../src/runner/perf.js";
 import { PlaytestCliUsageError } from "../src/runner/config.js";
 
@@ -389,6 +396,23 @@ describe("perfCommand", () => {
     const report = JSON.parse(written.join("")) as { pass: boolean; violations: Array<{ code: string; observed?: number }> };
     expect(report.pass).toBe(false);
     expect(report.violations).toContainEqual(expect.objectContaining({ code: "TN_PERF_HOST_EXIT", observed: 139 }));
+  });
+});
+
+describe("perfCommand --executable memory", () => {
+  it("reports the game process's peak RSS, read from /proc while it is still alive", async () => {
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+    const script = `setInterval(() => {}, 1000); process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const code = await perfCommand(["--executable", process.execPath, "--host-arg", "-e", "--host-arg", script]);
+    spy.mockRestore();
+    expect(code).toBe(0);
+    const report = JSON.parse(written.join("")) as { memory?: { rssPeakMb?: number } };
+    expect(report.memory?.rssPeakMb).toBeGreaterThan(0);
   });
 });
 
@@ -913,5 +937,148 @@ describe("windows too short to carry a display rate", () => {
     expect(report.violations).toEqual([
       expect.objectContaining({ code: "TN_PERF_MIN_FPS", observed: 60.4, window: 3 }),
     ]);
+  });
+});
+
+/** `/proc/<pid>/status`, the shape a Linux host reports. */
+const PROC_STATUS =
+  "Name:\tthreenative\nVmPeak:\t  8123456 kB\nVmSize:\t  8123456 kB\n" +
+  "VmHWM:\t    307200 kB\nVmRSS:\t    245760 kB\nThreads:\t9\n";
+
+/** The summary block of `adb shell dumpsys meminfo <pid>`. */
+const DUMPSYS_MEMINFO =
+  "Applications Memory Usage (in Kilobytes):\nUptime: 12345 Realtime: 12345\n\n" +
+  "** MEMINFO in pid 4321 [com.three.game] **\n" +
+  " TOTAL PSS:   100352      TOTAL RSS:   181983      TOTAL SWAP PSS:        0\n";
+
+describe("perf carries the host load it ran under", () => {
+  it("reads the cores and one-minute load from the injected source", () => {
+    expect(readHostLoad({ cores: () => 8, loadavg: () => [1.5, 1.4, 1.3] })).toEqual({ cores: 8, load1: 1.5 });
+  });
+
+  it("marks absolutes invalid once the one-minute load passes half the cores", () => {
+    expect(absolutesVerdict({ cores: 8, load1: 4 })).toBe("valid");
+    expect(absolutesVerdict({ cores: 8, load1: 4.1 })).toBe("invalid-absolute");
+  });
+
+  it("fails closed instead of vouching for absolutes it could not read", () => {
+    expect(() => readHostLoad({ cores: () => 0, loadavg: () => [1] })).toThrow(/TN_PERF_HOST_LOAD_UNREADABLE/u);
+    expect(() => readHostLoad({ cores: () => 8, loadavg: () => [] })).toThrow(/TN_PERF_HOST_LOAD_UNREADABLE/u);
+  });
+
+  it("prints the reading and the verdict, so an absolute number carries what it cost", () => {
+    const loaded = formatPerfReport({
+      ...assessPerfMarkers(parsePerformanceMarkers(sampleStream()), { requireWindows: 2 }, "test"),
+      hostLoad: { cores: 8, load1: 5.4, absolutes: "invalid-absolute" },
+    });
+    expect(loaded).toContain("host load: 1-minute 5.40 on 8 core(s) — absolutes invalid-absolute");
+  });
+});
+
+describe("perf memory readings", () => {
+  it("reads current and peak resident set out of /proc/<pid>/status, in MB", () => {
+    expect(parseProcStatusMemory(PROC_STATUS)).toEqual({ rssMb: 240, rssPeakMb: 300 });
+  });
+
+  it("fails closed on a status file with no VmHWM rather than reporting zero", () => {
+    expect(() => parseProcStatusMemory("Name:\tthreenative\nVmRSS:\t    245760 kB\n")).toThrow(
+      /TN_PERF_RSS_UNREADABLE.*VmHWM/u,
+    );
+  });
+
+  it("reads TOTAL PSS out of dumpsys meminfo, in MB", () => {
+    expect(parseTotalPssMb(DUMPSYS_MEMINFO)).toBe(98);
+  });
+
+  it("fails closed on dumpsys output with no TOTAL PSS line", () => {
+    expect(() => parseTotalPssMb("Applications Memory Usage (in Kilobytes):\n")).toThrow(
+      /TN_PERF_PSS_UNREADABLE/u,
+    );
+  });
+});
+
+/** One RSS sample per 100 frames of a soak, shaped by `rssMb`. */
+function soakSamples(rssMb: (frame: number) => number): ISoakSample[] {
+  return Array.from({ length: SOAK_MIN_FRAMES / 100 }, (_, index) => {
+    const frame = (index + 1) * 100;
+    return { frame, rssMb: rssMb(frame) };
+  });
+}
+
+describe("soakVerdict", () => {
+  it("passes a flat series", () => {
+    const verdict = soakVerdict({ frames: SOAK_MIN_FRAMES, samples: soakSamples(() => 240) });
+    expect(verdict).toMatchObject({ pass: true, growthPct: 0, baselineMb: 240, endMb: 240 });
+  });
+
+  it("passes a series that grows inside the ten percent limit", () => {
+    const verdict = soakVerdict({
+      frames: SOAK_MIN_FRAMES,
+      samples: soakSamples((frame) => (frame <= 300 ? 240 : 240 + (frame - 300) / 150)),
+    });
+    expect(verdict.pass).toBe(true);
+    expect(verdict.growthPct).toBeCloseTo(4.17, 1);
+  });
+
+  it("fails a series that outgrows the baseline after the first 300 frames", () => {
+    const verdict = soakVerdict({
+      frames: SOAK_MIN_FRAMES,
+      samples: soakSamples((frame) => (frame <= 300 ? 240 : 240 + (frame - 300) / 20)),
+    });
+    expect(verdict).toMatchObject({ pass: false, code: "TN_SOAK_RSS_GROWTH", baselineMb: 240, endMb: 315 });
+  });
+
+  it("fails a run whose process died before the requested frames", () => {
+    const verdict = soakVerdict({ frames: SOAK_MIN_FRAMES, samples: soakSamples(() => 240).slice(0, 6) });
+    expect(verdict).toMatchObject({ pass: false, code: "TN_SOAK_CRASH", framesReported: 600 });
+  });
+
+  it("fails a run that produced no sample at all", () => {
+    expect(soakVerdict({ frames: SOAK_MIN_FRAMES, samples: [] })).toMatchObject({
+      pass: false,
+      code: "TN_SOAK_CRASH",
+    });
+  });
+
+  it("rejects a soak shorter than the minimum, from the flag and from the verdict", () => {
+    expect(() => soakVerdict({ frames: 900, samples: [] })).toThrow(/at least 1800 frames/u);
+    expect(() => parsePerfArgs(["--executable", "host", "--soak", "900"])).toThrow(/at least 1800 frames/u);
+    expect(parsePerfArgs(["--executable", "host", "--soak", String(SOAK_MIN_FRAMES)]).soakFrames).toBe(SOAK_MIN_FRAMES);
+  });
+
+  it("needs an executable host to run frames against", () => {
+    expect(() => parsePerfArgs(["--file", "a.log", "--soak", "1800"])).toThrow(/needs --executable/u);
+  });
+});
+
+describe("perfCommand --soak", () => {
+  it("fails a soak whose host stopped short of the requested frames, named", async () => {
+    // Two windows of 300 frames, then the host exits 0 on its own. One steady window is enough
+    // (`--require-windows 1`) so the only finding left is the crash the soak exists to catch.
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10)].join("\n");
+    const script = `process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const code = await perfCommand([
+      "--executable", process.execPath,
+      "--host-arg", "-e",
+      "--host-arg", script,
+      "--soak", String(SOAK_MIN_FRAMES),
+      "--require-windows", "1",
+    ]);
+    spy.mockRestore();
+    expect(code).toBe(1);
+    const report = JSON.parse(written.join("")) as {
+      pass: boolean;
+      soak?: { pass: boolean; code?: string; samples: number };
+      violations: Array<{ code: string }>;
+    };
+    expect(report.pass).toBe(false);
+    expect(report.soak?.code).toBe("TN_SOAK_CRASH");
+    expect(report.soak?.samples).toBeGreaterThan(0);
+    expect(report.violations).toContainEqual(expect.objectContaining({ code: "TN_SOAK_CRASH" }));
   });
 });

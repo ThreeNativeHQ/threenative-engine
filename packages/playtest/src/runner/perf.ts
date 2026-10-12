@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { constants as osConstants } from "node:os";
+import { availableParallelism, constants as osConstants, loadavg } from "node:os";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { decideDisplayStrategy } from "./captureEnvironment.js";
@@ -179,16 +180,184 @@ export interface IPresentGapJson {
 export type IPerfViolationCode =
   | "TN_PERF_BOUNDS_NOT_ASSESSABLE"
   | "TN_PERF_HOST_EXIT"
+  | "TN_PERF_HOST_LOAD_UNREADABLE"
   | "TN_PERF_MAX_FRAME_P95"
   | "TN_PERF_MIN_FPS"
+  | "TN_PERF_RSS_UNREADABLE"
   | "TN_PERF_VIRTUAL_DISPLAY"
-  | "TN_PERF_WINDOWS_MISSING";
+  | "TN_PERF_WINDOWS_MISSING"
+  | "TN_SOAK_CRASH"
+  | "TN_SOAK_RSS_GROWTH";
 
 export interface IPerfViolation {
   readonly bound: number;
   readonly code: IPerfViolationCode;
+  /** Why it failed, in words. A named code with no reason tells the reader nothing to act on. */
+  readonly detail?: string;
   readonly observed: number | undefined;
   readonly window: number;
+}
+
+/**
+ * The one-minute load average and the core count of the machine that ran the report. Absolute
+ * milliseconds measured while more than half the cores are busy are somebody else's contention.
+ *
+ * The verdict rule and the reading are copied from `scripts/engine-load-test/report.ts`
+ * (`readHostLoad`, `absolutesVerdict`) rather than imported: a package must not reach into scripts/,
+ * and the rule is ten lines.
+ */
+export interface IPerfHostLoadReading {
+  readonly cores: number;
+  readonly load1: number;
+}
+export interface IPerfHostLoad extends IPerfHostLoadReading {
+  readonly absolutes: "invalid-absolute" | "valid";
+}
+export interface IPerfHostLoadSource {
+  cores(): number;
+  loadavg(): number[];
+}
+
+/** Absolutes are invalid once the one-minute load passes half the cores. */
+export function absolutesVerdict(reading: IPerfHostLoadReading): IPerfHostLoad["absolutes"] {
+  return reading.load1 > reading.cores / 2 ? "invalid-absolute" : "valid";
+}
+
+/** Defaults to this machine; a spec passes a stub. */
+export function readHostLoad(
+  source: IPerfHostLoadSource = { cores: () => availableParallelism(), loadavg },
+): IPerfHostLoadReading {
+  const cores = source.cores();
+  const load1 = source.loadavg()[0];
+  if (!Number.isInteger(cores) || cores < 1 || load1 === undefined || !Number.isFinite(load1)) {
+    throw new Error(
+      `TN_PERF_HOST_LOAD_UNREADABLE: cannot read host load (load1 ${String(load1)}, cores ${String(cores)}); an unmeasured load cannot vouch for absolutes`,
+    );
+  }
+  return { cores, load1 };
+}
+
+/**
+ * What the run's own memory cost, in MB.
+ *
+ * `rssPeakMb` is `VmHWM` of the desktop host, read at the end of the run. `pssMb` is the Android
+ * total PSS, which is the device's own accounting. Neither is ever reported as zero: a field the
+ * kernel or the device did not print is a named failure, not a measurement.
+ */
+export interface IPerfMemory {
+  readonly pssMb?: number;
+  readonly rssMb?: number;
+  readonly rssPeakMb?: number;
+}
+
+/** kB per MB, the unit `/proc` and `dumpsys meminfo` both report in. */
+const KB_PER_MB = 1024;
+
+/** Parse `/proc/<pid>/status`. Both fields are required; a missing one throws rather than reading 0. */
+export function parseProcStatusMemory(text: string): { rssMb: number; rssPeakMb: number } {
+  return {
+    rssMb: procStatusKb(text, "VmRSS:"),
+    rssPeakMb: procStatusKb(text, "VmHWM:"),
+  };
+}
+
+function procStatusKb(text: string, field: string): number {
+  const kb = new RegExp(`^${field}\\s+(\\d+) kB$`, "mu").exec(text)?.[1];
+if (kb === undefined) {
+    throw new Error(
+      `TN_PERF_RSS_UNREADABLE: /proc/<pid>/status carries no ${field} line; memory cannot be read, and an unread one is never reported as 0`,
+    );
+  }
+  return Number(kb) / KB_PER_MB;
+}
+
+/** Parse `adb shell dumpsys meminfo <pid>`: its `TOTAL PSS:` line, or a named failure. */
+export function parseTotalPssMb(text: string): number {
+  const kb = /^\s*TOTAL PSS:\s+(\d+)/mu.exec(text)?.[1];
+  if (kb === undefined) {
+    throw new Error(
+      "TN_PERF_PSS_UNREADABLE: dumpsys meminfo reported no TOTAL PSS line; device memory cannot be " +
+        "read, and an unread one is never reported as 0",
+    );
+  }
+  return Number(kb) / KB_PER_MB;
+}
+
+/** A soak runs at least this many frames; anything shorter is not a soak. */
+export const SOAK_MIN_FRAMES = 1800;
+/** RSS is sampled every this many frames. */
+export const SOAK_SAMPLE_EVERY_FRAMES = 100;
+/** Growth is judged from here, once startup has settled and the first allocations are resident. */
+export const SOAK_BASELINE_FRAME = 300;
+/** Resident set may grow this much past the baseline, in percent, before the soak fails. */
+export const SOAK_GROWTH_LIMIT_PCT = 10;
+
+export interface ISoakSample {
+  readonly frame: number;
+  readonly rssMb: number;
+}
+
+export interface ISoakRun {
+  /** Frames the soak was asked for. A run that stopped short of this died. */
+  readonly frames: number;
+  readonly samples: readonly ISoakSample[];
+}
+
+export interface ISoakVerdict {
+  readonly baselineMb: number;
+  readonly code?: "TN_SOAK_CRASH" | "TN_SOAK_RSS_GROWTH";
+  readonly endMb: number;
+  readonly framesReported: number;
+  readonly framesRequested: number;
+  readonly growthPct: number;
+  readonly pass: boolean;
+  readonly samples: number;
+}
+
+/**
+ * Did the soak survive, and did it stay the size it was after startup? Pure: the same samples
+ * always give the same verdict, so a report can be read without the run.
+ */
+export function soakVerdict(run: ISoakRun): ISoakVerdict {
+  requireSoakFrames(run.frames);
+  const end = run.samples.at(-1);
+  const baseline = run.samples.find((sample) => sample.frame >= SOAK_BASELINE_FRAME);
+  // No sample at or after the baseline frame, or a last sample short of the request, means the
+  // process never got there. There is no settled memory to compare against, so it is a crash
+  // rather than a flat run.
+  if (end === undefined || baseline === undefined || end.frame < run.frames) {
+    return {
+      baselineMb: baseline?.rssMb ?? 0,
+      code: "TN_SOAK_CRASH",
+      endMb: end?.rssMb ?? 0,
+      framesReported: end?.frame ?? 0,
+      framesRequested: run.frames,
+      growthPct: 0,
+      pass: false,
+      samples: run.samples.length,
+    };
+  }
+  const growthPct = ((end.rssMb - baseline.rssMb) / baseline.rssMb) * 100;
+  const growing = growthPct > SOAK_GROWTH_LIMIT_PCT;
+  return {
+    baselineMb: baseline.rssMb,
+    ...(growing ? { code: "TN_SOAK_RSS_GROWTH" as const } : {}),
+    endMb: end.rssMb,
+    framesReported: end.frame,
+    framesRequested: run.frames,
+    growthPct,
+    pass: !growing,
+    samples: run.samples.length,
+  };
+}
+
+function requireSoakFrames(frames: number): number {
+  if (frames < SOAK_MIN_FRAMES) {
+    throw new PlaytestCliUsageError(
+      `threenative-playtest perf: a soak needs at least ${SOAK_MIN_FRAMES} frames, received ${frames}.`,
+    );
+  }
+  return frames;
 }
 
 /**
@@ -259,6 +428,8 @@ export interface IPerfReport {
   readonly discardedWindows: readonly number[];
   readonly hitches: readonly IHitchWindowJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
+  readonly hostLoad?: IPerfHostLoad;
+  readonly memory?: IPerfMemory;
   readonly pipelineEvents?: readonly IPipelineCaptureEvent[];
   readonly pipelineCaches?: readonly IPipelineCacheObservation[];
   readonly display?: IPerfDisplay;
@@ -268,6 +439,7 @@ export interface IPerfReport {
   readonly presents: readonly IPresentsTickJson[];
   readonly projections: readonly IProjectionWindowJson[];
   readonly slowPhases: readonly ISlowPhaseJson[];
+  readonly soak?: ISoakVerdict;
   readonly source: string;
   readonly violations: readonly IPerfViolation[];
 }
@@ -300,6 +472,7 @@ export interface IPerfArgs extends IPerfBounds {
   readonly file: string | undefined;
   readonly hostArgs: readonly string[];
   readonly logcatSerial: string | undefined;
+  readonly soakFrames: number | undefined;
   readonly text: boolean;
   readonly timeoutSeconds: number;
 }
@@ -587,6 +760,7 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
     requireWindows: 2,
   };
   let text = false;
+  let soakFrames: number | undefined;
   let timeoutSeconds = 180;
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -600,6 +774,7 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
     else if (flag === "--max-frame-p95") { bounds.maxFrameMsP95 = requireNumber(flag, value); index += 1; }
     else if (flag === "--min-fps") { bounds.minFps = requireNumber(flag, value); index += 1; }
     else if (flag === "--require-windows") { bounds.requireWindows = requireNumber(flag, value); index += 1; }
+    else if (flag === "--soak") { soakFrames = requireSoakFrames(requireNumber(flag, value)); index += 1; }
     else if (flag === "--timeout") { timeoutSeconds = requireNumber(flag, value); index += 1; }
     else throw new PlaytestCliUsageError(`threenative-playtest perf: unknown flag '${flag}'. See threenative-playtest --help.`);
   }
@@ -613,6 +788,10 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
   if (named > 1) {
     throw new PlaytestCliUsageError("threenative-playtest perf: --file, --executable and --logcat are mutually exclusive.");
   }
+  // The soak watches a live process grow, so it needs the process: a log of frames already past.
+  if (soakFrames !== undefined && sources.executable === undefined) {
+    throw new PlaytestCliUsageError("threenative-playtest perf: --soak runs frames against a live host, so it needs --executable.");
+  }
   return {
     allowVirtualDisplay: bounds.allowVirtualDisplay === true,
     executable: sources.executable,
@@ -622,6 +801,7 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
     maxFrameMsP95: bounds.maxFrameMsP95,
     minFps: bounds.minFps,
     requireWindows: bounds.requireWindows,
+    soakFrames,
     text,
     timeoutSeconds,
   };
@@ -648,7 +828,10 @@ export async function perfCommand(argv: readonly string[]): Promise<number> {
       return emit(parsePerformanceMarkers(await readFile(path, "utf8")), args, `file: ${path}`);
     }
     if (args.logcatSerial !== undefined) {
-      return emit(parsePerformanceMarkers(await readLogcat(args.logcatSerial)), args, `logcat: ${args.logcatSerial}`);
+      const logcat = await readLogcat(args.logcatSerial);
+      return emit(parsePerformanceMarkers(logcat.text), args, `logcat: ${args.logcatSerial}`, {
+        memory: await logcatMemory(args.logcatSerial, logcat.pid),
+      });
     }
     if (args.executable !== undefined) {
       return await runExecutable(args, args.executable);
@@ -668,7 +851,17 @@ export async function perfCommand(argv: readonly string[]): Promise<number> {
   throw new PlaytestCliUsageError("threenative-playtest perf: no source named.");
 }
 
-/** Spawn the host, collect its output, and stop once enough windows have closed. */
+/** What one run measured beyond its windows: the host's own memory, and a soak's verdict. */
+export interface IPerfRun {
+  readonly display?: { readonly strategy: string; readonly virtual: boolean };
+  readonly hostStatus?: number;
+  readonly memory?: IPerfMemory;
+  /** Set when the host's memory could not be read. A named failure, never a missing column. */
+  readonly memoryError?: string;
+  readonly soak?: ISoakVerdict;
+}
+
+/** Spawn the host, collect its output, and stop once enough windows — or soak frames — have passed. */
 async function runExecutable(args: IPerfArgs, executable: string): Promise<number> {
   const source = `executable: ${[executable, ...args.hostArgs].join(" ")}`;
   // The same decision every other lane makes: the operator asked for the host display or this run
@@ -678,18 +871,48 @@ async function runExecutable(args: IPerfArgs, executable: string): Promise<numbe
   let collected = "";
   let stopped = false;
   let spawnFailed = false;
+  const soakFrames = args.soakFrames;
+  const samples: ISoakSample[] = [];
+  let nextSampleFrame = SOAK_SAMPLE_EVERY_FRAMES;
+  let memory: IPerfMemory | undefined;
+  let memoryError: string | undefined;
   // The first window is discarded as startup, so a complete run closes requireWindows + 1.
   const enoughWindows = (): boolean =>
     collected.split(FRAME_BUDGET_MARKER).length - 1 >= args.requireWindows + 1;
+  // The host's own memory, read from the live process. Once it exits, /proc/<pid> is gone, so every
+  // sample has to precede the stop; an unreadable one is a named failure rather than a missing
+  // column, and it never becomes a 0.
+  const readMemory = (): IPerfMemory | undefined => {
+    try {
+      return readProcStatusMemory(child.pid);
+    } catch (error) {
+      memoryError ??= error instanceof Error ? error.message : String(error);
+      return undefined;
+    }
+  };
+  const done = (): boolean =>
+    soakFrames === undefined ? enoughWindows() : framesReported(collected) >= soakFrames;
   const stop = (): void => {
     if (!stopped) {
       stopped = true;
+      memory = readMemory();
       child.kill("SIGTERM");
     }
   };
   child.stdout.on("data", (chunk: Buffer) => {
     collected += chunk.toString("utf8");
-    if (enoughWindows()) stop();
+    if (soakFrames !== undefined) {
+      // Sampled as the frame count crosses each boundary, so the series is what the run did rather
+      // than what it did between two reads of a clock.
+      const framesSeen = framesReported(collected);
+      while (framesSeen >= nextSampleFrame) {
+        const reading = readMemory();
+        if (reading === undefined) return stop();
+        samples.push({ frame: nextSampleFrame, rssMb: reading.rssMb });
+        nextSampleFrame += SOAK_SAMPLE_EVERY_FRAMES;
+      }
+    }
+    if (done()) stop();
   });
   child.stderr.on("data", (chunk: Buffer) => { collected += chunk.toString("utf8"); });
   const timeout = setTimeout(stop, args.timeoutSeconds * 1000);
@@ -706,26 +929,67 @@ async function runExecutable(args: IPerfArgs, executable: string): Promise<numbe
     child.on("close", (code, signal) => {
       clearTimeout(timeout);
       if (spawnFailed) return;
-      const exitCode = emit(
-        parsePerformanceMarkers(collected),
-        args,
-        source,
-        { strategy: strategy.kind, virtual: strategy.kind === "private-xvfb" },
-        hostFailureStatus(code, signal, stopped),
-      );
+      const exitCode = emit(parsePerformanceMarkers(collected), args, source, {
+        hostStatus: hostFailureStatus(code, signal, stopped),
+        ...(memory === undefined ? {} : { memory }),
+        ...(memoryError === undefined ? {} : { memoryError }),
+        ...(soakFrames === undefined ? {} : { soak: soakVerdict({ frames: soakFrames, samples }) }),
+        display: { strategy: strategy.kind, virtual: strategy.kind === "private-xvfb" },
+      });
       process.exitCode = exitCode;
       settleExit(exitCode);
     });
   });
 }
 
-async function readLogcat(serial: string): Promise<string> {
-  const execFileAsync = promisify(execFile);
+/** Frames the host has reported across every window collected so far. */
+function framesReported(text: string): number {
+  let total = 0;
+  for (const line of text.split("\n")) {
+    const window = parseMarkerLine<IFrameBudgetWindowJson>(line, FRAME_BUDGET_MARKER);
+    if (window !== undefined) total += window.frames;
+  }
+  return total;
+}
+
+function readProcStatusMemory(pid: number | undefined): IPerfMemory {
+  if (pid === undefined) {
+    throw new Error("TN_PERF_RSS_UNREADABLE: the host has no PID, so its memory cannot be read");
+  }
+  let text: string;
+  try {
+    text = readFileSync(`/proc/${pid}/status`, "utf8");
+  } catch (error) {
+    throw new Error(
+      `TN_PERF_RSS_UNREADABLE: cannot read /proc/${pid}/status: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return parseProcStatusMemory(text);
+}
+
+const execFileAsync = promisify(execFile);
+
+async function readLogcat(serial: string): Promise<{ pid: string | undefined; text: string }> {
   const { stdout } = await execFileAsync(discoverAdb(), ["-s", serial, "logcat", "-d", "-v", "brief"], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
-  return newestProcessLines(stdout);
+  const text = newestProcessLines(stdout);
+  return { pid: newestPid(text), text };
+}
+
+/** The Android process whose memory the device reports, from the PID that wrote the newest window. */
+async function logcatMemory(serial: string, pid: string | undefined): Promise<IPerfMemory> {
+  if (pid === undefined) {
+    throw new Error(
+      `TN_PERF_PSS_UNREADABLE: no PID in the logcat buffer for ${serial}; dumpsys meminfo needs one`,
+    );
+  }
+  const { stdout } = await execFileAsync(discoverAdb(), ["-s", serial, "shell", "dumpsys", "meminfo", pid], {
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return { pssMb: parseTotalPssMb(stdout) };
 }
 
 /**
@@ -735,10 +999,15 @@ async function readLogcat(serial: string): Promise<string> {
  */
 export function newestProcessLines(text: string): string {
   const lines = text.split("\n");
-  const newest = [...lines].reverse().find((line) => line.includes(FRAME_BUDGET_MARKER));
-  const pid = newest === undefined ? undefined : logcatPid(newest);
+  const pid = newestPid(text);
   if (pid === undefined) return text;
   return lines.filter((line) => logcatPid(line) === undefined || logcatPid(line) === pid).join("\n");
+}
+
+/** The PID that wrote the newest frame-budget marker, which is the launch this run is about. */
+function newestPid(text: string): string | undefined {
+  const newest = [...text.split("\n")].reverse().find((line) => line.includes(FRAME_BUDGET_MARKER));
+  return newest === undefined ? undefined : logcatPid(newest);
 }
 
 /** The PID in a brief-format header, such as `I/MystralStdio( 4321): message`. */
@@ -759,21 +1028,64 @@ function hostFailureStatus(code: number | null, signal: NodeJS.Signals | null, s
   return signal === null ? 128 : 128 + osConstants.signals[signal];
 }
 
-function emit(
-  parse: IPerfMarkerParse,
-  args: IPerfArgs,
-  source: string,
-  display?: { readonly strategy: string; readonly virtual: boolean },
-  hostStatus?: number,
-): number {
-  const assessed = assessPerfMarkers(parse, args, source, display);
+/**
+ * What the run itself found, beyond its windows: the host's exit, its memory, the soak, and the
+ * load it ran under. Each is a named failure or an absent value, never a softened pass.
+ *
+ * The load is read when the report is written, so it describes the run that just finished. An
+ * unreadable one cannot vouch for absolutes, so it fails the run by name instead of being absent.
+ */
+function runFindings(run?: IPerfRun): { hostLoad?: IPerfHostLoad; violations: IPerfViolation[] } {
+  const violations: IPerfViolation[] = [];
+  let hostLoad: IPerfHostLoad | undefined;
+  try {
+    const reading = readHostLoad();
+    hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
+  } catch (error) {
+    violations.push({
+      bound: 0,
+      code: "TN_PERF_HOST_LOAD_UNREADABLE",
+      detail: error instanceof Error ? error.message : String(error),
+      observed: undefined,
+      window: -1,
+    });
+  }
   // A host that failed on its own fails the run, whatever its markers say.
-  const report: IPerfReport = hostStatus === undefined ? assessed : {
+  if (run?.hostStatus !== undefined) {
+    violations.push({ bound: 0, code: "TN_PERF_HOST_EXIT", observed: run.hostStatus, window: -1 });
+  }
+  if (run?.memoryError !== undefined) {
+    violations.push({ bound: 0, code: "TN_PERF_RSS_UNREADABLE", detail: run.memoryError, observed: undefined, window: -1 });
+  }
+  const soak = run?.soak;
+  if (soak !== undefined && !soak.pass) {
+    const growth = soak.code === "TN_SOAK_RSS_GROWTH";
+    violations.push({
+      bound: growth ? SOAK_GROWTH_LIMIT_PCT : soak.framesRequested,
+      code: soak.code ?? "TN_SOAK_CRASH",
+      detail: growth
+        ? `${soak.baselineMb.toFixed(1)} MB after frame ${SOAK_BASELINE_FRAME} to ${soak.endMb.toFixed(1)} MB at frame ${soak.framesReported}`
+        : `${soak.framesReported} of ${soak.framesRequested} frames over ${soak.samples} RSS samples`,
+      observed: growth ? soak.growthPct : soak.framesReported,
+      window: -1,
+    });
+  }
+  return { hostLoad, violations };
+}
+
+function emit(parse: IPerfMarkerParse, args: IPerfArgs, source: string, run?: IPerfRun): number {
+  const assessed = assessPerfMarkers(parse, args, source, run?.display);
+  const findings = runFindings(run);
+  const violations = [...assessed.violations, ...findings.violations];
+  const report: IPerfReport = {
     ...assessed,
-    pass: false,
-    violations: [...assessed.violations, { bound: 0, code: "TN_PERF_HOST_EXIT", observed: hostStatus, window: -1 }],
+    ...(findings.hostLoad === undefined ? {} : { hostLoad: findings.hostLoad }),
+    ...(run?.memory === undefined ? {} : { memory: run.memory }),
+    ...(run?.soak === undefined ? {} : { soak: run.soak }),
+    pass: violations.length === 0 && assessed.pass,
+    violations,
   };
-  const windowsMissing = report.violations.some(({ code }) => code === "TN_PERF_WINDOWS_MISSING");
+  const windowsMissing = violations.some(({ code }) => code === "TN_PERF_WINDOWS_MISSING");
   const exitCode: 0 | 1 | 2 = windowsMissing ? 2 : report.pass ? 0 : 1;
   process.stdout.write(args.text ? formatPerfReport(report) : `${JSON.stringify(report, null, 2)}\n`);
   process.exitCode = exitCode;
@@ -806,6 +1118,7 @@ export function formatPerfReport(report: IPerfReport): string {
     lines.push("pipeline events: not reported — this log cannot attribute shader compilation");
   }
   if (report.presentMode !== undefined) lines.push(`present mode: ${report.presentMode}`);
+  lines.push(...formatRunContext(report));
   // Reported once, from the last window, next to the fps it explains. Named as unreported when
   // absent rather than left off: a reader who sees no scale line must not assume a full-resolution
   // single-sample frame, which is exactly how a perf record and its tree came to disagree.
@@ -891,10 +1204,48 @@ export function formatPerfReport(report: IPerfReport): string {
   lines.push(...formatHitches(report.hitches, report.presentGaps, report.slowPhases));
   for (const violation of report.violations) {
     const observed = violation.observed === undefined ? "absent" : round(violation.observed).toString();
-    lines.push(`FAIL ${violation.code}: window ${violation.window} observed ${observed} against bound ${violation.bound}`);
+    lines.push(
+      `FAIL ${violation.code}: window ${violation.window} observed ${observed} against bound ${violation.bound}` +
+        (violation.detail === undefined ? "" : ` — ${violation.detail}`),
+    );
   }
   if (report.pass) lines.push("PASS");
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * What the run cost and the machine it ran on: the host load its absolutes were measured under, the
+ * memory of the game process, and the soak's own verdict.
+ *
+ * Each memory value is its own line. The desktop host reports a peak, an Android device reports a
+ * PSS, and a soak reports the series it sampled: a blank or a zero where a number belongs is a
+ * measurement nobody can act on, so a value that could not be read is a named failure above.
+ */
+function formatRunContext(report: IPerfReport): string[] {
+  const lines: string[] = [];
+  if (report.hostLoad !== undefined) {
+    lines.push(
+      `host load: 1-minute ${report.hostLoad.load1.toFixed(2)} on ${report.hostLoad.cores} core(s) — absolutes ${report.hostLoad.absolutes}` +
+        (report.hostLoad.absolutes === "invalid-absolute"
+          ? " (more than half the cores were busy, so absolute milliseconds are somebody else's contention)"
+          : ""),
+    );
+  }
+  if (report.memory?.rssPeakMb !== undefined) {
+    lines.push(`memory: peak RSS ${report.memory.rssPeakMb.toFixed(1)} MB (VmHWM of the game process)`);
+  }
+  if (report.memory?.rssMb !== undefined) lines.push(`memory: RSS ${report.memory.rssMb.toFixed(1)} MB`);
+  if (report.memory?.pssMb !== undefined) {
+    lines.push(`memory: PSS ${report.memory.pssMb.toFixed(1)} MB (dumpsys meminfo TOTAL PSS)`);
+  }
+  if (report.soak !== undefined) {
+    lines.push(
+      `soak: ${report.soak.framesReported} of ${report.soak.framesRequested} frames, ${report.soak.samples} RSS samples every ${SOAK_SAMPLE_EVERY_FRAMES}, ` +
+        `${report.soak.baselineMb.toFixed(1)} MB after frame ${SOAK_BASELINE_FRAME} to ${report.soak.endMb.toFixed(1)} MB ` +
+        `(${report.soak.growthPct.toFixed(1)}% against a ${SOAK_GROWTH_LIMIT_PCT}% limit) — ${report.soak.pass ? "PASS" : `FAIL ${report.soak.code}`}`,
+    );
+  }
+  return lines;
 }
 
 /**
