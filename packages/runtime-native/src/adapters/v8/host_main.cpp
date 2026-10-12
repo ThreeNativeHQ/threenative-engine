@@ -186,6 +186,9 @@ struct V8Game {
         v8::Isolate::Scope isolateScope(isolate);
         v8::HandleScope scope(isolate);
         adapter = std::make_unique<tn::adapters::v8adapter::Adapter>(isolate, context);
+        // three's own math as JS (PRD-573 v1.11 step 4a); TN_NATIVE_JS_MATH=0 is the A/B arm with native math.
+        if (const char* mathMode = std::getenv("TN_NATIVE_JS_MATH"); mathMode == nullptr || std::string(mathMode) != "0")
+            adapter->setJsMath(true);
         v8::Local<v8::Context> ctx = v8::Context::New(isolate);
         js.Reset(isolate, ctx);
         v8::Context::Scope contextScope(ctx);

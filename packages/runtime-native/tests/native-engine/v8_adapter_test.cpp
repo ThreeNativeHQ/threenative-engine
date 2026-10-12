@@ -1476,6 +1476,16 @@ void jsMath() {
         mesh.position.set(7, 8, 9);
         `${p.x} ${p.y} ${p.z} ${w.x} ${w.y} ${w.z} ${new Color(0.25, 0.5, 1).r}`
     )JS") == "7 8 9 4 5 6 0.25");
+    // A native object may keep its argument (a curve's points, a Raycaster's ray) instead of copying it: that
+    // stand-in leaves the pool, so the next call's arguments neither overwrite it nor find the pool's handle dead.
+    CHECK(run(rt, adapter, R"JS(
+        const curve = new CatmullRomCurve3([0, 1, 2, 3].map((i) => new Vector3(i, i * i, 0)));
+        const kept = curve.points.map((p) => p.y).join();
+        const ray = new Raycaster(new Vector3(0.2, -0.3, 5), new Vector3(0, 0, -1));
+        const other = new Raycaster(new Vector3(7, 0, 0), new Vector3(0, 1, 0));
+        const again = new CatmullRomCurve3([4, 5, 6, 7].map((i) => new Vector3(i, i, i)));
+        `${kept} ${curve.points.map((p) => p.x).join()} ${ray.ray.origin.x} ${ray.ray.direction.z} ${other.ray.origin.x} ${again.points[3].x}`
+    )JS") == "0,1,4,9 0,1,2,3 0.2 -1 7 7");
 }
 
 // A transform member is a view over the object's own memory (PRD-573 v1.11 step 4b): component writes

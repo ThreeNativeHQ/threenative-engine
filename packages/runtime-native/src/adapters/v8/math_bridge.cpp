@@ -214,6 +214,7 @@ v8::MaybeLocal<v8::Value> MathBridge::view(tn_handle_t handle) {
     while (k < kMathKinds && types_[k] != handle.type) ++k;
     if (k == kMathKinds) return {};
     const auto kind = static_cast<MathKind>(k);
+    if (isStandIn(handle)) return {};  // the pool's own, only ever answered as the JS argument it stands for
     tn::binding::Object* object = tn::abi::objectOf(handle);
     if (object == nullptr) return {};
     const void* address = object->ptr.get();
@@ -368,7 +369,7 @@ MathBridge::Slot& MathBridge::acquire(MathKind kind, Stand& stand, v8::Local<v8:
     const auto k = static_cast<std::size_t>(kind);
     const std::size_t index = used_[k]++;
     auto& pool = pools_[k];
-    if (pool.size() <= index) {
+    if (pool.size() <= index || !pool[index].object) {
         using namespace tn::engine;
         std::shared_ptr<void> object;
         switch (kind) {
@@ -383,7 +384,11 @@ MathBridge::Slot& MathBridge::acquire(MathKind kind, Stand& stand, v8::Local<v8:
             case MathKind::Box3: object = std::make_shared<Box3>(); break;
             case MathKind::Sphere: object = std::make_shared<Sphere>(); break;
         }
-        pool.push_back(Slot{tn::abi::shareObject(context_, kNames[k], object), object});
+        const tn_handle_t handle = tn::abi::shareObject(context_, kNames[k], object);
+        Slot slot{handle, std::move(object), 0};
+        slot.baseline = slot.object.use_count();
+        if (pool.size() <= index) pool.push_back(std::move(slot));
+        else pool[index] = std::move(slot);
     }
     stand.uses_.push_back(Stand::Use{kind, index, js, {}});
     return pool[index];
@@ -404,8 +409,27 @@ bool MathBridge::standIn(v8::Local<v8::Value> value, Stand& stand, tn_value_t& o
     return true;
 }
 
+// A native object may keep an argument instead of copying it (a curve's points, a Raycaster's ray): that
+// stand-in is then the object's own, so the pool gives it up and makes a fresh one for the next call.
 MathBridge::Stand::~Stand() {
-    for (const Use& use : uses_) --bridge_->used_[static_cast<std::size_t>(use.kind)];
+    for (const Use& use : uses_) {
+        const auto k = static_cast<std::size_t>(use.kind);
+        --bridge_->used_[k];
+        Slot& slot = bridge_->pools_[k][use.index];
+        if (slot.object && slot.object.use_count() > slot.baseline) {
+            tn::abi::dropHandle(slot.handle);
+            slot.object.reset();
+        }
+    }
+}
+
+bool MathBridge::isStandIn(tn_handle_t handle) const {
+    for (const auto& pool : pools_)
+        for (const Slot& slot : pool)
+            if (slot.object && slot.handle.index == handle.index && slot.handle.generation == handle.generation &&
+                slot.handle.type == handle.type)
+                return true;
+    return false;
 }
 
 v8::Local<v8::Value> MathBridge::Stand::jsFor(tn_handle_t handle) const {

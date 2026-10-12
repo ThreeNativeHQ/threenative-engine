@@ -92,7 +92,8 @@ private:
     struct Entry;
     struct Slot {
         tn_handle_t handle;
-        std::shared_ptr<void> object;
+        std::shared_ptr<void> object;  // null once retired
+        long baseline = 0;             // object.use_count() while only the pool and the context hold it
     };
 
     v8::Local<v8::Value> build(MathKind kind, const void* address, tn::abi::ViewClaim* claim);
@@ -100,6 +101,7 @@ private:
     void remember(MathKind kind, const void* address, v8::Local<v8::Value> view);
     void pair(v8::Local<v8::Value> view, int column, const void* address);
     Slot& acquire(MathKind kind, Stand& stand, v8::Local<v8::Object> js);
+    bool isStandIn(tn_handle_t handle) const;
     bool fill(MathKind kind, void* object, v8::Local<v8::Object> js, std::array<double, 16>& flat);
     void flatten(MathKind kind, const void* object, std::array<double, 16>& flat) const;
     void write(MathKind kind, const std::array<double, 16>& flat, v8::Local<v8::Object> js);

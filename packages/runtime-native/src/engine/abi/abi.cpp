@@ -690,7 +690,18 @@ void dropHandle(tn_handle_t handle) {
     const tn::engine::Handle h{handle.type, handle.context, handle.index, handle.generation};
     if (context->objects.release(h) != tn::engine::HandleError::None || handle.index >= context->values.size()) return;
     tn::binding::Object& slot = context->values[handle.index];
-    if (slot.ptr) context->dropOwner(slot.ptr.get());
+    // Another live handle may name the same address (a Ray and its first member, `origin`): the owner
+    // record is what adoptAlias reads for both, so it stays while any of them lives.
+    const void* address = slot.ptr.get();
+    const auto lives = [&](const tn_handle_t& other) {
+        return !(other.index == handle.index && other.generation == handle.generation && other.type == handle.type) &&
+               context->object(other) != nullptr;
+    };
+    bool shared = false;
+    if (const auto known = context->identities_.find(address); known != context->identities_.end())
+        for (const auto& [cls, other] : known->second) shared = shared || lives(other);
+    if (const auto primary = context->primary_.find(address); primary != context->primary_.end()) shared = shared || lives(primary->second);
+    if (slot.ptr && !shared) context->dropOwner(address);
     context->ownCopy(slot.ptr, -1);
     slot = tn::binding::Object{};
 }

@@ -789,6 +789,9 @@ bool V8Game::start(const std::string& path, std::string& error) {
     v8::Isolate::Scope isolateScope(isolate_);
     v8::HandleScope scope(isolate_);
     adapter_ = std::make_unique<tn::adapters::v8adapter::Adapter>(isolate_, context_);
+    // three's own math as JS (PRD-573 v1.11 step 4a); TN_NATIVE_JS_MATH=0 is the A/B arm with native math.
+    if (const char* mathMode = std::getenv("TN_NATIVE_JS_MATH"); mathMode == nullptr || std::string(mathMode) != "0")
+        adapter_->setJsMath(true);
     mystral::js::JSValueGuard global(*services_, services_->getGlobal());
     auto object = static_cast<v8::Persistent<v8::Value>*>(global.get().ptr)->Get(isolate_).As<v8::Object>();
     v8::Local<v8::Context> ctx = object->GetCreationContext().ToLocalChecked();

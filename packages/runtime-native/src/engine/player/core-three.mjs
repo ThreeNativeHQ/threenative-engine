@@ -132,7 +132,8 @@ export {
 } from "./core-textures.mjs";
 
 // The binding registry represents the stateless namespaces as native objects.
-export const MathUtils = new globalThis.MathUtils();
+// With JS math (the player's default) the global is three's own namespace object; otherwise a bound class.
+export const MathUtils = typeof globalThis.MathUtils === "function" ? new globalThis.MathUtils() : globalThis.MathUtils;
 const skeletonUtils = new globalThis.SkeletonUtils();
 export const clone = (root) => skeletonUtils.clone(root);
 

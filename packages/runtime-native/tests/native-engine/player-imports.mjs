@@ -68,7 +68,11 @@ check(lathe instanceof THREE.BufferGeometry && JSON.stringify(Array.from(lathe.g
 const grip = [[0, -0.11, 1.21], [0.02, -0.24, 1.26], [0.06, -0.35, 1.32], [0.085, -0.42, 1.37]];
 const gripPoints = grip.map(([x, y, z]) => new THREE.Vector3(x, y, z));
 const curve = new THREE.CatmullRomCurve3(gripPoints, false, "centripetal");
-check(curve.isCatmullRomCurve3 && curve.points[0] === gripPoints[0], "curve keeps the caller's points");
+// With JS math the caller's Vector3s are three's own and the native curve copies them (the value, not the
+// object, crosses), so the points are equal but not identical; with native math they were the same objects.
+const samePoint = (a, b) => a === b || (a.x === b.x && a.y === b.y && a.z === b.z);
+check(curve.isCatmullRomCurve3 && curve.points.length === gripPoints.length && samePoint(curve.points[0], gripPoints[0]),
+  "curve keeps the caller's points");
 const curveAnswers = [...curve.getPoints(4), curve.getTangent(0.25), curve.getPointAt(0.6), curve.getTangentAt(0.9)]
   .map((v) => v.toArray()).concat([curve.getLength()]);
 check(JSON.stringify(curveAnswers) === ${JSON.stringify(JSON.stringify((() => {
