@@ -353,6 +353,8 @@ bool pumpEvents(Window& window, const Game& game) {
 
 const char* presentModeName() { return surfaceConfig().vsync ? "fifo" : "immediate"; }
 
+SurfaceSize configuredSurface() { return {surfaceConfig().width, surfaceConfig().height}; }
+
 double threadCpuMs() {
 #if defined(__linux__)
     timespec now{};

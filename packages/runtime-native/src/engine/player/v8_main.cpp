@@ -216,6 +216,7 @@ class V8Game {
     static void setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void requestAdapter(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void surfaceSize(const v8::FunctionCallbackInfo<v8::Value>& info);
     v8::Local<v8::Value> adapterValue();
   public:
     void setAdapter(std::vector<std::pair<std::string, std::string>> info) { adapterInfo_ = std::move(info); }
@@ -459,6 +460,20 @@ void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     record->Set(ctx, v8str(isolate, "drawCalls"), v8::Number::New(isolate, game.drawCalls_)).Check();
     record->Set(ctx, v8str(isolate, "triangles"), v8::Number::New(isolate, static_cast<double>(game.triangles_))).Check();
     record->Set(ctx, v8str(isolate, "pipelineCompiles"), v8::Number::New(isolate, static_cast<double>(game.pipelineCompiles_))).Check();
+    info.GetReturnValue().Set(record);
+}
+
+// `tn.surfaceSize()`: { width, height } of the drawing buffer. The player owns the window, so a game's
+// setSize cannot change it; the facade's getDrawingBufferSize reports this rather than the size it was asked for.
+void V8Game::surfaceSize(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto ctx = isolate->GetCurrentContext();
+    const player::SurfaceSize size = game.renderer_ ? player::SurfaceSize{game.renderer_->width(), game.renderer_->height()}
+                                                    : player::configuredSurface();
+    auto record = v8::Object::New(isolate);
+    record->Set(ctx, v8str(isolate, "width"), v8::Number::New(isolate, size.width)).Check();
+    record->Set(ctx, v8str(isolate, "height"), v8::Number::New(isolate, size.height)).Check();
     info.GetReturnValue().Set(record);
 }
 
@@ -867,6 +882,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "renderInfo"), v8::Function::New(ctx, &renderInfo, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "surfaceSize"), v8::Function::New(ctx, &surfaceSize, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "presentMode"), v8str(isolate_, player::presentModeName())).Check();
     v8::Local<v8::Script> script;
     if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {

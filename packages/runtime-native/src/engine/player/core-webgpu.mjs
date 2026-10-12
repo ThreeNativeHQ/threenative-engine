@@ -77,7 +77,11 @@ export class WebGPURenderer {
     this.domElement.width = width;
     this.domElement.height = height;
   }
-  getDrawingBufferSize(target) { return target.set(this.domElement.width, this.domElement.height); }
+  // The player owns the window, so setSize cannot resize it: the drawing buffer is the surface the player opened.
+  getDrawingBufferSize(target) {
+    const { width, height } = globalThis.tn.surfaceSize();
+    return target.set(width, height);
+  }
   render(scene, camera) {
     warnFogNode(scene);
     globalThis.__tnGameSpan?.(GAME_SPANS.transport, 0);

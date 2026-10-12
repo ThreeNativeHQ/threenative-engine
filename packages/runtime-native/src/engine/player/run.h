@@ -107,6 +107,10 @@ double gameSpan(int id, int action);
 double wallMs();
 /** "fifo" (vsync, the default) or "immediate" (TN_PLAYER_VSYNC=0): the present mode this run's surface uses. */
 const char* presentModeName();
+/** The window this run opens (TN_PLAYER_WIDTH x TN_PLAYER_HEIGHT, else the default): what a game may read before the
+ * renderer exists. Once it does, the renderer's own size is the drawing buffer. */
+struct SurfaceSize { uint32_t width, height; };
+SurfaceSize configuredSurface();
 json::Value gameSpanTiming(double gameMs);
 
 /** One owned player session; step returns 1 while running, 0 on close, a negative error on failure. */

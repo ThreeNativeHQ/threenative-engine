@@ -436,6 +436,25 @@ await bundleNativeEngine({ entry, outfile, boot: false });
 const lateFailure = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
 assert.equal(lateFailure.status, 1);
 assert.match(lateFailure.stderr, /core startup failed: late failure/);
+// The player owns the window: a game's setSize cannot resize it, so getDrawingBufferSize reports the surface
+// the player opens (TN_PLAYER_WIDTH x TN_PLAYER_HEIGHT, else 1280x720), never the size the game asked for.
+const surfaceGame = (want) => `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { Scene, PerspectiveCamera, Vector2 } from "three";
+import { WebGPURenderer } from "three/webgpu";
+const renderer = new WebGPURenderer({ canvas: globalThis.canvas });
+renderer.setSize(1920, 1080, false);
+const size = renderer.getDrawingBufferSize(new Vector2());
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera();
+if (size.x + "x" + size.y !== ${JSON.stringify(want)}) globalThis.tn.__startupError = "getDrawingBufferSize reported " + size.x + "x" + size.y;
+`;
+for (const [env, want] of [[{ TN_PLAYER_WIDTH: "640", TN_PLAYER_HEIGHT: "360" }, "640x360"], [{}, "1280x720"]]) {
+  const surfaceEntry = resolve(work, "surface.ts"), surfaceOut = resolve(work, "surface.js");
+  await writeFile(surfaceEntry, surfaceGame(want));
+  await bundleNativeEngine({ entry: surfaceEntry, outfile: surfaceOut, boot: false });
+  const surface = spawnSync(resolve(executable), ["--check-game", surfaceOut], { encoding: "utf8", env: { ...process.env, ...env } });
+  assert.equal(surface.status, 0, `${want}: ${surface.stdout}\n${surface.stderr}`);
+}
 if (process.argv.includes("--imports-only")) {
   console.log("PASS native imports, identity, picking, clone, TSL and audio");
   process.exit(0);
