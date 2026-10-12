@@ -39,9 +39,9 @@ and does not use it.
 
 | Package | LOC | Reads | Produces | Gap |
 |---|---|---|---|---|
-| `@threenative/raw-unreal` | 3,632 | uncooked `.uasset` static meshes — `FMeshDescription` (UE5), `FMeshDescription` UE4.2x, `FRawMesh` | `BufferGeometry` + sections + bounds | **no textures, no materials, no skeletal** (skeletal throws `UAssetError`) |
-| `@threenative/ueformat` | 1,348 | `.uemodel` from CUE4Parse/FModel | static + skeletal, skin weights, morphs, sockets | **no textures**; needs CUE4Parse installed |
-| `threenative-asset-mcp@0.7.0` (external) | ~10,227 in `src/unreal/` | `.uasset` meshes, textures, materials, skeletal, audio, Paper2D, fonts | GLB + PNG + an import report | **not in this repo**; PNG-only textures; no dedupe |
+| `@threenative/raw-unreal` | 3,650 | uncooked `.uasset` static meshes — `FMeshDescription` (UE5), `FMeshDescription` UE4.2x, `FRawMesh` | `BufferGeometry` + sections + bounds | **no textures, no materials, no skeletal** (skeletal throws `UAssetError`) |
+| `@threenative/ueformat` | 1,363 | `.uemodel` from CUE4Parse/FModel | static + skeletal, skin weights, morphs, sockets | **no textures**; needs CUE4Parse installed |
+| `threenative-asset-mcp@0.9.5` (external, measured at 0.7.0) | ~10,424 in `src/unreal/` | `.uasset` meshes, textures, materials, skeletal, audio, Paper2D, fonts | GLB + PNG + an import report | **not in this repo**; PNG-only textures; no dedupe |
 
 **Measured, on the wildwood pack**
 
@@ -72,7 +72,7 @@ hoping for bytes should read PRD-349.
    the pack itself; nothing is written twice.
 3. **One toolchain instead of two.** The importer provisions `umodel` and an uncooked converter
    (`4.27.2.0+threenative.7`, per wildwood's import report). `raw-unreal` needs neither.
-4. **The reader is already written and tested.** 3,632 LOC of self-validating parser, sitting unused
+4. **The reader is already written and tested.** 3,650 LOC of self-validating parser, sitting unused
    by the pipeline it was built for.
 
 **What it costs:** a `UTexture2D` reader. The spike below sized it: **small** — the bulk-data walk
@@ -150,13 +150,38 @@ rather than raw.
 already exist in this repo:
 
 1. the `FByteBulkData` walk — **`raw-unreal/src/bulk-data.ts` already does it**, for the same
-   packages;
+   packages. This holds for UE4 packages only. See "What Unreal 5.8.3 stores" below;
 2. a PNG decode — **`pngjs` is already a dependency of `packages/assets`**;
 3. source-format interpretation — verify decoded pixel/channel order against the external
    importer before applying any BGRA→RGBA swizzle; a PNG signature and `TSF_BGRA8` label alone
    do not prove the decoded PNG still needs a channel swap.
 
-The reader is small. The estimate in §2 ("the majority of the work") was wrong; the material
+**What Unreal 5.8.3 stores.** The three questions above describe a UE4 pack (object version 514). The
+engine source shows that a UE5 texture package differs in four ways that the reader must refuse or handle:
+
+- The source image lives in `FEditorBulkData`, not `FByteBulkData`. The payload sits in the package
+  trailer, in a `.upayload` sidecar file, or in a virtualization backend that is not on disk (UE 5.8.3:
+  `Engine/Source/Runtime/Engine/Private/Texture.cpp:1085-1112`,
+  `Engine/Source/Runtime/CoreUObject/Public/Serialization/EditorBulkData.h:371-400`).
+- The source compression format has five values: none, PNG, JPEG, a Unreal-specific JPEG and a Unreal-specific
+  delta transform (UE 5.8.3: `Engine/Source/Runtime/Engine/Classes/Engine/TextureDefines.h:335-345`).
+  Current Unreal saves most integer formats as the delta transform with a Kraken (Oodle) compressed
+  payload, not as PNG (UE 5.8.3: `Engine/Source/Runtime/Engine/Private/Texture.cpp:2546-2655`).
+  `raw-unreal` has no Oodle codec of its own.
+- The source pixel format has more values than `TSF_BGRA8`: 8-bit gray, 16-bit gray, RGBA16, half and full float,
+  and a shared-exponent format (UE 5.8.3: `Engine/Source/Runtime/Engine/Classes/Engine/TextureDefines.h:350-368`).
+  Packed masks are often gray or 16-bit.
+- Unreal itself swaps the red and blue channels after it decodes a PNG-wrapped `TSF_BGRA8` source. Its comment
+  calls this a legacy bug that compress and decompress must both keep (UE 5.8.3:
+  `Engine/Source/Runtime/Engine/Private/Texture.cpp:3399-3405`). A plain PNG decode therefore does not give
+  true colors. The swap negative control in §4 step 3 tests exactly this.
+
+Static meshes show the same three-way split in the source. A package holds a raw mesh when its editor object
+version is old, an inline mesh description in the middle versions, and a separate mesh-description
+object in current UE5 (UE 5.8.3: `Engine/Source/Runtime/Engine/Private/StaticMeshSourceData.cpp:392-425`). This
+matches the modes in the `raw-unreal` README.
+
+The reader is small for the wildwood pack. The estimate in §2 ("the majority of the work") was wrong; the material
 mapping in Q3 is the larger remaining piece.
 
 ## 4. The solution
@@ -232,6 +257,10 @@ Consumer-scoped, and deliberately narrow for a first version.
 - [ ] **No PNG intermediate tree is written.** The pack is the source; `public/` is the output.
 - [ ] **The existing cook owns final output.** Shared images, exclusions, budgets, dependency
       invalidation and atomic publication work on cold, cached and watched Unreal imports.
+- [ ] **A texture source the reader cannot decode is refused by name.** UEDELTA or Oodle payloads,
+      virtualized or sidecar payloads, JPEG sources and non-`TSF_BGRA8`/`TSF_G8` formats throw a typed
+      `UAssetError` that names the texture and the stored format. No silent gray or black image is written.
+      proof: a unit case per refused form in `packages/raw-unreal/__tests__/`, each red before the guard.
 - [ ] **The reader refuses clearly what it cannot read** — cooked packages, IoStore, Nanite,
       skeletal — with the same typed `UAssetError` discipline `raw-unreal` already has. A wrong
       guess that produces plausible-but-wrong geometry is the failure mode to design against.
@@ -254,3 +283,12 @@ Consumer-scoped, and deliberately narrow for a first version.
 | ~~The `UTexture2D` reader is most of the work~~ | **CLOSED — `TSF_BGRA8` PNG-wrapped; bulk-data walk and PNG decode both already in-repo. Material mapping is the larger piece.** |
 | Reimplementing material resolution reintroduces a solved problem badly | The external importer's `bindings[].confidence` model is the prior art; borrow the vocabulary rather than invent |
 | This PRD is mistaken for a size win and prioritized over PRD-349 | Stated in §2: it wins **zero shipped bytes**. PRD-349 wins them all without it. |
+
+## Decisions
+
+- 2026-10-12 (Unreal source review): the claim that a `UTexture2D` reader is small holds only for UE4 packs
+  such as wildwood. In Unreal 5.8.3 the source image can be a delta-transformed, Oodle-compressed,
+  trailer-stored or virtualized payload, in formats other than `TSF_BGRA8`. Version 1 now reads the
+  legacy PNG-wrapped `TSF_BGRA8` form only and refuses the rest by name (new acceptance box). The R/B swap that
+  Unreal applies to PNG-wrapped BGRA8 sources is now a documented expectation for the channel-order gate.
+  Refreshed the package sizes (`raw-unreal` 3,650 LOC, `ueformat` 1,363, asset-mcp 0.9.5).

@@ -8,23 +8,26 @@
 
 ## Context
 
-The Unreal importer (`/home/joao/projects/threenative/threenative-asset-mcp`, a linked dependency, not in this repo) maps a material graph onto glTF's five slots (`SLOT_ORDER`, `src/unreal/importer.ts:721`). It already repacks Unreal's packed masks into glTF `metallicRoughness` and `occlusion` (`importer.ts:699`). Every other texture becomes an `UnsupportedTexture { texture, reason }` (`src/unreal/materials.ts:50`). That record drops the Unreal parameter name. The texture is written beside the GLB and listed only in the import report's `sidecarTextures` (`importer.ts:93`, `:329`). Nothing in `packages/` reads it: `rg sidecar` over `packages/core/src` and `packages/assets/src` finds nothing.
+The Unreal importer (`/home/joao/projects/threenative/threenative-asset-mcp`, a linked dependency, not in this repo) maps a material graph onto glTF's five slots (`SLOT_ORDER`, `src/unreal/importer.ts:721`). It already repacks Unreal's packed masks into glTF `metallicRoughness` and `occlusion` (`importer.ts:699`). Every other texture becomes an `UnsupportedTexture { texture, reason }` (`src/unreal/materials.ts:50`). That record drops the Unreal parameter name. The texture is written beside the GLB and listed only in the import report's `sidecarTextures` (`importer.ts:94`, `:329`). Nothing in `packages/` reads it: `rg sidecarTextures` over `packages/core/src` and `packages/assets/src` finds nothing.
 
 The Fab Hornbeam (PRD-485) shows the cost. Its unmapped inputs are `TwoSided_Summer_Mask`, `TwoSided_Winter_{Albedo,Mask,Normal}`, `Decoration_Mask`, `Tileable_Mask` and `T_WindNoise`, all 8192² or 4096². The game excludes them (`exclude: ["fab/c6f917b6/textures/**"]`), so its leaves render as flat, opaque glTF PBR with no back-lighting and no detail normal. No template or core file builds a detail normal or foliage translucency today.
+
+**What Unreal stores.** A material instance keeps its own scalar, vector and texture parameter lists, a `Parent` link, and a set of base-property overrides such as `TwoSided` (UE 5.8.3: `Engine/Source/Runtime/Engine/Public/Materials/MaterialInstance.h:647`, `:773-785`, and `Materials/MaterialInstanceBasePropertyOverrides.h:18-38`). A parameter that the instance does not list takes its value from the parent chain, and the importer already follows that chain, instance first (`src/unreal/materials.ts:435-549`). Static switch parameters are a separate list that picks which graph branch runs (UE 5.8.3: `Engine/Source/Runtime/Engine/Public/StaticParameterSet.h:90`). The importer does not read them today. A season-style pair such as `TwoSided_Summer_*` and `TwoSided_Winter_*` may be two branches of one switch, so only one of the pair is live.
 
 The transport already exists. Three's `GLTFLoader` copies a material's glTF `extras` onto `material.userData` (`three@0.185.1` `GLTFLoader.js:3684`), and `ctx.assets.texture(path)` loads any cooked texture by logical path.
 
 ## Solution
 
 The importer records, the cook carries, and the template decides the look:
-1. **Importer (mechanism, linked repo).** Each glTF material gets `extras.unreal = { textures: { <parameter>: <relative path> }, scalars: {…}, vectors: {…} }`. It holds every unmapped texture under its Unreal parameter name, plus the instance's scalar and vector parameters (tiling, translucency strength).
+1. **Importer (mechanism, linked repo).** Each glTF material gets `extras.unreal = { textures: { <parameter>: <relative path> }, scalars: {…}, vectors: {…} }`. It holds every unmapped texture under its Unreal parameter name, plus the instance's scalar and vector parameters (tiling, translucency strength), resolved through the parent chain with the instance winning.
 2. **Cook (mechanism, `packages/assets`).** Material extras survive the model pass. The textures they name are cooked like any other texture, and their paths are rewritten to logical paths the loader resolves.
 3. **Look (template source).** `importedSurface(model, assets)` is added to `packages/create-threenative/templates/starter/src/render/materials.ts`. It reads `userData.unreal` and applies two things in TSL: a tiled detail normal and foliage back-light translucency driven by the two-sided mask. Materials with the same input set share one program.
 
 ## Decisions
 
-- 2026-10-03 (agent, proposed): foliage translucency is template TSL, never `KHR_materials_transmission` written into the GLB. AutoLOD declines any material with a transmission extension (`packages/assets/src/lod/eligibility.ts:137`), so a 755k-triangle tree would lose its chain. Transmission also adds a refraction pass that foliage does not need.
+- 2026-10-03 (agent, proposed): foliage translucency is template TSL, never `KHR_materials_transmission` written into the GLB. AutoLOD declines any material with a transmission extension (`packages/assets/src/lod/eligibility.ts:174`), so a 755k-triangle tree would lose its chain. Transmission also adds a refraction pass that foliage does not need.
 - 2026-10-03 (agent, proposed): no new core API. The `extras` → `userData` path and `ctx.assets.texture` already carry everything. If a core helper turns out to be needed, it must first beat the kill switch (`scripts/count-loc.ts`).
+- 2026-10-12 (Unreal source review): fixed two stale line cites (`importer.ts:94`, `eligibility.ts:174`). Added the static-switch finding to Phase 1. The importer reads no static switch values, so it may list the unused half of a Summer/Winter pair as live. A new box below records the switch values and drops textures that only a disabled branch uses.
 
 ## Integration Ledger
 
@@ -43,8 +46,9 @@ The importer records, the cook carries, and the template decides the look:
 #### Phase 1: The importer names what it could not map
 **Status:** NOT STARTED
 **Files:** `threenative-asset-mcp/src/unreal/materials.ts`, `threenative-asset-mcp/src/unreal/importer.ts`
-- [ ] [local] Every unmapped texture lands in the material's `extras.unreal.textures` under its Unreal parameter name, along with the instance's scalar and vector parameters. proof: red-green case in `npx vitest run tests/unreal-import.integration.test.ts` (asset-mcp).
+- [ ] [local] Every unmapped texture lands in the material's `extras.unreal.textures` under its Unreal parameter name, along with the scalar and vector parameters resolved through the parent chain. proof: red-green case in `npx vitest run tests/unreal-import.integration.test.ts` (asset-mcp).
 - [ ] [local] Re-importing the cached Hornbeam pack writes `extras.unreal` naming its two-sided mask and normal. proof: the integration test's cached-pack case, or `fab_import_asset` into a scratch dir and a read of the GLB's material extras.
+- [ ] [local] The importer reads the instance's static switch values and records them in `extras.unreal.switches`. A texture reachable only through a disabled branch is not listed as live. proof: red-green case in `npx vitest run tests/unreal-import.integration.test.ts` (asset-mcp) with a two-branch fixture.
 
 #### Phase 2: The cook carries them
 **Status:** NOT STARTED

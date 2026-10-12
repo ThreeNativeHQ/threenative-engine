@@ -19,8 +19,9 @@ Two costs follow on phones:
 
 **What Unreal does.** Clean-room summary, no code copied:
 
-- UE 5.8.3: `Engine/Config/BaseEngine.ini:3309-3314` (`[/Script/AndroidRuntimeSettings.AndroidRuntimeSettings]`). An Android build cooks several GPU formats (ETC2, DXT, ASTC) into the package and ranks them: ASTC 0.9, DXT 0.6, ETC2 0.2. At runtime the device takes the best format it supports. No runtime transcoder is involved.
-- UE 5.8.3: `Engine/Config/BaseEngine.ini:3355-3359` (`[/Script/UnrealEd.CookerSettings]`). The default ASTC block size is chosen for size (6×6), with 4×4 for high-quality textures.
+- UE 5.8.3: `Engine/Config/BaseEngine.ini:3309-3314` (`[/Script/AndroidRuntimeSettings.AndroidRuntimeSettings]`). An Android build cooks several GPU formats (ETC2, DXT, ASTC) into the package and ranks them: ASTC 0.9, DXT 0.6, ETC2 0.2. The build sorts the cooked formats by that priority and packages them in that order. The device then uses the first format it supports (UE 5.8.3: `Engine/Source/Developer/Android/AndroidTargetPlatformControls/Private/AndroidTargetPlatformControls.h:255-290`). No runtime transcoder is involved.
+- UE 5.8.3: `Engine/Config/BaseEngine.ini:3355-3359` (`[/Script/UnrealEd.CookerSettings]`). The default ASTC block size is chosen for size (6×6, setting value 3). A second default, 4×4, applies to the high-quality texture format that replaces BC7. Three finer rules sit in code. Normal maps are always 6×6. Virtual-streamable textures are always 4×4. A per-texture quality overrides both defaults (UE 5.8.3: `Engine/Source/Developer/TextureFormatASTC/Private/TextureFormatASTC.cpp:270-345`).
+- UE 5.8.3: `Engine/Source/Runtime/OpenGLDrv/Private/Android/AndroidOpenGL.cpp:904-950`. With `bValidateTextureFormats=true` (`BaseEngine.ini:3308`), Unreal checks at startup that the device supports at least one cooked format. If none works, it shows a message and stops. This is the same fail-closed rule as Solution step 3.
 
 A done PRD made the opposite trade on purpose. [PRD-349](../../done/PRD-349-the-cook-is-on-by-default.md) chose one transcodable Basis file over per-platform cooking, and [PRD-448](../../done/PRD-448-cross-platform-asset-cooking-and-device-budgets.md) declined automatic native ASTC "now", leaving native decoder work separate. This PRD does not reopen either one. It adds a cook-time transcode for mobile targets only. Web and desktop keep Basis.
 
@@ -31,13 +32,17 @@ A done PRD made the opposite trade on purpose. [PRD-349](../../done/PRD-349-the-
 1. **Cook (packages/assets, mechanism).** For `--target android|ios`, the texture pass transcodes each cooked Basis texture once, at build time in Node, to ASTC 4×4 blocks. It writes a KTX2 with the matching `vkFormat` (sRGB for colour, UNORM for data), the full mip chain and no supercompression. Basis already targets ASTC 4×4 (`TRANSCODE_TARGETS`), so the bytes match what V8 makes at runtime. The manifest records the format.
 2. **Admission (create-threenative).** The build gate separates Basis KTX2, which needs a decoder, from raw-block KTX2, which needs none. Raw ASTC is admitted on every mobile runtime. Basis KTX2 keeps today's refusal on QuickJS and JSC.
 3. **Device check (fail closed).** At startup, a game whose package holds ASTC on an adapter without `texture-compression-astc` stops with a named error that names the first texture. No silent RGBA8 fallback is shipped.
-4. **Block size.** Only 4×4, because ETC1S and UASTC transcode to 4×4 and to no larger block. Unreal's 6×6 size default would need a new encoder and is out of scope.
+4. **Block size.** Only 4×4, because ETC1S and UASTC transcode to 4×4 and to no larger block. Unreal's 6×6 size default would need a new encoder and is out of scope. Unreal also hard-codes 6×6 for normal maps. This PRD keeps 4×4 for them, because the Basis source holds only 4×4 data.
 
 **Risks:**
 
 - **Package size.** Raw ASTC 4×4 is 8 bits per pixel before the APK's deflate. ETC1S Basis is far smaller. Phase 2 records the bytes and the APK size.
 - **Quality.** ETC1S transcoded to ASTC keeps ETC1S quality. The PRD-351 compression floor still applies to the source.
 - **Emulator.** ASTC support on an emulator may differ from hardware (as recorded in PRD-097). The emulator proves the path. Only a device proves VRAM.
+
+## Decisions
+
+- 2026-10-12 (Unreal source review): the ASTC paths and values checked out (`BaseEngine.ini:3309-3314`, `:3355-3359`). Two claims were too loose. The 4×4 default is for the BC7-class format, not for all high-quality textures. The device picks the first supported format in the packaged priority order. Added the Unreal startup format check as the prior art for step 3. No box changed.
 
 ## Acceptance Criteria
 
