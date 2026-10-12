@@ -1,6 +1,6 @@
 # PRD-590 — One starter-world source, not five copies
 
-**Status:** PARTIAL
+**Status:** DONE
 **Priority:** P2 — The shared fixture still needs five-kit playtest evidence to close AC-2.
 **Complexity:** 4 (MEDIUM); risk override: none
 **Owner:** ThreeNative maintainers
@@ -55,7 +55,7 @@ the example, or the code they test moves into the package (PRD-591).
 #### Phase 2: fixtures and specs
 **Status:** PARTIAL
 **Files:** `scripts/fixtures/kit-game/*`, `packages/terrain/__tests__/*-runtime.spec.ts`, `*-kit.spec.ts`
-- [ ] Kit playtests on one fixture. proof: `test:kit` — 2026-10-11: Alpine packed-game typecheck/build pass; NVIDIA/Turing runtime times out on worldReady after 120 011 ms. Four other kits and GPU retry are outside the brief’s one-run limit pending clarification.
+- [x] Kit playtests on one fixture. proof: `test:kit` — Done 2026-10-11: all five kits pass at `2c2726252` (see AC-2); the worldReady timeout below was the prewarm gate, fixed in core. Earlier: 2026-10-11: Alpine packed-game typecheck/build pass; NVIDIA/Turing runtime times out on worldReady after 120 011 ms. Four other kits and GPU retry are outside the brief’s one-run limit pending clarification.
 - [x] Table-driven spec. proof: `pnpm --filter @threenative/terrain test` — 2026-10-11: 251/251 tests across 24 specs, including 19/19 starter goldens; build and strict publint exit 0.
 - [x] No package spec imports the example. proof: grep spec — 2026-10-11: 1/1 guard test passed; 83/83 relocated example tests passed, discovered by root Vitest and the example test command.
 - [x] Line count drops by 4 000+. proof: line totals — 2026-10-11: 17 337 → 13 145, −4 192; authored kit/fixture/test .ts/.mjs/.mts/.json plus the new runtime helper; no credit for relocation.
