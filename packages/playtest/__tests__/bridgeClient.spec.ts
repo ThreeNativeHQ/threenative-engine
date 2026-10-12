@@ -157,9 +157,9 @@ test("the WebGPU browser recipe expands to the sealed Chromium flags", () => {
     "--disable-gpu-sandbox",
     "--ignore-gpu-blocklist",
     "--enable-features=Vulkan",
-    "--use-angle=vulkan",
-    "--use-vulkan",
-    "--disable-vulkan-surface",
+    ...(process.env.TN_PLAYTEST_HOST_DISPLAY === "1"
+      ? ["--use-angle=vulkan", "--use-vulkan", "--disable-vulkan-surface"]
+      : []),
   ]);
   expect(() =>
     parseStandalonePlaytestArgs(["playtests/move.json", "--browser-recipe", "unknown"], "/project"),

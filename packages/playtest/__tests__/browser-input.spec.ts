@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   PERFORMANCE_BROWSER_ARGS,
@@ -40,7 +40,7 @@ test("multi-pointer browser input releases missing pointers before adding new ar
   ]);
 });
 
-test("the webgpu recipe asks for Vulkan so the run does not land on SwiftShader", () => {
+test("the webgpu recipe keeps Vulkan available", () => {
   expect(WEBGPU_BROWSER_ARGS).toContain("--enable-features=Vulkan");
 });
 
@@ -51,7 +51,29 @@ test("performance probes can bypass the virtual display compositor cadence", () 
   ]);
 });
 
-test("the webgpu recipe selects the Vulkan hardware adapter", () => {
-  expect(WEBGPU_BROWSER_ARGS).toContain("--use-angle=vulkan");
-  expect(WEBGPU_BROWSER_ARGS).toContain("--use-vulkan");
+test("the host-display webgpu recipe selects the Vulkan hardware adapter", async () => {
+  vi.stubEnv("TN_PLAYTEST_HOST_DISPLAY", "1");
+  vi.resetModules();
+  try {
+    const { WEBGPU_BROWSER_ARGS: args } = await import("../src/runner/browser.js");
+    expect(args).toContain("--use-angle=vulkan");
+    expect(args).toContain("--use-vulkan");
+  } finally {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  }
+});
+
+test.each([undefined, "0", "1"])("surface-less Vulkan requires the host-display opt-in (%s)", async (hostDisplay) => {
+  vi.stubEnv("TN_PLAYTEST_HOST_DISPLAY", hostDisplay);
+  vi.resetModules();
+  try {
+    const { WEBGPU_BROWSER_ARGS: args } = await import("../src/runner/browser.js");
+    expect(args.includes("--disable-vulkan-surface")).toBe(hostDisplay === "1");
+    expect(args.includes("--use-angle=vulkan")).toBe(hostDisplay === "1");
+    expect(args.includes("--use-vulkan")).toBe(hostDisplay === "1");
+  } finally {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  }
 });

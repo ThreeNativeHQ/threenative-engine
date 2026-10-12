@@ -5,12 +5,13 @@ export const WEBGPU_BROWSER_ARGS = [
   "--enable-unsafe-webgpu",
   "--disable-gpu-sandbox",
   "--ignore-gpu-blocklist",
-  // Measured on an RTX 2080 under Xvfb: these Vulkan flags select `turing / nvidia`;
-  // enabling Vulkan alone leaves `adapter.info` at `swiftshader / google`.
+  // Keep Vulkan available on both hardware and software adapters.
   "--enable-features=Vulkan",
-  "--use-angle=vulkan",
-  "--use-vulkan",
-  "--disable-vulkan-surface",
+  // Forced ANGLE/Vulkan selects NVIDIA locally but breaks hosted software adapters, especially headed.
+  // Apply that workaround only when the caller explicitly requests the host display.
+  ...(process.env.TN_PLAYTEST_HOST_DISPLAY === "1"
+    ? ["--use-angle=vulkan", "--use-vulkan", "--disable-vulkan-surface"]
+    : []),
 ] as const;
 
 /** Allow performance probes to sample render work instead of Xvfb's compositor cadence. */
