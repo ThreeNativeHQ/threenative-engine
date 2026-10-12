@@ -2,14 +2,19 @@ import { Group, Matrix4, type Vector3 } from "three";
 import { Fn } from "three/tsl";
 import { SpriteNodeMaterial } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GPUParticles3D, type IGPUParticles3DSpawnRequest } from "../src/particles.js";
+import {
+  GPUParticles3D,
+  type IGPUParticles3DClosedFormOptions,
+  type IGPUParticles3DSpawnOptions,
+  type IGPUParticles3DSpawnRequest,
+} from "../src/particles.js";
 import type { IRendererLike } from "../src/renderer.js";
 
 function computeNode() {
   return Fn(() => {})().compute(1);
 }
 
-function particles(options: Partial<ConstructorParameters<typeof GPUParticles3D>[0]> = {}) {
+function particles(options: Partial<IGPUParticles3DClosedFormOptions> = {}) {
   return new GPUParticles3D({
     amount: 4,
     material: new SpriteNodeMaterial(),
@@ -97,7 +102,7 @@ describe("GPUParticles3D spawn requests", () => {
   afterEach(() => vi.restoreAllMocks());
 
   /** A spawn emitter whose dispatches record the ring window the engine uniforms held at dispatch time. */
-  function spawner(options: Partial<ConstructorParameters<typeof GPUParticles3D>[0]> = {}) {
+  function spawner(options: Partial<IGPUParticles3DSpawnOptions> = {}) {
     let request: IGPUParticles3DSpawnRequest | undefined;
     const rings: { first: number; count: number; origin: number[] }[] = [];
     const particle = new GPUParticles3D({

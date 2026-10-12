@@ -1364,11 +1364,13 @@ if (isMobile()) showTouchControls();
 export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
-- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles · splash spray droplets with lifetime and gravity · spawn water droplets, mist, or foam bubbles above a fluid surface · falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard · kick up a spray of powder snow or dust where a foot or a ball lands
-- **Constraints:** geometry, color, and timing remain supplied by the game
+- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles · splash spray droplets with lifetime and gravity · spawn water droplets, mist, or foam bubbles above a fluid surface · falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard · kick up a spray of powder snow or dust where a foot or a ball lands · a hit, impact or explosion burst that starts at the point and moment it is asked for, and a second hit that must not move the first hit's live particles · emitParticle a burst of GPU particles at a world position with its own free slots
+- **Constraints:** geometry, color, and timing remain supplied by the game · a `spawn` kernel makes bursts requests: `emitParticle({ count, origin })` reserves ring slots, the engine stamps `buffers.births` and `process` reads age as `runtime.time - births[i]`; there is no readback · a spawn emitter is world space (identity world matrix); `localCoords: true` follows the parent · requests over `amount` or `maxSpawnPerFrame` clamp, add to `stats.clamped` and warn once; `stats.recycledLive` is `undefined` without the `lifetime` option
+- **Overrides:** localCoords, maxSpawnPerFrame and lifetime tune a spawn emitter; `restart()` kills every particle and rewinds the ring
 
 ```ts
 const particles = new GPUParticles3D(particleOptions);
+particles.emitParticle({ count: 220, origin: hit.position });
 ```
 
 ### `GPUReadback`

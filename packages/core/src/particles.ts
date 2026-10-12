@@ -31,13 +31,36 @@ export interface IGPUParticles3DSpawnRequest {
   readonly time: Node<"float">;
 }
 
-export interface IGPUParticles3DOptions {
+/** Buffers a spawn-driven emitter's kernels receive: `births` always exists. */
+export interface IGPUParticles3DSpawnBuffers extends IGPUParticles3DBuffers {
+  readonly births: StorageBufferNode<"float">;
+}
+
+interface IGPUParticles3DBaseOptions {
   readonly amount: number;
   readonly material: SpriteNodeMaterial;
-  /** Required unless `spawn` is given. */
-  readonly start?: (buffers: IGPUParticles3DBuffers) => ComputeNode;
+  /** World space when `spawn` is given, emitter space otherwise. */
+  readonly localCoords?: boolean;
+}
+
+/** The closed-form tier: every particle is a function of time, `start` seeds the buffers. */
+export interface IGPUParticles3DClosedFormOptions extends IGPUParticles3DBaseOptions {
+  readonly start: (buffers: IGPUParticles3DBuffers) => ComputeNode;
   readonly process: (
     buffers: IGPUParticles3DBuffers,
+    runtime: IGPUParticles3DRuntime,
+  ) => ComputeNode;
+  readonly spawn?: undefined;
+  readonly lifetime?: undefined;
+  readonly maxSpawnPerFrame?: undefined;
+}
+
+/** The spawn tier: a burst is a request, and the engine owns the slots and the birth stamps. */
+export interface IGPUParticles3DSpawnOptions extends IGPUParticles3DBaseOptions {
+  /** Optional here: the engine already resets every birth. */
+  readonly start?: (buffers: IGPUParticles3DSpawnBuffers) => ComputeNode;
+  readonly process: (
+    buffers: IGPUParticles3DSpawnBuffers,
     runtime: IGPUParticles3DRuntime,
   ) => ComputeNode;
   /**
@@ -45,17 +68,17 @@ export interface IGPUParticles3DOptions {
    * `instanceIndex >= request.count` returns at once. ponytail: costs `amount` threads per emit;
    * upgrade to an indirect dispatch of `count` threads if `amount` passes about 100,000.
    */
-  readonly spawn?: (
-    buffers: IGPUParticles3DBuffers & { readonly births: StorageBufferNode<"float"> },
+  readonly spawn: (
+    buffers: IGPUParticles3DSpawnBuffers,
     request: IGPUParticles3DSpawnRequest,
   ) => ComputeNode;
-  /** World space when `spawn` is given, emitter space otherwise. */
-  readonly localCoords?: boolean;
   /** Game-owned longest life in seconds. Lets `stats.recycledLive` count slots recycled while alive. */
   readonly lifetime?: number;
   /** Cap on particles spawned between two `process` calls. Defaults to `amount`. */
   readonly maxSpawnPerFrame?: number;
 }
+
+export type IGPUParticles3DOptions = IGPUParticles3DClosedFormOptions | IGPUParticles3DSpawnOptions;
 
 export interface IEmitParticleRequest {
   readonly count?: number;
@@ -169,13 +192,18 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
       this.matrixWorld.identity();
     }
     this.#start =
-      options.start === undefined ? undefined : computeNode("start", options.start(this.buffers));
+      options.start === undefined
+        ? undefined
+        : computeNode(
+            "start",
+            (options.start as (b: IGPUParticles3DBuffers) => ComputeNode)(this.buffers),
+          );
     this.#process = computeNode(
       "process",
-      options.process(this.buffers, {
-        time: time as Node<"float">,
-        delta: deltaTime as Node<"float">,
-      }),
+      (options.process as (b: IGPUParticles3DBuffers, r: IGPUParticles3DRuntime) => ComputeNode)(
+        this.buffers,
+        { time: time as Node<"float">, delta: deltaTime as Node<"float"> },
+      ),
     );
     if (options.spawn !== undefined && births !== undefined)
       this.#spawn = this.#buildSpawn(options.spawn, births);
@@ -190,7 +218,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
   }
 
   #buildSpawn(
-    spawn: NonNullable<IGPUParticles3DOptions["spawn"]>,
+    spawn: IGPUParticles3DSpawnOptions["spawn"],
     births: StorageBufferNode<"float">,
   ): ISpawnState {
     const amount = this.amount;

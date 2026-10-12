@@ -1769,11 +1769,18 @@
     },
     {
       "aliases": [],
-      "constraints": ["geometry, color, and timing remain supplied by the game"],
-      "example": "const particles = new GPUParticles3D(particleOptions);",
+      "constraints": [
+        "geometry, color, and timing remain supplied by the game",
+        "a `spawn` kernel makes bursts requests: `emitParticle({ count, origin })` reserves ring slots, the engine stamps `buffers.births` and `process` reads age as `runtime.time - births[i]`; there is no readback",
+        "a spawn emitter is world space (identity world matrix); `localCoords: true` follows the parent",
+        "requests over `amount` or `maxSpawnPerFrame` clamp, add to `stats.clamped` and warn once; `stats.recycledLive` is `undefined` without the `lifetime` option"
+      ],
+      "example": "const particles = new GPUParticles3D(particleOptions);\nparticles.emitParticle({ count: 220, origin: hit.position });",
       "importPath": "@threenative/core",
       "kind": "class",
-      "overrides": [],
+      "overrides": [
+        "localCoords, maxSpawnPerFrame and lifetime tune a spawn emitter; `restart()` kills every particle and rewinds the ring"
+      ],
       "package": "@threenative/core",
       "signature": "export class GPUParticles3D extends Sprite implements IComputeDriven { … }",
       "situations": [
@@ -1785,7 +1792,9 @@
         "splash spray droplets with lifetime and gravity",
         "spawn water droplets, mist, or foam bubbles above a fluid surface",
         "falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard",
-        "kick up a spray of powder snow or dust where a foot or a ball lands"
+        "kick up a spray of powder snow or dust where a foot or a ball lands",
+        "a hit, impact or explosion burst that starts at the point and moment it is asked for, and a second hit that must not move the first hit's live particles",
+        "emitParticle a burst of GPU particles at a world position with its own free slots"
       ],
       "summary": "Dispatch a game-owned particle surface and process function through a pooled system.",
       "supersedes": [],
