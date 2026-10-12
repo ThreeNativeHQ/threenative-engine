@@ -84,8 +84,12 @@ describe("the browser-JS back end", () => {
           language.includes(key)
         )
           continue;
+        // A list getter with indexed setters (`morphTargetInfluences.0`) is a live array, assignable whole.
+        const liveArray = binding.setters.some((path) =>
+          new RegExp(`^${key}\\.\\d+$`, "u").test(path),
+        );
         expect(descriptor.set !== undefined, `${name}.${key} settable`).toBe(
-          binding.setters.includes(key),
+          binding.setters.includes(key) || liveArray,
         );
       }
     }

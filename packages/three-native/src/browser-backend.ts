@@ -489,6 +489,36 @@ export function defineBrowserClasses(
         },
       });
     }
+    // A list getter with indexed setters (`morphTargetInfluences.0`) is a live array, as on the V8 adapter:
+    // an index write and a whole-array assignment (core's projection shares the source's) reach the engine.
+    const indexed = (head: string) =>
+      binding.setters.some(
+        (path) => path.startsWith(`${head}.`) && /^\d+$/u.test(path.slice(head.length + 1)),
+      );
+    for (const property of binding.getters) {
+      if (property.includes(".") || setters.has(property) || !indexed(property)) continue;
+      Object.defineProperty(prototype, property, {
+        configurable: true,
+        get(this: object) {
+          const ref = refOf(this);
+          const list = fromEngine(runtime.get(ref, property));
+          if (!Array.isArray(list)) return list;
+          return new Proxy(list, {
+            set(target, key, value) {
+              target[key as never] = value as never;
+              if (typeof key === "string" && /^\d+$/u.test(key))
+                runtime.set(ref, `${property}.${key}`, toEngine(value));
+              return true;
+            },
+          });
+        },
+        set(this: object, value: ArrayLike<number>) {
+          const ref = refOf(this);
+          for (let index = 0; index < value.length; index++)
+            runtime.set(ref, `${property}.${index}`, value[index] as number);
+        },
+      });
+    }
     for (const property of [...binding.getters, ...binding.members]) {
       if (
         property.includes(".") ||

@@ -78,6 +78,17 @@ check(
 );
 mesh.castShadow = true;
 check(mesh.castShadow === true, "a set flag field reads back");
+// three's morphTargetInfluences is a plain array: assigned whole (core's projection shares the source's) or per index.
+mesh.morphTargetInfluences = [0.25, 0.5];
+check(
+  mesh.morphTargetInfluences[1] === 0.5,
+  "an assigned morphTargetInfluences reaches the engine",
+);
+mesh.morphTargetInfluences[0] = 0.75;
+check(
+  mesh.morphTargetInfluences[0] === 0.75,
+  "an index write to morphTargetInfluences reaches the engine",
+);
 const position = mesh.position;
 check(position === mesh.position, "a member object keeps one identity");
 mesh.position.x = 5;
