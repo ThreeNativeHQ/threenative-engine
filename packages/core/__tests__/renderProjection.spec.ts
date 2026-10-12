@@ -37,6 +37,7 @@ import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { markEngineRenderHook } from "../src/engine-render-hook.js";
 import { ProjectionMirror } from "../src/projection-apply.js";
+import { hasMorphAttributes } from "../src/projection-plan.js";
 import {
   createProjectionScanWorkspace,
   releaseProjectionScanWorkspace,
@@ -1256,6 +1257,18 @@ describe("SceneRenderProjection exact lane corpus", () => {
     );
     expect(proxy).toBeDefined();
     expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("does not read a holder that names position and normal with no targets as morphed", () => {
+    // The native engine's morphAttributes always carries both keys, as empty arrays.
+    const geometry = new BoxGeometry(1, 1, 1);
+    geometry.morphAttributes.position = [];
+    geometry.morphAttributes.normal = [];
+    expect(hasMorphAttributes(geometry)).toBe(false);
+    geometry.morphAttributes.position = [
+      new Float32BufferAttribute(new Float32Array(geometry.getAttribute("position").count * 3), 3),
+    ];
+    expect(hasMorphAttributes(geometry)).toBe(true);
   });
 
   it("keeps a geometry that draws only part of its index buffer", () => {

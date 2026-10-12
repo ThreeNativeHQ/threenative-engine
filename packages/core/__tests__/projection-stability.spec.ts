@@ -49,3 +49,30 @@ describe("ProjectionStability lane predicates", () => {
     expect(stability.holds(scene)).toBe(true);
   });
 });
+
+describe("a host whose `children` is built on every read", () => {
+  // The native engine returns a fresh array of wrappers from each `children` read, so a walk that reads
+  // it per index is quadratic in the scene's size: 4096 cubes cost three seconds a frame.
+  it("reads the root's children once per scan, record and holds, not once per child", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    const geometry = new BoxGeometry(1, 1, 1);
+    for (let index = 0; index < 300; index += 1) scene.add(new Mesh(geometry, material));
+    const real = scene.children;
+    let reads = 0;
+    Object.defineProperty(scene, "children", {
+      get() {
+        reads += 1;
+        return real;
+      },
+    });
+
+    const stability = new ProjectionStability();
+    const workspace = createProjectionScanWorkspace();
+    const scan = scanProjection(scene, 4, workspace);
+    stability.record(scene, scan);
+    expect(stability.holds(scene)).toBe(true);
+    // One read per walk: the scan, the record and the check each take the array once.
+    expect(reads).toBeLessThanOrEqual(6);
+  });
+});

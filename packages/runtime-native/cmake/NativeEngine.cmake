@@ -243,6 +243,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_overlay_over_frame=overlay_over_frame
         native_engine_gpu_timer_is_opt_in=gpu_timer_is_opt_in
         native_engine_shadow_camera_layers=shadow_camera_layers
+        native_engine_flat_shading_needs_no_normals=flat_shading_needs_no_normals
         native_engine_renderer_map_sampleability_changes=map_sampleability_changes
         native_engine_renderer_batch_caches_stay_put=batch_caches_stay_put
         native_engine_renderer_frustum_culling=frustum_culling

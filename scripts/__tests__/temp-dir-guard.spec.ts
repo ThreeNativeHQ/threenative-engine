@@ -148,6 +148,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],
   [
+    "packages/runtime-native/tests/native-engine/player-read-target-osr.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
     "packages/runtime-native/tests/native-engine/player-tsl-values.mjs",
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],

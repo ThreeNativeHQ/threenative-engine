@@ -212,6 +212,11 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-render-target.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_render_target PROPERTIES LABELS "native-engine")
+    # A render-target read settles from the GPU event drain; its continuation must run with the isolate entered.
+    add_test(NAME native_engine_player_read_target_osr
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-read-target-osr.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_read_target_osr PROPERTIES LABELS "native-engine")
     # PRD-547: uniform and constant values through the player's TSL (shared with Wasm).
     add_test(NAME native_engine_player_tsl_values
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-tsl-values.mjs

@@ -145,6 +145,7 @@ struct DrawItem {
     bool castShadow = false;    // Object3D.castShadow: drawn into every shadow map
     bool receiveShadow = false; // Object3D.receiveShadow: its lit program reads the shadow maps
     uint8_t side = 0;           // material.side: 0 FrontSide, 1 BackSide, 2 DoubleSide
+    bool flatShading = false;   // material.flatShading: the face normal replaces the vertex normal
     uint8_t blending = 1;       // material.blending: 0 NoBlending, 1 NormalBlending, 2 AdditiveBlending
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
     BufferStore* instanceMatrices = nullptr;
@@ -383,6 +384,8 @@ public:
         uint32_t draws = 0;
         uint64_t triangles = 0;
         uint32_t shadowDraws = 0;
+        /** The triangles those shadow draws submitted; three's Info counts them with the main pass's. */
+        uint64_t shadowTriangles = 0;
         struct SkinnedPass {
             uint32_t batches = 0, draws = 0, exactDraws = 0, instances = 0;
         };

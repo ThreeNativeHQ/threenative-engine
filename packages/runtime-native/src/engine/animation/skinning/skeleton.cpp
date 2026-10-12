@@ -3,6 +3,7 @@
 // three's `undefined`, skipped by pose and replaced by the identity in update.
 
 #include "engine/animation/skinning/skeleton.h"
+#include "engine/scene/lights.h"
 
 #include <cstddef>
 #include <cmath>
@@ -137,6 +138,61 @@ const Box3& SkinnedMesh::cachedBounds() {
     return *boundingBox;
 }
 
+namespace {
+
+// three's LightShadow.copy: the receiver-side settings and the shadow camera's own frustum, which is
+// what a mirrored light needs to cast the shadow the game's light casts.
+void copyShadow(LightShadow& to, const LightShadow& from) {
+    to.intensity = from.intensity;
+    to.bias = from.bias;
+    to.normalBias = from.normalBias;
+    to.radius = from.radius;
+    to.mapSize = from.mapSize;
+    to.focus = from.focus;
+    to.aspect = from.aspect;
+    if (from.camera->type() == "OrthographicCamera")
+        static_cast<OrthographicCamera&>(*to.camera).copy(static_cast<const OrthographicCamera&>(*from.camera));
+    else if (from.camera->type() == "PerspectiveCamera")
+        static_cast<PerspectiveCamera&>(*to.camera).copy(static_cast<const PerspectiveCamera&>(*from.camera));
+}
+
+// three's Light.copy for the lights the renderer draws; an unknown kind returns null.
+std::shared_ptr<Object3D> cloneLight(const Object3D& from, std::string_view kind) {
+    if (kind == "AmbientLight") {
+        const auto& light = static_cast<const AmbientLight&>(from);
+        return std::make_shared<AmbientLight>(light.color, light.intensity);
+    }
+    if (kind == "HemisphereLight") {
+        const auto& light = static_cast<const HemisphereLight&>(from);
+        return std::make_shared<HemisphereLight>(light.color, light.groundColor, light.intensity);
+    }
+    if (kind == "DirectionalLight") {
+        const auto& light = static_cast<const DirectionalLight&>(from);
+        auto next = std::make_shared<DirectionalLight>(light.color, light.intensity);
+        next->target = std::make_shared<Object3D>();
+        next->target->copy(*light.target);
+        copyShadow(next->shadow, light.shadow);
+        return next;
+    }
+    if (kind == "PointLight") {
+        const auto& light = static_cast<const PointLight&>(from);
+        auto next = std::make_shared<PointLight>(light.color, light.intensity, light.distance, light.decay);
+        copyShadow(next->shadow, light.shadow);
+        return next;
+    }
+    if (kind == "SpotLight") {
+        const auto& light = static_cast<const SpotLight&>(from);
+        auto next = std::make_shared<SpotLight>(light.color, light.intensity, light.distance, light.angle,
+                                                light.penumbra, light.decay);
+        next->target->copy(*light.target);
+        copyShadow(next->shadow, light.shadow);
+        return next;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
 std::shared_ptr<Object3D> cloneObject(const Object3D& source, bool recursive, std::string& error) {
     error.clear();
     const std::function<std::shared_ptr<Object3D>(const Object3D&)> clone = [&](const Object3D& from) -> std::shared_ptr<Object3D> {
@@ -171,6 +227,12 @@ std::shared_ptr<Object3D> cloneObject(const Object3D& source, bool recursive, st
                 next->skeleton = mesh.skeleton;
                 if (mesh.boundingBox) next->boundingBox = std::make_shared<Box3>(*mesh.boundingBox);
                 to = std::move(next);
+            } else if (from.isLight()) {
+                to = cloneLight(from, kind);
+                if (!to) {
+                    error = "TN_NATIVE_CLONE_UNSUPPORTED: " + std::string(kind);
+                    return nullptr;
+                }
             } else {
                 error = "TN_NATIVE_CLONE_UNSUPPORTED: " + std::string(kind);
                 return nullptr;

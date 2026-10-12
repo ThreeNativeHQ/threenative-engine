@@ -445,6 +445,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.positionNode = material->positionNode;
     d.nodes = material->nodes;
     d.side = static_cast<uint8_t>(material->side);
+    d.flatShading = material->flatShading;
     d.blending = static_cast<uint8_t>(material->blending);
     r.drawable = d.positions != nullptr;
     return r;
@@ -459,6 +460,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.forceSinglePass = r.material->forceSinglePass;
     d.depthWrite = r.material->depthWrite;
     d.side = static_cast<uint8_t>(r.material->side);
+    d.flatShading = r.material->flatShading;
     d.blending = static_cast<uint8_t>(r.material->blending);
     d.positionNode = r.material->positionNode;
     d.nodes = r.material->nodes;

@@ -193,8 +193,9 @@ export class ProjectionStability {
     let depth = 0;
     let visited = 0;
     let watched = 0;
-    for (let index = source.children.length - 1; index >= 0; index -= 1) {
-      stack[depth] = source.children[index] as Object3D;
+    const roots = source.children;
+    for (let index = roots.length - 1; index >= 0; index -= 1) {
+      stack[depth] = roots[index] as Object3D;
       stackVisible[depth] = true;
       depth += 1;
     }
@@ -295,8 +296,9 @@ export class ProjectionStability {
     let depth = 0;
     let visited = 0;
     let watched = 0;
-    for (let index = source.children.length - 1; index >= 0; index -= 1) {
-      stack[depth] = source.children[index] as Object3D;
+    const roots = source.children;
+    for (let index = roots.length - 1; index >= 0; index -= 1) {
+      stack[depth] = roots[index] as Object3D;
       stackVisible[depth] = true;
       depth += 1;
     }

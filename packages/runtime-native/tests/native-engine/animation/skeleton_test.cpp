@@ -6,6 +6,7 @@
 // on the recorded pose and compares every float and double bit for bit.
 #include "check.h"
 #include "engine/animation/skinning/skeleton.h"
+#include "engine/scene/lights.h"
 
 #include <bit>
 #include <cinttypes>
@@ -136,6 +137,43 @@ void cloneBounds() {
     CHECK(mesh.boundingBox->min.x == 100);
 }
 
+// The projection mirror clones each light once and keeps the copy in step; the copy has to cast the shadow
+// the game's light casts, so the shadow camera's frustum and the receiver settings come across.
+void cloneLights() {
+    std::string error;
+    DirectionalLight sun(Color(1, 0.5, 0.25), 2.4);
+    sun.position.set(40, 80, 25);
+    static_cast<OrthographicCamera&>(*sun.shadow.camera).left = -120;
+    static_cast<OrthographicCamera&>(*sun.shadow.camera).far = 900;
+    sun.shadow.mapSize = Vector2{4096, 4096};
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.02;
+    const auto sunCopy = std::dynamic_pointer_cast<DirectionalLight>(cloneObject(sun, true, error));
+    CHECK(sunCopy && error.empty());
+    if (!sunCopy) return;
+    CHECK(sunCopy.get() != &sun && sunCopy->target != sun.target);
+    CHECK(sunCopy->intensity == 2.4 && sunCopy->color.g == 0.5 && sunCopy->position.x == 40);
+    const auto& shadowCamera = static_cast<const OrthographicCamera&>(*sunCopy->shadow.camera);
+    CHECK(shadowCamera.left == -120 && shadowCamera.far == 900);
+    CHECK(sunCopy->shadow.mapSize.x == 4096 && sunCopy->shadow.bias == -0.0005 && sunCopy->shadow.normalBias == 0.02);
+
+    PointLight lamp(Color(1, 1, 1), 1.2, 30, 2);
+    lamp.shadow.radius = 4;
+    const auto lampCopy = std::dynamic_pointer_cast<PointLight>(cloneObject(lamp, true, error));
+    CHECK(lampCopy && lampCopy->distance == 30 && lampCopy->decay == 2 && lampCopy->shadow.radius == 4);
+
+    SpotLight spot(Color(1, 1, 1), 3, 10, 0.5, 0.25, 1);
+    const auto spotCopy = std::dynamic_pointer_cast<SpotLight>(cloneObject(spot, true, error));
+    CHECK(spotCopy && spotCopy->angle == 0.5 && spotCopy->penumbra == 0.25 && spotCopy->target != spot.target);
+
+    HemisphereLight sky(Color(0.1, 0.2, 0.3), Color(0.4, 0.5, 0.6), 0.7);
+    const auto skyCopy = std::dynamic_pointer_cast<HemisphereLight>(cloneObject(sky, true, error));
+    CHECK(skyCopy && skyCopy->groundColor.g == 0.5 && skyCopy->intensity == 0.7);
+
+    AmbientLight ambient(Color(1, 1, 1), 0.3);
+    CHECK(std::dynamic_pointer_cast<AmbientLight>(cloneObject(ambient, true, error)) != nullptr);
+}
+
 } // namespace
 
-TN_TEST_MAIN({"skeleton_pose", skeletonPose}, {"clone_bounds", cloneBounds})
+TN_TEST_MAIN({"skeleton_pose", skeletonPose}, {"clone_bounds", cloneBounds}, {"clone_lights", cloneLights})

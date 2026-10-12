@@ -890,13 +890,16 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId model = v.uniform("modelMatrix", Type::mat(4, 4));
     const ExprId view = v.uniform("viewMatrix", Type::mat(4, 4));
     const ExprId normalMatrix = v.uniform("normalMatrix", Type::mat(3, 3));
-    const LocalVertex local = localVertex(v, variant, true);
+    const LocalVertex local = localVertex(v, variant, !variant.flatShading);
     const ExprId position = local.position, normal = local.normal;
     const ExprId positionView = v.mul(view, v.mul(model, position));
     v.output("position", clipPosition(v, variant, local, v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView)));
     // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
-    // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
-    v.output("normalView", v.call("normalize", {v.mul(normalMatrix, variant.backSide ? v.neg(normal) : normal)}));
+    // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product. A flat-shaded
+    // draw has no normal attribute: the varying stays zero, as three's missing attribute reads.
+    v.output("normalView", variant.flatShading
+        ? v.construct(Type::vec(3), {v.constant(0.0f), v.constant(0.0f), v.constant(0.0f)})
+        : v.call("normalize", {v.mul(normalMatrix, variant.backSide ? v.neg(normal) : normal)}));
     v.output("positionView", v.swizzle(positionView, "xyz"));
     // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
     if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));
@@ -907,8 +910,13 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     Tsl t{f};
     // normalViewGeometry is the varying renormalized (three's .normalize().toVar()); getGeometryRoughness
     // differentiates that, not the raw varying.
-    const ExprId normalViewGeometry = f.call("normalize", {f.varying("normalView", Type::vec(3))});
-    const ExprId normalViewFaced = facedNormal(f, variant, normalViewGeometry);
+    const ExprId normalViewGeometry = variant.flatShading ? f.varying("normalView", Type::vec(3))
+                                                          : f.call("normalize", {f.varying("normalView", Type::vec(3))});
+    // NodeMaterial.setupNormal with flatShading: normalize(cross(dFdx(positionView), dFdy(positionView))).
+    const ExprId normalViewFaced = facedNormal(f, variant, variant.flatShading
+        ? f.call("normalize", {f.call("cross", {f.call("dFdx", {f.varying("positionView", Type::vec(3))}),
+                                                 f.call("dFdy", {f.varying("positionView", Type::vec(3))})})})
+        : normalViewGeometry);
     ExprId n = nodeValue(f, variant.nodes.normalNode, Type::vec(3), normalViewFaced, normalViewFaced, normalViewGeometry);
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
     const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;

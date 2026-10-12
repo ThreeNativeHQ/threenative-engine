@@ -217,8 +217,10 @@ class V8Game {
   public:
     void setAdapter(std::vector<std::pair<std::string, std::string>> info) { adapterInfo_ = std::move(info); }
     void frameDrawn(const Renderer& renderer) {
-        drawCalls_ = renderer.lastFrame().draws;
-        triangles_ = renderer.lastFrame().triangles;
+        // three's renderer.info.render counts every pass of a render(): the shadow pass's draws and
+        // triangles are in it, so a scene is counted the same on both backends.
+        drawCalls_ = renderer.lastFrame().draws + renderer.lastFrame().shadowDraws;
+        triangles_ = renderer.lastFrame().triangles + renderer.lastFrame().shadowTriangles;
         pipelineCompiles_ = renderer.pipelines().compiles();
         frameClockMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStartedAt_).count();
     }
@@ -245,6 +247,9 @@ class V8Game {
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void readFrame(const v8::FunctionCallbackInfo<v8::Value>& info);
+    /** Settles a read promise from the GPU event drain: bytes as a Uint8Array, or a rejection. */
+    void settleRead(v8::Global<v8::Promise::Resolver>& pending, GpuStatus status, const std::vector<uint8_t>& bytes);
     static void compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info);
     struct Compilation {
         std::shared_ptr<void> root, camera, scene;
@@ -537,6 +542,45 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     if (!refused.empty()) refuse(refused.front());
 }
 
+void V8Game::settleRead(v8::Global<v8::Promise::Resolver>& pending, GpuStatus status, const std::vector<uint8_t>& bytes) {
+    // The GPU event drain calls this outside every frame callback, and settling the promise runs
+    // the game's continuation: with the isolate not entered, a hot loop there crashes V8 on a
+    // null current isolate the first time it asks for on-stack replacement.
+    v8::Isolate::Scope isolateScope(isolate_);
+    v8::HandleScope scope(isolate_);
+    auto context = js_.Get(isolate_);
+    v8::Context::Scope contextScope(context);
+    auto settle = pending.Get(isolate_);
+    if (status != GpuStatus::Ok) {
+        settle->Reject(context, v8::Exception::Error(v8str(isolate_, "TN_NATIVE_READ_TARGET: the read failed"))).Check();
+        return;
+    }
+    auto buffer = v8::ArrayBuffer::New(isolate_, bytes.size());
+    std::memcpy(buffer->Data(), bytes.data(), bytes.size());
+    settle->Resolve(context, v8::Uint8Array::New(buffer, 0, bytes.size())).Check();
+}
+
+// `tn.readFrame()`: a Promise of the last frame the player drew, RGBA8 rows (top row first) as a Uint8Array,
+// post chain included. three has no such call: its render() into a render target carries a pipeline's output
+// there, which this player's post pass does not, so a probe of a post frame reads the frame itself.
+void V8Game::readFrame(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto ctx = isolate->GetCurrentContext();
+    auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
+    info.GetReturnValue().Set(resolver->GetPromise());
+    if (game.renderer_ == nullptr) {
+        resolver->Reject(ctx, v8::Exception::Error(v8str(isolate, "TN_NATIVE_READ_FRAME: the player has no renderer before its first frame"))).Check();
+        return;
+    }
+    auto pending = std::make_shared<v8::Global<v8::Promise::Resolver>>(isolate, resolver);
+    const GpuStatus started = game.renderer_->readPixels([&game, pending](GpuStatus status, std::vector<uint8_t> bytes) {
+        game.settleRead(*pending, status, bytes);
+    });
+    if (started != GpuStatus::Ok)
+        resolver->Reject(ctx, v8::Exception::Error(v8str(isolate, "TN_NATIVE_READ_FRAME: no frame has been drawn yet"))).Check();
+}
+
 // `tn.readTarget(target, x, y, width, height)`: a Promise of the region's RGBA16Float rows (top row
 // first) as a Uint8Array, resolved from the player's poll once the GPU copy lands.
 void V8Game::readTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -559,17 +603,7 @@ void V8Game::readTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto pending = std::make_shared<v8::Global<v8::Promise::Resolver>>(isolate, resolver);
     const GpuStatus started = readRenderTarget(*static_cast<RenderTarget*>(target->ptr.get()), region[0], region[1],
         region[2], region[3], [&game, pending](GpuStatus status, std::vector<uint8_t> bytes) {
-            v8::HandleScope scope(game.isolate_);
-            auto context = game.js_.Get(game.isolate_);
-            v8::Context::Scope contextScope(context);
-            auto settle = pending->Get(game.isolate_);
-            if (status != GpuStatus::Ok) {
-                settle->Reject(context, v8::Exception::Error(v8str(game.isolate_, "TN_NATIVE_READ_TARGET: the read failed"))).Check();
-                return;
-            }
-            auto buffer = v8::ArrayBuffer::New(game.isolate_, bytes.size());
-            std::memcpy(buffer->Data(), bytes.data(), bytes.size());
-            settle->Resolve(context, v8::Uint8Array::New(buffer, 0, bytes.size())).Check();
+            game.settleRead(*pending, status, bytes);
         });
     if (started == GpuStatus::InvalidHandle) reject("TN_NATIVE_READ_TARGET: the target never rendered");
     else if (started != GpuStatus::Ok) reject("TN_NATIVE_READ_TARGET: region outside the target");
@@ -826,6 +860,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "renderTarget"), v8::Function::New(ctx, &renderTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "compileAsync"), v8::Function::New(ctx, &compileAsync, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readTarget"), v8::Function::New(ctx, &readTarget, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "readFrame"), v8::Function::New(ctx, &readFrame, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "renderInfo"), v8::Function::New(ctx, &renderInfo, self).ToLocalChecked()).Check();

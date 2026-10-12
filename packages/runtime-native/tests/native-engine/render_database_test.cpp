@@ -2189,6 +2189,54 @@ void msaaEdges() {
     CHECK(renderer.diagnostics().empty());
 }
 
+// A flat-shaded lit mesh needs no normal attribute (three's NodeMaterial.setupNormal takes the face
+// normal from the position's derivatives). A glTF without NORMAL, the Khronos Fox, loads that way: the
+// draw must reach the main pass and light the mesh instead of vanishing from it.
+void flatShadingNeedsNoNormals() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+
+    Scene scene;
+    PerspectiveCamera camera(60, 4.0 / 3, 0.1, 100);
+    camera.position.set(0, 0, 4);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    auto light = std::make_shared<DirectionalLight>(Color(1, 1, 1), 3.0);
+    light->position.set(2, 3, 5);
+    scene.add(*light);
+
+    auto geometry = makeBoxGeometry(1.5, 1.5, 1.5);
+    geometry->attributes.erase("normal");
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    material->flatShading = true;
+    Mesh mesh(geometry, material);
+    scene.add(mesh);
+
+    RenderDatabase database;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(database.diagnostics().empty());
+    CHECK(renderer.diagnostics().empty());
+    CHECK(renderer.lastFrame().draws == 2);  // the box and the output pass
+    CHECK(renderer.lastFrame().triangles > 3);
+
+    std::vector<uint8_t> pixels;
+    bool read = false;
+    renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+        if (status == GpuStatus::Ok) pixels = std::move(px);
+        read = true;
+    });
+    for (int i = 0; i < 5000 && !read; ++i) {
+        renderer.poll();
+        events.drain();
+        if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const size_t centre = (size_t{24} * 64 + 32) * 4;
+    CHECK(pixels.size() == size_t{64} * 48 * 4 && (pixels[centre] | pixels[centre + 1] | pixels[centre + 2]) != 0);
+}
+
 // Shadow-camera layers: a light shadow camera can draw casters on layers excluded by the main camera.
 void shadowCameraLayers() {
     mystral::webgpu::Context context;
@@ -2234,6 +2282,10 @@ void shadowCameraLayers() {
     auto stats = renderer.lastFrame();
     CHECK(stats.draws == 2);
     CHECK(stats.shadowDraws == 2);
+    // The shadow pass counts its triangles beside its draws (three's Info counts both passes): two
+    // draws of one geometry, then one when the layer mask drops a caster.
+    const uint64_t twoCasters = stats.shadowTriangles;
+    CHECK(twoCasters > 0 && twoCasters % 2 == 0);
 
     // 2. Default case: shadow camera with mask 1 uses the main camera's mask.
     // A layer-2 mesh casts only if the main camera enables layer 2.
@@ -2242,6 +2294,7 @@ void shadowCameraLayers() {
     stats = renderer.lastFrame();
     CHECK(stats.draws == 2);
     CHECK(stats.shadowDraws == 1);
+    CHECK(stats.shadowTriangles == twoCasters / 2);
 
     camera.enableLayer(2);
     database.render(renderer, scene, camera);
@@ -2483,7 +2536,7 @@ void shadowLightsFollowHierarchy() {
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy})
 
 

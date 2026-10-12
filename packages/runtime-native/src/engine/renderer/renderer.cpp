@@ -1958,6 +1958,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.sprite = item.sprite;
         v.backSide = item.side == 1;
         v.doubleSide = item.side == 2;
+        v.flatShading = item.flatShading;
         v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
@@ -2055,7 +2056,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         Program& program = *built;
         if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
-        if (!item.positions || (lit && !item.normals) || !item.material) continue;
+        if (!item.positions || (lit && !item.normals && !item.flatShading) || !item.material) continue;
         // material.side: FrontSide culls back faces, BackSide front faces, DoubleSide none.
         const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
         // three blends unless NoBlending, or NormalBlending on a material that is not transparent.
@@ -2627,11 +2628,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             const uint32_t count = static_cast<uint32_t>(item.indices->byteLength() / (wide ? 4 : 2));
             TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
-            if (counted) lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
+            (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
         } else {
             const uint32_t count = static_cast<uint32_t>(item.positions->byteLength() / 12);
             TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
-            if (counted) lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);
+            (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);
         }
         if (counted) ++lastFrame_.draws;
         else ++lastFrame_.shadowDraws;
@@ -2730,6 +2731,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
         const auto shadowStats = lastFrame_.shadowSkinned;
         const auto shadowDraws = lastFrame_.shadowDraws;
+        const auto shadowTriangles = lastFrame_.shadowTriangles;
         lastFrame_ = FrameStats{};
         const auto record = [&](std::size_t from, std::size_t to) {
             const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
@@ -2747,6 +2749,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         mainBundleStats_ = lastFrame_;
         lastFrame_.shadowSkinned = shadowStats;
         lastFrame_.shadowDraws = shadowDraws;
+        lastFrame_.shadowTriangles = shadowTriangles;
         mainBundleKey_ = std::move(bundleKey);
     } else {
         lastFrame_.draws = mainBundleStats_.draws;

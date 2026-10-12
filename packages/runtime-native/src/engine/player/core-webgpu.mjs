@@ -69,6 +69,8 @@ export class WebGPURenderer {
   getClearAlpha() { return this.__clearColor[3]; }
   setClearAlpha(alpha) { this.__clearColor[3] = alpha; }
   setPixelRatio() {}
+  // three's `await renderer.init()`: the player owns the GPU and has opened it before any script runs.
+  async init() { return this; }
   // WebGPUCapabilities.getMaxAnisotropy: WebGPU samplers clamp maxAnisotropy to 16.
   getMaxAnisotropy() { return 16; }
   setSize(width, height) {
