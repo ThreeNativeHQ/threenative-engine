@@ -169,7 +169,12 @@ it("passes the real native handshake preflight for every generated arm", async (
     async call<T>(method: string): Promise<T> {
       if (method === "describe")
         return {
-          capabilities: ["runtime.resources", "runtime.fixedStep", "runtime.startup"],
+          capabilities: [
+            "runtime.network",
+            "runtime.resources",
+            "runtime.fixedStep",
+            "runtime.startup",
+          ],
           limits: PLAYTEST_PROTOCOL_LIMITS,
           name: "@threenative/playtest/three",
           protocolVersion: 1,

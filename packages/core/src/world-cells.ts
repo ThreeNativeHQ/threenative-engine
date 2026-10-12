@@ -4960,7 +4960,9 @@ export class WorldCells extends Group implements IComputeDriven {
     // it to reach the set it already holds. Skipped while both hold. A move, a load, a build, a
     // deferred admission or a shadow level not yet told runs the pass exactly as before.
     const terrainView =
-      this.#camera !== undefined && this.#renderer !== undefined
+      this.#terrain !== undefined &&
+      this.#camera !== undefined &&
+      this.#renderer?.domElement?.height !== undefined
         ? {
             camera: this.#camera,
             viewportHeight: this.#renderer.domElement.height,

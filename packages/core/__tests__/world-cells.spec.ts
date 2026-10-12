@@ -2514,6 +2514,35 @@ describe("WorldCells", () => {
     world.dispose();
   });
 
+  it("does not read a raster viewport for a world without terrain", async () => {
+    stubFixtureFetch();
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow: followAt(0, 0),
+      loadModel: async () => new Group(),
+      ring: 0,
+      surface,
+      terrain: false,
+      gpuScene: false,
+      url: "/world/world.json",
+    });
+    const renderer = {
+      info: { render: { drawCalls: 0 } },
+      get domElement() {
+        throw new Error("No terrain viewport requested");
+      },
+      kind: "webgl",
+      raw: {},
+      compileAsync: vi.fn(async () => undefined),
+      uploadAttributes: vi.fn(() => 1),
+    } as unknown as IRendererLike;
+    try {
+      expect(() => world.update(renderer, new PerspectiveCamera())).not.toThrow();
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("passes the resolved props pixel policy and current raster view to settled terrain", async () => {
     stubFixtureFetch();
     const world = await loadWorld({

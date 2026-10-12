@@ -196,9 +196,9 @@ test("requires the terrain scenario to prove an LOD transition after its baselin
   expect(lod).toMatchObject({ changed: true });
   expect(lod).not.toHaveProperty("allowTrivial");
   expect(lod).not.toHaveProperty("gte");
-  expect(component("maxSeamGap")).toMatchObject({ gte: 0.000001, lte: 64 });
+  expect(component("maxSeamGap")).toMatchObject({ changed: true, gte: 0.000001, lte: 64 });
   expect(component("maxSeamGap")).not.toHaveProperty("allowTrivial");
-  expect(component("stitchedEdges")).toMatchObject({ entity: "terrainCpuReference", gte: 1 });
+  expect(component("stitchedEdges")).toMatchObject({ changed: true, entity: "terrainCpuReference", gte: 1 });
   expect(component("stitchedEdges")).not.toHaveProperty("allowTrivial");
   expect(component("maxVisualSeamGap")).toMatchObject({ lte: 0 });
   expect(component("skirtVertexCount")).toMatchObject({ gte: 1 });

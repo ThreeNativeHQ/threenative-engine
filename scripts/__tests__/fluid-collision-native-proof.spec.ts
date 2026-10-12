@@ -222,7 +222,12 @@ test("preserves numerical predicates and passes native preflight while diagnosti
     async call<T>(method: string): Promise<T> {
       if (method === "describe")
         return {
-          capabilities: ["runtime.resources", "runtime.fixedStep", "runtime.diagnostics"],
+          capabilities: [
+            "runtime.network",
+            "runtime.resources",
+            "runtime.fixedStep",
+            "runtime.diagnostics",
+          ],
           limits: PLAYTEST_PROTOCOL_LIMITS,
           name: "@threenative/playtest/three",
           protocolVersion: 1,

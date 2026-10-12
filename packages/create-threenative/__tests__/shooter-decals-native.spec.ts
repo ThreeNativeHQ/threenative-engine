@@ -88,7 +88,12 @@ it("preserves all authored predicates and passes actual minimal-native mailbox p
     async call<T>(method: string): Promise<T> {
       if (method === "describe")
         return {
-          capabilities: ["runtime.resources", "runtime.fixedStep", "runtime.startup"],
+          capabilities: [
+            "runtime.network",
+            "runtime.resources",
+            "runtime.fixedStep",
+            "runtime.startup",
+          ],
           limits: PLAYTEST_PROTOCOL_LIMITS,
           name: "@threenative/playtest/three",
           protocolVersion: 1,

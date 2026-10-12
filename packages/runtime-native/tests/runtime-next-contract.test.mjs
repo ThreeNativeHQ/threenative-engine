@@ -41,7 +41,7 @@ function implementedRows() {
 
 const RUNTIME_SCRIPT_HASHES = {
   'storage-polyfill.js': '7e03f256b0e11b5370bf86ccb5ae286be221080a1baa8339efe2aa570dd3c25d',
-  'fetch-polyfill.js': '7b4cf3551605af8d13175239f1f270722af5e709067ad451fa07790a0d58ec1a',
+  'fetch-polyfill.js': '352dbc282ed5f8f4f389d1ec79c18fc0d7e18dbdf5e79c6509515fabdee54cd2',
   'streams-polyfill.js': 'b57569ac2079bc5864eb7c8aefef6b03321acad8b6f6364b3de714e2bee64d83',
   'url-worker-polyfill.js': 'fb709b56f527c82cc7ba4d2c3430a6f17c81e0550f736d145819b25463811af3',
   'create-element-setup.js': '3891c716e3e7b8801f45306b50c5c8c5990042276524fbaac745b157389d1bee',

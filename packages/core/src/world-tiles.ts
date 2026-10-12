@@ -3610,6 +3610,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const apply = (result: ITerrainMergeResult): void => {
       this.#mergingBlocks.delete(blockKey);
       if (this.#released) return;
+      // Completed merges cost work even when newer residency makes their result stale.
+      this.#blockRebuilds += 1;
       if (job instanceof Promise) {
         const current = this.#blockMembers(blockKey, lod);
         const superseded =
@@ -3696,7 +3698,6 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       const tile = this.#resident.get(key);
       if (tile !== undefined) this.#setLodVisibility(tile);
     }
-    this.#blockRebuilds += 1;
   }
 
   /** The resident settled tiles a block covers, and their level geometries to concatenate. */
