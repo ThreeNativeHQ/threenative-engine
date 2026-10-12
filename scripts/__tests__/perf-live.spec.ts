@@ -1,7 +1,18 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { epicOf, pointsOf, rowsOf } from "../perf-live.js";
+import {
+  type IPoint,
+  deltaOf,
+  epicOf,
+  heroOf,
+  phaseGapOf,
+  pointsOf,
+  rowsOf,
+  sentenceOf,
+  staleReason,
+  valueColor,
+} from "../perf-live.js";
 
 const pilot = "artifacts/engine-load-test/prd-449/pilots/scoreboard-tn-r3-2026-09-28.json";
 
@@ -149,5 +160,137 @@ describe("perf-live", () => {
     });
     expect(points[1]?.ratioCpu).toBeCloseTo(96 / 55);
     expect(points.slice(2).map((p) => p.ratioCpu)).toEqual([2, 1]);
+  });
+
+  it("colours a KPI value: green at the target, orange above parity, red below it", () => {
+    expect([0.79, 1, 1.04, 1.99, 2, 3].map(valueColor)).toEqual([
+      "red",
+      "orange",
+      "orange",
+      "orange",
+      "green",
+      "green",
+    ]);
+  });
+
+  it("reports a delta as flat inside the 10% noise band and up or down beyond it", () => {
+    expect(deltaOf(1, 1.1).dir).toBe("flat");
+    expect(deltaOf(1, 0.91).dir).toBe("flat");
+    expect(deltaOf(1, 1.2)).toMatchObject({ dir: "up" });
+    expect(deltaOf(1, 0.8)).toMatchObject({ dir: "down" });
+    expect(deltaOf(1, 1.5).pct).toBeCloseTo(0.5);
+  });
+
+  it("says 'cheaper' at parity or better and 'costs' below it", () => {
+    expect(sentenceOf(1.04)).toBe("Native is 1.04× cheaper than legacy on R5. Target 2×.");
+    expect(sentenceOf(0.5)).toContain("Native costs 2.00× legacy");
+  });
+
+  const HOUR = 3_600_000;
+  const point = (
+    label: string,
+    mode: string,
+    t: number,
+    ratio?: number,
+    objects = 4096,
+  ): IPoint => ({
+    label,
+    mode,
+    objects,
+    t,
+    m: t,
+    invalid: false,
+    legacyRuns: 1,
+    nativeRuns: 1,
+    ...(ratio === undefined ? {} : { ratioNoPresent: ratio }),
+  });
+
+  it("marks the hero stale after 6 hours or when R2 or R3 was measured after R5", () => {
+    const now = 100 * HOUR;
+    const r5 = point("v/r5", "R5", now - HOUR, 1.5);
+    expect(staleReason([r5], now)).toBeUndefined();
+    expect(heroOf([r5], now)).toMatchObject({ status: "orange", ratio: 1.5 });
+    expect(heroOf([point("v/old", "R5", now - 7 * HOUR, 2.5)], now)).toMatchObject({
+      status: "yellow",
+      valueColor: "green",
+    });
+    // R2 minutes after R5 is the same session; an hour later it is stale.
+    expect(staleReason([r5, point("v/r2", "R2", r5.t + 60_000, 0.4)], now)).toBeUndefined();
+    expect(staleReason([r5, point("v/r2", "R2", r5.t + HOUR / 2, 0.4)], now)).toContain("v/r2");
+    // The control rung and points without a KPI never make R5 stale.
+    expect(staleReason([r5, point("c", "R2", now, 1, 256)], now)).toBeUndefined();
+    expect(staleReason([r5, point("n", "R3", now)], now)).toBeUndefined();
+  });
+
+  it("builds the hero from the newest R5 KPI point and compares it with the one before", () => {
+    const now = 10 * HOUR;
+    const hero = heroOf(
+      [
+        point("a", "R5", now - 3 * HOUR, 1),
+        point("b", "R2", now - 2 * HOUR, 0.4),
+        point("c", "R5", now - HOUR, 1.5),
+      ],
+      now,
+    );
+    expect(hero).toMatchObject({ label: "c", status: "orange", delta: { dir: "up", label: "a" } });
+    expect(heroOf([point("b", "R2", now, 0.4)], now).status).toBe("none");
+    expect(heroOf([], now).status).toBe("none");
+  });
+
+  it("names the phase where native spends the most extra ms, and none when it is never slower", () => {
+    expect(
+      phaseGapOf(
+        { game: 2, projection: 2, present: 70 },
+        { game: 3, projection: 6.1, present: 99 },
+      ),
+    ).toEqual({ phase: "projection", native: 6.1, legacy: 2 });
+    expect(phaseGapOf({ game: 5 }, { game: 1 })).toBeUndefined();
+  });
+
+  it("carries per-arm phases from runs into the point and the hero", () => {
+    const run = (arm: string, game: number) => ({
+      arm,
+      build: { notes: "", type: "release" },
+      device: { battery: null, label: "d" },
+      display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
+      driver: { adapter: "a", renderer: "r" },
+      engine: { name: "threenative", version: "w" },
+      rungs: [
+        {
+          cpuMsPerFrame: 20,
+          threadCpuMs: [game + 1, game + 1],
+          presentCpuMs: [70, 70],
+          phases: {
+            game: [game, game],
+            animation: [0, 0],
+            matrixWorld: [0, 0],
+            projection: [0, 0],
+            render: [0, 0],
+          },
+          drawCalls: 5,
+          frameMs: [10, 10],
+          mode: "L1",
+          objectCount: 4096,
+          positionHash: "h",
+          repeat: 0,
+          triangles: 1,
+          visibleObjects: 4096,
+        },
+      ],
+    });
+    const rows = [
+      ...rowsOf(run("tn-desktop", 4), "v111/p-tn-desktop-r1.json", 1),
+      ...rowsOf(run("tn-engine-desktop", 8), "v111/p-tn-engine-desktop-r1.json", 2),
+    ];
+    const [p] = pointsOf(rows);
+    expect(p?.legacyPhases).toMatchObject({ game: 4, other: 1, present: 70 });
+    expect(p?.nativePhases).toMatchObject({ game: 8, other: 1, present: 70 });
+    // The hero reads phases from the newest R5 point that has them.
+    const r5 = {
+      ...point("v/p", "R5", 1, 1.2),
+      legacyPhases: p?.legacyPhases,
+      nativePhases: p?.nativePhases,
+    };
+    expect(heroOf([r5 as IPoint], 3).phases?.gap).toEqual({ phase: "game", native: 8, legacy: 4 });
   });
 });

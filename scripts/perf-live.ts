@@ -21,6 +21,8 @@ export interface IRow {
   cpu?: number;
   /** Main-thread CPU ms per frame without the present call (p50), when the arm reports it: the KPI metric. */
   threadCpu?: number;
+  /** Median ms per frame by phase (game, projection, ..., other) plus `present`, when the report carries phase arrays. */
+  phases?: Record<string, number>;
   /** Host load above half the cores: absolutes are not valid, ratios between alternating arms still are. */
   invalid: boolean;
   cycle: string;
@@ -82,27 +84,45 @@ export function epicOf(markdown: string) {
   return cycles;
 }
 
+/** Per-key median across records; a key missing from a record is skipped, not zeroed. */
+function medianByKey(records: readonly Record<string, number>[]): Record<string, number> {
+  const keys = new Set(records.flatMap((r) => Object.keys(r)));
+  return Object.fromEntries(
+    [...keys].map((k) => [
+      k,
+      medianOf(records.flatMap((r) => (r[k] === undefined ? [] : [r[k] as number]))) as number,
+    ]),
+  );
+}
+
 export function rowsOf(report: unknown, file: string, mtime: number): IRow[] {
   const day = /(\d{4}-\d{2}-\d{2})/u.exec(file)?.[1];
   const t = day ? Date.parse(`${day}T12:00:00Z`) : mtime;
   const r = parseRunReport(report);
-  return summarize(r).map((s) => ({
-    arm: r.arm,
-    engine: r.engine.name,
-    file,
-    mode: s.mode,
-    objects: s.objectCount,
-    p50: s.p50,
-    p95: s.p95,
-    p99: s.p99,
-    hitches: s.hitches,
-    ...(s.cpuMsPerFrame === undefined ? {} : { cpu: s.cpuMsPerFrame }),
-    ...(s.threadCpuP50 === undefined ? {} : { threadCpu: s.threadCpuP50 }),
-    invalid: r.hostLoad?.absolutes === "invalid-absolute",
-    cycle: /(?:^|[\/_.-])(v[1-5])(?:[\/_.-]|$)/u.exec(file)?.[1] ?? "v1",
-    t,
-    m: mtime,
-  }));
+  return summarize(r).map((s) => {
+    // The bench parser already pools per-frame phase arrays into p50s (render includes the host draw).
+    const phases = s.phases
+      ? Object.fromEntries(Object.entries(s.phases).map(([k, v]) => [k, v.p50]))
+      : undefined;
+    return {
+      arm: r.arm,
+      engine: r.engine.name,
+      file,
+      mode: s.mode,
+      objects: s.objectCount,
+      p50: s.p50,
+      p95: s.p95,
+      p99: s.p99,
+      hitches: s.hitches,
+      ...(s.cpuMsPerFrame === undefined ? {} : { cpu: s.cpuMsPerFrame }),
+      ...(s.threadCpuP50 === undefined ? {} : { threadCpu: s.threadCpuP50 }),
+      ...(phases === undefined ? {} : { phases }),
+      invalid: r.hostLoad?.absolutes === "invalid-absolute",
+      cycle: /(?:^|[\/_.-])(v[1-5])(?:[\/_.-]|$)/u.exec(file)?.[1] ?? "v1",
+      t,
+      m: mtime,
+    };
+  });
 }
 
 export interface IPoint {
@@ -128,6 +148,9 @@ export interface IPoint {
   nativeThread?: number;
   /** legacy ÷ native without the present call: the declared KPI metric. */
   ratioNoPresent?: number;
+  /** Median ms per frame by phase, per arm, when the runs carry phase arrays. */
+  legacyPhases?: Record<string, number>;
+  nativePhases?: Record<string, number>;
 }
 
 const LEGACY_ARM = "tn-desktop";
@@ -153,6 +176,12 @@ function armMedian(group: readonly IRow[], arm: string, field: "cpu" | "threadCp
   );
 }
 
+/** Per-phase median across one arm's runs that carry phases. */
+function armPhases(group: readonly IRow[], arm: string): Record<string, number> | undefined {
+  const withPhases = group.flatMap((r) => (r.arm === arm && r.phases ? [r.phases] : []));
+  return withPhases.length === 0 ? undefined : medianByKey(withPhases);
+}
+
 /** The point one group of runs makes; undefined when one arm alone ran, since then there is no ratio. */
 function pointOf(key: string, group: readonly IRow[]): IPoint | undefined {
   const [dir, tag, mode, objects] = JSON.parse(key) as [string, string, string, number];
@@ -167,6 +196,8 @@ function pointOf(key: string, group: readonly IRow[]): IPoint | undefined {
       ? legacyThread / nativeThread
       : undefined;
   if (ratioCpu === undefined && ratioNoPresent === undefined) return undefined;
+  const legacyPhases = armPhases(group, LEGACY_ARM);
+  const nativePhases = armPhases(group, NATIVE_ARM);
   return {
     label: dir === "." ? tag : `${dir}/${tag}`,
     mode,
@@ -182,6 +213,8 @@ function pointOf(key: string, group: readonly IRow[]): IPoint | undefined {
     legacyThread,
     nativeThread,
     ratioNoPresent,
+    ...(legacyPhases === undefined ? {} : { legacyPhases }),
+    ...(nativePhases === undefined ? {} : { nativePhases }),
   };
 }
 
@@ -204,6 +237,120 @@ export function pointsOf(rows: readonly IRow[]): IPoint[] {
     if (point !== undefined) points.push(point);
   }
   return points.sort((a, b) => a.t - b.t || a.m - b.m || a.label.localeCompare(b.label));
+}
+
+/** The KPI target: native costs at most half the legacy CPU per frame. */
+export const TARGET = 2;
+/** The hero turns yellow when the newest R5 KPI point is older than this. */
+export const STALE_MS = 6 * 3_600_000;
+/** An R2/R3 point counts as "newer" only when it lands more than this after R5 (one measuring session). */
+export const SAME_SESSION_MS = 15 * 60_000;
+/** Moves inside this fraction of the previous KPI are noise: shown as flat. */
+export const FLAT_BAND = 0.1;
+
+export type Status = "green" | "orange" | "red" | "yellow" | "none";
+
+/** Colour of a KPI value: green meets the target, orange beats legacy but misses it, red is slower than legacy. */
+export const valueColor = (ratio: number): Exclude<Status, "yellow" | "none"> =>
+  ratio >= TARGET ? "green" : ratio >= 1 ? "orange" : "red";
+
+/** Change against the previous KPI point; inside the noise band it is flat. */
+export function deltaOf(previous: number, current: number) {
+  const pct = (current - previous) / previous;
+  const dir: "up" | "down" | "flat" =
+    Math.abs(pct) <= FLAT_BAND + 1e-9 ? "flat" : pct > 0 ? "up" : "down";
+  return { dir, pct };
+}
+
+/** Why the R5 number may be out of date, or undefined when it is current. */
+export function staleReason(points: readonly IPoint[], now: number): string | undefined {
+  const r5 = r5Points(points).at(-1);
+  if (r5 === undefined) return undefined;
+  const hours = (now - r5.t) / 3_600_000;
+  if (now - r5.t > STALE_MS) return `The newest R5 measurement is ${Math.floor(hours)} h old.`;
+  const newer = points.find(
+    (p) =>
+      (p.mode === "R2" || p.mode === "R3") &&
+      p.objects === 4096 &&
+      p.ratioNoPresent !== undefined &&
+      p.t > r5.t + SAME_SESSION_MS,
+  );
+  return newer === undefined
+    ? undefined
+    : `${newer.label} (${newer.mode}) was measured after the newest R5 point. Re-measure R5.`;
+}
+
+/** R5 @ 4096 objects with a KPI value, in time order: the headline series. */
+const r5Points = (points: readonly IPoint[]) =>
+  points.filter((p) => p.mode === "R5" && p.objects === 4096 && p.ratioNoPresent !== undefined);
+
+/** The plain sentence for a KPI value. Below 1 it says "costs", so nobody reads 0.8 as good news. */
+export function sentenceOf(ratio: number): string {
+  return ratio >= 1
+    ? `Native is ${ratio.toFixed(2)}× cheaper than legacy on R5. Target ${TARGET}×.`
+    : `Native costs ${(1 / ratio).toFixed(2)}× legacy on R5. Target: ${TARGET}× cheaper.`;
+}
+
+/** The phase where native spends the most extra ms against legacy; undefined when it is never slower. */
+export function phaseGapOf(legacy: Record<string, number>, native: Record<string, number>) {
+  let best: { phase: string; native: number; legacy: number } | undefined;
+  for (const [phase, ms] of Object.entries(native)) {
+    if (phase === "present") continue;
+    const other = legacy[phase] ?? 0;
+    if (ms - other > (best ? best.native - best.legacy : 0))
+      best = { phase, native: ms, legacy: other };
+  }
+  return best;
+}
+
+/** Everything the hero needs, decided here so the page only draws it. */
+export function heroOf(points: readonly IPoint[], now: number) {
+  const series = r5Points(points);
+  const latest = series.at(-1);
+  const withPhases = [...points]
+    .reverse()
+    .find((p) => p.mode === "R5" && p.objects === 4096 && p.legacyPhases && p.nativePhases);
+  const phases =
+    withPhases?.legacyPhases && withPhases.nativePhases
+      ? {
+          label: withPhases.label,
+          t: withPhases.t,
+          legacy: withPhases.legacyPhases,
+          native: withPhases.nativePhases,
+          gap: phaseGapOf(withPhases.legacyPhases, withPhases.nativePhases),
+        }
+      : undefined;
+  if (latest?.ratioNoPresent === undefined)
+    return {
+      status: "none" as Status,
+      sentence: "No R5 measurement with both arms yet.",
+      now,
+      ...(phases ? { phases } : {}),
+    };
+  const ratio = latest.ratioNoPresent;
+  const previous = series.at(-2);
+  const reason = staleReason(points, now);
+  return {
+    status: (reason === undefined ? valueColor(ratio) : "yellow") as Status,
+    valueColor: valueColor(ratio),
+    ratio,
+    sentence: sentenceOf(ratio),
+    label: latest.label,
+    t: latest.t,
+    now,
+    invalid: latest.invalid,
+    ...(reason === undefined ? {} : { reason }),
+    ...(previous?.ratioNoPresent === undefined
+      ? {}
+      : {
+          delta: {
+            ...deltaOf(previous.ratioNoPresent, ratio),
+            from: previous.ratioNoPresent,
+            label: previous.label,
+          },
+        }),
+    ...(phases ? { phases } : {}),
+  };
 }
 
 async function allRows(): Promise<IRow[]> {
@@ -234,6 +381,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     } else if (req.url?.startsWith("/api/rows")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify({ roots, rows: await allRows() }));
+    } else if (req.url?.startsWith("/api/hero")) {
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify(heroOf(pointsOf(await allRows()), Date.now())));
     } else if (req.url?.startsWith("/api/points")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(pointsOf(await allRows())));
