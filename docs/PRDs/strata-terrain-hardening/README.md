@@ -37,3 +37,17 @@ Current baseline: `pnpm build` and `pnpm check:docs` passed; six documentation c
 ## Active worker checkouts
 
 PRD-592 validation and golden bytes are integrated at `6c40d8757`; its validation candidate passes 39 focused tests and preserves all 21 forest files, but the latest prescribed same-host timing reaches only 22.55% on a busy host, so the 30% target remains open. PRD-585 local coverage and the scaffold package-manager pin are integrated; 68 scaffold tests pass, while real CI and runtime acceptance remain open. PRD-583 forest cook, alternate LODs and both isolated-install dependency closures are integrated through `38c83ef48`; parent assets build and 17 cook tests pass, and the unskipped packed-game consumer passes on NVIDIA Turing; layered-material visual proof remains pending. PRD-587 server recovery is integrated at `5b8fbfa60`; its corrected queue is integrated locally and passes 45 focused tests, with UI and worker proofs open. PRD-593 owns the reused proof checkout; its corrected pinned-source generator passes 33 focused tests, while actual patch regeneration and all 31 predecessor compatibility checks remain in progress. The active owner checkouts remain `.worktrees/strata-terrain-bake`, `.worktrees/strata-editor-durability` and `.worktrees/strata-terrain-proof`; cleanup follows owner release and tracked, untracked and ignored-data checks. Codex coordinates this entire batch through PR #483.
+
+## Look gate (owner decision, 2026-10-11)
+
+The terrain must be AAA quality. Structure, speed and packaging work does not count as progress on the look. The forest kit renders worse than the merged PR #381 canopy (preview example unchanged; kit path differs). [PRD-580](../open-world/PRD-580-strata-starter-kit-art-bar.md) owns the art bar and now runs first for the forest kit, ahead of the remaining acceptance work in this EPIC.
+
+Order, one lane at a time, each ending in a fresh read-only visual judge (headed WebGPU, `--browser-recipe webgpu`, `adapter.info` checked, two runs per arm, same pose as the PR #381 canopy frames, Gaia and AAA reference images attached):
+
+1. Black trees under the starter post chain (stage readout, tree-pixel luminance assertion in the forest walk playtest).
+2. Placement: clearings, clumping, density and height variation in `recipe.json`.
+3. Lighting and horizon from the kit's own source instead of the starter template defaults.
+4. LOD by distance for the near fir (also the 10.8 M triangle cost, PRD-584 AC-4/5).
+5. Needle material and colour, cutout edges.
+
+A change that touches trees, ground, lighting or LOD ticks no box without an IMPROVEMENT verdict. The PRD 583 authored-noise ground attempt (REGRESSION) stays out of the tree. Perf wins count only after the judge passes.
