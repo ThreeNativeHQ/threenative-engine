@@ -548,7 +548,8 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
     const player = this.#player?.mesh.position;
     const x = player?.x ?? 0;
     const z = player?.z ?? 0;
-    ctx.camera.position.set(x, 180, z + 180);
-    ctx.camera.lookAt(x, 0, z);
+    const y = player?.y ?? 0;
+    ctx.camera.position.set(x, y + 180, z + 180);
+    ctx.camera.lookAt(x, y, z);
   }
 }
