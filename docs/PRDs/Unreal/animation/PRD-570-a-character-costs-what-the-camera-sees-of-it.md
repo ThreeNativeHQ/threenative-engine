@@ -333,3 +333,19 @@ native claim; late-baseline rejection still applies and every PRD gate remains o
   `/proc/driver/nvidia/version` is `615.71.09`, installed Vulkan/NVML libraries are `615.78.08`,
   `vulkaninfo` finds no driver, and `nvidia-smi` reports a driver/library mismatch. No Phase 1,
   AC-1, Phase 3, visual, native or AC-2 box is ticked from these runs.
+
+- 2026-10-12, manager-reproduced moving-root defect fixed in `86d284513`: the red regression
+  failed with `batch.palette[12] = 0` after a skipped-rate-4 frame while the moved actor's
+  `matrixWorld.elements[12] = 10`. `SkinnedBatch.write` now compares the rig's current
+  `matrixWorld` with the last world transform written; a changed gameplay transform writes the
+  world-space palette even when animation evaluation is skipped, while an unchanged skipped pose
+  still omits `skinnedWrite`. The regression also proves velocity history is old-root to new-root.
+  `pnpm exec vitest run packages/core/__tests__/animation-rate.spec.ts packages/core/__tests__/projection-skinned.spec.ts`
+  passes 43/43, and touched-file Biome passes.
+
+- 2026-10-12, hardware doctor after sourcing
+  `/home/joao/.cache/nvidia-615.71.09/env.sh`: `nvidia-smi` reports NVIDIA GeForce RTX 2080,
+  driver `615.71.09`; `vulkaninfo --summary` reports Vulkan 1.4.363; the headed playtest doctor
+  exits 0 with `adapter nvidia turing`, a nonblank rendered scene and 0 console errors. The first
+  doctor attempt was intentionally invalid because the owned preview was stopped and returned
+  `ERR_CONNECTION_REFUSED`; the corrected doctor run used the preview on port 57170 and passed.
