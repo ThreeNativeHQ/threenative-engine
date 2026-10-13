@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { PerspectiveCamera, Scene } from "three";
 import { describe, expect, it } from "vitest";
+import { exposureSettings } from "../template-assets/exposure.js";
 import { createFixedExposureRooms } from "./fixtures/auto-exposure/fixedRooms.js";
+import { assertHistogramProbe } from "./fixtures/auto-exposure/histogramProof.js";
+import {
+  histogramCases,
+  referenceClippedMean,
+} from "./fixtures/auto-exposure/histogramReference.js";
 import {
   assertDeterministicExposureBudget,
   assertExposureClock,
@@ -509,4 +515,33 @@ describe("approved first-update snap acceptance", () => {
       expect(() => qualifyExposureSnap(value, 1)).toThrow(/first paired sample/);
     },
   );
+});
+
+describe("histogram probe qualification", () => {
+  const reference = () =>
+    histogramCases.map(({ name, bins, lowPercent, highPercent }) => {
+      const { logMean, kept } = referenceClippedMean(bins, lowPercent, highPercent);
+      const goal = Math.min(
+        exposureSettings.maxStops,
+        Math.max(exposureSettings.minStops, Math.log2(exposureSettings.key) - logMean),
+      );
+      return kept > 0 ? { name, luminance: 2 ** logMean, goal } : { name, luminance: -1, goal: 0 };
+    });
+  const lines = (values: unknown) => [{ text: `TN_EXPOSURE_HISTOGRAM:${JSON.stringify(values)}` }];
+  it("accepts values that match the CPU reference", () => {
+    expect(assertHistogramProbe(lines(reference()))).toBe(histogramCases.length);
+  });
+  it("rejects a bright tail that moved the mean", () => {
+    const wrong = reference().map((item) =>
+      item.name === "bright-tail-clipped" ? { ...item, luminance: item.luminance * 1.5 } : item,
+    );
+    expect(() => assertHistogramProbe(lines(wrong))).toThrow(/bright-tail-clipped/);
+  });
+  it("rejects a metered luminance for an empty clip, and a missing marker", () => {
+    const wrong = reference().map((item) =>
+      item.name === "empty" ? { ...item, luminance: 0.5 } : item,
+    );
+    expect(() => assertHistogramProbe(lines(wrong))).toThrow(/kept no weight/);
+    expect(() => assertHistogramProbe([])).toThrow(/TN_HISTOGRAM_MISSING/);
+  });
 });

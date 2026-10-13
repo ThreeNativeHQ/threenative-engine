@@ -568,6 +568,24 @@ describe("IAssetLoader through the asset manifest", () => {
     expect(requests).toEqual(["/assets/rock.png"]);
   });
 
+  it("should load the raw path when the served manifest lists nothing", async () => {
+    // An asset-free build serves `{ version: 1, entries: {} }` so the probe never 404s; files in
+    // `public/` must still load verbatim instead of being rejected as unlisted.
+    const fetchAsset = vi.fn(async () => manifestResponse({ version: 1, entries: {} }));
+    vi.stubGlobal("fetch", fetchAsset);
+    const requests: string[] = [];
+    const assets = createAssetLoader({
+      basePath: "/assets",
+      model: async (url) => {
+        requests.push(url);
+        return { url };
+      },
+    });
+
+    await expect(assets.model("rock.png")).resolves.toEqual({ url: "/assets/rock.png" });
+    expect(requests).toEqual(["/assets/rock.png"]);
+  });
+
   it("should fall back to the source directory when the compiled output is gone", async () => {
     // The delete-test: the bake produced `rock.a1b2c3.png` and the manifest that named it, both
     // were deleted, and only `assets/rock.png` is left. Before this the loader asked for
@@ -696,9 +714,17 @@ describe("IAssetLoader through the asset manifest", () => {
   });
 
   it("should throw when the manifest is present but the path is absent", async () => {
+    // The manifest lists another file: an empty one is the asset-free fallback, not authority.
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => manifestResponse({ version: 1, entries: {} })),
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "tree.png": { output: "tree.a1b2c3.png", kind: "texture", bytes: 1024, passes: [] },
+          },
+        }),
+      ),
     );
     const assets = createAssetLoader({ basePath: "/assets", model: async () => ({}) });
 

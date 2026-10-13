@@ -445,7 +445,11 @@ export type { IClusteredMeshOptions, IClusterTable } from "./clustered-mesh.js";
  * const hull = await ctx.assets.model("hull.glb");
  * ctx.scene.add(hull.scene);
  */
-export { updateModelLods } from "./model-lod.js";
+export {
+  DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+  DISCRETE_LOD_DEFAULT_HYSTERESIS,
+  updateModelLods,
+} from "./model-lod.js";
 /**
  * The full-detail geometry of a mesh the loader gave an automatic LOD chain.
  *
@@ -545,6 +549,7 @@ export {
 export type {
   FrameBudgetPhase,
   IFrameBudgetOptions,
+  IFrameBudgetSimulation,
   IFrameBudgetPassSummary,
   IFrameBudgetSummary,
   IFrameBudgetWindow,
@@ -666,6 +671,21 @@ export {
   unlitFoliageWarning,
 } from "./profiling/unlit-foliage-warning.js";
 export type { IUnlitFoliageWarning } from "./profiling/unlit-foliage-warning.js";
+/**
+ * Catch scene state that silently loses environment fill or ignores authored opacity.
+ * Printed once after `enter()` as `TN_ENVIRONMENT_TOO_SMALL` or `TN_OPACITY_IGNORED`,
+ * with the fix in the same console error line so playtest `noConsoleErrors` rejects it.
+ * @situation audit an equirectangular sky too narrow for three's WebGPU PMREM
+ * @situation find visible opaque materials whose authored opacity is ignored
+ * @constraint structural scene reads only, one visible-tree walk per entry, at most five material examples
+ * @constraint it changes no scene state; environment and transparency remain the game's decisions
+ * @example renderTrapAudit(ctx.scene); // marker lines with the fixes, or an empty array
+ */
+export {
+  ENVIRONMENT_TOO_SMALL_MARKER,
+  OPACITY_IGNORED_MARKER,
+  renderTrapAudit,
+} from "./profiling/render-trap-audit.js";
 /**
  * Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the
  * subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and
@@ -987,6 +1007,12 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  * @situation falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard
  * @situation kick up a spray of powder snow or dust where a foot or a ball lands
  * @constraint geometry, color, and timing remain supplied by the game
+ * @constraint the emitter measures its own bounds and stops computing and drawing after graceSeconds outside the camera view
+ * @constraint a game needs no emitting = visible gate, and an emitter with no measured bounds is never culled for leaving the view
+ * @constraint when measured GPU cost passes the frame budget, the smallest projected emitters pause first, and cull.reason reads outside-view or over-budget
+ * @override onCull: "clear" restarts a returning effect, the default "pause" resumes it with buffers intact
+ * @override bounds supplies a fixed local Box3 and skips GPU measurement, padding enlarges the world box, boundsEveryFrames sets the measurement cadence
+ * @override graceSeconds sets the seconds outside the view before culling, and Infinity disables view culling
  * @example const particles = new GPUParticles3D(particleOptions);
  */
 export { GPUParticles3D } from "./particles.js";

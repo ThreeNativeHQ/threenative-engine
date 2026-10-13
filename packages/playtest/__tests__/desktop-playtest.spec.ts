@@ -2,13 +2,14 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { PNG } from "pngjs";
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 import {
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
   type IPlaytestBridgeV1,
+  type IPlaytestObservationSnapshot,
   type JsonValue,
 } from "../src/index.js";
 import { assertCaptureNotBlank } from "../src/capture.js";
@@ -20,6 +21,24 @@ import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { normalizedRuntimeDiagnostics } from "../src/runner/observationSampling.js";
 import type { IDevicePlaytestDriver } from "../src/runner/androidRunner.js";
 import { connectDevicePlaytestBridge, type IDeviceBridgeInstallation } from "../src/three/device.js";
+
+beforeEach(() => {
+  vi.stubEnv("TN_PLAYTEST_CLOCK", undefined);
+  Reflect.deleteProperty(process.env, "TN_PLAYTEST_CLOCK");
+});
+afterEach(() => vi.unstubAllEnvs());
+
+test.each([undefined, false])("desktop counted run refuses an inherited clock with liveClock=%s", async (liveClock) => {
+  const driverFactory = vi.fn(() => { throw new Error("driver started"); });
+  for (const clock of ["wall-clock", "", "unsupported"]) {
+    process.env.TN_PLAYTEST_CLOCK = clock;
+    await expect(runDesktopPlaytest(
+      { ...minimalConfig("desktop"), liveClock },
+      { driverFactory },
+    )).rejects.toThrow("TN_PLAYTEST_CLOCK: a counted run must not inherit a wall clock; unset TN_PLAYTEST_CLOCK or pass --live-clock.");
+    expect(driverFactory).not.toHaveBeenCalled();
+  }
+});
 
 test("desktop CLI parsing requires and resolves the native executable", () => {
   const config = parseStandalonePlaytestArgs([
@@ -258,6 +277,8 @@ test.skipIf(process.platform === "win32")("desktop runner drives a real local ma
     expect(report.pass).toBe(true);
     expect(report.runtime).toBe("native");
     expect(report.target).toBe("desktop");
+    expect(JSON.parse(await readFile(join(mailboxRoot, "desktop-fixture-args.json"), "utf8")))
+      .toEqual(["--width", "640", "--height", "360", "--windowed"]);
     expect(report.assertionResults).toContainEqual(expect.objectContaining({ id: "movement.distance", pass: true }));
     if (process.platform === "linux") {
       expect(await readFile(join(mailboxRoot, "desktop-fixture-display.txt"), "utf8")).toMatch(/^:\d+$/u);
@@ -389,9 +410,37 @@ test("desktop runner asks for the frame series a performance assertion reads", a
     const performance = report.assertionResults?.find(({ id }) => id === "performance.minFps");
     expect(performance?.pass).toBe(true);
   } finally {
-    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    if (previous === undefined) Reflect.deleteProperty(host, "__THREENATIVE_NATIVE__");
     else host.__THREENATIVE_NATIVE__ = previous;
     await rm(projectPath, { force: true, recursive: true });
+  }
+});
+
+test("desktop driver gives the native host the clock the run asked for, and none when it asked for none", async () => {
+  // The runner's own `clock` field is a claim about the run. This reads the environment the child
+  // process actually receives, which is the only thing the host can read the request from.
+  const root = await makeTempDir("playtest-desktop-clock-");
+  const observed = async (liveClock: boolean): Promise<string> => {
+    const mailbox = join(root, liveClock ? "asked" : "counted");
+    const driver = new DesktopPlaytestDriver({
+      executable: process.execPath,
+      liveClock,
+      mailboxRoot: mailbox,
+      args: ["-e", `require("node:fs").writeFileSync(process.env.TN_PLAYTEST_MAILBOX_ROOT + "/clock.txt", process.env.TN_PLAYTEST_CLOCK ?? "absent");`],
+    });
+    try {
+      await driver.prepare("unused");
+      await expect.poll(() => driver.isAlive()).toBe(false);
+      return await readFile(join(mailbox, "clock.txt"), "utf8");
+    } finally {
+      await driver.stop();
+    }
+  };
+  try {
+    expect(await observed(true)).toBe("wall-clock");
+    expect(await observed(false)).toBe("absent");
+  } finally {
+    await rm(root, { force: true, recursive: true });
   }
 });
 
@@ -606,6 +655,8 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout can be rai
 });
 
 interface IDesktopScenarioOptions {
+  network?: JsonValue;
+  assertNetwork?: boolean;
   console?: { text: string; type: string }[];
   mailboxFile?: boolean;
   onDriver?: (driver: FakeDesktopDriver) => void;
@@ -633,7 +684,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   const scenarioPath = join(projectPath, "scenario.json");
   await writeFile(scenarioPath, JSON.stringify({
     artifacts: { screenshots: options.screenshots ?? false },
-    assert: { movement: { entity: "player", minDistance } },
+    assert: { movement: { entity: "player", minDistance }, ...(options.assertNetwork ? { diagnostics: { noNetworkErrors: true } } : {}) },
     name: "desktop-cross-target-scenario",
     schemaVersion: 1,
     steps: [{
@@ -649,6 +700,10 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   }));
   const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;
   const moving = movingBridge();
+  const sample = moving.bridge.sample;
+  moving.bridge.sample = async (request) => ({ ...await sample(request), network: (options.network === undefined ? { requests: 0, entries: [] } : options.network) as IPlaytestObservationSnapshot["network"] });
+  const describe = moving.bridge.describe;
+  moving.bridge.describe = async () => ({ ...await describe(), capabilities: [...(await describe()).capabilities, "runtime.network"] });
   const driver = new FakeDesktopDriver(
     moving.bridge,
     options.stopError,
@@ -689,7 +744,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
     });
     return { driver, report };
   } finally {
-    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    if (previous === undefined) Reflect.deleteProperty(host, "__THREENATIVE_NATIVE__");
     else host.__THREENATIVE_NATIVE__ = previous;
     if (ownsProjectPath) await rm(projectPath, { force: true, recursive: true });
   }
@@ -790,6 +845,7 @@ function movingBridge(options: { resourceReadyAtTick?: number } = {}): { bridge:
           "entity.observe",
           "runtime.diagnostics",
           "runtime.fixedStep",
+          "runtime.network",
           ...(resourceReadyAtTick === undefined ? [] : ["runtime.resources"]),
         ],
         limits: PLAYTEST_PROTOCOL_LIMITS,
@@ -800,6 +856,7 @@ function movingBridge(options: { resourceReadyAtTick?: number } = {}): { bridge:
       sample: () => ({
         clock: { mode: "fixed-step", tick },
         diagnostics: [],
+        network: { requests: 0, entries: [] },
         entities: [{ id: "player", transform: { position: [x, 0, 0] }, visible: true }],
         resources: resources(),
       }),
@@ -848,6 +905,7 @@ const responsePath = join(root, "tn-playtest-response.json");
 const screenshotRequestPath = join(root, "tn-playtest-screenshot-request.txt");
 const screenshotBytes = Buffer.from(${JSON.stringify(screenshot)}, "base64");
 writeFileSync(join(root, "desktop-fixture-display.txt"), process.env.DISPLAY ?? "");
+writeFileSync(join(root, "desktop-fixture-args.json"), JSON.stringify(process.argv.slice(2)));
 let held = false;
 let x = 0;
 let tick = 0;
@@ -880,7 +938,7 @@ function poll() {
   let result = null;
   if (request.method === "describe") {
     result = {
-      capabilities: ["entity.observe", "runtime.diagnostics", "runtime.fixedStep"],
+      capabilities: ["entity.observe", "runtime.diagnostics", "runtime.fixedStep", "runtime.network"],
       limits: { maxEntitiesPerSample: 100, maxEventsPerDrain: 1000, maxPayloadBytes: 1000000, operationTimeoutMs: 5000 },
       name: "desktop-mailbox-fixture",
       protocolVersion: 1,
@@ -895,6 +953,7 @@ function poll() {
     result = {
       clock: { mode: "fixed-step", tick },
       diagnostics: [],
+      network: { requests: 0, entries: [] },
       entities: [{ id: "player", transform: { position: [x, 0, 0] }, visible: true }],
       resources: {},
     };
@@ -943,3 +1002,22 @@ function minimalConfig(target: "android" | "browser" | "desktop" | "ios"): IStan
     url: "http://127.0.0.1:5173",
   };
 }
+
+
+test("desktop evaluates the host network observation instead of rejecting the assertion", async () => {
+  const { report } = await runDesktopScenario(2, { assertNetwork: true, network: {
+    requests: 2, entries: [{ method: "GET", url: "https://host/failure" }],
+  } });
+  expect(report.pass).toBe(false);
+  expect(report.diagnostics.some(({ code }) => code === "TN_PLAYTEST_UNSUPPORTED_ON_TARGET")).toBe(false);
+  expect(report.observations?.network).toEqual([{ method: "GET", url: "https://host/failure" }]);
+  expect(report.diagnostics.some(({ code }) => code === "TN_PLAYTEST_NETWORK_ERROR")).toBe(true);
+  const healthy = await runDesktopScenario(2, { assertNetwork: true, network: { requests: 2, entries: [] } });
+  expect(healthy.report.pass).toBe(true);
+});
+
+test.each([null, { requests: -1, entries: [] }, { requests: 1, entries: [{ url: 123 }] }])(
+  "desktop fails closed for a missing or malformed network observation %j", async (network) => {
+    await expect(runDesktopScenario(2, { assertNetwork: true, network })).rejects.toThrow(/NETWORK.*UNOBSERVED/u);
+  },
+);

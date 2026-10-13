@@ -315,6 +315,14 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
       expect(backend).toContain("data.bindGroupLayoutKeys !== bindGroupLayoutKeys");
       expect(backend).toContain("data.bindGroupLayoutKeys = bindGroupLayoutKeys");
       expect(backend).toContain("bindGroupLayoutKeys,");
+      expect(backend).toContain("renderObject.getGeometryCacheKey( false )");
+    }
+
+    for (const file of ["src/renderers/common/RenderObject.js", "build/three.webgpu.js"]) {
+      expect(patched.get(file)).toContain("getGeometryCacheKey( useMorphTargetIds = true )");
+      expect(patched.get(file)).toContain("targets.length + ',' + geometry.morphTargetsRelative");
+      expect(patched.get(file)).toContain("useMorphTargetIds ? attribute.id");
+      expect(patched.get(file)).toContain("attribute.count + ',' + attribute.itemSize");
     }
 
     await run(process.execPath, ["./scripts/postinstall.mjs"], {

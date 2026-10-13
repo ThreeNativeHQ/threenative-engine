@@ -949,9 +949,7 @@ describe("compileAssets", () => {
     expect(secondManifest.entries["rock.png"].output).not.toBe(first.entries["rock.png"].output);
   });
 
-  it("should skip compilation without touching the output when no source directory exists", async () => {
-    // The pre-pipeline state: projects built before this step have no assets/ and their
-    // builds must keep working unchanged.
+  it("should publish an empty manifest when no source directory exists", async () => {
     const root = await makeTempDir("threenative-compile-absent-");
 
     const result = await compileAssets({ cwd: root });
@@ -963,7 +961,18 @@ describe("compileAssets", () => {
       skippedCompression: [],
       written: 0,
     });
-    await expect(stat(path.join(root, "public"))).rejects.toThrow();
+    expect(
+      JSON.parse(await readFile(path.join(root, "public/assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
+  });
+
+  it("should publish an empty manifest when the source directory is empty", async () => {
+    const root = await makeTempDir("threenative-compile-empty-");
+    await mkdir(path.join(root, "assets"));
+    await compileAssets({ cwd: root });
+    expect(
+      JSON.parse(await readFile(path.join(root, "public/assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
   });
 
   it("should throw when the source path exists but is not a directory", async () => {
@@ -1014,9 +1023,7 @@ describe("compileAssets", () => {
     expect(compiled).toEqual(source);
   });
 
-  it("should not publish an empty manifest when the source holds only dotfiles", async () => {
-    // A served manifest is authoritative at runtime: an empty one would reject every load
-    // in a game whose assets still live in public/ by hand. Empty source means no manifest.
+  it("should publish an empty manifest when the source holds only dotfiles", async () => {
     const root = await makeTempDir("threenative-compile-empty-source-");
     await mkdir(path.join(root, "assets"));
     await writeFile(path.join(root, "assets", ".gitkeep"), "");
@@ -1030,10 +1037,12 @@ describe("compileAssets", () => {
       skippedCompression: [],
       written: 0,
     });
-    await expect(stat(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow();
+    expect(
+      JSON.parse(await readFile(path.join(root, "public/assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
   });
 
-  it("should drop the stale manifest once the last input is removed", async () => {
+  it("should empty the stale manifest once the last input is removed", async () => {
     const root = await makeTempDir("threenative-compile-stale-manifest-");
     await mkdir(path.join(root, "assets"));
     await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
@@ -1042,7 +1051,9 @@ describe("compileAssets", () => {
 
     await compileAssets({ cwd: root });
 
-    await expect(stat(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow();
+    expect(
+      JSON.parse(await readFile(path.join(root, "public/assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
   });
 
   it("should throw on unknown config keys and duplicate logical paths", async () => {

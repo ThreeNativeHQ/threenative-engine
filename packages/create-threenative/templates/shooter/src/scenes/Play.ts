@@ -187,6 +187,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       godraysLight: key,
       mobile,
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     ctx.add(camera);
 

@@ -371,9 +371,9 @@ describe("bake receipt", () => {
     await compileAssets({ cwd: root, config: { budget: "none" } });
 
     await expect(readFile(path.join(root, "public", output ?? ""))).rejects.toThrow(/ENOENT/u);
-    await expect(readFile(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow(
-      /ENOENT/u,
-    );
+    expect(
+      JSON.parse(await readFile(path.join(root, "public", "assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
     expect(await readFile(path.join(root, "public", "icon.txt"), "utf8")).toBe(
       "belongs to the game",
     );

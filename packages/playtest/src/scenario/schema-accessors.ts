@@ -1,7 +1,7 @@
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { PLAYTEST_FRAME_BUDGET_PHASES, PLAYTEST_FRAME_PASS_KINDS } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
-import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
+import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS, PLAYTEST_PER_ADAPTER_KEYS } from "./schema-base.js";
 import { GENERATED_ASSERTION_FIELD_VALIDATORS } from "./generated-assertion-validators.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
   IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
@@ -400,10 +400,10 @@ function validateRenderChainPerAdapter(
   }
   const result: Record<string, IPlaytestRenderChainExpectation> = {};
   for (const [kind, branch] of entries) {
-    if (kind !== "hardware" && kind !== "software") {
+    if (!(PLAYTEST_PER_ADAPTER_KEYS as readonly string[]).includes(kind)) {
       throw invalidScenario(
         scenarioPath,
-        `'${objectPath}.${kind}' is not an adapter class this harness can classify; expected hardware or software.`,
+        `'${objectPath}.${kind}' is not an adapter class this harness can classify; expected ${PLAYTEST_PER_ADAPTER_KEYS.join(", ")}.`,
       );
     }
     // The branch is a whole render-chain expectation, validated by the same function as the flat
@@ -1171,7 +1171,7 @@ export function validateNestedAssertionKeys(
     rejectRenderChainExpectationKeys(value, scenarioPath, `assert.${kind}${suffix}`);
     if (isRecord(value.perAdapter)) {
       const branchPath = `assert.renderChain${suffix}.perAdapter`;
-      rejectUnknownKeys(value.perAdapter, ["hardware", "software"], scenarioPath, branchPath);
+      rejectUnknownKeys(value.perAdapter, [...PLAYTEST_PER_ADAPTER_KEYS], scenarioPath, branchPath);
       for (const [adapterKind, branch] of Object.entries(value.perAdapter)) {
         // A branch is the same shape as the flat assertion, so it runs the same key check at both
         // levels — and `perAdapter` is not one of its keys, which is what makes a second level a

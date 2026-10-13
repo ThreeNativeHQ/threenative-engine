@@ -1365,7 +1365,8 @@ export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
 - **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles · splash spray droplets with lifetime and gravity · spawn water droplets, mist, or foam bubbles above a fluid surface · falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard · kick up a spray of powder snow or dust where a foot or a ball lands
-- **Constraints:** geometry, color, and timing remain supplied by the game
+- **Constraints:** geometry, color, and timing remain supplied by the game · the emitter measures its own bounds and stops computing and drawing after graceSeconds outside the camera view · a game needs no emitting = visible gate, and an emitter with no measured bounds is never culled for leaving the view · when measured GPU cost passes the frame budget, the smallest projected emitters pause first, and cull.reason reads outside-view or over-budget
+- **Overrides:** onCull: "clear" restarts a returning effect, the default "pause" resumes it with buffers intact · bounds supplies a fixed local Box3 and skips GPU measurement, padding enlarges the world box, boundsEveryFrames sets the measurement cadence · graceSeconds sets the seconds outside the view before culling, and Infinity disables view culling
 
 ```ts
 const particles = new GPUParticles3D(particleOptions);
@@ -2009,6 +2010,21 @@ export class RenderListValidator { … }
 
 ```ts
 if (renderListValidationRequested()) console.log(formatValidationReport(report));
+```
+
+### `renderTrapAudit`
+
+`function` — Catch scene state that silently loses environment fill or ignores authored opacity. Printed once after `enter()` as `TN_ENVIRONMENT_TOO_SMALL` or `TN_OPACITY_IGNORED`, with the fix in the same console error line so playtest `noConsoleErrors` rejects it.
+
+```ts
+export function renderTrapAudit(scene: Object3D & { … }
+```
+
+- **Use when:** audit an equirectangular sky too narrow for three's WebGPU PMREM · find visible opaque materials whose authored opacity is ignored
+- **Constraints:** structural scene reads only, one visible-tree walk per entry, at most five material examples · it changes no scene state; environment and transparency remain the game's decisions
+
+```ts
+renderTrapAudit(ctx.scene); // marker lines with the fixes, or an empty array
 ```
 
 ### `replay`
@@ -3889,6 +3905,21 @@ export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrame
 
 ```ts
 assertCaptureNotBlank(png, "first frame");
+```
+
+### `assertDesktopCaptureNotBlank`
+
+`function` — Fail closed when a desktop-host frame shows no rendered content. A native desktop frame has no HTML overlay, so the browser bright-pixel floor does not apply.
+
+```ts
+export function assertDesktopCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }
+```
+
+- **Use when:** guard a native desktop capture of a 3D scene
+- **Constraints:** keeps the uniform-frame checks and replaces only the bright-pixel floor
+
+```ts
+assertDesktopCaptureNotBlank(png, "panned-culled.png");
 ```
 
 ### `assertFrameShowsSomething`

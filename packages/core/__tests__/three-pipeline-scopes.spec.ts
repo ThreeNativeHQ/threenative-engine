@@ -1,5 +1,16 @@
 import { setImmediate } from "node:timers/promises";
-import { BufferGeometry, Mesh, MeshBasicMaterial, NoBlending } from "three";
+import {
+  BufferGeometry,
+  Float32BufferAttribute,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
+  Mesh,
+  MeshBasicMaterial,
+  NoBlending,
+} from "three";
+// @ts-expect-error Three's private render-object module has no public declaration.
+import RenderObject from "three/src/renderers/common/RenderObject.js";
+import WebGPUBackend from "three/src/renderers/webgpu/WebGPUBackend.js";
 // @ts-expect-error Three's private pipeline utility has no public declaration.
 import WebGPUPipelineUtils from "three/src/renderers/webgpu/utils/WebGPUPipelineUtils.js";
 import { WebGPURenderer } from "three/webgpu";
@@ -209,5 +220,86 @@ describe.each(["source", "distribution"])("%s async render pipeline validation s
       expect.stringContaining("pipeline layout validation failed"),
     );
     expect(state.shaderDiagnostics).toHaveBeenCalledOnce();
+  });
+});
+
+describe.each(["source", "distribution"])("%s morph pipeline cache layout", (mode) => {
+  it("shares equal layouts without sharing geometry identity and separates layout changes", () => {
+    const backend =
+      mode === "source"
+        ? new WebGPUBackend()
+        : new WebGPURenderer({ canvas: { width: 1, height: 1 } as HTMLCanvasElement }).backend;
+    Reflect.set(backend, "utils", {
+      getSampleCountRenderContext: () => 1,
+      getCurrentColorSpace: () => "srgb",
+      getCurrentColorFormat: () => "bgra8unorm",
+      getCurrentDepthStencilFormat: () => "depth24plus",
+      getPrimitiveTopology: () => "triangle-list",
+    });
+    const make = () => {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 0, 1], 3));
+      geometry.morphAttributes.position = [new Float32BufferAttribute(new Float32Array(9), 3)];
+      geometry.morphTargetsRelative = true;
+      const object = new Mesh(geometry, new MeshBasicMaterial());
+      return {
+        object,
+        material: object.material,
+        geometry,
+        context: {},
+        getBindings: () => [],
+        getGeometryCacheKey: RenderObject.prototype.getGeometryCacheKey,
+      };
+    };
+    const first = make();
+    const second = make();
+    const key = (object: ReturnType<typeof make>) =>
+      Reflect.apply(Reflect.get(backend, "getRenderCacheKey"), backend, [object]) as string;
+    expect(first.getGeometryCacheKey()).not.toBe(second.getGeometryCacheKey());
+    expect(key(first)).toBe(key(second));
+    second.geometry.morphAttributes.position?.push(
+      new Float32BufferAttribute(new Float32Array(9), 3),
+    );
+    expect(key(first)).not.toBe(key(second));
+    second.geometry.morphAttributes.position?.pop();
+    second.geometry.morphTargetsRelative = false;
+    expect(key(first)).not.toBe(key(second));
+    second.geometry.morphTargetsRelative = true;
+    second.geometry.morphAttributes.position = [
+      new Float32BufferAttribute(new Float32Array(12), 4),
+    ];
+    expect(key(first)).not.toBe(key(second));
+    second.geometry.morphAttributes.position = [
+      new Float32BufferAttribute(new Float32Array(12), 3),
+    ];
+    expect(key(first)).not.toBe(key(second));
+    second.geometry.morphAttributes = { normal: first.geometry.morphAttributes.position };
+    expect(key(first)).not.toBe(key(second));
+    second.geometry.morphAttributes = first.geometry.morphAttributes;
+    second.geometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(12), 4));
+    expect(key(first)).not.toBe(key(second));
+    second.geometry.setAttribute("position", first.geometry.getAttribute("position"));
+    const interleaved = new InterleavedBufferAttribute(
+      new InterleavedBuffer(new Float32Array(12), 4),
+      3,
+      0,
+    );
+    second.geometry.setAttribute("position", interleaved);
+    expect(key(first)).not.toBe(key(second));
+    first.geometry.setAttribute("position", new InterleavedBufferAttribute(interleaved.data, 3, 1));
+    expect(key(first)).not.toBe(key(second));
+    first.geometry.setAttribute("position", interleaved);
+    expect(key(first)).toBe(key(second));
+    second.geometry.setAttribute(
+      "position",
+      new InterleavedBufferAttribute(interleaved.data, 3, 0, true),
+    );
+    expect(key(first)).not.toBe(key(second));
+    second.geometry.setAttribute("position", interleaved);
+    second.geometry.setAttribute("normal", new Float32BufferAttribute(new Float32Array(9), 3));
+    expect(key(first)).not.toBe(key(second));
+    second.geometry.deleteAttribute("normal");
+    second.geometry.setIndex([0, 1, 2]);
+    expect(key(first)).not.toBe(key(second));
   });
 });

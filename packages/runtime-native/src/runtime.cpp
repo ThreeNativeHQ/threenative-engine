@@ -988,6 +988,24 @@ public:
             }
         }
 
+        // The clock the run asked for, read before the game module evaluates so the request cannot
+        // land after the producer that owns the loop was installed. Unset changes nothing.
+        const char* requestedClock = std::getenv("TN_PLAYTEST_CLOCK");
+        if (requestedClock != nullptr && requestedClock[0] != '\0') {
+            if (std::string(requestedClock) != "wall-clock") {
+                // Refuse rather than fall back: a misspelling that quietly left the loop frozen
+                // would publish a frame rate for a game that was not playing.
+                std::cerr << "TN_PLAYTEST_CLOCK_UNSUPPORTED: '" << requestedClock
+                          << "' is not a known clock; expected 'wall-clock'." << std::endl;
+                return false;
+            }
+            if (!jsEngine_->evalScript("globalThis.__THREENATIVE_PLAYTEST_CLOCK__ = \"wall-clock\";",
+                                      "tn-playtest-clock.js")) {
+                std::cerr << "[Mystral] TN_PLAYTEST_CLOCK=wall-clock was not installed" << std::endl;
+                return false;
+            }
+        }
+
         return moduleSystem_->loadEntry(path);
     }
 
@@ -3781,6 +3799,8 @@ private:
         );
         jsEngine_->setProperty(nativeHost, "playtestInput", playtestHost);
         auto playtestMailbox = jsEngine_->newObject();
+        jsEngine_->setProperty(playtestMailbox, "network",
+            jsEngine_->getProperty(jsEngine_->getGlobalProperty("fetch"), "network"));
         jsEngine_->setProperty(playtestMailbox, "receive",
             jsEngine_->newFunction("receive", [this](void*, const std::vector<js::JSValueHandle>& args) {
                 if (args.empty()) return jsEngine_->newUndefined();

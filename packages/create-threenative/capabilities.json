@@ -1769,11 +1769,20 @@
     },
     {
       "aliases": [],
-      "constraints": ["geometry, color, and timing remain supplied by the game"],
+      "constraints": [
+        "geometry, color, and timing remain supplied by the game",
+        "the emitter measures its own bounds and stops computing and drawing after graceSeconds outside the camera view",
+        "a game needs no emitting = visible gate, and an emitter with no measured bounds is never culled for leaving the view",
+        "when measured GPU cost passes the frame budget, the smallest projected emitters pause first, and cull.reason reads outside-view or over-budget"
+      ],
       "example": "const particles = new GPUParticles3D(particleOptions);",
       "importPath": "@threenative/core",
       "kind": "class",
-      "overrides": [],
+      "overrides": [
+        "onCull: \"clear\" restarts a returning effect, the default \"pause\" resumes it with buffers intact",
+        "bounds supplies a fixed local Box3 and skips GPU measurement, padding enlarges the world box, boundsEveryFrames sets the measurement cadence",
+        "graceSeconds sets the seconds outside the view before culling, and Infinity disables view culling"
+      ],
       "package": "@threenative/core",
       "signature": "export class GPUParticles3D extends Sprite implements IComputeDriven { … }",
       "situations": [
@@ -2610,6 +2619,26 @@
       "summary": "Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.",
       "supersedes": [],
       "symbol": "RenderListValidator"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "structural scene reads only, one visible-tree walk per entry, at most five material examples",
+        "it changes no scene state; environment and transparency remain the game's decisions"
+      ],
+      "example": "renderTrapAudit(ctx.scene); // marker lines with the fixes, or an empty array",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function renderTrapAudit(scene: Object3D & { … }",
+      "situations": [
+        "audit an equirectangular sky too narrow for three's WebGPU PMREM",
+        "find visible opaque materials whose authored opacity is ignored"
+      ],
+      "summary": "Catch scene state that silently loses environment fill or ignores authored opacity. Printed once after `enter()` as `TN_ENVIRONMENT_TOO_SMALL` or `TN_OPACITY_IGNORED`, with the fix in the same console error line so playtest `noConsoleErrors` rejects it.",
+      "supersedes": [],
+      "symbol": "renderTrapAudit"
     },
     {
       "aliases": ["fixed seed fixed-step simulation"],
@@ -4911,6 +4940,20 @@
       "summary": "Fail closed when a screenshot is blank or uniform.",
       "supersedes": [],
       "symbol": "assertCaptureNotBlank"
+    },
+    {
+      "aliases": [],
+      "constraints": ["keeps the uniform-frame checks and replaces only the bright-pixel floor"],
+      "example": "assertDesktopCaptureNotBlank(png, \"panned-culled.png\");",
+      "importPath": "@threenative/playtest/capture",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function assertDesktopCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }",
+      "situations": ["guard a native desktop capture of a 3D scene"],
+      "summary": "Fail closed when a desktop-host frame shows no rendered content. A native desktop frame has no HTML overlay, so the browser bright-pixel floor does not apply.",
+      "supersedes": [],
+      "symbol": "assertDesktopCaptureNotBlank"
     },
     {
       "aliases": [],

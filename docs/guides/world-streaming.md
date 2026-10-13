@@ -122,8 +122,13 @@ scene.add(world);
 `terrain.streamRadius` is the terrain residency radius in tiles, and it defaults to `ring`, so a
 world streams ground and props over the same square. Raise it alone to put the ground out to the
 horizon while the props stay near: the default `lodDistances` are `tileSize` multiples, so the far
-tiles of the wider ring take the coarser levels on their own. `terrain.colliderRadius` is the
-separate Chebyshev radius that gets a `createCollider` body, and it also defaults to `ring`; a tile
+tiles of the wider ring can take coarser levels. Each distance is the nearest allowed switch;
+screen error can hold a finer level farther out. With a render camera and renderer, terrain shares
+props’ resolved `autoLod.maxPixelError` budget and `lodHysteresis`, using the current drawing-buffer
+height and camera projection. Resizing or moving the camera refreshes settled terrain without
+resampling heights. Without a render view, existing distance-only selection is preserved.
+
+`terrain.colliderRadius` is the separate Chebyshev radius that gets a `createCollider` body, and it also defaults to `ring`; a tile
 crossing it has its body created or disposed as it goes, so a wide render ring does not cost a
 physics body for every tile in it.
 
@@ -168,7 +173,8 @@ The numbers come from where each edge can be, measured from the follow point:
 - **Bodies reach `colliderRadius · c`.** That is at most `ring`, because physics never needs ground
   the props have not reached. 128 m is far above any fall in one frame; a fast vehicle may want 2.
 - **A terrain LOD switch is at least fog `near`**, so a switch pops inside the haze. The
-  distances must increase, which `TerrainTiles` checks itself.
+  distances must increase, which `TerrainTiles` checks itself. Screen-error selection may delay a
+  switch beyond these floors, so higher raster resolution cannot bring it in front of the haze.
 - **`budgets.residentCells` is at least `(2 · ring + 1)²`**, the wanted square. Cells kept by the
   `ring + 1` hysteresis yield to wanted cells when the budget is full.
 

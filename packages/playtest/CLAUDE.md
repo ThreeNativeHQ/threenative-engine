@@ -112,9 +112,11 @@ bridge advertising `runtime.startup` to report `phase: "ready"`; bounded by
 `TN_PLAYTEST_STARTUP_NOT_READY` rather than being observed mid-load. A host that has *exited* is
 `TN_PLAYTEST_STARTUP_HOST_EXITED`, not a slow launch. **Never fix a boot race by lengthening a
 wait** — padding changes which runs get lucky. One measurement opt-in sits outside all of it:
-`--live-clock` (browser target) injects `__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock"` ahead of
-every page script, so the host's own frame pump moves the simulation and a standing scene is
-measurable at all; every report then says `clock: "wall-clock"`. Full rule:
+`--live-clock` (browser and desktop targets) makes the host's own frame pump move the simulation,
+so a standing scene is measurable at all. The browser injects `__THREENATIVE_PLAYTEST_CLOCK__ =
+"wall-clock"` ahead of every page script. The desktop runner sets `TN_PLAYTEST_CLOCK=wall-clock` for
+the native host, which installs the same global before the game module loads. Every report then
+says `clock: "wall-clock"`. A counted desktop run refuses an inherited `TN_PLAYTEST_CLOCK`. Full rule:
 [docs/determinism.md](docs/determinism.md).
 
 ## Where things live

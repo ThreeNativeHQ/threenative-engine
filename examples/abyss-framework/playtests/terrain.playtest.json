@@ -1,5 +1,6 @@
 {
   "assert": {
+    "performance": { "minFps": 1 },
     "diagnostics": {
       "noConsoleErrors": true,
       "noNetworkErrors": true,
@@ -16,6 +17,11 @@
       }
     },
     "components": [
+      {
+        "component": "maxBlendingTiles",
+        "entity": "terrain",
+        "gte": 1
+      },
       {
         "allowTrivial": "TerrainTiles reports its hard tile cap from the first observation.",
         "component": "residentTiles",
@@ -41,20 +47,22 @@
         "gte": 1
       },
       {
+        "changed": true,
         "component": "maxSeamGap",
-        "entity": "terrain",
-        "gte": 0.000001,
+        "entity": "terrainCpuReference",
+        "gte": 1e-6,
         "lte": 64
       },
       {
         "allowTrivial": "TerrainTiles reports no consumer-visible seam after generated skirt coverage.",
         "component": "maxVisualSeamGap",
-        "entity": "terrain",
+        "entity": "terrainCpuReference",
         "lte": 0
       },
       {
+        "changed": true,
         "component": "stitchedEdges",
-        "entity": "terrain",
+        "entity": "terrainCpuReference",
         "gte": 1
       },
       {
@@ -67,7 +75,7 @@
         "allowTrivial": "TerrainTiles keeps the measured LOD mismatch below its declared transition bound from startup.",
         "changed": true,
         "component": "maxLodPop",
-        "entity": "terrain",
+        "entity": "terrainCpuReference",
         "lte": 16
       },
       {
@@ -79,6 +87,36 @@
         "changed": true,
         "component": "lodTransitions",
         "entity": "terrain"
+      },
+      {
+        "entity": "terrain",
+        "component": "activeMorphFrames",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "terrain",
+        "component": "parityFrames",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "terrain",
+        "component": "parityVertices",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "terrain",
+        "component": "maxPositionError",
+        "lte": 0.001,
+        "allowTrivial": "Every observed visible source vertex is compared with the independent CPU reference; mismatches throw."
+      },
+      {
+        "entity": "terrain",
+        "component": "maxNormalError",
+        "lte": 0.001,
+        "allowTrivial": "Every observed normalized morph normal is compared with the independent CPU reference; mismatches throw."
       }
     ],
     "visibility": [
@@ -103,7 +141,7 @@
   "subject": "player",
   "target": "web",
   "viewport": {
-    "height": 720,
+    "height": 300,
     "width": 1280
   },
   "warmupFrames": 10

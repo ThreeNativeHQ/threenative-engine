@@ -220,10 +220,22 @@ describe("PRD-380 an ordinary pull request owes only the Linux native rows", () 
     expect(
       (ordinary.jobs as Record<string, { required: boolean }>)["native-platforms"]?.required,
     ).toBe(true);
-    expect(classify(["--event-name", "pull_request", "--target", "develop"], "github")).toContain(
-      "native_tier=full\n",
+    // An unresolved live pull request rejects before fanout rather than emit a plan it cannot prove.
+    const unresolved = spawnSync(
+      process.execPath,
+      [
+        path.join(repo, "scripts/ci-change-scope.mjs"),
+        ...["--event-name", "pull_request", "--target", "develop"],
+        ...["--candidate-sha", candidate, "--format", "github"],
+      ],
+      { cwd: repo, encoding: "utf8" },
     );
-    // Queue qualification owes all supported systems regardless of the target branch.
+    expect(unresolved.status, unresolved.stderr).toBe(2);
+    expect(unresolved.stderr).toContain("CI_REQUIRED_PR_CANDIDATE_MISMATCH");
+    expect(unresolved.stdout).not.toContain("plan=");
+    // A queue entry whose base/head this classifier cannot resolve still owes every row: with no
+    // proven candidate identity it has no diff to narrow by. (A resolved develop queue run narrows
+    // exactly like a pull request — ci-qualification.spec.ts proves that case.)
     expect(
       JSON.parse(classify(["--event-name", "merge_group", "--target", "develop"])),
     ).toMatchObject({ nativeTier: "full" });
@@ -378,7 +390,7 @@ describe("PRD-373 fail-closed required verdict", () => {
    * repository's candidate SHA, so the verdict reaches the selection gate instead of stopping at
    * the candidate assertion. The empty diff is deliberately classified `full`, so it cannot serve.
    */
-  function prosePlan(): Record<string, unknown> {
+  function prosePlan(file = "NOTES.md"): Record<string, unknown> {
     const root = makeTempDirSync("threenative-ci-required-prose-");
     const git = (...args: string[]) =>
       spawnSync("git", args, {
@@ -397,7 +409,8 @@ describe("PRD-373 fail-closed required verdict", () => {
     git("add", "-A");
     git("commit", "--quiet", "-m", "base");
     const base = git("rev-parse", "HEAD").stdout.trim();
-    writeFileSync(path.join(root, "NOTES.md"), "prose\n");
+    mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    writeFileSync(path.join(root, file), "prose\n");
     git("add", "-A");
     git("commit", "--quiet", "-m", "prose");
     const head = git("rev-parse", "HEAD").stdout.trim();
@@ -524,6 +537,13 @@ describe("PRD-373 fail-closed required verdict", () => {
       const narrowed = verify(prosePlan(), {}, { ...environment, TN_CI_HEAD_REF: headRef });
       expect(narrowed.status, narrowed.stdout + narrowed.stderr).toBe(1);
       expect(narrowed.stderr).toContain("CI_REQUIRED_QUALIFICATION_MINIMUM");
+    }
+  });
+
+  it("classifies the generated speed-loop record as prose, not a full board", () => {
+    // Only scripts/ci-speed-loop.mjs reads these files, and no CI job runs that script.
+    for (const file of ["docs/ci-speed/ledger.json", "docs/ci-speed/index.html"]) {
+      expect(prosePlan(file).selection).toBe("prose");
     }
   });
 
@@ -700,6 +720,67 @@ describe("PRD-373 fixed full candidates and current package products", () => {
       const stale = check("d".repeat(40));
       expect(stale.status).toBe(1);
       expect(stale.stderr).toContain("CI_REQUIRED_PR_CANDIDATE_MISMATCH");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // A stale recorded base must reject before a plan is emitted, exactly as the verdict's parent check does.
+  it("rejects a pull-request candidate whose recorded base is stale before emitting a plan", () => {
+    const root = makeTempDirSync("ci-stale-base-");
+    const git = (...args: string[]) => {
+      const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+      expect(result.status, result.stderr).toBe(0);
+      return result.stdout.trim();
+    };
+    try {
+      git("init", "-q", "--initial-branch=main");
+      git("config", "user.email", "ci@example.invalid");
+      git("config", "user.name", "CI fixture");
+      writeFileSync(path.join(root, "seed"), "seed");
+      git("add", ".");
+      git("commit", "-qm", "seed");
+      git("checkout", "-qb", "develop");
+      writeFileSync(path.join(root, "feature"), "feature");
+      git("add", ".");
+      git("commit", "-qm", "feature");
+      const head = git("rev-parse", "HEAD");
+      git("checkout", "-q", "main");
+      writeFileSync(path.join(root, "base"), "base");
+      git("add", ".");
+      git("commit", "-qm", "base");
+      const recordedBase = git("rev-parse", "HEAD");
+      writeFileSync(path.join(root, "newer"), "newer");
+      git("add", ".");
+      git("commit", "-qm", "moved base");
+      const currentBase = git("rev-parse", "HEAD");
+      git("merge", "--no-ff", "-qm", "candidate", "develop");
+      const live = ["--event-name", "pull_request", "--target", "develop", "--format", "github"];
+      const run = (...args: string[]) =>
+        spawnSync(process.execPath, [path.join(repo, "scripts/ci-change-scope.mjs"), ...args], {
+          cwd: root,
+          encoding: "utf8",
+          env: { ...process.env },
+        });
+      // The same merge fixture proves the guard accepts the candidate's own base and head.
+      const valid = run("--base", currentBase, "--head", head, ...live);
+      expect(valid.status, valid.stderr).toBe(0);
+      expect(valid.stdout).toContain("plan=");
+      // Every stale or incomplete base/head reaches the live guard, so each rejects before a plan.
+      const rejectedCases: readonly (readonly string[])[] = [
+        ["--base", recordedBase, "--head", head],
+        ["--base", recordedBase, "--head", head, "--target", "main"],
+        ["--base", recordedBase, "--head", head, "--full"],
+        ["--head", head],
+        ["--base", currentBase],
+      ];
+      for (const args of rejectedCases) {
+        // live first so a per-case --target (main) overrides the shared develop default.
+        const rejected = run(...live, ...args);
+        expect(rejected.status, rejected.stderr).toBe(2);
+        expect(rejected.stderr).toContain("CI_REQUIRED_PR_CANDIDATE_MISMATCH");
+        expect(rejected.stdout).not.toContain("plan=");
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
