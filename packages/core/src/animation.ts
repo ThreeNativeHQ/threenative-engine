@@ -3,7 +3,6 @@ import {
   type AnimationClip,
   AnimationMixer,
   type AnimationMixerEventMap,
-  type BaseEvent,
   type EventListener,
   LoopOnce,
   LoopRepeat,
@@ -252,7 +251,6 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
   readonly #loopListeners = new Set<LoopListener>();
   readonly #beforeFirstLoopListener: BeforeFirstLoopListener;
   #updateDepth = 0;
-  #suppressLoopEvents = false;
 
   constructor(root: Object3D, beforeFirstLoopListener: BeforeFirstLoopListener) {
     super(root);
@@ -274,7 +272,6 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
       if (!this.hasEventListener(type, loopListener)) {
         if (!this.hasLoopListeners) {
           const duringUpdate = this.#updateDepth > 0;
-          if (duringUpdate) this.#suppressLoopEvents = true;
           this.#beforeFirstLoopListener(duringUpdate);
         }
         this.#loopListeners.add(loopListener);
@@ -307,15 +304,7 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
       return super.update(deltaTime);
     } finally {
       this.#updateDepth -= 1;
-      if (this.#updateDepth === 0) this.#suppressLoopEvents = false;
     }
-  }
-
-  override dispatchEvent<T extends Extract<keyof AnimationMixerEventMap, string>>(
-    event: BaseEvent<T> & AnimationMixerEventMap[T],
-  ): void {
-    if (event.type === "loop" && this.#suppressLoopEvents) return;
-    super.dispatchEvent(event);
   }
 }
 
@@ -601,7 +590,8 @@ export class AnimationPlayer {
     if (clipGroundSpeed < CLIP_GROUND_FLOOR) {
       // Not locomotion. An idle, a reload or a death is authored at the rate it is authored at,
       // and warping it by how fast the body happens to be sliding is a bug, not a convention.
-      if (action.getEffectiveTimeScale() !== 1) action.setEffectiveTimeScale(1);
+      if (this.#strideSynced && action.getEffectiveTimeScale() === this.#strideRate)
+        action.setEffectiveTimeScale(1);
       this.#strideGroundSpeed = groundSpeed;
       this.#strideRate = 1;
       this.#strideSynced = false;
@@ -918,22 +908,35 @@ export class AnimationPlayer {
     const mixerScale = this.mixer.timeScale;
     this.mixer.timeScale = 1;
     for (const [action, pending] of this.#pendingActionTimes) {
-      this.#evaluationScales.set(action, action.timeScale);
-      if (action.paused && pending !== 0) {
+      const wasPaused = action.paused;
+      if (wasPaused && pending !== 0) {
         this.#evaluationPaused.add(action);
         action.paused = false;
       }
       let time = pending;
+      let seamAdjusted = false;
       const duration = action.getClip().duration;
       if (action.loop === LoopRepeat && duration > 0) {
         const end = action.time + time;
         const seam = Math.round(end / duration) * duration;
         // Grouped addition must not hold the last pose when rate 1 already crossed a loop seam.
-        if (Math.abs(end - seam) <= Number.EPSILON * 16 * Math.max(duration, Math.abs(end)))
+        if (Math.abs(end - seam) <= Number.EPSILON * 16 * Math.max(duration, Math.abs(end))) {
           time = seam - action.time;
+          seamAdjusted = true;
+        }
       }
       // Integrate changing stride rates; the last tick's rate must not own earlier skipped time.
-      if (elapsed !== 0) action.setEffectiveTimeScale(time / elapsed);
+      if (elapsed !== 0) {
+        const scale = time / elapsed;
+        const equalToActionScale =
+          Math.abs(scale - action.timeScale) <=
+          Number.EPSILON * 16 * Math.max(1, Math.abs(scale), Math.abs(action.timeScale));
+        const warpActive = !wasPaused && action.getEffectiveTimeScale() !== action.timeScale;
+        if (!warpActive && (seamAdjusted || !equalToActionScale)) {
+          this.#evaluationScales.set(action, action.timeScale);
+          action.setEffectiveTimeScale(scale);
+        }
+      }
     }
     try {
       this.mixer.update(elapsed);

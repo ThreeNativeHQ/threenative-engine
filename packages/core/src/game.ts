@@ -1778,6 +1778,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           } finally {
             endSpan(SPANS.lod);
           }
+          const renderRoot = this.#projection?.root ?? threeScene;
+          // The cull reads the matrices the renderer will draw. Projection exact proxies carry the
+          // authored world matrix in their local matrix, so their own world walk must precede both
+          // the cull and the render rather than following the cull.
+          renderRoot.matrixWorldAutoUpdate = false;
+          this.#matrixWorld?.apply(renderRoot);
           // Visibility is decided against the transforms and LOD selection that will actually be
           // drawn. The earlier animation-only pass has already published the rate for this frame.
           const cullApplyStart = spans === undefined ? 0 : spanNow();
@@ -1809,12 +1815,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 : { backend: rendererBackendIdentity(renderer.raw) as string }),
             });
           }
-          const renderRoot = this.#projection?.root ?? threeScene;
-          // three's renderer walks whatever scene it is handed, so it is told not to: the pass above
-          // is the walk. Handing it the mirror sets the mirror scene's flag; the authored scene was
-          // marked at construction.
-          renderRoot.matrixWorldAutoUpdate = false;
-          this.#matrixWorld?.apply(renderRoot);
           renderer.render(renderRoot, camera);
           // *After* the render, because that is where the draw happened. The matrices read here are
           // the ones drawn: the walk above refreshed them and `render()` did not touch them. The

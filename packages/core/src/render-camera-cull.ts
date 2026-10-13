@@ -317,6 +317,7 @@ export class RenderCameraCull {
 
   #visitAnimation(object: Object3D): void {
     if (!isRenderable(object)) return;
+    this.#observeAnimationSources(object);
     if (this.#isCameraAttached(object)) {
       this.#observeAnimation(object, undefined);
       return;
@@ -326,7 +327,6 @@ export class RenderCameraCull {
       return;
     }
     if (object.frustumCulled === false) {
-      this.#observeAnimationSources(object);
       this.#observeAnimation(object, undefined);
       return;
     }
@@ -336,6 +336,7 @@ export class RenderCameraCull {
   #visit(object: Object3D): void {
     if (!isRenderable(object)) return;
     this.#considered += 1;
+    this.#observeAnimationSources(object);
     if (this.#isCameraAttached(object)) {
       this.#observeAnimation(object, undefined);
       this.#exemptCameraAttached += 1;
@@ -350,7 +351,6 @@ export class RenderCameraCull {
     // trusted — the pooled tracer, particle and whitewater batches set it for exactly that
     // reason. A second, stricter cull does not get to override the opt-out.
     if (object.frustumCulled === false) {
-      this.#observeAnimationSources(object);
       this.#observeAnimation(object, undefined);
       this.#exemptFrustumCulled += 1;
       return;

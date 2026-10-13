@@ -609,6 +609,80 @@ describe("IGame", () => {
     }
   });
 
+  it("refreshes exact projection proxies before the final camera cull", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let moveIntoView = false;
+    const exactDraws: { visible: boolean; z: number }[] = [];
+    const geometry = new SphereGeometry(0.1, 8, 6);
+    const material = new MeshBasicMaterial();
+    let exactSource: Mesh | undefined;
+    class ProjectedCullScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        exactSource = new Mesh(geometry, material);
+        exactSource.renderOrder = 1;
+        exactSource.position.z = -1_000;
+        ctx.add(exactSource);
+        for (let index = 0; index < 200; index += 1) {
+          const mesh = new Mesh(geometry, material);
+          mesh.position.z = -1_000;
+          ctx.add(mesh);
+        }
+        ctx.beforeRender(() => {
+          if (moveIntoView) exactSource?.position.set(0, 0, -10);
+        });
+      }
+    }
+    const game = defineGame({
+      camera: { projection: "perspective", fov: 60, near: 0.1, far: 2_000 },
+      render: { minimumProjectedPixels: 2 },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: (scene: { traverse(callback: (object: Mesh) => void): void }) => {
+            scene.traverse((object) => {
+              if (object.isMesh === true && object.renderOrder === 1) {
+                exactDraws.push({ visible: object.visible, z: object.matrixWorld.elements[14] ?? 0 });
+              }
+            });
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: ProjectedCullScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined || exactSource === undefined)
+        throw new Error("Game did not start its loop.");
+      frame(16);
+      moveIntoView = true;
+      frame(32);
+      const latest = exactDraws.at(-1);
+      expect(latest).toEqual({ visible: true, z: -10 });
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+      geometry.dispose();
+      material.dispose();
+    }
+  });
+
   it("snapshots ctx.beforeRender so additions wait a frame and removals still run", async () => {
     const canvas = testCanvas();
     const events: string[] = [];

@@ -453,6 +453,56 @@ describe("SkinnedBatch palette", () => {
     for (const entry of entries) entry.player.dispose();
   });
 
+  it("observes animation roots behind exact projection proxies", () => {
+    const scene = new Scene();
+    const geometry = rigGeometry();
+    const material = new MeshStandardMaterial();
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1_000);
+    scene.add(camera);
+    const entries: { player: AnimationPlayer; root: Group }[] = [];
+    for (let index = 0; index < 9; index += 1) {
+      const root = new Group();
+      root.position.set(index === 0 ? 60 : 0, 0, -120);
+      const mesh = rig(geometry, material);
+      if (index === 0) mesh.scale.set(1, 2, 1);
+      else if (index === 1 || index === 2) mesh.scale.set(-1, 1, 1);
+      root.add(mesh);
+      (index === 2 ? camera : scene).add(root);
+      const player = new AnimationPlayer({
+        root,
+        clips: [
+          new AnimationClip("turn", 1, [
+            new NumberKeyframeTrack(".rotation[z]", [0, 1], [0, Math.PI]),
+          ]),
+        ],
+        strideSync: false,
+      });
+      player.play("turn");
+      entries.push({ player, root });
+    }
+    camera.lookAt(0, 0, -120);
+    scene.updateMatrixWorld(true);
+    const projection = new SceneRenderProjection(scene, { minMeshes: 1 });
+    const cull = new RenderCameraCull({ minimumPixels: 2 });
+    try {
+      projection.reconcile();
+      expect(projection.report.exact.nonUniformScale).toBe(1);
+      expect(projection.report.exact.negativeScale).toBe(2);
+      cull.apply(projection.root, camera, 720);
+      cull.restore();
+      for (const entry of entries) entry.player.update(1 / 60);
+      expect(entries[0]?.player.updateRateReport.rate).toBeGreaterThan(1);
+      expect(entries[1]?.player.updateRateReport).toMatchObject({ rate: 1, overridden: false });
+      expect(entries[2]?.player.updateRateReport).toMatchObject({ rate: 1, overridden: false });
+    } finally {
+      cull.dispose();
+      projection.dispose();
+      for (const entry of entries) entry.player.dispose();
+      geometry.dispose();
+      material.dispose();
+    }
+  });
+
   it("writes gameplay root movement on a skipped animation frame", () => {
     const root = new Group();
     const mesh = rig(rigGeometry(), new MeshStandardMaterial());
