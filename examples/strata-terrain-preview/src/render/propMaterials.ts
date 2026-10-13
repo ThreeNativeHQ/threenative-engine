@@ -1093,6 +1093,8 @@ export async function createPropSurfaces(
   sway(petalMaterial, seconds, WIND.amplitude.petal);
 
   const stoneMaterial = stoneSurface(stone);
+  // Cast the sun-facing surface: back-face depth leaves a lit strip at the sand intersection.
+  if (biome?.world === "coastal") stoneMaterial.shadowSide = FrontSide;
   if (biome?.propStoneTint && stoneMaterial.colorNode)
     stoneMaterial.colorNode = (
       stone.diffuse ? (stoneMaterial.colorNode as Node<"vec3">) : vec3(0.4, 0.35, 0.3)

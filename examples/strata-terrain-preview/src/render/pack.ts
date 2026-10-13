@@ -7,6 +7,7 @@ import {
   DataUtils,
   DoubleSide,
   EquirectangularReflectionMapping,
+  FrontSide,
   type Group,
   type Material,
   type Mesh,
@@ -206,6 +207,7 @@ function stoneSurface(
   snowMap?: Texture,
 ): void {
   const { source, world } = context;
+  if (world === "coastal") material.shadowSide = FrontSide;
   const growth = smoothstep(-0.15, 0.3, mx_noise_float(positionWorld.mul(2.1)));
   const moss = normalWorldGeometry.y
     .max(0)
