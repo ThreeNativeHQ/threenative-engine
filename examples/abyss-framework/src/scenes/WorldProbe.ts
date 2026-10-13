@@ -57,9 +57,13 @@ const SHADOW_MOVERS = /[?&]shadowMovers\b/.test(globalThis.location?.search ?? "
  * three steps (a caster arrives, one leaves while another arrives, one leaves) and compares each
  * partial shadow redraw to a whole one: PRD-538's depth-equivalence proof, read off the GPU.
  */
-const SHADOW_PARTIAL = /[?&]shadowPartial\b/.test(
-  globalThis.location?.search ?? globalThis.document?.location?.search ?? "",
-);
+// The native host has no query string and forwards only `TN_DEBUG_*` into `process.env`.
+const SHADOW_PARTIAL =
+  /[?&]shadowPartial\b/.test(
+    globalThis.location?.search ?? globalThis.document?.location?.search ?? "",
+  ) ||
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+    ?.TN_DEBUG_SHADOW_PARTIAL === "1";
 /** Metres the sphere swings either side of its rest point, and radians per second of the swing. */
 const BALL_SWING = 8;
 const BALL_RATE = 2;
