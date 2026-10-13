@@ -203,7 +203,10 @@ describe("groups and loading", () => {
   it("loads <tag>-<arm> dirs oldest first and ignores everything else", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "midway-runs-"));
     dirs.push(root);
-    for (const name of ["a1-desktop", "empty-desktop", "notes"]) await mkdir(path.join(root, name));
+    for (const name of ["a1-desktop", "empty-desktop", "notes", "prof-desktop"])
+      await mkdir(path.join(root, name));
+    await writeFile(path.join(root, "prof-desktop", "run.log"), frame(9));
+    await writeFile(path.join(root, "prof.perf.data"), "");
     await writeFile(
       path.join(root, "a1-desktop", "run.log"),
       [frame(7), ui(5), proj(900)].join("\n"),

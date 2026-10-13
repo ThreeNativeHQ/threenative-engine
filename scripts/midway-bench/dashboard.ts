@@ -306,14 +306,19 @@ async function readRun(root: string, name: string, tag: string, arm: Arm) {
   return run;
 }
 
-/** Every `<tag>-<arm>` directory under the runs dir, oldest first. Other entries are ignored. */
+/**
+ * Every `<tag>-<arm>` directory under the runs dir, oldest first. Other entries are ignored, and so
+ * is a profiled run (a sibling `<tag>.perf.data` or `<tag>.cpuprofile`): the profiler slows it.
+ */
 export async function loadMidwayRuns(root = runsDir()): Promise<IMidwayRun[]> {
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const names = new Set(entries.map((e) => e.name));
   const runs: IMidwayRun[] = [];
   for (const entry of entries) {
     const m = /^(.+)-(legacy|native|desktop)$/.exec(entry.name);
+    const profiled = m && (names.has(`${m[1]}.perf.data`) || names.has(`${m[1]}.cpuprofile`));
     const run =
-      entry.isDirectory() && m
+      entry.isDirectory() && m && !profiled
         ? await readRun(root, entry.name, m[1] as string, m[2] as Arm)
         : undefined;
     if (run) runs.push(run);
