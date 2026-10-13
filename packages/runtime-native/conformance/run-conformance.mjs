@@ -1208,6 +1208,7 @@ async function runDesktop(test, bundlePath, result, runtime, captureRoot, assets
             ? { ...process.env, SDL_VIDEODRIVER: "x11" }
             : process.env,
         timeout: 180_000,
+        maxBuffer: 64 * 1024 * 1024,
       },
     );
     const combined = `${proc.stdout || ""}\n${proc.stderr || ""}`;
@@ -1218,6 +1219,7 @@ async function runDesktop(test, bundlePath, result, runtime, captureRoot, assets
       screenshot: hasScreenshot ? screenshot : null,
       stdout: (proc.stdout || "").slice(-4000),
       stderr: (proc.stderr || "").slice(-4000),
+      error: proc.error instanceof Error ? proc.error.message : proc.error ? String(proc.error) : null,
       uniform: null,
     };
     const gpuErrors = validationErrors(combined);

@@ -1299,6 +1299,12 @@ test("Linux desktop parity selects SDL X11 because the native surface does not s
   assert.match(source, /process\.platform === "linux"[\s\S]*SDL_VIDEODRIVER: "x11"/u);
 });
 
+test("desktop conformance preserves verbose native diagnostics without hiding spawn errors", () => {
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /timeout: 180_000,[\s\S]*maxBuffer: 64 \* 1024 \* 1024/u);
+  assert.match(source, /error: proc\.error instanceof Error/u);
+});
+
 test("a pre-marker death excerpt carries the app's own diagnostic lines, not death chatter", () => {
   // PRD-166 phase 3: the full-lane rerun's row error appended a raw 400-char tail that was
   // Window Manager lines merely naming the app, crowding out the scene trace that names the
