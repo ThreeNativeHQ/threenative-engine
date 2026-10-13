@@ -8,6 +8,7 @@ with the engine arm graded against the three.js arm before any timing counts.
 | `install.sh` | Packs this checkout's engine packages and installs them into a Midway game copy. |
 | `flight.sh` | Runs the scripted flight headed on WebGPU, then (native arm) grades the frames. |
 | `flight-bench.playtest.json` | The scenario: take the deck, climb, cockpit view, three screenshots. |
+| `flight-bench-desktop.playtest.json` | The same flight on the desktop engine player (`flight.sh desktop <tag>` with `MIDWAY_PLAYER_DIR`, graded against the same legacy web runs). |
 | `parity.ts` | The fail-closed frame check. Exit 1 when a native frame is not the legacy frame. |
 
 ## Setup
@@ -48,6 +49,10 @@ Floors: worst tile at least 0.70 and mean at least 0.93, calibrated between a br
 and must stay above the worst-tile floor, or the reference is unstable and the check fails. A missing
 frame or a size mismatch fails. `scripts/__tests__/midway-parity.spec.ts` pins the floors on 320x180
 frames of the broken and fixed native runs.
+
+Desktop engine player (2026-10-13, 1280x720, NVIDIA): takeoff worst tile 0.784, cockpit and after 0.796, mean
+0.947 to 0.967, against legacy web spread 0.965 to 1. The floors hold unchanged. The worst tiles sit on the left HUD
+panel, where WebKitGTK draws the text and the mission range reads a different value, not on the 3D scene.
 
 ## Timing
 

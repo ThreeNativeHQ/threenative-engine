@@ -9,11 +9,12 @@ import { bundleNativeEngine, cookNativeEngineAssets } from "./bundle-native-engi
 
 const PLAYER = "tn-native-engine-player-v8";
 
-/** The launcher: the window opens at the game's configured size, and every argument reaches the player. */
-export function launcher(width, height) {
+/** The launcher: the window opens with the game's title and size, and every argument reaches the player. */
+export function launcher(width, height, title) {
   return [
     "#!/bin/sh",
     'DIR=$(cd "$(dirname "$0")" && pwd)',
+    ...(title ? [`TN_PLAYER_TITLE=\${TN_PLAYER_TITLE:-'${title.replaceAll("'", "'\\''")}'}`, "export TN_PLAYER_TITLE"] : []),
     `: "\${TN_PLAYER_WIDTH:=${width}}"`,
     `: "\${TN_PLAYER_HEIGHT:=${height}}"`,
     "export TN_PLAYER_WIDTH TN_PLAYER_HEIGHT",
@@ -27,7 +28,7 @@ export function launcher(width, height) {
  * and, for a web UI, `ui/`. `bundle` and `cook` are the engine bundler's, injectable for the unit test.
  */
 export async function packageEngineDesktop(
-  { project, entry, player, ui, output, width = 1280, height = 720 },
+  { project, entry, player, ui, output, width = 1280, height = 720, title },
   { bundle = bundleNativeEngine, cook = cookNativeEngineAssets } = {},
 ) {
   if (!player || !existsSync(player)) {
@@ -49,7 +50,7 @@ export async function packageEngineDesktop(
     cpSync(ui, join(output, "ui"), { recursive: true });
   }
   const start = join(output, basename(output));
-  writeFileSync(start, launcher(width, height));
+  writeFileSync(start, launcher(width, height, title));
   chmodSync(start, 0o755);
   console.log(`ThreeNative desktop artifact: ${output}`);
   return output;
@@ -59,7 +60,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const args = process.argv.slice(2);
   const flags = new Map();
   for (let i = 0; i < args.length; i += 2) {
-    if (!["--project", "--entry", "--player", "--ui", "--output", "--width", "--height"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
+    if (!["--project", "--entry", "--player", "--ui", "--output", "--width", "--height", "--title"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
       throw new Error(`TN_ENGINE_PACKAGE_ARGS: invalid or repeated option ${args[i]}`);
     flags.set(args[i], args[i + 1]);
   }
@@ -72,6 +73,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       output: flags.get("--output"),
       width: flags.has("--width") ? Number(flags.get("--width")) : undefined,
       height: flags.has("--height") ? Number(flags.get("--height")) : undefined,
+      title: flags.get("--title"),
     });
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

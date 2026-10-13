@@ -1,10 +1,14 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-// @ts-expect-error The packager is a plain .mjs script with no declaration file.
-import { launcher, packageEngineDesktop } from "../../runtime-native/scripts/package-engine-desktop.mjs";
+import {
+  launcher,
+  packageEngineDesktop,
+  // @ts-expect-error The packager is a plain .mjs script with no declaration file.
+} from "../../runtime-native/scripts/package-engine-desktop.mjs";
 import { build, engineDesktopPlayer } from "../src/build.js";
 
 const roots: string[] = [];
@@ -30,7 +34,10 @@ describe("engine: native on desktop", () => {
     await mkdir(path.join(root, "src"), { recursive: true });
     await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "engine-game" }));
-    await writeFile(path.join(root, "threenative.config.ts"), 'export default { engine: "native" };\n');
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { engine: "native" };\n',
+    );
     await expect(build({ cwd: root, target: "desktop" })).rejects.toThrow(
       /TN_ENGINE_BUNDLER_MISSING/u,
     );
@@ -81,6 +88,35 @@ describe("packageEngineDesktop", () => {
     expect(start).toBe(launcher(1920, 1080));
     expect(start).toContain(':"${TN_PLAYER_WIDTH:=1920}"'.slice(1));
     expect(start).toContain('exec "$DIR/tn-native-engine-player-v8" "$DIR/game.js" "$@"');
+  });
+
+  it("opens the window with the game's title and size, a quote in the title included", async () => {
+    const root = await temp("threenative-engine-package-title-");
+    const player = path.join(root, "player");
+    // A stand-in player that reports what the launcher gave it.
+    await writeFile(
+      player,
+      '#!/bin/sh\necho "$TN_PLAYER_TITLE|$TN_PLAYER_WIDTH|$TN_PLAYER_HEIGHT"\n',
+    );
+    const output = path.join(root, "dist-native", "midway");
+    await packageEngineDesktop(
+      {
+        project: root,
+        entry: "e",
+        player,
+        output,
+        width: 1280,
+        height: 720,
+        title: "MIDWAY — Pilot's Open Pacific",
+      },
+      stubs,
+    );
+    const env = { ...process.env, TN_PLAYER_TITLE: "", TN_PLAYER_WIDTH: "", TN_PLAYER_HEIGHT: "" };
+    for (const key of ["TN_PLAYER_TITLE", "TN_PLAYER_WIDTH", "TN_PLAYER_HEIGHT"])
+      delete (env as Record<string, unknown>)[key];
+    expect(execFileSync(path.join(output, "midway"), { env, encoding: "utf8" }).trim()).toBe(
+      "MIDWAY — Pilot's Open Pacific|1280|720",
+    );
   });
 
   it("fails closed without a player, and without a UI page when one was asked for", async () => {
