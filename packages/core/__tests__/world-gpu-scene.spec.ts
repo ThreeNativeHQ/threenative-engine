@@ -14,6 +14,7 @@ import {
   MeshBasicMaterial,
   type Object3D,
   PerspectiveCamera,
+  Quaternion,
   Ray,
   Vector3,
   WebGPUCoordinateSystem,
@@ -236,6 +237,40 @@ function pineIn(...cells: string[]): number {
 /** The world-space centre of cell `(x, z)`, from the package's own extent and cell size. */
 function cellCentre(x: number, z: number): { x: number; z: number } {
   return { x: manifest.extent.minX + (x + 0.5) * CELL, z: manifest.extent.minZ + (z + 0.5) * CELL };
+}
+
+/** The complete source transform set for resident cells, independent of WorldGpuScene storage. */
+function sourceMatricesFor(...cells: string[]): string[] {
+  const wanted = new Set(cells);
+  const records = new Float32Array(
+    placementBytes.buffer,
+    placementBytes.byteOffset,
+    placementBytes.byteLength / Float32Array.BYTES_PER_ELEMENT,
+  );
+  const matrices: string[] = [];
+  for (const cell of manifest.cells) {
+    if (!wanted.has(`${String(cell.x)},${String(cell.z)}`)) continue;
+    for (const run of cell.runs)
+      for (let index = 0; index < run.count; index += 1) {
+        const base = (run.offset + index) * 8;
+        const matrix = new Matrix4().compose(
+          new Vector3(
+            records[base] as number,
+            records[base + 1] as number,
+            records[base + 2] as number,
+          ),
+          new Quaternion(
+            records[base + 3] as number,
+            records[base + 4] as number,
+            records[base + 5] as number,
+            records[base + 6] as number,
+          ),
+          new Vector3().setScalar(records[base + 7] as number),
+        );
+        matrices.push(Float32Array.from(matrix.elements).join(","));
+      }
+  }
+  return matrices.sort();
 }
 
 function plainModel(): Group {
@@ -2460,21 +2495,18 @@ describe("WorldCells whose GPU scene comes up under a built ring", () => {
       // GPU source residency is the raw resident placement count, not the CPU path's already
       // maxDistance-filtered draw count. The dispatch applies that cull later.
       const expected = cpu.stats().instances;
+      const expectedMatrices = sourceMatricesFor("1,1");
       expect(world.stats().gpuScene.instances).toBe(expected);
       expect(mainReport).toContain(`instances=${String(expected)} `);
       const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
-      const matrices = scene.placements
-        .filter((one) => one.slot >= 0)
-        .map((one) => one.matrix.join(","))
-        .sort();
-      expect(matrices).toHaveLength(expected);
+      expect(expectedMatrices).toHaveLength(expected);
       const assertSources = (): void => {
         expect(
           scene.placements
             .filter((one) => one.slot >= 0)
             .map((one) => one.matrix.join(","))
             .sort(),
-        ).toEqual(matrices);
+        ).toEqual(expectedMatrices);
       };
       assertSources();
       Object.assign(follow.position, cellCentre(6, 1));
