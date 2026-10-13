@@ -340,3 +340,41 @@ test("unsupported URL schemes reject instead of falling through to file reads", 
     /Unsupported URL scheme: ftp/u,
   );
 });
+
+test("native fetch network observation records real HTTP and asset failures", async () => {
+  const { context } = setupFetchContext({
+    __httpRequestAsync: (url, _options, callback) => callback(
+      url.endsWith("/reject") ? { error: "connection refused" }
+        : { ok: !url.endsWith("/404"), status: url.endsWith("/404") ? 404 : 200, url },
+    ),
+    __readFileAsync: (_path, callback) => callback(null, "missing asset"),
+  });
+  const observation = await vm.runInContext(`(async () => {
+    await fetch("https://host/ok");
+    await fetch(new Request("https://host/404", { method: "POST" }));
+    await fetch("https://host/reject").catch(() => {});
+    await fetch("missing.bin").catch(() => {});
+    return fetch.network();
+  })()`, context);
+  assert.deepEqual(guest(observation), { requests: 4, entries: [
+    { method: "POST", url: "https://host/404" },
+    { method: "GET", url: "https://host/reject" },
+    { method: "GET", url: "missing.bin" },
+  ] });
+  assert.match(readRuntimeCpp(), /setProperty\(playtestMailbox, "network"/u);
+});
+
+test("native fetch network observation fails closed on overflow and protects its retained entries", async () => {
+  const { context } = setupFetchContext({
+    __httpRequestAsync: (_url, _options, callback) => callback({ ok: false, status: 500 }),
+  });
+  await vm.runInContext(`(async () => {
+    await fetch("https://host/error");
+    fetch.network().entries.length = 0;
+  })()`, context);
+  assert.equal(vm.runInContext("fetch.network().entries.length", context), 1);
+  await vm.runInContext(`(async () => {
+    for (let i = 0; i < 256; i++) await fetch("https://host/error");
+  })()`, context);
+  assert.throws(() => vm.runInContext("fetch.network()", context), /NETWORK.*OVERFLOW/u);
+});

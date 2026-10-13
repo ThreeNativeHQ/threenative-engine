@@ -3781,6 +3781,8 @@ private:
         );
         jsEngine_->setProperty(nativeHost, "playtestInput", playtestHost);
         auto playtestMailbox = jsEngine_->newObject();
+        jsEngine_->setProperty(playtestMailbox, "network",
+            jsEngine_->getProperty(jsEngine_->getGlobalProperty("fetch"), "network"));
         jsEngine_->setProperty(playtestMailbox, "receive",
             jsEngine_->newFunction("receive", [this](void*, const std::vector<js::JSValueHandle>& args) {
                 if (args.empty()) return jsEngine_->newUndefined();

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { MeshBasicMaterial } from "three";
+import { MeshBasicMaterial, PerspectiveCamera } from "three";
 import { describe, expect, it } from "vitest";
 import { TerrainTiles } from "../src/world.js";
 
@@ -98,6 +98,56 @@ describe("world-streaming view-distance recipe", () => {
     expect(recipe.fogNear).toBe(c);
     expect(recipe.fogFar).toBe(recipe.ring * c);
     expect(recipe.residentCells).toBe((2 * recipe.ring + 1) ** 2);
+  });
+
+  it("keeps screen-error switches behind 180 m fog and the explicit distance floor at both raster sizes", () => {
+    const switches: number[][] = [];
+    for (const [width, height] of [
+      [1280, 720],
+      [2560, 1440],
+    ] as const) {
+      const tiles = new TerrainTiles({
+        surface: new MeshBasicMaterial(),
+        residentByteBudget: 2_000_000,
+        residentTileBudget: 1,
+        sampleHeight: (x) => Math.cos((Math.PI * x) / 128),
+        streamRadius: 0,
+        tileResolution: 9,
+        tileSize: 1024,
+        skirtDepth: 1,
+        lodDistances: [180, 360],
+      });
+      const camera = new PerspectiveCamera(60, width / height, 0.1, 10000);
+      const changed: number[] = [];
+      let previous = 0;
+      try {
+        for (const x of [0, 179, 180, 359, 360, 480]) {
+          camera.position.set(0, 0, 1800 + 4 * x);
+          camera.lookAt(0, 0, 0);
+          camera.updateMatrixWorld(true);
+          tiles.follow({ x, z: 0 }, undefined, {
+            camera,
+            viewportHeight: height,
+            maxPixelError: 1,
+            hysteresis: 0.15,
+          });
+          const level = tiles.getTile("0:0")?.lodLevel;
+          if (level === undefined) throw new Error("Expected the same resident recipe tile.");
+          if (level !== previous) {
+            expect(x).toBeGreaterThanOrEqual(180);
+            expect(x).toBeGreaterThanOrEqual([0, 180, 360][level] as number);
+            changed.push(x);
+          }
+          previous = level;
+          for (let frame = 0; frame < 3; frame += 1) tiles.process();
+        }
+        expect(tiles.maxLodTransitionFrames).toBe(3);
+        switches.push(changed);
+      } finally {
+        tiles.dispose();
+      }
+    }
+    expect(switches).toEqual([[180, 360], [480]]);
   });
 
   it("control: fog far set against the ring corner (452 m) leaves the ring's side visible", () => {
