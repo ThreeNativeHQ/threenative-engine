@@ -322,6 +322,8 @@ constexpr const char* kDocumentShim = R"JS(
       }
       return el.__ctx;
     };
+    // ctx.drawImage(otherCanvas, ...) finds the source's context here, as the legacy host's elements expose it.
+    Object.defineProperty(el, "_context2d", { get: () => el.getContext("2d") });
     el.toDataURL = () => { throw new Error("TN_PLAYER_CANVAS_TODATAURL: canvas.toDataURL is not available in the engine player"); };
     return el;
   };
