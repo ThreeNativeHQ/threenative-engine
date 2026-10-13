@@ -110,6 +110,11 @@ describe("createWebEnginePlugin", () => {
     });
     try {
       expect(await server.pluginContainer.resolveId("three")).toMatchObject({ id: WEB_ENGINE_ID });
+      // The dep optimizer bypasses resolveId: a pre-bundled @threenative/core would inline upstream
+      // three-mesh-bvh, whose module scope builds a Line3 the engine refuses (Midway dev boot).
+      expect(server.config.optimizeDeps.exclude).toEqual(
+        expect.arrayContaining(["three", "three/webgpu", "three/tsl", "three-mesh-bvh"]),
+      );
     } finally {
       await server.close();
     }
@@ -153,6 +158,7 @@ describe("createWebEnginePlugin", () => {
     for (const name of [
       "web-engine-runtime",
       "web-engine-mesh-bvh",
+      "web-engine-mesh-bvh-webgpu",
       "web-engine-buffer-geometry-utils",
       "web-engine-hdr-loader",
       "web-engine-gltf-loader",
@@ -217,6 +223,19 @@ describe("createWebEnginePlugin", () => {
     expect(resolved).toMatch(
       /(?:three-native\/src\/addons\/mesh-bvh\.ts|web-engine-mesh-bvh\.js)$/u,
     );
+  });
+
+  it("resolves three-mesh-bvh/webgpu to an engine module that loads and refuses each export at use", async () => {
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+      "three-mesh-bvh/webgpu",
+    );
+    expect(resolved).toMatch(
+      /(?:three-native\/src\/addons\/mesh-bvh-webgpu\.ts|web-engine-mesh-bvh-webgpu\.js)$/u,
+    );
+    // Core's gpu-scene-bvh reads these three at module scope; reading must not throw, using must.
+    const module = (await import(resolved as string)) as Record<string, { struct?: unknown }>;
+    for (const name of ["bvhIntersectFirstHit", "rayStruct", "bvhNodeStruct"])
+      expect(() => module[name]?.struct).toThrow(`TN_NATIVE_UNSUPPORTED_${name.toUpperCase()}`);
   });
 
   it("resolves BufferGeometryUtils to the engine's mergeGeometries, never the upstream addon", () => {
