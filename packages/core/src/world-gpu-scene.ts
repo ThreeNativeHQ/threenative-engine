@@ -28,6 +28,7 @@ import {
 } from "three/tsl";
 import {
   IndirectStorageBufferAttribute,
+  ReadbackBuffer,
   StorageBufferAttribute,
   StorageInstancedBufferAttribute,
 } from "three/webgpu";
@@ -349,6 +350,11 @@ interface IValidationSnapshot extends IKernelInput {
   readonly drawn: unknown;
   /** Resident placements the scene held when this dispatch ran. */
   readonly placed: number;
+}
+
+interface IValidationReadbacks {
+  readonly args: ReadbackBuffer;
+  readonly drawn: ReadbackBuffer;
 }
 
 /**
@@ -2307,6 +2313,8 @@ export class WorldGpuScene {
   #lines: string[] = [];
   #validate = false;
   #validating = false;
+  /** Reused MAP_READ buffers keep validation from allocating two fresh GPU buffers on every check. */
+  #validationReadbacks: IValidationReadbacks | undefined;
   /** Whether the owner asked for the GPU-selected main-pass tally; a validation turns it on too. */
   #tally = false;
   /** What a launch asked the pyramid occlusion test to do. `measure` never changes what is drawn. */
@@ -2496,11 +2504,14 @@ export class WorldGpuScene {
     // Taken now, with the snapshot, and not when the readback lands: see `drawsFrom`.
     const draws = this.#draws?.() ?? [];
     const issued = this.#dispatched;
+    const readbacks = this.#readbacksFor(snapshot);
     this.#validating = true;
     const occlusionReason = this.#occlusionReason;
-    Promise.all([renderer.readback(snapshot.args), renderer.readback(snapshot.drawn)])
+    Promise.all([
+      renderer.readback(snapshot.args, readbacks.args),
+      renderer.readback(snapshot.drawn, readbacks.drawn),
+    ])
       .then(([argsBytes, drawnBytes]) => {
-        this.#validating = false;
         // The same landed args feed the tally, so a validation pays for it and this adds no copy.
         this.#landTally(argsBytes, issued, snapshot.regions, occlusionReason);
         this.#publish(
@@ -2517,7 +2528,6 @@ export class WorldGpuScene {
       .catch((reason: unknown) => {
         // A readback that never lands is a check that never ran, and saying so is the whole point:
         // this line used to end the chain and leave the last verdict standing as if it were fresh.
-        this.#validating = false;
         this.#publish(renderer, {
           cause: `readback-failed: ${String(reason instanceof Error ? reason.message : reason)}`,
           compared: 0,
@@ -2532,7 +2542,37 @@ export class WorldGpuScene {
           matrixMismatches: [],
           placed: snapshot.placed,
         });
+      })
+      .finally(() => {
+        readbacks.args.release();
+        readbacks.drawn.release();
+        this.#validating = false;
       });
+  }
+
+  #readbacksFor(snapshot: IValidationSnapshot): IValidationReadbacks {
+    const argsBytes = Math.max(
+      4,
+      (snapshot.args as { array: { byteLength: number } }).array.byteLength,
+    );
+    const drawnBytes = Math.max(
+      4,
+      (snapshot.drawn as { array: { byteLength: number } }).array.byteLength,
+    );
+    const current = this.#validationReadbacks;
+    if (
+      current !== undefined &&
+      current.args.maxByteLength >= argsBytes &&
+      current.drawn.maxByteLength >= drawnBytes
+    )
+      return current;
+    current?.args.dispose();
+    current?.drawn.dispose();
+    this.#validationReadbacks = {
+      args: new ReadbackBuffer(argsBytes),
+      drawn: new ReadbackBuffer(drawnBytes),
+    };
+    return this.#validationReadbacks;
   }
 
   /**
@@ -2697,6 +2737,9 @@ export class WorldGpuScene {
   }
 
   dispose(): void {
+    this.#validationReadbacks?.args.dispose();
+    this.#validationReadbacks?.drawn.dispose();
+    this.#validationReadbacks = undefined;
     this.#kernel = undefined;
     this.#shadowKernel = undefined;
     this.#shadow = undefined;

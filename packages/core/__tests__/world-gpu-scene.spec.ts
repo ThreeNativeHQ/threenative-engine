@@ -3263,6 +3263,61 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expect(scene.validation.verdict).not.toBe("error");
   });
 
+  it("reuses and releases validation readback buffers", async () => {
+    const { camera, planes } = cameraAt(0, 0);
+    const scene = new WorldGpuScene();
+    const targets: unknown[] = [];
+    const releases = new Map<unknown, number>();
+    const disposals = new Set<unknown>();
+    const mirror = (attribute: unknown, target?: unknown): Promise<ArrayBuffer> => {
+      expect(target).toBeDefined();
+      if (!releases.has(target)) {
+        releases.set(target, 0);
+        const readback = target as {
+          addEventListener: (type: string, listener: () => void) => void;
+        };
+        readback.addEventListener("release", () => {
+          releases.set(target, (releases.get(target) ?? 0) + 1);
+        });
+        readback.addEventListener("dispose", () => disposals.add(target));
+      }
+      targets.push(target);
+      const result = cullAndSelect({
+        camera: { planes, x: 0, y: 0, z: 0 },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      });
+      const words = (attribute as { array: Uint32Array | Float32Array }).array;
+      const bytes = words instanceof Float32Array ? result.drawn : result.args;
+      return Promise.resolve(bytes.slice().buffer as ArrayBuffer);
+    };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (): void => {},
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: mirror,
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, true)).toBe(true);
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+
+    await drive(scene, renderer, 30);
+    expect(targets).toHaveLength(2);
+    expect([...releases.values()]).toEqual([1, 1]);
+    await drive(scene, renderer, 30);
+    expect(targets).toHaveLength(4);
+    expect(targets[2]).toBe(targets[0]);
+    expect(targets[3]).toBe(targets[1]);
+    expect([...releases.values()]).toEqual([2, 2]);
+    scene.dispose();
+    expect(disposals.size).toBe(2);
+  });
+
   /**
    * The readback is held against the dispatch that produced it, not against the frames that followed.
    *
