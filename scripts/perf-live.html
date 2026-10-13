@@ -320,7 +320,7 @@ function renderDesktop() {
     <p class="mute sm">tn-desktop ÷ tn-engine-desktop · thread CPU without present</p>
     <p class="fine">Draw-call parity waived for desktop batching (drawCalls); triangles and remaining parity checks apply.</p>
     <div class="scroll"><table><tr><th>Rung / set</th><th>Legacy ms</th><th>Engine ms</th><th>Pooled ratio</th><th>Per-round ratios</th><th>Triangles L / E</th><th>Commit</th></tr>
-    ${desktop.kpi.map((r) => `<tr><td>${esc(r.rung)} ${esc(r.label ?? "")}</td><td>${ms(r.pair?.left.threadCpuP50)}</td><td>${ms(r.pair?.right.threadCpuP50)}</td><td>${ratio(r.pair?.ratio.threadCpu)}</td><td>${r.rounds?.map((p) => `r${p.round}: ${ratio(p.ratio)}`).join(" · ") || pending}</td><td>${r.pair ? `${r.pair.left.triangles} / ${r.pair.right.triangles}` : pending}</td><td>${r.commits?.map(esc).join(" · ") || pending}</td></tr>`).join("")}
+    ${desktop.kpi.map((r) => `<tr><td>${esc(r.rung)} ${esc(r.label ?? "")} <span class="pill">${esc(r.lane ?? "")}</span></td><td>${ms(r.pair?.left.threadCpuP50)}</td><td>${ms(r.pair?.right.threadCpuP50)}</td><td>${ratio(r.pair?.ratio.threadCpu)}</td><td>${r.rounds?.map((p) => `r${p.round}: ${ratio(p.ratio)}`).join(" · ") || pending}</td><td>${r.pair ? `${r.pair.left.triangles} / ${r.pair.right.triangles}` : pending}</td><td>${r.commits?.map(esc).join(" · ") || pending}</td></tr>`).join("")}
     </table></div>
     ${desktop.kpi.map(problem).join("")}
     <p class="sm"><b>real-GPU inclusive (R5)</b>: ${gpu.status === "PENDING" ? pending : `frame p50 ratio ${ratio(gpu.pair?.ratio.p50)} · ${gpu.adapters.map(esc).join(" · ")}`}</p>${problem(gpu)}

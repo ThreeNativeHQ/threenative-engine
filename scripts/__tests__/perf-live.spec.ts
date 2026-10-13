@@ -151,6 +151,23 @@ describe("perf-live", () => {
       });
     });
 
+    it("lets a real-display set outrank the Xvfb confirm set for its rung, and says which lane it is", async () => {
+      await fixture(async (dir, put) => {
+        await put("v1-confirm-R3", "tn-desktop", "R3", 12);
+        await put("v1-confirm-R3", "tn-engine-desktop", "R3", 6);
+        expect(desktopOf(await loadRuns([dir])).kpi[1]).toMatchObject({
+          lane: "Xvfb",
+          pair: { ratio: { threadCpu: 2 } },
+        });
+        await put("gpu-R3-desktop", "tn-desktop", "R3", 12);
+        await put("gpu-R3-desktop", "tn-engine-desktop", "R3", 4);
+        expect(desktopOf(await loadRuns([dir])).kpi[1]).toMatchObject({
+          lane: "real GPU",
+          pair: { ratio: { threadCpu: 3 } },
+        });
+      });
+    });
+
     it("shows GPU inclusive timing and Godot frame percentiles only when reports exist", async () => {
       await fixture(async (dir, put) => {
         await put("v1-confirm", "tn-engine-desktop", "R5", 6);

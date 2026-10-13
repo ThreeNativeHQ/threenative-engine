@@ -710,15 +710,24 @@ export function desktopOf(runs: readonly ILoadedRun[]) {
       else process.env.TN_BENCH_WAIVE = waiver;
     }
   };
-  const kpi = (["R2", "R3", "R5"] as const).map((rung) => ({
-    rung,
-    ...compare(
-      latest(rung === "R5" ? "v1-confirm" : `v1-confirm-${rung}`, rung),
-      rung,
-      LEGACY_ARM,
-      NATIVE_ARM,
-    ),
-  }));
+  // A real-display set (`gpu-<rung>*`, hardware adapter) outranks the Xvfb confirm set for the same rung.
+  const kpi = (["R2", "R3", "R5"] as const).map((rung) => {
+    const real = latest(`gpu-${rung}`, rung);
+    const hardware = real.length > 0 && !real.some((r) => r.rows.some((row) => row.software));
+    const result = hardware ? compare(real, rung, LEGACY_ARM, NATIVE_ARM) : undefined;
+    return result?.status === "measured"
+      ? { rung, lane: "real GPU", ...result }
+      : {
+          rung,
+          lane: "Xvfb",
+          ...compare(
+            latest(rung === "R5" ? "v1-confirm" : `v1-confirm-${rung}`, rung),
+            rung,
+            LEGACY_ARM,
+            NATIVE_ARM,
+          ),
+        };
+  });
   const gpuRuns = latest("gpu-R5", "R5");
   const gpu = gpuRuns.some((r) => r.rows.some((row) => row.software))
     ? { status: "PENDING" as const, problem: "Software adapter is not real-GPU evidence." }
