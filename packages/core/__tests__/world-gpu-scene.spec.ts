@@ -3318,6 +3318,74 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expect(disposals.size).toBe(2);
   });
 
+  it("holds both validation targets until a failed pair has settled", async () => {
+    const lines: string[] = [];
+    const scene = new WorldGpuScene();
+    const targets: unknown[] = [];
+    const releases = new Map<unknown, number>();
+    const disposals = new Set<unknown>();
+    let calls = 0;
+    let settleDrawn!: (bytes: ArrayBuffer) => void;
+    const drawnPending = new Promise<ArrayBuffer>((resolve) => {
+      settleDrawn = resolve;
+    });
+    const readback = (_attribute: unknown, target?: unknown): Promise<ArrayBuffer> => {
+      expect(target).toBeDefined();
+      if (!releases.has(target)) {
+        releases.set(target, 0);
+        const readbackTarget = target as {
+          addEventListener: (type: string, listener: () => void) => void;
+        };
+        readbackTarget.addEventListener("release", () => {
+          releases.set(target, (releases.get(target) ?? 0) + 1);
+        });
+        readbackTarget.addEventListener("dispose", () => disposals.add(target));
+      }
+      targets.push(target);
+      calls += 1;
+      if (calls === 1) return Promise.reject(new Error("args map failed"));
+      if (calls === 2) return drawnPending;
+      return Promise.resolve(new ArrayBuffer(0));
+    };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (line: string): void => {
+        lines.push(line);
+      },
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback,
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, true)).toBe(true);
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+
+    await drive(scene, renderer, 30);
+    expect(scene.validation.verdict).toBe("error");
+    expect(lines).toContain("TN_WORLD_GPU_SCENE_VALIDATE cause=readback-failed: args map failed");
+    expect(targets).toHaveLength(2);
+    expect([...releases.values()]).toEqual([0, 0]);
+    expect(disposals.size).toBe(0);
+
+    // A structural grow while the pair is pending must not replace or release either target.
+    scene.key("oak:0:0", LOCAL, 128, { group: "oak:0", part: 0, parts: 1 });
+    scene.slot("oak", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 1, parts: 1 }] });
+    await drive(scene, renderer, 30);
+    expect(targets).toHaveLength(2);
+    expect([...releases.values()]).toEqual([0, 0]);
+    expect(disposals.size).toBe(0);
+
+    // Disposal also waits for the GPU operation: the cleanup owns the pair after the scene drops it.
+    scene.dispose();
+    expect([...releases.values()]).toEqual([0, 0]);
+    expect(disposals.size).toBe(0);
+    settleDrawn(new ArrayBuffer(0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect([...releases.values()]).toEqual([1, 1]);
+    expect(disposals.size).toBe(2);
+  });
+
   /**
    * The readback is held against the dispatch that produced it, not against the frames that followed.
    *

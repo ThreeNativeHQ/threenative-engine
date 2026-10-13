@@ -2507,10 +2507,11 @@ export class WorldGpuScene {
     const readbacks = this.#readbacksFor(snapshot);
     this.#validating = true;
     const occlusionReason = this.#occlusionReason;
-    Promise.all([
+    const reads = [
       renderer.readback(snapshot.args, readbacks.args),
       renderer.readback(snapshot.drawn, readbacks.drawn),
-    ])
+    ] as const;
+    Promise.all(reads)
       .then(([argsBytes, drawnBytes]) => {
         // The same landed args feed the tally, so a validation pays for it and this adds no copy.
         this.#landTally(argsBytes, issued, snapshot.regions, occlusionReason);
@@ -2542,12 +2543,18 @@ export class WorldGpuScene {
           matrixMismatches: [],
           placed: snapshot.placed,
         });
-      })
-      .finally(() => {
-        readbacks.args.release();
-        readbacks.drawn.release();
-        this.#validating = false;
       });
+    // Promise.all reports the first failure, but its rejection does not mean the other GPU copy has
+    // stopped. Release only after both copies settle, so a pending map cannot race a reused target.
+    Promise.allSettled(reads).finally(() => {
+      readbacks.args.release();
+      readbacks.drawn.release();
+      if (this.#validationReadbacks !== readbacks) {
+        readbacks.args.dispose();
+        readbacks.drawn.dispose();
+      }
+      this.#validating = false;
+    });
   }
 
   #readbacksFor(snapshot: IValidationSnapshot): IValidationReadbacks {
@@ -2737,9 +2744,12 @@ export class WorldGpuScene {
   }
 
   dispose(): void {
-    this.#validationReadbacks?.args.dispose();
-    this.#validationReadbacks?.drawn.dispose();
+    const readbacks = this.#validationReadbacks;
     this.#validationReadbacks = undefined;
+    if (!this.#validating) {
+      readbacks?.args.dispose();
+      readbacks?.drawn.dispose();
+    }
     this.#kernel = undefined;
     this.#shadowKernel = undefined;
     this.#shadow = undefined;
