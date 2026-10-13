@@ -1206,6 +1206,7 @@ describe("WorldCells with the GPU-driven main pass", () => {
     // option off the same walk repacks every time the window moves.
     expect(after.mainCull.repacks - settled.mainCull.repacks).toBe(0);
     expect(after.mainCull.windows - settled.mainCull.windows).toBe(0);
+    expect(after.levelRefilters - settled.levelRefilters).toBe(0);
     expect(after.gpuScene.dispatches - settled.gpuScene.dispatches).toBe(200);
     expect(after.gpuScene.instances).toBeGreaterThan(0);
     expect(world.stats().failures).toBe(0);
@@ -1238,7 +1239,9 @@ describe("WorldCells with the GPU-driven main pass", () => {
       cpuFollow.position.z = at.z;
       cpu.update(renderer, camera);
     }
-    const cpuRebuilds = cpu.stats().refilterEntries - cpuSettled.refilterEntries;
+    const cpuAfter = cpu.stats();
+    const cpuRebuilds = cpuAfter.refilterEntries - cpuSettled.refilterEntries;
+    expect(cpuAfter.levelRefilters - cpuSettled.levelRefilters).toBeGreaterThan(0);
     expect(gpuRebuilds).toBeLessThan(cpuRebuilds);
     cpu.dispose();
   });

@@ -758,6 +758,11 @@ export interface IWorldCellsStats {
    */
   readonly refilters: number;
   /**
+   * Cumulative CPU LOD-refilter builds that entered placement-level selection. Initial builds and
+   * the GPU path's correctness-required cull-only source scan are not included.
+   */
+  readonly levelRefilters: number;
+  /**
    * Cumulative stale cell-assets the refilter passes found, across every update. The pass walks every
    * resident cell and gates it as a whole before it looks at one batch, so a follow point that has
    * crossed nothing leaves this still — which is what says the walk cost brackets and comparisons and
@@ -789,10 +794,11 @@ export interface IWorldCellsStats {
   /**
    * What the GPU-driven main pass is doing, and why it is not: `on` is the answer, `reason` is the
    * one line `TN_WORLD_GPU_SCENE` printed, and `dispatches` is what the walk actually paid for its
-   * per-instance work. `mainCull.repacks` and `refilters` stay at `0` while it is on — that is the
-   * CPU work it replaced, counted by the same counters that report it when it is off. `dressed` over
-   * `meshes` is the marker line's own pair, and it is the one that says the scene has meshes to draw
-   * with: an `on` with `0` dressed is a ring the CPU path is still drawing.
+   * per-instance work. `mainCull.repacks` and `levelRefilters` stay at `0` while it is on — that is
+   * the CPU work it replaced. The aggregate `refilters` counter can still rise because the retained
+   * cull-only source scan is correctness work, not CPU LOD selection. `dressed` over `meshes` is the
+   * marker line's own pair, and it is the one that says the scene has meshes to draw with: an `on`
+   * with `0` dressed is a ring the CPU path is still drawing.
    */
   readonly gpuScene: {
     readonly on: boolean;
@@ -2156,6 +2162,8 @@ interface IBuildJob {
   filterZ: number;
   /** A refilter's outgoing batches, drawn until this job's own batches are attached. */
   replaced: ICellBatch[];
+  /** This CPU refilter crossed an LOD gate; initial and cull-only builds leave it false. */
+  readonly levelRefilter: boolean;
   /** This job's built batches, attached together when the last one is ready. */
   readonly fresh: ICellBatch[];
   /** The run's placement records, read once and kept across the slices that filter them. */
@@ -4360,12 +4368,19 @@ export class WorldCells extends Group implements IComputeDriven {
   #rebuilds = 0;
   /** Refilter passes run, whether or not they queued anything; see `IWorldCellsStats.refilters`. */
   #refilters = 0;
+  /** CPU LOD-refilter builds that entered #addPlacements; initial builds and cull-only scans do not count. */
+  #levelRefilters = 0;
   /** Refilters whose rebuild came back identical and were settled without a write. */
   #unchanged = 0;
   /** Every distinct gate distance the world's assets have, ascending; see `#noteGate`. */
   readonly #gates: number[] = [];
   /** The reused hit list and the reused per-cell seen set; see `#staleIn`. */
-  readonly #stale: Array<{ cell: IResidentCell; distance: number; id: string }> = [];
+  readonly #stale: Array<{
+    cell: IResidentCell;
+    distance: number;
+    id: string;
+    levelRefilter: boolean;
+  }> = [];
   readonly #staleSeen = new Set<string>();
   /** Stale cell-assets the passes found, cumulative; see `IWorldCellsStats.refilterEntries`. */
   #staleEntries = 0;
@@ -5847,6 +5862,7 @@ export class WorldCells extends Group implements IComputeDriven {
       refilters: this.#refilters,
       refilterEntries: this.#staleEntries,
       rebuilds: this.#rebuilds,
+      levelRefilters: this.#levelRefilters,
       // The share of `rebuilds` the swap found unchanged, which is the honest report of how much of
       // the refilter pass is a bracket that was wider than any placement.
       unchanged: this.#unchanged,
@@ -6135,6 +6151,7 @@ export class WorldCells extends Group implements IComputeDriven {
     run: IWorldRun,
     replace = false,
     force = false,
+    levelRefilter = false,
   ): void {
     // Keyed on the run, not the asset: one cell can hold two runs of the same canonical asset —
     // two names for one model — and each has its own records to build. A token per asset made the
@@ -6156,6 +6173,7 @@ export class WorldCells extends Group implements IComputeDriven {
       filterX: this.#follow.position.x,
       filterZ: this.#follow.position.z,
       fresh: [],
+      levelRefilter,
       next: 0,
       published: 0,
       records: undefined,
@@ -6607,9 +6625,11 @@ export class WorldCells extends Group implements IComputeDriven {
       drawn += shared.drawn;
       if (shared.mesh.visible === false) hidden += 1;
     }
+    const stats = this.stats();
     console.info(
       `TN_WORLD_MAIN_CULL instances=${String(instances)} drawn=${String(drawn)} ` +
         `hidden=${String(hidden)} castersHidden=${String(castersHidden)} repacks=${String(repacks)} ` +
+        `refilters=${String(stats.refilters)} levelRefilters=${String(stats.levelRefilters)} ` +
         `clusterTris=${String(clusterTriangles)} wideTris=${String(wideTriangles)} ` +
         `dressed=${String(dressed)}/${String(mainMeshes)}`,
     );
@@ -6620,7 +6640,7 @@ export class WorldCells extends Group implements IComputeDriven {
         `wideMissing=${String(wideMissing)} seeded=${String(this.#gpuSeeded)} ` +
         `queued=${String(this.#jobs.length)}`,
     );
-    const hlod = this.stats().hlod;
+    const hlod = stats.hlod;
     let proxyDraws = 0;
     let replacedSources = 0;
     for (const state of this.#cellProxies) {
@@ -6641,7 +6661,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // repacks it every frame is drawing a moving set, which is the bug a bundle cannot have. `reason`
     // is on it because the default is now on: a reader has to be able to tell a run that turned it
     // off from a run where recording never happened.
-    const bundles = this.stats().bundle;
+    const bundles = stats.bundle;
     console.info(
       `TN_WORLD_BUNDLE ${bundles.on ? "on" : "off"} reason=${bundles.reason} ` +
         `children=${String(bundles.children)} cpuMeshes=${String(bundles.cpuMeshes)} gpuMeshes=${String(bundles.gpuMeshes)} records=${String(bundles.records)}`,
@@ -6654,6 +6674,7 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #addPlacements(job: IBuildJob, from: number, to: number): void {
     const { asset, filterX, filterZ } = job;
+    if (job.levelRefilter && job.next === 0) this.#levelRefilters += 1;
     if (job.records === undefined) job.records = cellPlacements(this.#placements, job.run);
     const records = job.records;
     const inner = cullDistance(asset.definition.maxDistance);
@@ -9331,8 +9352,11 @@ export class WorldCells extends Group implements IComputeDriven {
         high = reachHigh;
       }
       if (!reachCrossed && !gates.some((gate) => gate >= low && gate <= high)) continue;
+      const levelRefilter =
+        !this.#gpuScene.on &&
+        asset.gates.some((gate) => gate !== cull && gate >= low && gate <= high);
       seen.add(entry.asset);
-      this.#stale.push({ cell, distance: near, id: entry.asset });
+      this.#stale.push({ cell, distance: near, id: entry.asset, levelRefilter });
       this.#staleEntries += 1;
     }
   }
@@ -9384,7 +9408,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // left the other drawing the level its own distance has moved out of.
       for (const run of job.cell.cell.runs) {
         if (this.#canonical(run.asset) !== job.id) continue;
-        this.#queueBuild(asset, job.cell, run, true);
+        this.#queueBuild(asset, job.cell, run, true, false, job.levelRefilter);
         this.#rebuilds += 1;
       }
     }
