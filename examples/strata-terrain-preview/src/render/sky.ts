@@ -114,13 +114,19 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   const sun = new DirectionalLight(sunColor, biome?.sun.intensity ?? SUN.intensity);
   sun.name = "temperate-sun";
   sun.castShadow = true;
-  sun.shadow.normalBias = 0.035;
   sun.shadow.radius = biome?.sun.shadowRadius ?? BIOMES.forest.sun.shadowRadius;
   if (omitted.has("sun")) sun.intensity = 0;
   const farShadows = biome?.world === "alpine" || biome?.world === "desert";
+  const mapSize = farShadows ? 4096 : 2048;
+  // Coastal stones showed a lit rim at their base. One fine texel of normal bias ties the contact
+  // offset to shadow resolution. Other worlds keep their judged bias until close-ups prove a change.
+  const tightContacts = biome?.world === "coastal";
+  sun.shadow.normalBias = tightContacts ? (2 * rig.shadowExtents[0]) / mapSize : 0.035;
   const shadows = new VirtualShadowNode(sun, {
     clipExtents: [...rig.shadowExtents],
-    mapSize: farShadows ? 4096 : 2048,
+    mapSize,
+    // engine-override: footprint-wide slope bias detaches low-relief contacts such as beach stones.
+    ...(tightContacts ? { receiverPlaneBias: false } : {}),
     ...(farShadows ? { refreshStep: [0.2, 0.125] } : {}),
   });
   // Fade the outer cascade before its cached window ends, including its refresh trail.
