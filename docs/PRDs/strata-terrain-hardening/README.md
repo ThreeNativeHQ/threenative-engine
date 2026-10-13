@@ -34,9 +34,13 @@ Start with PRD-592 golden bytes and validation, then execute 585, 583, 587, 593,
 
 Current baseline: `pnpm build` and `pnpm check:docs` passed; six documentation contract spec files passed (244 tests). No runtime or performance acceptance is established by those checks.
 
-## Active worker checkouts
+## Current integration state
 
-PRD-592 validation and golden bytes are integrated at `6c40d8757`; its validation candidate passes 39 focused tests and preserves all 21 forest files, but the latest prescribed same-host timing reaches only 22.55% on a busy host, so the 30% target remains open. PRD-585 local coverage and the scaffold package-manager pin are integrated; 68 scaffold tests pass, while real CI and runtime acceptance remain open. PRD-583 forest cook, alternate LODs and both isolated-install dependency closures are integrated through `38c83ef48`; parent assets build and 17 cook tests pass, and the unskipped packed-game consumer passes on NVIDIA Turing; layered-material visual proof remains pending. PRD-587 server recovery is integrated at `5b8fbfa60`; its corrected queue is integrated locally and passes 45 focused tests, with UI and worker proofs open. PRD-593 owns the reused proof checkout; its corrected pinned-source generator passes 33 focused tests, while actual patch regeneration and all 31 predecessor compatibility checks remain in progress. The active owner checkouts remain `.worktrees/strata-terrain-bake`, `.worktrees/strata-editor-durability` and `.worktrees/strata-terrain-proof`; cleanup follows owner release and tracked, untracked and ignored-data checks. Codex coordinates this entire batch through PR #483.
+At merge `159d1ca78`, the batch has 49/62 verified phase boxes (repository bucket `prd:75%`) and 108/132 combined phase/acceptance boxes. PRDs 587, 588, 590 and 592 are complete; all other original requirements remain open. The integration checkout above is retained for this active goal.
+
+Develop integration resolves all six conflicted files, regenerates the Three patches with both morph pipeline sharing and bounded uploads, and fixes removed camera/renderer references through the extracted collaborator. Focused validation passes 261 tests with 4 skips; core typecheck, frozen install and scoped Biome pass. Full CI and remaining runtime/visual acceptance are not established by those checks.
+
+The versioned starter-asset release is now published. A fresh extracted terrain package, without checkout assets or URL overrides, downloads and validates the public 31,598,616-byte archive and extracts 18 entries. PRD-589 stays open pending the scaffolded-game runtime proof against that published archive.
 
 ## Look gate (owner decision, 2026-10-11)
 
