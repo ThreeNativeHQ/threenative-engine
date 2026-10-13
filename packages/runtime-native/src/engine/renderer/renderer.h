@@ -324,6 +324,20 @@ public:
      */
     bool blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat format);
     /**
+     * blitTo in two halves (PRD-610 AC-9): the game thread prepares the pipelines and bind groups,
+     * and `encodeBlit` records the pass on any thread without touching this renderer.
+     */
+    struct BlitPlan {
+        WGPUDevice device = nullptr;
+        WGPURenderPipeline pipeline = nullptr, over = nullptr;
+        WGPUBindGroup group = nullptr, overGroup = nullptr;
+        WGPUBuffer triangle = nullptr;
+        uint32_t location = 0;
+    };
+    std::optional<BlitPlan> prepareBlit(WGPUTextureFormat format);
+    /** Records the plan's pass into `target` and releases its bind groups. */
+    static WGPUCommandBuffer encodeBlit(BlitPlan& plan, WGPUTextureView target);
+    /**
      * PRD-554: a UI overlay's newest frame, premultiplied 8-bit rows from the top (`bgra` for a desktop
      * web view's B,G,R,A; `stride` bytes per row, 0 for tight), which blitTo draws "over" the frame,
      * stretched to the target. `version` names the pixels: the same version uploads nothing, so a

@@ -474,6 +474,11 @@ struct Session {
     std::unique_ptr<Presenter> presenter;
     EventQueue events;
     std::unique_ptr<Renderer> renderer;
+    // PRD-610 AC-9: submit, acquire, blit, present and the device poll run here, off the game thread,
+    // while the next frame's JS runs. TN_GPU_THREAD=0 keeps them on the game thread.
+    std::shared_ptr<GpuThread> gpuThread;
+    double gpuThreadCpuMs = -1;  // the GPU thread's CPU for the previous frame's present job
+    double gpuJobCpuMs = -1;     // written by that job; copied above only after a wait
     world::FixedStepClock clock{kTickStep, 5};
     double nowMs = 0;
     std::unique_ptr<inspect::Endpoint> endpoint;
@@ -570,6 +575,12 @@ int Session::initialize() {
     const uint32_t height = presenter ? presenter->height() : surfaceConfig().height;
     renderer->setSize(width, height);
     renderer->setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+#if !defined(__ANDROID__)
+    if (const char* flag = std::getenv("TN_GPU_THREAD"); presenter && !(flag && std::strcmp(flag, "0") == 0)) {
+        gpuThread = std::make_shared<GpuThread>();
+        renderer->gpu().setThread(gpuThread);
+    }
+#endif
     startupStage("renderer-ready");
     initialized = true;
     startupStage("game-initialize-begin");
@@ -658,6 +669,7 @@ int Session::initialize() {
         if (!refreshView()) { if (spans) gameSpan(kHostFrameSpan, 1); return; }
 
         if (presenter && (presenter->width() != window.width || presenter->height() != window.height)) {
+            if (gpuThread) gpuThread->wait();  // the previous present still uses the surface
             presenter->resize(window.width, window.height);
             renderer->setSize(presenter->width(), presenter->height());
             if (game.uiResize) game.uiResize(int(window.width), int(window.height));
@@ -683,6 +695,15 @@ int Session::initialize() {
             gameSpan(kHostFrameSpan, 1);
             frameSpans = gameSpanTiming(gameMs);
         }
+        // One frame in flight: the previous frame's present job ends before this frame touches the queue.
+        // The JS above ran while it was still going.
+        if (gpuThread) {
+            gpuThread->wait();
+            gpuThreadCpuMs = gpuJobCpuMs;
+        }
+        // The page's newest frame goes over the world in the blit (PRD-554); uploaded before the render
+        // so its queue write never waits for this frame's submit on the GPU thread.
+        if (presenter && game.uiDraw) game.uiDraw(*renderer);
         const auto renderBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double renderCpuBegin = metrics ? threadCpuMs() : -1;
         database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1});
@@ -695,13 +716,30 @@ int Session::initialize() {
         if (presenter) {
             Presenter::Frame target;
             if (firstFrame) startupStage("first-acquire-begin");
-            // The page's newest frame goes over the world in the same blit (PRD-554).
-            if (game.uiDraw) game.uiDraw(*renderer);
             const auto presentBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-            if (presenter->begin(target)) {
+            const auto format = static_cast<WGPUTextureFormat>(context->getPreferredFormat());
+            if (gpuThread && !firstFrame) {
+                // Prepared here, recorded there: the job reads the plan and the presenter, never the renderer.
+                if (auto plan = renderer->prepareBlit(format)) {
+                    gpuThread->post([plan = *plan, presenter = presenter.get(), queue = context->getQueue(),
+                                     stats = &gpuJobCpuMs]() mutable {
+                        const double begin = threadCpuMs();
+                        Presenter::Frame frame;
+                        WGPUCommandBuffer commands = presenter->begin(frame) ? Renderer::encodeBlit(plan, frame.color) : nullptr;
+                        if (commands) {
+                            wgpuQueueSubmit(queue, 1, &commands);
+                            wgpuCommandBufferRelease(commands);
+                            presenter->present();
+                        } else {
+                            wgpuBindGroupRelease(plan.group);
+                            if (plan.overGroup) wgpuBindGroupRelease(plan.overGroup);
+                        }
+                        *stats = threadCpuMs() - begin;  // read by the game thread after its next wait
+                    });
+                }
+            } else if (presenter->begin(target)) {
                 // The window carries the very frame the render database just built.
-                renderer->blitTo(context->getQueue(), target.color,
-                                static_cast<WGPUTextureFormat>(context->getPreferredFormat()));
+                renderer->blitTo(context->getQueue(), target.color, format);
                 // The swap call alone, on the clock the legacy host uses around wgpuSurfacePresent.
                 const double presentCpuBegin = metrics ? threadCpuMs() : -1;
                 const double presentInstructionsBegin = metrics ? threadInstructions() : -1;
@@ -742,7 +780,9 @@ int Session::initialize() {
         }
         // Bounded by iteration count, never by a wait: a readback completes on a later drain of
         // the event queue (GpuResources::readTexture), and the swapchain's present paces the loop.
-        for (int i = 0; i < 100000 && (readbackInFlight || events.pending()); ++i) {
+        // With a GPU thread the poll is one more posted job, after the present; what it delivers
+        // drains on a later frame.
+        for (int i = 0; !gpuThread && i < 100000 && (readbackInFlight || events.pending()); ++i) {
             renderer->poll();
             events.drain();
             if (!readbackInFlight && events.pending() == 0)
@@ -776,6 +816,12 @@ int Session::initialize() {
                 auto members = sample.members();
                 members.emplace_back("cpuFrameKInstructions", json::Value::makeNumber(std::round(
                     (updateInstructions + threadInstructions() - instructionsFrameBegin - presentInstructions) / 1e3)));
+                sample = json::Value::makeObject(std::move(members));
+            }
+            if (gpuThread && gpuThreadCpuMs >= 0) {
+                // The previous frame's submit, acquire, blit and present, now off the game thread.
+                auto members = sample.members();
+                members.emplace_back("gpuThreadCpuMs", json::Value::makeNumber(gpuThreadCpuMs));
                 sample = json::Value::makeObject(std::move(members));
             }
             if (spans) {

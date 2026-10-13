@@ -49,9 +49,60 @@ GpuStatus fromHandleError(HandleError error) {
 
 size_t EventQueue::drain() {
     std::vector<std::function<void()>> ready;
-    ready.swap(events_);
+    {
+        std::lock_guard lock(mutex_);
+        ready.swap(events_);
+    }
     for (auto& event : ready) event();
     return ready.size();
+}
+
+GpuThread::GpuThread() {
+    thread_ = std::thread([this] {
+        std::unique_lock lock(mutex_);
+        for (;;) {
+            work_.wait(lock, [this] { return stopping_ || !pending_.empty(); });  // TN_WORKER_ONLY: only inside the GPU thread
+            if (pending_.empty()) return;
+            auto job = std::move(pending_.front());
+            pending_.pop_front();
+            busy_ = true;
+            lock.unlock();
+            job();
+            lock.lock();
+            busy_ = false;
+            ++ran_;
+            if (pending_.empty()) idle_.notify_all();
+        }
+    });
+}
+
+GpuThread::~GpuThread() {
+    {
+        std::lock_guard lock(mutex_);
+        stopping_ = true;
+    }
+    work_.notify_one();
+    thread_.join();  // runs what was posted first: a posted submit still reaches the queue
+}
+
+void GpuThread::post(std::function<void()> job) {
+    {
+        std::lock_guard lock(mutex_);
+        pending_.push_back(std::move(job));
+    }
+    work_.notify_one();
+}
+
+void GpuThread::wait() {
+    std::unique_lock lock(mutex_);
+    // The game thread waits here for the previous frame's present job, once per frame: the swap it
+    // used to block in itself. Never on GPU completion, and only the native player starts a GpuThread.
+    idle_.wait(lock, [this] { return pending_.empty() && !busy_; });  // TN_WORKER_ONLY: GpuThread::wait frame join
+}
+
+uint64_t GpuThread::ran() const {
+    std::lock_guard lock(mutex_);
+    return ran_;
 }
 
 void GpuResources::Shared::collect() {
@@ -66,6 +117,7 @@ GpuResources::GpuResources(WGPUInstance instance, WGPUDevice device, WGPUQueue q
     : instance_(instance), device_(device), queue_(queue), events_(events), handles_(deviceGeneration) {}
 
 GpuResources::~GpuResources() {
+    sync();  // a posted job may still read these
     for (Record& record : records_) release(record);
     if (shared_.use_count() > 1) return;  // a table sharing the serial still submits: it frees them
     for (PendingDestroy& entry : shared_->pending) release(entry.record);
@@ -138,6 +190,16 @@ Handle GpuResources::createTexture(uint32_t width, uint32_t height, WGPUTextureF
     return handle;
 }
 
+void GpuResources::setThread(std::shared_ptr<GpuThread> thread) {
+    sync();
+    shared_->thread = std::move(thread);
+}
+
+void GpuResources::post(std::function<void()> job) const {
+    if (shared_->thread) shared_->thread->post(std::move(job));
+    else job();
+}
+
 GpuStatus GpuResources::writeBuffer(Handle buffer, uint64_t offset, const void* data, uint64_t size) {
     GpuStatus status;
     Record* target = record(buffer, kBuffer, status);
@@ -145,7 +207,19 @@ GpuStatus GpuResources::writeBuffer(Handle buffer, uint64_t offset, const void* 
     if (offset > target->size || size > target->size - offset || size % 4 != 0 || offset % 4 != 0) {
         return GpuStatus::OutOfRange;
     }
-    wgpuQueueWriteBuffer(queue_, target->buffer, offset, data, size);
+    if (shared_->thread) {
+        // Queued behind the submits already posted, with its own copy of the bytes, as a browser's
+        // GPU process takes a write: the game thread never waits for the GPU thread here.
+        WGPUBuffer gpuBuffer = target->buffer;
+        wgpuBufferAddRef(gpuBuffer);
+        std::vector<uint8_t> bytes(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size);
+        shared_->thread->post([queue = queue_, gpuBuffer, offset, bytes = std::move(bytes)] {
+            wgpuQueueWriteBuffer(queue, gpuBuffer, offset, bytes.data(), bytes.size());
+            wgpuBufferRelease(gpuBuffer);
+        });
+    } else {
+        wgpuQueueWriteBuffer(queue_, target->buffer, offset, data, size);
+    }
     queueWriteBytes_ += size;
     return GpuStatus::Ok;
 }
@@ -162,7 +236,17 @@ GpuStatus GpuResources::writeTexture(Handle texture, const void* pixels, uint64_
     layout.bytesPerRow = target->width * target->bytesPerPixel;
     layout.rowsPerImage = target->height;
     const WGPUExtent3D extent = {target->width, target->height, 1};
-    wgpuQueueWriteTexture(queue_, &destination, pixels, size, &layout, &extent);
+    if (shared_->thread) {
+        // Posted with its own copy, like writeBuffer.
+        wgpuTextureAddRef(destination.texture);
+        std::vector<uint8_t> bytes(static_cast<const uint8_t*>(pixels), static_cast<const uint8_t*>(pixels) + size);
+        shared_->thread->post([queue = queue_, destination, layout, extent, bytes = std::move(bytes)] {
+            wgpuQueueWriteTexture(queue, &destination, bytes.data(), bytes.size(), &layout, &extent);
+            wgpuTextureRelease(destination.texture);
+        });
+    } else {
+        wgpuQueueWriteTexture(queue_, &destination, pixels, size, &layout, &extent);
+    }
     return GpuStatus::Ok;
 }
 
@@ -207,7 +291,8 @@ void GpuResources::readInto(WGPUCommandEncoder encoder, WGPUBuffer staging, uint
             wgpuBufferRelease(request->staging);
         });
     };
-    wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, size, info);
+    // After the submit that fills it: mapping a buffer an unsubmitted copy still writes is an error.
+    post([staging, size, info] { wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, size, info); });
 }
 
 GpuStatus GpuResources::readBuffer(Handle buffer, uint64_t offset, uint64_t size, ReadbackCallback done) {
@@ -297,44 +382,50 @@ WGPUTexture GpuResources::texture(Handle handle) const {
 }
 
 uint64_t GpuResources::submit(WGPUCommandBuffer commands) {
-    wgpuQueueSubmit(queue_, 1, &commands);
-    wgpuCommandBufferRelease(commands);
     const uint64_t serial = ++shared_->submitted;
+    post([queue = queue_, commands, owner = std::weak_ptr<Shared>(shared_), events = &events_, serial] {
+        wgpuQueueSubmit(queue, 1, &commands);
+        wgpuCommandBufferRelease(commands);
 
-    struct WorkDone {
-        std::weak_ptr<Shared> owner;
-        EventQueue* events;
-        uint64_t serial;
-    };
-    WGPUQueueWorkDoneCallbackInfo info = {};
-    info.mode = WGPUCallbackMode_AllowProcessEvents;
-    info.userdata1 = new WorkDone{shared_, &events_, serial};
-    info.callback = [](WGPUQueueWorkDoneStatus,
+        struct WorkDone {
+            std::weak_ptr<Shared> owner;
+            EventQueue* events;
+            uint64_t serial;
+        };
+        WGPUQueueWorkDoneCallbackInfo info = {};
+        info.mode = WGPUCallbackMode_AllowProcessEvents;
+        info.userdata1 = new WorkDone{owner, events, serial};
+        info.callback = [](WGPUQueueWorkDoneStatus,
 #if defined(MYSTRAL_WEBGPU_DAWN)
-                       WGPUStringView,
+                           WGPUStringView,
 #endif
-                       void* userdata, void*) {
-        std::unique_ptr<WorkDone> done(static_cast<WorkDone*>(userdata));
-        // A backend may fire this at device release, after the resource table and the event queue
-        // it posts to are gone (wgpu does); the queue outlives the table, so a live owner is the test.
-        if (done->owner.expired()) return;
-        done->events->post([owner = done->owner, serial = done->serial]() {
-            if (auto shared = owner.lock()) {
-                shared->completed = std::max(shared->completed, serial);
-                shared->collect();
-            }
-        });
-    };
-    wgpuQueueOnSubmittedWorkDone(queue_, info);
+                           void* userdata, void*) {
+            std::unique_ptr<WorkDone> done(static_cast<WorkDone*>(userdata));
+            // A backend may fire this at device release, after the resource table and the event queue
+            // it posts to are gone (wgpu does); the queue outlives the table, so a live owner is the test.
+            if (done->owner.expired()) return;
+            done->events->post([owner = done->owner, serial = done->serial]() {
+                if (auto shared = owner.lock()) {
+                    shared->completed = std::max(shared->completed, serial);
+                    shared->collect();
+                }
+            });
+        };
+        wgpuQueueOnSubmittedWorkDone(queue, info);
+    });
     return serial;
 }
 
 void GpuResources::poll() {
+    post([instance = instance_, device = device_] {
 #if defined(MYSTRAL_WEBGPU_DAWN)
-    wgpuInstanceProcessEvents(instance_);
+        (void)device;
+        wgpuInstanceProcessEvents(instance);
 #else
-    wgpuDevicePoll(device_, false, nullptr);
+        (void)instance;
+        wgpuDevicePoll(device, false, nullptr);
 #endif
+    });
 }
 
 }  // namespace tn::engine

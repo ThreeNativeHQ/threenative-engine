@@ -1,8 +1,12 @@
 #pragma once
 
+#include <condition_variable>  // TN_WORKER_ONLY: GpuThread parks its worker and joins one frame
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 #include <webgpu/webgpu.h>
@@ -18,13 +22,49 @@ namespace tn::engine {
  */
 class EventQueue {
 public:
-    void post(std::function<void()> event) { events_.push_back(std::move(event)); }
+    /** Thread-safe: with a GPU thread, Dawn fires callbacks there and they post here. */
+    void post(std::function<void()> event) {
+        std::lock_guard lock(mutex_);
+        events_.push_back(std::move(event));
+    }
     /** Runs the events posted so far; events they post wait for the next drain. */
     size_t drain();
-    size_t pending() const { return events_.size(); }
+    size_t pending() const {
+        std::lock_guard lock(mutex_);
+        return events_.size();
+    }
 
 private:
+    mutable std::mutex mutex_;
     std::vector<std::function<void()>> events_;
+};
+
+/**
+ * One thread that runs queue work in the order it was posted (PRD-610 AC-9): submits, the present
+ * and the device poll leave the game thread, as a browser's GPU process takes them from the page.
+ * The game thread calls `wait()` before it touches the queue or the targets a posted job reads.
+ */
+class GpuThread {
+public:
+    GpuThread();
+    ~GpuThread();
+    GpuThread(const GpuThread&) = delete;
+    GpuThread& operator=(const GpuThread&) = delete;
+
+    void post(std::function<void()> job);
+    /** Returns once every job posted so far has run. */
+    void wait();
+    /** Jobs run so far; a test reads it. */
+    uint64_t ran() const;
+
+private:
+    mutable std::mutex mutex_;
+    std::condition_variable work_;  // TN_WORKER_ONLY: parks the GPU thread between jobs
+    std::condition_variable idle_;  // TN_WORKER_ONLY: GpuThread::wait, the one frame-pacing join
+    std::deque<std::function<void()>> pending_;
+    bool busy_ = false, stopping_ = false;
+    uint64_t ran_ = 0;
+    std::thread thread_;
 };
 
 enum class GpuStatus : uint8_t {
@@ -74,6 +114,16 @@ public:
     /** One serial with `other`, a table on the same queue: a destroy here waits for its submissions too. */
     void shareSubmissions(const GpuResources& other) { shared_ = other.shared_; }
 
+    /** Queue work (submits, maps, polls) runs on `thread` from now on; null runs it inline again. */
+    void setThread(std::shared_ptr<GpuThread> thread);
+    GpuThread* thread() const { return shared_->thread.get(); }
+    /** Waits for the posted queue work; a no-op without a GPU thread. */
+    void sync() const {
+        if (shared_->thread) shared_->thread->wait();
+    }
+    /** Runs `job` on the GPU thread after the work posted before it, or now without one. */
+    void post(std::function<void()> job) const;
+
     WGPUBuffer buffer(Handle handle) const;
     WGPUTexture texture(Handle handle) const;
 
@@ -105,6 +155,7 @@ private:
     // Outlived by nothing that captures it: callbacks hold a weak reference, so a callback that
     // arrives after this object is gone finds it expired and does nothing.
     struct Shared {
+        std::shared_ptr<GpuThread> thread;
         uint64_t submitted = 0;
         uint64_t completed = 0;
         std::vector<PendingDestroy> pending;

@@ -491,6 +491,11 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
         static_cast<WGPUFeatureName>(WGPUNativeFeature_TextureAdapterSpecificFormatFeatures),
         "texture-adapter-specific-format-features");
 #endif
+#if defined(MYSTRAL_WEBGPU_DAWN) && defined(TN_ENGINE_HOST_SERVICES)
+    // Dawn locks the device around each call only when asked: the engine's GPU thread submits and
+    // presents while the game thread encodes, and pipeline workers create pipelines (PRD-610 AC-9).
+    appendIfSupported(WGPUFeatureName_ImplicitDeviceSynchronization, "implicit-device-synchronization");
+#endif
     appendIfSupported(WGPUFeatureName_TextureCompressionBC, "texture-compression-bc");
     appendIfSupported(WGPUFeatureName_TextureCompressionETC2, "texture-compression-etc2");
     appendIfSupported(WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc");

@@ -486,6 +486,7 @@ void Renderer::setProbeVolume(const std::string& name, const probes::ProbeVolume
     WGPUTextureDataLayout_Compat layout{};
     layout.bytesPerRow = size.width * 4 * sizeof(float);
     layout.rowsPerImage = size.height;
+    gpu_.sync();  // ordered after any submit still on the GPU thread
     wgpuQueueWriteTexture(queue_, &destination, data.data(), data.size_bytes(), &layout, &size);
     if (resized && uniformCapacity_) rebuildGroups();
 }
@@ -761,6 +762,7 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     width = std::max(width, 1u);
     height = std::max(height, 1u);
     if (width == width_ && height == height_) return;
+    gpu_.sync();  // a posted blit still reads the targets released here
     releaseTargets();
     width_ = width;
     height_ = height;
@@ -940,6 +942,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         layout.bytesPerRow = texture.width * texture.bytesPerTexel();
         layout.rowsPerImage = texture.height;
         const WGPUExtent3D extent = {texture.width, texture.height, texture.depth};
+        gpu_.sync();  // ordered after any submit still on the GPU thread
         wgpuQueueWriteTexture(queue_, &destination, texture.data.data(), texture.data.size(), &layout, &extent);
         textures_->uploadBytes += texture.data.size();
         WGPUTextureViewDescriptor view = {};
@@ -984,6 +987,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         layout.bytesPerRow = texture.width * texture.bytesPerTexel();
         layout.rowsPerImage = texture.height;
         const WGPUExtent3D extent = {texture.width, texture.height, 1};
+        gpu_.sync();  // both uploads are queue work: ordered after any submit still on the GPU thread
         if (texture.external) {
             if (!textures_->copyExternal(texture.external->id, record.texture, texture.flipY))
                 throw std::runtime_error("TN_NATIVE_TEXTURE_UPLOAD_FAILED: the host could not copy its image");
@@ -3040,21 +3044,43 @@ void Renderer::submit(WGPUCommandBuffer commands) {
     gpu_.submit(commands);
 }
 
-bool Renderer::blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat format) {
-    if (!target || !colorView_)
-        return false;
-    // The finished frame is already tone mapped and encoded: the blit copies it, never re-encodes it.
-    WGPURenderPipeline pipeline = copyPipeline(format, 0);
-    if (!pipeline)
-        return false;
-    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
-    WGPUBindGroup group = bindGroup(layout, blitFragment_, outputUniforms_, colorView_, outputSampler_);
-    wgpuBindGroupLayoutRelease(layout);
-    if (!group)
-        return false;
+bool Renderer::blitTo(WGPUQueue, WGPUTextureView target, WGPUTextureFormat format) {
+    if (!target) return false;
+    auto plan = prepareBlit(format);
+    if (!plan) return false;
+    submit(encodeBlit(*plan, target));
+    return true;
+}
 
+std::optional<Renderer::BlitPlan> Renderer::prepareBlit(WGPUTextureFormat format) {
+    if (!colorView_) return std::nullopt;
+    // The finished frame is already tone mapped and encoded: the blit copies it, never re-encodes it.
+    BlitPlan plan;
+    plan.device = device_;
+    plan.pipeline = copyPipeline(format, 0);
+    if (!plan.pipeline) return std::nullopt;
+    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(plan.pipeline, 0);
+    plan.group = bindGroup(layout, blitFragment_, outputUniforms_, colorView_, outputSampler_);
+    wgpuBindGroupLayoutRelease(layout);
+    if (!plan.group) return std::nullopt;
+    plan.triangle = gpu_.buffer(outputTriangle_);
+    plan.location = blitVertex_.attributes.at(0).location;
+    // The UI overlay's frame over the world, in the same pass: the same copy program samples it, and
+    // premultiplied "over" blending keeps whatever the page left transparent.
+    if (overlayView_) {
+        plan.over = copyPipeline(format, 3);
+        if (plan.over) {
+            WGPUBindGroupLayout overLayout = wgpuRenderPipelineGetBindGroupLayout(plan.over, 0);
+            plan.overGroup = bindGroup(overLayout, blitFragment_, outputUniforms_, overlayView_, outputSampler_);
+            wgpuBindGroupLayoutRelease(overLayout);
+        }
+    }
+    return plan;
+}
+
+WGPUCommandBuffer Renderer::encodeBlit(BlitPlan& plan, WGPUTextureView target) {
     WGPUCommandEncoderDescriptor encoderDesc = {};
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(plan.device, &encoderDesc);
     WGPURenderPassColorAttachment color = {};
     color.view = target;
     color.loadOp = WGPULoadOp_Clear;
@@ -3067,35 +3093,24 @@ bool Renderer::blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
-    wgpuRenderPassEncoderSetPipeline(pass, pipeline);
-    wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
-    wgpuRenderPassEncoderSetVertexBuffer(pass, blitVertex_.attributes.at(0).location,
-                                         gpu_.buffer(outputTriangle_), 0, 24);
+    wgpuRenderPassEncoderSetPipeline(pass, plan.pipeline);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, plan.group, 0, nullptr);
+    wgpuRenderPassEncoderSetVertexBuffer(pass, plan.location, plan.triangle, 0, 24);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-    // The UI overlay's frame over the world, in the same pass: the same copy program samples it, and
-    // premultiplied "over" blending keeps whatever the page left transparent.
-    WGPUBindGroup overlayGroup = nullptr;
-    if (overlayView_) {
-        WGPURenderPipeline over = copyPipeline(format, 3);
-        if (over) {
-            WGPUBindGroupLayout overLayout = wgpuRenderPipelineGetBindGroupLayout(over, 0);
-            overlayGroup = bindGroup(overLayout, blitFragment_, outputUniforms_, overlayView_, outputSampler_);
-            wgpuBindGroupLayoutRelease(overLayout);
-        }
-        if (overlayGroup) {
-            wgpuRenderPassEncoderSetPipeline(pass, over);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, overlayGroup, 0, nullptr);
-            wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-        }
+    if (plan.overGroup) {
+        wgpuRenderPassEncoderSetPipeline(pass, plan.over);
+        wgpuRenderPassEncoderSetBindGroup(pass, 0, plan.overGroup, 0, nullptr);
+        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
     }
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
     WGPUCommandBufferDescriptor commandDesc = {};
-    submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, &commandDesc);
     wgpuCommandEncoderRelease(encoder);
-    wgpuBindGroupRelease(group);
-    if (overlayGroup) wgpuBindGroupRelease(overlayGroup);
-    return true;
+    wgpuBindGroupRelease(plan.group);
+    if (plan.overGroup) wgpuBindGroupRelease(plan.overGroup);
+    plan.group = plan.overGroup = nullptr;
+    return commands;
 }
 
 void Renderer::setOverlay(const uint8_t* pixels, uint32_t width, uint32_t height, uint64_t version, uint32_t stride,
