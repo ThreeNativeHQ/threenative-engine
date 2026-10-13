@@ -52,6 +52,7 @@ import {
   resolveAxes,
   uniqueMaterialColor,
 } from "../../examples/engine-load-test/src/workload.js";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   assertHardwareAdapter,
   assertPlainThreePilot,
@@ -4328,7 +4329,7 @@ describe("the tn-engine-web arm (PRD-573 slice 7)", () => {
   });
 
   it("refuses a Wasm older than the engine sources it is built from", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tn-web-engine-"));
+    const root = makeTempDirSync("tn-web-engine-");
     const wasm = path.join(root, WEB_ENGINE_WASM);
     const source = path.join(root, "packages/runtime-native/src/engine/scene/object3d.cpp");
     fs.mkdirSync(path.dirname(wasm), { recursive: true });
@@ -4347,7 +4348,7 @@ describe("the tn-engine-web arm (PRD-573 slice 7)", () => {
   });
 
   it("counts the shipped .js and .wasm bytes, raw and gzip", async () => {
-    const dist = fs.mkdtempSync(path.join(os.tmpdir(), "tn-web-dist-"));
+    const dist = makeTempDirSync("tn-web-dist-");
     fs.mkdirSync(path.join(dist, "assets"));
     fs.writeFileSync(path.join(dist, "assets/a.js"), "x".repeat(1000));
     fs.writeFileSync(path.join(dist, "assets/b.wasm"), "y".repeat(500));

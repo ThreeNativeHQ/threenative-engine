@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rename, rm, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rename, rm, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { expectedLadderCounts } from "../../examples/engine-load-test/src/ladder.js";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   type IPoint,
   deltaOf,
@@ -129,7 +129,7 @@ describe("perf-live", () => {
         ) => Promise<void>,
       ) => Promise<void>,
     ) {
-      const dir = await mkdtemp(path.join(tmpdir(), "perf-live-"));
+      const dir = await makeTempDir("perf-live-");
       const put = async (
         tag: string,
         arm: string,
