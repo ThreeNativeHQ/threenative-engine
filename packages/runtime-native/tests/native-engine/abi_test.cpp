@@ -10,7 +10,11 @@
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
 #include "engine/scene/nodes.h"
+#include "engine/scene/camera.h"
+#include "engine/scene/geometry.h"
+#include "engine/scene/projected_cull.h"
 
+#include <cmath>
 #include <cstring>
 #include <map>
 
@@ -1361,9 +1365,62 @@ void matrix_walk_count() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-610 AC-4: the projected-size cull reads a flat list of the tree, built once per hierarchy version, instead
+// of comparing type strings and casting every node every frame (7.7% of a Midway tick). The answer is the same:
+// a hidden subtree is skipped whole, a sub-threshold mesh is hidden for the frame, and an added mesh is seen.
+void projected_cull_list() {
+    using namespace tn::engine;
+    auto scene = std::make_shared<Scene>();
+    auto group = std::make_shared<Object3D>();
+    auto geometry = std::make_shared<BufferGeometry>();
+    auto narrow = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    narrow->setXYZ(0, -0.01, 0, 0).setXYZ(1, 0.01, 0, 0);
+    geometry->setAttribute("position", narrow);
+    auto nearMesh = std::make_shared<Mesh>(geometry, nullptr);
+    auto farMesh = std::make_shared<Mesh>(geometry, nullptr);
+    nearMesh->position.z = -2;
+    farMesh->position.z = -1000;
+    scene->add(*group);
+    group->add(*nearMesh);
+    group->add(*farMesh);
+    PerspectiveCamera camera(50, 1, 0.1, 5000);
+    camera.updateMatrixWorld();
+    scene->updateMatrixWorld();
+    const double scale = 720 / (2 * std::tan(25 * 3.141592653589793 / 180));
+    ProjectedCull cull;
+    for (int frame = 0; frame < 6; ++frame) {
+        const auto report = cull.apply(*scene, camera, true, scale, 2, true);
+        CHECK(report.considered == 2 && report.culled == 1);
+        CHECK(nearMesh->visible() && !farMesh->visible());
+    }
+    CHECK(cull.rebuilds() == 1);  // six frames, one walk of the tree
+    group->setVisible(false);
+    CHECK(cull.apply(*scene, camera, true, scale, 2, true).considered == 0);
+    group->setVisible(true);
+    CHECK(cull.apply(*scene, camera, true, scale, 2, true).considered == 2);
+    CHECK(cull.rebuilds() == 1);  // visibility is not a hierarchy change
+    auto added = std::make_shared<Mesh>(geometry, nullptr);
+    added->position.z = -3;
+    scene->add(*added);
+    scene->updateMatrixWorld();
+    const auto report = cull.apply(*scene, camera, true, scale, 2, true);
+    CHECK(report.considered == 3 && report.culled == 1 && cull.rebuilds() == 2);
+    cull.restore();
+    CHECK(farMesh->visible());
+    // A position attribute swapped on the geometry is read, not the one cached before it: the larger
+    // bound it gives keeps the far mesh above the pixel threshold.
+    auto wide = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    wide->setXYZ(0, -50, -50, -50).setXYZ(1, 50, 50, 50);
+    wide->setNeedsUpdate();
+    geometry->setAttribute("position", wide);
+    CHECK(cull.apply(*scene, camera, true, scale, 2, true).culled == 0);
+    cull.restore();
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
-             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count})
+             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count},
+             {"projected_cull_list", projected_cull_list})

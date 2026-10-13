@@ -7,8 +7,10 @@
 
 namespace tn::engine {
 
+class BufferAttribute;
 class BufferGeometry;
 class Camera;
+class Mesh;
 class Object3D;
 
 /**
@@ -36,7 +38,34 @@ public:
     /** Shows again every object the last apply() hid. */
     void restore();
 
+    /** Times apply() rebuilt its flat walk (a hierarchy change, another root or camera); for the ctest. */
+    [[nodiscard]] uint64_t rebuilds() const { return rebuilds_; }
+
 private:
+    /**
+     * The tree under the root in three's traverse order, built once per hierarchy version: a node, where its
+     * subtree ends (so a hidden node skips it whole, as traverseVisible does) and, for a renderable, its mesh and
+     * whether it hangs under the camera. A frame then reads no type string and casts nothing (PRD-610 AC-4).
+     */
+    struct Node {
+        Object3D* object;
+        const Mesh* mesh;  // null: not a renderable
+        uint32_t end;            // index past this node's subtree
+        bool cameraAttached;
+        bool instanced;          // an InstancedMesh: its own bound comes first
+        // The mesh's geometry and its position attribute at that geometry's revision, so a frame does not
+        // look "position" up in the attribute map (most of the cull's time in Midway flight).
+        const BufferGeometry* geometry = nullptr;
+        uint64_t geometryRevision = 0;
+        const BufferAttribute* position = nullptr;
+    };
+    std::vector<Node> nodes_;
+    uint64_t nodesVersion_ = 0;
+    const Object3D* nodesRoot_ = nullptr;
+    const Camera* nodesCamera_ = nullptr;
+    uint64_t rebuilds_ = 0;
+    void rebuild(Object3D& root, const Camera& camera);
+
     struct Version {
         std::weak_ptr<const BufferGeometry> geometry;
         uint32_t version = 0;
