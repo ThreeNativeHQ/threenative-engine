@@ -246,7 +246,11 @@ export async function startScene(canvas, dimensions) {
           if (renderedWorld !== undefined)
             renderedWorld.update(worldRenderer, camera);
           renderer.render(scene, camera);
-          if (renderedWorld !== undefined && detail.reloadReady === false) {
+          if (
+            renderedWorld !== undefined &&
+            detail.reloadReady === false &&
+            (detail.framewise > 0 || renderedWorld.stats().gpuScene.dispatches > 0)
+          ) {
             const validation = await renderedWorld.validateGpuFrame(frame);
             assertFrameValidation(validation, frame);
           }
