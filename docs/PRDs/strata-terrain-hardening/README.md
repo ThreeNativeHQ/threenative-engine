@@ -20,7 +20,7 @@
 - [PRD-585 — Strata's proof runs in CI, not only by hand](PRD-585-strata-proof-runs-in-ci.md)
 - [PRD-587 — The terrain editor never drops an edit](../done/PRD-587-the-terrain-editor-never-drops-an-edit.md)
 - [PRD-588 — The terrain editor is typed modules, not one 1481-line closure](../done/PRD-588-the-terrain-editor-is-typed-modules.md)
-- [PRD-589 — `@threenative/terrain` ships code, not 33 MB of kit data](PRD-589-the-terrain-package-ships-code-not-kit-data.md)
+- [PRD-589 — `@threenative/terrain` ships code, not 33 MB of kit data](../done/PRD-589-the-terrain-package-ships-code-not-kit-data.md)
 - [PRD-590 — One starter-world source, not five copies](../done/PRD-590-one-starter-world-source-not-five.md)
 - [PRD-591 — The preview stops re-implementing engine mechanisms](PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md)
 - [PRD-592 — Terrain core fails closed and erodes without allocating](../done/PRD-592-terrain-core-fails-closed-and-erodes-without-allocating.md)
@@ -36,11 +36,11 @@ Current baseline: `pnpm build` and `pnpm check:docs` passed; six documentation c
 
 ## Current integration state
 
-At merge `159d1ca78`, the batch has 49/62 verified phase boxes (repository bucket `prd:75%`) and 108/132 combined phase/acceptance boxes. PRDs 587, 588, 590 and 592 are complete; all other original requirements remain open. The integration checkout above is retained for this active goal.
+At merge `159d1ca78`, the batch has 50/62 verified phase boxes (repository bucket `prd:75%`) and 110/132 combined phase/acceptance boxes. PRDs 587, 588, 589, 590 and 592 are complete; all other original requirements remain open. The integration checkout above is retained for this active goal.
 
 Develop integration resolves all six conflicted files, regenerates the Three patches with both morph pipeline sharing and bounded uploads, and fixes removed camera/renderer references through the extracted collaborator. Focused validation passes 261 tests with 4 skips; core typecheck, frozen install and scoped Biome pass. Full CI and remaining runtime/visual acceptance are not established by those checks.
 
-The versioned starter-asset release is now published. A fresh extracted terrain package, without checkout assets or URL overrides, downloads and validates the public 31,598,616-byte archive and extracts 18 entries. PRD-589 stays open pending the scaffolded-game runtime proof against that published archive.
+The versioned starter-asset release is now published. A fresh extracted terrain package, without checkout assets or URL overrides, downloads and validates the public 31,598,616-byte archive and extracts 18 entries. A fresh-cache scaffolded forest now passes the published-archive runtime gate (819 frames, NVIDIA/Turing); PRD-589 is complete and archived.
 
 ## Look gate (owner decision, 2026-10-11)
 
