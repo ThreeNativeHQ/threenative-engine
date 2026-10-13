@@ -32,6 +32,23 @@
 #include "mystral/webgpu/presentation.h"
 #include "mystral/webgpu_compat.h"
 
+// The legacy host's SDL-to-DOM input translation (platform/input.cpp), which declares none of these.
+namespace mystral::platform {
+void processKeyboardEvent(const SDL_KeyboardEvent& event, bool isDown);
+void processMouseMotion(const SDL_MouseMotionEvent& event);
+void processMouseButton(const SDL_MouseButtonEvent& event, bool isDown);
+void processMouseWheel(const SDL_MouseWheelEvent& event);
+
+// input.cpp's touch path scales by the window; the player owns exactly one, and does not link platform/window.cpp.
+void getWindowSize(int* width, int* height) {
+    int count = 0;
+    SDL_Window** windows = SDL_GetWindows(&count);
+    *width = *height = 0;
+    if (windows != nullptr && count > 0) SDL_GetWindowSize(windows[0], width, height);
+    SDL_free(windows);
+}
+}  // namespace mystral::platform
+
 using namespace tn::engine;
 
 namespace tn::engine::player {
@@ -329,17 +346,27 @@ bool pumpEvents(Window& window, const Game& game) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             return false;
         // The mouse reaches an attached UI first, as on the legacy host (PRD-554), in window-normalized
-        // coordinates.
-        if (game.uiPointer && window.width > 0 && window.height > 0 &&
-            (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
-             event.type == SDL_EVENT_MOUSE_MOTION)) {
+        // coordinates; what the UI declines is the game's.
+        const bool mouse = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+                           event.type == SDL_EVENT_MOUSE_MOTION;
+        if (game.uiPointer && window.width > 0 && window.height > 0 && mouse) {
             const bool motion = event.type == SDL_EVENT_MOUSE_MOTION;
             const float x = motion ? event.motion.x : event.button.x, y = motion ? event.motion.y : event.button.y;
             const SDL_MouseButtonFlags held = SDL_GetMouseState(nullptr, nullptr);
             int buttons = (held & SDL_BUTTON_LMASK ? 1 : 0) | (held & SDL_BUTTON_RMASK ? 2 : 0) | (held & SDL_BUTTON_MMASK ? 4 : 0);
             const char* type = motion ? "pointermove" : event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "pointerdown" : "pointerup";
-            game.uiPointer(type, x / float(window.width), y / float(window.height), buttons);
-            continue;
+            if (game.uiPointer(type, x / float(window.width), y / float(window.height), buttons)) continue;
+        }
+        // A person's keys, mouse and wheel become the DOM events the game's listeners read, through the
+        // legacy host's translation (platform/input.cpp); a game runtime installs the callbacks.
+        switch (event.type) {
+            case SDL_EVENT_KEY_DOWN: mystral::platform::processKeyboardEvent(event.key, true); continue;
+            case SDL_EVENT_KEY_UP: mystral::platform::processKeyboardEvent(event.key, false); continue;
+            case SDL_EVENT_MOUSE_MOTION: mystral::platform::processMouseMotion(event.motion); continue;
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: mystral::platform::processMouseButton(event.button, true); continue;
+            case SDL_EVENT_MOUSE_BUTTON_UP: mystral::platform::processMouseButton(event.button, false); continue;
+            case SDL_EVENT_MOUSE_WHEEL: mystral::platform::processMouseWheel(event.wheel); continue;
+            default: break;
         }
         if (event.type != SDL_EVENT_WINDOW_RESIZED && event.type != SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
             continue;

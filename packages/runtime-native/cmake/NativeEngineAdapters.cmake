@@ -235,6 +235,21 @@ if(TN_NODE_EXECUTABLE)
                 $<TARGET_FILE:tn-native-engine-player-v8>)
         set_tests_properties(native_engine_player_ui_overlay PROPERTIES LABELS "native-engine" TIMEOUT 300)
     endif()
+    # A person's keys, mouse and wheel reach the game: real X11 events (xdotool, XTEST) on the player's window under
+    # its own Xvfb, not the playtest mailbox. The second run has the web HUD overlay attached.
+    find_program(TN_XDOTOOL xdotool)
+    if(TN_XDOTOOL AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_test(NAME native_engine_player_real_input
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-real-input.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_real_input PROPERTIES LABELS "native-engine" TIMEOUT 300)
+        if(TN_ENGINE_PLAYER_UI_OVERLAY)
+            add_test(NAME native_engine_player_real_input_ui
+                COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-real-input.mjs
+                    $<TARGET_FILE:tn-native-engine-player-v8> --ui)
+            set_tests_properties(native_engine_player_real_input_ui PROPERTIES LABELS "native-engine" TIMEOUT 300)
+        endif()
+    endif()
     add_test(NAME native_engine_player_async_bridge
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-async-bridge.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)

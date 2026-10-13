@@ -62,6 +62,16 @@ globalThis.tn.onFrame((frameMs) => {
   if (framePaced()) flushFrames(frameMs);
 });
 
+// A person's input from the player's window (SDL through the legacy host's DOM translation), as the events
+// core's listeners on the canvas read. A key also enters the held set, so the per-tick diff below does not
+// raise it a second time.
+globalThis.__tnDispatchInput = (event) => {
+  if (event.type === "keydown") held.add(event.code);
+  else if (event.type === "keyup") held.delete(event.code);
+  const dom = { ...event, isTrusted: true, target: canvas, preventDefault() {}, stopPropagation() {} };
+  for (const callback of [...(listeners.get(event.type) ?? [])]) callback(dom);
+};
+
 globalThis.tn.onUpdate((dt) => {
   time += dt * 1000;
   // Every held key by code (KeyW, ArrowUp), as keydown/keyup events with the DOM key beside the code.

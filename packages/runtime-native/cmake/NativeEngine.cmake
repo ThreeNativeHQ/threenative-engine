@@ -520,7 +520,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # links SDL, never a VM. Neither player is part of the default build (EXCLUDE_FROM_ALL).
     add_library(tn_engine_player STATIC src/engine/player/mailbox.cpp src/engine/player/demo.cpp
         src/engine/player/run.cpp src/engine/player/skinned_crowd.cpp src/engine/player/world_walk.cpp
-        src/platform/ui_overlay.cpp)
+        src/platform/ui_overlay.cpp src/platform/input.cpp)
     tn_native_engine_target(tn_engine_player)
     # The UI seam is shared with the legacy host; the CSS backend is never linked here. The web view is
     # opt-in (a game with ui.renderer "web" draws its HUD through it), so the default graph stays JS- and
