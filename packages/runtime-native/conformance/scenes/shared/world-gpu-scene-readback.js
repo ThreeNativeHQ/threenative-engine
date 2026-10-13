@@ -56,7 +56,6 @@ function assertReadbackLifecycle(detail, targets, releases) {
     "World GPU readback targets did not both release on repeated checks.",
   );
   detail.disposed = true;
-  detail.targetIdentities = targets.size;
 }
 
 function scheduleDisposal(renderer, world, detail, targets, releases, onDone) {
@@ -68,6 +67,20 @@ function scheduleDisposal(renderer, world, detail, targets, releases, onDone) {
   }).catch((error) => {
     detail.failure = String(error);
   });
+}
+
+function observeWorldFrame(world, detail) {
+  if (visibleWorldMeshes(world) > 0) detail.nonemptyFrames += 1;
+  if (detail.failure !== "") throw new Error(detail.failure);
+}
+
+function canDispose(detail, disposePending) {
+  return detail.censuses >= 2 && detail.releaseEvents >= 4 && disposePending === false;
+}
+
+function assertProofDeadline(frame, detail) {
+  if (frame >= 299 && detail.disposed === false)
+    throw new Error("World GPU readback proof did not complete two checks and disposal.");
 }
 
 export async function startScene(canvas, dimensions) {
@@ -168,17 +181,15 @@ export async function startScene(canvas, dimensions) {
           frame += 1;
           world.update(worldRenderer, camera);
           renderer.render(scene, camera);
-          if (visibleWorldMeshes(world) > 0) detail.nonemptyFrames += 1;
-          if (detail.failure !== "") throw new Error(detail.failure);
-          const ready = detail.censuses >= 2 && detail.releaseEvents >= 4 && disposePending === false;
-          if (ready) {
+          observeWorldFrame(world, detail);
+          if (canDispose(detail, disposePending)) {
             disposePending = true;
             scheduleDisposal(renderer, world, detail, targets, releases, () => {
               frozen = true;
             });
-          } else if (frame >= 299 && detail.disposed === false) {
-            throw new Error("World GPU readback proof did not complete two checks and disposal.");
+            return;
           }
+          assertProofDeadline(frame, detail);
         },
       };
     },
