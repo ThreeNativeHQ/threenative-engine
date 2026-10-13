@@ -1332,6 +1332,19 @@ void matrix_walk_count() {
     CHECK(tn::binding::subtreeSizeWalks() - before == 2);
     CHECK(tn_invoke(group, "remove", &extraArg, 1, &out, &d.value) == TN_OK);
     CHECK(covered() == 3);
+    // Two roots asked in turn (the scene and a projection mirror) are each counted once, not once per ask.
+    tn_handle_t mirror{}, leaf{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &mirror, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &leaf, &d.value) == TN_OK);
+    const tn_value_t leafArg = ref(leaf);
+    CHECK(tn_invoke(mirror, "add", &leafArg, 1, &out, &d.value) == TN_OK);
+    const uint64_t pairBefore = tn::binding::subtreeSizeWalks();
+    for (int frame = 0; frame < 4; ++frame) {
+        CHECK(covered() == 3);
+        tn_value_t walked{};
+        CHECK(tn_invoke(mirror, "__tnUpdateMatrixWorld", nullptr, 0, &walked, &d.value) == TN_OK && walked.number == 2);
+    }
+    CHECK(tn::binding::subtreeSizeWalks() - pairBefore == 2);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
