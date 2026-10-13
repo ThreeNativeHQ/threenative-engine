@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 import { type IGamePlatformSource, defineGame } from "../src/game.js";
 import { InputMap } from "../src/input.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
+import { RenderCameraCull } from "../src/render-camera-cull.js";
 import { type ICtx, Scene } from "../src/scene.js";
 import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
 import { subscribeUiState } from "../src/ui-state.js";
@@ -489,6 +490,59 @@ describe("IGame", () => {
     } finally {
       game.stop();
       nowSpy.mockRestore();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("applies camera animation policy before beforeRender projection work", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let cullCalls = 0;
+    let cullsBeforeBeforeRender = 0;
+    const cull = vi.spyOn(RenderCameraCull.prototype, "apply").mockImplementation(() => {
+      cullCalls += 1;
+    });
+    class PolicyOrderScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.beforeRender(() => {
+          cullsBeforeBeforeRender = cullCalls;
+        });
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: PolicyOrderScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      frame(16);
+      expect(cullCalls).toBeGreaterThan(0);
+      expect(cullsBeforeBeforeRender).toBeGreaterThan(0);
+    } finally {
+      game.stop();
+      cull.mockRestore();
       if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
       else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
     }
