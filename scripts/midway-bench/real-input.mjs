@@ -33,10 +33,13 @@ if (!packageDir) {
 }
 // The player needs a display of its own: re-run this script under a virtual one.
 if (!process.env.DISPLAY || process.env.TN_REAL_INPUT_INNER !== "1") {
-  const env = { ...process.env, TN_REAL_INPUT_INNER: "1" };
-  delete env.DISPLAY;
+  const env = Object.fromEntries([
+    ...Object.entries(process.env).filter(([name]) => name !== "DISPLAY"),
+    ["TN_REAL_INPUT_INNER", "1"],
+    ["TN_XVFB_SCREEN", "1400x900x24"],
+  ]);
   const run = spawnSync("sh", [xvfb, process.execPath, fileURLToPath(import.meta.url), ...args], {
-    env: { ...env, TN_XVFB_SCREEN: "1400x900x24" },
+    env,
     stdio: "inherit",
   });
   process.exit(run.status ?? 1);
@@ -66,12 +69,12 @@ if (!args.includes("--no-wm")) {
   await sleep(3000);
 }
 const player = spawn(launcher, [], {
-  env: {
-    ...process.env,
-    TN_PLAYTEST_MAILBOX_ROOT: mailbox,
-    TN_PLAYER_WIDTH: "1280",
-    TN_PLAYER_HEIGHT: "720",
-  },
+  env: Object.fromEntries([
+    ...Object.entries(process.env),
+    ["TN_PLAYTEST_MAILBOX_ROOT", mailbox],
+    ["TN_PLAYER_WIDTH", "1280"],
+    ["TN_PLAYER_HEIGHT", "720"],
+  ]),
   stdio: ["ignore", "pipe", "pipe"],
 });
 children.push(player);
