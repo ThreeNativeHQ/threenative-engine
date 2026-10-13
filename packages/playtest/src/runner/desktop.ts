@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { assertCaptureNotBlank } from "../capture.js";
+import { assertDesktopCaptureNotBlank } from "../capture.js";
 import type { IDevicePlaytestDriver } from "./androidRunner.js";
 import { SCREENSHOT_TIMEOUT_MS as OVERALL_SCREENSHOT_TIMEOUT_MS } from "./shared.js";
 
@@ -25,6 +25,8 @@ export interface IDesktopPlaytestDriverOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   executable: string;
+  /** Ask the host for the wall clock, the native counterpart of the browser's init script. */
+  liveClock?: boolean;
   mailboxRoot?: string;
   screenshotTimeoutMs?: number;
 }
@@ -115,6 +117,11 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       MYSTRAL_HEADLESS: "1",
       ...this.options.env,
       TN_PLAYTEST_MAILBOX_ROOT: this.mailboxRoot,
+      // The host reads the request before it evaluates the game entry, the way the browser runner
+      // puts it ahead of every page script. No key when the run asked for no clock. The desktop
+      // runner refuses an inherited TN_PLAYTEST_CLOCK before this driver starts, so a counted run
+      // never reaches this line with one.
+      ...(this.options.liveClock === true ? { TN_PLAYTEST_CLOCK: "wall-clock" } : {}),
     };
     const child = spawn(this.options.executable, [
       ...(this.options.args ?? []),
@@ -240,7 +247,7 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
 async function tryReadDesktopScreenshot(path: string): Promise<unknown | undefined> {
   try {
     const png = await readFile(path);
-    assertCaptureNotBlank(png, path);
+    assertDesktopCaptureNotBlank(png, path);
     return undefined;
   } catch (error) {
     if (error instanceof Error && error.name === "CaptureGuardError") throw error;

@@ -38,6 +38,7 @@ export interface IActionRpgVfxOptions {
   readonly material: SpriteNodeMaterial;
   readonly start: (buffers: IActionRpgVfxBuffers) => ComputeNode;
   readonly process: (buffers: IActionRpgVfxBuffers) => ComputeNode;
+  readonly onCull?: "pause" | "clear";
 }
 
 type DonorRecipe = {
@@ -181,7 +182,9 @@ function createDonorEmitter(recipe: DonorRecipe, seed: number): IActionRpgVfxOpt
     })().compute(recipe.amount);
   const direction = launch(recipe, seed);
   material.rotationNode = atan(direction.y, direction.x);
-  return { amount: recipe.amount, material, start, process };
+  // The kernels above derive every position from time, so a burst that left the view has no
+  // buffer state to lose: it pauses and picks up where it was when the camera returns.
+  return { amount: recipe.amount, material, start, process, onCull: "pause" };
 }
 
 /** The attack arc uses the Kenney particle-pack slash-arc layer: line, width, colour and timing. */
