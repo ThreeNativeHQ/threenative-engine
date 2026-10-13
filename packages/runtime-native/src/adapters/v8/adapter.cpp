@@ -69,9 +69,11 @@ Adapter* adapterOf(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
 // The shape of nearly every hot call (`position.set(x, y, z)`, `rotation.x = v`, `matrix.copy(other)`):
 // up to eight plain numbers or engine objects. They cross as a stack array, with none of the containers
-// the general converter builds.
+// the general converter builds. A JS math argument is that object when it is a view over native memory, and
+// otherwise a stand-in in `stand`, which the caller copies back.
 constexpr int kFastArguments = 8;
-bool fastArguments(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, tn_value_t (&out)[kFastArguments]) {
+bool fastArguments(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, tn_value_t (&out)[kFastArguments],
+                   MathBridge::Stand& stand) {
     const int count = info.Length();
     if (count > kFastArguments) return false;
     for (int i = 0; i < count; ++i) {
@@ -79,8 +81,10 @@ bool fastArguments(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, 
         if (info[i]->IsNumber()) {
             out[i].kind = TN_VALUE_NUMBER;
             out[i].number = info[i].As<v8::Number>()->Value();
-        } else if (a.unwrapForCall(info[i], out[i].handle)) {
-            out[i].kind = TN_VALUE_HANDLE;
+        } else if (a.unwrapForCall(info[i], out[i].handle) || (a.math() != nullptr && a.math()->viewHandle(info[i], out[i].handle))) {
+            out[i].kind = TN_VALUE_HANDLE;  // an engine object, or a JS math view over one: the call reads and writes its memory
+        } else if (a.math() != nullptr && a.math()->standIn(info[i], stand, out[i])) {
+            // three's own math value, stood in for the call
         } else {
             return false;
         }
@@ -186,6 +190,9 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
             v.kind = TN_VALUE_HANDLE;
             v.handle = h;
             a.holdIfCallback(h);
+        } else if (stand != nullptr && a.math() != nullptr && a.math()->viewHandle(arg, h)) {
+            v.kind = TN_VALUE_HANDLE;
+            v.handle = h;
         } else if (stand != nullptr && a.math() != nullptr && a.math()->standIn(arg, *stand, v)) {
             // three's own math value: a native stand-in for the call (copied back if the call changes it)
         } else if (arg->IsArray()) {
@@ -573,9 +580,19 @@ void Adapter::collect() {
 void Adapter::promote(v8::Isolate*, v8::GCType, v8::GCCallbackFlags, void* data) {
     // Only up: a wrapper the engine took since the last safe point survives this collection. Down
     // waits for collect(), which also ends holdIfCallback's hold.
+    // The ownership epoch moves whenever the engine may start holding an object, so with it unmoved since the
+    // last pass only the wrappers made or held by a call since the last safe point can be new.
     auto* a = static_cast<Adapter*>(data);
-    for (auto& [k, w] : a->wrappers_) {
+    const auto promoteOne = [a](Wrapper* w) {
         if (!w->held && tn::abi::engineReferences(w->handle) > 0) a->strong(w);
+    };
+    const uint64_t epoch = tn::abi::ownershipEpoch();
+    if (epoch != a->promoteSeen_) {
+        a->promoteSeen_ = epoch;
+        for (auto& [k, w] : a->wrappers_) promoteOne(w);
+    } else {
+        for (const uint64_t k : a->undecided_)
+            if (const auto it = a->wrappers_.find(k); it != a->wrappers_.end()) promoteOne(it->second);
     }
 }
 
@@ -855,7 +872,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    return;
                                }
                                tn_value_t fast[kFastArguments];
-                               if (!d->intersections && fastArguments(*d->adapter, info, fast)) {
+                               MathBridge::Stand fastStand(d->adapter->math());
+                               if (!d->intersections && fastArguments(*d->adapter, info, fast, fastStand)) {
                                    tn_value_t result{};
                                    tn_diagnostic_t diagnostic{nullptr, 0};
                                    if (tn::abi::invokeMethod(h, d->method, d->name, fast, static_cast<uint32_t>(info.Length()), &result,
@@ -863,13 +881,24 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                        throwStatus(isolate, diagnostic);
                                        return;
                                    }
-                                   // A chaining call answers the object it was called on: that is this wrapper.
-                                   if (result.kind == TN_VALUE_HANDLE && result.handle.index == h.index &&
-                                       result.handle.generation == h.generation && result.handle.type == h.type &&
-                                       result.handle.context == h.context)
-                                       info.GetReturnValue().Set(info.This());
-                                   else
-                                       info.GetReturnValue().Set(fromValue(*d->adapter, result));
+                                   fastStand.copyBack();
+                                   // A chaining call answers the object it was called on (this wrapper) or one it was given.
+                                   if (result.kind == TN_VALUE_HANDLE) {
+                                       const auto is = [&](const tn_handle_t& o) {
+                                           return result.handle.index == o.index && result.handle.generation == o.generation &&
+                                                  result.handle.type == o.type && result.handle.context == o.context;
+                                       };
+                                       if (is(h)) {
+                                           info.GetReturnValue().Set(info.This());
+                                           return;
+                                       }
+                                       for (int i = 0; i < info.Length(); ++i)
+                                           if (fast[i].kind == TN_VALUE_HANDLE && is(fast[i].handle)) {
+                                               info.GetReturnValue().Set(info[i]);
+                                               return;
+                                           }
+                                   }
+                                   info.GetReturnValue().Set(fromValue(*d->adapter, result));
                                    return;
                                }
                                std::vector<tn_value_t> args;

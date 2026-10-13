@@ -56,18 +56,32 @@ struct MathBridge::Entry {
     MathBridge* bridge;
     Key key;
     v8::Global<v8::Object> view;
+    tn_handle_t handle{};  // the native object itself, kept while the view lives (viewHandle); type 0: none
+    int hash = 0;          // the view's identity hash, the key it has in byHash_
 };
+
+namespace {
+// Euler and Quaternion views are written through three's `_onChange` hooks (the rotation/quaternion pair), so a
+// native write into their memory would leave the mate stale: they always cross as stand-ins.
+bool takesNativeWrites(MathKind kind) { return kind != MathKind::Euler && kind != MathKind::Quaternion; }
+}  // namespace
 
 MathBridge::MathBridge(v8::Isolate* isolate, tn_context_t* context) : isolate_(isolate), context_(context) {
     for (std::size_t k = 0; k < kMathKinds; ++k) types_[k] = tn_type_id(kNames[k]);
 }
 
-MathBridge::~MathBridge() {
+void MathBridge::forgetAll() {
     for (auto& [key, entry] : cache_) {
         entry->view.Reset();
+        if (entry->handle.type != 0) tn::abi::dropHandle(entry->handle);
         delete entry;
     }
     cache_.clear();
+    byHash_.clear();
+}
+
+MathBridge::~MathBridge() {
+    forgetAll();
     drain();
 }
 
@@ -87,11 +101,7 @@ bool MathBridge::install(v8::Local<v8::Context> context, v8::Local<v8::Object> t
     for (const char* name : kKeyNames) keys_.emplace_back(isolate_, literal(isolate_, name));
     used_.fill(0);
     // Views of an earlier install belong to that context's classes.
-    for (auto& [view, entry] : cache_) {
-        entry->view.Reset();
-        delete entry;
-    }
-    cache_.clear();
+    forgetAll();
     v8::TryCatch tryCatch(isolate_);
     const auto fail = [&](const char* what) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());
@@ -148,6 +158,7 @@ bool MathBridge::kindOf(v8::Local<v8::Value> value, MathKind& kind) {
     const v8::Local<v8::Object> object = value.As<v8::Object>();
     if (object->InternalFieldCount() != 0) return false;
     v8::Local<v8::Value> tag;
+    ++counters_.reads;
     if (!object->Get(isolate_->GetCurrentContext(), key(kTag)).ToLocal(&tag) || !tag->IsInt32()) return false;
     const int32_t index = tag.As<v8::Int32>()->Value();
     if (index < 0 || index >= static_cast<int32_t>(tags_.size()) || tags_[index] < 0) return false;
@@ -176,16 +187,35 @@ v8::Local<v8::Value> MathBridge::cached(MathKind kind, const void* address) {
     return found->second->view.Get(isolate_);
 }
 
-void MathBridge::remember(MathKind kind, const void* address, v8::Local<v8::Value> view) {
+MathBridge::Entry* MathBridge::remember(MathKind kind, const void* address, v8::Local<v8::Value> view) {
     auto* entry = new Entry{this, Key{address, kind}, {}};
     entry->view.Reset(isolate_, view.As<v8::Object>());
     entry->view.SetWeak(entry, [](const v8::WeakCallbackInfo<Entry>& info) {
         Entry* gone = info.GetParameter();
         gone->view.Reset();
         gone->bridge->cache_.erase(gone->key);
+        if (gone->handle.type != 0) {
+            auto& bucket = gone->bridge->byHash_;
+            for (auto [it, end] = bucket.equal_range(gone->hash); it != end; ++it)
+                if (it->second == gone) { bucket.erase(it); break; }
+            tn::abi::dropHandle(gone->handle);
+        }
         delete gone;
     }, v8::WeakCallbackType::kParameter);
     cache_[entry->key] = entry;
+    return entry;
+}
+
+bool MathBridge::viewHandle(v8::Local<v8::Value> value, tn_handle_t& out) {
+    if (byHash_.empty() || !value->IsObject()) return false;
+    for (auto [it, end] = byHash_.equal_range(value.As<v8::Object>()->GetIdentityHash()); it != end; ++it) {
+        const Entry* entry = it->second;
+        if (!entry->view.IsEmpty() && entry->view.Get(isolate_)->StrictEquals(value)) {
+            out = entry->handle;
+            return true;
+        }
+    }
+    return false;
 }
 
 // An Object3D's rotation and quaternion are one orientation in two forms: both views exist as soon as
@@ -214,13 +244,15 @@ v8::MaybeLocal<v8::Value> MathBridge::view(tn_handle_t handle) {
     while (k < kMathKinds && types_[k] != handle.type) ++k;
     if (k == kMathKinds) return {};
     const auto kind = static_cast<MathKind>(k);
-    if (isStandIn(handle)) return {};  // the pool's own, only ever answered as the JS argument it stands for
+    if (isStandIn(handle, k)) return {};  // the pool's own, only ever answered as the JS argument it stands for
     tn::binding::Object* object = tn::abi::objectOf(handle);
     if (object == nullptr) return {};
     const void* address = object->ptr.get();
-    if (v8::Local<v8::Value> known = cached(kind, address); !known.IsEmpty()) {
-        tn::abi::dropHandle(handle);
-        return known;
+    if (const auto found = cache_.find(Key{address, kind}); found != cache_.end() && !found->second->view.IsEmpty()) {
+        // The handle the view keeps names this object, and the caller's is the same one while it lives.
+        const tn_handle_t& kept = found->second->handle;
+        if (kept.type == 0 || kept.index != handle.index || kept.generation != handle.generation) tn::abi::dropHandle(handle);
+        return found->second->view.Get(isolate_);
     }
     const void* claimed = nullptr;
     int column = -1;
@@ -228,9 +260,16 @@ v8::MaybeLocal<v8::Value> MathBridge::view(tn_handle_t handle) {
     if (claim == nullptr) return {};
     v8::Local<v8::Value> made = build(kind, address, claim);
     if (made.IsEmpty()) return {};
-    remember(kind, address, made);
+    Entry* entry = remember(kind, address, made);
     if (column == 2 || column == 3) pair(made, column, address);
-    tn::abi::dropHandle(handle);
+    if (takesNativeWrites(kind)) {
+        // Kept, not dropped: a call that takes this view as an argument names the object by it.
+        entry->handle = handle;
+        entry->hash = made.As<v8::Object>()->GetIdentityHash();
+        byHash_.emplace(entry->hash, entry);
+    } else {
+        tn::abi::dropHandle(handle);
+    }
     return made;
 }
 
@@ -248,6 +287,7 @@ void MathBridge::drain() {
 double MathBridge::read(v8::Local<v8::Object> object, int which) {
     v8::Local<v8::Context> context = isolate_->GetCurrentContext();
     v8::Local<v8::Value> value;
+    ++counters_.reads;
     if (!object->Get(context, key(which)).ToLocal(&value)) return std::numeric_limits<double>::quiet_NaN();
     return value->NumberValue(context).FromMaybe(std::numeric_limits<double>::quiet_NaN());
 }
@@ -298,6 +338,7 @@ bool MathBridge::fill(MathKind kind, void* object, v8::Local<v8::Object> js, std
     v8::Local<v8::Context> context = isolate_->GetCurrentContext();
     const auto elements = [&](double* out, std::size_t count) {
         v8::Local<v8::Value> value;
+        ++counters_.reads;
         if (!js->Get(context, key(kElements)).ToLocal(&value) || !value->IsObject()) return false;
         if (value->IsFloat64Array()) {
             const auto typed = value.As<v8::Float64Array>();
@@ -312,6 +353,7 @@ bool MathBridge::fill(MathKind kind, void* object, v8::Local<v8::Object> js, std
     };
     const auto nested = [&](int part, double* out) {
         v8::Local<v8::Value> value;
+        ++counters_.reads;
         if (!js->Get(context, key(part)).ToLocal(&value) || !value->IsObject()) return false;
         const auto vector = value.As<v8::Object>();
         out[0] = read(vector, kX); out[1] = read(vector, kY); out[2] = read(vector, kZ);
@@ -334,6 +376,7 @@ bool MathBridge::fill(MathKind kind, void* object, v8::Local<v8::Object> js, std
             Euler& euler = as<Euler>(object);
             euler.x = read(js, kX); euler.y = read(js, kY); euler.z = read(js, kZ);
             v8::Local<v8::Value> order;
+            ++counters_.reads;
             if (!js->Get(context, key(kOrder)).ToLocal(&order) || !order->IsString()) return false;
             v8::String::Utf8Value text(isolate_, order);
             int found = -1;
@@ -390,6 +433,7 @@ MathBridge::Slot& MathBridge::acquire(MathKind kind, Stand& stand, v8::Local<v8:
         if (pool.size() <= index) pool.push_back(std::move(slot));
         else pool[index] = std::move(slot);
     }
+    ++counters_.stands;
     stand.uses_.push_back(Stand::Use{kind, index, js, {}});
     return pool[index];
 }
@@ -423,12 +467,11 @@ MathBridge::Stand::~Stand() {
     }
 }
 
-bool MathBridge::isStandIn(tn_handle_t handle) const {
-    for (const auto& pool : pools_)
-        for (const Slot& slot : pool)
-            if (slot.object && slot.handle.index == handle.index && slot.handle.generation == handle.generation &&
-                slot.handle.type == handle.type)
-                return true;
+bool MathBridge::isStandIn(tn_handle_t handle, std::size_t kind) const {
+    for (const Slot& slot : pools_[kind])
+        if (slot.object && slot.handle.index == handle.index && slot.handle.generation == handle.generation &&
+            slot.handle.type == handle.type)
+            return true;
     return false;
 }
 
@@ -453,6 +496,7 @@ void MathBridge::Stand::copyBack() {
 
 // Writes through three's own methods, so a view fires its `_onChange` hooks once, as a JS `set` would.
 void MathBridge::write(MathKind kind, const std::array<double, 16>& flat, v8::Local<v8::Object> js) {
+    ++counters_.writes;
     v8::Local<v8::Context> context = isolate_->GetCurrentContext();
     const auto number = [&](double v) { return v8::Number::New(isolate_, v).As<v8::Value>(); };
     const auto set = [&](v8::Local<v8::Object> target, std::initializer_list<v8::Local<v8::Value>> values) {

@@ -64,6 +64,22 @@ public:
     /** Runs the embedded script into `context`, defining the math classes on `target`. False with `error` set when it cannot. */
     bool install(v8::Local<v8::Context> context, v8::Local<v8::Object> target, std::string& error);
 
+    /** What the stand-in path costs: stand-ins made, v8 property reads and JS writes done. A view argument needs none. */
+    struct Counters {
+        uint64_t stands = 0;
+        uint64_t reads = 0;
+        uint64_t writes = 0;
+    };
+    const Counters& counters() const { return counters_; }
+
+    /**
+     * The handle of the native object a JS value is a view of, when a native call can take that object itself:
+     * the call then reads and writes the view's own memory, with no stand-in, no property read and no copy-back.
+     * False for any other value, and for an Euler or Quaternion view, whose writes JS must see through its
+     * `_onChange` hooks.
+     */
+    bool viewHandle(v8::Local<v8::Value> value, tn_handle_t& out);
+
     /** The math kind a JS value is an instance of (three's own class or a view of it), or false. */
     bool kindOf(v8::Local<v8::Value> value, MathKind& kind);
     /** A stand-in for a JS math argument, as a handle value for the ABI. False when the value cannot be read. */
@@ -98,10 +114,11 @@ private:
 
     v8::Local<v8::Value> build(MathKind kind, const void* address, tn::abi::ViewClaim* claim);
     v8::Local<v8::Value> cached(MathKind kind, const void* address);
-    void remember(MathKind kind, const void* address, v8::Local<v8::Value> view);
+    Entry* remember(MathKind kind, const void* address, v8::Local<v8::Value> view);
     void pair(v8::Local<v8::Value> view, int column, const void* address);
     Slot& acquire(MathKind kind, Stand& stand, v8::Local<v8::Object> js);
-    bool isStandIn(tn_handle_t handle) const;
+    bool isStandIn(tn_handle_t handle, std::size_t kind) const;
+    void forgetAll();
     bool fill(MathKind kind, void* object, v8::Local<v8::Object> js, std::array<double, 16>& flat);
     void flatten(MathKind kind, const void* object, std::array<double, 16>& flat) const;
     void write(MathKind kind, const std::array<double, 16>& flat, v8::Local<v8::Object> js);
@@ -120,6 +137,8 @@ private:
     std::array<uint32_t, kMathKinds> bytes_{};
     std::array<uint16_t, kMathKinds> types_{};
     std::unordered_map<Key, Entry*, KeyHash> cache_;
+    std::unordered_multimap<int, Entry*> byHash_;  // views that keep their handle, by the view's identity hash
+    Counters counters_;
     bool installed_ = false;
 };
 

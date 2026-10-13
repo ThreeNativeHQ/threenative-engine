@@ -1,4 +1,5 @@
 #include "adapters/v8/adapter.h"
+#include "adapters/v8/math_bridge.h"
 #include "check.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/bindings.h"
@@ -1616,6 +1617,76 @@ void jsMathMembers() {
     CHECK(got == want);
 }
 
+// A JS math value that is a view over a native object's memory is the call's argument itself (PRD-610 AC-11): no
+// stand-in, no property read and no copy-back cross for it, and the result is what the stand-in path answers.
+void jsMathViewArguments() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    adapter.setJsMath(true);
+    v8::HandleScope scope(rt.isolate);
+    v8::Local<v8::Context> ctx = v8::Context::New(rt.isolate);
+    v8::Context::Scope contextScope(ctx);
+    adapter.install(ctx, ctx->Global());
+    static const tn::adapters::v8adapter::MathBridge* bridge;
+    bridge = adapter.math();
+    ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__stand"),
+        v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            const auto& n = bridge->counters();
+            info.GetReturnValue().Set(static_cast<double>(n.stands + n.reads + n.writes));
+        }).ToLocalChecked()).Check();
+    const char* source = R"JS(
+        const make = () => new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        const a = make(), a2 = make(), b = make(), c = make();
+        for (const m of [a, a2]) { m.position.set(1, 2, 3); m.scale.set(2, 2, 2); m.rotation.y = 0.5; }
+        b.position.set(4, 5, 6);
+        a.updateMatrixWorld(true); a2.updateMatrixWorld(true);
+        const pb = b.position, pc = c.position, same = (u, v) => u.x === v.x && u.y === v.y && u.z === v.z;
+        // Plain arguments are the reference: the stand-in path, which these calls must agree with.
+        const plainWorld = a.getWorldPosition(new Vector3());
+        const plainLocal = new Vector3().copy(pb), plainBack = new Vector3();
+        a.worldToLocal(plainLocal);
+        a.localToWorld(plainBack.copy(plainLocal));
+        const plainDirection = a.getWorldDirection(new Vector3());
+        const plainScale = a.getWorldScale(new Vector3());
+        const plainQuaternion = a.getWorldQuaternion(new Quaternion());
+        const before = __stand();
+        const answered = a.getWorldPosition(pc);
+        const world = same(pc, plainWorld) && answered === pc && plainWorld.x === 1 && plainWorld.y === 2 && plainWorld.z === 3;
+        a.worldToLocal(pb);
+        const local = same(pb, plainLocal);
+        a.localToWorld(pb);
+        const back = same(pb, plainBack);
+        const direction = same(a.getWorldDirection(pc), plainDirection);
+        const scale = same(a.getWorldScale(pc), plainScale);
+        a.lookAt(pc);
+        const heldBack = __stand() - before;
+        a2.lookAt(new Vector3().copy(pc));
+        const looked = ["x", "y", "z", "w"].every((k) => a.quaternion[k] === a2.quaternion[k]);
+        // A quaternion view still crosses as a stand-in, so its rotation mate follows what the call wrote.
+        const q = a.getWorldQuaternion(c.quaternion);
+        const euler = new Euler().setFromQuaternion(c.quaternion, c.rotation.order);
+        const mate = q === c.quaternion && Math.abs(c.quaternion.x - plainQuaternion.x) < 1e-12 &&
+            Math.abs(c.rotation.y - euler.y) < 1e-12 && Math.abs(c.rotation.x - euler.x) < 1e-12;
+        // The view and the object are one memory: the call's write reaches the object, not only the view.
+        c.updateMatrix();
+        const object = c.matrix.elements[12] === pc.x;
+        `${heldBack} ${world} ${local} ${back} ${direction} ${scale} ${looked} ${mate} ${object}`
+    )JS";
+    v8::Local<v8::Script> script = v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, source).ToLocalChecked()).ToLocalChecked();
+    v8::TryCatch tryCatch(rt.isolate);
+    v8::Local<v8::Value> result;
+    if (!script->Run(ctx).ToLocal(&result)) {
+        v8::String::Utf8Value error(rt.isolate, tryCatch.Exception());
+        std::printf("THROWN %s\n", *error ? *error : "?");
+        CHECK(false);
+        return;
+    }
+    v8::String::Utf8Value text(rt.isolate, result);
+    if (std::string(*text) != "0 true true true true true true true true") std::printf("got: %s\n", *text);
+    CHECK(std::string(*text) == "0 true true true true true true true true");
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
@@ -1625,4 +1696,4 @@ TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp"
              {"catalog_coverage", catalogCoverage},
              {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
              {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle},
-             {"material_slots", materialSlots}, {"js_math", jsMath}, {"js_math_views", jsMathViews}, {"js_math_members", jsMathMembers})
+             {"material_slots", materialSlots}, {"js_math", jsMath}, {"js_math_views", jsMathViews}, {"js_math_members", jsMathMembers}, {"js_math_view_arguments", jsMathViewArguments})

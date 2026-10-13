@@ -110,6 +110,7 @@ private:
     uint64_t genericArguments_ = 0;
     uint64_t collectVisits_ = 0;
     uint64_t ownershipSeen_ = 0;          // tn::abi::ownershipEpoch() at the last full decision
+    uint64_t promoteSeen_ = 0;            // tn::abi::ownershipEpoch() at the last promote() pass over every wrapper
     unsigned safePointsSinceFull_ = 0;
     std::vector<uint64_t> undecided_;     // wrappers new or held by a call since the last safe point, by key
     std::unique_ptr<Tsl> tsl_;
