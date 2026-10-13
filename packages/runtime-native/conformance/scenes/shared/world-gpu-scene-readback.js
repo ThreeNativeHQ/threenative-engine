@@ -77,7 +77,7 @@ function observeWorldFrame(world, detail, phase) {
       detail.reloadNonemptyFrames += 1;
       if (detail.reloadMarkerReported === false) {
         console.info(
-          `TN_WORLD_GPU_SCENE_READBACK original=disposed originalNonempty=${String(detail.originalNonemptyFrames)} censuses=${String(detail.censuses)} targetIdentities=${String(detail.targetIdentities)} releaseEvents=${String(detail.releaseEvents)} disposeEvents=${String(detail.disposeEvents)} reload=ready reloadNonempty=${String(detail.reloadNonemptyFrames)} reloadFailures=${String(detail.reloadFailures)} validation=off reason=post-disposal-reload`,
+          `TN_WORLD_GPU_SCENE_READBACK original=disposed originalNonempty=${String(detail.originalNonemptyFrames)} framewise=${String(detail.framewise)} lastDispatch=${String(detail.lastDispatch)} censuses=${String(detail.censuses)} targetIdentities=${String(detail.targetIdentities)} releaseEvents=${String(detail.releaseEvents)} disposeEvents=${String(detail.disposeEvents)} reload=ready reloadNonempty=${String(detail.reloadNonemptyFrames)} reloadFailures=${String(detail.reloadFailures)} validation=off reason=post-disposal-reload`,
         );
         detail.reloadMarkerReported = true;
       }
@@ -87,20 +87,34 @@ function observeWorldFrame(world, detail, phase) {
 }
 
 function canDispose(detail, disposePending) {
-  return detail.censuses >= 2 && detail.releaseEvents >= 4 && disposePending === false;
+  return detail.framewise >= 200 && detail.releaseEvents >= 4 && disposePending === false;
 }
 
 function assertProofDeadline(frame, detail) {
-  if (frame >= 299 && (detail.originalDisposed === false || detail.reloadReady === false || detail.reloadNonemptyFrames === 0))
+  if (
+    frame >= 299 &&
+    (detail.framewise < 200 ||
+      detail.originalNonemptyFrames === 0 ||
+      detail.originalDisposed === false ||
+      detail.reloadReady === false ||
+      detail.reloadNonemptyFrames === 0)
+  )
     throw new Error(
-      `World GPU readback proof did not render the reloaded world: originalDisposed=${String(detail.originalDisposed)} reloadReady=${String(detail.reloadReady)} reloadNonempty=${String(detail.reloadNonemptyFrames)}.`,
+      `World GPU readback proof did not complete its framewise lifecycle: framewise=${String(detail.framewise)} originalNonempty=${String(detail.originalNonemptyFrames)} originalDisposed=${String(detail.originalDisposed)} reloadReady=${String(detail.reloadReady)} reloadNonempty=${String(detail.reloadNonemptyFrames)}.`,
     );
 }
 
 function reportFinalMarker(frame, detail) {
-  if (frame < 299 || detail.finalMarkerReported || detail.reloadNonemptyFrames === 0) return;
+  if (
+    frame < 299 ||
+    detail.framewise < 200 ||
+    detail.originalNonemptyFrames === 0 ||
+    detail.finalMarkerReported ||
+    detail.reloadNonemptyFrames === 0
+  )
+    return;
   console.info(
-    `TN_WORLD_GPU_SCENE_READBACK final original=disposed originalNonempty=${String(detail.originalNonemptyFrames)} censuses=${String(detail.censuses)} targetIdentities=${String(detail.targetIdentities)} releaseEvents=${String(detail.releaseEvents)} disposeEvents=${String(detail.disposeEvents)} reload=ready reloadNonempty=${String(detail.reloadNonemptyFrames)} reloadFailures=${String(detail.reloadFailures)} validation=off reason=post-disposal-reload`,
+    `TN_WORLD_GPU_SCENE_READBACK final original=disposed originalNonempty=${String(detail.originalNonemptyFrames)} framewise=${String(detail.framewise)} lastDispatch=${String(detail.lastDispatch)} censuses=${String(detail.censuses)} targetIdentities=${String(detail.targetIdentities)} releaseEvents=${String(detail.releaseEvents)} disposeEvents=${String(detail.disposeEvents)} reload=ready reloadNonempty=${String(detail.reloadNonemptyFrames)} reloadFailures=${String(detail.reloadFailures)} validation=off reason=post-disposal-reload`,
   );
   detail.finalMarkerReported = true;
 }
@@ -125,6 +139,8 @@ export async function startScene(canvas, dimensions) {
         reloadNonemptyFrames: 0,
         reloadReady: false,
         targetIdentities: 0,
+        framewise: 0,
+        lastDispatch: 0,
       };
       const targets = new Map();
       const releases = new Map();
@@ -197,6 +213,27 @@ export async function startScene(canvas, dimensions) {
           terrain: false,
           loadModel: async () => decodedModel(),
         });
+      const assertFrameValidation = (validation, frame) => {
+        assertCondition(validation.frame === frame, `World GPU frame identity drifted at ${String(frame)}.`);
+        assertCondition(
+          validation.dispatch > detail.lastDispatch,
+          `World GPU dispatch ${String(validation.dispatch)} did not advance after frame ${String(frame - 1)}.`,
+        );
+        assertCondition(validation.compared > 0, `World GPU frame ${String(frame)} compared no keys.`);
+        assertCondition(
+          validation.instancesGpu > 0 && validation.instancesCpu > 0,
+          `World GPU frame ${String(frame)} compared no nonempty world instances.`,
+        );
+        assertCondition(validation.verdict === "ok", `World GPU frame ${String(frame)} failed validation.`);
+        assertCondition(
+          validation.mismatched === 0 &&
+            validation.matricesMismatched === 0 &&
+            validation.meshMismatched === 0,
+          `World GPU frame ${String(frame)} reported a drawn-set mismatch.`,
+        );
+        detail.framewise += 1;
+        detail.lastDispatch = validation.dispatch;
+      };
       const world = await loadWorld(true);
       scene.add(world);
       let frame = 0;
@@ -204,11 +241,15 @@ export async function startScene(canvas, dimensions) {
       let renderedWorld = world;
       return {
         detail,
-        render() {
+        async render() {
           frame += 1;
           if (renderedWorld !== undefined)
             renderedWorld.update(worldRenderer, camera);
           renderer.render(scene, camera);
+          if (renderedWorld !== undefined && detail.reloadReady === false) {
+            const validation = await renderedWorld.validateGpuFrame(frame);
+            assertFrameValidation(validation, frame);
+          }
           if (renderedWorld !== undefined)
             observeWorldFrame(renderedWorld, detail, detail.reloadReady ? "reload" : "original");
           if (canDispose(detail, disposePending)) {
@@ -230,6 +271,7 @@ export async function startScene(canvas, dimensions) {
     },
     {
       background: 0x101820,
+      awaitRender: true,
       camera: (size) => {
         const camera = new THREE.PerspectiveCamera(52, size.width / size.height, 0.1, 100);
         camera.position.set(0, 3.5, 11);

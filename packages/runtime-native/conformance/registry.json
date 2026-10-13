@@ -927,7 +927,7 @@
     },
     {
       "id": "world-gpu-scene-readback",
-      "title": "GPU WorldCells validation reuses two caller-owned readback targets",
+      "title": "per-frame GPU WorldCells validation reuses two caller-owned readback targets",
       "category": "world",
       "status": "implemented",
       "scene": "conformance/scenes/shared/world-gpu-scene-readback.js",

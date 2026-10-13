@@ -583,6 +583,29 @@ describe("WorldCells automatic impostors", () => {
     expect(scene.validation.mismatched).toBe(0);
     expect(scene.validation.matricesMismatched).toBe(0);
     expect(scene.validation.meshMismatched).toBe(0);
+
+    // The kernel and its count/matrix reference must be allowed to agree on bad GPU metadata; the
+    // owner's published source snapshot is the independent third check that must reject it.
+    const published = scene.gates()[0];
+    if (published === undefined) throw new Error("pine GPU slot was not published");
+    const corruptions = [
+      { cull: 0 },
+      { distances: [...published.distances.slice(0, -1), Number.POSITIVE_INFINITY] },
+      // The terminal flag only changes the projected terminal gate; move that gate far enough to
+      // make the flag's corruption observable without changing the published CPU snapshot.
+      {
+        distances: [...published.distances.slice(0, -1), Number.POSITIVE_INFINITY],
+        impostor: !published.impostor,
+      },
+    ];
+    for (const corruption of corruptions) {
+      scene.slot("pine", { ...published, ...corruption });
+      for (let dispatch = 0; dispatch < 30; dispatch += 1) scene.dispatch(renderer, camera);
+      await flush();
+      expect(scene.validation.verdict).toBe("mismatch");
+      expect(scene.validation.meshMismatched).toBeGreaterThan(0);
+      scene.slot("pine", published);
+    }
     world.dispose();
   });
 

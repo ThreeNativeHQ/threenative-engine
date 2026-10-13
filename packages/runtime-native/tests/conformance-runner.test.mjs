@@ -128,6 +128,16 @@ test("World GPU readback captures through its frame-299 proof deadline", () => {
   assert.equal(row?.nativeFrames, 300);
 });
 
+test("World GPU readback fences 200 completed frame validations before disposal", () => {
+  const source = readFileSync(
+    join(root, "conformance/scenes/shared/world-gpu-scene-readback.js"),
+    "utf8",
+  );
+  assert.match(source, /awaitRender: true/u);
+  assert.match(source, /validateGpuFrame\(frame\)/u);
+  assert.match(source, /detail\.framewise >= 200/u);
+});
+
 test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () => {
   // Fixture is the real web report from the Android parity run that failed on 2026-08-31, with the
   // adapter refusals reclassified the way the runner now reports them.

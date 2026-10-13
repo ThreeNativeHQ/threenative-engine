@@ -79,6 +79,7 @@ import {
   type ILiveAsset,
   type IMeshDraw,
   type IShadowLevel,
+  type IWorldGpuFrameValidation,
   type IWorldGpuSceneReport,
   WorldGpuScene,
   bundlesAsked,
@@ -621,6 +622,9 @@ export interface IWorldCellsLoadOptions {
    *
    * A readback is a queue submission and a mapped buffer, so this is a mode for answering "which key
    * draws fewer instances than the CPU path" and never a walk to be measured with.
+   * For a fixed-step diagnostic walk, call {@link validateGpuFrame} after the render and await its
+   * promise before advancing the next frame; that opt-in fence checks every dispatch and replaces
+   * the periodic samples for that world.
    */
   readonly gpuSceneValidate?: boolean;
   /**
@@ -2380,6 +2384,11 @@ interface IAssetState {
   resolvedGlb: string;
   /** The whole-asset impostor level this asset appended, once its bake landed. See `#finishImpostor`. */
   impostor?: IImpostorState;
+}
+
+/** Immutable CPU representation published beside one source swap for the independent mesh check. */
+interface IPublishedGpuGates extends IAssetSlot {
+  readonly locals: readonly (readonly Float32Array[])[];
 }
 
 interface IWorldCellsInit extends IWorldCellsLoadOptions {
@@ -4428,6 +4437,10 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #occlusion: OcclusionMode;
   /** Resident placements per canonical asset, which is the capacity a key of that asset needs. */
   readonly #gpuResident = new Map<string, number>();
+  /** CPU-owned gate metadata for the source representation last published by a completed swap. */
+  readonly #publishedGpuGates = new Map<string, IPublishedGpuGates>();
+  /** CPU-owned key runs recorded when the owner dresses a source part. */
+  readonly #gpuLevelKeys = new Map<string, Array<{ firstKey: number; parts: number }>>();
   /**
    * The `BundleGroup`s every recorded main batch mesh is parented under, one per shard of
    * {@link MAIN_BUNDLE_SHARDS}, and the number of times one has been re-recorded. A shard is minted by
@@ -4888,6 +4901,18 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   get prewarmed(): Promise<void> {
     return this.#prewarmed;
+  }
+
+  /**
+   * Fence one just-rendered GPU dispatch for a diagnostic walk, resolving after both readbacks land.
+   * Call after {@link update} and the render, then await it before advancing the measured frame.
+   */
+  validateGpuFrame(frame: number): Promise<IWorldGpuFrameValidation> {
+    if (this.#released)
+      return Promise.reject(new Error("World GPU frame validation cannot run after dispose."));
+    if (this.#renderer === undefined)
+      return Promise.reject(new Error("World GPU frame validation needs a renderer."));
+    return this.#gpuScene.validateCurrentDispatch(this.#renderer, frame);
   }
 
   /**
@@ -5950,6 +5975,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // atlases and aborts any bake still in flight.
     this.#drainImpostors();
     this.#gpuScene.dispose();
+    this.#publishedGpuGates.clear();
+    this.#gpuLevelKeys.clear();
     this.#bundleSafety.clear();
     this.#gpuResident.clear();
     if (this.#drainShared() > 0) this.#failures += 1;
@@ -6368,6 +6395,9 @@ export class WorldCells extends Group implements IComputeDriven {
       if (entry.wide !== undefined)
         entry.wide.write(entry.wideSegment, entry.wideRoot ?? entry.batch);
     }
+    // The source meshes and records are now published together. Until this point a queued impostor
+    // replacement may have already changed the GPU slot table while the old mesh still draws.
+    this.#publishGpuGates(job.asset);
     // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
     // that drew the old ones are stale. One flag, told at most once a second.
     if (job.fresh.length > 0 || job.replaced.length > 0)
@@ -7619,6 +7649,12 @@ export class WorldCells extends Group implements IComputeDriven {
       parts: (asset.levels[key.level] as readonly IAssetPart[]).length,
     });
     if (region === undefined) return;
+    const levels = this.#gpuLevelKeys.get(key.asset) ?? [];
+    levels[key.level] = {
+      firstKey: region - key.part,
+      parts: asset.levels[key.level]?.length ?? 0,
+    };
+    this.#gpuLevelKeys.set(key.asset, levels);
     const drawn = scene.drawn;
     const args = scene.args;
     const args2 = scene.regionOf(key.key);
@@ -7727,11 +7763,12 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #gatesOf(id: string, asset: IAssetState): IAssetSlot {
     const gates: { firstKey: number; parts: number }[] = [];
-    // The level's own contiguous run, which is what the kernel's `firstKey + part` addresses. Read
-    // back from the scene rather than remembered here: a table that recorded the key index it saw
-    // last named the wrong part as the first, and a multi-part asset then drew nothing anywhere.
+    // The level's own contiguous run, which is what the kernel's `firstKey + part` addresses. The
+    // owner records it when dressing the key; reading it back from the scene would make the mesh
+    // check agree with a corrupted GPU gate table instead of checking that table independently.
+    const keyed = this.#gpuLevelKeys.get(id);
     for (const [level] of asset.levels.entries())
-      gates.push(this.#gpuScene.levelKeys(`${id}:${String(level)}`) ?? { firstKey: 0, parts: 0 });
+      gates.push(keyed?.[level] ?? { firstKey: 0, parts: 0 });
     return {
       cull: cullDistance(asset.definition.maxDistance),
       distances: asset.distances,
@@ -7740,6 +7777,20 @@ export class WorldCells extends Group implements IComputeDriven {
       impostor: asset.impostor !== undefined,
       levels: gates,
     };
+  }
+
+  /** Copy the CPU gates at the same publication boundary as the source records and meshes. */
+  #publishGpuGates(asset: IAssetState): void {
+    const gates = this.#gatesOf(asset.id, asset);
+    this.#publishedGpuGates.set(asset.id, {
+      cull: gates.cull,
+      distances: [...gates.distances],
+      impostor: gates.impostor,
+      levels: gates.levels.map((level) => ({ ...level })),
+      locals: asset.levels.map((parts) =>
+        parts.map((part) => Float32Array.from(part.local.elements)),
+      ),
+    });
   }
 
   /**
@@ -7817,21 +7868,22 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Every dressed main mesh's own draw, and what the dispatch's gate table says it must be holding.
+   * Every dressed main mesh's own draw, and what the CPU-published source says it must be holding.
    *
    * The scene's own validation mirrors its own kernel, so a key, a record, a gate table and a mesh
    * that do not correspond are one both sides reproduce and a check that reports `ok` over a forest
    * drawn with another tree's geometry. These are the three numbers that are not the scene's: the
    * mesh's own name, the record its own geometry points at (`indirectOffset`, which a dress wrote),
    * and the instances the owner's part transforms compose for that name. The level and cull gates
-   * come from the scene's current slot table, because a replacement keeps its old mesh and source
-   * records drawing until the new representation is attached; the camera's own six planes over the
-   * scene's own placements and each part's own offset remain independently composed here.
+   * come from the CPU snapshot published with the current source records, because a replacement
+   * keeps its old mesh drawing while the GPU slot may already name the future representation; the
+   * camera's own six planes over the scene's own placements and each part's own offset remain
+   * independently composed here.
    *
    * Not the per-cell records this path's own refilter left behind: the GPU scene bypasses that
    * refilter, and a queued replacement deliberately leaves those records and their old mesh live
-   * until the swap. Using the dispatch's table keeps that transition in the same representation as
-   * the GPU reference while the mesh binding and composed matrices remain an independent check.
+   * until the swap. The dispatch's table is deliberately not reused for these gates: the check must
+   * still fail when that table is wrong while the CPU-published source is unchanged.
    */
   #gpuDraws(): readonly IMeshDraw[] {
     const camera = this.#camera;
@@ -7887,32 +7939,26 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * The dispatch's current gates with the owner's part offsets, keyed by asset id.
+   * The CPU-published gates with the owner's part offsets, keyed by asset id.
    *
-   * A queued source replacement leaves the old slot and mesh drawing until its swap. Taking
-   * distances, cull and impostor state from the same slot table the kernel reads keeps this check
-   * on that old representation for the transition, while the local matrices still come from the
-   * owner rather than from the scene's own reference data.
+   * A queued source replacement may update the GPU slot before its old mesh and source records are
+   * swapped. The publication copy stays old until that swap, while the local matrices still come
+   * from the owner rather than from the scene's own reference data.
    */
   #liveGates(): Map<string, ILiveAsset> {
     const out = new Map<string, ILiveAsset>();
     const slots = this.#gpuScene.gates();
-    for (const [slot, gates] of slots.entries()) {
+    for (const [slot] of slots.entries()) {
       const id = this.#gpuScene.slotAsset(slot);
       const asset = id === undefined ? undefined : this.#assets.get(id);
-      if (asset === undefined || asset.levels.length === 0) continue;
-      const locals: Float32Array[][] = [];
-      for (const parts of asset.levels.slice(0, gates.distances.length)) {
-        const level: Float32Array[] = [];
-        for (const part of parts) level.push(Float32Array.from(part.local.elements));
-        locals.push(level);
-      }
+      const published = id === undefined ? undefined : this.#publishedGpuGates.get(id);
+      if (asset === undefined || published === undefined) continue;
       out.set(asset.id, {
-        cull: gates.cull,
-        distances: gates.distances,
+        cull: published.cull,
+        distances: published.distances,
         id: asset.id,
-        impostor: gates.impostor,
-        locals,
+        impostor: published.impostor,
+        locals: published.locals,
       });
     }
     return out;

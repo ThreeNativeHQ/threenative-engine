@@ -3318,6 +3318,55 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expect(disposals.size).toBe(2);
   });
 
+  it("returns one completed manual frame validation with its dispatch identity", async () => {
+    const { camera, planes } = cameraAt(0, 0);
+    const scene = new WorldGpuScene();
+    let readbacks = 0;
+    const mirror = (attribute: unknown): Promise<ArrayBuffer> => {
+      readbacks += 1;
+      const result = cullAndSelect({
+        camera: { planes, x: 0, y: 0, z: 0 },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      });
+      const words = (attribute as { array: Uint32Array | Float32Array }).array;
+      const bytes = words instanceof Float32Array ? result.drawn : result.args;
+      return Promise.resolve(bytes.slice().buffer as ArrayBuffer);
+    };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: mirror,
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, false)).toBe(true);
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+    scene.dispatch(renderer, camera);
+
+    const result = await scene.validateCurrentDispatch(renderer, 17);
+    expect(result.frame).toBe(17);
+    expect(result.dispatch).toBe(1);
+    expect(result.verdict).toBe("ok");
+    expect(result.compared).toBe(1);
+    expect(result.instancesGpu).toBe(1);
+    expect(result.instancesCpu).toBe(1);
+    await expect(scene.validateCurrentDispatch(renderer, 18)).rejects.toThrow(
+      "already manually validated",
+    );
+    for (let dispatch = 2; dispatch <= 30; dispatch += 1) scene.dispatch(renderer, camera);
+    const thirtieth = await scene.validateCurrentDispatch(renderer, 30);
+    expect(thirtieth.dispatch).toBe(30);
+    expect(thirtieth.frame).toBe(30);
+    expect(thirtieth.verdict).toBe("ok");
+    expect(readbacks).toBe(4);
+    scene.dispose();
+  });
+
   it("holds both validation targets until a failed pair has settled", async () => {
     const lines: string[] = [];
     const scene = new WorldGpuScene();
