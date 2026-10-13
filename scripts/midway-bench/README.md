@@ -9,6 +9,7 @@ with the engine arm graded against the three.js arm before any timing counts.
 | `flight.sh` | Runs the scripted flight headed on WebGPU, then (native arm) grades the frames. |
 | `flight-bench.playtest.json` | The scenario: take the deck, climb, cockpit view, three screenshots. |
 | `flight-bench-desktop.playtest.json` | The same flight on the desktop engine player (`flight.sh desktop <tag>` with `MIDWAY_PLAYER_DIR`, graded against the same legacy web runs). |
+| `real-input.mjs` | Real X11 keys and mouse (xdotool) on the packaged desktop engine player, proven from game state: HUD click, W, ArrowDown, ArrowUp, C, a right-button drag, Escape. Own Xvfb and kwin, never the user's display. `node scripts/midway-bench/real-input.mjs <packaged dir>`; red (11 fails) on a player built before the input fix. |
 | `parity.ts` | The fail-closed frame check. Exit 1 when a native frame is not the legacy frame. |
 
 ## Setup
