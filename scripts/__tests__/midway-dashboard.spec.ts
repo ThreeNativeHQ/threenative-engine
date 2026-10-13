@@ -4,9 +4,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type IMidwayRun,
+  cullOf,
   frameBudget,
-  groupsOf,
-  kpisOf,
   loadMidwayRuns,
   matrixWalk,
   parityOf,
@@ -16,6 +15,16 @@ import {
   scanJson,
   uiRoundTrip,
 } from "../midway-bench/dashboard.js";
+import {
+  abPairsOf,
+  breakdownOf,
+  groupsOf,
+  kpisOf,
+  midwayOf,
+  prdProgress,
+  progressOf,
+  trendsOf,
+} from "../midway-bench/kpis.js";
 
 const frame = (cpu: number, ms = 40) =>
   `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: cpu, frameMs: ms, bridgeCalls: 10, hostCpuMs: { update: 1 } })}`;
@@ -130,30 +139,38 @@ describe("PRD-610 KPIs", () => {
 
   it("passes when every target holds", () => {
     expect(verdicts(runs(8, 10, 1000))).toEqual({
+      "AC-3": "pass",
+      "AC-4": "pending",
+      "AC-5": "pass",
       "AC-6": "pass",
       "AC-7": "pass",
-      "AC-5": "pass",
-      "AC-3": "pass",
     });
   });
 
   it("fails each target independently", () => {
     expect(verdicts(runs(14, 20, 5000))).toEqual({
+      "AC-3": "fail",
+      "AC-4": "pending",
+      "AC-5": "fail",
       "AC-6": "fail",
       "AC-7": "pass",
-      "AC-5": "fail",
-      "AC-3": "fail",
     });
   });
 
   it("fails a faster desktop run when parity fails", () => {
-    const [ac6] = kpisOf(runs(5, 10, 1000, false));
+    const ac6 = kpisOf(runs(5, 10, 1000, false)).find((k) => k.id === "AC-6");
     expect(ac6?.verdict).toBe("fail");
     expect(ac6?.detail).toContain("parity FAIL");
   });
 
   it("is pending, never pass, with no data", () => {
-    expect(Object.values(verdicts([]))).toEqual(["pending", "pending", "pending", "pending"]);
+    expect(Object.values(verdicts([]))).toEqual([
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+    ]);
     expect(verdicts([run("ref1-legacy", budget(10))])["AC-6"]).toBe("pending");
   });
 });
@@ -199,5 +216,103 @@ describe("groups and loading", () => {
   it("defaults the runs dir under the home directory and honours MIDWAY_RUNS", () => {
     expect(runsDir({})).toBe(path.join(os.homedir(), ".cache", "tmp-tn", "midway-runs"));
     expect(runsDir({ MIDWAY_RUNS: "/data/runs" })).toBe("/data/runs");
+  });
+});
+
+describe("progress, trends and PRD boxes", () => {
+  it("counts ticked and open AC boxes, and reports none for a file without them", () => {
+    const md =
+      "- [x] AC-1 [local]: a\n- [ ] AC-2 [local]: b\n- [X] AC-3: c\n  - [x] AC-9 nested\n- [ ] not an ac\n";
+    expect(prdProgress(md)).toEqual({
+      done: 2,
+      total: 3,
+      ticked: ["AC-1", "AC-3"],
+      open: ["AC-2"],
+    });
+    expect(prdProgress("# no boxes here")).toBeUndefined();
+    expect(midwayOf([]).prd).toBeUndefined();
+    expect(midwayOf([], md).prd?.done).toBe(2);
+  });
+
+  it("measures the fraction from baseline to target for lower and higher is better", () => {
+    expect(progressOf(10_000, 5_750, 1_500)).toBeCloseTo(0.5);
+    expect(progressOf(0.5, 1, 1)).toBe(1);
+    expect(progressOf(0.8, 0.6, 1)).toBeCloseTo(-1);
+    expect(progressOf(5, 5, 5)).toBe(1);
+    expect(progressOf(5, 6, 5)).toBe(0);
+  });
+
+  it("scores a KPI from the first recorded run, with a regression below zero", () => {
+    const list = [
+      run("ref1-legacy", budget(10)),
+      run("w1-desktop", [frame(20), ui(80), proj(9000)].join("\n"), parityText(true)),
+      run("w2-desktop", [frame(12), ui(90), proj(5250)].join("\n"), parityText(true)),
+    ];
+    const kpi = Object.fromEntries(kpisOf(list).map((k) => [k.id, k]));
+    expect(kpi["AC-3"]).toMatchObject({
+      baseline: 9000,
+      current: 5250,
+      baselineRun: "w1-desktop",
+      verdict: "fail",
+    });
+    expect(kpi["AC-3"]?.progress).toBeCloseTo(0.5);
+    expect(kpi["AC-5"]?.progress).toBeLessThan(0);
+    expect(kpi["AC-6"]).toMatchObject({ baseline: 0.5, current: 10 / 12 });
+    expect(kpi["AC-4"]).toMatchObject({ verdict: "pending" });
+    expect(kpi["AC-4"]?.current).toBeUndefined();
+  });
+
+  it("reads the cull share from cull.json and ignores bad files", () => {
+    expect(cullOf('{"sharePct":1.4}')).toBe(1.4);
+    for (const bad of ["", "{", '{"sharePct":"x"}', '{"sharePct":-1}', undefined])
+      expect(cullOf(bad)).toBeUndefined();
+    const list = [runOf("c1-desktop", "c1", "desktop", 1, frame(5), undefined, '{"sharePct":1.5}')];
+    expect(kpisOf(list).find((k) => k.id === "AC-4")).toMatchObject({
+      verdict: "pass",
+      current: 1.5,
+    });
+  });
+
+  it("builds trends with the legacy target and the improvement against the first desktop run", () => {
+    const list = [
+      run("ref1-legacy", budget(11)),
+      run("a1-desktop", frame(20)),
+      run("a2-desktop", frame(15)),
+    ];
+    const ms = trendsOf(list).find((t) => t.id === "ms");
+    expect(ms?.target).toBe(11);
+    expect(ms?.points.map((p) => p.dir)).toEqual(["ref1-legacy", "a1-desktop", "a2-desktop"]);
+    expect(ms?.deltaPct).toBeCloseTo(25);
+    expect(
+      trendsOf([run("a1-desktop", frame(20))]).find((t) => t.id === "ms")?.deltaPct,
+    ).toBeUndefined();
+  });
+
+  it("splits the desktop frame into game, render, other and present", () => {
+    const line = `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: 10, gameJsCpuMs: 6, renderCpuMs: 3, presentCpuMs: 30 })}`;
+    expect(breakdownOf([run("a1-desktop", line)])).toEqual({
+      dir: "a1-desktop",
+      gameJs: 6,
+      render: 3,
+      other: 1,
+      present: 30,
+    });
+    expect(breakdownOf([])).toBeUndefined();
+  });
+
+  it("applies the keep rule: every B beats every A", () => {
+    const set = (a: number[], b: number[]) => [
+      ...a.map((v, i) => run(`t-a${i + 1}-desktop`, frame(v))),
+      ...b.map((v, i) => run(`t-b${i + 1}-desktop`, frame(v))),
+    ];
+    expect(abPairsOf(set([14, 15, 16], [10, 11, 12]))[0]).toMatchObject({
+      stem: "t",
+      verdict: "keep",
+      medianA: 15,
+      medianB: 11,
+    });
+    expect(abPairsOf(set([14, 15, 16], [10, 11, 14]))[0]?.verdict).toBe("reject");
+    expect(abPairsOf(set([14, 15, 16], []))[0]?.verdict).toBe("pending");
+    expect(abPairsOf([run("solo-desktop", frame(5))])).toEqual([]);
   });
 });

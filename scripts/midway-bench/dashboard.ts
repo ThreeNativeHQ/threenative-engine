@@ -15,9 +15,6 @@ export const runsDir = (env: NodeJS.ProcessEnv = process.env) =>
 
 export const ARMS = ["legacy", "native", "desktop"] as const;
 export type Arm = (typeof ARMS)[number];
-export const POSES = ["takeoff", "cockpit", "reargun"] as const;
-/** PRD-610 targets. */
-export const TARGETS = { hudP95Ms: 16.7, matrixVisited: 1500, webRatio: 1 } as const;
 const LAST = 1000;
 const PLAYER_KEYS = [
   "cpuFrameCpuMs",
@@ -68,7 +65,7 @@ export function scanJson<T = Record<string, unknown>>(text: string, marker: stri
   return out;
 }
 
-const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+export const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 export function median(values: readonly number[]): number | undefined {
   if (!values.length) return undefined;
@@ -208,6 +205,16 @@ export function parityOf(text: string): IParity | undefined {
   }
 }
 
+/** `cull.json` as `{"sharePct": n}`; anything else is no sample. */
+export function cullOf(text: string | undefined): number | undefined {
+  try {
+    const v = (JSON.parse(text ?? "") as { sharePct?: unknown }).sharePct;
+    return finite(v) && v >= 0 ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface IMidwayRun {
   dir: string;
   tag: string;
@@ -222,6 +229,8 @@ export interface IMidwayRun {
   ui?: { n: number; p50: number; p95: number };
   matrix?: { n: number; last: number; max: number };
   parity?: IParity;
+  /** Share of the main thread `ProjectedCull::apply` takes, in percent, from an optional `cull.json` (`{"sharePct": n}`). */
+  cullPct?: number;
   /** `parity.json` exists but does not parse. */
   parityMalformed?: true;
   /** Marker lines dropped because their JSON was malformed. */
@@ -235,12 +244,14 @@ export function runOf(
   mtimeMs: number,
   log: string,
   parityText?: string,
+  cullText?: string,
 ): IMidwayRun {
   const player = arm === "desktop" ? playerFrames(log) : { skipped: 0 };
   const budget = frameBudget(log);
   const ui = uiRoundTrip(log);
   const matrix = matrixWalk(log);
   const parity = parityText === undefined ? undefined : parityOf(parityText);
+  const cullPct = cullOf(cullText);
   const desktop = "frames" in player ? player.frames : undefined;
   const run: IMidwayRun = {
     dir,
@@ -255,6 +266,7 @@ export function runOf(
     ...("ui" in ui ? { ui: ui.ui } : {}),
     ...(matrix ? { matrix } : {}),
     ...(parity ? { parity } : {}),
+    ...(cullPct === undefined ? {} : { cullPct }),
     ...(parityText !== undefined && !parity ? { parityMalformed: true as const } : {}),
   };
   return run;
@@ -262,207 +274,41 @@ export function runOf(
 
 const cache = new Map<string, { mtime: number; run: IMidwayRun }>();
 
+async function readRun(root: string, name: string, tag: string, arm: Arm) {
+  const dir = path.join(root, name);
+  const logStat = await stat(path.join(dir, "run.log")).catch(() => undefined);
+  if (!logStat) return undefined;
+  const parityStat = await stat(path.join(dir, "parity.json")).catch(() => undefined);
+  const cullStat = await stat(path.join(dir, "cull.json")).catch(() => undefined);
+  const mtime = Math.max(logStat.mtimeMs, parityStat?.mtimeMs ?? 0, cullStat?.mtimeMs ?? 0);
+  const hit = cache.get(dir);
+  if (hit?.mtime === mtime) return hit.run;
+  const optional = (file: string, has: unknown) =>
+    has ? readFile(path.join(dir, file), "utf8") : undefined;
+  const run = runOf(
+    name,
+    tag,
+    arm,
+    logStat.mtimeMs,
+    await readFile(path.join(dir, "run.log"), "utf8"),
+    await optional("parity.json", parityStat),
+    await optional("cull.json", cullStat),
+  );
+  cache.set(dir, { mtime, run });
+  return run;
+}
+
 /** Every `<tag>-<arm>` directory under the runs dir, oldest first. Other entries are ignored. */
 export async function loadMidwayRuns(root = runsDir()): Promise<IMidwayRun[]> {
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
   const runs: IMidwayRun[] = [];
   for (const entry of entries) {
     const m = /^(.+)-(legacy|native|desktop)$/.exec(entry.name);
-    if (!entry.isDirectory() || !m) continue;
-    const dir = path.join(root, entry.name);
-    const logStat = await stat(path.join(dir, "run.log")).catch(() => undefined);
-    if (!logStat) continue;
-    const parityStat = await stat(path.join(dir, "parity.json")).catch(() => undefined);
-    const mtime = Math.max(logStat.mtimeMs, parityStat?.mtimeMs ?? 0);
-    let hit = cache.get(dir);
-    if (hit?.mtime !== mtime) {
-      const log = await readFile(path.join(dir, "run.log"), "utf8");
-      const parityText = parityStat
-        ? await readFile(path.join(dir, "parity.json"), "utf8")
+    const run =
+      entry.isDirectory() && m
+        ? await readRun(root, entry.name, m[1] as string, m[2] as Arm)
         : undefined;
-      hit = {
-        mtime,
-        run: runOf(entry.name, m[1] as string, m[2] as Arm, logStat.mtimeMs, log, parityText),
-      };
-      cache.set(dir, hit);
-    }
-    runs.push(hit.run);
+    if (run) runs.push(run);
   }
   return runs.sort((a, b) => a.mtimeMs - b.mtimeMs || a.dir.localeCompare(b.dir));
-}
-
-export type Verdict = "pass" | "fail" | "pending";
-export interface IKpi {
-  id: string;
-  title: string;
-  target: string;
-  verdict: Verdict;
-  value?: string;
-  detail: string;
-}
-
-/** Main-thread ms per frame that both arms report: legacy and web Wasm `frame.p50`, desktop `cpuFrameCpuMs`. */
-export const mainThreadMs = (run: IMidwayRun) =>
-  run.arm === "desktop" ? run.desktop?.medians.cpuFrameCpuMs : run.budget?.frameP50;
-
-const latest = (runs: readonly IMidwayRun[], arm: Arm, has: (r: IMidwayRun) => boolean) =>
-  runs.filter((r) => r.arm === arm && has(r)).at(-1);
-
-/** The legacy reference: median over every legacy run that has a frame time. */
-export const legacyMs = (runs: readonly IMidwayRun[]) =>
-  median(
-    runs
-      .filter((r) => r.arm === "legacy")
-      .map(mainThreadMs)
-      .filter(finite),
-  );
-
-const parityVerdict = (run: IMidwayRun | undefined) =>
-  !run?.parity
-    ? "no parity.json"
-    : run.parity.pass && POSES.every((p) => run.parity?.frames[p]?.pass)
-      ? undefined
-      : "parity FAIL";
-
-/** PRD-610 acceptance criteria as pass, fail or pending cards. */
-export function kpisOf(runs: readonly IMidwayRun[]): IKpi[] {
-  const desktop = latest(runs, "desktop", (r) => r.desktop !== undefined);
-  const web = latest(runs, "native", (r) => r.budget !== undefined);
-  const legacy = legacyMs(runs);
-  const ratioKpi = (
-    id: string,
-    title: string,
-    target: string,
-    run: IMidwayRun | undefined,
-    floor: number,
-    label: string,
-  ): IKpi => {
-    const ms = run ? mainThreadMs(run) : undefined;
-    if (!run || ms === undefined || legacy === undefined)
-      return {
-        id,
-        title,
-        target,
-        verdict: "pending",
-        detail: `no samples: need a ${label} run and a legacy run`,
-      };
-    const ratio = legacy / ms;
-    const bad = parityVerdict(run);
-    const faster = floor === 1 ? ratio > 1 : ratio >= floor;
-    return {
-      id,
-      title,
-      target,
-      verdict: bad === undefined && faster ? "pass" : "fail",
-      value: `${ratio.toFixed(2)}x`,
-      detail: `${run.dir}: ${ms.toFixed(2)} ms vs legacy ${legacy.toFixed(2)} ms${bad ? `, ${bad}` : ", parity PASS"}. Run level, poses are not separated in the logs.`,
-    };
-  };
-  const hud = desktop?.ui;
-  const matrix = desktop?.matrix;
-  return [
-    ratioKpi(
-      "AC-6",
-      "Desktop beats three.js",
-      "ratio above 1.0, parity PASS",
-      desktop,
-      1,
-      "desktop",
-    ),
-    ratioKpi(
-      "AC-7",
-      "Web Wasm vs three.js",
-      "ratio at least 1.0, parity PASS",
-      web,
-      TARGETS.webRatio,
-      "native",
-    ),
-    hud
-      ? {
-          id: "AC-5",
-          title: "HUD round trip",
-          target: `p95 below ${TARGETS.hudP95Ms} ms`,
-          verdict: hud.p95 < TARGETS.hudP95Ms ? "pass" : "fail",
-          value: `${hud.p95.toFixed(1)} ms`,
-          detail: `${desktop?.dir}: p50 ${hud.p50.toFixed(1)} ms, p95 ${hud.p95.toFixed(1)} ms over ${hud.n} snapshots`,
-        }
-      : {
-          id: "AC-5",
-          title: "HUD round trip",
-          target: `p95 below ${TARGETS.hudP95Ms} ms`,
-          verdict: "pending",
-          detail: "no samples: no desktop run with TN_UI_SNAPSHOT",
-        },
-    matrix
-      ? {
-          id: "AC-3",
-          title: "Matrix walk",
-          target: `visited at most ${TARGETS.matrixVisited}`,
-          verdict: matrix.last <= TARGETS.matrixVisited ? "pass" : "fail",
-          value: matrix.last.toLocaleString("en-US"),
-          detail: `${desktop?.dir}: last ${matrix.last}, max ${matrix.max} over ${matrix.n} projection lines`,
-        }
-      : {
-          id: "AC-3",
-          title: "Matrix walk",
-          target: `visited at most ${TARGETS.matrixVisited}`,
-          verdict: "pending",
-          detail: "no samples: no desktop projection line",
-        },
-  ];
-}
-
-export interface IGroup {
-  group: string;
-  arm: Arm;
-  runs: number;
-  cpuFrameMs?: number;
-  frameP95?: number;
-  hudP95?: number;
-  matrixLast?: number;
-  parityPass: number;
-}
-
-/** A/B grouping by tag prefix and arm: `walk-a1..a3` against `walk-b1..b3`. */
-export function groupsOf(runs: readonly IMidwayRun[]): IGroup[] {
-  const by = new Map<string, IMidwayRun[]>();
-  for (const r of runs)
-    by.set(`${r.group}\0${r.arm}`, [...(by.get(`${r.group}\0${r.arm}`) ?? []), r]);
-  const med = (list: readonly IMidwayRun[], get: (r: IMidwayRun) => number | undefined) =>
-    median(list.map(get).filter(finite));
-  return [...by.values()].map((list) => {
-    const first = list[0] as IMidwayRun;
-    const opt = <K extends string>(key: K, value: number | undefined) =>
-      value === undefined ? {} : { [key]: value };
-    return {
-      group: first.group,
-      arm: first.arm,
-      runs: list.length,
-      parityPass: list.filter((r) => r.parity?.pass).length,
-      ...opt("cpuFrameMs", med(list, mainThreadMs)),
-      ...opt(
-        "frameP95",
-        med(list, (r) => r.desktop?.frameP95 ?? r.budget?.frameP95),
-      ),
-      ...opt(
-        "hudP95",
-        med(list, (r) => r.ui?.p95),
-      ),
-      ...opt(
-        "matrixLast",
-        med(list, (r) => r.matrix?.last),
-      ),
-    };
-  });
-}
-
-export function midwayOf(runs: readonly IMidwayRun[]) {
-  return {
-    kpis: kpisOf(runs),
-    groups: groupsOf(runs),
-    legacyMs: legacyMs(runs),
-    runs,
-    skipped: runs.reduce((n, r) => n + r.skipped, 0),
-    dir: runsDir(),
-  };
 }

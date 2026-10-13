@@ -6,94 +6,174 @@
 <title>Midway scoreboard</title>
 <style>
   :root {
-    --bg:#FAF9F5; --card:#F0EEE6; --ink:#141413; --mute:#5E5D59; --line:#E8E6DC; --accent:#D97757; --soft:#B0AEA5;
-    --green:#15803d; --green-bg:#e8f6ee; --red:#c8261b; --red-bg:#fdeceb; --grey:#5E5D59; --grey-bg:#E8E6DC;
+    --bg:#FAF9F5; --card:#F0EEE6; --ink:#141413; --mute:#5E5D59; --line:#E3E0D3; --track:#E3E0D3; --accent:#D97757; --soft:#B0AEA5;
+    --green:#15803d; --green-bg:#e3f3e9; --red:#c8261b; --red-bg:#fbe6e3; --grey-bg:#E8E6DC;
+    --desktop:#D97757; --wasm:#6A9BCC; --legacy:#87867F;
   }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-    --bg:#262624; --card:#30302E; --ink:#F0EEE6; --mute:#B0AEA5; --line:#3F3E3B; --accent:#D97757; --soft:#B0AEA5;
-    --green:#4ade80; --green-bg:#112a1b; --red:#ff7b70; --red-bg:#331512; --grey:#B0AEA5; --grey-bg:#3A3936;
+    --bg:#262624; --card:#30302E; --ink:#F0EEE6; --mute:#B0AEA5; --line:#454441; --track:#454441; --accent:#D97757; --soft:#B0AEA5;
+    --green:#4ade80; --green-bg:#16301f; --red:#ff7b70; --red-bg:#3a1a17; --grey-bg:#3A3936;
+    --desktop:#E08A6D; --wasm:#7FAAD6; --legacy:#A9A79D;
   } }
   :root[data-theme="dark"] {
-    --bg:#262624; --card:#30302E; --ink:#F0EEE6; --mute:#B0AEA5; --line:#3F3E3B; --accent:#D97757; --soft:#B0AEA5;
-    --green:#4ade80; --green-bg:#112a1b; --red:#ff7b70; --red-bg:#331512; --grey:#B0AEA5; --grey-bg:#3A3936;
+    --bg:#262624; --card:#30302E; --ink:#F0EEE6; --mute:#B0AEA5; --line:#454441; --track:#454441; --accent:#D97757; --soft:#B0AEA5;
+    --green:#4ade80; --green-bg:#16301f; --red:#ff7b70; --red-bg:#3a1a17; --grey-bg:#3A3936;
+    --desktop:#E08A6D; --wasm:#7FAAD6; --legacy:#A9A79D;
   }
   * { box-sizing:border-box; }
-  body { margin:0; padding:20px 16px 48px; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; font-variant-numeric:tabular-nums; }
-  main { max-width:960px; margin:0 auto; display:grid; gap:20px; } main > * { min-width:0; }
-  header { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:baseline; justify-content:space-between; }
-  h1 { font-size:17px; margin:0; font-weight:650; } h2 { font-size:15px; margin:0 0 8px; font-weight:650; }
-  nav.tabs { display:flex; gap:6px; } nav.tabs a { padding:4px 12px; border-radius:999px; color:var(--mute); text-decoration:none; border:1px solid var(--line); }
+  body { margin:0; padding:14px 18px 40px; background:var(--bg); color:var(--ink); font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; font-variant-numeric:tabular-nums; }
+  main { max-width:1700px; margin:0 auto; display:grid; gap:14px; } main > * { min-width:0; }
+  header { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+  h1 { font-size:17px; margin:0; font-weight:650; } h2 { font-size:12px; margin:0 0 10px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); }
+  .grow { flex:1; }
+  nav.tabs { display:flex; gap:6px; } nav.tabs a { padding:3px 12px; border-radius:999px; color:var(--mute); text-decoration:none; border:1px solid var(--line); }
   nav.tabs a[aria-current] { background:var(--accent); border-color:var(--accent); color:#fff; }
-  .mute { color:var(--mute); } .sm { font-size:12.5px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
-  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
-  .kpi { border-radius:10px; padding:12px 14px; background:var(--grey-bg); border-left:4px solid var(--grey); }
-  .kpi.pass { background:var(--green-bg); border-color:var(--green); } .kpi.fail { background:var(--red-bg); border-color:var(--red); }
-  .kpi b { display:block; font-size:12.5px; color:var(--mute); font-weight:600; }
-  .kpi .v { font-size:30px; font-weight:700; line-height:1.15; } .kpi.pass .v { color:var(--green); } .kpi.fail .v { color:var(--red); }
-  .kpi .t { font-size:12px; color:var(--mute); } .kpi .d { font-size:11.5px; color:var(--mute); margin-top:6px; }
-  .pill { display:inline-block; border-radius:999px; padding:1px 9px; font-size:11.5px; background:var(--grey-bg); color:var(--mute); }
-  .pill.pass { background:var(--green-bg); color:var(--green); } .pill.fail { background:var(--red-bg); color:var(--red); }
+  .mute { color:var(--mute); } .sm { font-size:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .hero { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:14px; align-items:start; }
+  .stack { display:grid; gap:14px; }
+  .kpi { display:grid; gap:5px; padding:9px 0 11px; border-top:1px solid var(--line); } .kpi:first-of-type { border-top:0; padding-top:0; }
+  .kpi .top { display:flex; align-items:baseline; gap:10px; }
+  .kpi .name { font-weight:600; font-size:14px; } .kpi .name small { color:var(--mute); font-weight:500; margin-right:6px; }
+  .kpi .big { font-size:36px; font-weight:750; line-height:1; letter-spacing:-.02em; } .kpi .big small { font-size:14px; font-weight:500; color:var(--mute); letter-spacing:0; margin-left:3px; }
+  .pass .big { color:var(--green); } .fail .big { color:var(--red); }
+  .bar { position:relative; height:16px; border-radius:8px; background:var(--track); overflow:hidden; }
+  .bar i { position:absolute; inset:0 auto 0 0; border-radius:8px; background:var(--accent); }
+  .pass .bar i { background:var(--green); }
+  .pending .bar { background:repeating-linear-gradient(135deg,var(--track) 0 8px,transparent 8px 16px); }
+  .bar b { position:absolute; top:0; bottom:0; width:3px; background:var(--red); }
+  .kpi .foot { display:flex; gap:8px; font-size:12px; color:var(--mute); align-items:center; }
+  .chip { display:inline-block; border-radius:999px; padding:1px 9px; font-size:11.5px; font-weight:650; background:var(--grey-bg); color:var(--mute); white-space:nowrap; }
+  .chip.pass { background:var(--green-bg); color:var(--green); } .chip.fail { background:var(--red-bg); color:var(--red); }
+  .pct { font-size:20px; font-weight:700; color:var(--ink); }
+  .ring { display:flex; gap:16px; align-items:center; }
+  .acs { display:flex; flex-wrap:wrap; gap:5px; } .acs .chip { min-width:48px; text-align:center; }
+  #ab { grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); }
+  .twin { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:10px; }
+  .row3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:14px; }
+  .charthead { display:flex; align-items:center; gap:8px; margin-bottom:4px; } .charthead b { font-size:13px; }
+  svg { display:block; width:100%; height:auto; } svg text { fill:var(--mute); font-size:10.5px; }
+  svg .val { fill:var(--ink); font-size:12px; font-weight:650; } svg .tgt { fill:var(--ink); font-size:10.5px; }
+  .legend { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:12px; color:var(--mute); }
+  .legend span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px; background:var(--c); }
   .scroll { overflow-x:auto; } table { border-collapse:collapse; width:100%; font-size:12.5px; }
-  th, td { text-align:right; padding:4px 8px; border-top:1px solid var(--line); white-space:nowrap; } th:first-child, td:first-child { text-align:left; } th { color:var(--mute); font-weight:500; }
+  th, td { text-align:right; padding:3px 8px; border-top:1px solid var(--line); white-space:nowrap; } th:first-child, td:first-child { text-align:left; } th { color:var(--mute); font-weight:500; }
+  details summary { cursor:pointer; font-weight:650; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); }
   #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px; }
-  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
-  svg text { fill:var(--mute); font-size:10px; } .legend span::before { content:""; display:inline-block; width:10px; height:3px; margin-right:5px; vertical-align:middle; background:var(--lc); }
-  .legend span { margin-right:12px; font-size:12px; color:var(--mute); }
+  @media (max-width:1100px) { .hero { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
 <main>
 <header>
-  <h1>Midway scoreboard <span class="mute">· PRD-610 · native engine vs three.js</span></h1>
+  <h1>Midway scoreboard <span class="mute">PRD-610 · native engine vs three.js</span></h1>
   <nav class="tabs"><a href="/">Epic scoreboard</a><a href="/midway" aria-current="page">Midway</a></nav>
+  <span class="grow"></span>
   <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
 </header>
-<section class="card"><h2>PRD-610 targets</h2><div class="kpis" id="kpis"></div></section>
-<section class="card"><h2>Side by side, latest run per arm</h2><div class="scroll" id="side"></div></section>
-<section class="card"><h2>Trend, oldest left</h2><div class="charts" id="trend"></div></section>
-<section class="card"><h2>A/B groups by tag prefix</h2><div class="scroll" id="groups"></div></section>
-<section class="card"><h2>Every run</h2><div class="scroll" id="runs"></div></section>
+<section class="hero">
+  <div class="card"><h2>Progress to the PRD-610 targets <span class="mute" style="text-transform:none;letter-spacing:0">· bar runs from the first recorded run to the target</span></h2><div id="kpis"></div></div>
+  <div class="stack">
+    <div class="card"><h2>PRD-610 acceptance boxes</h2><div class="ring" id="ring"></div></div>
+    <div class="card"><h2>Native vs web, main-thread ms per frame</h2><div class="twin" id="side"></div><div class="legend" id="sideLegend"></div></div>
+  </div>
+</section>
+<section class="card"><h2>Trend per run · dashed line is the target</h2><div class="row3" id="trend"></div><div class="legend" id="trendLegend" style="margin-top:6px"></div></section>
+<section class="card"><h2>A/B groups · keep rule: every B beats every A</h2><div class="row3" id="ab"></div></section>
+<section class="card"><details><summary>Every run, groups and parity</summary><div class="scroll" id="runs" style="margin-top:8px"></div></details></section>
 </main>
 <script>
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const $ = (id) => document.getElementById(id);
-const n = (v, d = 2, u = "") => (v === undefined ? '<span class="mute">no samples</span>' : `${v.toFixed(d)}${u}`);
+const NS = '<span class="mute">no samples</span>';
 const ARM = { desktop: "Native engine (desktop)", native: "Web Wasm engine", legacy: "Web three.js" };
-const COLOR = { desktop: "var(--accent)", native: "var(--soft)", legacy: "var(--ink)" };
+const COLOR = { desktop: "var(--desktop)", native: "var(--wasm)", legacy: "var(--legacy)" };
+const num = (v, d = 1) => (v >= 1000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v >= 100 ? 0 : d));
+const n = (v, d = 2) => (v === undefined ? NS : v.toFixed(d));
 const ms = (r) => (r.arm === "desktop" ? r.desktop?.medians.cpuFrameCpuMs : r.budget?.frameP50);
-const parity = (r) => (r.parityMalformed ? '<span class="pill fail">malformed</span>' : !r.parity ? '<span class="pill">none</span>' : `<span class="pill ${r.parity.pass ? "pass" : "fail"}">${r.parity.pass ? "PASS" : "FAIL"}</span>`);
+const parity = (r) => (r.parityMalformed ? '<span class="chip fail">malformed</span>' : !r.parity ? '<span class="chip">none</span>' : `<span class="chip ${r.parity.pass ? "pass" : "fail"}">${r.parity.pass ? "PASS" : "FAIL"}</span>`);
+const legendOf = (arms) => arms.map((a) => `<span style="--c:${COLOR[a]}">${ARM[a]}</span>`).join("");
+const short = (dir) => dir.replace(/-(desktop|native|legacy)$/, "");
 
-function chart(title, unit, get, runs) {
-  const arms = Object.keys(ARM).map((arm) => ({ arm, pts: runs.map((r, i) => ({ i, v: r.arm === arm ? get(r) : undefined })).filter((p) => p.v !== undefined) })).filter((s) => s.pts.length);
-  if (!arms.length) return `<div><b class="sm">${title}</b><p class="mute sm">no samples</p></div>`;
-  const all = arms.flatMap((s) => s.pts.map((p) => p.v)), hi = Math.max(...all, 1e-9), W = 300, H = 120, x = (i) => 8 + (i / Math.max(runs.length - 1, 1)) * (W - 16), y = (v) => H - 14 - (v / hi) * (H - 30);
-  const lines = arms.map((s) => `<polyline fill="none" stroke="${COLOR[s.arm]}" stroke-width="2" points="${s.pts.map((p) => `${x(p.i)},${y(p.v)}`).join(" ")}"/>${s.pts.map((p) => `<circle cx="${x(p.i)}" cy="${y(p.v)}" r="3" fill="${COLOR[s.arm]}"><title>${esc(runs[p.i].dir)}: ${p.v.toFixed(2)} ${unit}</title></circle>`).join("")}`).join("");
-  return `<div><b class="sm">${title}</b><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(title)}"><line x1="8" x2="${W - 8}" y1="${H - 14}" y2="${H - 14}" stroke="var(--line)"/><text x="8" y="10">${hi.toFixed(1)} ${unit}</text>${lines}</svg></div>`;
+function kpi(k) {
+  const unit = { x: "×", "%": "%", ms: "ms", nodes: "nodes" }[k.unit];
+  const fmt = (v) => (k.unit === "x" ? v.toFixed(2) : k.unit === "%" ? v.toFixed(1) : num(v));
+  const tgt = `${k.better === "lower" ? "≤" : "≥"} ${fmt(k.target)} ${unit}`;
+  if (k.verdict === "pending")
+    return `<div class="kpi pending"><div class="top"><span class="name"><small>${k.id}</small>${esc(k.title)}</span><span class="grow"></span><span class="big">—</span><span class="chip">pending</span></div><div class="bar"></div><div class="foot"><span>target ${tgt}</span><span class="grow"></span><span>${esc(k.detail)}</span></div></div>`;
+  const p = k.progress, fill = Math.max(0, Math.min(1, p)) * 100;
+  const notch = p < 0 ? '<b style="left:0"></b>' : "";
+  const word = p < 0 ? `${Math.abs(p * 100).toFixed(0)}% worse than baseline` : p > 1 ? "past the target" : "of the way";
+  return `<div class="kpi ${k.verdict}"><div class="top"><span class="name"><small>${k.id}${k.ticked ? " ✓" : ""}</small>${esc(k.title)}</span><span class="grow"></span><span class="big">${fmt(k.current)}<small>${unit}</small></span><span class="chip ${k.verdict}">${k.verdict.toUpperCase()}</span></div>
+    <div class="bar" role="img" aria-label="${k.id} progress ${Math.round(p * 100)} percent"><i style="width:${fill}%"></i>${notch}</div>
+    <div class="foot"><span>start ${fmt(k.baseline)} ${unit} <span title="first recorded run">(${esc(short(k.baselineRun))})</span></span><span class="grow"></span><span class="pct">${p < 0 ? "−" : ""}${Math.abs(p * 100).toFixed(0)}%</span><span>${word}</span><span class="grow"></span><span>target <b>${tgt}</b></span></div>
+    <div class="foot"><span>${esc(short(k.run))}: ${esc(k.detail)}</span></div></div>`;
+}
+
+function ring(prd) {
+  if (!prd) return '<span class="mute">no AC boxes found in the PRD file</span>';
+  const R = 54, C = 2 * Math.PI * R, f = prd.done / prd.total;
+  const all = [...prd.ticked.map((id) => [id, 1]), ...prd.open.map((id) => [id, 0])].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
+  return `<svg viewBox="0 0 140 140" style="width:140px;flex:none" role="img" aria-label="${prd.done} of ${prd.total} acceptance boxes ticked"><circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--track)" stroke-width="14"/><circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--accent)" stroke-width="14" stroke-linecap="round" stroke-dasharray="${f * C} ${C}" transform="rotate(-90 70 70)"/><text x="70" y="72" text-anchor="middle" class="val" style="font-size:30px;font-weight:750">${prd.done}/${prd.total}</text><text x="70" y="92" text-anchor="middle">${Math.round(f * 100)}% ticked</text></svg>
+  <div><div class="acs">${all.map(([id, t]) => `<span class="chip ${t ? "pass" : ""}">${id}${t ? " ✓" : ""}</span>`).join("")}</div><p class="mute sm" style="margin:8px 0 0">A box is ticked only when its proof ran. The bars on the left show how far the measurements got.</p></div>`;
+}
+
+function side(d) {
+  const latest = (arm) => d.runs.filter((r) => r.arm === arm && ms(r) !== undefined).at(-1);
+  const bars = Object.keys(ARM).map((arm) => ({ arm, r: latest(arm) }));
+  const W = 360, H = 270, base = H - 34, top = 26, hi = Math.max(...bars.map((b) => (b.r ? ms(b.r) : 0)), 1) * 1.15, bw = 70, gap = (W - 3 * bw) / 4;
+  const ref = d.legacyMs;
+  const cols = bars.map((b, i) => {
+    const x = gap + i * (bw + gap), label = ARM[b.arm].replace(" (desktop)", "").replace("Native engine", "Native");
+    if (!b.r) return `<g><rect x="${x}" y="${top}" width="${bw}" height="${base - top}" rx="6" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${x + bw / 2}" y="${(base + top) / 2}" text-anchor="middle">no samples</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${label}</text></g>`;
+    const v = ms(b.r), h = (v / hi) * (base - top), chip = ref && b.arm !== "legacy" ? `${(ref / v).toFixed(2)}× three.js` : "reference";
+    return `<g><rect x="${x}" y="${base - h}" width="${bw}" height="${h}" rx="6" fill="${COLOR[b.arm]}"><title>${esc(b.r.dir)}</title></rect><text class="val" x="${x + bw / 2}" y="${base - h - 6}" text-anchor="middle">${v.toFixed(1)} ms</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${label}</text><text x="${x + bw / 2}" y="${H - 3}" text-anchor="middle" style="fill:${b.arm !== "legacy" && ref && ref / v < 1 ? "var(--red)" : "var(--mute)"}">${chip}</text></g>`;
+  }).join("");
+  const refLine = ref ? `<line x1="0" x2="${W}" y1="${base - (ref / hi) * (base - top)}" y2="${base - (ref / hi) * (base - top)}" stroke="var(--legacy)" stroke-dasharray="5 4"/>` : "";
+  const bd = d.breakdown;
+  let stack = `<div class="mute sm">no desktop samples</div>`, legend = "";
+  if (bd) {
+    const parts = [["gameJs", "Game JS", "var(--wasm)", bd.gameJs], ["render", "Render", "var(--desktop)", bd.render], ["other", "Other main thread", "var(--soft)", bd.other]];
+    const total = parts.reduce((s, p) => s + p[3], 0), SW = 200, sb = H - 34, st = 46, bx = 40, sw = 80;
+    let y = sb;
+    const segs = parts.map(([, name, color, v]) => { const h = (v / total) * (sb - st); y -= h; return `<g><rect x="${bx}" y="${y}" width="${sw}" height="${Math.max(h, 0)}" fill="${color}"><title>${name}: ${v.toFixed(2)} ms</title></rect>${h > 13 ? `<text x="${bx + sw + 6}" y="${y + h / 2 + 4}" style="fill:var(--ink)">${name.split(" ")[0]} ${v.toFixed(1)}</text>` : ""}</g>`; }).join("");
+    stack = `<svg viewBox="0 0 ${SW} ${H}" role="img" aria-label="Desktop frame breakdown">${segs}<text class="val" x="${bx + sw / 2}" y="${st - 8}" text-anchor="middle">${total.toFixed(1)} ms</text><text x="${bx + sw / 2}" y="${st - 24}" text-anchor="middle">+ ${bd.present.toFixed(1)} present</text><text x="${bx + sw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">Desktop split</text><text x="${bx + sw / 2}" y="${H - 3}" text-anchor="middle">${esc(short(bd.dir))}</text></svg>`;
+    legend = `<span style="--c:var(--wasm)">Game JS</span><span style="--c:var(--desktop)">Render</span><span style="--c:var(--soft)">Other main thread</span><span>present call (${bd.present.toFixed(1)} ms) is outside the KPI</span>`;
+  }
+  $("side").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Main-thread ms per frame by arm"><line x1="0" x2="${W}" y1="${base}" y2="${base}" stroke="var(--line)"/>${refLine}${cols}</svg>${stack}`;
+  $("sideLegend").innerHTML = (ref ? `<span style="--c:var(--legacy)">dashed: three.js ${ref.toFixed(1)} ms</span>` : "") + legend;
+}
+
+function trend(t) {
+  const W = 420, H = 190, L = 40, R = 10, T = 14, B = 26, pts = t.points;
+  if (!pts.length) return `<div><div class="charthead"><b>${t.title}</b></div><p class="mute sm">no samples</p></div>`;
+  const hi = Math.max(...pts.map((p) => p.v), t.target ?? 0) * 1.12, x = (i) => L + (pts.length === 1 ? (W - L - R) / 2 : (i / (pts.length - 1)) * (W - L - R)), y = (v) => H - B - (v / hi) * (H - B - T);
+  const grid = [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${y(hi * f)}" y2="${y(hi * f)}" stroke="var(--line)"/><text x="${L - 5}" y="${y(hi * f) + 3}" text-anchor="end">${num(hi * f, 0)}</text>`).join("");
+  const lines = Object.keys(ARM).map((arm) => { const mine = pts.map((p, i) => ({ p, i })).filter((q) => q.p.arm === arm); if (!mine.length) return ""; return `${mine.length > 1 ? `<polyline fill="none" stroke="${COLOR[arm]}" stroke-width="2.5" stroke-linejoin="round" points="${mine.map((q) => `${x(q.i)},${y(q.p.v)}`).join(" ")}"/>` : ""}${mine.map((q) => `<circle cx="${x(q.i)}" cy="${y(q.p.v)}" r="3.8" fill="${COLOR[arm]}"><title>${esc(q.p.dir)}: ${q.p.v.toFixed(2)} ${t.unit}</title></circle>`).join("")}`; }).join("");
+  const tgt = t.target === undefined ? "" : `<line x1="${L}" x2="${W - R}" y1="${y(t.target)}" y2="${y(t.target)}" stroke="var(--green)" stroke-width="1.8" stroke-dasharray="6 4"/><text class="tgt" x="${W - R}" y="${y(t.target) - 4}" text-anchor="end" style="fill:var(--green)">${t.targetLabel} ${num(t.target)} ${t.unit}</text>`;
+  const badge = t.deltaPct === undefined ? '<span class="chip">needs 2 desktop runs</span>' : `<span class="chip ${t.deltaPct >= 0 ? "pass" : "fail"}">${t.deltaPct >= 0 ? "▼" : "▲"} ${Math.abs(t.deltaPct).toFixed(0)}% ${t.deltaPct >= 0 ? "better" : "worse"} than baseline</span>`;
+  return `<div><div class="charthead"><b>${t.title}</b><span class="grow"></span>${badge}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t.title)} per run">${grid}${tgt}${lines}<text x="${L}" y="${H - 8}">${esc(short(pts[0].dir))}</text><text x="${W - R}" y="${H - 8}" text-anchor="end">${esc(short(pts.at(-1).dir))}</text></svg></div>`;
+}
+
+function ab(p) {
+  const rows = Math.max(p.a.length, p.b.length), W = 420, H = 190, L = 34, T = 22, B = 26, hi = Math.max(...p.a.map((r) => r.ms), ...p.b.map((r) => r.ms), 1) * 1.15;
+  const slot = (W - L - 8) / rows, bw = Math.min(34, slot / 2 - 4), y = (v) => H - B - (v / hi) * (H - B - T);
+  const bar = (r, i, side) => { if (!r) return ""; const cx = L + slot * i + slot / 2, bx = cx + (side === "a" ? -bw - 2 : 2); return `<rect x="${bx}" y="${y(r.ms)}" width="${bw}" height="${H - B - y(r.ms)}" rx="4" fill="${side === "a" ? "var(--legacy)" : "var(--desktop)"}"><title>${esc(r.dir)}: ${r.ms.toFixed(2)} ms</title></rect><text class="val" style="font-size:11px" x="${bx + bw / 2}" y="${y(r.ms) - 4}" text-anchor="middle">${r.ms.toFixed(1)}</text>`; };
+  const bars = Array.from({ length: rows }, (_, i) => bar(p.a[i], i, "a") + bar(p.b[i], i, "b") + `<text x="${L + slot * i + slot / 2}" y="${H - 8}" text-anchor="middle">run ${i + 1}</text>`).join("");
+  const chip = { keep: ["pass", "KEEP B"], reject: ["fail", "REJECT B"], pending: ["", "needs A and B"] }[p.verdict];
+  const delta = p.medianA && p.medianB ? `median A ${p.medianA.toFixed(1)} → B ${p.medianB.toFixed(1)} ms (${((p.medianB / p.medianA - 1) * 100).toFixed(0)}%)` : "";
+  const why = p.verdict === "keep" ? "every B beats every A" : p.verdict === "reject" ? `worst B ${Math.max(...p.b.map((r) => r.ms)).toFixed(1)} is not below best A ${Math.min(...p.a.map((r) => r.ms)).toFixed(1)}` : "";
+  return `<div><div class="charthead"><b>${esc(p.stem)} · ${p.arm}</b><span class="grow"></span><span class="chip ${chip[0]}">${chip[1]}</span></div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="A versus B ms per frame"><line x1="${L}" x2="${W - 8}" y1="${H - B}" y2="${H - B}" stroke="var(--line)"/>${bars}</svg><div class="legend"><span style="--c:var(--legacy)">A</span><span style="--c:var(--desktop)">B</span><span>${delta}${why ? ` · ${why}` : ""}</span></div></div>`;
 }
 
 function render(d) {
-  $("kpis").innerHTML = d.kpis.map((k) => `<div class="kpi ${k.verdict}"><b>${k.id} · ${esc(k.title)} <span class="pill ${k.verdict}">${k.verdict}</span></b><div class="v">${k.value ? esc(k.value) : "no samples"}</div><div class="t">target: ${esc(k.target)}</div><div class="d">${esc(k.detail)}</div></div>`).join("");
-  const latest = (arm) => d.runs.filter((r) => r.arm === arm && r.status === "ok").at(-1);
-  const cols = Object.keys(ARM).map((arm) => [arm, latest(arm)]);
-  const row = (label, f) => `<tr><th>${label}</th>${cols.map(([, r]) => `<td>${r ? f(r) : '<span class="mute">no run</span>'}</td>`).join("")}</tr>`;
-  $("side").innerHTML = `<table><tr><th></th>${cols.map(([a]) => `<th>${ARM[a]}</th>`).join("")}</tr>
-    ${row("Run", (r) => esc(r.dir))}
-    ${row("Main-thread ms / frame", (r) => n(ms(r)))}
-    ${row("Frame p95 ms", (r) => n(r.desktop?.frameP95 ?? r.budget?.frameP95))}
-    ${row("Frame ms incl. present", (r) => n(r.desktop?.medians.frameMs))}
-    ${row("Render CPU ms", (r) => n(r.desktop?.medians.renderCpuMs))}
-    ${row("Game JS CPU ms", (r) => n(r.desktop?.medians.gameJsCpuMs))}
-    ${row("Bridge calls / frame", (r) => n(r.desktop?.medians.bridgeCalls, 0))}
-    ${row("FPS (budget window)", (r) => n(r.budget?.fps, 1))}
-    ${row("HUD round trip p50 / p95 ms", (r) => (r.ui ? `${r.ui.p50.toFixed(1)} / ${r.ui.p95.toFixed(1)}` : '<span class="mute">no samples</span>'))}
-    ${row("Matrix walk visited (last / max)", (r) => (r.matrix ? `${r.matrix.last} / ${r.matrix.max}` : '<span class="mute">no samples</span>'))}
-    ${row("Parity", parity)}</table>
-    <p class="mute sm">Main-thread ms per frame is desktop <code>cpuFrameCpuMs</code> against web <code>TN_FRAME_BUDGET</code> frame p50. Legacy reference: ${n(d.legacyMs, 2, " ms")} (median of all legacy runs).</p>`;
-  const legend = `<p class="legend" style="grid-column:1/-1;margin:0">${Object.keys(ARM).map((a) => `<span style="--lc:${COLOR[a]}">${ARM[a]}</span>`).join("")}</p>`;
-  $("trend").innerHTML = legend + chart("Main-thread ms / frame", "ms", ms, d.runs) + chart("Ratio vs legacy (higher is better)", "x", (r) => (r.arm !== "legacy" && d.legacyMs && ms(r) ? d.legacyMs / ms(r) : undefined), d.runs) + chart("HUD round trip p95", "ms", (r) => r.ui?.p95, d.runs) + chart("Matrix walk visited (last)", "nodes", (r) => r.matrix?.last, d.runs);
-  $("groups").innerHTML = `<table><tr><th>Group</th><th>Arm</th><th>Runs</th><th>ms / frame</th><th>Frame p95</th><th>HUD p95</th><th>Matrix last</th><th>Parity PASS</th></tr>${d.groups.map((g) => `<tr><td>${esc(g.group)}</td><td>${g.arm}</td><td>${g.runs}</td><td>${n(g.cpuFrameMs)}</td><td>${n(g.frameP95)}</td><td>${n(g.hudP95, 1)}</td><td>${n(g.matrixLast, 0)}</td><td>${g.parityPass}/${g.runs}</td></tr>`).join("")}</table>`;
-  $("runs").innerHTML = `<table><tr><th>Run</th><th>Updated</th><th>ms / frame</th><th>Frame p95</th><th>HUD p95</th><th>Matrix last</th><th>Parity</th><th>Skipped lines</th></tr>${[...d.runs].reverse().map((r) => `<tr><td>${esc(r.dir)}</td><td>${new Date(r.mtimeMs).toLocaleString()}</td><td>${r.status === "ok" ? n(ms(r)) : "no samples"}</td><td>${n(r.desktop?.frameP95 ?? r.budget?.frameP95)}</td><td>${n(r.ui?.p95, 1)}</td><td>${n(r.matrix?.last, 0)}</td><td>${parity(r)}</td><td>${r.skipped}</td></tr>`).join("")}</table>`;
+  $("kpis").innerHTML = d.kpis.map(kpi).join("");
+  $("ring").innerHTML = ring(d.prd);
+  side(d);
+  $("trend").innerHTML = d.trends.map(trend).join("");
+  $("trendLegend").innerHTML = legendOf(Object.keys(ARM));
+  $("ab").innerHTML = d.abPairs.map(ab).join("") || '<span class="mute">no A/B tags yet (name runs like walk-a1 and walk-b1)</span>';
+  $("runs").innerHTML = `<table><tr><th>Run</th><th>Updated</th><th>ms / frame</th><th>Frame p95</th><th>HUD p95</th><th>Matrix last</th><th>Cull %</th><th>Parity</th><th>Skipped lines</th></tr>${[...d.runs].reverse().map((r) => `<tr><td>${esc(r.dir)}</td><td>${new Date(r.mtimeMs).toLocaleString()}</td><td>${r.status === "ok" ? n(ms(r)) : "no samples"}</td><td>${n(r.desktop?.frameP95 ?? r.budget?.frameP95)}</td><td>${n(r.ui?.p95, 1)}</td><td>${n(r.matrix?.last, 0)}</td><td>${n(r.cullPct)}</td><td>${parity(r)}</td><td>${r.skipped}</td></tr>`).join("")}</table>`;
 }
 
 async function tick() {
@@ -102,8 +182,8 @@ async function tick() {
     render(d);
     $("status").textContent = `live · ${d.runs.length} runs · ${d.skipped} skipped lines · updated ${new Date().toLocaleTimeString()}`;
     $("dot").style.background = "var(--green)";
-  } catch {
-    $("status").textContent = "server not reachable";
+  } catch (e) {
+    $("status").textContent = `server not reachable or page error: ${e}`;
     $("dot").style.background = "var(--red)";
   }
 }

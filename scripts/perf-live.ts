@@ -8,7 +8,7 @@ import path from "node:path";
 import { softwareAdapterName } from "../packages/playtest/src/runner/browser.js";
 import { type IPairRow, frameRates, pairRows } from "./engine-load-test/pair.js";
 import { type IRunReport, parseRunReport, summarize } from "./engine-load-test/report.js";
-import { loadMidwayRuns, midwayOf } from "./midway-bench/dashboard.js";
+import { midwayState } from "./midway-bench/kpis.js";
 
 export interface IRow {
   arm: string;
@@ -787,7 +787,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       res.end(JSON.stringify(webOf(await allRows())));
     } else if (req.url?.startsWith("/api/midway")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-      res.end(JSON.stringify(midwayOf(await loadMidwayRuns())));
+      res.end(JSON.stringify(await midwayState()));
     } else if (req.url?.startsWith("/midway")) {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(await readFile(new URL("./midway-bench/dashboard.html", import.meta.url), "utf8"));
