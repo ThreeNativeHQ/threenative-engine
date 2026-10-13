@@ -410,4 +410,25 @@ describe("progress, trends and PRD boxes", () => {
       ["pkg-new", 3, 14],
     ]);
   });
+
+  it("keeps profiled perf- runs out of every score but lists them", () => {
+    const d = (dir: string, pkg: string, cpu: number, visited: number) =>
+      run(dir, [pkgLine(pkg), frame(cpu), ui(30), proj(visited)].join("\n"), parityText(true));
+    const list = [
+      run("ref1-legacy", budget(10)),
+      d("a1-desktop", "pkg-old", 20, 9000),
+      d("b1-desktop", "pkg-new", 14, 3000),
+      d("perf-b-desktop", "pkg-prof", 40, 100),
+    ];
+    expect(list.map((r) => r.profiled)).toEqual([undefined, undefined, undefined, true]);
+    const m = midwayOf(list);
+    expect(m.runs).toHaveLength(4);
+    expect(m.builds.map((b) => b.build)).toEqual(["pkg-old", "pkg-new"]);
+    expect(m.kpis.find((k) => k.id === "AC-3")).toMatchObject({ build: "pkg-new", current: 3000 });
+    expect(m.gap.desktop).toMatchObject({ build: "pkg-new", ms: 14 });
+    expect(m.trends.find((t) => t.id === "ms")?.points.map((p) => p.build)).not.toContain(
+      "pkg-prof",
+    );
+    expect(m.abPairs).toEqual([]);
+  });
 });

@@ -222,6 +222,8 @@ export interface IMidwayRun {
   group: string;
   arm: Arm;
   mtimeMs: number;
+  /** Ran with `perf record` and the UI snapshot trace attached (tag starts with `perf-`): its timings are biased. */
+  profiled?: true;
   /** The build that ran it: the `pkg-<name>` directory of the player path in the log (desktop runs). */
   pkg?: string;
   /** `no samples` when the log held none; `ok` otherwise. */
@@ -271,6 +273,7 @@ export function runOf(
     ...(parity ? { parity } : {}),
     ...(cullPct === undefined ? {} : { cullPct }),
     ...(pkg ? { pkg } : {}),
+    ...(tag.startsWith("perf-") ? { profiled: true as const } : {}),
     ...(parityText !== undefined && !parity ? { parityMalformed: true as const } : {}),
   };
   return run;

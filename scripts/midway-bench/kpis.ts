@@ -452,7 +452,9 @@ export function buildsOf(runs: readonly IMidwayRun[]) {
   }));
 }
 
-export function midwayOf(runs: readonly IMidwayRun[], prdText?: string) {
+/** Every score reads the timed runs only: profiled runs are listed in `runs` and counted nowhere else. */
+export function midwayOf(all: readonly IMidwayRun[], prdText?: string) {
+  const runs = all.filter((r) => !r.profiled);
   const prd = prdText === undefined ? undefined : prdProgress(prdText);
   return {
     kpis: kpisOf(runs, prd),
@@ -464,8 +466,8 @@ export function midwayOf(runs: readonly IMidwayRun[], prdText?: string) {
     gap: gapOf(runs),
     groups: groupsOf(runs),
     legacyMs: legacyMs(runs),
-    runs,
-    skipped: runs.reduce((n, r) => n + r.skipped, 0),
+    runs: all,
+    skipped: all.reduce((n, r) => n + r.skipped, 0),
     dir: runsDir(),
   };
 }
