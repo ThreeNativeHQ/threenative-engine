@@ -315,6 +315,42 @@ describe("three's math values on the browser back end", () => {
     expect(calls.filter((call) => call === "get position")).toHaveLength(gets);
   });
 
+  it("turns an object off the heap view, with no per-lane read call", () => {
+    const { runtime, heap } = memoryRuntime();
+    let laneReads = 0;
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      readByte: () => 0,
+      heapF64: () => heap,
+      readDoubles(address, count) {
+        laneReads++;
+        return runtime.readDoubles?.(address, count) as number;
+      },
+      get(self, property) {
+        if (property === "rotation") return runtime.construct("Euler", []);
+        if (property === "quaternion") return runtime.construct("Quaternion", [0, 0, 0, 1]);
+        return runtime.get(self, property);
+      },
+    });
+    const group = new (
+      classes.Group as new () => {
+        rotation: { x: number; y: number };
+        quaternion: { x: number; y: number; z: number; w: number };
+      }
+    )();
+    const { rotation } = group;
+    void group.quaternion;
+    laneReads = 0;
+    for (let i = 0; i < 100; i++) {
+      rotation.x = i * 0.01;
+      rotation.y = -i * 0.02;
+    }
+    expect(laneReads).toBe(0);
+    const { x, y, z, w } = group.quaternion;
+    const expected = new Quaternion().setFromEuler(new Euler(0.99, -1.98, 0));
+    expect([x, y, z, w]).toEqual([expected.x, expected.y, expected.z, expected.w]);
+  });
+
   it("keeps a mesh's geometry and an attribute's shape until they are set", () => {
     const { runtime } = memoryRuntime();
     const reads: string[] = [];

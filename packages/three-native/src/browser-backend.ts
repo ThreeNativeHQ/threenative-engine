@@ -762,22 +762,43 @@ export function defineBrowserClasses(
         [1, 1, -1, -1],
         [-1, -1, 1, 1],
       ];
-      const sync = (euler: object, owner: object) => {
-        const at = addressOf(euler);
-        const [x = 0, y = 0, z = 0] = angles.map((offset) => readLane(at + offset, 1) as number);
-        const [sx = 1, sy = 1, sz = 1, sw = 1] = signs[readByte(at + (order[0] ?? 0))] ?? [];
-        const c1 = Math.cos(x / 2);
-        const c2 = Math.cos(y / 2);
-        const c3 = Math.cos(z / 2);
-        const s1 = Math.sin(x / 2);
-        const s2 = Math.sin(y / 2);
-        const s3 = Math.sin(z / 2);
-        const q = addressOf((owner as { quaternion: object }).quaternion);
-        const [qx = 0, qy = 0, qz = 0, qw = 0] = targets;
-        write(q + qx, s1 * c2 * c3 + sx * c1 * s2 * s3);
-        write(q + qy, c1 * s2 * c3 + sy * s1 * c2 * s3);
-        write(q + qz, c1 * c2 * s3 + sz * s1 * s2 * c3);
-        write(q + qw, c1 * c2 * c3 + sw * s1 * s2 * s3);
+      // Two writes per object per frame land here (R5 turns x then y on 4,096 cubes), so the hot path
+      // allocates nothing: offsets are numbers, the owner's quaternion address is kept per Euler (an
+      // engine object never moves), and lanes are read off HEAPF64 when the runtime has it.
+      const [ox = 0, oy = 0, oz = 0] = angles;
+      const [qx = 0, qy = 0, qz = 0, qw = 0] = targets;
+      const orderAt = order[0] ?? 0;
+      const heap = runtime.heapF64;
+      const lane = heap
+        ? (address: number) => heap()[address / 8] as number
+        : (address: number) => readLane(address, 1) as number;
+      // An object's rotation -> [its address, its owner's quaternion address]: one lookup per write.
+      const places = new WeakMap<object, [number, number]>();
+      const placeOf = (euler: object): [number, number] | undefined => {
+        let place = places.get(euler);
+        if (place === undefined) {
+          const owner = rotations.get(euler);
+          if (owner === undefined) return undefined;
+          place = [addressOf(euler), addressOf((owner as { quaternion: object }).quaternion)];
+          places.set(euler, place);
+        }
+        return place;
+      };
+      const sync = (at: number, q: number) => {
+        const x = lane(at + ox) / 2;
+        const y = lane(at + oy) / 2;
+        const z = lane(at + oz) / 2;
+        const sign = (signs[readByte(at + orderAt)] ?? signs[0]) as number[];
+        const c1 = Math.cos(x);
+        const c2 = Math.cos(y);
+        const c3 = Math.cos(z);
+        const s1 = Math.sin(x);
+        const s2 = Math.sin(y);
+        const s3 = Math.sin(z);
+        write(q + qx, s1 * c2 * c3 + (sign[0] as number) * c1 * s2 * s3);
+        write(q + qy, c1 * s2 * c3 + (sign[1] as number) * s1 * c2 * s3);
+        write(q + qz, c1 * c2 * s3 + (sign[2] as number) * s1 * s2 * c3);
+        write(q + qw, c1 * c2 * c3 + (sign[3] as number) * s1 * s2 * s3);
       };
       angles.forEach((offset, i) => {
         const lane = "xyz"[i] as string;
@@ -785,10 +806,10 @@ export function defineBrowserClasses(
         Object.defineProperty(prototype, lane, {
           ...crossing,
           set(this: object, value: number) {
-            const owner = rotations.get(this);
-            if (owner === undefined) return crossing?.set?.call(this, value);
-            write(addressOf(this) + offset, value);
-            sync(this, owner);
+            const place = placeOf(this);
+            if (place === undefined) return crossing?.set?.call(this, value);
+            write(place[0] + offset, value);
+            sync(place[0], place[1]);
           },
         });
       });
@@ -797,14 +818,14 @@ export function defineBrowserClasses(
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
-          const owner = rotations.get(this);
-          if (owner === undefined) return set.apply(this, args);
-          const at = addressOf(this);
+          const place = placeOf(this);
+          if (place === undefined) return set.apply(this, args);
+          const [at, q] = place;
           // Games pass their one order on every set; only a new order goes to the engine.
           if (args[3] !== undefined && args[3] !== names[readByte(at + (order[0] ?? 0))])
             return set.apply(this, args);
           angles.forEach((offset, i) => write(at + offset, args[i] as number));
-          sync(this, owner);
+          sync(at, q);
           return this;
         },
       });
