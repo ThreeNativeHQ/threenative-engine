@@ -32,6 +32,10 @@ interface IOptions {
   json: boolean;
   memory: boolean;
   allowSoftware: boolean;
+  /** Main-thread busy ms per presented frame, from the CPU profile (a frame cap hides it in p50). */
+  cpuWork: boolean;
+  /** Selectors clicked in order after load, before the warm-up: real input into the game's own UI. */
+  clicks: string[];
 }
 
 export function options(argv: readonly string[]): IOptions {
@@ -59,31 +63,79 @@ export function options(argv: readonly string[]): IOptions {
     json: argv.includes("--json"),
     memory: argv.includes("--memory"),
     allowSoftware: argv.includes("--allow-software"),
+    cpuWork: argv.includes("--cpu-work"),
+    clicks: argv.flatMap((arg, i) => {
+      if (arg !== "--click") return [];
+      const selector = argv[i + 1];
+      if (selector === undefined || selector.startsWith("--"))
+        throw new Error("--click needs a selector");
+      return [selector];
+    }),
   };
 }
 
+interface ICpuProfile {
+  nodes: IProfileNode[];
+  samples: number[];
+  timeDeltas: number[];
+}
+
+/** Busy main-thread ms per presented frame: every sample but `(idle)`, weighted by its time delta. */
+export function cpuWork(profile: ICpuProfile, frames: number) {
+  if (!(frames > 0))
+    throw new Error("TN_PROFILE_CPU_WORK_NO_FRAMES: no frame was presented in the profile window");
+  if (profile.timeDeltas.length !== profile.samples.length)
+    throw new Error("TN_PROFILE_CPU_WORK_DELTAS: the profile's samples and time deltas differ");
+  const idle = new Set(
+    profile.nodes.filter((node) => node.callFrame.functionName === "(idle)").map((node) => node.id),
+  );
+  let busyUs = 0;
+  let wallUs = 0;
+  profile.samples.forEach((id, i) => {
+    const delta = profile.timeDeltas[i] as number;
+    wallUs += delta;
+    if (!idle.has(id)) busyUs += delta;
+  });
+  return { busyMsPerFrame: busyUs / 1000 / frames, frames, wallMs: wallUs / 1000 };
+}
+
+/** Frame-interval percentiles; a hitch is an interval over twice the run's own median. */
+export function frameStats(intervals: readonly number[]) {
+  if (intervals.length === 0) throw new Error("TN_PROFILE_NO_FRAMES: no frame interval recorded");
+  const d = [...intervals].sort((a, b) => a - b);
+  const at = (q: number) => d[Math.min(d.length - 1, Math.floor(q * d.length))] as number;
+  const p50 = at(0.5);
+  const mean = d.reduce((a, b) => a + b, 0) / d.length;
+  return {
+    p50,
+    p95: at(0.95),
+    p99: at(0.99),
+    hitches: d.filter((x) => x > 2 * p50).length,
+    fps: 1000 / mean,
+  };
+}
+
+const CLICK_TIMEOUT_MS = 300_000;
 const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
 
+const FRAME_SAMPLES = 601;
+
+/** Presented-frame intervals in ms, one per requestAnimationFrame, for frameStats. */
 async function frames(page: Page) {
-  return page.evaluate(
-    () =>
-      new Promise<{ p50: number; p95: number; fps: number }>((resolve) => {
+  const intervals = await page.evaluate(
+    (count) =>
+      new Promise<number[]>((resolve) => {
         const times: number[] = [];
         const step = (t: number) => {
           times.push(t);
-          if (times.length < 241) requestAnimationFrame(step);
-          else {
-            const d = times
-              .slice(1)
-              .map((x, i) => x - (times[i] as number))
-              .sort((a, b) => a - b);
-            const mean = d.reduce((a, b) => a + b, 0) / d.length;
-            resolve({ p50: d[120] as number, p95: d[228] as number, fps: 1000 / mean });
-          }
+          if (times.length < count) requestAnimationFrame(step);
+          else resolve(times.slice(1).map((x, i) => x - (times[i] as number)));
         };
         requestAnimationFrame(step);
       }),
+    FRAME_SAMPLES,
   );
+  return frameStats(intervals);
 }
 
 interface IProfileNode {
@@ -92,15 +144,17 @@ interface IProfileNode {
   children?: number[];
 }
 
-async function cpu(page: Page, seconds: number) {
+async function cpu(page: Page, seconds: number, withWork: boolean) {
+  const framesBefore = withWork ? await presentedFrames(page) : 0;
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Profiler.enable");
   await cdp.send("Profiler.setSamplingInterval", { interval: 200 });
   await cdp.send("Profiler.start");
   await page.waitForTimeout(seconds * 1000);
-  const { profile } = (await cdp.send("Profiler.stop")) as {
-    profile: { nodes: IProfileNode[]; samples: number[] };
-  };
+  const { profile } = (await cdp.send("Profiler.stop")) as { profile: ICpuProfile };
+  const work = withWork
+    ? cpuWork(profile, (await presentedFrames(page)) - framesBefore)
+    : undefined;
   const byId = new Map(profile.nodes.map((node) => [node.id, node]));
   const parents = new Map<number, number>();
   for (const node of profile.nodes)
@@ -141,11 +195,21 @@ async function cpu(page: Page, seconds: number) {
       .slice(0, limit)
       .map(([key, n]) => ({ name: key, percent: Number(((100 * n) / total).toFixed(1)) }));
   return {
+    ...(work ? { work } : {}),
     samples: total,
     groups: share(groups, 12),
     inclusive: share(inclusive, 30),
     self: share(self, 20),
   };
+}
+
+/** Counts every presented frame from page load; installed by --cpu-work (CPU_WORK_COUNTER). */
+const CPU_WORK_COUNTER = `(() => { globalThis.__tnPresented = 0;
+  const count = () => { globalThis.__tnPresented++; requestAnimationFrame(count); };
+  requestAnimationFrame(count); })();`;
+
+async function presentedFrames(page: Page) {
+  return Number(await page.evaluate("globalThis.__tnPresented"));
 }
 
 async function calls(page: Page) {
@@ -250,6 +314,8 @@ export async function measure(url: string, o: IOptions) {
     // tsx keeps function names with an `__name` helper that the evaluated page functions call.
     await page.addInitScript("globalThis.__name = (fn) => fn;");
     if (o.gpuCalls) await page.addInitScript(GPU_CENSUS);
+    if (o.cpuWork) await page.addInitScript(CPU_WORK_COUNTER);
+    const started = Date.now();
     await page.goto(url);
     const adapter = await page.evaluate(async () => {
       const gpu = (
@@ -268,11 +334,15 @@ export async function measure(url: string, o: IOptions) {
       throw new Error(
         `TN_PROFILE_SOFTWARE_ADAPTER: '${adapter}' is not a hardware WebGPU adapter (pass --allow-software to measure it anyway)`,
       );
+    // Real input into the game's own UI: each click waits for its target to be actionable, so the
+    // startup time below ends when the game is ready to be started, not when the HTML arrived.
+    for (const selector of o.clicks) await page.click(selector, { timeout: CLICK_TIMEOUT_MS });
+    const startupMs = Date.now() - started;
     await page.waitForTimeout(o.warmupMs);
     const reading = readHostLoad();
     const hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
     const frame = await frames(page);
-    const profile = await cpu(page, o.seconds);
+    const profile = await cpu(page, o.seconds, o.cpuWork);
     const census = o.calls ? await calls(page) : undefined;
     const gpu = o.gpuCalls ? await gpuCalls(page) : undefined;
     const memory = o.memory
@@ -297,6 +367,7 @@ export async function measure(url: string, o: IOptions) {
       hostLoad,
       ...(memory ? { memory: parseWebMetrics({ memory }).memory } : {}),
       adapter,
+      startupMs,
       frame,
       profile,
       ...(census ? { calls: census } : {}),
@@ -317,8 +388,12 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
       `memory: Wasm ${r.memory.wasmMemoryBytes} bytes, JS heap used ${r.memory.jsHeapUsedBytes} bytes`,
     );
   console.log(
-    `frame p50 ${r.frame.p50.toFixed(2)} ms, p95 ${r.frame.p95.toFixed(2)} ms, ${r.frame.fps.toFixed(0)} fps`,
+    `startup ${(r.startupMs / 1000).toFixed(1)} s; frame p50 ${r.frame.p50.toFixed(2)} ms, p95 ${r.frame.p95.toFixed(2)} ms, p99 ${r.frame.p99.toFixed(2)} ms, ${r.frame.hitches} hitches, ${r.frame.fps.toFixed(0)} fps`,
   );
+  if (r.profile.work)
+    console.log(
+      `cpu work ${r.profile.work.busyMsPerFrame.toFixed(2)} ms per frame over ${r.profile.work.frames} frames`,
+    );
   console.log(
     `cpu (${r.profile.samples} samples): ${r.profile.groups.map((g) => `${g.name} ${g.percent}%`).join(", ")}`,
   );
@@ -354,6 +429,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.log(
         `\nsubject/control frame p50: ${ratio.toFixed(2)}x (${ratio > 1 ? "subject slower" : "subject faster"})`,
       );
+      const [a, b] = [subject.profile.work, control.profile.work];
+      if (a && b)
+        console.log(
+          `subject/control cpu work per frame: ${(a.busyMsPerFrame / b.busyMsPerFrame).toFixed(2)}x (${(b.busyMsPerFrame / a.busyMsPerFrame).toFixed(2)}x less CPU in subject if above 1)`,
+        );
     }
   }
 }
