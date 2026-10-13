@@ -18,6 +18,78 @@ const windowOf = (gpuMs: number, frames = 1) => ({
 });
 
 describe("ResolutionScaler continuous sub-rectangle mode", () => {
+  it.each([{}, { gpuMs: 34, gpuAgeFrames: 17 }, { gpu: { p50: 34, samples: 3 } }])(
+    "retains the timer-less probe and refund with unusable GPU timing %j",
+    (gpu) => {
+      const scaler = new ResolutionScaler({ start: 1, targetFps: 60 });
+      const slow = {
+        fps: 20,
+        presented: { max: 60, p50: 50, p95: 55, p99: 58 },
+        surface,
+        ...gpu,
+      };
+      expect(scaler.observe(slow)).toBeUndefined(); // warmup
+      expect(scaler.observe(slow)).toBe(0.85);
+      expect(scaler.observe(slow)).toBeUndefined(); // resize cooldown
+      expect(scaler.observe(slow)).toBe(1);
+      for (let index = 0; index < 20; index++) expect(scaler.observe(slow)).toBeUndefined();
+      expect(scaler.scaleSource).toBe("auto");
+      expect(scaler.atFloor).toBe(false);
+    },
+  );
+
+  it("retains the timer-less floor and refunds a failed probe at that floor", () => {
+    const scaler = new ResolutionScaler({ start: 0.72, minScale: 0.61, targetFps: 60 });
+    const slow = {
+      fps: 20,
+      presented: { max: 60, p50: 50, p95: 55, p99: 58 },
+      surface,
+    };
+    scaler.observe(slow);
+    expect(scaler.observe(slow)).toBe(0.61);
+    scaler.observe(slow);
+    expect(scaler.observe({ ...slow, fps: 25 })).toBeUndefined();
+    expect(scaler.atFloor).toBe(true);
+
+    const refund = new ResolutionScaler({ start: 0.72, minScale: 0.61, targetFps: 60 });
+    refund.observe(slow);
+    expect(refund.observe(slow)).toBe(0.61);
+    refund.observe(slow);
+    expect(refund.observe(slow)).toBe(0.72);
+    expect(refund.atFloor).toBe(false);
+  });
+
+  it("retains timer-less tail deferral and climbs only one rung after four clean windows", () => {
+    const scaler = new ResolutionScaler({ start: 0.72, targetFps: 60 });
+    const clean = {
+      fps: 60,
+      presented: { max: 17, p50: 16.67, p95: 17, p99: 17 },
+      surface,
+    };
+    scaler.observe(clean);
+    for (let index = 0; index < 4; index++)
+      expect(
+        scaler.observe({ ...clean, presented: { ...clean.presented, p95: 20 } }),
+      ).toBeUndefined();
+    for (let index = 0; index < 3; index++) expect(scaler.observe(clean)).toBeUndefined();
+    expect(scaler.observe(clean)).toBe(0.85);
+  });
+
+  it("uses the legacy timer-less route after a valid continuous fraction loses GPU timing", () => {
+    const scaler = new ResolutionScaler({ start: 1, targetFps: 60 });
+    scaler.observe(windowOf(34, 8));
+    expect(scaler.observe(windowOf(34, 8))).toBeCloseTo(1360 / 1920, 6);
+    const slow = {
+      fps: 20,
+      presented: { max: 60, p50: 50, p95: 55, p99: 58 },
+      surface,
+    };
+    expect(scaler.observe(slow)).toBeUndefined(); // resize cooldown
+    expect(scaler.observe(slow)).toBe(0.61);
+    expect(scaler.observe(slow)).toBeUndefined(); // resize cooldown
+    expect(scaler.observe(slow)).toBe(0.72);
+  });
+
   it("uses the quadratic estimate, eight-pixel quantization, and the eight-frame gap", () => {
     const scaler = new ResolutionScaler({ minScale: 0.23, start: 1, targetFps: 60 });
     expect(scaler.observe(windowOf(34))).toBeUndefined();

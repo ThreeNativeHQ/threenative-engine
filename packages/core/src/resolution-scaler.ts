@@ -390,7 +390,8 @@ export class ResolutionScaler {
     this.#trackInsensitiveRise(gpuMs);
     const refunded = this.#settleInsensitiveProbe(gpuMs);
     if (refunded !== undefined) return refunded;
-    if (this.#continuousActive(window)) return this.#observeContinuous(window, gpuMs, stalled);
+    if (gpuMs !== undefined && this.#continuousActive(window))
+      return this.#observeContinuous(window, gpuMs, stalled);
     if (window.fps < this.targetFps && (gpuMs === undefined || gpuMs > this.budgetMs)) {
       // **Only the mean is under target: hold.** `fps` is `1000 / mean`, and on the one panel
       // arrangement every game actually ships into — `display.maxFps` equal to the refresh rate,
