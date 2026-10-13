@@ -1,0 +1,26 @@
+{
+  "name": "crowd-rate-visual",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "label": "render-frame-120",
+      "waitTicks": 120,
+      "screenshot": "render-frame-120"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    }
+  }
+}

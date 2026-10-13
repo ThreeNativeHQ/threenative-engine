@@ -44,12 +44,15 @@ const requestedCount = query.get("crowdCount") ?? (spansRequested() ? "128" : nu
 const count = requestedCount === null ? SIDE * SIDE : Number(requestedCount);
 const arm = query.get("crowdArm") ?? "animated";
 const requestedRate = query.get("crowdRate") ?? "auto";
+const focusDepth = query.get("crowdFocus");
 const updateRate = requestedRate === "1" ? 1 : requestedRate === "auto" ? "auto" : undefined;
 if (requestedCount !== null && ![32, 128, 256].includes(count))
   throw new Error("crowdCount must be 32, 128 or 256.");
 if (!["animated", "held", "static"].includes(arm))
   throw new Error("crowdArm must be animated, held or static.");
 if (updateRate === undefined) throw new Error("crowdRate must be auto or 1.");
+if (focusDepth !== null && !["10", "40", "120"].includes(focusDepth))
+  throw new Error("crowdFocus must be 10, 40 or 120.");
 const measuring = requestedCount !== null;
 
 export const crowdRate: Record<string, unknown> = {
@@ -257,7 +260,7 @@ export class Crowd extends Scene {
     camera.lookAt(0, 0, 0);
     if (measuring) {
       camera.position.set(0, 3, 0);
-      camera.lookAt(0, 0, -40);
+      camera.lookAt(0, 0, -Number(focusDepth ?? "40"));
       camera.far = 250;
       camera.updateProjectionMatrix();
     }
