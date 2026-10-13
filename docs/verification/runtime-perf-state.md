@@ -10,6 +10,15 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## The native C++ engine beats legacy on the R ladder, desktop and web — 2026-10-12
+
+PRD-573 (PR #493). Full tables and setup: [RESULTS-2026-10-12](../benchmark/prd573/RESULTS-2026-10-12.md).
+
+- **Desktop, real GPU** (RTX 2080, real display, both arms the same size, equal triangles): frame p50 ratio, legacy over engine, is R5 2.80x, R3 3.20x and R2 2.35x. Uncapped FPS at R5 was 80 vs 198. p99 is lower on the engine at every rung.
+- **Desktop, Xvfb:** thread CPU without present at R5 is 2.10x. Xvfb present costs about 75 ms per frame in both arms, so Xvfb frame time and FPS cannot show engine gains. Read Xvfb A/Bs on thread CPU only.
+- **Web** (tn-engine-web vs tn-web, main-thread wall time): 0.15x at the first port, then 1.41x after the bridge, collect and member cuts. WebGPU glue is about 1% of samples, and the remaining cost is JS around the calls.
+- **What made the native win:** host projection (crossings 17,669 to 62 per R5 frame), JS math value types over TransformPage views, and render-record caching. What remains on native is the driver, parity math and JS that legacy also runs.
+
 ## Machinefall open world on develop: the CPU render phase is the frame — 2026-10-01
 
 PRD-475 Phase 1 baseline (`docs/PRDs/unreal-like-features/PRD-475-open-world-120-fps-without-visual-loss.md`). Machinefall `?scene=map-walk` on develop `a602467db` (core 0.3.4, assets 0.3.5, world re-cooked), browser WebGPU on the RTX 2080 (nvidia/turing), private Xvfb, 3 runs started at load 3.4–3.8. Steady `TN_FRAME_BUDGET` windows; medians across runs.
