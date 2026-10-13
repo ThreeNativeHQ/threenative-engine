@@ -151,9 +151,12 @@ it("counts mip/layer/sample payloads and refuses an unmeasured format", () => {
 
 it("captures exactly step +30 frames for each scale, counts allocations/builds, restores probes", async () => {
   const log = vi.spyOn(console, "info").mockImplementation(() => {});
+  let insideFrame = false;
+  const censusInsideFrames: boolean[] = [];
   const budget = {
-    beginFrame(_timestamp: number, _clock: number) {},
+    beginFrame(_timestamp: number, _clock: number) { insideFrame = true; },
     endFrame(_now: number, _want: boolean) {
+      insideFrame = false;
       return true;
     },
   };
@@ -169,10 +172,10 @@ it("captures exactly step +30 frames for each scale, counts allocations/builds, 
   let builds = 3;
   const renderer = {
     surface: () => ({ resolutionScale: scale }),
-    pipelineCensus: () => ({
-      complete: true,
-      counts: { deviceCreations: builds, failures: 0, pending: 0, droppedEvents: 0 },
-    }),
+    pipelineCensus: () => {
+      censusInsideFrames.push(insideFrame);
+      return {complete: true, counts: { deviceCreations: builds, failures: 0, pending: 0, droppedEvents: 0 }};
+    },
     setResolutionScale(next: number) {
       scale = next;
       builds++;
@@ -181,6 +184,7 @@ it("captures exactly step +30 frames for each scale, counts allocations/builds, 
   };
   const result = installResolutionScaleProbe(budget, renderer, device, () => 4);
   for (let frame = 0; frame < 213; frame++) {
+    if (frame === 151) builds++; // A pipeline created between windows must remain counted.
     budget.beginFrame(frame * 16, frame * 16);
     budget.endFrame(frame * 16 + (frame === 120 ? 12 : 3), true);
   }
@@ -189,11 +193,12 @@ it("captures exactly step +30 frames for each scale, counts allocations/builds, 
     rows.map((row) => [row.scale, row.frames.length, row.textureBytes, row.pipelineBuilds]),
   ).toEqual([
     [0.85, 31, 64, 1],
-    [0.61, 31, 64, 1],
+    [0.61, 31, 64, 2],
     [1, 31, 64, 1],
   ]);
-  expect(rows.map((row) => row.stepCensusAfter.counts.deviceCreations)).toEqual([4, 5, 6]);
+  expect(rows.map((row) => row.stepCensusAfter.counts.deviceCreations)).toEqual([4, 6, 7]);
   expect(rows[0]!.stepRatio).toBe(4);
+  expect(censusInsideFrames.every((inside) => !inside)).toBe(true);
   expect([budget.beginFrame, budget.endFrame, device.createTexture]).toEqual([begin, end, create]);
   log.mockRestore();
 });

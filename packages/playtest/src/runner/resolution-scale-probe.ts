@@ -308,7 +308,6 @@ export function installResolutionScaleProbe(
       try {
         if (frame < 0) return;
         if (frame % 31 === 0) {
-          initialCensus = census();
           frames = [];
           allocations = [];
           step++;
@@ -324,6 +323,8 @@ export function installResolutionScaleProbe(
     budgetPrototype.endFrame = function (now: number, wantSample: boolean) {
       const result = end.call(this, now, wantSample);
       try {
+        // Census collection must not charge observer work only to the forced-step frame.
+        if (frame === -1) initialCensus = census();
         if (frame >= 0) {
           if (renderer.surface().resolutionScale !== scales[step])
             throw new Error("Forced scale was overridden");
@@ -355,6 +356,7 @@ export function installResolutionScaleProbe(
               stepRatio: frames[0]!.frameMs / p50!,
             };
             rows.push(row);
+            initialCensus = after;
             console.info(`TN_RESOLUTION_STEP:${JSON.stringify(row)}`);
             if (step === 2) {
               clearTimeout(timeout);

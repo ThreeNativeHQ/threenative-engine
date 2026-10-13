@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +21,11 @@ import type { IResolutionScaleRun, IResolutionScaleRow } from "./resolution-scal
 
 // Use a served starter with resolutionScale pinned to 1; all other render settings stay authored.
 const output = resolve(process.argv[2] ?? "artifacts/prd564");
+const controlPath = process.env.TN_RESOLUTION_CONTROL_SOURCE;
+const controlCode = controlPath === undefined ? undefined : await readFile(controlPath, "utf8");
+const control = controlCode === undefined ? undefined : {
+  path: resolve(controlPath!), sha256: createHash("sha256").update(controlCode).digest("hex"),
+};
 const preflightOnly = process.argv[3] === "--preflight";
 if (process.argv[3] !== undefined && !preflightOnly)
   throw new Error("Expected --preflight or no mode");
@@ -83,6 +89,9 @@ try {
     const page = await pending("browser.page", () => context.newPage());
     page.on("console", (message) => logs.push(message.text()));
     page.on("pageerror", (error) => logs.push(`PAGE_ERROR:${error.message}`));
+    page.on("requestfailed", (request) =>
+      logs.push(`REQUEST_FAILED:${request.url()}:${request.failure()?.errorText}`),
+    );
     try {
       await pending("page.goto", () => page.goto(url, { waitUntil: "domcontentloaded", timeout: PLAYTEST_STARTUP_READY_TIMEOUT_MS }));
       const transport = new PlaywrightTransport(page);
@@ -190,6 +199,8 @@ try {
       if (navigations.length)
         throw new Error(`TN_RESOLUTION_NAVIGATION: ${navigations.join(", ")}`);
       const { preflight, rows = [] } = observed;
+      if (control !== undefined && preflight?.surface.resolutionSubrect === true)
+        throw new Error("TN_RESOLUTION_CONTROL_INVALID: control installed the subrectangle path");
       evidence.rows = rows;
       const adapter = preflight!.adapter;
       if (logs.some((line) => line.startsWith("PAGE_ERROR:")))
@@ -207,6 +218,7 @@ try {
             display: providedDisplay.strategy,
             startup,
             adapter,
+            ...(control === undefined ? {} : { control }),
             preflight,
             rows,
             ...(gate === undefined ? {} : { gate }),
@@ -286,6 +298,8 @@ async function serveStarter(
   const target = await mkdtemp(resolve(output, "starter-"));
   await checkpoint("starter.scaffold");
   await createProject({ target, template: "starter", install: false });
+  if (controlCode !== undefined)
+    await writeFile(resolve(target, "src/render/worldEnvironment.ts"), controlCode);
   await checkpoint("starter.link-dependencies");
   await mkdir(resolve(target, "node_modules"));
   for (const name of [
