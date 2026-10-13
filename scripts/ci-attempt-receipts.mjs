@@ -20,7 +20,8 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
           "api",
           "--paginate",
           "--slurp",
-          `repos/${repository}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`,
+          // GitHub returns 502 for large job pages; paginate smaller pages without dropping evidence.
+          `repos/${repository}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=10`,
         ],
         { encoding: "utf8", timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
       );
