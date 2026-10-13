@@ -55,6 +55,67 @@ describe("perf-live", () => {
         },
       ],
     });
+    it("renders FPS for both desktop and web arms in the comparison and KPI table", async () => {
+      const legacy = run("tn-desktop", "R5", 20);
+      const native = run("tn-engine-desktop", "R5", 10);
+      const [legacyRung] = legacy.rungs;
+      const [nativeRung] = native.rungs;
+      if (!legacyRung || !nativeRung) throw new Error("missing fixture rung");
+      legacyRung.frameMs = [10, 10, 10, 20];
+      nativeRung.frameMs = [5, 5, 5, 10];
+      const reportRows = [
+        ...rowsOf(legacy, "fps-tn-desktop-r1.json", 1),
+        ...rowsOf(native, "fps-tn-engine-desktop-r1.json", 2),
+      ];
+      expect(reportRows[0]).toMatchObject({ fps: 80, fpsLow1: 50 });
+      const loaded = [legacy, native].map((report, i) => ({
+        report: report as Parameters<typeof desktopOf>[0][number]["report"],
+        file: `v1-confirm-fps-${report.arm}-r1.json`,
+        mtime: i + 1,
+        rows: rowsOf(report, `v1-confirm-fps-${report.arm}-r1.json`, i + 1),
+      }));
+      const desktop = desktopOf(loaded);
+      expect(desktop.kpi.find((r) => r.rung === "R5")?.pair?.left).toMatchObject({
+        fps: 80,
+        fpsLow1: 50,
+      });
+      const elements = new Map<string, { innerHTML: string; addEventListener(): void }>();
+      const html = await readFile(new URL("../perf-live.html", import.meta.url), "utf8");
+      const script = (html.split("<script>")[1] as string)
+        .split("</script>")[0]
+        ?.replace("tick(); setInterval(tick, 2000);", "");
+      runInNewContext(
+        `${script}\ndesktop = data; web = webData; renderCompare(); renderDesktop(); renderWeb();`,
+        {
+          data: desktop,
+          webData: webOf([
+            ...rowsOf({ ...legacy, arm: "tn-web" }, "fps-tn-web-r1.json", 1),
+            ...rowsOf({ ...native, arm: "tn-engine-web" }, "fps-tn-engine-web-r1.json", 2),
+          ]),
+          document: {
+            getElementById: (id: string) => {
+              if (!elements.has(id)) elements.set(id, { innerHTML: "", addEventListener() {} });
+              return elements.get(id);
+            },
+          },
+        },
+      );
+      for (const id of ["compare", "desktop", "web"]) {
+        const output = elements.get(id)?.innerHTML;
+        expect(output).toContain("80.0 fps");
+        expect(output).toContain("160.0 fps");
+        expect(output).toContain("50.0 fps");
+        expect(output).toContain("100.0 fps");
+      }
+      expect(elements.get("compare")?.innerHTML).toContain("uncapped (vsync off)");
+      expect(elements.get("compare")?.innerHTML).toContain(
+        "page frames per second (performance.now)",
+      );
+      expect(elements.get("desktop")?.innerHTML).toContain("uncapped (vsync off)");
+      legacyRung.frameMs = [];
+      expect(() => rowsOf(legacy, "empty.json", 1)).toThrow();
+    });
+
     async function fixture(
       check: (
         dir: string,
@@ -524,6 +585,26 @@ describe("perf-live", () => {
         },
       ],
     });
+    it("carries mean FPS and 1% low into both web arms and rejects empty frames", () => {
+      const legacy = webRun("tn-web", 10);
+      const native = webRun("tn-engine-web", 5);
+      const [legacyRung] = legacy.rungs;
+      const [nativeRung] = native.rungs;
+      if (!legacyRung || !nativeRung) throw new Error("missing fixture rung");
+      legacyRung.frameMs = [10, 10, 10, 20];
+      nativeRung.frameMs = [5, 5, 5, 10];
+      const rows = [
+        ...rowsOf(legacy, "fps-tn-web-r1.json", 1),
+        ...rowsOf(native, "fps-tn-engine-web-r1.json", 2),
+      ];
+      expect(rows[0]).toMatchObject({ fps: 80, fpsLow1: 50 });
+      const [pair] = webOf(rows).pairs;
+      expect(pair?.legacy).toMatchObject({ fps: 80, fpsLow1: 50 });
+      expect(pair?.native).toMatchObject({ fps: 160, fpsLow1: 100 });
+      legacyRung.frameMs = [];
+      expect(() => rowsOf(legacy, "empty.json", 1)).toThrow();
+    });
+
     const web = {
       startup: { entryMs: 100, firstFrameMs: 500, wasmInstantiateMs: [10, 6] },
       memory: { jsHeapUsedBytes: 4e7, wasmMemoryBytes: 1e8 },

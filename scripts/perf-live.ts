@@ -6,7 +6,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { softwareAdapterName } from "../packages/playtest/src/runner/browser.js";
-import { type IPairRow, pairRows } from "./engine-load-test/pair.js";
+import { type IPairRow, frameRates, pairRows } from "./engine-load-test/pair.js";
 import { type IRunReport, parseRunReport, summarize } from "./engine-load-test/report.js";
 
 export interface IRow {
@@ -18,6 +18,8 @@ export interface IRow {
   p50: number;
   p95: number;
   p99: number;
+  fps: number;
+  fpsLow1: number;
   hitches: number;
   /** Whole-process CPU ms per frame, when the arm reports it (includes the present call). */
   cpu?: number;
@@ -158,6 +160,11 @@ export function rowsOf(report: unknown, file: string, mtime: number): IRow[] {
       p50: s.p50,
       p95: s.p95,
       p99: s.p99,
+      ...frameRates(
+        r.rungs
+          .filter((rung) => rung.mode === s.mode && rung.objectCount === s.objectCount)
+          .flatMap((rung) => rung.frameMs),
+      ),
       hitches: s.hitches,
       ...(s.cpuMsPerFrame === undefined ? {} : { cpu: s.cpuMsPerFrame }),
       ...(s.threadCpuP50 === undefined ? {} : { threadCpu: s.threadCpuP50 }),
@@ -298,6 +305,8 @@ export interface IWebArm {
   p50?: number;
   p95?: number;
   p99?: number;
+  fps?: number;
+  fpsLow1?: number;
   /** Main-thread ms per frame without present (page wall time: a page has no thread CPU clock). */
   thread?: number;
   crossings?: number;
@@ -380,6 +389,14 @@ function webArmOf(group: readonly IRow[], arm: string): IWebArm {
   put(
     "crossings",
     pick((r) => r.crossings),
+  );
+  put(
+    "fps",
+    pick((r) => r.fps),
+  );
+  put(
+    "fpsLow1",
+    pick((r) => r.fpsLow1),
   );
   put("phases", armPhases(group, arm));
   const webs = runs.flatMap((r) => (r.web ? [r.web as Record<string, number>] : []));

@@ -4036,6 +4036,21 @@ describe("the same-run pair guard", () => {
     );
   const labels = ["tn-desktop", "tn-engine-desktop"] as const;
 
+  it("derives FPS from mean frame time and 1% low from p99", () => {
+    const left = arm("tn-desktop", { rung: { frameMs: [10, 10, 10, 20] } });
+    const right = arm("tn-engine-desktop", { rung: { frameMs: [5, 5, 5, 10] } });
+    const [row] = pairRows([left], [right], labels);
+    expect(row?.left).toMatchObject({ fps: 80, fpsLow1: 50 });
+    expect(row?.right).toMatchObject({ fps: 160, fpsLow1: 100 });
+    expect(row?.ratio.fps).toBe(2);
+    const markdown = renderPairMarkdown([left], [right], labels);
+    expect(markdown).toContain("| fps | 1% low fps |");
+    expect(markdown).toContain("| 80.00 | 50.00 |");
+    expect(() =>
+      pairRows([arm("tn-desktop", { rung: { frameMs: [] } })], [right], labels),
+    ).toThrow();
+  });
+
   it("prints a ratio when both arms drew the same scene, and carries the load beside it", () => {
     const rows = pairRows(
       [arm("tn-desktop", { cpu: 10 })],

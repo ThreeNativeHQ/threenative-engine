@@ -149,12 +149,25 @@ export function pairVerdict(
 
 export interface IPairRow {
   key: string;
-  left: IRungSummary;
-  /** left over right: above 1 means the right arm is cheaper. */
-  ratio: { cpu?: number; p50: number; p95: number; p99: number; threadCpu?: number };
+  left: IRungSummary & { fps: number; fpsLow1: number };
+  /** Timing ratios are left over right; FPS is right over left. Above 1 means the right arm is faster. */
+  ratio: { cpu?: number; fps: number; p50: number; p95: number; p99: number; threadCpu?: number };
   /** Per phase, the right arm's p50 over the left arm's: below 1 means the right arm spends less there. */
   phaseRatio: Partial<Record<SummaryPhase, number>>;
-  right: IRungSummary;
+  right: IRungSummary & { fps: number; fpsLow1: number };
+}
+
+/** Frame rates from recorded wall times, with no empty or invalid series accepted. */
+export function frameRates(frameMs: readonly number[]): { fps: number; fpsLow1: number } {
+  const p99 = percentile(frameMs, 0.99);
+  if (frameMs.some((ms) => !Number.isFinite(ms) || ms <= 0))
+    throw new BenchError("TN_BENCH_BAD_SHAPE", "frame samples must be finite and positive");
+  const mean = frameMs.reduce((sum, ms) => sum + ms / frameMs.length, 0);
+  const fps = 1000 / mean;
+  const fpsLow1 = 1000 / p99;
+  if (!Number.isFinite(fps) || !Number.isFinite(fpsLow1))
+    throw new BenchError("TN_BENCH_BAD_SHAPE", "frame rates must be finite");
+  return { fps, fpsLow1 };
 }
 
 function medianOf(values: readonly number[]): number {
@@ -162,14 +175,14 @@ function medianOf(values: readonly number[]): number {
 }
 
 /** One summary per rung key, medians taken over every run of the arm (and so over its repeats). */
-function pooled(runs: readonly IRunReport[]): Map<string, IRungSummary> {
+function pooled(runs: readonly IRunReport[]): Map<string, IPairRow["left"]> {
   const byKey = new Map<string, IRungSummary[]>();
   for (const run of runs)
     for (const summary of summarize(run)) {
       const key = rungKey(summary.mode, summary.objectCount);
       byKey.set(key, [...(byKey.get(key) ?? []), summary]);
     }
-  const out = new Map<string, IRungSummary>();
+  const out = new Map<string, IPairRow["left"]>();
   for (const [key, list] of byKey) {
     const first = list[0] as IRungSummary;
     const cpu = list.map((item) => item.cpuMsPerFrame);
@@ -180,6 +193,13 @@ function pooled(runs: readonly IRunReport[]): Map<string, IRungSummary> {
     const phases = pooledPhaseStats(list.map((item) => item.phases));
     out.set(key, {
       ...first,
+      ...frameRates(
+        runs.flatMap((run) =>
+          run.rungs
+            .filter((rung) => rungKey(rung.mode, rung.objectCount) === key)
+            .flatMap((rung) => rung.frameMs),
+        ),
+      ),
       ...(phases === undefined ? {} : { phases }),
       ...(cpu.every((value) => value !== undefined)
         ? { cpuMsPerFrame: medianOf(cpu as number[]) }
@@ -222,8 +242,8 @@ export function pairRows(
     .filter((key) => b.has(key))
     .sort()
     .map((key) => {
-      const l = a.get(key) as IRungSummary;
-      const r = b.get(key) as IRungSummary;
+      const l = a.get(key) as IPairRow["left"];
+      const r = b.get(key) as IPairRow["right"];
       const phaseRatio: Partial<Record<SummaryPhase, number>> = {};
       for (const name of SUMMARY_PHASES) {
         const [from, to] = [l.phases?.[name]?.p50, r.phases?.[name]?.p50];
@@ -234,6 +254,7 @@ export function pairRows(
         left: l,
         phaseRatio,
         ratio: {
+          fps: r.fps / l.fps,
           ...(l.cpuMsPerFrame !== undefined && r.cpuMsPerFrame !== undefined && r.cpuMsPerFrame > 0
             ? { cpu: l.cpuMsPerFrame / r.cpuMsPerFrame }
             : {}),
@@ -274,8 +295,8 @@ export function renderPairMarkdown(
     `- host load (1 min, \`!\` = invalid-absolute above half the cores): ${labels[0]} ${load(left)}; ${labels[1]} ${load(right)}`,
     `- ratio is ${labels[0]} over ${labels[1]}: above 1 means ${labels[1]} is cheaper`,
     "",
-    "| rung | arm | p50 ms | p95 ms | p99 ms | hitches | draws | compiles | cpu ms/frame (inclusive) | thread cpu p50 (no present) | present cpu p50 | crossings p50 | ratio p50 | ratio cpu | ratio thread cpu |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| rung | arm | p50 ms | p95 ms | p99 ms | fps | 1% low fps | hitches | draws | compiles | cpu ms/frame (inclusive) | thread cpu p50 (no present) | present cpu p50 | crossings p50 | ratio p50 | ratio cpu | ratio thread cpu |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   for (const row of rows) {
     for (const [label, summary] of [
@@ -283,7 +304,7 @@ export function renderPairMarkdown(
       [labels[1], row.right],
     ] as const)
       lines.push(
-        `| ${row.key} | ${label} | ${f(summary.p50)} | ${f(summary.p95)} | ${f(summary.p99)} | ${summary.hitches} | ${summary.drawCalls} | ${summary.pipelineCompiles ?? "n/a"} | ${f(summary.cpuMsPerFrame)} | ${f(summary.threadCpuP50)} | ${f(summary.presentCpuP50)} | ${summary.crossingsP50 ?? "n/a"} | ${label === labels[1] ? f(row.ratio.p50) : ""} | ${label === labels[1] ? f(row.ratio.cpu) : ""} | ${label === labels[1] ? f(row.ratio.threadCpu) : ""} |`,
+        `| ${row.key} | ${label} | ${f(summary.p50)} | ${f(summary.p95)} | ${f(summary.p99)} | ${f(summary.fps)} | ${f(summary.fpsLow1)} | ${summary.hitches} | ${summary.drawCalls} | ${summary.pipelineCompiles ?? "n/a"} | ${f(summary.cpuMsPerFrame)} | ${f(summary.threadCpuP50)} | ${f(summary.presentCpuP50)} | ${summary.crossingsP50 ?? "n/a"} | ${label === labels[1] ? f(row.ratio.p50) : ""} | ${label === labels[1] ? f(row.ratio.cpu) : ""} | ${label === labels[1] ? f(row.ratio.threadCpu) : ""} |`,
       );
   }
   lines.push(...renderPhaseBlock(rows, labels));

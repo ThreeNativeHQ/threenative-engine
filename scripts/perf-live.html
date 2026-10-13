@@ -129,6 +129,7 @@ let hero = { status: "none" }, points = [], epic = [], rows = [], web = { pairs:
 // ---- 0. Native desktop and web, side by side -----------------------------------------------------------
 // Same phase order and colours in both columns. Each column scales its own two bars to the larger one.
 const CMP_PHASES = ["game", "animation", "matrixWorld", "projection", "render", "other"];
+const ffps = (v) => v === undefined ? '<span class="pill">PENDING</span>' : `${v.toFixed(1)} fps`;
 const cmpList = (list) => (list?.length ? list.map(esc).join(", ") : '<span class="pill">missing</span>');
 function compareColumn(c) {
   const pending = '<span class="pill">PENDING</span>';
@@ -150,7 +151,7 @@ function compareColumn(c) {
       <p style="margin:6px 0 0">${has ? `${esc(c.ratioNote)} Target ${c.target}×: ${c.ratio >= c.target ? "met" : "not met yet"}.` : esc(c.pendingText)}</p>
       <div class="gauge" role="img" aria-label="${has ? `${fx(c.ratio)} of a ${c.target}× target` : "PENDING"}"><i style="width:${fill}%;background:var(--accent)"></i><b style="left:100%" title="target"></b><u style="left:100%">${c.target}× target</u></div></div>
     <div class="scroll"><table><tr><th>Timing</th><th>${esc(c.legacyName)}</th><th>${esc(c.nativeName)}</th></tr>
-      ${c.rows.map(([label, l, n]) => `<tr><th>${label}</th><td>${ms(l)}</td><td>${ms(n)}</td></tr>`).join("")}</table></div>
+      ${c.rows.map(([label, l, n, unit]) => `<tr><th>${label}</th><td>${unit === "fps" ? ffps(l) : ms(l)}</td><td>${unit === "fps" ? ffps(n) : ms(n)}</td></tr>`).join("")}</table></div>
     <div>${stack("legacy", esc(c.legacyName))}${stack("native", esc(c.nativeName))}
       <p class="fine" style="margin:0">${esc(c.phaseNote)}</p></div>
     <div class="scroll"><table><tr><th>Phase</th><th>${esc(c.legacyName)}</th><th>${esc(c.nativeName)}</th></tr>
@@ -179,6 +180,8 @@ function renderCompare() {
       ratioNote: "tn-desktop ÷ tn-engine-desktop thread CPU p50, above 1 the engine is cheaper.",
       pendingText: "PENDING: no confirmed R5 set has both arms yet.",
       rows: [
+        ["FPS, uncapped (vsync off)", d?.left.fps, d?.right.fps, "fps"],
+        ["1% low FPS", d?.left.fpsLow1, d?.right.fpsLow1, "fps"],
         ["p50, thread CPU (KPI)", d?.left.threadCpuP50, d?.right.threadCpuP50],
         ["p95, frame (not thread CPU)", d?.left.p95, d?.right.p95],
         ["p99, frame (not thread CPU)", d?.left.p99, d?.right.p99],
@@ -200,6 +203,8 @@ function renderCompare() {
       ratioNote: "tn-web ÷ tn-engine-web p50, above 1 the engine is cheaper.",
       pendingText: "PENDING: no web pair has both arms yet.",
       rows: [
+        ["FPS, page frames per second (performance.now)", latest?.legacy.fps, latest?.native.fps, "fps"],
+        ["1% low FPS", latest?.legacy.fpsLow1, latest?.native.fpsLow1, "fps"],
         ["p50, main thread (wall)", latest?.legacy.p50, latest?.native.p50],
         ["p95, main thread (wall)", latest?.legacy.p95, latest?.native.p95],
         ["p99, main thread (wall)", latest?.legacy.p99, latest?.native.p99],
@@ -317,10 +322,10 @@ function renderDesktop() {
   const problem = (r) => r.problem ? `<p class="fine">${esc(r.problem)}</p>` : "";
   const gpu = desktop.gpu, godot = desktop.godot;
   $("desktop").innerHTML = `<h2>Desktop KPI (v1)</h2>
-    <p class="mute sm">tn-desktop ÷ tn-engine-desktop · thread CPU without present</p>
+    <p class="mute sm">tn-desktop ÷ tn-engine-desktop · thread CPU without present · FPS uncapped (vsync off)</p>
     <p class="fine">Draw-call parity waived for desktop batching (drawCalls); triangles and remaining parity checks apply.</p>
-    <div class="scroll"><table><tr><th>Rung / set</th><th>Legacy ms</th><th>Engine ms</th><th>Pooled ratio</th><th>Per-round ratios</th><th>Triangles L / E</th><th>Commit</th></tr>
-    ${desktop.kpi.map((r) => `<tr><td>${esc(r.rung)} ${esc(r.label ?? "")} <span class="pill">${esc(r.lane ?? "")}</span></td><td>${ms(r.pair?.left.threadCpuP50)}</td><td>${ms(r.pair?.right.threadCpuP50)}</td><td>${ratio(r.pair?.ratio.threadCpu)}</td><td>${r.rounds?.map((p) => `r${p.round}: ${ratio(p.ratio)}`).join(" · ") || pending}</td><td>${r.pair ? `${r.pair.left.triangles} / ${r.pair.right.triangles}` : pending}</td><td>${r.commits?.map(esc).join(" · ") || pending}</td></tr>`).join("")}
+    <div class="scroll"><table><tr><th>Rung / set</th><th>Legacy ms</th><th>Engine ms</th><th>Legacy FPS</th><th>1% low FPS</th><th>Engine FPS</th><th>1% low FPS</th><th>Pooled ratio</th><th>Per-round ratios</th><th>Triangles L / E</th><th>Commit</th></tr>
+    ${desktop.kpi.map((r) => `<tr><td>${esc(r.rung)} ${esc(r.label ?? "")} <span class="pill">${esc(r.lane ?? "")}</span></td><td>${ms(r.pair?.left.threadCpuP50)}</td><td>${ms(r.pair?.right.threadCpuP50)}</td><td>${ffps(r.pair?.left.fps)}</td><td>${ffps(r.pair?.left.fpsLow1)}</td><td>${ffps(r.pair?.right.fps)}</td><td>${ffps(r.pair?.right.fpsLow1)}</td><td>${ratio(r.pair?.ratio.threadCpu)}</td><td>${r.rounds?.map((p) => `r${p.round}: ${ratio(p.ratio)}`).join(" · ") || pending}</td><td>${r.pair ? `${r.pair.left.triangles} / ${r.pair.right.triangles}` : pending}</td><td>${r.commits?.map(esc).join(" · ") || pending}</td></tr>`).join("")}
     </table></div>
     ${desktop.kpi.map(problem).join("")}
     <p class="sm"><b>real-GPU inclusive (R5)</b>: ${gpu.status === "PENDING" ? pending : `frame p50 ratio ${ratio(gpu.pair?.ratio.p50)} · ${gpu.adapters.map(esc).join(" · ")}`}</p>${problem(gpu)}
@@ -329,7 +334,7 @@ function renderDesktop() {
 
 function renderWeb() {
   const el = $("web"), { pairs, cuts, census } = web;
-  const head = `<h2>Web: tn-web vs tn-engine-web <span class="mute sm">browser WebGPU, separate from the desktop KPI</span></h2>`;
+  const head = `<h2>Web: tn-web vs tn-engine-web <span class="mute sm">browser WebGPU · page frames per second (performance.now), separate from the desktop KPI</span></h2>`;
   if (!pairs.length && !cuts.length) { el.innerHTML = `${head}<p><span class="pill">pending</span> No web run yet. Run <code>pnpm bench:engines --pair tn-web,tn-engine-web --production --browser-recipe webgpu</code>.</p>`; return; }
   const measured = pairs.filter((p) => p.status === "measured" && p.ratioP50 !== undefined);
   const latest = measured.at(-1);
@@ -341,10 +346,10 @@ function renderWeb() {
     <p style="margin:2px 0 8px">${latest.ratioP50 >= 1 ? `The engine page is ${latest.ratioP50.toFixed(2)}× cheaper per frame than three.js on ${esc(latest.mode)}@${latest.objects}.` : `The engine page costs ${(1 / latest.ratioP50).toFixed(2)}× three.js per frame on ${esc(latest.mode)}@${latest.objects}.`} Target ${WEB_TARGET}× cheaper${latest.ratioP50 >= WEB_TARGET ? " (met)" : ` (${latest.ratioP50.toFixed(2)}× of ${WEB_TARGET}×)`}.</p></div>
     <div class="meta">${delta}<span class="mute">${esc(latest.label)}, ${ago(Date.now() - latest.t)}</span></div>
     <p class="sm" style="margin:8px 0 0">Platform web · arms tn-web, tn-engine-web · commit ${miss(latest.commits)} · hardware ${miss(latest.adapters)} · browser ${miss(latest.browsers)} · ${flags(latest)}</p>` : '<p><span class="pill">pending</span> No pair has both arms yet.</p>';
-  const arm = (a) => `<td>${fm(a.p50)}</td><td>${fm(a.p95)}</td><td>${fm(a.p99)}</td>`;
+  const arm = (a) => `<td>${fm(a.p50)}</td><td>${fm(a.p95)}</td><td>${fm(a.p99)}</td><td>${ffps(a.fps)}</td><td>${ffps(a.fpsLow1)}</td>`;
   el.innerHTML = `${head}${hero}
     <h3 class="sm" style="margin:14px 0 2px">Pairs (alternating rounds; ratio = tn-web ÷ tn-engine-web p50, above 1 the engine is cheaper)</h3>
-    <div class="scroll"><table><tr><th>Point</th><th>Rung</th><th>web p50</th><th>p95</th><th>p99</th><th>engine p50</th><th>p95</th><th>p99</th><th>Ratio p50</th><th>Ratio main thread</th><th>Runs</th><th>Host</th><th>Visual</th></tr>
+    <div class="scroll"><table><tr><th>Point</th><th>Rung</th><th>web p50</th><th>p95</th><th>p99</th><th>FPS</th><th>1% low FPS</th><th>engine p50</th><th>p95</th><th>p99</th><th>FPS</th><th>1% low FPS</th><th>Ratio p50</th><th>Ratio main thread</th><th>Runs</th><th>Host</th><th>Visual</th></tr>
     ${[...pairs].reverse().map((p) => `<tr><td>${esc(p.label)}${p.status === "pending" ? ' <span class="pill">pending</span>' : ""}</td><td>${esc(p.mode)}@${p.objects}</td>${arm(p.legacy)}${arm(p.native)}<td>${fx(p.ratioP50)}</td><td>${fx(p.ratioThread)}</td><td>${p.legacy.runs}+${p.native.runs}</td><td>${p.invalid ? "loaded" : "idle"}</td><td>${p.software ? "software" : "real GPU"}</td></tr>`).join("")}</table></div>
     ${latest ? `<h3 class="sm" style="margin:14px 0 2px">Startup, bytes and memory (${esc(latest.label)})</h3>
     <div class="scroll"><table><tr><th>Arm</th><th>First frame</th><th>Wasm compile+instantiate</th><th>JS gzip</th><th>Wasm gzip</th><th>Wasm memory</th><th>JS heap</th></tr>
