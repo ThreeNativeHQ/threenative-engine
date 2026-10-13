@@ -564,6 +564,9 @@ export function phaseGapOf(legacy: Record<string, number>, native: Record<string
   return best;
 }
 
+/** The lane a point was measured on: a `gpu-` set ran on the real display, everything else on Xvfb. */
+const laneOf = (label: string): string => (/(^|\/)gpu-/u.test(label) ? "real GPU" : "Xvfb");
+
 /** Everything the hero needs, decided here so the page only draws it. */
 export function heroOf(points: readonly IPoint[], now: number) {
   const series = r5Points(points);
@@ -589,7 +592,8 @@ export function heroOf(points: readonly IPoint[], now: number) {
       ...(phases ? { phases } : {}),
     };
   const ratio = latest.ratioNoPresent;
-  const previous = series.at(-2);
+  const lane = laneOf(latest.label);
+  const previous = series.slice(0, -1).findLast((p) => laneOf(p.label) === lane);
   const reason = staleReason(points, now);
   return {
     status: (reason === undefined ? valueColor(ratio) : "yellow") as Status,
@@ -597,6 +601,7 @@ export function heroOf(points: readonly IPoint[], now: number) {
     ratio,
     sentence: sentenceOf(ratio),
     label: latest.label,
+    lane,
     t: latest.t,
     now,
     invalid: latest.invalid,

@@ -495,6 +495,19 @@ describe("perf-live", () => {
     );
     expect(hero).toMatchObject({ label: "c", status: "orange", delta: { dir: "up", label: "a" } });
     expect(heroOf([point("b", "R2", now, 0.4)], now).status).toBe("none");
+  });
+
+  it("compares the hero only with the previous point on the same lane", () => {
+    const now = 10 * HOUR;
+    const hero = heroOf(
+      [
+        point("v111/head-R5-old", "R5", now - 4 * HOUR, 2.1),
+        point("v111/gpu-R5-cut2", "R5", now - 2 * HOUR, 2.97),
+        point("v111/head-R5", "R5", now - HOUR, 2.13),
+      ],
+      now,
+    );
+    expect(hero).toMatchObject({ lane: "Xvfb", delta: { label: "v111/head-R5-old", dir: "flat" } });
     expect(heroOf([], now).status).toBe("none");
   });
 

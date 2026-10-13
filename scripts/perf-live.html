@@ -239,7 +239,7 @@ function renderHero() {
     <div class="gauge" role="img" aria-label="KPI ${h.ratio.toFixed(2)}× on a scale from 0 to ${TARGET}×"><i style="width:${pos}%"></i>
       <b style="left:50%" title="parity"></b><b style="left:100%" title="target"></b>
       <u style="left:0">0×</u><u style="left:50%">1× parity</u><u style="left:100%">2× target</u></div>
-    <div class="meta">${delta}<span class="mute">Last measured ${ago(h.now - h.t)} at ${esc(h.label)}</span></div>
+    <div class="meta">${delta}<span class="mute">Last measured ${ago(h.now - h.t)} at ${esc(h.label)}${h.lane ? ` · ${esc(h.lane)}` : ""}</span></div>
     ${h.reason ? `<p class="reason"><b>Stale.</b> ${esc(h.reason)}</p>` : ""}
     <p class="legend"><span style="--c:var(--green)">green: 2× or more</span><span style="--c:var(--orange)">orange: 1× to 2×</span><span style="--c:var(--red)">red: below 1×</span><span style="--c:var(--yellow)">yellow: stale (over ${STALE_HOURS} h, or R2/R3 newer)</span></p>
     <p class="fine">KPI = legacy ÷ native thread CPU per frame, screen present left out, at R5 with 4,096 objects. Higher is better.
