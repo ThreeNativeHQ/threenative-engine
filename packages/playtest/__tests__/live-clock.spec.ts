@@ -31,13 +31,13 @@ function project(): string {
   return root;
 }
 
-test("the flag is off by default and names the browser lane only", () => {
+test("the flag is off by default and names the browser and desktop lanes", () => {
   const root = project();
   expect(parseStandalonePlaytestArgs(["standing.playtest.json", "--project", root]).liveClock).toBeUndefined();
   expect(parseStandalonePlaytestArgs(["standing.playtest.json", "--project", root, "--live-clock"]).liveClock).toBe(true);
-  // Fail closed rather than silently measuring on the clock nobody asked for: the native lanes take
-  // this switch from the production profile's injected instrumentation, not from this runner.
-  expect(() => parseStandalonePlaytestArgs([
+  // The native desktop host reads the same request through TN_PLAYTEST_CLOCK, so a counted batch
+  // that presents no frame stops being the only clock a standing scene can be measured on there.
+  expect(parseStandalonePlaytestArgs([
     "standing.playtest.json",
     "--project",
     root,
@@ -45,6 +45,27 @@ test("the flag is off by default and names the browser lane only", () => {
     "desktop",
     "--executable",
     "game",
+    "--live-clock",
+  ]).liveClock).toBe(true);
+  // Fail closed rather than silently measuring on the clock nobody asked for: the device lanes take
+  // this switch from the production profile's injected instrumentation, not from this runner.
+  for (const target of ["android", "ios"]) {
+    expect(() => parseStandalonePlaytestArgs([
+      "standing.playtest.json",
+      "--project",
+      root,
+      "--target",
+      target,
+      "--live-clock",
+    ])).toThrow(/browser and desktop/u);
+  }
+  // The named targets are the whole accepted set, so the message names both of them.
+  expect(() => parseStandalonePlaytestArgs([
+    "standing.playtest.json",
+    "--project",
+    root,
+    "--target",
+    "android",
     "--live-clock",
   ])).toThrow(PlaytestCliUsageError);
 });

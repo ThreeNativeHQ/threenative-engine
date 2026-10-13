@@ -198,11 +198,11 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
     const results = new Map((report.assertionResults ?? []).map(({ id, pass }) => [id, pass]));
     for (const id of [
       "resource.state.aiming.atSteps",
-      "resource.state.playerYaw.atSteps",
+      "resource.state.playerYaw",
       "resource.state.shots.atSteps",
       "resource.state.ammo.atSteps",
-      "component.rifle.barrelAxisErrorDeg.atSteps",
-      "component.rifle.opticScreen.x.atSteps",
+      "component.rifle.barrelAxisErrorDeg.value",
+      "component.rifle.opticScreen.x",
     ]) {
       expect(results.get(id), `${id} must be evaluated`).toBeDefined();
       expect(results.get(id), `${id} must pass`).toBe(true);
@@ -274,7 +274,7 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
     );
     // The red must name the input state itself, not a transport or parse failure.
     expect(failed.has("resource.state.aiming.atSteps")).toBe(true);
-    expect(failed.has("component.rifle.opticScreen.x.atSteps")).toBe(true);
+    expect(failed.has("component.rifle.opticScreen.x")).toBe(true);
   }, 600_000);
 
   test("scenario keeps a no-input control ahead of every input step", async () => {
@@ -283,6 +283,7 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
         components?: Array<{
           atSteps?: Array<{ equals: unknown; label: string }>;
           component: string;
+          lte?: number;
         }>;
         resources?: Array<{ atSteps?: Array<{ equals: unknown; label: string }> }>;
       };
@@ -294,12 +295,12 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
     const aiming = scenario.assert?.resources?.find((row) =>
       row.atSteps?.some(({ label }) => label === "aim-settle"),
     );
-    expect(aiming?.atSteps).toContainEqual({ label: "aim-settle", equals: 1 });
+    expect(aiming?.atSteps).toContainEqual({ label: "aim-settle", equals: true });
     // And the shot is the crosshair's: the barrel converges onto the camera axis, which a
     // weapon firing down its own muzzle cannot satisfy.
     const barrel = scenario.assert?.components?.find(
       ({ component }) => component === "barrelAxisErrorDeg",
     );
-    expect(barrel?.atSteps?.some(({ label }) => label === "fire-settle")).toBe(true);
+    expect(barrel?.lte).toBe(0.5);
   });
 });

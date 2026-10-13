@@ -189,6 +189,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
   // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
@@ -247,9 +248,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
   // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
   // createProject on the merged tree.
-  // PRD-566 merge: measured all thirteen trees; only the shared morph pipeline patch changes bytes.
-  // PRD-570: compact updateRate guidance and its generated mirror are shipped in every kit.
-  "action-rpg": "29f211cc7668f6f94e58b2c61f13ebe28ff7880e4706ed4b79f2191c4d410ee3",
+  // PRD-569/570 merge: the measured trees retain particle/onCull and updateRate guidance.
+  "action-rpg": "4b5b69696ed344b4306d71a1040ce86d34e5d815e17c7fdc61e5d86d38437262",
   minimal: "ee2fbdf0a58d98f309614c9ecc31d276d2e7a4ba797c60a0de1fa211271dab44",
   platformer: "400084c29381beb085c2a466f17798bd2f73d701c504101424b9bb498b0faac0",
   puzzle: "41a369c51d108b1f167a8a2d7b4d18d5202479ccecb1c8941f77932d17040f69",
