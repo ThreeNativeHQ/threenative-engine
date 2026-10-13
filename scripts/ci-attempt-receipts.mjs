@@ -11,10 +11,10 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
     !/^[1-9]\d*$/u.test(runAttempt ?? "")
   )
     throw new Error(`${prefix}_RUN_IDENTITY: repository, run and attempt are required`);
-  let response;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    let pages;
     try {
-      response = execFileSync(
+      const response = execFileSync(
         "gh",
         [
           "api",
@@ -25,7 +25,7 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
         ],
         { encoding: "utf8", timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
       );
-      break;
+      pages = JSON.parse(response);
     } catch (error) {
       const stderr = String(error.stderr ?? "");
       if (
@@ -38,23 +38,29 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
         throw error;
       // Retry only the same read endpoint after 1, 2, 4, 8 seconds; no stale page, receipt or permission fallback.
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000 * 2 ** attempt);
+      continue;
     }
+    if (
+      !Array.isArray(pages) ||
+      pages.length === 0 ||
+      pages.some((page) => !Array.isArray(page?.jobs) || !Number.isInteger(page.total_count))
+    )
+      throw new Error(`${prefix}_API_INCOMPLETE: malformed paginated jobs`);
+    if (pages.some((page) => page.total_count !== pages[0].total_count)) {
+      if (attempt === MAX_ATTEMPTS - 1)
+        throw new Error(`${prefix}_API_INCOMPLETE: job inventory changed during pagination`);
+      // New dependent jobs can appear between pages; discard the entire read and require a stable inventory.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000 * 2 ** attempt);
+      continue;
+    }
+    const listing = { totalCount: pages[0].total_count, jobs: pages.flatMap((page) => page.jobs) };
+    if (
+      listing.totalCount !== listing.jobs.length ||
+      new Set(listing.jobs.map((job) => job.id)).size !== listing.jobs.length
+    )
+      throw new Error(`${prefix}_API_INCOMPLETE: truncated job listing`);
+    return listing;
   }
-  const pages = JSON.parse(response);
-  if (
-    !Array.isArray(pages) ||
-    pages.length === 0 ||
-    pages.some((page) => !Array.isArray(page.jobs) || page.total_count !== pages[0].total_count)
-  )
-    throw new Error(`${prefix}_API_INCOMPLETE: malformed paginated jobs`);
-  const listing = { totalCount: pages[0].total_count, jobs: pages.flatMap((page) => page.jobs) };
-  if (
-    !Number.isInteger(listing.totalCount) ||
-    listing.totalCount !== listing.jobs.length ||
-    new Set(listing.jobs.map((job) => job.id)).size !== listing.jobs.length
-  )
-    throw new Error(`${prefix}_API_INCOMPLETE: truncated job listing`);
-  return listing;
 }
 
 export function receiptFiles(directory, prefix = "CI_INTEGRATION") {

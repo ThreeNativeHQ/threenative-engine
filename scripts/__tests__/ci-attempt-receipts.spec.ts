@@ -64,6 +64,28 @@ it("fails closed after five server failures without accepting partial pages", ()
   expect(() => readAttemptJobs(identity)).toThrow("HTTP 502");
   expect(execute).toHaveBeenCalledTimes(5);
 });
+it("refetches every page when new jobs change the inventory during pagination", () => {
+  execute.mockReturnValueOnce(
+    JSON.stringify([
+      { total_count: 1, jobs: [{ id: 99 }] },
+      { total_count: 2, jobs: [{ id: 100 }] },
+    ]),
+  );
+  execute.mockReturnValueOnce(complete);
+  expect(readAttemptJobs(identity).jobs).toEqual([{ id: 10, run_attempt: 2 }]);
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(execute.mock.calls[0]).toEqual(execute.mock.calls[1]);
+});
+it("fails closed when every paginated inventory changes", () => {
+  execute.mockReturnValue(
+    JSON.stringify([
+      { total_count: 1, jobs: [{ id: 99 }] },
+      { total_count: 2, jobs: [{ id: 100 }] },
+    ]),
+  );
+  expect(() => readAttemptJobs(identity)).toThrow("API_INCOMPLETE");
+  expect(execute).toHaveBeenCalledTimes(5);
+});
 it("fails closed after five connection failures without returning a receipt", () => {
   execute.mockImplementation(() => {
     throw failure("error connecting to api.github.com");
