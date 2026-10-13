@@ -192,6 +192,88 @@ it("owns subrect installations while keeping the full drawing buffer", async () 
   }
 });
 
+it("updates scene viewport/scissor without allocations and reallocates once on renderer canvas growth", async () => {
+  const canvas = Object.assign(new EventTarget(), {
+    clientWidth: 1280,
+    clientHeight: 720,
+    parentElement: null,
+  }) as unknown as HTMLCanvasElement;
+  const resize = vi.fn();
+  const renderer = await createRenderer({
+    canvas,
+    source: {
+      createCanvas: () => canvas,
+      hasWebGPU: () => true,
+      readSize: () => [canvas.clientWidth, canvas.clientHeight],
+      observeResize: (element, callback) => {
+        element.addEventListener("resize", callback);
+        return () => element.removeEventListener("resize", callback);
+      },
+    },
+    webgpuFactory: () => ({
+      domElement: canvas,
+      init: async () => undefined,
+      render: () => undefined,
+      setSize: resize,
+    }),
+  });
+  const scenePass = pass(new Scene(), new PerspectiveCamera());
+  const target = scenePass.renderTarget;
+  const allocations = vi.fn();
+  // Three invalidates the target allocation via dispose when its extent changes; no GPU is used.
+  target.addEventListener("dispose", allocations);
+  try {
+    const handle = renderer.createResolutionSubrect?.();
+    if (!handle) throw new Error("Missing controller factory");
+    handle.retain(scenePass, [target]);
+    renderer.setOutputNode({}, scenePass, { resolutionSubrect: handle });
+    expect([target.width, target.height]).toEqual([1280, 720]);
+    expect(allocations).toHaveBeenCalledTimes(1);
+    allocations.mockClear();
+    resize.mockClear();
+
+    for (const [scale, width, height] of [
+      [0.72, 928, 520],
+      [0.61, 784, 440],
+      [1, 1280, 720],
+    ] as const) {
+      renderer.setResolutionScale(scale, "auto");
+      expect(target.viewport.toArray()).toEqual([0, 0, width, height]);
+      expect(target.scissor.toArray()).toEqual([0, 0, width, height]);
+      expect(target.scissorTest).toBe(true);
+      expect([target.width, target.height]).toEqual([1280, 720]);
+      expect(allocations).not.toHaveBeenCalled();
+      expect(resize).not.toHaveBeenCalled();
+    }
+
+    Object.assign(canvas, { clientWidth: 1401, clientHeight: 801 });
+    canvas.dispatchEvent(new Event("resize"));
+    expect(resize).toHaveBeenCalledExactlyOnceWith(1401, 801, false);
+    expect(renderer.surface()).toMatchObject({
+      drawingBufferWidth: 1401,
+      drawingBufferHeight: 801,
+    });
+    expect([target.width, target.height]).toEqual([1408, 808]);
+    expect(target.viewport.toArray()).toEqual([0, 0, 1408, 808]);
+    expect(target.scissor.toArray()).toEqual([0, 0, 1408, 808]);
+    expect(target.scissorTest).toBe(true);
+    expect(allocations).toHaveBeenCalledTimes(1);
+
+    Object.assign(canvas, { clientWidth: 640, clientHeight: 360 });
+    canvas.dispatchEvent(new Event("resize"));
+    expect(resize).toHaveBeenLastCalledWith(640, 360, false);
+    expect(renderer.surface()).toMatchObject({ drawingBufferWidth: 640, drawingBufferHeight: 360 });
+    expect([target.width, target.height]).toEqual([1408, 808]);
+    expect(target.viewport.toArray()).toEqual([0, 0, 640, 360]);
+    expect(target.scissor.toArray()).toEqual([0, 0, 640, 360]);
+    expect(target.scissorTest).toBe(true);
+    expect(allocations).toHaveBeenCalledTimes(1);
+  } finally {
+    renderer.dispose();
+    scenePass.dispose();
+  }
+});
+
 it("restores actual capacity after deactivation and reactivation", () => {
   const target = new RenderTarget();
   const controller = new ResolutionSubrect();
