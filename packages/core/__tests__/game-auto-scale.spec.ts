@@ -34,6 +34,7 @@ async function run(
   let releaseCompile = () => {};
   const compileWindows: boolean[] = [];
   const game = defineGame({
+    step: presentedP95 / 1000,
     display: { maxFps: 60 },
     frameBudget: {
       report: () => {},
@@ -72,7 +73,7 @@ async function run(
   try {
     await game.start();
     if (frame === undefined) throw new Error("Game did not start its loop.");
-    let time = 0;
+    let time = performance.now();
     // Reach readiness before measuring anything. The scaler deliberately ignores windows that
     // close before the world is up — the ones that close during a launch are asset decode, scene
     // construction and first-use compilation, not the game — and this harness used to drive
@@ -241,7 +242,8 @@ describe('resolutionScale: "auto"', () => {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
       // Thirty windows is many more rungs than the scaler needs to reach its floor.
-      for (let index = 1; index <= 30; index += 1) frame(index * 60);
+      const startTime = performance.now();
+      for (let index = 1; index <= 30; index += 1) frame(startTime + index * 60);
       const last = windows.at(-1);
       expect(last?.surface?.resolutionScale).toBe(0.61);
       expect(last?.surface?.atFloor).toBe(true);
@@ -295,7 +297,7 @@ describe('resolutionScale: "auto"', () => {
       // Same readiness ramp as `run()` above, and for the same reason: the scaler ignores windows
       // that close before the world is up, so a loop that never reaches readiness measures a
       // scaler that was never allowed to act.
-      let time = 0;
+      let time = performance.now();
       for (let index = 0; index < 10; index += 1) {
         time += 8;
         frame(time);
@@ -391,7 +393,7 @@ describe('resolutionScale: "auto"', () => {
       // span. Note also that readiness cannot be held off simply by driving slow frames here —
       // `observe()` measures the frame callback's own duration, not the interval between frames,
       // and this fake callback is nearly free.
-      let time = 0;
+      let time = performance.now();
       for (let index = 0; index < 20; index += 1) {
         time += 100;
         frame(time);

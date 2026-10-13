@@ -1365,8 +1365,8 @@ export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
 - **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles · splash spray droplets with lifetime and gravity · spawn water droplets, mist, or foam bubbles above a fluid surface · falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard · kick up a spray of powder snow or dust where a foot or a ball lands · a hit, impact or explosion burst that starts at the point and moment it is asked for, and a second hit that must not move the first hit's live particles · emitParticle a burst of GPU particles at a world position with its own free slots
-- **Constraints:** geometry, color, and timing remain supplied by the game · a `spawn` kernel makes bursts requests: `emitParticle({ count, origin })` reserves ring slots, the engine stamps `buffers.births` and `process` reads age as `runtime.time - births[i]`; there is no readback · a spawn emitter is world space (identity world matrix); `localCoords: true` follows the parent · requests over `amount` or `maxSpawnPerFrame` clamp, add to `stats.clamped` and warn once; `stats.recycledLive` is `undefined` without the `lifetime` option
-- **Overrides:** localCoords, maxSpawnPerFrame and lifetime tune a spawn emitter; `restart()` kills every particle and rewinds the ring
+- **Constraints:** geometry, color, and timing remain supplied by the game · a `spawn` kernel makes bursts requests: `emitParticle({ count, origin })` reserves ring slots, the engine stamps `buffers.births` and `process` reads age as `runtime.time - births[i]`; there is no readback · a spawn emitter is world space (identity world matrix); `localCoords: true` follows the parent · requests over `amount` or `maxSpawnPerFrame` clamp, add to `stats.clamped` and warn once; `stats.recycledLive` is `undefined` without the `lifetime` option · the emitter measures its own bounds and stops computing and drawing after graceSeconds outside the camera view · a game needs no emitting = visible gate, and an emitter with no measured bounds is never culled for leaving the view · when measured GPU cost passes the frame budget, the smallest projected emitters pause first, and cull.reason reads outside-view or over-budget
+- **Overrides:** localCoords, maxSpawnPerFrame and lifetime tune a spawn emitter; `restart()` kills every particle and rewinds the ring · onCull: "clear" restarts a returning effect, the default "pause" resumes it with buffers intact · bounds supplies a fixed local Box3 and skips GPU measurement, padding enlarges the world box, boundsEveryFrames sets the measurement cadence · graceSeconds sets the seconds outside the view before culling, and Infinity disables view culling
 
 ```ts
 const particles = new GPUParticles3D(particleOptions);
@@ -3906,6 +3906,21 @@ export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrame
 
 ```ts
 assertCaptureNotBlank(png, "first frame");
+```
+
+### `assertDesktopCaptureNotBlank`
+
+`function` — Fail closed when a desktop-host frame shows no rendered content. A native desktop frame has no HTML overlay, so the browser bright-pixel floor does not apply.
+
+```ts
+export function assertDesktopCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }
+```
+
+- **Use when:** guard a native desktop capture of a 3D scene
+- **Constraints:** keeps the uniform-frame checks and replaces only the bright-pixel floor
+
+```ts
+assertDesktopCaptureNotBlank(png, "panned-culled.png");
 ```
 
 ### `assertFrameShowsSomething`

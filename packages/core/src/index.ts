@@ -549,6 +549,7 @@ export {
 export type {
   FrameBudgetPhase,
   IFrameBudgetOptions,
+  IFrameBudgetSimulation,
   IFrameBudgetPassSummary,
   IFrameBudgetSummary,
   IFrameBudgetWindow,
@@ -1011,7 +1012,13 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  * @constraint a `spawn` kernel makes bursts requests: `emitParticle({ count, origin })` reserves ring slots, the engine stamps `buffers.births` and `process` reads age as `runtime.time - births[i]`; there is no readback
  * @constraint a spawn emitter is world space (identity world matrix); `localCoords: true` follows the parent
  * @constraint requests over `amount` or `maxSpawnPerFrame` clamp, add to `stats.clamped` and warn once; `stats.recycledLive` is `undefined` without the `lifetime` option
+ * @constraint the emitter measures its own bounds and stops computing and drawing after graceSeconds outside the camera view
+ * @constraint a game needs no emitting = visible gate, and an emitter with no measured bounds is never culled for leaving the view
+ * @constraint when measured GPU cost passes the frame budget, the smallest projected emitters pause first, and cull.reason reads outside-view or over-budget
  * @override localCoords, maxSpawnPerFrame and lifetime tune a spawn emitter; `restart()` kills every particle and rewinds the ring
+ * @override onCull: "clear" restarts a returning effect, the default "pause" resumes it with buffers intact
+ * @override bounds supplies a fixed local Box3 and skips GPU measurement, padding enlarges the world box, boundsEveryFrames sets the measurement cadence
+ * @override graceSeconds sets the seconds outside the view before culling, and Infinity disables view culling
  * @example const particles = new GPUParticles3D(particleOptions);
  * particles.emitParticle({ count: 220, origin: hit.position });
  */

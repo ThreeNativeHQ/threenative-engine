@@ -60,6 +60,7 @@ export interface IActionRpgVfxOptions {
     buffers: IActionRpgVfxBuffers,
     runtime: { readonly time: Node<"float"> },
   ) => ComputeNode;
+  readonly onCull?: "pause" | "clear";
 }
 
 /** The ring holds this many overlapping bursts before a new one takes the oldest slots. */
@@ -233,11 +234,14 @@ function createDonorEmitter(recipe: DonorRecipe, seed: number): IActionRpgVfxOpt
         .mul(exp(float(-recipe.drag).mul(elapsed)));
       positions.element(instanceIndex).assign(velocities.element(instanceIndex).add(local));
     })().compute(capacity);
+  // A burst ages on the engine clock, so one that expires while the camera is away stays gone.
+  // emitParticle still writes a burst emitted off-screen; it shows when the camera returns.
   return {
     amount: capacity,
     burstCount: recipe.amount,
     lifetime: recipe.lifetime[1],
     material,
+    onCull: "pause",
     process,
     spawn,
   };
