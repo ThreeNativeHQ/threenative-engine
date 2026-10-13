@@ -16,7 +16,7 @@
 - **No per-layer roughness or AO.** The material hard-codes `MeshStandardNodeMaterial({ metalness: 0, roughness: 0.92 })`. That is a look constant in package code, and every layer gets it. Megascans-grade layers ship albedo + normal + ORM.
 - **Cost grows with layer count.** Every pixel samples every layer through the `mix` chain, and triplanar layers sample three times.
 
-Out of scope: virtual texturing (WORLD-STREAMING.md) and texture residency ([PRD-VQ-10](../performance/PRD-VQ-10-texture-mip-residency.md)), and per-layer height blending ([PRD-567](../done/PRD-567-terrain-layers-blend-by-their-own-height.md)), which keeps this PRD's "no new curve vocabulary" rule by adding only a height set and a weight seam to the package and leaving the curve in game source.
+Out of scope: virtual texturing (WORLD-STREAMING.md) and texture residency ([PRD-VQ-10](../Unreal/performance/PRD-VQ-10-texture-mip-residency.md)), and per-layer height blending ([PRD-567](../done/PRD-567-terrain-layers-blend-by-their-own-height.md)), which keeps this PRD's "no new curve vocabulary" rule by adding only a height set and a weight seam to the package and leaving the curve in game source.
 
 ## Solution
 

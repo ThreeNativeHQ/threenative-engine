@@ -76,11 +76,11 @@ cancel and an axis-rolled limb is caught where a bone-direction check reads zero
 
 ## Budget real time for the look — see `node_modules/create-threenative/agent-docs/references/dream-loop.md`
 
-`src/render/` is yours to edit and is where the base look lives: the prototype test scene, a metre
+WebGPU reports `TN_GPU_CLASS` once per launch. Automatic `render.resolutionScale` starts at 0.85 for `mobile-low`, otherwise 1; a numeric value pins it. `TN_FRAME_BUDGET` reports the actual scale under both policies. `src/render/` is yours to edit and is where the base look lives: the prototype test scene, a metre
 grid in world UVs over a light floor and a dark structure, `palette.ts`'s five roles with exactly one
 saturated `accent` for anything you can touch, `sky.ts`'s photograph behind everything, and bevelled
 `RoundedBoxGeometry` sunk by its bevel radius. Torch point lights are the only warm light. Imported foliage (Fab/Megascans cutouts) draws with its own albedo, normal map and alpha cutoff under the environment light `sky.ts` makes — never tint it, fake its emission or flatten its normals to make up for missing light; `TN_UNLIT_FOLIAGE` names cutout materials drawn with no environment.
-`quality.ts` defines `low`, `medium`, and `high`; `isMobile()` selects `low`, otherwise `high`, and
+`quality.ts` defines `low`, `medium`, and `high`; the GPU family from `ctx.renderer.gpuClass` sets the start (`discrete` `high`, `integrated` and `mobile-high` `medium`, other phones `low`); `isMobile()` chooses `low`, otherwise `high` when the family is `unknown`, and
 `setupPost(..., { tier: "low" })` is the named override — unknown tiers throw and `TN_QUALITY_TIER`
 reports the source. VFX appearance belongs in `src/render/vfx.ts`: keep its TSL material, geometry,
 colour, blend, curves, timing and capacity there; gameplay creates `GPUParticles3D` once, adds it with
@@ -92,4 +92,4 @@ For terrain generation or editing, read `node_modules/create-threenative/agent-d
 ## Optional multiplayer transport
 For online play only, import `connect` from `@threenative/core/net` with an HTTPS URL and nonempty identity credential; configure `connectTimeoutMs`, `maxReliableMessageBytes`, `maxQueuedReliableBytes`, and `maxQueuedDatagrams` (10s/65,536/1 MiB/256), use `reliable-ordered` for ordered reliable messages and bounded `unreliable` datagrams that may drop, and keep serialization, replication, prediction, interpolation, snapshots and rejoin in this game's `src/` and server. There is no fallback: unsupported WebTransport/native rejects with `TN_NET_UNAVAILABLE`; reference Go server: `packages/runtime-native/examples/webtransport/server`.
 Material backlighting lives in `src/render/lighting.ts`: named `rimGain` and `fillGain` controls preserve the authored palette; `materialLighting.ts` reports `TN_ENVIRONMENT_CONTRIBUTION`. Admission is limited to high hardware desktop WebGPU; mobile/software/WebGL/native retain original materials. Existing authored fill stays authoritative.
-`src/render/exposure.ts` owns optional adaptation (`enabled: false`); `autoExposure.ts` meters even when disabled. Recipe: `node_modules/create-threenative/agent-docs/references/auto-exposure.md`.
+`src/render/exposure.ts` owns optional adaptation (`enabled: false`); `autoExposure.ts` meters even when disabled. Recipe: `node_modules/create-threenative/agent-docs/references/auto-exposure.md`. Fog is height fog: `HEIGHT_FOG` in `src/render/heightFog.ts` (`density`, `heightFalloff`, `fogHeight`, `maxOpacity`, `startDistance`, `sunExponent`, `sunStartDistance`, `cutoffDistance`) is added to the `FogExp2` distance term on `scene.fogNode` and never replaces it, so a streaming fog `far` still holds.

@@ -225,6 +225,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       godraysLight: sun,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
       onTierChanged: (tier) =>
         this.#materialLighting?.setEnabled(
           materialLightingEnabled(tier, this.#materialEnvironment(ctx)),

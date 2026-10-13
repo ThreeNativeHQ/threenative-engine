@@ -22,7 +22,7 @@
 // `(x/W)^g / (1 + (x/W)^g)` with `W = 4, g = 1/2.2` cost 4.3. `__tests__/grade.spec.ts` holds the
 // arithmetic; the value of the transform's own seat is that an identity table there is under one
 // step by construction rather than by a fitted curve.
-import type { Data3DTexture } from "three";
+import { type Data3DTexture, DataUtils, FloatType, HalfFloatType } from "three";
 import { film } from "three/addons/tsl/display/FilmNode.js";
 import { lut3D } from "three/addons/tsl/display/Lut3DNode.js";
 import { float, renderOutput, texture3D, time, uv } from "three/tsl";
@@ -54,10 +54,31 @@ export interface IGradeSettings {
   readonly tier: QualityTier;
 }
 
-/** The loaded table: the parsed `.cube` and the size `lut3D` has to be told. */
+/** The loaded table: the parsed `.cube` as a filterable texture, and the size `lut3D` has to be told. */
 export interface IGradeTable {
   readonly size: number;
   readonly texture: Data3DTexture;
+}
+
+/**
+ * The table `LUTCubeLoader` parsed as `FloatType`, uploaded as half floats so the GPU can filter it.
+ *
+ * The float parse keeps the file's own numbers. But three's WGSL builder samples a float32 3D
+ * texture without filtering unless the device has the optional `float32-filterable` feature. Then
+ * every lookup reads one of the nine cells, and the frame posterises. Half floats filter on every
+ * device and hold each number from 0 to 1 within a quarter of an 8-bit step. Any other input throws,
+ * because converting its bytes would build a wrong table.
+ */
+export function filterableTable(texture: Data3DTexture): Data3DTexture {
+  const { data } = texture.image;
+  if (texture.type !== FloatType || !(data instanceof Float32Array))
+    throw new Error(
+      `grade table must be a Float32Array parsed with setType(FloatType); got type ${texture.type}, ${data?.constructor.name}.`,
+    );
+  texture.image.data = Uint16Array.from(data, (value) => DataUtils.toHalfFloat(value));
+  texture.type = HalfFloatType;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 /**

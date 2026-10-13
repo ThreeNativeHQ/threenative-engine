@@ -1,11 +1,16 @@
 import type { IPlaytestObservations } from "../assertion-report.js";
 import type { IPlaytestCaptureProvenance, IPlaytestReport } from "../report.js";
 import { softwareAdapterName } from "../runner/browser.js";
-import type { PlaytestAdapterClass } from "../scenario/schema-base.js";
+import type { PlaytestAdapterClass, PlaytestGpuFamily } from "../scenario/schema-base.js";
 
 export interface IAdapterClassification {
   /** Absent when this run reported no adapter to classify. Never defaulted to `hardware`. */
   readonly adapterClass?: PlaytestAdapterClass;
+  /**
+   * The GPU family the observed identity fields prove, on a hardware run only. Absent when no
+   * family rule matched, and never guessed: a `perAdapter` family row needs this to apply.
+   */
+  readonly gpuFamily?: PlaytestGpuFamily;
   /** The `adapter.info` field value that named a CPU rasteriser. */
   readonly softwareAdapter?: string;
 }
@@ -40,9 +45,9 @@ export function classifyAdapter(report: IPlaytestReport): IAdapterClassification
   // decide which class that identity is.
   if (adapterIdentity(capture.adapter) === undefined) return {};
   const software = softwareAdapterName(capture.adapter);
-  return software === undefined
-    ? { adapterClass: "hardware" }
-    : { adapterClass: "software", softwareAdapter: software };
+  if (software !== undefined) return { adapterClass: "software", softwareAdapter: software };
+  const gpuFamily = gpuFamilyOf(capture.adapter);
+  return gpuFamily === undefined ? { adapterClass: "hardware" } : { adapterClass: "hardware", gpuFamily };
 }
 
 /** The same four `adapter.info` fields core's `softwareAdapter` reads, in that order. */
@@ -61,6 +66,82 @@ function adapterIdentity(adapter: Readonly<Record<string, string>> | undefined):
   for (const key of ADAPTER_IDENTITY_KEYS) {
     const value = adapter[key];
     if (typeof value === "string" && value.trim() !== "") return value;
+  }
+  return undefined;
+}
+
+type IdentityFields = Readonly<Record<(typeof ADAPTER_IDENTITY_KEYS)[number], string>>;
+
+const MALI_MODEL = /\bmali[\s_-]*g?[\s-]*(\d{2,3})/i;
+const ADRENO_MODEL = /\badreno\W*(?:tm\W*)?(\d)(\d\d|xx)/i;
+const AMD_INTEGRATED = /radeon(?:\(tm\))?\s+(?:graphics|\d{3}m)\b/i;
+const INTEL_DISCRETE = /\barc\b|xe2?-hpg|battlemage|alchemist/i;
+
+/**
+ * Ordered family rules, first match wins: this package's own copy of core's `classifyGpu` table
+ * minus its software row, which `softwareAdapterName` already answered first. It is a copy because
+ * the harness runs against plain Three.js and takes no `@threenative/core` dependency; a spec holds
+ * the two tables to the same answer on shared fixtures. Each rule reads only the fields it names, and
+ * an empty field matches no pattern, so a coarse adapter yields no family instead of a wrong one.
+ */
+const FAMILY_RULES: readonly ((fields: IdentityFields) => PlaytestGpuFamily | undefined)[] = [
+  ({ architecture, description, device }) => {
+    const number = [description, device, architecture]
+      .map((value) => MALI_MODEL.exec(value)?.[1])
+      .find((value) => value !== undefined);
+    if (number === undefined) return undefined;
+    const model = Number(number);
+    // G710 and newer are the flagship line, G57 to G78 the middle, G31 to G52 and G71/G72 the budget parts.
+    if (model >= 710) return "mobile-high";
+    return model < 57 || model === 71 || model === 72 ? "mobile-low" : "mobile-mid";
+  },
+  ({ architecture, vendor }) => {
+    if (!/\barm\b/i.test(vendor)) return undefined;
+    if (/midgard|bifrost/i.test(architecture)) return "mobile-low";
+    if (/valhall/i.test(architecture)) return "mobile-mid";
+    return /5th-?gen|immortalis/i.test(architecture) ? "mobile-high" : undefined;
+  },
+  ({ architecture, description, device }) => {
+    const match = [description, device, architecture]
+      .map((value) => ADRENO_MODEL.exec(value))
+      .find((value) => value !== null && value !== undefined);
+    if (match === null || match === undefined) return undefined;
+    const generation = Number(match[1]);
+    if (generation <= 4) return "mobile-low";
+    if (generation === 5) return "mobile-mid";
+    // 6xx spans the 610 budget part to the 660 flagship; a generation-only name is the safe middle.
+    if (generation === 6) return match[2] !== "xx" && Number(match[2]) >= 30 ? "mobile-high" : "mobile-mid";
+    return "mobile-high";
+  },
+  ({ architecture, description, device, vendor }) =>
+    /nvidia/i.test(vendor) && ![architecture, description, device].some((value) => /tegra/i.test(value))
+      ? "discrete"
+      : undefined,
+  ({ architecture, description, device, vendor }) => {
+    if (!/intel/i.test(vendor)) return undefined;
+    return [architecture, description, device].some((value) => INTEL_DISCRETE.test(value)) ? "discrete" : "integrated";
+  },
+  // An APU and a card share an architecture name, so an AMD adapter that names no iGPU is `discrete`.
+  ({ description, vendor }) =>
+    /\b(?:amd|ati)\b/i.test(vendor) ? (AMD_INTEGRATED.test(description) ? "integrated" : "discrete") : undefined,
+];
+
+/** The family the four identity fields prove, or none: only those keys are read, an absent one is empty. */
+function gpuFamilyOf(adapter: Readonly<Record<string, string>> | undefined): PlaytestGpuFamily | undefined {
+  if (adapter === undefined) return undefined;
+  const field = (key: (typeof ADAPTER_IDENTITY_KEYS)[number]): string => {
+    const value = adapter[key];
+    return typeof value === "string" ? value : "";
+  };
+  const fields: IdentityFields = {
+    architecture: field("architecture"),
+    description: field("description"),
+    device: field("device"),
+    vendor: field("vendor"),
+  };
+  for (const rule of FAMILY_RULES) {
+    const family = rule(fields);
+    if (family !== undefined) return family;
   }
   return undefined;
 }

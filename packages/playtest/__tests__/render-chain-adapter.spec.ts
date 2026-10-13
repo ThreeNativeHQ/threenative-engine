@@ -1,7 +1,9 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { classifyGpu } from "../../core/src/gpu-class.js";
 import { evaluateRichPlaytestAssertions, loadPlaytestScenario } from "../src/index.js";
-import { nativeCaptureProvenance } from "../src/evaluators/adapter-class.js";
+import { classifyAdapter, nativeCaptureProvenance } from "../src/evaluators/adapter-class.js";
 import type { IPlaytestRenderChainObservation } from "../src/protocol.js";
 import type { IPlaytestCaptureProvenance, IPlaytestReport } from "../src/report.js";
 
@@ -477,5 +479,295 @@ describe("renderChain perAdapter selection", () => {
         expect.objectContaining({ id: "renderChain.adapterClass", pass: false }),
       );
     });
+  });
+});
+
+// The templates start each GPU family at its own tier (`START_TIER_BY_GPU_CLASS`), so a scenario
+// that asserts a flat `high` for every real GPU fails on a laptop iGPU and on a phone. These rows
+// are the family tiers the template table names, written in the scenario and never read back from
+// what the game printed. `classifyAdapter` proves the family from the four `adapter.info` fields
+// alone, with its own copy of the rules core's `classifyGpu` holds.
+const MEDIUM: IPlaytestRenderChainObservation = { ...HIGH, tier: "medium" };
+const FAMILY_ASSERTION = {
+  perAdapter: {
+    integrated: { tier: "medium" },
+    "mobile-high": { tier: "medium" },
+    "mobile-low": { tier: "low" },
+    "mobile-mid": { tier: "low" },
+    software: { tier: "low" },
+  },
+  tier: "high",
+};
+
+const IRIS_XE = { architecture: "gen-12lp", vendor: "intel" };
+const ARC_A770 = { architecture: "xe-hpg", description: "Intel(R) Arc(tm) A770 Graphics", vendor: "intel" };
+const MALI_G715 = { description: "Mali-G715-Immortalis MC11", vendor: "arm" };
+const MALI_G78 = { architecture: "valhall", description: "Mali-G78", vendor: "arm" };
+const MALI_G52 = { architecture: "bifrost", description: "Mali-G52 MC2", vendor: "arm" };
+const APPLE = { architecture: "common-3", vendor: "apple" };
+
+describe("renderChain perAdapter GPU families", () => {
+  it.each<[string, Record<string, string>, IPlaytestRenderChainObservation, string | undefined]>([
+    ["an Intel Iris Xe laptop", IRIS_XE, MEDIUM, "integrated"],
+    ["a Mali-G715 phone", MALI_G715, MEDIUM, "mobile-high"],
+    ["a Mali-G78 phone", MALI_G78, LOW, "mobile-mid"],
+    ["a Mali-G52 phone", MALI_G52, LOW, "mobile-low"],
+    // An Arc card is `discrete`: no integrated row may catch it, and the flat `high` stays its policy.
+    ["an Intel Arc card", ARC_A770, HIGH, "discrete"],
+    ["an RTX card", TURING, HIGH, "discrete"],
+    // No family rule names Apple Silicon, so it keeps the flat policy it had before families existed.
+    ["an adapter no family rule names", APPLE, HIGH, undefined],
+  ])("holds %s to the tier its family starts at", async (_name, adapter, renderChain, gpuFamily) => {
+    const scenario = await load(SCENARIO(FAMILY_ASSERTION));
+    const result = evaluateRichPlaytestAssertions({ report: report(renderChain, capture(adapter)), scenario });
+
+    expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
+    // No family is reported rather than a guessed one when no rule matched.
+    const provenance = gpuFamily === undefined ? { adapterClass: "hardware" } : { adapterClass: "hardware", gpuFamily };
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({ details: expect.objectContaining(provenance), id: "renderChain.tier", pass: true }),
+    );
+    if (gpuFamily === undefined) {
+      expect(classifyAdapter(report(renderChain, capture(adapter)))).not.toHaveProperty("gpuFamily");
+    }
+  });
+
+  // A family row replaces the flat policy for that family only, so the policy it replaced cannot
+  // pass beside it: an iGPU that stayed on `high` is no longer the template's start.
+  it.each<[string, Record<string, string>, IPlaytestRenderChainObservation]>([
+    ["an integrated GPU on the flat high", IRIS_XE, HIGH],
+    ["a mobile-high phone on the flat high", MALI_G715, HIGH],
+    ["a mobile-low phone on medium", MALI_G52, MEDIUM],
+    ["an Arc card dropped below high", ARC_A770, MEDIUM],
+    ["an adapter no family rule names, below the flat high", APPLE, MEDIUM],
+  ])("fails %s", async (_name, adapter, renderChain) => {
+    const scenario = await load(SCENARIO(FAMILY_ASSERTION));
+    const result = evaluateRichPlaytestAssertions({ report: report(renderChain, capture(adapter)), scenario });
+
+    expect(result.assertions).toContainEqual(expect.objectContaining({ id: "renderChain.tier", pass: false }));
+  });
+
+  it("keeps a scenario with only hardware and software rows on its old selection", async () => {
+    const scenario = await load(SCENARIO({ perAdapter: { software: { tier: "low" } }, tier: "high" }));
+    // Without a family row an Iris Xe is the generic hardware policy, exactly as before families.
+    const result = evaluateRichPlaytestAssertions({ report: report(HIGH, capture(IRIS_XE)), scenario });
+
+    expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({
+        details: expect.objectContaining({ adapterClass: "hardware", gpuFamily: "integrated" }),
+        id: "renderChain.tier",
+        pass: true,
+      }),
+    );
+  });
+
+  it("lets a hardware row apply to a family it names no row for", async () => {
+    const scenario = await load(
+      SCENARIO({ perAdapter: { hardware: { tier: "medium" }, integrated: { tier: "low" } }, tier: "high" }),
+    );
+    const result = evaluateRichPlaytestAssertions({ report: report(MEDIUM, capture(TURING)), scenario });
+
+    expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
+  });
+
+  // The shipped files, not a copy of their shape: the real `renderChain` block of the starter's
+  // `play` and `look` scenarios goes through the real loader and the evaluator, against the adapter
+  // fields the Iris Xe laptop and the Pixel 8 report. The flat `high` alone failed both.
+  const LOOK_HIGH_STAGES = ["ambientOcclusion", "bloom", "vignette", "grade", "grain"];
+  const LOOK_LOW_STAGES = ["bloom", "vignette", "antialias", "grade"];
+  const lookChain = (tier: "high" | "low" | "medium"): IPlaytestRenderChainObservation => {
+    const stages = tier === "low" ? LOOK_LOW_STAGES : LOOK_HIGH_STAGES;
+    return {
+      ...HIGH,
+      contributions: stages.map((name) => ({ graphOutputChanged: true, name })),
+      requested: stages,
+      stages,
+      tier,
+    };
+  };
+  const shipped = async (relative: string) => {
+    const { readFile } = await import("node:fs/promises");
+    const file = fileURLToPath(new URL(`../../create-threenative/${relative}`, import.meta.url));
+    const parsed = JSON.parse(await readFile(file, "utf8")) as { assert: { renderChain: unknown } };
+    return load(SCENARIO(parsed.assert.renderChain));
+  };
+  const STARTER_PLAY = "templates/starter/playtests/play.playtest.json";
+  const STARTER_LOOK = "template-playtests/starter/look.playtest.json";
+
+  it.each<[string, string, Record<string, string>, IPlaytestRenderChainObservation, boolean]>([
+    ["play on an Iris Xe", STARTER_PLAY, IRIS_XE, MEDIUM, true],
+    ["play on a Mali-G715", STARTER_PLAY, MALI_G715, MEDIUM, true],
+    ["play on a Mali-G78", STARTER_PLAY, MALI_G78, LOW, true],
+    ["play on a Mali-G52", STARTER_PLAY, MALI_G52, LOW, true],
+    ["play on an RTX card", STARTER_PLAY, TURING, HIGH, true],
+    ["play on an Iris Xe that stayed on high", STARTER_PLAY, IRIS_XE, HIGH, false],
+    ["look on an Iris Xe", STARTER_LOOK, IRIS_XE, lookChain("medium"), true],
+    ["look on a Mali-G715", STARTER_LOOK, MALI_G715, lookChain("medium"), true],
+    ["look on a Mali-G52", STARTER_LOOK, MALI_G52, lookChain("low"), true],
+    ["look on an RTX card", STARTER_LOOK, TURING, lookChain("high"), true],
+    ["look on an Iris Xe that stayed on high", STARTER_LOOK, IRIS_XE, lookChain("high"), false],
+  ])("holds the shipped starter %s to its own table", async (_name, relative, adapter, renderChain, passes) => {
+    const scenario = await shipped(relative);
+    const result = evaluateRichPlaytestAssertions({ report: report(renderChain, capture(adapter)), scenario });
+    const rows = result.assertions.filter((row) => row.id.startsWith("renderChain."));
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.pass === true)).toBe(passes);
+  });
+
+  // The four scenarios that once asserted a flat `high` alone. Each reports the stages its own
+  // template authors at that tier: the starter drops ambientOcclusion and grain at low, while
+  // sailing's bloom and rain's stormPost run at every tier, so their rows keep the stage check.
+  it.each<[string, string, string[], string[]]>([
+    ["starter native render-chain", "templates/starter/native-playtests/render-chain.playtest.json", LOOK_HIGH_STAGES, ["bloom", "vignette", "antialias", "grade"]],
+    ["sailing native survives", "templates/sailing/native-playtests/survives.playtest.json", ["bloom"], ["bloom"]],
+    ["rain native boot", "templates/rain/native-playtests/boot.playtest.json", ["stormPost"], ["stormPost"]],
+    ["rain performance", "templates/rain/playtests/performance.playtest.json", ["stormPost"], ["stormPost"]],
+  ])("holds the shipped %s scenario to the tier each adapter starts on", async (_name, relative, upperStages, lowStages) => {
+    const scenario = await shipped(relative);
+    const observed = (tier: "high" | "low" | "medium"): IPlaytestRenderChainObservation => {
+      const stages = tier === "low" ? lowStages : upperStages;
+      return { ...HIGH, contributions: stages.map((name) => ({ graphOutputChanged: true, name })), requested: stages, stages, tier };
+    };
+    const verdicts = (adapter: Record<string, string>, tier: "high" | "low" | "medium") => {
+      const result = evaluateRichPlaytestAssertions({ report: report(observed(tier), capture(adapter)), scenario });
+      const rows = result.assertions.filter((row) => row.id.startsWith("renderChain."));
+      expect(rows.length).toBeGreaterThan(0);
+      return rows.every((row) => row.pass === true);
+    };
+
+    expect(verdicts(IRIS_XE, "medium")).toBe(true);
+    expect(verdicts(MALI_G715, "medium")).toBe(true);
+    expect(verdicts(MALI_G78, "low")).toBe(true);
+    expect(verdicts(MALI_G52, "low")).toBe(true);
+    expect(verdicts(SWIFTSHADER, "low")).toBe(true);
+    expect(verdicts(TURING, "high")).toBe(true);
+    expect(verdicts(IRIS_XE, "high")).toBe(false);
+    expect(verdicts(SWIFTSHADER, "high")).toBe(false);
+  });
+
+  it("keeps the starter native low row from accepting a chain that still runs occlusion or grain", async () => {
+    const scenario = await shipped("templates/starter/native-playtests/render-chain.playtest.json");
+    const stages = LOOK_HIGH_STAGES;
+    const heldHigh: IPlaytestRenderChainObservation = {
+      ...HIGH,
+      contributions: stages.map((name) => ({ graphOutputChanged: true, name })),
+      requested: stages,
+      stages,
+      tier: "low",
+    };
+    const result = evaluateRichPlaytestAssertions({ report: report(heldHigh, capture(MALI_G52)), scenario });
+
+    expect(result.assertions).toContainEqual(expect.objectContaining({ id: "renderChain.stages.excludes", pass: false }));
+  });
+
+  it("never lets a software adapter take a family row from its vendor", async () => {
+    const scenario = await load(SCENARIO(FAMILY_ASSERTION));
+    const software = { architecture: "swiftshader", vendor: "intel" };
+    const result = evaluateRichPlaytestAssertions({ report: report(LOW, capture(software)), scenario });
+
+    expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({
+        details: expect.objectContaining({ adapterClass: "software" }),
+        id: "renderChain.tier",
+        pass: true,
+      }),
+    );
+    expect(classifyAdapter(report(LOW, capture(software)))).toEqual({
+      adapterClass: "software",
+      softwareAdapter: "swiftshader",
+    });
+  });
+
+  it("proves a native run's family from the census identity it already carries", async () => {
+    const scenario = await load(SCENARIO(FAMILY_ASSERTION));
+    const native = report(MEDIUM, nativeCaptureProvenance(
+      { adapter: { identity: "webgpu:description=Mali-G715-Immortalis%20MC11|vendor=arm" } },
+      "android",
+      { height: 720, width: 1280 },
+    ));
+    const result = evaluateRichPlaytestAssertions({ report: native, scenario });
+
+    expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
+    expect(classifyAdapter(native)).toEqual({ adapterClass: "hardware", gpuFamily: "mobile-high" });
+  });
+
+  // Missing fields prove nothing: a family rule that needs a field the platform did not report
+  // never matches, and a run that named no adapter at all stays unclassified (fails closed).
+  it.each<[string, Record<string, string>]>([
+    ["only an unrecognised vendor", { vendor: "acme" }],
+    ["a Tegra under an NVIDIA vendor", { description: "NVIDIA Tegra Orin", vendor: "nvidia" }],
+    ["a Mali architecture with the vendor missing", { architecture: "bifrost" }],
+    ["an Adreno family with no number", { description: "Adreno", vendor: "qualcomm" }],
+    ["fields that are blank", { architecture: " ", description: "", device: "\t", vendor: " " }],
+  ])("proves no family from %s", (_name, adapter) => {
+    const classification = classifyAdapter(report(HIGH, capture(adapter)));
+
+    expect(classification).not.toHaveProperty("gpuFamily");
+  });
+
+  it("leaves an adapter that named nothing unclassified, with no family", () => {
+    expect(classifyAdapter(report(HIGH, capture({})))).toEqual({});
+    expect(classifyAdapter(report(HIGH, capture({ architecture: "", vendor: "" })))).toEqual({});
+  });
+
+  // The copy in this package and core's table answer from the same fields, so the harness cannot
+  // hold a run to a family the template did not start it at. `unknown` and `software` carry no family.
+  it.each<[string, Record<string, string>]>([
+    ["RTX 2080, Chrome", TURING],
+    ["RTX 4090, native", { description: "NVIDIA GeForce RTX 4090", vendor: "NVIDIA" }],
+    ["RTX 2080 on the Android emulator", { architecture: "unknown", description: "615.71.09", device: "NVIDIA GeForce RTX 2080", vendor: "NVIDIA" }],
+    ["SwiftShader", SWIFTSHADER],
+    ["llvmpipe", { description: "llvmpipe (LLVM 17)", vendor: "mesa" }],
+    ["Iris Xe", IRIS_XE],
+    ["Arc A770", ARC_A770],
+    ["Intel with only a vendor", { vendor: "intel" }],
+    ["Radeon RX 7800 XT", { architecture: "rdna-3", description: "AMD Radeon RX 7800 XT", vendor: "amd" }],
+    ["Ryzen iGPU", { architecture: "rdna-2", description: "AMD Radeon(TM) Graphics", vendor: "amd" }],
+    ["Mali-G715", MALI_G715],
+    ["Mali-G52", MALI_G52],
+    ["Mali-G78", MALI_G78],
+    ["Mali by architecture only", { architecture: "bifrost", vendor: "arm" }],
+    ["Adreno 5xx", { description: "Adreno (TM) 540", vendor: "qualcomm" }],
+    ["Adreno 650", { description: "Adreno (TM) 650", vendor: "qualcomm" }],
+    ["Adreno 618", { description: "Adreno (TM) 618", vendor: "qualcomm" }],
+    ["Adreno 740 by architecture", { architecture: "adreno-7xx", vendor: "qualcomm" }],
+    ["Adreno 4xx", { description: "Adreno (TM) 430", vendor: "qualcomm" }],
+    ["Apple Silicon", APPLE],
+    ["Tegra", { description: "NVIDIA Tegra Orin", vendor: "nvidia" }],
+  ])("agrees with core's classifyGpu on %s", (_name, adapter) => {
+    const core = classifyGpu(adapter).class;
+    const classification = classifyAdapter(report(HIGH, capture(adapter)));
+
+    if (core === "software") {
+      expect(classification.adapterClass).toBe("software");
+      expect(classification).not.toHaveProperty("gpuFamily");
+    } else {
+      expect(classification.adapterClass).toBe("hardware");
+      expect(classification.gpuFamily).toBe(core === "unknown" ? undefined : core);
+    }
+  });
+
+  it("accepts every family key beside hardware and software at load", async () => {
+    const rows = Object.fromEntries(
+      ["discrete", "hardware", "integrated", "mobile-high", "mobile-low", "mobile-mid", "software"].map(
+        (key) => [key, { tier: "low" }],
+      ),
+    );
+    await expect(load(SCENARIO({ perAdapter: rows, tier: "high" }))).resolves.toBeDefined();
+  });
+
+  it("rejects a mistyped family key, and a typo inside a family row, at load", async () => {
+    await expect(load(SCENARIO({ perAdapter: { mobile_high: { tier: "medium" } } }))).rejects.toThrow(
+      /perAdapter\.mobile_high/u,
+    );
+    await expect(load(SCENARIO({ perAdapter: { integrated: { tiers: "medium" } } }))).rejects.toThrow(
+      /perAdapter\.integrated\.tiers/u,
+    );
+    await expect(
+      load(SCENARIO({ perAdapter: { "mobile-high": { stages: { includess: ["bloom"] } } } })),
+    ).rejects.toThrow(/perAdapter\.mobile-high\.stages\.includess/u);
   });
 });

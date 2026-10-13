@@ -4,10 +4,10 @@ prd_contract: v1
 
 # PRD-455 — Fewer rendered pixels reconstruct into a stable full-resolution frame
 
-**Status:** DONE (scoped) — the opt-in full-resolution temporal provider, history-correctness lifecycle and ghosting/cost controls shipped; the low-resolution reconstruction quality, frame-time and scaler criteria moved to [PRD-539](../rendering/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (2026-10-07).  
+**Status:** DONE (scoped) — the opt-in full-resolution temporal provider, history-correctness lifecycle and ghosting/cost controls shipped; the low-resolution reconstruction quality, frame-time and scaler criteria moved to [PRD-539](../Unreal/performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (2026-10-07).  
 **Priority:** P1 — closed as scoped; the unmet reconstruction work continues in PRD-539.
 **Complexity:** 8 → HIGH. The renderer already has the difficult prerequisites; the remaining risk is history correctness and proving reconstruction wins more GPU time than it costs.  
-**Depends on:** the landed motion-history implementation from PRD-269 (`packages/core/src/render/velocity.ts`, commit `3630847a`), its pending canonical [PR393 repair](https://github.com/ThreeNativeHQ/threenative/pull/393) at `47e188e41601a64decb4fe0f580037546d63b543`, the existing `RenderChain`, and [PRD-384 adaptive resolution](../performance/PRD-384-adaptive-resolution-gpu-headroom.md).
+**Depends on:** the landed motion-history implementation from PRD-269 (`packages/core/src/render/velocity.ts`, commit `3630847a`), its pending canonical [PR393 repair](https://github.com/ThreeNativeHQ/threenative/pull/393) at `47e188e41601a64decb4fe0f580037546d63b543`, the existing `RenderChain`, and [PRD-384 adaptive resolution](PRD-384-adaptive-resolution-gpu-headroom.md).
 
 ## Problem
 

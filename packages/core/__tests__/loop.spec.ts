@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { retainTerrainBlendFrame } from "../../../examples/abyss-framework/src/scenes/TerrainProbe.js";
 import { FRAME_BUDGET_MARKER, FrameBudget, type IFrameBudgetWindow } from "../src/frame-budget.js";
 import {
   FixedStepLoop,
@@ -620,5 +621,25 @@ describe("after-physics phase dispatch", () => {
     phase.register(() => seen.push("after"));
     phase.run(1 / 60);
     expect(seen).toEqual(["after"]);
+  });
+});
+
+describe("terrain draw interval retention", () => {
+  it("closes the preceding draw with its own blend count, not the next draw's count", () => {
+    const entries: { frame: number; startedAt: number; blendingTiles: number; frameMs?: number }[] =
+      [];
+    retainTerrainBlendFrame(entries, 100, 5);
+    expect(entries).toEqual([{ frame: 0, startedAt: 100, blendingTiles: 5 }]);
+    retainTerrainBlendFrame(entries, 170, 0);
+    retainTerrainBlendFrame(entries, 180, 2);
+    expect(entries).toEqual([
+      { frame: 0, startedAt: 100, blendingTiles: 5, frameMs: 70 },
+      { frame: 1, startedAt: 170, blendingTiles: 0, frameMs: 10 },
+      { frame: 2, startedAt: 180, blendingTiles: 2 },
+    ]);
+    for (let i = 3; i <= 1025; i++) retainTerrainBlendFrame(entries, 180 + i, i % 2);
+    expect(entries).toHaveLength(1024);
+    expect(entries[0]?.frame).toBe(2);
+    expect(entries.at(-1)?.frame).toBe(1025);
   });
 });

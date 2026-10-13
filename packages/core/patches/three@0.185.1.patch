@@ -448,6 +448,30 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..a308a892c59283b3b9a71477b3b02d64
  
  	}
  
+@@ -30286,7 +30424,7 @@ class RenderObject {
+-	getGeometryCacheKey() {
++	getGeometryCacheKey( useMorphTargetIds = true ) {
+ 
+ 		const { geometry } = this;
+ 
+ 		let cacheKey = '';
+ 
+ 		for ( const name of Object.keys( geometry.attributes ).sort() ) {
+@@ -30312,11 +30450,13 @@ class RenderObject {
+ 
+ 			cacheKey += 'morph-' + name + ',';
++			if ( ! useMorphTargetIds ) cacheKey += targets.length + ',' + geometry.morphTargetsRelative + ',';
+ 
+ 			for ( let i = 0, l = targets.length; i < l; i ++ ) {
+ 
+ 				const attribute = targets[ i ];
+ 
+-				cacheKey += attribute.id + ',';
++				cacheKey += useMorphTargetIds ? attribute.id + ',' :
++					attribute.count + ',' + attribute.itemSize + ',';
+ 
+ 			}
+ 
 @@ -30548,6 +30686,7 @@ class RenderObject {
  		}
  
@@ -1990,14 +2014,17 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..a308a892c59283b3b9a71477b3b02d64
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,6 +86647,7 @@ class WebGPUBackend extends Backend {
+@@ -85846,8 +86647,9 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
 +			bindGroupLayoutKeys,
  			utils.getCurrentColorSpace( renderContext ), utils.getCurrentColorFormat( renderContext ), utils.getCurrentDepthStencilFormat( renderContext ),
  			utils.getPrimitiveTopology( object, material ),
- 			renderObject.getGeometryCacheKey(),
+-			renderObject.getGeometryCacheKey(),
++			renderObject.getGeometryCacheKey( false ),
+ 			renderObject.clippingContextCacheKey
+ 		].join();
 @@ -85916,6 +86718,12 @@ class WebGPUBackend extends Backend {
  
  	}
@@ -4539,6 +4566,29 @@ index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..a3dcba2f1fb0df19f3ddb3039a97ae40
  
  	}
  
+@@ -672,6 +684,6 @@ class RenderObject {
+ 	 * @return {string} The geometry cache key.
+ 	 */
+-	getGeometryCacheKey() {
++	getGeometryCacheKey( useMorphTargetIds = true ) {
+ 
+ 		const { geometry } = this;
+ 
+@@ -700,11 +712,13 @@ class RenderObject {
+ 
+ 			cacheKey += 'morph-' + name + ',';
++			if ( ! useMorphTargetIds ) cacheKey += targets.length + ',' + geometry.morphTargetsRelative + ',';
+ 
+ 			for ( let i = 0, l = targets.length; i < l; i ++ ) {
+ 
+ 				const attribute = targets[ i ];
+ 
+-				cacheKey += attribute.id + ',';
++				cacheKey += useMorphTargetIds ? attribute.id + ',' :
++					attribute.count + ',' + attribute.itemSize + ',';
+ 
+ 			}
+ 
 @@ -936,6 +948,7 @@ class RenderObject {
  		}
  
@@ -5167,14 +5217,17 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..5636b40e6708a490e926e5f590675834
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -2134,6 +2167,7 @@ class WebGPUBackend extends Backend {
+@@ -2134,8 +2167,9 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
 +			bindGroupLayoutKeys,
  			utils.getCurrentColorSpace( renderContext ), utils.getCurrentColorFormat( renderContext ), utils.getCurrentDepthStencilFormat( renderContext ),
  			utils.getPrimitiveTopology( object, material ),
- 			renderObject.getGeometryCacheKey(),
+-			renderObject.getGeometryCacheKey(),
++			renderObject.getGeometryCacheKey( false ),
+ 			renderObject.clippingContextCacheKey
+ 		].join();
 @@ -2204,6 +2238,12 @@ class WebGPUBackend extends Backend {
  
  	}
