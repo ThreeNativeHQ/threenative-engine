@@ -60,6 +60,8 @@ function runHost(bundlePath, mode = "screenshot") {
     return execFileSync("sh", [xvfb, "env", "SDL_VIDEODRIVER=x11", findBinary(), ...args], {
       cwd: dir,
       encoding: "utf8",
+      // The default 1 MB cap cuts off a host's log, and the pump line is often after the cut.
+      maxBuffer: 64 * 1024 * 1024,
       timeout: 120_000,
     });
   } catch (error) {
