@@ -15,6 +15,7 @@ type EngineDataTexture = {
   minFilter: number;
   needsUpdate: boolean;
 };
+// quality-allow: the engine DataTexture is constructed with an argument list upstream's declaration does not carry.
 const EngineDataTexture = DataTexture as unknown as new (
   data: ArrayLike<number>,
   width: number,

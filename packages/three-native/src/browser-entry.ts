@@ -29,6 +29,9 @@ import { defineQuadMesh } from "./quad-mesh.js";
 import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
 
+// quality-allow: the JSON import is typed by its literal values, which ICatalog does not accept.
+const engineCatalog = catalogJson as unknown as ICatalog;
+
 const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
 
 /** A value that throws `diagnostic` on any call, construction or property access. */
@@ -105,7 +108,7 @@ export async function bindWebEngine(
   const { classes, wrap, collect, crossings } = defineBrowserClasses(
     registry as IRegistryDump,
     runtime,
-    catalogJson as unknown as ICatalog,
+    engineCatalog,
   );
   // Engine crossings so far, for a bench page's per-frame bridgeCalls (the pair's crossing budget).
   (globalThis as { __tnCrossingCount?: () => number }).__tnCrossingCount = crossings;
@@ -118,7 +121,7 @@ export async function bindWebEngine(
     if (prototype !== undefined) prototype.dispose ??= () => {};
   }
   // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).
-  const entries = (catalogJson as unknown as ICatalog).entries;
+  const entries = engineCatalog.entries;
   const extending = (base: string) =>
     entries
       .filter(
@@ -151,6 +154,7 @@ export async function bindWebEngine(
   // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes
   // world poses to WebAudio each frame, where three's own render calls updateMatrixWorld.
   const audio = defineAudioClasses({
+    // quality-allow: the registry classes are read as the audio engine surface, which declares only the classes it uses.
     ...(classes as unknown as Omit<IAudioEngine, "read">),
     read: async (url) => {
       const response = await fetch(url);
@@ -196,7 +200,7 @@ export async function bindWebEngine(
       }),
     );
   }
-  return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
+  return bindUpstreamExports(names, engineCatalog, bound);
 }
 
 /**

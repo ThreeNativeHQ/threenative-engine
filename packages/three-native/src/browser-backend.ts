@@ -484,6 +484,7 @@ export function defineBrowserClasses(
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      // quality-allow: a typed-array view read as its numeric index signature, which ArrayBufferView does not declare.
       const list = Array.from(value as unknown as ArrayLike<number>);
       Object.defineProperty(list, TYPED, { value: value.constructor.name });
       return list;
@@ -1215,6 +1216,7 @@ function gltfOf(
   context: number,
   h: Pick<IAbiHelpers, "scoped" | "alloc"> & { keyOf(pointer: number): IEngineRef },
 ): Pick<IBrowserRuntime, "loadGltf"> {
+  // quality-allow: the Emscripten module is read through the two exports this call site names, not its full surface.
   const host = abi as unknown as Partial<
     Record<"_tnw_web_load_gltf" | "_tnw_web_load_error", (...args: number[]) => number>
   >;
@@ -1250,6 +1252,7 @@ function tslOf(
   h: IAbiHelpers,
 ): { tsl: ITslRuntime } | undefined {
   // Node ids are u64 in the C ABI; Emscripten passes a 64-bit parameter as a BigInt.
+  // quality-allow: the Emscripten module is read through the TSL call exports this call site names, not its full surface.
   const calls = abi as unknown as Partial<
     Record<TslCall, (...args: (number | bigint)[]) => number>
   >;

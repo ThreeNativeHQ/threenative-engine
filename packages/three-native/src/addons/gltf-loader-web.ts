@@ -5,6 +5,7 @@
  * so it is never bundled. The web build cooks models decoder-free for the native engine, so a codec
  * or plugin the engine loader lacks is refused by name instead of being skipped.
  */
+// quality-allow: the symbol exists only in the web engine module the bundler resolves "three" to, so no declaration can type it.
 // @ts-expect-error -- `__tnLoadGltf` exists only in the web engine module "three" resolves to.
 import { __tnLoadGltf } from "three";
 

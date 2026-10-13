@@ -41,10 +41,12 @@ export function markNormalTarget<T extends (...args: never[]) => object>(
   normalView: unknown,
 ): T {
   return ((...args: unknown[]) => {
+    // quality-allow: the back end's vec4 is called with its untyped argument list, as three's own TSL does.
     const node = (vec4 as unknown as (...a: unknown[]) => object)(...args);
     if (args.length === 2 && args[0] === normalView && args[1] === 0)
       Object.defineProperty(node, "__tnNormalView", { value: normalView });
     return node;
+    // quality-allow: the wrapper is returned as the same call signature T it wraps.
   }) as unknown as T;
 }
 
