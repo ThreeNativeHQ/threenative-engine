@@ -183,11 +183,13 @@ constexpr bool kSurfaceVsync = true;
  * A measurement run states its surface: TN_PLAYER_WIDTH and TN_PLAYER_HEIGHT size the window (the
  * drawing buffer follows it), TN_PLAYER_VSYNC=0 presents uncapped as the legacy host's `--no-vsync`
  * does. Read once; an unreadable value stops the player by name rather than measuring a surface
- * nobody asked for. Unset, every default is unchanged.
+ * nobody asked for. Unset, every default is unchanged. TN_PLAYER_TITLE names the window (a packaged
+ * game passes its `window.title`).
  */
 struct SurfaceConfig {
     uint32_t width = kWidth, height = kHeight;
     bool vsync = kSurfaceVsync;
+    std::string title = "ThreeNative native engine";
     std::string problem;
 };
 
@@ -206,6 +208,7 @@ SurfaceConfig readSurfaceConfig() {
     };
     dimension("TN_PLAYER_WIDTH", config.width);
     dimension("TN_PLAYER_HEIGHT", config.height);
+    if (const char* text = std::getenv("TN_PLAYER_TITLE"); text != nullptr && text[0] != '\0') config.title = text;
     if (const char* text = std::getenv("TN_PLAYER_VSYNC"); text != nullptr && text[0] != '\0') {
         if (std::strcmp(text, "0") == 0 || std::strcmp(text, "off") == 0) config.vsync = false;
         else if (std::strcmp(text, "1") == 0 || std::strcmp(text, "on") == 0) config.vsync = true;
@@ -261,7 +264,7 @@ bool openWindow(Window& window) {
 #elif !defined(_WIN32)
     flags |= SDL_WINDOW_VULKAN;
 #endif
-    window.handle = SDL_CreateWindow("ThreeNative native engine", static_cast<int>(surfaceConfig().width),
+    window.handle = SDL_CreateWindow(surfaceConfig().title.c_str(), static_cast<int>(surfaceConfig().width),
                                      static_cast<int>(surfaceConfig().height), flags);
     if (!window.handle) {
         std::printf("[Playtest] SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -273,6 +276,7 @@ bool openWindow(Window& window) {
         return false;
     window.width = static_cast<uint32_t>(width);
     window.height = static_cast<uint32_t>(height);
+    std::printf("TN_PLAYER_WINDOW: title '%s', %dx%d\n", SDL_GetWindowTitle(window.handle), width, height);
     return true;
 }
 
