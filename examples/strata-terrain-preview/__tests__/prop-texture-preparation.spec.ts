@@ -1,5 +1,11 @@
 import type { ICtx } from "@threenative/core";
-import { CompressedTexture, ExternalTexture, MeshStandardMaterial, RGBA_BPTC_Format } from "three";
+import {
+  CompressedTexture,
+  ExternalTexture,
+  MeshStandardMaterial,
+  RGBA_BPTC_Format,
+  Texture,
+} from "three";
 import { texture } from "three/tsl";
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
 import { expect, it, vi } from "vitest";
@@ -102,4 +108,74 @@ it("snapshots a generator once and replaces every material map and TSL node", as
   expect(ordinary.normalMap).toBe(prepared.get(normal));
   expect(nodes.map).toBe(prepared.get(map));
   expect(tslNode.value).toBe(prepared.get(nodeMap));
+});
+
+it("reports only distinct compressed replacements applied after successful preparation", async () => {
+  const original = compressed();
+  const unchanged = compressed();
+  const invalid = compressed();
+  const unused = compressed();
+  const jpeg = new Texture();
+  const ready = replacement();
+  const material = new MeshStandardMaterial({
+    map: original,
+    normalMap: unchanged,
+    alphaMap: invalid,
+    aoMap: jpeg,
+  });
+  const nodes = new MeshPhysicalNodeMaterial();
+  const sampled = texture(original);
+  nodes.colorNode = sampled.rgb;
+  const reported = vi.fn();
+  let finish = () => {};
+  const prepare = vi.fn(
+    async (
+      _textures: Iterable<Texture>,
+      _signal?: AbortSignal,
+      _progress?: (completed: number) => void,
+      replacements?: Map<Texture, Texture>,
+    ) => {
+      replacements?.set(original, ready);
+      replacements?.set(unchanged, unchanged);
+      replacements?.set(invalid, {} as Texture);
+      replacements?.set(unused, replacement());
+      replacements?.set(jpeg, replacement());
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return 5;
+    },
+  );
+  const pending = preparePropTextures(
+    { prepareTextures: prepare } as unknown as ICtx["renderer"],
+    [material, nodes],
+    undefined,
+    undefined,
+    reported,
+  );
+  expect(reported).not.toHaveBeenCalled();
+  finish();
+  expect(await pending).toBe(5);
+  expect(material.map).toBe(ready);
+  expect(sampled.value).toBe(ready);
+  expect(material.alphaMap).toBe(invalid);
+  expect(reported).toHaveBeenCalledExactlyOnceWith(1);
+});
+
+it("does not report compressed completion when preparation rejects", async () => {
+  const reported = vi.fn();
+  await expect(
+    preparePropTextures(
+      {
+        prepareTextures: async () => {
+          throw new Error("upload failed");
+        },
+      } as unknown as ICtx["renderer"],
+      [new MeshStandardMaterial({ map: compressed() })],
+      undefined,
+      undefined,
+      reported,
+    ),
+  ).rejects.toThrow("upload failed");
+  expect(reported).not.toHaveBeenCalled();
 });

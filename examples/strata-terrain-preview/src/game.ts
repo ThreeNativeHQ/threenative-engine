@@ -160,6 +160,7 @@ const initialState = {
   propInstances: 0,
   propTriangles: 0,
   preparedLodBaseSpread: 0,
+  compressedTexturesPrepared: 0,
   preparedLevelsWithoutSolid: 0,
   view: "player",
   windowDrawCalls: 0,
@@ -243,6 +244,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         loadingError: "",
         spawnCellsRequired: 0,
         spawnCellsLoaded: 0,
+        compressedTexturesPrepared: 0,
       });
       let released = false;
       const textureUploads = new AbortController();
@@ -557,6 +559,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // What the prepared files measured on load. Published rather than thrown on, because a
       // number in the run report says which level is off the ground and a stack trace does not.
       let preparedLodBaseSpread = 0;
+      let compressedTexturesPrepared = 0;
       let preparedLevelsWithoutSolid = 0;
       let surfacesDispose: (() => void) | undefined;
       ctx.entities.add("props-lifetime", {
@@ -680,6 +683,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           (completed) => {
             completedPropsWork += completed - preparedTextures;
             preparedTextures = completed;
+          },
+          (completed) => {
+            compressedTexturesPrepared = completed;
           },
         );
         if (released) return;
@@ -1021,6 +1027,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           propInstances: propCounts.instances,
           propTriangles: propCounts.triangles,
           preparedLodBaseSpread,
+          compressedTexturesPrepared,
           preparedLevelsWithoutSolid,
           windowDrawCalls: budget.drawCalls,
           windowFrameMs: budget.frameMs,

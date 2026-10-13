@@ -73,8 +73,9 @@ function applyReplacements(
   materials: Iterable<Material>,
   sampledNodes: Node[],
   replacements: Map<Texture, Texture>,
-): void {
-  if (replacements.size === 0) return;
+): number {
+  if (replacements.size === 0) return 0;
+  const applied = new Set<Texture>();
   for (const material of new Set(materials)) {
     const surface = material as Material &
       Partial<MeshPhysicalNodeMaterial> &
@@ -82,28 +83,39 @@ function applyReplacements(
     for (const key of mapInputs) {
       const value = surface[key] as Texture | undefined;
       const prepared = value?.isTexture === true ? replacements.get(value) : undefined;
-      if (prepared !== undefined) surface[key] = prepared;
+      if (value?.isTexture && prepared?.isTexture && prepared !== value) {
+        surface[key] = prepared;
+        if ((value as Texture & { isCompressedTexture?: boolean }).isCompressedTexture)
+          applied.add(value);
+      }
     }
   }
   for (const node of sampledNodes) {
     const sampled = node as Node & { value?: Texture };
     if (sampled.value === undefined) continue;
     const prepared = replacements.get(sampled.value);
-    if (prepared !== undefined) sampled.value = prepared;
+    if (prepared?.isTexture && prepared !== sampled.value) {
+      if ((sampled.value as Texture & { isCompressedTexture?: boolean }).isCompressedTexture)
+        applied.add(sampled.value);
+      sampled.value = prepared;
+    }
   }
+  return applied.size;
 }
 
 /**
  * Borrow actual material texture identities; asset loading continues to own their lifetime. The
  * renderer prepares copies it owns and this call swaps every map and TSL texture node reference
  * for its prepared replacement, so a compressed material samples uploaded GPU data. The numeric
- * completion count, progress callback and errors keep the renderer's contract.
+ * completion count, progress callback and errors keep the renderer's contract. Compressed completion
+ * reports distinct compressed inputs actually replaced after preparation succeeds.
  */
 export async function preparePropTextures(
   renderer: Pick<ICtx["renderer"], "prepareTextures">,
   materials: Iterable<Material>,
   signal?: AbortSignal,
   onProgress?: (completed: number) => void,
+  onCompressedPrepared?: (completed: number) => void,
 ): Promise<number> {
   // Snapshot the iterable once so a generator is not consumed before replacements are applied.
   const materialList = [...new Set(materials)];
@@ -114,6 +126,7 @@ export async function preparePropTextures(
     throw new Error("Renderer lacks bounded prop texture preparation.");
   const replacements = new Map<Texture, Texture>();
   const completed = await renderer.prepareTextures(textures, signal, onProgress, replacements);
-  applyReplacements(materialList, sampledNodes, replacements);
+  const compressedPrepared = applyReplacements(materialList, sampledNodes, replacements);
+  onCompressedPrepared?.(compressedPrepared);
   return completed;
 }
