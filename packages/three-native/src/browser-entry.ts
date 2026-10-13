@@ -102,11 +102,13 @@ export async function bindWebEngine(
     (globalThis as { __tnWasmMemoryBytes?: () => number }).__tnWasmMemoryBytes = () =>
       memory.buffer.byteLength;
   const runtime = createWasmRuntime(module);
-  const { classes, wrap, collect } = defineBrowserClasses(
+  const { classes, wrap, collect, crossings } = defineBrowserClasses(
     registry as IRegistryDump,
     runtime,
     catalogJson as unknown as ICatalog,
   );
+  // Engine crossings so far, for a bench page's per-frame bridgeCalls (the pair's crossing budget).
+  (globalThis as { __tnCrossingCount?: () => number }).__tnCrossingCount = crossings;
   defineTypeFlags(classes);
   // three's BatchedMesh/InstancedMesh.dispose frees the instance textures; the engine frees its instance
   // buffers with the object, so the call has nothing to release (core's projection mirror makes it).
