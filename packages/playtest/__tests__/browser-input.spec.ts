@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
+import * as ts from "typescript";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -49,6 +52,21 @@ test("performance probes can bypass the virtual display compositor cadence", () 
     "--disable-frame-rate-limit",
     "--disable-gpu-vsync",
   ]);
+});
+
+test("browser module loads without Node process and keeps software adapter detection", () => {
+  const source = readFileSync(new URL("../src/runner/browser.ts", import.meta.url), "utf8");
+  const module = { exports: {} as Record<string, unknown> };
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+
+  runInNewContext(compiled, { exports: module.exports, module });
+
+  const softwareAdapterName = module.exports.softwareAdapterName as (
+    adapter: Readonly<Record<string, string>> | undefined,
+  ) => string | undefined;
+  expect(softwareAdapterName({ architecture: "swiftshader" })).toBe("swiftshader");
 });
 
 test("the host-display webgpu recipe selects the Vulkan hardware adapter", async () => {
