@@ -28,7 +28,11 @@ const roots = [
 let linked = 0;
 function mirror(source, target) {
   for (const entry of readdirSync(source, { withFileTypes: true })) {
-    if (source === join(here, "src/world") && !entry.name.endsWith(".placements.bin")) continue;
+    if (
+      source === join(here, "src/world") &&
+      !/\.(?:placements\.bin|world\.json|layers\.json|splat\.rgba8)$/u.test(entry.name)
+    )
+      continue;
     const from = join(source, entry.name);
     const to = join(target, entry.name);
     if (entry.isDirectory()) {

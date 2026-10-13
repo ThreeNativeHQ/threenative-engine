@@ -3,3 +3,4 @@
 /src/world/.bake-stamp
 /assets/
 /src/world/*.placements.bin
+/src/world/*.splat.rgba8
