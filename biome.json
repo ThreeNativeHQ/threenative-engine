@@ -11,6 +11,7 @@
       "packages/metahuman/wasm/**",
       "artifacts/**",
       "examples/strata-terrain-preview/src/world/*.json",
+      "examples/strata-terrain-preview/assets/world/*.json",
       "examples/strata-terrain-preview/local-assets/**",
       "build/**",
       "release-native/**",
@@ -89,6 +90,10 @@
     }
   },
   "overrides": [
+    {
+      "include": ["examples/procedural-animals/src/render/donor/core/motion/quadruped.js"],
+      "javascript": { "formatter": { "quoteProperties": "preserve" } }
+    },
     {
       "include": ["**/*.ts", "**/*.tsx"],
       "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
