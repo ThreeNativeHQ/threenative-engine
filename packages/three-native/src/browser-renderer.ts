@@ -109,7 +109,8 @@ export function defineWebRenderer(
       engine: { compiles: 0, textLookups: 0, bindGroups: 0, graphKeys: 0, programs: 0 },
       reset(): void {},
     };
-    readonly samples = 1;
+    /** three's WebGPURenderer: `antialias` is 4x MSAA, `samples` 0 or 1 is none; the engine draws 1 or 4. */
+    readonly samples: number;
     autoClear = true;
     toneMapping = 0;
     toneMappingExposure = 1;
@@ -140,6 +141,8 @@ export function defineWebRenderer(
         (parameters.canvas as HTMLCanvasElement | undefined) ?? document.createElement("canvas");
       // three's WebGPURenderer marks its canvas `three.js r<rev> webgpu`; tools read the backend there.
       this.domElement.setAttribute("data-engine", "threenative wasm webgpu");
+      const samples = parameters.samples ?? (parameters.antialias ? 4 : 1);
+      this.samples = Math.max(1, Number(samples));
       this.#width = this.domElement.width || 300;
       this.#height = this.domElement.height || 150;
       const adapter = () => this.#adapter;
@@ -263,8 +266,8 @@ export function defineWebRenderer(
 
     /** three's output and shadow settings, handed to the engine when they change. */
     #applyState(): void {
-      const { toneMapping, toneMappingExposure, outputColorSpace, shadowMap } = this;
-      const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}`;
+      const { toneMapping, toneMappingExposure, outputColorSpace, shadowMap, samples } = this;
+      const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}|${samples}`;
       if (key === this.#state) return;
       const space = string(String(outputColorSpace));
       try {
@@ -275,6 +278,7 @@ export function defineWebRenderer(
             space,
             shadowMap.enabled ? 1 : 0,
             shadowMap.type,
+            samples,
           ),
         );
       } finally {
