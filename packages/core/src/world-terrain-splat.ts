@@ -126,6 +126,33 @@ export interface ITerrainSplatWeightContext {
   readonly index: number;
 }
 
+/** Loaded images for one game-authored sample; index 0 is the base, then table.layers in order.
+ * The loader owns these images until the returned material is disposed; do not dispose them. */
+export interface ITerrainSplatSampleContext {
+  readonly layer: ITerrainSplatLayer;
+  readonly index: number;
+  readonly diffuse: Texture;
+  readonly normal: Texture | undefined;
+  readonly orm: Texture | undefined;
+  readonly height: Texture | undefined;
+}
+
+/** A game's projected layer. An absent normal leaves the accumulated normal unchanged.
+ * Normals are encoded OpenGL for the default factory; a custom factory owns their encoding.
+ * An absent ORM uses the layer's existing map or scalar response. */
+export interface ITerrainSplatSample {
+  readonly color: Node<"vec3">;
+  readonly normal?: Node<"vec3">;
+  readonly orm?: Node<"vec3">;
+}
+
+/** Engine-blended channels; color includes the table's macro variation. */
+export interface ITerrainSplatMaterialContext {
+  readonly color: Node<"vec3">;
+  readonly normal: Node<"vec3">;
+  readonly orm: Node<"vec3">;
+}
+
 export interface ILoadTerrainSplatOptions {
   readonly assets: IAssetLoader;
   /**
@@ -133,6 +160,12 @@ export interface ILoadTerrainSplatOptions {
    * which need one; without it every layer keeps its own sampler and the marker says so.
    */
   readonly renderer?: IRendererLike;
+  /** Precomputed for every layer before layerWeight runs; replaces the package's projection.
+   * Custom sampling retains the loaded images and skips texture-array stacking. */
+  readonly layerSample?: (context: ITerrainSplatSampleContext) => ITerrainSplatSample;
+  /** Replaces final material assembly, retaining the engine's ordered channel blend.
+   * Loader-owned textures are released with the returned material, including composition errors. */
+  readonly materialFactory?: (context: ITerrainSplatMaterialContext) => Material;
   /**
    * Replaces each layer's blend weight, given the mask's own (remapped, 0..1) and the layer's
    * height sample. The game owns the curve, for example a height blend; the package mixes colour,
@@ -410,6 +443,17 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
       `TN_TERRAIN_SPLAT: ${unstated.join(", ")} states no orm map and no roughness/metalness, so they answer light as roughness ${String(DEFAULT_ROUGHNESS)} and metalness 0; re-export the package to author them.`,
     );
 
+  const owned =
+    options.layerSample !== undefined || options.materialFactory !== undefined
+      ? new Set<Texture>([splat])
+      : undefined;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    for (const map of owned ?? []) map.dispose();
+  };
+
   const load = async (
     layer: ITerrainSplatLayer,
     kind: "diff" | "nrm" | "orm" | "h",
@@ -442,156 +486,197 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     map.wrapT = RepeatWrapping;
     map.anisotropy = 8;
     map.needsUpdate = true;
+    if (released && owned?.has(map) === false) map.dispose();
+    owned?.add(map);
     return map;
   };
-  const withNormals = all.filter((layer) => layer.normal === true);
-  const withOrm = all.filter((layer) => layer.orm === true);
-  const diffuseMaps = await Promise.all(all.map((layer) => load(layer, "diff")));
-  const normalMaps = await Promise.all(withNormals.map((layer) => load(layer, "nrm")));
-  const ormMaps = await Promise.all(withOrm.map((layer) => load(layer, "orm")));
-  const withHeight = table.layers.filter((layer) => layer.height === true);
-  const heightMaps = await Promise.all(withHeight.map((layer) => load(layer, "h")));
+  try {
+    const withNormals = all.filter((layer) => layer.normal === true);
+    const withOrm = all.filter((layer) => layer.orm === true);
+    const diffuseMaps = await Promise.all(all.map((layer) => load(layer, "diff")));
+    const normalMaps = await Promise.all(withNormals.map((layer) => load(layer, "nrm")));
+    const ormMaps = await Promise.all(withOrm.map((layer) => load(layer, "orm")));
+    const withHeight = table.layers.filter((layer) => layer.height === true);
+    const heightMaps = await Promise.all(withHeight.map((layer) => load(layer, "h")));
 
-  // One sampler per set when the layers stack; separate textures (and a warning) when they do not.
-  let samplers = 1;
-  let stackedSets = 0;
-  const sampler = (
-    maps: readonly Texture[],
-    what: string,
-  ): ((layer: number, uv: Node<"vec2">) => Node<"vec3">) => {
-    const stacked = stackLayers(maps, options.renderer);
-    if (stacked !== undefined) {
-      samplers += 1;
-      stackedSets += 1;
-      return (layer, uv) => texture(stacked, uv).depth(int(layer)).rgb;
-    }
-    samplers += maps.length;
-    if (maps.length > 1)
-      console.warn(
-        `TN_TERRAIN_SPLAT: ${what} layers could not stack into one array (mixed format or size, or no renderer to copy them with); they bind ${String(maps.length)} samplers, and WebGPU guarantees 16 a stage.`,
-      );
-    return (layer, uv) => texture(maps[layer] as Texture, uv).rgb;
-  };
-  const diffuseAt = sampler(diffuseMaps, "albedo");
-  const normalAt = withNormals.length === 0 ? undefined : sampler(normalMaps, "normal");
-  const ormAt = withOrm.length === 0 ? undefined : sampler(ormMaps, "ORM");
-  const heightAt = withHeight.length === 0 ? undefined : sampler(heightMaps, "height");
-
-  const ground = vec2(positionWorld.x, positionWorld.z.negate());
-  const maskOf = (layer: ITerrainSplatMaskedLayer): Node<"float"> => {
-    const where = table.splat.masks[layer.mask];
-    if (where === undefined) throw new Error(`loadTerrainSplat: unknown mask '${layer.mask}'.`);
-    const source = planes[where[0]];
-    if (source === undefined)
-      throw new Error(`loadTerrainSplat: mask '${layer.mask}' names a missing plane.`);
-    return source[where[1] === "rgb" ? layer.channel : where[1]];
-  };
-  const breakup = mx_noise_float(vec3(ground.mul(table.breakup.scale), 0))
-    .mul(0.5)
-    .add(0.5);
-  const push = breakup.mul(2 * table.breakup.push).sub(table.breakup.push);
-
-  // Box projection for cliffs: three axis-aligned samples blended by the surface normal.
-  const triplanar = (at: (uv: Node<"vec2">) => Node<"vec3">, tile: number): Node<"vec3"> => {
-    const weights = normalWorld.abs();
-    const w = weights.div(weights.x.add(weights.y).add(weights.z));
-    const p = positionWorld.div(tile);
-    return at(p.zy).mul(w.x).add(at(p.xz).mul(w.y)).add(at(p.xy).mul(w.z));
-  };
-
-  const albedo = (layer: ITerrainSplatLayer, index: number): Node<"vec3"> => {
-    let sample: Node<"vec3"> =
-      layer.triplanar === true
-        ? triplanar((uv) => diffuseAt(index, uv), layer.tile)
-        : diffuseAt(index, ground.div(layer.tile));
-    const far = layer.far;
-    if (far !== undefined && layer.triplanar !== true) {
-      if (!(far.tile > 0 && far.from < far.to && far.amount >= 0 && far.amount <= 1))
-        throw new Error(
-          `loadTerrainSplat: layer '${layer.id}' far needs tile > 0, from < to and amount in 0..1.`,
+    // One sampler per set when the layers stack; separate textures (and a warning) when they do not.
+    let samplers = 1;
+    let stackedSets = 0;
+    const sampler = (
+      maps: readonly Texture[],
+      what: string,
+    ): ((layer: number, uv: Node<"vec2">) => Node<"vec3">) => {
+      if (options.layerSample !== undefined) {
+        samplers += maps.length;
+        return (layer, uv) => texture(maps[layer] as Texture, uv).rgb;
+      }
+      const stacked = stackLayers(maps, options.renderer);
+      if (stacked !== undefined) {
+        samplers += 1;
+        stackedSets += 1;
+        for (const map of maps) owned?.delete(map);
+        owned?.add(stacked);
+        return (layer, uv) => texture(stacked, uv).depth(int(layer)).rgb;
+      }
+      samplers += maps.length;
+      if (maps.length > 1)
+        console.warn(
+          `TN_TERRAIN_SPLAT: ${what} layers could not stack into one array (mixed format or size, or no renderer to copy them with); they bind ${String(maps.length)} samplers, and WebGPU guarantees 16 a stage.`,
         );
-      const reach = smoothstep(far.from, far.to, positionWorld.distance(cameraPosition));
-      sample = mix(sample, diffuseAt(index, ground.div(far.tile)), reach.mul(far.amount));
-    }
-    if (layer.saturation !== undefined) {
-      const luma = dot(sample, vec3(0.2126, 0.7152, 0.0722));
-      sample = mix(vec3(luma), sample, layer.saturation);
-    }
-    return sample.mul(vec3(...layer.tint));
-  };
-  const normalOf = (layer: ITerrainSplatLayer): Node<"vec3"> | undefined => {
-    const slot = withNormals.indexOf(layer);
-    return slot === -1 || normalAt === undefined
-      ? undefined
-      : normalAt(slot, ground.div(layer.tile));
-  };
-  /**
-   * A layer's answer to light, as occlusion in r, roughness in g and metalness in b: its ORM map
-   * where it ships one, else the two numbers the table states (and no occlusion to apply).
-   */
-  const ormOf = (layer: ITerrainSplatLayer): Node<"vec3"> => {
-    const slot = withOrm.indexOf(layer);
-    if (slot !== -1 && ormAt !== undefined) return ormAt(slot, ground.div(layer.tile));
-    return vec3(1, layer.roughness ?? DEFAULT_ROUGHNESS, layer.metalness ?? 0);
-  };
+      return (layer, uv) => texture(maps[layer] as Texture, uv).rgb;
+    };
+    const diffuseAt = sampler(diffuseMaps, "albedo");
+    const normalAt = withNormals.length === 0 ? undefined : sampler(normalMaps, "normal");
+    const ormAt = withOrm.length === 0 ? undefined : sampler(ormMaps, "ORM");
+    const heightAt = withHeight.length === 0 ? undefined : sampler(heightMaps, "height");
 
-  /** A height-carrying layer's own height, on the projection its albedo uses. */
-  const heightOf = (layer: ITerrainSplatMaskedLayer): Node<"float"> | undefined => {
-    const slot = withHeight.indexOf(layer);
-    if (slot === -1 || heightAt === undefined) return undefined;
-    const at = (uv: Node<"vec2">): Node<"vec3"> => heightAt(slot, uv);
-    return (layer.triplanar === true ? triplanar(at, layer.tile) : at(ground.div(layer.tile))).r;
-  };
+    const ground = vec2(positionWorld.x, positionWorld.z.negate());
+    const maskOf = (layer: ITerrainSplatMaskedLayer): Node<"float"> => {
+      const where = table.splat.masks[layer.mask];
+      if (where === undefined) throw new Error(`loadTerrainSplat: unknown mask '${layer.mask}'.`);
+      const source = planes[where[0]];
+      if (source === undefined)
+        throw new Error(`loadTerrainSplat: mask '${layer.mask}' names a missing plane.`);
+      return source[where[1] === "rgb" ? layer.channel : where[1]];
+    };
+    const breakup = mx_noise_float(vec3(ground.mul(table.breakup.scale), 0))
+      .mul(0.5)
+      .add(0.5);
+    const push = breakup.mul(2 * table.breakup.push).sub(table.breakup.push);
 
-  let color = albedo(table.base, 0);
-  let normalSample: Node<"vec3"> = normalOf(table.base) ?? vec3(0.5, 0.5, 1);
-  let ormSample: Node<"vec3"> = ormOf(table.base);
-  table.layers.forEach((layer, offset) => {
-    const masked = clamp(
-      maskOf(layer)
-        .add(push)
-        .sub(layer.lo)
-        .div(layer.hi - layer.lo),
-      0,
-      1,
+    // Box projection for cliffs: three axis-aligned samples blended by the surface normal.
+    const triplanar = (at: (uv: Node<"vec2">) => Node<"vec3">, tile: number): Node<"vec3"> => {
+      const weights = normalWorld.abs();
+      const w = weights.div(weights.x.add(weights.y).add(weights.z));
+      const p = positionWorld.div(tile);
+      return at(p.zy).mul(w.x).add(at(p.xz).mul(w.y)).add(at(p.xy).mul(w.z));
+    };
+
+    const albedo = (layer: ITerrainSplatLayer, index: number): Node<"vec3"> => {
+      let sample: Node<"vec3"> =
+        layer.triplanar === true
+          ? triplanar((uv) => diffuseAt(index, uv), layer.tile)
+          : diffuseAt(index, ground.div(layer.tile));
+      const far = layer.far;
+      if (far !== undefined && layer.triplanar !== true) {
+        if (!(far.tile > 0 && far.from < far.to && far.amount >= 0 && far.amount <= 1))
+          throw new Error(
+            `loadTerrainSplat: layer '${layer.id}' far needs tile > 0, from < to and amount in 0..1.`,
+          );
+        const reach = smoothstep(far.from, far.to, positionWorld.distance(cameraPosition));
+        sample = mix(sample, diffuseAt(index, ground.div(far.tile)), reach.mul(far.amount));
+      }
+      if (layer.saturation !== undefined) {
+        const luma = dot(sample, vec3(0.2126, 0.7152, 0.0722));
+        sample = mix(vec3(luma), sample, layer.saturation);
+      }
+      return sample.mul(vec3(...layer.tint));
+    };
+    const normalOf = (layer: ITerrainSplatLayer): Node<"vec3"> | undefined => {
+      const slot = withNormals.indexOf(layer);
+      return slot === -1 || normalAt === undefined
+        ? undefined
+        : normalAt(slot, ground.div(layer.tile));
+    };
+    /**
+     * A layer's answer to light, as occlusion in r, roughness in g and metalness in b: its ORM map
+     * where it ships one, else the two numbers the table states (and no occlusion to apply).
+     */
+    const ormOf = (layer: ITerrainSplatLayer): Node<"vec3"> => {
+      const slot = withOrm.indexOf(layer);
+      if (slot !== -1 && ormAt !== undefined) return ormAt(slot, ground.div(layer.tile));
+      return vec3(1, layer.roughness ?? DEFAULT_ROUGHNESS, layer.metalness ?? 0);
+    };
+
+    /** A height-carrying layer's own height, on the projection its albedo uses. */
+    const heightOf = (layer: ITerrainSplatMaskedLayer): Node<"float"> | undefined => {
+      const slot = withHeight.indexOf(layer);
+      if (slot === -1 || heightAt === undefined) return undefined;
+      const at = (uv: Node<"vec2">): Node<"vec3"> => heightAt(slot, uv);
+      return (layer.triplanar === true ? triplanar(at, layer.tile) : at(ground.div(layer.tile))).r;
+    };
+
+    const samples = all.map(
+      (layer, index): ITerrainSplatSample =>
+        options.layerSample === undefined
+          ? { color: albedo(layer, index), normal: normalOf(layer), orm: ormOf(layer) }
+          : options.layerSample({
+              layer,
+              index,
+              diffuse: diffuseMaps[index] as Texture,
+              normal: normalMaps[withNormals.indexOf(layer)],
+              orm: ormMaps[withOrm.indexOf(layer)],
+              height: heightMaps[withHeight.indexOf(layer as ITerrainSplatMaskedLayer)],
+            }),
     );
-    const weight =
-      options.layerWeight === undefined
-        ? masked
-        : options.layerWeight(masked, { height: heightOf(layer), index: offset, layer });
-    color = mix(color, albedo(layer, offset + 1), weight);
-    const nrm = normalOf(layer);
-    if (nrm !== undefined) normalSample = mix(normalSample, nrm, weight);
-    ormSample = mix(ormSample, ormOf(layer), weight);
-  });
-  const macro = mx_noise_float(vec3(ground.mul(table.macro.scale), 0))
-    .mul(0.5)
-    .add(0.5)
-    .mul(table.macro.max - table.macro.min)
-    .add(table.macro.min);
+    let color = (samples[0] as ITerrainSplatSample).color;
+    let normalSample: Node<"vec3"> = samples[0]?.normal ?? vec3(0.5, 0.5, 1);
+    let ormSample: Node<"vec3"> = samples[0]?.orm ?? ormOf(table.base);
+    table.layers.forEach((layer, offset) => {
+      const masked = clamp(
+        maskOf(layer)
+          .add(push)
+          .sub(layer.lo)
+          .div(layer.hi - layer.lo),
+        0,
+        1,
+      );
+      const weight =
+        options.layerWeight === undefined
+          ? masked
+          : options.layerWeight(masked, { height: heightOf(layer), index: offset, layer });
+      const sample = samples[offset + 1] as ITerrainSplatSample;
+      color = mix(color, sample.color, weight);
+      const nrm = sample.normal;
+      if (nrm !== undefined) normalSample = mix(normalSample, nrm, weight);
+      ormSample = mix(ormSample, sample.orm ?? ormOf(layer), weight);
+    });
+    const macro = mx_noise_float(vec3(ground.mul(table.macro.scale), 0))
+      .mul(0.5)
+      .add(0.5)
+      .mul(table.macro.max - table.macro.min)
+      .add(table.macro.min);
 
-  // Every layer's own light response, blended by the same weights as its colour: the material
-  // holds no scalar of its own, and `DEFAULT_ROUGHNESS` only answers for a layer that states
-  // nothing at all.
-  const material = new MeshStandardNodeMaterial();
-  material.name = "terrain-splat";
-  material.colorNode = color.mul(macro);
-  // A top-down projection's tangent frame: +x along u, ground +y (three -z) along v, OpenGL green
-  // up v, re-orthogonalised against the tile's own normal.
-  const n = normalWorld;
-  const tangent = vec3(1, 0, 0).sub(n.mul(n.x)).normalize();
-  const bitangent = n.cross(tangent).normalize();
-  const t = normalSample.mul(2).sub(1);
-  const perturbed = tangent.mul(t.x).add(bitangent.mul(t.y)).add(n.mul(t.z)).normalize();
-  material.normalNode = cameraViewMatrix.mul(vec4(perturbed, 0)).xyz.normalize();
-  material.aoNode = ormSample.r;
-  material.roughnessNode = ormSample.g;
-  material.metalnessNode = ormSample.b;
-  // One line, printed and kept on the material: what this surface costs, readable by a game that
-  // wants to assert it rather than scrape a console.
-  material.userData.TN_TERRAIN_SPLAT = `layers=${String(all.length)} samplers=${String(samplers)} stacked=${String(stackedSets)}`;
-  console.info(`TN_TERRAIN_SPLAT ${material.userData.TN_TERRAIN_SPLAT as string}`);
-  return material;
+    // Every layer's own light response, blended by the same weights as its colour: the material
+    // holds no scalar of its own, and `DEFAULT_ROUGHNESS` only answers for a layer that states
+    // nothing at all.
+    let material: Material;
+    if (options.materialFactory === undefined) {
+      const standard = new MeshStandardNodeMaterial();
+      standard.name = "terrain-splat";
+      standard.colorNode = color.mul(macro);
+      // A top-down projection's tangent frame: +x along u, ground +y (three -z) along v, OpenGL green
+      // up v, re-orthogonalised against the tile's own normal.
+      const n = normalWorld;
+      const tangent = vec3(1, 0, 0).sub(n.mul(n.x)).normalize();
+      const bitangent = n.cross(tangent).normalize();
+      const t = normalSample.mul(2).sub(1);
+      const perturbed = tangent.mul(t.x).add(bitangent.mul(t.y)).add(n.mul(t.z)).normalize();
+      standard.normalNode = cameraViewMatrix.mul(vec4(perturbed, 0)).xyz.normalize();
+      standard.aoNode = ormSample.r;
+      standard.roughnessNode = ormSample.g;
+      standard.metalnessNode = ormSample.b;
+      material = standard;
+    } else {
+      material = options.materialFactory({
+        color: color.mul(macro),
+        normal: normalSample,
+        orm: ormSample,
+      });
+    }
+    if (owned !== undefined) material.addEventListener("dispose", release);
+    // One line, printed and kept on the material: what this surface costs, readable by a game that
+    // wants to assert it rather than scrape a console.
+    material.userData.TN_TERRAIN_SPLAT =
+      options.layerSample === undefined
+        ? `layers=${String(all.length)} samplers=${String(samplers)} stacked=${String(stackedSets)}`
+        : `layers=${String(all.length)} loadedSamplerUpperBound=${String(samplers)} stacked=0 sampling=custom`;
+    console.info(`TN_TERRAIN_SPLAT ${material.userData.TN_TERRAIN_SPLAT as string}`);
+    return material;
+  } catch (error) {
+    if (owned !== undefined) release();
+    throw error;
+  }
 }
 
 /**
