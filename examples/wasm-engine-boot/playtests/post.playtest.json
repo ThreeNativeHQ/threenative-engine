@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-post",
+  "target": "web",
+  "subject": "wasm-post",
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "rendered",
+      "waitTicks": 40
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "wasm-post",
+        "component": "probe",
+        "path": "error",
+        "equals": "",
+        "allowTrivial": "The page reports its own failure here: a refused stage or effect throws."
+      },
+      {
+        "entity": "wasm-post",
+        "component": "probe",
+        "path": "frames",
+        "gte": 40
+      },
+      {
+        "entity": "wasm-post",
+        "component": "probe",
+        "path": "draws",
+        "gte": 1,
+        "allowTrivial": "ready() resolves after the first engine frame."
+      },
+      {
+        "entity": "wasm-post",
+        "component": "probe",
+        "path": "steadyCompiles",
+        "equals": 0,
+        "allowTrivial": "A steady frame with the post chain adds no setup work; -1 means frame 10 never drew."
+      },
+      {
+        "entity": "wasm-post",
+        "component": "probe",
+        "path": "steadyTextKeys",
+        "equals": 0,
+        "allowTrivial": "A steady frame with the post chain adds no setup work; -1 means frame 10 never drew."
+      },
+      {
+        "entity": "wasm-post",
+        "component": "probe",
+        "path": "steadyBindGroups",
+        "equals": 0,
+        "allowTrivial": "A steady frame with the post chain adds no setup work; -1 means frame 10 never drew."
+      },
+      {
+        "entity": "wasm-post",
+        "component": "probe",
+        "path": "steadyGraphKeys",
+        "equals": 0,
+        "allowTrivial": "A steady frame with the post chain adds no setup work; -1 means frame 10 never drew."
+      },
+      {
+        "entity": "wasm-post",
+        "component": "probe",
+        "path": "steadyPrograms",
+        "equals": 0,
+        "allowTrivial": "A steady frame with the post chain adds no setup work; -1 means frame 10 never drew."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 300,
+          "y": 160,
+          "width": 40,
+          "height": 40,
+          "minNonblankPixelRatio": 0.95
+        }
+      },
+      {
+        "region": {
+          "x": 440,
+          "y": 165,
+          "width": 25,
+          "height": 30,
+          "minNonblankPixelRatio": 0.9
+        }
+      }
+    ]
+  }
+}
