@@ -383,3 +383,20 @@ native claim; late-baseline rejection still applies and every PRD gate remains o
 - 2026-10-12, camera-target policy red-green and final-policy visual recapture: the manager's unparented animated target at `z=-120`, observed through `camera.lookAt(target)`, first reported `rate=4` instead of the required full rate. `RenderCameraCull` now promotes each known world bound independently only when it intersects the camera's forward centre ray; camera-parented rigs retain their existing protection, retargeting recomputes the promotion, and off-centre/off-frustum rigs keep the normal screen-size policy. No closest-object choice or per-frame bounds recomputation was added. The direct target, retarget-away, and projected-`SkinnedBatch` regressions are green with `pnpm exec vitest run packages/core/__tests__/animation-rate.spec.ts packages/core/__tests__/projection-skinned.spec.ts packages/core/__tests__/render-camera-cull.spec.ts` (3 files, 64 tests); `pnpm --filter @threenative/core build` also passes.
 
   The visual fixture now freezes only after its normal `beforeRender` update at `crowdFreezeFrame=120`, without forcing a final evaluation, and exposes `visualRenderFrame`, `visualLogicalSeconds`, `visualEvaluationTimes`, `visualRates`, `visualEvaluated`, and `visualThrottledRigs`. Final rate-1 captures report frame 120, 2 seconds, 128 rate-1 rigs and zero throttled rigs. Final auto captures report frame 120, 2 seconds, 112 throttled rigs; the retained 40 m witness has rates `1×16, 2×49, 4×63`, and the 120 m witness has `1×16, 2×53, 4×59`. All six corrected-policy runs used the same 1280×720 NVIDIA/Turing WebGPU build, camera/light/material setup and matching focus bands (`10+row`, `40+row`, `120-row`), with zero diagnostics and nonblank PNGs. Final pairs are in `artifacts/prd570-visual-camera-target/rate1/` and `artifacts/prd570-visual-camera-target/auto/`; the rebuilt blind bundle is `artifacts/prd570-visual-camera-target/visual-ab/blind/`. `pnpm visuals:ab ...` exited 2 only because it awaits the manager's judge verdict; the visual box remains open.
+
+- 2026-10-12, public contract/discovery completion: `packages/core/src/index.ts` now documents
+  `updateRate: "auto"` as the default camera policy, `updateRate: 1` as full evaluation, another
+  positive safe integer as a requested frame interval, and `updateRateReport` as the effective-rate,
+  override-status and latest-evaluation report. It names the full-rate protections without changing
+  runtime behavior: one-shots/fades, root-motion `AnimationComposer`, automatic camera-ray targets
+  and camera-parented rigs. All 13 shipped template `AGENTS.md` files carry the same authoring
+  convention and their generated `CLAUDE.md` mirrors are synced. The draw-cull class comment no
+  longer misstates the animation-only camera-ray exemption.
+
+  `pnpm sync:agents` passed (`25` mirrors checked, `13` written); `pnpm capabilities:sync` passed
+  (`439` entries, `6` not-owned rows, `427/427` package-backed scaffold imports, `0` unresolved),
+  regenerating both capability manifests and the capability reference. The focused capability,
+  mirror and scaffold checks passed 8 files/72 tests; `pnpm check:docs` passed 3,087 links across
+  1,361 Markdown files; Biome passed with only the two existing camera-cull complexity warnings.
+  The visual, performance and shooter boxes remain open for the manager's actual gates and
+  independent judge/review.

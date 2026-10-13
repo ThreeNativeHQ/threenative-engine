@@ -15,8 +15,7 @@ import { isRenderable } from "./projection-plan.js";
  * skipped only when its **world bounding sphere** projects to fewer pixels than
  * {@link DEFAULT_MINIMUM_PROJECTED_PIXELS} *in the camera about to render it*, and only when
  * nothing offers a reason to keep it: {@link alwaysRender}, a shadow caster, a camera-attached
- * object, the known bound intersecting the camera's forward centre ray, an object that already set
- * `frustumCulled = false`, or a bound that is absent,
+ * object, an object that already set `frustumCulled = false`, or a bound that is absent,
  * degenerate (a zero or non-finite radius is not a size) or stale (the position buffer was
  * rewritten after the sphere was computed — a changed buffer is recomputed, never trusted). The
  * one flag it writes is `Object3D.visible`,
