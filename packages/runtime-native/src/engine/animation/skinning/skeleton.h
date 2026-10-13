@@ -91,6 +91,7 @@ class SkinnedMesh : public Mesh {
     void bind(std::shared_ptr<Skeleton> skeleton, const Matrix4* bindMatrix = nullptr);
     void pose() { if (skeleton) skeleton->pose(); }
     void updateMatrixWorld(bool force = false) override;
+    void afterMatrixWorld() override;
     Vector3& getVertexPosition(uint64_t index, Vector3& target) const override;
     Vector3& applyBoneTransform(uint64_t index, Vector3& target) const;
     void computeBoundingBox();

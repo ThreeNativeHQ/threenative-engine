@@ -45,6 +45,7 @@ public:
     /** A camera looks down its local negative z-axis, so the reference negates the base answer. */
     Vector3& getWorldDirection(Vector3& target) override;
     void updateMatrixWorld(bool force = false) override;
+    void afterMatrixWorld() override { updateViewMatrix(); }
     void updateWorldMatrix(bool updateParents, bool updateChildren, bool force = false) override;
     Camera& copy(const Camera& source);
 

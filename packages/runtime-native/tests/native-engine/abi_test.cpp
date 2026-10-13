@@ -21,7 +21,6 @@
 
 namespace tn::binding {
 // How many times the matrix walk's node count was recounted (bindings_scene.cpp).
-uint64_t subtreeSizeWalks();
 }  // namespace tn::binding
 
 extern "C" uintptr_t tnw_attribute_view(const tn_handle_t* attribute, uint64_t* out);
@@ -1300,51 +1299,65 @@ void material_uuid() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
-// PRD-573 web perf: core's per-frame `__tnUpdateMatrixWorld` answers the nodes it covered. Counting them
-// walked the whole tree a second time every frame (2.3% of Midway's CPU profile); the count changes only
-// when the hierarchy does, so it is recounted then and not otherwise.
+// PRD-610: core's per-frame `__tnUpdateMatrixWorld(force, prune)` answers the nodes its own walk visited, so no
+// second walk counts the tree. With `prune` a hidden subtree composes only its root, as core's JS pass does
+// (9,903 nodes a Midway frame against 779): its world matrices catch up, forced, on the first frame it shows.
+// A hidden node with a Bone under it is walked whole, because a visible SkinnedMesh draws with those matrices,
+// and a subtree core froze with markStatic is a leaf (its JS pass stops there too).
 void matrix_walk_count() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
     Diag d;
     CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
-    tn_handle_t scene{}, group{}, mesh{}, extra{};
+    tn_handle_t scene{}, group{}, mesh{}, rig{}, bone{};
     CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
     CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
     CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &mesh, &d.value) == TN_OK);
-    CHECK(tn_construct(ctx, "Group", nullptr, 0, &extra, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &rig, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &bone, &d.value) == TN_OK);
     tn_value_t out{};
-    const tn_value_t groupArg = ref(group), meshArg = ref(mesh), extraArg = ref(extra);
+    const tn_value_t groupArg = ref(group), meshArg = ref(mesh), rigArg = ref(rig), boneArg = ref(bone);
     CHECK(tn_invoke(scene, "add", &groupArg, 1, &out, &d.value) == TN_OK);
     CHECK(tn_invoke(group, "add", &meshArg, 1, &out, &d.value) == TN_OK);
-    const auto covered = [&] {
+    const auto walk = [&](bool prune) {
+        const tn_value_t args[] = {boolean(false), boolean(prune)};
         tn_value_t walked{};
-        CHECK(tn_invoke(scene, "__tnUpdateMatrixWorld", nullptr, 0, &walked, &d.value) == TN_OK);
+        CHECK(tn_invoke(scene, "__tnUpdateMatrixWorld", args, 2, &walked, &d.value) == TN_OK);
         CHECK(walked.kind == TN_VALUE_NUMBER);
         return walked.number;
     };
-    const uint64_t before = tn::binding::subtreeSizeWalks();
-    CHECK(covered() == 3);
-    for (int frame = 0; frame < 5; ++frame) CHECK(covered() == 3);
-    CHECK(tn::binding::subtreeSizeWalks() - before == 1);  // six frames, one recount
-    CHECK(tn_invoke(group, "add", &extraArg, 1, &out, &d.value) == TN_OK);
-    CHECK(covered() == 4 && covered() == 4);  // a changed hierarchy is recounted, then cached again
-    CHECK(tn::binding::subtreeSizeWalks() - before == 2);
-    CHECK(tn_invoke(group, "remove", &extraArg, 1, &out, &d.value) == TN_OK);
-    CHECK(covered() == 3);
-    // Two roots asked in turn (the scene and a projection mirror) are each counted once, not once per ask.
-    tn_handle_t mirror{}, leaf{};
-    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &mirror, &d.value) == TN_OK);
-    CHECK(tn_construct(ctx, "Group", nullptr, 0, &leaf, &d.value) == TN_OK);
-    const tn_value_t leafArg = ref(leaf);
-    CHECK(tn_invoke(mirror, "add", &leafArg, 1, &out, &d.value) == TN_OK);
-    const uint64_t pairBefore = tn::binding::subtreeSizeWalks();
-    for (int frame = 0; frame < 4; ++frame) {
-        CHECK(covered() == 3);
-        tn_value_t walked{};
-        CHECK(tn_invoke(mirror, "__tnUpdateMatrixWorld", nullptr, 0, &walked, &d.value) == TN_OK && walked.number == 2);
-    }
-    CHECK(tn::binding::subtreeSizeWalks() - pairBefore == 2);
+    CHECK(walk(true) == 3 && walk(true) == 3);
+    // A hidden group composes itself and stops: its mesh is not visited, pruned or not asked to prune.
+    const tn_value_t hidden = boolean(false), shown = boolean(true);
+    CHECK(tn_set(group, "visible", &hidden, &d.value) == TN_OK);
+    CHECK(walk(true) == 2);
+    CHECK(walk(false) == 3);
+    // The group moves while hidden: the mesh's world matrix waits, then catches up the frame the group shows.
+    auto* meshObject = engineObject<tn::engine::Object3D>(mesh);
+    CHECK(walk(true) == 2);
+    engineObject<tn::engine::Object3D>(group)->position.x = 5;
+    CHECK(walk(true) == 2);
+    CHECK(meshObject->matrixWorld.elements[12] == 0);
+    CHECK(tn_set(group, "visible", &shown, &d.value) == TN_OK);
+    CHECK(walk(true) == 3);
+    CHECK(meshObject->matrixWorld.elements[12] == 5);
+    // A hidden rig is walked whole: a skinned mesh elsewhere draws with its bones.
+    CHECK(tn_invoke(scene, "add", &rigArg, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_invoke(rig, "add", &boneArg, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_set(rig, "visible", &hidden, &d.value) == TN_OK);
+    CHECK(walk(true) == 5);
+    // A subtree frozen by core's markStatic (`static` on, the root's matrixWorldAutoUpdate off) is a leaf, in
+    // either mode: its matrices were composed when it froze. Re-armed (the world compose back on), it is walked.
+    const tn_value_t on = boolean(true), off = boolean(false);
+    CHECK(tn_set(rig, "visible", &shown, &d.value) == TN_OK);
+    CHECK(tn_set(group, "static", &on, &d.value) == TN_OK && tn_set(mesh, "static", &on, &d.value) == TN_OK);
+    CHECK(walk(true) == 5);  // static alone is three's renderer hint, not a freeze
+    CHECK(tn_set(group, "matrixWorldAutoUpdate", &off, &d.value) == TN_OK);
+    CHECK(walk(true) == 4 && walk(false) == 4);
+    tn_value_t flagValue{};
+    CHECK(tn_get(group, "static", &flagValue, &d.value) == TN_OK && flagValue.kind == TN_VALUE_BOOL && flagValue.boolean);
+    CHECK(tn_set(group, "matrixWorldAutoUpdate", &on, &d.value) == TN_OK);
+    CHECK(walk(true) == 5);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 

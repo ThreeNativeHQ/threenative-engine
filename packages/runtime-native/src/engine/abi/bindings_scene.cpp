@@ -215,35 +215,6 @@ void registerObject3DEvents(ClassBinding& b) {
 // geometry, material, flags, render order and layer mask. It walks the way that proof walks, so a
 // light or LOD hides its children. A hash, so a match is a claim at 2^-53 and a mismatch only sends
 // the caller to its own exact walk.
-// The nodes at and under `root`: what a walk of its subtree covers.
-std::atomic<uint64_t> gSubtreeWalks{0};
-
-double countSubtree(const Object3D& root) {
-    double count = 1;
-    for (const Object3D* child : root.children) count += countSubtree(*child);
-    return count;
-}
-
-// The count moves only with the hierarchy (an add, a remove, a destructor: Object3D::hierarchyVersion), and
-// core's matrix pass asks for it every frame for each root it applies to (the scene, a projection mirror),
-// so the answers are kept per root until the version moves.
-double subtreeSize(const Object3D& root) {
-    struct Counted {
-        uint64_t version = 0;
-        std::unordered_map<const Object3D*, double> byRoot;
-    };
-    thread_local Counted counted;
-    const uint64_t version = Object3D::hierarchyVersion();
-    if (counted.version != version) {
-        counted.byRoot.clear();
-        counted.version = version;
-    }
-    const auto known = counted.byRoot.find(&root);
-    if (known != counted.byRoot.end()) return known->second;
-    gSubtreeWalks.fetch_add(1, std::memory_order_relaxed);
-    return counted.byRoot.emplace(&root, countSubtree(root)).first->second;
-}
-
 double structureStamp(Object3D& root) {
     uint64_t h = 0xcbf29ce484222325ULL;
     const auto mix = [&h](uint64_t v) {
@@ -437,6 +408,8 @@ void registerObject3D(ClassBinding& b) {
     b.setters["matrixAutoUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixAutoUpdate = flag(v); };
     b.getters["matrixWorldAutoUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldAutoUpdate); };
     b.setters["matrixWorldAutoUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixWorldAutoUpdate = flag(v); };
+    b.getters["static"] = [](void* self) { return Value::of(as<Object3D>(self)->isStatic); };
+    b.setters["static"] = [](void* self, const Value& v) { as<Object3D>(self)->isStatic = flag(v); };
     b.getters["matrixWorldNeedsUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldNeedsUpdate); };
     b.setters["matrixWorldNeedsUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixWorldNeedsUpdate = flag(v); };
     b.getters["id"] = [](void* self) { return Value::of(double(as<Object3D>(self)->id())); };
@@ -564,12 +537,11 @@ void registerObject3D(ClassBinding& b) {
             if (!node->visible()) return Value::of(false);
         return Value::of(true);
     };
-    // core's MatrixWorldPass asks for this where it exists: three's updateMatrixWorld recursion in one call instead
-    // of a call per node. It answers how many nodes the walk covered (the root and everything under it).
+    // core's MatrixWorldPass asks for this where it exists: its walk in one call instead of a call per node.
+    // `__tnUpdateMatrixWorld(force, prune)` answers the nodes it visited; with `prune` (core's "visible" mode) a
+    // hidden subtree waits for the frame it shows (Object3D::updateMatrixWorldVisible).
     b.methods["__tnUpdateMatrixWorld"] = [](void* self, const Args& a, Store&) {
-        Object3D* root = as<Object3D>(self);
-        root->updateMatrixWorld(boolean(a, 0, false));
-        return Value::of(subtreeSize(*root));
+        return Value::of(double(as<Object3D>(self)->updateMatrixWorldVisible(boolean(a, 0, false), boolean(a, 1, false))));
     };
     b.methods["updateMatrix"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->updateMatrix();
@@ -1735,8 +1707,6 @@ void registerBatchedMesh(ClassBinding& b) {
 }
 
 }  // namespace
-
-uint64_t subtreeSizeWalks() { return gSubtreeWalks.load(std::memory_order_relaxed); }
 
 std::string& pendingListenerError() {
     thread_local std::string error;

@@ -91,6 +91,10 @@ void SkinnedMesh::bind(std::shared_ptr<Skeleton> next, const Matrix4* matrix) {
 
 void SkinnedMesh::updateMatrixWorld(bool force) {
     Mesh::updateMatrixWorld(force);
+    afterMatrixWorld();
+}
+
+void SkinnedMesh::afterMatrixWorld() {
     if (attached) bindMatrixInverse.copy(matrixWorld).invert();
     else bindMatrixInverse.copy(bindMatrix).invert();
 }

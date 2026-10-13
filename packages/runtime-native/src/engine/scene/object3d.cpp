@@ -676,6 +676,29 @@ void Object3D::updateMatrixWorld(bool force) {
     for (Object3D* child : children) child->updateMatrixWorld(force);
 }
 
+uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
+    bool childForce = updateMatrixWorldSelf(force);
+    afterMatrixWorld();
+    uint32_t visited = 1;
+    if (prune && !visible_) {
+        if (holdsBones_ < 0) {
+            holdsBones_ = 0;
+            traverse([](Object3D& node, void* found) {
+                if (node.type() == "Bone") *static_cast<int8_t*>(found) = 1;
+            }, &holdsBones_);
+        }
+        if (holdsBones_ == 0) {
+            worldStale_ = worldStale_ || childForce;
+            return visited;
+        }
+    }
+    if (worldStale_) childForce = true;
+    worldStale_ = false;
+    if (isStatic && !matrixWorldAutoUpdate) return visited;
+    for (Object3D* child : children) visited += child->updateMatrixWorldVisible(childForce, prune);
+    return visited;
+}
+
 void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool force) {
     Object3D* const parent_ = parent;
 
@@ -719,6 +742,7 @@ Object3D& Object3D::copy(const Object3D& source) {
     matrixAutoUpdate = source.matrixAutoUpdate;
     matrixWorldAutoUpdate = source.matrixWorldAutoUpdate;
     matrixWorldNeedsUpdate = source.matrixWorldNeedsUpdate;
+    isStatic = source.isStatic;
     layers_.mask = source.layers_.mask;
     visible_ = source.visible_;
     castShadow_ = source.castShadow_;
