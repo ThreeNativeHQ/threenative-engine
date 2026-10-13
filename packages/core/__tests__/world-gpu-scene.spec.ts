@@ -1153,7 +1153,7 @@ describe("WorldCells with the GPU-driven main pass", () => {
     world.dispose();
   });
 
-  it("spends no regroup and no refilter, feeds the source buffer, and dresses every main key", async () => {
+  it("spends no regroup, counts replacement LOD work, feeds the source buffer, and dresses every main key", async () => {
     stubManifestFetch();
     const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
     const world = await WorldCells.load({
@@ -1206,7 +1206,9 @@ describe("WorldCells with the GPU-driven main pass", () => {
     // option off the same walk repacks every time the window moves.
     expect(after.mainCull.repacks - settled.mainCull.repacks).toBe(0);
     expect(after.mainCull.windows - settled.mainCull.windows).toBe(0);
-    expect(after.levelRefilters - settled.levelRefilters).toBe(0);
+    // GPU cull-gate replacements still enter the shared CPU selector to build source records. The
+    // dispatch removes per-instance LOD work, but this replacement-level work remains visible.
+    expect(after.levelRefilters - settled.levelRefilters).toBeGreaterThan(0);
     expect(after.gpuScene.dispatches - settled.gpuScene.dispatches).toBe(200);
     expect(after.gpuScene.instances).toBeGreaterThan(0);
     expect(world.stats().failures).toBe(0);
