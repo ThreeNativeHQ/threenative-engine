@@ -6,11 +6,15 @@ import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as url from "node:url";
 import { runInNewContext } from "node:vm";
+import type { IAssetLoader } from "@threenative/core";
 import { MATERIAL_IDS, Terrain } from "@threenative/terrain";
 import { starterAssetsDir } from "@threenative/terrain/kit";
+import { DataTexture, type Texture } from "three";
+import { float } from "three/tsl";
 import ts from "typescript";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { BIOMES } from "../src/render/biomes.js";
+import { createGroundMaterial, createTerrain } from "../src/render/terrain.js";
 import { GROUND_MAPS, GROUND_TILE } from "../src/world/terrainAssets.js";
 
 const base = new URL("../", import.meta.url);
@@ -170,3 +174,90 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+it.each(["fallback", "licensed", "cancelled"])(
+  "uses the actual engine blend and releases images for %s",
+  async (mode) => {
+    const terrain = new Terrain({ size: 2, resolution: 17 }).evaluate();
+    const { world, table, splat } = pack("forest", terrain, GROUND_MAPS);
+    const responses = new Map([
+      ["world/forest.world.json", JSON.stringify(world)],
+      ["world/forest.layers.json", JSON.stringify(table)],
+      ["world/forest.splat.rgba8", splat],
+    ]);
+    vi.stubGlobal("fetch", async (path: string) => {
+      const body = responses.get(path);
+      if (body === undefined) throw new Error(`Unexpected request: ${path}`);
+      return new Response(body);
+    });
+    const images: Texture[] = [];
+    const releases = new Map<Texture, number>();
+    const assets = {
+      resolve: async (path: string) => [path],
+      texture: async (path: string) => {
+        if (mode !== "licensed" && path.startsWith("temperate/"))
+          throw new Error("Optional licensed map absent");
+        const image = new DataTexture(new Uint8Array([80, 150, 50, 255]), 1, 1);
+        image.userData.path = path;
+        image.addEventListener("dispose", () =>
+          releases.set(image, (releases.get(image) ?? 0) + 1),
+        );
+        images.push(image);
+        return image;
+      },
+    } as unknown as IAssetLoader;
+    const curvature = new DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+    curvature.addEventListener("dispose", () =>
+      releases.set(curvature, (releases.get(curvature) ?? 0) + 1),
+    );
+    try {
+      const data = {
+        size: 2,
+        resolution: 17,
+        heights: Array.from({ length: 17 * 17 }, (_, i) => i / 17),
+        colors: Array.from({ length: 17 * 17 * 3 }, () => 0.5),
+        waterLevel: null,
+      };
+      if (mode === "cancelled") {
+        const { mesh } = createTerrain(data, assets, BIOMES.forest);
+        const placeholder = mesh.material;
+        mesh.geometry.dispose();
+        (mesh.material as { dispose: () => void }).dispose();
+        await vi.waitFor(() => {
+          expect(images).toHaveLength(10);
+          for (const image of images) expect(releases.get(image)).toBe(1);
+        });
+        expect(mesh.material).toBe(placeholder);
+        curvature.dispose();
+        return;
+      }
+      const material = await createGroundMaterial(
+        data,
+        assets,
+        {
+          texture: curvature,
+          node: float(0),
+          wetBank: float(0),
+          flow: float(0),
+          deposits: float(0),
+        },
+        BIOMES.forest,
+      );
+      expect(material.userData.TN_TERRAIN_SPLAT).toBeDefined();
+      expect(images).toHaveLength(mode === "licensed" ? 12 : 10);
+      for (const node of [material.colorNode, material.normalNode]) {
+        const sampled = new Set<Texture>();
+        node?.traverse((child) => {
+          const value = (child as unknown as { value?: Texture }).value;
+          if (value?.isTexture) sampled.add(value);
+        });
+        expect([...sampled].some((image) => image.isDataArrayTexture)).toBe(false);
+        expect(sampled.size).toBeGreaterThan(0);
+      }
+      material.dispose();
+      for (const image of [...images, curvature]) expect(releases.get(image)).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  },
+);

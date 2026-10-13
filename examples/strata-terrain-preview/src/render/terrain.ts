@@ -1,5 +1,5 @@
 import type { IAssetLoader } from "@threenative/core";
-import { Heightfield } from "@threenative/core/world";
+import { Heightfield, loadTerrainSplat } from "@threenative/core/world";
 import { createSegmentIndex } from "@threenative/terrain";
 import {
   type BufferGeometry,
@@ -45,7 +45,7 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import { GROUND_MAPS, GROUND_TILE, type LayerKey, ROCKFACE_MAPS } from "../world/terrainAssets.js";
+import { GROUND_TILE, type LayerKey, ROCKFACE_MAPS } from "../world/terrainAssets.js";
 import { alpineRockColor, alpineRockTap, desertRockColor } from "./biomes.js";
 // The ground's look, and every number in it, lives in this game: which surface covers which
 // height and slope, how many metres one texture tile spans, and how the blend edges break. The
@@ -59,7 +59,7 @@ import { alpineRockColor, alpineRockTap, desertRockColor } from "./biomes.js";
 // disagree with the geometry.
 //
 // Texture budget: six albedos + four normals + curvature + two shadow levels × two = 15/16.
-import { BIOMES, type IBiome, biomeWeights } from "./biomes.js";
+import { type IBiome, biomeWeights } from "./biomes.js";
 import { createHorizonGeometry } from "./horizon.js";
 import { loadSkyLight, skyIrradiance } from "./pack.js";
 import {
@@ -109,9 +109,6 @@ export interface IGroundCurvature {
   readonly flow: Node<"float">;
   readonly deposits: Node<"float">;
 }
-
-/** The layers that cover ground, ordered so the heavier surface blends over the base one. */
-const LAYERS: readonly LayerKey[] = ["dirt", "moss", "sand", "rock", "snow"];
 
 interface ILayerMaps {
   diffuse: Texture;
@@ -495,12 +492,13 @@ export function paintCanopy(
  * The ground material: one lit surface whose colour is a blend of six PBR layers, blended in weight
  * order outwards from the base surface.
  */
-export function createGroundMaterial(
+export async function createGroundMaterial(
   data: IBakedWorld,
-  maps: Partial<Record<LayerKey, ILayerMaps>>,
+  assets: IAssetLoader,
   curvature: IGroundCurvature,
   biome?: IBiome,
-): MeshStandardNodeMaterial {
+): Promise<MeshStandardNodeMaterial> {
+  const maps: Partial<Record<LayerKey, ILayerMaps>> = {};
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.94 });
   material.userData.biome = biome?.world ?? "forest";
   material.userData.erosion = data.erosion !== undefined;
@@ -652,7 +650,6 @@ export function createGroundMaterial(
 
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
-    held.add(diffuse);
     const flat = groundLayer(diffuse, key);
     if (biome?.world === "tundra" && (key === "grass" || key === "dirt" || key === "moss")) {
       // The same rotated two-scale floor and walls continue across the resident edge.
@@ -743,7 +740,6 @@ export function createGroundMaterial(
         crevice: float(1),
         tilt: key === "sand" ? sandRipples() : key === "snow" ? microGrain().mul(0.4) : vec3(0),
       };
-    held.add(source);
     if (key === "rock") {
       const walls = { crevice: float(1), tilt: stoneRelief(source, biome) };
       return {
@@ -784,139 +780,171 @@ export function createGroundMaterial(
       : blended;
   };
 
-  const grassRelief = reliefOf("grass", 0.38);
-  let albedo: Node<"vec4"> = vec4(groundTurf(albedoOf("grass").rgb, biome, hollow), 1);
-  // Three scales of relief on the meadow, not two: a metre of detail normal under the player's feet,
-  // the tile's own scale at reading distance, and a decimetre of grain so the ground nearest the eye
-  // is not smooth between the blades. The finest is a noise field rather than a texture, because a
-  // third sampler on the grass layer is a third of the budget for detail nobody can name.
-  let normal = grassRelief.tilt
-    .mul(weights.grass)
-    .mul(biome?.world === "alpine" ? mix(1, 0.05, smoothstep(45, 130, positionView.length())) : 1)
-    .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
-  if (biome?.world === "desert")
-    normal = normal.add(sandRipples(vec2(0.53, 0.85)).mul(weights.grass));
-  // The crevice term follows the surface the eye is actually looking at, so it is blended by the
-  // same weights as the colour rather than applied to every layer at once.
   let snowCover: Node<"float"> = float(0);
-  for (const key of LAYERS) {
-    const weight = weights[key];
-    // A surface takes the ground over once it *is* most of the ground. Blending every layer by a
-    // share of the running total instead leaves a beach a third sand, a third grass and a third
-    // dirt, which is mud with a texture on it.
-    const surface = albedoOf(key);
-    const relief = reliefOf(key, key === "rock" ? 0.52 : key === "snow" ? 0.18 : 0.32);
-    // No displacement maps in these starter sets: normal relief breaks the blend edge,
-    // while slope, elevation and curvature determine which surface belongs here.
-    const reliefHeight = relief.crevice.sub(0.8).mul(0.12).add(breakUp.mul(0.045));
-    // The photograph's relief and metre-scale breakup cut pockets into the soil/rock boundary.
-    const rockHeight = dot(surface.rgb, vec3(0.2126, 0.7152, 0.0722))
-      .sub(0.1)
-      .mul(0.7)
-      .add(mx_noise_float(positionWorld.mul(0.65)).mul(0.16));
-    const over =
-      key === "snow" && otherBiome
-        ? weight.mul(float(1).add(breakUp.mul(0.025))).clamp(0, 1)
-        : key === "rock"
-          ? smoothstep(0.34, 0.51, weight.add(rockHeight))
-          : smoothstep(0.12, 0.82, weight.add(reliefHeight));
-    if (key === "snow") snowCover = over;
-    albedo = mix(albedo, surface, over);
-    normal = mix(normal, relief.tilt, over);
-  }
-  // Concavity occludes sky bounce, leaving direct sunlight physically separate.
-  material.aoNode = mix(float(1), float(0.88), smoothstep(0.2, 0.85, hollow));
-
-  // 50–200 metre vegetation tones survive texture mipmapping in the overview.
-  const dryness = otherBiome
-    ? smoothstep(
-        -0.18,
-        0.22,
-        mx_fractal_noise_float(positionWorld.mul(0.006), 3)
-          .sub(hollow.mul(0.16))
-          .add(alpine.mul(0.06)),
-      )
-    : max(deposits.mul(0.7), drainage.mul(smoothstep(0.015, 0.12, slope)).mul(0.4));
-  const tone = otherBiome
-    ? mix(vec3(0.92, 0.94, 0.91), vec3(1.08, 1.03, 0.95), dryness)
-    : mix(vec3(0.9, 0.95, 0.84), vec3(1.03, 1.04, 0.95), dryness);
-  const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
-  const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
-  const strata = mx_fractal_noise_float(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
-  // Reuse the resident maps at massif scale: steep faces project onto their own axes.
-  const forest = triplanarAlbedo(layer("grass").diffuse, "grass", 12)
-    .rgb.mul(MEADOW)
-    .mul(mix(0.5, 0.85, breakUp.add(0.5)));
-  const crag = (
-    biome?.world === "coastal"
-      ? triplanarAlbedo(layer("rock").diffuse, "rock", 6)
-      : mix(
-          triplanarAlbedo(layer("rock").diffuse, "rock", 2.6),
-          triplanarAlbedo(layer("rock").diffuse, "rock", 14),
-          patch.mul(0.25).add(0.15),
-        )
-  ).rgb
-    .mul(vec3(0.62, 0.66, 0.67))
-    .mul(strata.mul(0.35).add(1));
-  const treeline = smoothstep(110, 240, positionWorld.y.add(breakUp.mul(24)));
-  const face = smoothstep(0.14, 0.3, steep.add(strata.mul(0.055)));
-  const cap = smoothstep(225, 310, positionWorld.y.add(breakUp.mul(28))).mul(
-    oneMinus(smoothstep(0.18, 0.42, steep)),
-  );
-  const snow = triplanarAlbedo(layer("snow").diffuse, "snow", 8).rgb;
-  const mountain = mix(mix(forest, crag, max(treeline, face)), snow, cap);
-  material.colorNode = mix(
-    albedo.rgb.mul(mix(vec3(1), tone, vegetation)),
-    otherBiome ? albedo.rgb : mountain,
-    continuation,
-  )
-    .mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank))
-    .mul(mix(vec3(1), FOREST_FLOOR, forestFloor));
-  material.roughnessNode = mix(
-    mix(
-      otherBiome ? 0.94 : mix(0.88, 0.98, dryness),
-      float(0.91).sub(
-        smoothstep(0.48, 0.68, mx_noise_float(positionWorld.mul(60)))
-          .mul(oneMinus(smoothstep(3, 14, positionView.length())))
-          .mul(0.5),
-      ),
-      snowCover,
-    ),
-    0.48,
-    curvature.wetBank,
-  );
-  if (!otherBiome) {
-    material.roughnessNode = mix(
-      material.roughnessNode as Node<"float">,
-      0.52,
-      sand.mul(wetness()),
-    );
-    // A little albedo-coloured bounce keeps unlit rock faces legible without changing the sky rig.
-    material.emissiveNode = (material.colorNode as Node<"vec3">).mul(
-      weights.rock.max(continuation).mul(0.08),
-    );
-  }
-  // Distant faces resolve broad rock strata, rather than subpixel meadow normals.
-  const rockNormal = layer("rock").normal;
-  const mountainTilt =
-    rockNormal === undefined
-      ? vec3(0)
-      : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32);
-  // Distant alpine rock previously discarded all normal relief; snow weights stay unchanged.
-  const distantTilt = biome?.world === "alpine" ? mountainTilt.mul(weights.rock) : mountainTilt;
-  const tilt = biome?.world === "tundra" ? normal : mix(normal, distantTilt, continuation);
-  // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
-  const tangent = tilt.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, tilt)));
-  const crystals = microGrain()
-    .mul(snowCover)
-    .mul(oneMinus(smoothstep(4, 22, positionView.length())));
-  material.normalNode = transformNormalToView(
-    normalize(normalWorldGeometry.add(tangent).add(crystals)),
-  );
+  const samples: Partial<Record<LayerKey, { surface: Node<"vec4">; relief: IRelief }>> = {};
   material.addEventListener("dispose", () => {
     for (const source of held) source.dispose();
   });
-  return material;
+  try {
+    // Owner-local crags remain optional; the package always carries the portable CC0 fallback.
+    const rockPaths = otherBiome ? biome.maps.rock : ROCKFACE_MAPS;
+    if (rockPaths.diffuse.startsWith("temperate/")) {
+      const diffuse = await get(assets, rockPaths.diffuse, false);
+      if (diffuse) {
+        held.add(diffuse);
+        const normal = rockPaths.normal ? await get(assets, rockPaths.normal, true) : undefined;
+        if (normal) held.add(normal);
+        maps.rock = { diffuse, normal };
+      }
+    }
+    return (await loadTerrainSplat({
+      assets,
+      url: `world/${biome?.world ?? "forest"}.world.json`,
+      layerSample: ({ layer: descriptor, diffuse, normal: normalMap }) => {
+        const key = descriptor.id as LayerKey;
+        maps[key] ??= { diffuse, normal: normalMap };
+        const surface = albedoOf(key);
+        const relief = reliefOf(
+          key,
+          key === "grass" ? 0.38 : key === "rock" ? 0.52 : key === "snow" ? 0.18 : 0.32,
+        );
+        samples[key] = { surface, relief };
+        if (key !== "grass") return { color: surface.rgb, normal: relief.tilt };
+        let normal = relief.tilt
+          .mul(weights.grass)
+          .mul(
+            biome?.world === "alpine"
+              ? mix(1, 0.05, smoothstep(45, 130, positionView.length()))
+              : 1,
+          )
+          .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
+        if (biome?.world === "desert")
+          normal = normal.add(sandRipples(vec2(0.53, 0.85)).mul(weights.grass));
+        return { color: groundTurf(surface.rgb, biome, hollow), normal };
+      },
+      // Geometry, transport and curvature choose placement; the packaged masks remain authored data.
+      layerWeight: (_masked, { layer: descriptor }) => {
+        const key = descriptor.id as LayerKey;
+        const weight = weights[key];
+        const sample = samples[key];
+        if (!sample) throw new RangeError(`Ground layer '${key}' was not sampled`);
+        const { surface, relief } = sample;
+        // No displacement maps in these starter sets: normal relief breaks the blend edge,
+        // while slope, elevation and curvature determine which surface belongs here.
+        const reliefHeight = relief.crevice.sub(0.8).mul(0.12).add(breakUp.mul(0.045));
+        // The photograph's relief and metre-scale breakup cut pockets into the soil/rock boundary.
+        const rockHeight = dot(surface.rgb, vec3(0.2126, 0.7152, 0.0722))
+          .sub(0.1)
+          .mul(0.7)
+          .add(mx_noise_float(positionWorld.mul(0.65)).mul(0.16));
+        const over =
+          key === "snow" && otherBiome
+            ? weight.mul(float(1).add(breakUp.mul(0.025))).clamp(0, 1)
+            : key === "rock"
+              ? smoothstep(0.34, 0.51, weight.add(rockHeight))
+              : smoothstep(0.12, 0.82, weight.add(reliefHeight));
+        if (key === "snow") snowCover = over;
+        return over;
+      },
+      materialFactory: ({ color, normal }) => {
+        const albedo = vec4(color, 1);
+        // Concavity occludes sky bounce, leaving direct sunlight physically separate.
+        material.aoNode = mix(float(1), float(0.88), smoothstep(0.2, 0.85, hollow));
+
+        // 50–200 metre vegetation tones survive texture mipmapping in the overview.
+        const dryness = otherBiome
+          ? smoothstep(
+              -0.18,
+              0.22,
+              mx_fractal_noise_float(positionWorld.mul(0.006), 3)
+                .sub(hollow.mul(0.16))
+                .add(alpine.mul(0.06)),
+            )
+          : max(deposits.mul(0.7), drainage.mul(smoothstep(0.015, 0.12, slope)).mul(0.4));
+        const tone = otherBiome
+          ? mix(vec3(0.92, 0.94, 0.91), vec3(1.08, 1.03, 0.95), dryness)
+          : mix(vec3(0.9, 0.95, 0.84), vec3(1.03, 1.04, 0.95), dryness);
+        const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
+        const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
+        const strata = mx_fractal_noise_float(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
+        // Reuse the resident maps at massif scale: steep faces project onto their own axes.
+        const forest = triplanarAlbedo(layer("grass").diffuse, "grass", 12)
+          .rgb.mul(MEADOW)
+          .mul(mix(0.5, 0.85, breakUp.add(0.5)));
+        const crag = (
+          biome?.world === "coastal"
+            ? triplanarAlbedo(layer("rock").diffuse, "rock", 6)
+            : mix(
+                triplanarAlbedo(layer("rock").diffuse, "rock", 2.6),
+                triplanarAlbedo(layer("rock").diffuse, "rock", 14),
+                patch.mul(0.25).add(0.15),
+              )
+        ).rgb
+          .mul(vec3(0.62, 0.66, 0.67))
+          .mul(strata.mul(0.35).add(1));
+        const treeline = smoothstep(110, 240, positionWorld.y.add(breakUp.mul(24)));
+        const face = smoothstep(0.14, 0.3, steep.add(strata.mul(0.055)));
+        const cap = smoothstep(225, 310, positionWorld.y.add(breakUp.mul(28))).mul(
+          oneMinus(smoothstep(0.18, 0.42, steep)),
+        );
+        const snow = triplanarAlbedo(layer("snow").diffuse, "snow", 8).rgb;
+        const mountain = mix(mix(forest, crag, max(treeline, face)), snow, cap);
+        material.colorNode = mix(
+          albedo.rgb.mul(mix(vec3(1), tone, vegetation)),
+          otherBiome ? albedo.rgb : mountain,
+          continuation,
+        )
+          .mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank))
+          .mul(mix(vec3(1), FOREST_FLOOR, forestFloor));
+        material.roughnessNode = mix(
+          mix(
+            otherBiome ? 0.94 : mix(0.88, 0.98, dryness),
+            float(0.91).sub(
+              smoothstep(0.48, 0.68, mx_noise_float(positionWorld.mul(60)))
+                .mul(oneMinus(smoothstep(3, 14, positionView.length())))
+                .mul(0.5),
+            ),
+            snowCover,
+          ),
+          0.48,
+          curvature.wetBank,
+        );
+        if (!otherBiome) {
+          material.roughnessNode = mix(
+            material.roughnessNode as Node<"float">,
+            0.52,
+            sand.mul(wetness()),
+          );
+          // A little albedo-coloured bounce keeps unlit rock faces legible without changing the sky rig.
+          material.emissiveNode = (material.colorNode as Node<"vec3">).mul(
+            weights.rock.max(continuation).mul(0.08),
+          );
+        }
+        // Distant faces resolve broad rock strata, rather than subpixel meadow normals.
+        const rockNormal = layer("rock").normal;
+        const mountainTilt =
+          rockNormal === undefined
+            ? vec3(0)
+            : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32);
+        // Distant alpine rock previously discarded all normal relief; snow weights stay unchanged.
+        const distantTilt =
+          biome?.world === "alpine" ? mountainTilt.mul(weights.rock) : mountainTilt;
+        const tilt = biome?.world === "tundra" ? normal : mix(normal, distantTilt, continuation);
+        // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
+        const tangent = tilt.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, tilt)));
+        const crystals = microGrain()
+          .mul(snowCover)
+          .mul(oneMinus(smoothstep(4, 22, positionView.length())));
+        material.normalNode = transformNormalToView(
+          normalize(normalWorldGeometry.add(tangent).add(crystals)),
+        );
+        return material;
+      },
+    })) as MeshStandardNodeMaterial;
+  } catch (error) {
+    material.dispose();
+    throw error;
+  }
 }
 
 /**
@@ -1012,18 +1040,16 @@ export function createTerrain(
   geometry.addEventListener("dispose", () => horizon.geometry.dispose());
 
   const curvature = buildCurvature(data, field, biome);
+  let disposed = false;
+  geometry.addEventListener("dispose", () => {
+    disposed = true;
+  });
   if (assets !== undefined)
-    void loadGroundMaps(
-      assets,
-      biome?.world === "forest" || biome?.world === "coastal" || biome === undefined
-        ? { ...(biome?.maps ?? GROUND_MAPS), rock: ROCKFACE_MAPS, dirt: BIOMES.alpine.maps.dirt }
-        : biome.maps,
-    )
-      .then((maps) => createGroundMaterial(data, maps, curvature, biome))
+    void createGroundMaterial(data, assets, curvature, biome)
       .then((ground) => {
         // Anything but the flat placeholder means the scene already moved on; a material nothing
         // draws holds GPU memory until its textures are released.
-        if (mesh.material !== material) return ground.dispose();
+        if (disposed || mesh.material !== material) return ground.dispose();
         mesh.material = ground;
         horizon.material = ground;
         material.dispose();
@@ -1176,38 +1202,6 @@ function buildCurvature(data: IBakedWorld, field: Heightfield, biome?: IBiome): 
     flow: sampled.b.mul(resident),
     deposits: sampled.a.mul(resident),
   };
-}
-
-/**
- * Every starter map the ground binds, keyed by layer.
- *
- * Albedo is colour data and everything else is linear, so the loader is told which is each: a
- * normal map read as sRGB bends its own channels and the ground loses the relief it was cooked with.
- */
-async function loadGroundMaps(
-  assets: IAssetLoader,
-  pathsByLayer = GROUND_MAPS,
-): Promise<Partial<Record<LayerKey, ILayerMaps>>> {
-  const layers = await Promise.all(
-    Object.entries(pathsByLayer).map(async ([key, paths]) => {
-      // A layer without its albedo has no place in the blend, so the set comes back without it.
-      let diffuse = await get(assets, paths.diffuse, false);
-      let chosen = paths;
-      if (diffuse === undefined && paths.diffuse.startsWith("temperate/")) {
-        chosen = GROUND_MAPS[key as LayerKey];
-        diffuse = await get(assets, chosen.diffuse, false);
-      }
-      if (diffuse === undefined) return undefined;
-      const maps: ILayerMaps = { diffuse };
-      for (const [slot, path] of Object.entries(chosen)) {
-        if (slot === "diffuse") continue;
-        const found = await get(assets, path, true);
-        if (found !== undefined) maps[slot as "normal"] = found;
-      }
-      return [key, maps] as const;
-    }),
-  );
-  return Object.fromEntries(layers.filter((entry) => entry !== undefined));
 }
 
 async function get(
