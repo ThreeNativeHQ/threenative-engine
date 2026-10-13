@@ -1,8 +1,10 @@
 import * as THREE from "three/webgpu";
 import { clamp, pass, screenUV, uniform } from "three/tsl";
+import { ResolutionSubrect } from "../../../../core/src/render/resolution-subrect.ts";
 import { startVisualScene } from "./scene-support.js";
 
 const SCALE = 0.72;
+const quantize = (size) => Math.max(8, Math.ceil(size / 8) * 8);
 
 export function startScene(canvas, dimensions) {
   return startVisualScene(canvas, dimensions, "resolution-subrect", ({ renderer, scene, camera }) => {
@@ -13,17 +15,16 @@ export function startScene(canvas, dimensions) {
     subject.rotation.set(0.3, 0.4, 0.1);
     scene.add(subject);
 
-    const capacityWidth = dimensions.width;
-    const capacityHeight = dimensions.height;
-    const viewWidth = Math.ceil((capacityWidth * SCALE) / 8) * 8;
-    const viewHeight = Math.ceil((capacityHeight * SCALE) / 8) * 8;
     const scenePass = pass(scene, camera);
-    scenePass.setSize(capacityWidth, capacityHeight);
-    scenePass.setViewport(0, 0, viewWidth, viewHeight);
-    scenePass.setScissor(0, 0, viewWidth, viewHeight);
+    const controller = new ResolutionSubrect();
+    controller.retain(scenePass, [scenePass.renderTarget]);
+    controller.activate(1);
+    controller.setSize(dimensions.width, dimensions.height);
 
-    const viewFraction = uniform(new THREE.Vector2(viewWidth / capacityWidth, viewHeight / capacityHeight));
-    const halfTexel = uniform(new THREE.Vector2(0.5 / capacityWidth, 0.5 / capacityHeight));
+    const view = controller.textureView(scenePass.renderTarget.texture);
+    if (!view) throw new Error("Resolution sub-rectangle did not retain the scene pass texture.");
+    const viewFraction = uniform(new THREE.Vector2(1, 1)).onRenderUpdate(() => view.viewFraction);
+    const halfTexel = uniform(new THREE.Vector2()).onRenderUpdate(() => view.halfTexel);
     const uvNode = clamp(
       screenUV.mul(viewFraction),
       halfTexel,
@@ -31,22 +32,40 @@ export function startScene(canvas, dimensions) {
     );
     const pipeline = new THREE.RenderPipeline(renderer);
     pipeline.outputNode = scenePass.getTextureNode("output").sample(uvNode);
-    pipeline.render();
 
-    if (
-      scenePass.renderTarget.width !== capacityWidth ||
-      scenePass.renderTarget.height !== capacityHeight ||
-      scenePass.renderTarget.viewport.z !== viewWidth ||
-      scenePass.renderTarget.viewport.w !== viewHeight ||
-      scenePass.renderTarget.scissor.z !== viewWidth ||
-      scenePass.renderTarget.scissor.w !== viewHeight
-    )
-      throw new Error("Resolution sub-rectangle did not retain the full target capacity.");
+    const capacityWidth = quantize(dimensions.width);
+    const capacityHeight = quantize(dimensions.height);
+    const assertTransition = (scale) => {
+      const viewWidth = quantize(dimensions.width * scale);
+      const viewHeight = quantize(dimensions.height * scale);
+      const target = scenePass.renderTarget;
+      if (
+        target.width !== capacityWidth ||
+        target.height !== capacityHeight ||
+        target.viewport.z !== viewWidth ||
+        target.viewport.w !== viewHeight ||
+        target.scissor.z !== viewWidth ||
+        target.scissor.w !== viewHeight ||
+        !target.scissorTest ||
+        view.viewFraction.x !== viewWidth / capacityWidth ||
+        view.viewFraction.y !== viewHeight / capacityHeight ||
+        view.halfTexel.x !== 0.5 / capacityWidth ||
+        view.halfTexel.y !== 0.5 / capacityHeight
+      )
+        throw new Error(`Resolution sub-rectangle transition failed at scale ${scale}.`);
+    };
+
+    for (const scale of [SCALE, 1, SCALE]) {
+      controller.setScale(scale);
+      pipeline.render();
+      assertTransition(scale);
+    }
+
     return {
       render: () => pipeline.render(),
       detail: {
         capacity: [capacityWidth, capacityHeight],
-        view: [viewWidth, viewHeight],
+        view: [quantize(dimensions.width * SCALE), quantize(dimensions.height * SCALE)],
         scale: SCALE,
         sampling: "viewFraction*screenUV-clamped-to-half-texel",
       },
