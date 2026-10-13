@@ -7,6 +7,7 @@ import {
   cullOf,
   frameBudget,
   loadMidwayRuns,
+  loadedHost,
   matrixWalk,
   parityOf,
   playerFrames,
@@ -207,6 +208,12 @@ describe("groups and loading", () => {
       await mkdir(path.join(root, name));
     await writeFile(path.join(root, "prof-desktop", "run.log"), frame(9));
     await writeFile(path.join(root, "prof.perf.data"), "");
+    await mkdir(path.join(root, "busy-desktop"));
+    await writeFile(path.join(root, "busy-desktop", "run.log"), frame(9));
+    await writeFile(
+      path.join(root, "busy-desktop", "host-load.txt"),
+      "cores 24\nload 4.1\nload 48.9\n",
+    );
     await writeFile(
       path.join(root, "a1-desktop", "run.log"),
       [frame(7), ui(5), proj(900)].join("\n"),
@@ -221,6 +228,14 @@ describe("groups and loading", () => {
     ]);
     expect(loaded[0]).toMatchObject({ tag: "a1", group: "a", parity: { pass: true } });
     expect(await loadMidwayRuns(path.join(root, "missing"))).toEqual([]);
+  });
+
+  it("marks a host loaded above three quarters of its cores, and nothing else", () => {
+    expect(loadedHost("cores 24\nload 4.1\nload 18.5\n")).toBe(true);
+    expect(loadedHost("cores 24\nload 4.1\nload 18\n")).toBe(false);
+    expect(loadedHost(undefined)).toBe(false);
+    expect(loadedHost("cores x\nload 99\n")).toBe(false);
+    expect(loadedHost("cores 24\n")).toBe(false);
   });
 
   it("defaults the runs dir under the home directory and honours MIDWAY_RUNS", () => {

@@ -35,6 +35,10 @@ OUT=$RUNS/$TAG-$ARM
 SCENARIO=${MIDWAY_SCENARIO:-$HERE/flight-bench.playtest.json}
 [ "$ARM" = desktop ] && SCENARIO=${MIDWAY_SCENARIO:-$HERE/flight-bench-desktop.playtest.json}
 mkdir -p "$OUT"
+# The host's load around the run: the dashboard leaves a run flown on a loaded host out of its ms trends.
+loadnow() { echo "load $(cut -d' ' -f1 /proc/loadavg)" >> "$OUT/host-load.txt"; }
+echo "cores $(nproc)" > "$OUT/host-load.txt"
+loadnow
 cd "$GAME" || exit 2
 LOCK=${TN_HEAVY_LOCK:+flock $TN_HEAVY_LOCK}
 GPU_ENV=${TN_VK_ICD:+VK_ICD_FILENAMES=$TN_VK_ICD}
@@ -53,6 +57,7 @@ $LOCK env -u DISPLAY $GPU_ENV ${TN_VK_LIB:+LD_LIBRARY_PATH=$TN_VK_LIB} \
   --server-command 'pnpm dev --host 127.0.0.1 --port $PORT --strictPort' > "$OUT/run.log" 2>&1
 fi
 STATUS=$?
+loadnow
 echo "$ARM exit $STATUS"
 tail -30 "$OUT/run.log"
 [ "$STATUS" = 0 ] || exit "$STATUS"

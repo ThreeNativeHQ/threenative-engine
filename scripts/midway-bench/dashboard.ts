@@ -307,8 +307,22 @@ async function readRun(root: string, name: string, tag: string, arm: Arm) {
 }
 
 /**
+ * True when `host-load.txt` (written by flight.sh: `cores N`, then `load X` before and after the run)
+ * shows a 1-minute load above three quarters of the cores: other work then slows the run's frame.
+ * A run without the file, or with a malformed one, counts as not loaded.
+ */
+export function loadedHost(text: string | undefined): boolean {
+  if (!text) return false;
+  const cores = Number(/^cores (\d+)$/m.exec(text)?.[1]);
+  const loads = [...text.matchAll(/^load ([\d.]+)$/gm)].map((m) => Number(m[1]));
+  if (!(cores > 0) || loads.length === 0) return false;
+  return Math.max(...loads) > cores * 0.75;
+}
+
+/**
  * Every `<tag>-<arm>` directory under the runs dir, oldest first. Other entries are ignored, and so
  * is a profiled run (a sibling `<tag>.perf.data` or `<tag>.cpuprofile`): the profiler slows it.
+ * So is a run flown on a loaded host (see `loadedHost`).
  */
 export async function loadMidwayRuns(root = runsDir()): Promise<IMidwayRun[]> {
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
@@ -317,8 +331,13 @@ export async function loadMidwayRuns(root = runsDir()): Promise<IMidwayRun[]> {
   for (const entry of entries) {
     const m = /^(.+)-(legacy|native|desktop)$/.exec(entry.name);
     const profiled = m && (names.has(`${m[1]}.perf.data`) || names.has(`${m[1]}.cpuprofile`));
+    const loaded =
+      m &&
+      loadedHost(
+        await readFile(path.join(root, entry.name, "host-load.txt"), "utf8").catch(() => undefined),
+      );
     const run =
-      entry.isDirectory() && m && !profiled
+      entry.isDirectory() && m && !profiled && !loaded
         ? await readRun(root, entry.name, m[1] as string, m[2] as Arm)
         : undefined;
     if (run) runs.push(run);
