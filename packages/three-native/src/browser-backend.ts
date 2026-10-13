@@ -283,7 +283,6 @@ export function defineBrowserClasses(
   // `readDoubles`), and a fixed member (`position`, `matrixWorld`) is kept after its first answer.
   // Writes still go through the engine's setters, which it reacts to.
   const addresses = new WeakMap<object, number>();
-  const kept = new WeakMap<object, Map<string, unknown>>();
   // Each object's kept `rotation` Euler -> the object, whose quaternion a rotation write syncs.
   const rotations = new WeakMap<object, object>();
   // Properties only the object's own setter or methods change: `name` and `type` (read per track and
@@ -318,18 +317,14 @@ export function defineBrowserClasses(
       };
     }
     if (binding.fixedMembers?.includes(property) && !binding.setters.includes(property))
+      // The first read defines the member as the object's own read-only property, as three's
+      // Object3D has it: every later read is a plain property load, never this getter (R5 reads
+      // position and rotation three times per cube per frame).
       return function (this: object) {
-        let members = kept.get(this);
-        if (members === undefined) {
-          members = new Map();
-          kept.set(this, members);
-        }
-        if (!members.has(property)) {
-          const member = fromEngine(runtime.get(refOf(this), property));
-          members.set(property, member);
-          if (property === "rotation") rotations.set(member as object, this);
-        }
-        return members.get(property);
+        const member = fromEngine(runtime.get(refOf(this), property));
+        Object.defineProperty(this, property, { value: member, writable: false });
+        if (property === "rotation") rotations.set(member as object, this);
+        return member;
       };
     return undefined;
   };
@@ -407,6 +402,7 @@ export function defineBrowserClasses(
   const callbackNames = new Map<string, Set<string>>(); // by handle key, to clear on collection
   const held = new Set<object>();
   let cursor = held.values(); // collect()'s place in `held`
+  let peak = 0; // the most wrappers held since this pass of `cursor` began
   // userData is the game's: it lives with the wrapper, which `held` keeps while the engine references it.
   const userData = new WeakMap<object, unknown>();
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
@@ -766,22 +762,43 @@ export function defineBrowserClasses(
         [1, 1, -1, -1],
         [-1, -1, 1, 1],
       ];
-      const sync = (euler: object, owner: object) => {
-        const at = addressOf(euler);
-        const [x = 0, y = 0, z = 0] = angles.map((offset) => readLane(at + offset, 1) as number);
-        const [sx = 1, sy = 1, sz = 1, sw = 1] = signs[readByte(at + (order[0] ?? 0))] ?? [];
-        const c1 = Math.cos(x / 2);
-        const c2 = Math.cos(y / 2);
-        const c3 = Math.cos(z / 2);
-        const s1 = Math.sin(x / 2);
-        const s2 = Math.sin(y / 2);
-        const s3 = Math.sin(z / 2);
-        const q = addressOf((owner as { quaternion: object }).quaternion);
-        const [qx = 0, qy = 0, qz = 0, qw = 0] = targets;
-        write(q + qx, s1 * c2 * c3 + sx * c1 * s2 * s3);
-        write(q + qy, c1 * s2 * c3 + sy * s1 * c2 * s3);
-        write(q + qz, c1 * c2 * s3 + sz * s1 * s2 * c3);
-        write(q + qw, c1 * c2 * c3 + sw * s1 * s2 * s3);
+      // Two writes per object per frame land here (R5 turns x then y on 4,096 cubes), so the hot path
+      // allocates nothing: offsets are numbers, the owner's quaternion address is kept per Euler (an
+      // engine object never moves), and lanes are read off HEAPF64 when the runtime has it.
+      const [ox = 0, oy = 0, oz = 0] = angles;
+      const [qx = 0, qy = 0, qz = 0, qw = 0] = targets;
+      const orderAt = order[0] ?? 0;
+      const heap = runtime.heapF64;
+      const lane = heap
+        ? (address: number) => heap()[address / 8] as number
+        : (address: number) => readLane(address, 1) as number;
+      // An object's rotation -> [its address, its owner's quaternion address]: one lookup per write.
+      const places = new WeakMap<object, [number, number]>();
+      const placeOf = (euler: object): [number, number] | undefined => {
+        let place = places.get(euler);
+        if (place === undefined) {
+          const owner = rotations.get(euler);
+          if (owner === undefined) return undefined;
+          place = [addressOf(euler), addressOf((owner as { quaternion: object }).quaternion)];
+          places.set(euler, place);
+        }
+        return place;
+      };
+      const sync = (at: number, q: number) => {
+        const x = lane(at + ox) / 2;
+        const y = lane(at + oy) / 2;
+        const z = lane(at + oz) / 2;
+        const sign = (signs[readByte(at + orderAt)] ?? signs[0]) as number[];
+        const c1 = Math.cos(x);
+        const c2 = Math.cos(y);
+        const c3 = Math.cos(z);
+        const s1 = Math.sin(x);
+        const s2 = Math.sin(y);
+        const s3 = Math.sin(z);
+        write(q + qx, s1 * c2 * c3 + (sign[0] as number) * c1 * s2 * s3);
+        write(q + qy, c1 * s2 * c3 + (sign[1] as number) * s1 * c2 * s3);
+        write(q + qz, c1 * c2 * s3 + (sign[2] as number) * s1 * s2 * c3);
+        write(q + qw, c1 * c2 * c3 + (sign[3] as number) * s1 * s2 * s3);
       };
       angles.forEach((offset, i) => {
         const lane = "xyz"[i] as string;
@@ -789,10 +806,10 @@ export function defineBrowserClasses(
         Object.defineProperty(prototype, lane, {
           ...crossing,
           set(this: object, value: number) {
-            const owner = rotations.get(this);
-            if (owner === undefined) return crossing?.set?.call(this, value);
-            write(addressOf(this) + offset, value);
-            sync(this, owner);
+            const place = placeOf(this);
+            if (place === undefined) return crossing?.set?.call(this, value);
+            write(place[0] + offset, value);
+            sync(place[0], place[1]);
           },
         });
       });
@@ -801,14 +818,14 @@ export function defineBrowserClasses(
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
-          const owner = rotations.get(this);
-          if (owner === undefined) return set.apply(this, args);
-          const at = addressOf(this);
+          const place = placeOf(this);
+          if (place === undefined) return set.apply(this, args);
+          const [at, q] = place;
           // Games pass their one order on every set; only a new order goes to the engine.
           if (args[3] !== undefined && args[3] !== names[readByte(at + (order[0] ?? 0))])
             return set.apply(this, args);
           angles.forEach((offset, i) => write(at + offset, args[i] as number));
-          sync(this, owner);
+          sync(at, q);
           return this;
         },
       });
@@ -1058,9 +1075,12 @@ export function defineBrowserClasses(
     wrap,
     collect() {
       // An eighth of the held wrappers each safe point, round robin (a live Set iterator): asking all
-      // of them cost about 1 ms a frame at 4,096 meshes. Holding a wrapper a few frames longer only
-      // delays its release; a game that drops objects faster than this settles near 8 frames of drops.
-      const budget = Math.ceil(held.size / 8);
+      // of them cost about 1 ms a frame at 4,096 meshes. The eighth is of the pass's peak, so releases
+      // during a pass do not shrink it: a pass takes at most eight safe points, and a wrapper the
+      // engine lets go is asked within two passes (tests/browser-backend-gc.ts). Holding a wrapper a
+      // few frames longer only delays its release.
+      peak = Math.max(peak, held.size);
+      const budget = Math.ceil(peak / 8);
       const candidates: object[] = [];
       while (candidates.length < budget) {
         const next = cursor.next();
@@ -1069,6 +1089,7 @@ export function defineBrowserClasses(
           continue;
         }
         cursor = held.values();
+        peak = held.size;
         if (candidates.length > 0) break;
       }
       const counts = runtime.engineReferences?.(candidates.map(refOf));

@@ -85,6 +85,26 @@ check(
 );
 check(weakDetached.deref() === undefined, "a detached subtree nothing reaches is collected");
 
+// The safe point asks an eighth of a pass's peak each time (PRD-573 web cut 5): a removed object is asked
+// within two passes, sixteen safe points, so a game that adds and removes objects does not leak.
+const weakRemoved: WeakRef<Node3D>[] = [];
+(() => {
+  const batch = Array.from({ length: 400 }, () => new Object3D());
+  for (const node of batch) scene.add(node);
+  collect();
+  for (const node of batch) {
+    scene.remove(node);
+    weakRemoved.push(new WeakRef(node));
+  }
+})();
+for (let i = 0; i < 16; i++) collect();
+await collectAll();
+const leaked = weakRemoved.filter((weak) => weak.deref() !== undefined).length;
+check(
+  leaked === 0,
+  `removed objects are released within sixteen safe points (${leaked} of 400 left)`,
+);
+
 if (failures.length > 0) {
   console.error(`TN_BROWSER_GC_FAILED: ${failures.join("; ")}`);
   process.exit(1);
