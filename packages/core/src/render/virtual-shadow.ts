@@ -2954,6 +2954,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
         const grant = due && (!budgetSpent || (urgentSelected && matured));
         // The rectangles this render draws, or undefined for the whole level.
         let passes: IPartialPass[] | undefined;
+        // The pages this render counted as rectangles, kept for the derived span below that turns
+        // them into the whole level and has to say so in the counters it already spent.
+        let countedPages = 0;
         if (grant) {
           // A level's first render places its window; only later renders are travel.
           if (Number.isFinite(level.minX)) {
@@ -2980,6 +2983,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
               ? levelPages
               : dirtyPages;
           this.#pagesRedrawn += passes === undefined ? levelPages : dirtyPages;
+          countedPages = dirtyPages;
           if (reason === REASON_MOVE) {
             this.#byMove += 1;
             // The render was already going to happen for the window, so the invalidation rode
@@ -3043,7 +3047,24 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // texels. Both are undone the moment the render is over — by `#restoreHidden`, which the
           // mover maps and the main pass both need back.
           this.#probe(level, centre, index, stat);
+          const drawnNear = level.depthNear;
+          const drawnFar = level.depthFar;
           if (this.#autoDepth) this.#deriveDepth(level, centre);
+          // A rectangle redraws only the pages it names and keeps every other texel, and a kept
+          // texel holds its depth as the span that drew it encoded it. A span this render derived
+          // re-encodes every one of them, so the level draws whole instead of leaving numbers the
+          // map no longer holds. Nothing else here can move the encoding: a centre that travels
+          // along the light slides the camera down its own axis, and the receiver matrix and every
+          // kept texel land where they did.
+          if (
+            passes !== undefined &&
+            (level.depthNear !== drawnNear || level.depthFar !== drawnFar)
+          ) {
+            const whole = this.clipmap.pagesPerAxis ** 2 - countedPages;
+            this.#pagesDirty += whole;
+            this.#pagesRedrawn += whole;
+            passes = undefined;
+          }
           this.#place(level, centre);
           try {
             // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.

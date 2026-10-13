@@ -143,6 +143,42 @@
         "entity": "world",
         "equals": 0,
         "allowTrivial": "Receiver matrix after the partial redraw must equal the forced whole-map receiver matrix."
+      },
+      {
+        "component": "shadowPartialTravelledPartial",
+        "entity": "world",
+        "equals": 1,
+        "allowTrivial": "1 only when every redraw of the step drew fewer pages than a whole level."
+      },
+      {
+        "component": "shadowPartialTravelledAdmission",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "The caster arrived through childadded, so the redraw counts as an admission."
+      },
+      {
+        "component": "shadowPartialTravelledChanged",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "Texels that differ from the previous map: the step drew something."
+      },
+      {
+        "component": "shadowPartialTravelledMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Texels that differ between the partial redraw and the whole one."
+      },
+      {
+        "component": "shadowPartialTravelledColorMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Actual GPU RGBA bytes after the partial redraw must match the stock whole-map clear and redraw."
+      },
+      {
+        "component": "shadowPartialTravelledMatrixMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Receiver matrix after the partial redraw must equal the forced whole-map receiver matrix."
       }
     ]
   }

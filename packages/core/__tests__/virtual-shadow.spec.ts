@@ -2138,6 +2138,106 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     node.dispose();
   });
 
+  /**
+   * Where a world point lands in a level's map: the texel it writes and the depth stored there.
+   * That is the receiver matrix the level samples every fragment through, so a texel the map kept
+   * and a point outside the rectangle have to agree on it.
+   */
+  function projected(node: VirtualShadowNode, level: number, point: Vector3): Vector3 {
+    const light = levelLight(node, level) as unknown as DirectionalLight;
+    light.shadow.updateMatrices(light);
+    return point.clone().applyMatrix4(light.shadow.matrix);
+  }
+
+  interface IRenderedRedraw {
+    far: number;
+    near: number;
+    partial: boolean;
+  }
+
+  /** What one level's next redraw drew with: its rectangle, and the depth it drew it in. */
+  function nextRedraw(
+    node: VirtualShadowNode,
+    camera: PerspectiveCamera,
+    ask: () => void,
+  ): IRenderedRedraw[] {
+    const draws: IRenderedRedraw[] = [];
+    (node.levelNodes[0] as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow =
+      () => {
+        const level = levelCamera(node, 0);
+        draws.push({ far: level.far, near: level.near, partial: level.view?.enabled === true });
+      };
+    ask();
+    for (let step = 0; step < 40 && draws.length === 0; step += 1)
+      node.updateBefore(frameFor(camera));
+    return draws;
+  }
+
+  it("should redraw the whole level when a streamed caster moves the span a partial redraw would keep", () => {
+    const { camera, light, mass, scene } = shadowWorld();
+    // Without the 500 m slab, whose own 708 m of span every other caster fits inside: a tower here
+    // can move the span it has to be covered in.
+    mass.removeFromParent();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    settle(node, camera);
+    // A ground point the map already holds, and the span it holds it in.
+    const resident = new Vector3(0, 0, 0);
+    const before = projected(node, 0, resident);
+    const held = levelCamera(node, 0);
+    const near = held.near;
+    const far = held.far;
+    // A 120 m tower streams into the window: 120 m of depth the map was never drawn with.
+    const tower = new Mesh(new BoxGeometry(6, 120, 6), new MeshStandardMaterial());
+    tower.position.set(30, 60, 30);
+    tower.castShadow = true;
+    scene.add(tower);
+    scene.updateMatrixWorld(true);
+    const draws = nextRedraw(node, camera, () =>
+      node.invalidateRegion({ min: { x: 20, y: 0, z: 20 }, max: { x: 44, y: 120, z: 44 } }, true),
+    );
+    expect(draws).toHaveLength(1);
+    expect(levelCamera(node, 0).near).not.toBeCloseTo(near, 3);
+    // A rectangle redraws only the pages it names and keeps every other texel, and a kept texel
+    // holds its depth as the span that drew it encoded it. So a moved span is a whole redraw.
+    expect(draws[0]?.partial, "a kept texel cannot be read with a span it was not drawn in").toBe(
+      false,
+    );
+    // And the redraw that replaced it re-encodes the whole map with it, so the point keeps its texel.
+    const after = projected(node, 0, resident);
+    expect(after.x).toBeCloseTo(before.x, 9);
+    expect(after.y).toBeCloseTo(before.y, 9);
+    node.dispose();
+  });
+
+  it("should keep a partial redraw partial while its span holds, across a camera move along the light", () => {
+    const { camera, light, scene } = shadowWorld();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    settle(node, camera);
+    const resident = new Vector3(0, 0, 0);
+    const before = projected(node, 0, resident);
+    const held = levelCamera(node, 0);
+    const near = held.near;
+    const far = held.far;
+    // The camera travels along the light only: the page window stands still, so the level keeps
+    // its map, and the point it holds still projects to the same texel and the same depth.
+    camera.position.addScaledVector(SUN, 4);
+    node.updateBefore(frameFor(camera));
+    expect(projected(node, 0, resident).toArray()).toEqual(before.toArray());
+    // A caster inside the span it already holds is the ordinary streamed admission.
+    const low = new Mesh(new BoxGeometry(4, 4, 4), new MeshStandardMaterial());
+    low.position.set(-6, 2, 0);
+    low.castShadow = true;
+    scene.add(low);
+    scene.updateMatrixWorld(true);
+    const draws = nextRedraw(node, camera, () =>
+      node.invalidateRegion({ min: { x: -10, y: 0, z: -4 }, max: { x: 0, y: 4, z: 4 } }, true),
+    );
+    expect(draws).toEqual([{ far, near, partial: true }]);
+    // The kept texels were drawn in this span, so the receiver matrix still reads them the same.
+    expect(projected(node, 0, resident).toArray()).toEqual(before.toArray());
+    node.dispose();
+  });
+
   it("shades both sides of the fine guard edge with the same canopy in every level under load", () => {
     const { camera, light, scene } = world();
     light.position.set(0, 100, 100);

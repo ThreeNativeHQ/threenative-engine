@@ -1,5 +1,5 @@
 import type { VirtualShadowNode } from "@threenative/core";
-import { BoxGeometry, type DirectionalLight, Mesh, type Scene } from "three";
+import { BoxGeometry, type DirectionalLight, Mesh, type Scene, Vector3 } from "three";
 import { vec4 } from "three/tsl";
 import { MeshStandardNodeMaterial, type RenderTarget, type Renderer } from "three/webgpu";
 
@@ -130,6 +130,8 @@ export function isPartialRedraw(
 
 export class ShadowPartialProbe {
   readonly results: ShadowPartialResults = { shadowPartialDone: 0 };
+  /** Where the play camera stands, so a step can move it without the scene following it. */
+  readonly cameraOffset = new Vector3();
   readonly #scene: Scene;
   readonly #shadow: VirtualShadowNode;
   readonly #renderer: unknown;
@@ -162,6 +164,16 @@ export class ShadowPartialProbe {
     mesh.name = name;
     this.#boxes.set(name, mesh);
     return mesh;
+  }
+
+  /**
+   * Travel `metres` along the light, so the page window stands still and only the depth centre
+   * moves. Every texel a level keeps then belongs to a camera that is nowhere near where the map
+   * was drawn from, which is the case the pinned `lightDistance` of this scene cannot show.
+   */
+  async #travelAlongLight(metres: number): Promise<void> {
+    this.cameraOffset.addScaledVector(this.#shadow.light.position.clone().normalize(), metres);
+    await this.#frames(2);
   }
 
   #frames(count: number): Promise<void> {
@@ -302,6 +314,9 @@ export class ShadowPartialProbe {
     );
     // Removing what the baseline never held must put the baseline back, texel for texel.
     this.results.shadowPartialRestoredMismatch = differing(baseline, depth);
+    // Last, because the camera never comes back: every map after it was drawn somewhere else.
+    await this.#travelAlongLight(6);
+    await this.#step("Travelled", () => this.#scene.add(this.#box("c", -30, 10)), depth);
     this.results.shadowPartialDone = 1;
     this.#done();
   }

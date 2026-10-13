@@ -202,7 +202,10 @@ export class WorldProbe extends Scene<WorldState> {
     // have crossed the whole fixture before the baseline observation.
     if (ctx.input.pressed("fly")) this.#elapsed += dt;
     if (SHADOW_PARTIAL) {
+      const held = this.#partial?.cameraOffset;
       ctx.camera.position.set(-45, 14, 0);
+      // The partial proof's own travel: a camera that moves while the scene holds its shape.
+      if (held !== undefined) ctx.camera.position.add(held);
       this.#cameraTarget = [-30, 2, 0];
       ctx.camera.lookAt(...this.#cameraTarget);
       this.#sample(ctx);
