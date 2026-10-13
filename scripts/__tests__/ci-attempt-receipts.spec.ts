@@ -39,6 +39,25 @@ it("retries a transport outage against the same exact attempt endpoint", () => {
   expect(execute).toHaveBeenCalledTimes(2);
   expect(execute.mock.calls[0]).toEqual(execute.mock.calls[1]);
 });
+it.each([500, 502, 503, 504])(
+  "retries HTTP %s against the same exact attempt endpoint",
+  (status) => {
+    execute.mockImplementationOnce(() => {
+      throw failure(`gh: Server Error (HTTP ${status})`);
+    });
+    execute.mockReturnValueOnce(complete);
+    expect(readAttemptJobs(identity).jobs).toEqual([{ id: 10, run_attempt: 2 }]);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls[0]).toEqual(execute.mock.calls[1]);
+  },
+);
+it("fails closed after five server failures without accepting partial pages", () => {
+  execute.mockImplementation(() => {
+    throw Object.assign(failure("gh: Server Error (HTTP 502)"), { stdout: complete });
+  });
+  expect(() => readAttemptJobs(identity)).toThrow("HTTP 502");
+  expect(execute).toHaveBeenCalledTimes(5);
+});
 it("fails closed after five connection failures without returning a receipt", () => {
   execute.mockImplementation(() => {
     throw failure("error connecting to api.github.com");

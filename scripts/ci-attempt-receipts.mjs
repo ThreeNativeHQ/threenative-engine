@@ -32,7 +32,7 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
         attempt === MAX_ATTEMPTS - 1 ||
         error.status !== 1 ||
         error.signal ||
-        !/error connecting to api\.github\.com/iu.test(stderr) ||
+        !/error connecting to api\.github\.com|HTTP (?:500|502|503|504)\b/iu.test(stderr) ||
         /HTTP (?:401|403|404|429)\b/iu.test(stderr)
       )
         throw error;
