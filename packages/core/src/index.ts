@@ -22,8 +22,9 @@ export const version = "0.3.4";
  * that frame interval. `updateRateReport` reports the effective rate, whether a named override is
  * active, and whether the latest update evaluated. One-shots and fades stay full-rate; root-motion
  * `AnimationComposer` advances every tick, and auto camera-ray targets and camera-parented rigs
- * stay full-rate. A public `mixer` `"loop"` listener also promotes the player to full-rate so
- * Three.js preserves one loop callback per tick; `updateRateReport` reports that effective rate.
+ * stay full-rate. A public `mixer` `"loop"` listener promotes the player to full-rate and observes
+ * only loop events after registration, so skipped pre-registration cycles are not replayed;
+ * `updateRateReport` reports that effective rate.
  * @situation play an animation on a character
  * @situation switch a character between idle and attack clips
  * @situation stop a walking character's feet from sliding or spinning
@@ -86,7 +87,8 @@ export { BlendSpace1D, BlendSpace2D } from "./animation-blend.js";
  * interval, and `updateRateReport` exposes the effective rate, override status and latest result.
  * One-shots and fades stay full-rate; root-motion `AnimationComposer` advances every tick, and
  * auto camera-ray targets and camera-parented rigs stay full-rate. A public `mixer` `"loop"`
- * listener also promotes effective evaluation to 1 so Three.js emits one loop callback per tick.
+ * listener promotes effective evaluation to 1 and observes only loop events after registration,
+ * so skipped pre-registration cycles are not replayed.
  * @situation put an animated character in the scene
  * @situation my imported character renders deformed
  * @situation instance an imported rigged character

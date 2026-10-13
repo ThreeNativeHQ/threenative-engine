@@ -3,6 +3,7 @@ import {
   type AnimationClip,
   AnimationMixer,
   type AnimationMixerEventMap,
+  type BaseEvent,
   type EventListener,
   LoopOnce,
   LoopRepeat,
@@ -245,9 +246,18 @@ type FinishedListener = EventListener<
   "finished",
   LoopAwareAnimationMixer
 >;
+type BeforeFirstLoopListener = (duringUpdate: boolean) => void;
 
 class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
   readonly #loopListeners = new Set<LoopListener>();
+  readonly #beforeFirstLoopListener: BeforeFirstLoopListener;
+  #updateDepth = 0;
+  #suppressLoopEvents = false;
+
+  constructor(root: Object3D, beforeFirstLoopListener: BeforeFirstLoopListener) {
+    super(root);
+    this.#beforeFirstLoopListener = beforeFirstLoopListener;
+  }
 
   get hasLoopListeners(): boolean {
     return this.#loopListeners.size > 0;
@@ -261,7 +271,14 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
   ): void {
     if (type === "loop") {
       const loopListener = listener as LoopListener;
-      if (!this.hasEventListener(type, loopListener)) this.#loopListeners.add(loopListener);
+      if (!this.hasEventListener(type, loopListener)) {
+        if (!this.hasLoopListeners) {
+          const duringUpdate = this.#updateDepth > 0;
+          if (duringUpdate) this.#suppressLoopEvents = true;
+          this.#beforeFirstLoopListener(duringUpdate);
+        }
+        this.#loopListeners.add(loopListener);
+      }
       super.addEventListener(type, loopListener);
       return;
     }
@@ -282,6 +299,23 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
       return;
     }
     super.removeEventListener(type, listener as FinishedListener);
+  }
+
+  override update(deltaTime: number): AnimationMixer {
+    this.#updateDepth += 1;
+    try {
+      return super.update(deltaTime);
+    } finally {
+      this.#updateDepth -= 1;
+      if (this.#updateDepth === 0) this.#suppressLoopEvents = false;
+    }
+  }
+
+  override dispatchEvent<T extends Extract<keyof AnimationMixerEventMap, string>>(
+    event: BaseEvent<T> & AnimationMixerEventMap[T],
+  ): void {
+    if (event.type === "loop" && this.#suppressLoopEvents) return;
+    super.dispatchEvent(event);
   }
 }
 
@@ -340,7 +374,9 @@ export class AnimationPlayer {
     const owner = new.target.name || "AnimationPlayer";
     this.root = options.root;
     this.updateRate = options.updateRate ?? "auto";
-    this.mixer = new LoopAwareAnimationMixer(options.root);
+    this.mixer = new LoopAwareAnimationMixer(options.root, (duringUpdate) => {
+      if (!duringUpdate) this.#flushPending();
+    });
     this.#preparation = options.preparation;
     this.#strideSync = options.strideSync ?? true;
     this.#strideRoot = options.strideRoot ?? options.root;

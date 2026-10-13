@@ -154,6 +154,108 @@ describe("AnimationPlayer update rate", () => {
     candidate.dispose();
   });
 
+  it("starts a newly registered loop listener after skipped time", () => {
+    const clip = new AnimationClip("loop", 0.05, [
+      new NumberKeyframeTrack(".rotation[x]", [0, 0.05], [0, 1]),
+    ]);
+    const baseline = new AnimationPlayer({
+      root: new Group(),
+      clips: [clip],
+      strideSync: false,
+      updateRate: 1,
+    });
+    const candidate = new AnimationPlayer({
+      root: new Group(),
+      clips: [clip],
+      strideSync: false,
+      updateRate: 8,
+    });
+    baseline.play("loop");
+    candidate.play("loop");
+    for (let frame = 0; frame < 6; frame += 1) {
+      baseline.update(1 / 60);
+      candidate.update(1 / 60);
+    }
+    const expected: { frame: number; loopDelta: number; clip: string }[] = [];
+    const actual: { frame: number; loopDelta: number; clip: string }[] = [];
+    let frame = 6;
+    baseline.mixer.addEventListener("loop", ({ action, loopDelta }) =>
+      expected.push({ frame, loopDelta, clip: action.getClip().name }),
+    );
+    candidate.mixer.addEventListener("loop", ({ action, loopDelta }) =>
+      actual.push({ frame, loopDelta, clip: action.getClip().name }),
+    );
+    for (; frame < 60; frame += 1) {
+      baseline.update(1 / 60);
+      candidate.update(1 / 60);
+    }
+    expect(actual).toEqual(expected);
+    expect(actual.length).toBeGreaterThan(0);
+    baseline.dispose();
+    candidate.dispose();
+  });
+
+  it("restores throttling after duplicate listener removal and later re-registration", () => {
+    const clip = new AnimationClip("loop", 0.05, [
+      new NumberKeyframeTrack(".rotation[x]", [0, 0.05], [0, 1]),
+    ]);
+    const candidate = new AnimationPlayer({
+      root: new Group(),
+      clips: [clip],
+      strideSync: false,
+      updateRate: 8,
+    });
+    candidate.play("loop");
+    const first = vi.fn();
+    const second = vi.fn();
+    expect(candidate.updateRateReport.rate).toBe(8);
+    candidate.mixer.addEventListener("loop", first);
+    candidate.mixer.addEventListener("loop", first);
+    expect(candidate.updateRateReport.rate).toBe(1);
+    candidate.mixer.removeEventListener("loop", first);
+    expect(candidate.updateRateReport.rate).toBe(8);
+    candidate.mixer.addEventListener("loop", first);
+    candidate.mixer.addEventListener("loop", second);
+    candidate.mixer.removeEventListener("loop", first);
+    expect(candidate.updateRateReport.rate).toBe(1);
+    candidate.mixer.removeEventListener("loop", first);
+    expect(candidate.updateRateReport.rate).toBe(1);
+    candidate.mixer.removeEventListener("loop", second);
+    expect(candidate.updateRateReport.rate).toBe(8);
+    for (let frame = 0; frame < 6; frame += 1) candidate.update(1 / 60);
+    candidate.mixer.addEventListener("loop", first);
+    expect(candidate.updateRateReport.rate).toBe(1);
+    expect(first).not.toHaveBeenCalled();
+    candidate.update(1 / 60);
+    candidate.dispose();
+  });
+
+  it("does not reenter listener synchronization from a mixer callback", () => {
+    const onceClip = new AnimationClip("once", 0.05, [
+      new NumberKeyframeTrack(".rotation[x]", [0, 0.05], [0, 1]),
+    ]);
+    const loopClip = new AnimationClip("loop", 0.05, [
+      new NumberKeyframeTrack(".rotation[y]", [0, 0.05], [0, 1]),
+    ]);
+    const candidate = new AnimationPlayer({
+      root: new Group(),
+      clips: [onceClip, loopClip],
+      strideSync: false,
+      updateRate: 8,
+    });
+    candidate.play("once", { mode: "once" });
+    candidate.mixer.clipAction(loopClip).play();
+    const loopListener = vi.fn();
+    candidate.mixer.addEventListener("finished", () => {
+      candidate.mixer.addEventListener("loop", loopListener);
+    });
+    expect(() => {
+      for (let frame = 0; frame < 4; frame += 1) candidate.update(1 / 60);
+    }).not.toThrow();
+    expect(loopListener).not.toHaveBeenCalled();
+    candidate.dispose();
+  });
+
   it("flushes elapsed time before weighted phase sync and keeps transition weights exact", () => {
     const baseline = player(1);
     const candidate = player(8);
