@@ -2245,6 +2245,38 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     node.dispose();
   });
 
+  it("should keep the drawn span when an eviction shrinks a derived span, so kept texels still decode", () => {
+    const { camera, light, mass, scene } = shadowWorld();
+    // Without the 500 m slab, a 120 m tower is the top of the span the level derives.
+    mass.removeFromParent();
+    const tower = new Mesh(new BoxGeometry(6, 120, 6), new MeshStandardMaterial());
+    tower.position.set(30, 60, 30);
+    tower.castShadow = true;
+    scene.add(tower);
+    scene.updateMatrixWorld(true);
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    settle(node, camera);
+    const resident = new Vector3(0, 0, 0);
+    const before = projected(node, 0, resident);
+    const near = levelCamera(node, 0).near;
+    const far = levelCamera(node, 0).far;
+    // The walk's common ask: the caster at the top of the span leaves. A re-derived span would move
+    // the camera down the light and every texel outside the rectangle would decode deeper than the
+    // ground under it, which is the shadow walk03 lost.
+    tower.removeFromParent();
+    scene.updateMatrixWorld(true);
+    const draws = nextRedraw(node, camera, () =>
+      node.invalidateRegion({ min: { x: 20, y: 0, z: 20 }, max: { x: 40, y: 120, z: 40 } }),
+    );
+    expect(draws).toEqual([{ far, near, partial: true }]);
+    expect(projected(node, 0, resident).toArray()).toEqual(before.toArray());
+    // The next whole render measures the smaller span again.
+    node.invalidateAll();
+    settle(node, camera);
+    expect(levelCamera(node, 0).far - levelCamera(node, 0).near).toBeLessThan(far - near);
+    node.dispose();
+  });
+
   it("should redraw the whole level when an authored span travels the camera off its depth origin", () => {
     const { camera, light, scene } = shadowWorld();
     // The span this scene authors: `lightDistance` and `depthRange` pin near and far, so no render

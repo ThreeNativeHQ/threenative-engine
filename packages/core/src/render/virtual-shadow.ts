@@ -639,6 +639,8 @@ interface ILevel {
   dirtyAll: boolean;
   /** The rectangle this level is rendering now, set only around a partial redraw. */
   pass: IPartialPass | undefined;
+  /** The caster interval along the light, from the centre, that the derived depth was drawn for. */
+  drawnSpan: ILightAxisRange;
   /**
    * The engine frame clock's reading when this level last rendered, in seconds. A dirty level
    * re-renders for the invalidation no sooner than `invalidationDelay` after this. `-Infinity`
@@ -2272,7 +2274,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * sphere, because a sphere has to cover a 128 m tile's diagonal and would report 180 m of cliff
    * where the tile has 15 m of it.
    */
-  #deriveDepth(level: ILevel, centre: IVector3Like): void {
+  #deriveDepth(level: ILevel, centre: IVector3Like): ILightAxisRange | undefined {
     const pool = this.#pool;
     const count = this.#poolCount;
     const { basisU, basisV, basisW } = this.clipmap;
@@ -2286,7 +2288,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const fits = extent * 2 * MAX_MASS_WINDOW_WIDTHS;
     const sin = basisW.y;
     // A sun on or below the horizon needs the fallback span rather than division by almost zero.
-    if (sin < MIN_SUN_COSINE) return;
+    if (sin < MIN_SUN_COSINE) return undefined;
     const heightReach = extent * (Math.abs(basisU.y) + Math.abs(basisV.y));
     // Everything that writes depth: the casters whose bounding sphere reaches into the window's
     // u/v box. A receiver writes no depth, so a piece of ground that only receives is not in the
@@ -2320,15 +2322,36 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (along - radius < low) low = along - radius;
       if (along + radius > high) high = along + radius;
     }
-    if (!Number.isFinite(low)) return;
+    if (!Number.isFinite(low)) return undefined;
     const span = high - low;
-    if (!(span > 0)) return;
+    if (!(span > 0)) return undefined;
     // Two per cent of slack, and never less than a metre: the pool holds bounding spheres, which
     // round up, and a caster a shadow-map texel taller than the window's own ground must still draw.
     const margin = Math.max(1, span * 0.02);
     level.eye = high + margin;
     level.depthNear = margin;
     level.depthFar = margin + span;
+    return { high, low };
+  }
+
+  /**
+   * Derive a level's depth, or keep the depth its map was drawn with. The span is always measured;
+   * a rectangle whose casters all fit inside the drawn span keeps the drawn camera, so the texels it
+   * does not redraw still decode as they were written. Only a caster beyond that span moves the
+   * encoding, and the depth-row check then makes the render whole.
+   */
+  #measureDepth(level: ILevel, centre: IVector3Like, keep: boolean): void {
+    const { eye, depthNear, depthFar, drawnSpan } = level;
+    const measured = this.#deriveDepth(level, centre);
+    if (measured === undefined) return;
+    if (keep && measured.low >= drawnSpan.low && measured.high <= drawnSpan.high) {
+      level.eye = eye;
+      level.depthNear = depthNear;
+      level.depthFar = depthFar;
+      return;
+    }
+    drawnSpan.low = measured.low;
+    drawnSpan.high = measured.high;
   }
 
   /** Put a level's camera on its window with the depth it last derived, and hold both maps to it. */
@@ -2500,6 +2523,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         dirtyAdmit: undefined,
         dirtyAll: false,
         dirtyEvict: undefined,
+        drawnSpan: { high: Number.NaN, low: Number.NaN },
         pass: undefined,
         eye: this.options.lightDistance,
         extent,
@@ -2966,7 +2990,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // The pages this render counted as rectangles, kept for the derived span below that turns
         // them into the whole level and has to say so in the counters it already spent.
         let countedPages = 0;
+        // A rectangle with a derived span keeps the camera its map was drawn from while the casters
+        // still fit, so kept texels decode as written and a shrunk span no longer moves them.
+        let keepsDepth = false;
         if (grant) {
+          const sameWindow =
+            level.mapped.value === 1 && window.minX === level.minX && window.minY === level.minY;
           // A level's first render places its window; only later renders are travel.
           if (Number.isFinite(level.minX)) {
             this.#windowSteps +=
@@ -2974,7 +3003,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
           }
           level.minX = window.minX;
           level.minY = window.minY;
-          level.centerW = this.clipmap.centerLight.w;
           level.mapped.value = 1;
           level.pending = REASON_NONE;
           level.lastRender = now;
@@ -2993,6 +3021,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
               : dirtyPages;
           this.#pagesRedrawn += passes === undefined ? levelPages : dirtyPages;
           countedPages = dirtyPages;
+          keepsDepth = passes !== undefined && sameWindow && this.#autoDepth;
+          if (!keepsDepth) level.centerW = this.clipmap.centerLight.w;
           if (reason === REASON_MOVE) {
             this.#byMove += 1;
             // The render was already going to happen for the window, so the invalidation rode
@@ -3069,7 +3099,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           const drawnNear = level.depthNear;
           const drawnFar = level.depthFar;
           this.#readDepthRow(level, _drawnDepth);
-          if (this.#autoDepth) this.#deriveDepth(level, centre);
+          if (this.#autoDepth) this.#measureDepth(level, centre, keepsDepth);
           this.#place(level, centre);
           if (passes !== undefined) {
             level.shadow.updateMatrices(level.light as unknown as DirectionalLight);
