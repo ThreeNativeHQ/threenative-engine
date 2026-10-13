@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { bridgeWaitTimeoutMs } from "../src/runner/bridgeClient.js";
 
 const fixture = vi.hoisted(() => {
   const server = {
@@ -103,5 +104,18 @@ test("capture lease is released even when display cleanup rejects", async () => 
   fixture.browserLaunch.mockRejectedValue(new Error("browser launch failed"));
   fixture.display.release.mockRejectedValue(error);
   await expect(importMeasurement()).rejects.toBe(error);
+  expect(fixture.captureLease.release).toHaveBeenCalledOnce();
+});
+
+test("cold navigation uses the existing startup wait budget and releases resources on failure", async () => {
+  const error = new Error("navigation failed");
+  const goto = vi.fn().mockRejectedValue(error);
+  const context = {newPage: vi.fn().mockResolvedValue({on: vi.fn(), goto}), close: vi.fn()};
+  const browser = {newContext: vi.fn().mockResolvedValue(context), close: vi.fn()};
+  fixture.browserLaunch.mockResolvedValue(browser);
+  await expect(importMeasurement()).rejects.toBe(error);
+  expect(goto).toHaveBeenCalledWith("http://127.0.0.1:4173", {waitUntil: "domcontentloaded", timeout: bridgeWaitTimeoutMs()});
+  expect(context.close).toHaveBeenCalledOnce();
+  expect(browser.close).toHaveBeenCalledOnce();
   expect(fixture.captureLease.release).toHaveBeenCalledOnce();
 });

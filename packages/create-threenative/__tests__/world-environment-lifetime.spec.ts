@@ -1,8 +1,9 @@
 import { PerspectiveCamera, Scene, Texture } from "three";
 import BloomNode from "three/addons/tsl/display/BloomNode.js";
 import { rtt, texture, vec4 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, NodeBuilder } from "three/webgpu";
 import { expect, it, vi } from "vitest";
+import { ResolutionSubrect } from "../../core/src/render/resolution-subrect.js";
 import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
 
 it.each([undefined, 0, 4])(
@@ -254,7 +255,13 @@ it("releases the unique direct installation receipt rather than the legacy node 
 });
 
 it("admits default spatial stages and explicitly refuses unadapted graphs", () => {
-  const handle = { active: false, retain: vi.fn(), textureView: () => undefined, dispose: vi.fn() };
+  const handle = {
+    active: false,
+    retain: vi.fn(),
+    release: vi.fn(),
+    textureView: () => undefined,
+    dispose: vi.fn(),
+  };
   const optionsSeen: Parameters<NonNullable<OutputRenderer["createRenderChain"]>>[0][] = [];
   const renderer: OutputRenderer = {
     kind: "webgpu",
@@ -301,7 +308,9 @@ it.each([
 ])("keeps the sub-rectangle fallback for $name", ({ environment, target, refusal }) => {
   const createResolutionSubrect = vi.fn(() => ({
     active: false,
+    textureView: () => undefined,
     retain: vi.fn(),
+    release: vi.fn(),
     dispose: vi.fn(),
   }));
   const createRenderChain = vi.fn(
@@ -325,5 +334,117 @@ it.each([
     applied.dispose?.();
   } finally {
     report.mockRestore();
+  }
+});
+
+it("retains every spatial intermediate target rather than only the scene pass", () => {
+  const retain = vi.fn();
+  const handle = {
+    active: false,
+    retain,
+    release: vi.fn(),
+    textureView: () => undefined,
+    dispose: vi.fn(),
+  };
+  vi.stubGlobal(
+    "Image",
+    class {
+      src = "";
+      onload = () => {};
+    },
+  );
+  let release: (() => void) | undefined;
+  try {
+    const renderer: OutputRenderer = {
+      kind: "webgpu",
+      raw: {},
+      createResolutionSubrect: () => handle,
+      createRenderChain(options) {
+        let node = options.input;
+        for (const name of ["ambientOcclusion", "bloom", "vignette", "antialias"]) {
+          const stage = options.stages?.find((entry) => entry.name === name);
+          if (!stage) throw new Error(`Missing ${name}`);
+          node = stage.build(node, { tier: "high" });
+        }
+        const prepared = new Set<Node>();
+        (node as Node).traverse((entry) => {
+          if (entry instanceof BloomNode && !prepared.has(entry)) {
+            prepared.add(entry);
+            entry.setup({ getSharedContext: () => ({}) } as unknown as NodeBuilder);
+          }
+        });
+        return { applied: { stages: [], dropped: [] }, dispose() {} };
+      },
+    };
+    const graph = new WorldEnvironment({ gtaoEnabled: true, bloomEnabled: true }).apply(
+      renderer,
+      new Scene(),
+      new PerspectiveCamera(),
+    );
+    release = graph.dispose;
+    const targets = retain.mock.calls.flatMap(([, targets]) => targets as unknown[]);
+    // Scene + GTAO + bloom input/11 mips + SMAA input/3 targets.
+    expect(targets.length).toBeGreaterThanOrEqual(18);
+    expect(new Set(targets).size).toBe(targets.length);
+  } finally {
+    release?.();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps lazy bloom mips valid at small viewports and releases retired bindings", () => {
+  const controller = new ResolutionSubrect();
+  let effect: BloomNode | undefined;
+  let stageDispose: (() => void) | undefined;
+  const renderer: OutputRenderer = {
+    kind: "webgpu",
+    raw: {},
+    createResolutionSubrect: () => controller,
+    createRenderChain(options) {
+      const stage = options.stages?.find((entry) => entry.name === "bloom");
+      if (!stage) throw new Error("Missing bloom");
+      const graph = stage.build(options.input, { tier: "high" }) as Node;
+      graph.traverse((node) => {
+        if (node instanceof BloomNode) effect ??= node;
+      });
+      stageDispose = stage.dispose;
+      return {
+        applied: { stages: ["bloom"], dropped: [] },
+        dispose() {
+          stageDispose?.();
+        },
+      };
+    },
+  };
+  const graph = new WorldEnvironment({ bloomEnabled: true, screenSpaceAA: "disabled" }).apply(
+    renderer,
+    new Scene(),
+    new PerspectiveCamera(),
+  );
+  try {
+    if (!effect) throw new Error("Missing stock bloom");
+    controller.activate(0.23);
+    controller.setSize(128, 64);
+    expect(() =>
+      effect?.setup({ getSharedContext: () => ({}) } as unknown as NodeBuilder),
+    ).not.toThrow();
+    const retained = effect as unknown as {
+      _renderTargetBright: import("three").RenderTarget;
+      _renderTargetsHorizontal: import("three").RenderTarget[];
+      _separableBlurMaterials: { invSize: { value: import("three").Vector2 } }[];
+    };
+    for (const target of retained._renderTargetsHorizontal) {
+      expect(target.width).toBeGreaterThan(0);
+      expect(target.height).toBeGreaterThan(0);
+    }
+    for (const material of retained._separableBlurMaterials)
+      expect(material.invSize.value.toArray().every(Number.isFinite)).toBe(true);
+    stageDispose?.();
+    expect(controller.textureView(retained._renderTargetBright.texture)).toBeUndefined();
+    const resize = vi.spyOn(retained._renderTargetBright, "setSize");
+    controller.setScale(0.72);
+    expect(resize).not.toHaveBeenCalled();
+  } finally {
+    graph.dispose?.();
   }
 });

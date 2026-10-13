@@ -84,7 +84,7 @@ try {
     page.on("console", (message) => logs.push(message.text()));
     page.on("pageerror", (error) => logs.push(`PAGE_ERROR:${error.message}`));
     try {
-      await pending("page.goto", () => page.goto(url));
+      await pending("page.goto", () => page.goto(url, { waitUntil: "domcontentloaded", timeout: bridgeWaitTimeoutMs() }));
       const transport = new PlaywrightTransport(page);
       const bootError = async () =>
         (await page.locator("[data-threenative-canvas-error]").allTextContents()).join("\n");

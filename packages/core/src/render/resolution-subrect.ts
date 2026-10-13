@@ -41,16 +41,19 @@ const validateScale = (scale: number): void => {
 export interface IResolutionSubrect {
   readonly active?: boolean;
   readonly view?: IResolutionTextureView;
+  textureView(texture: Texture): IResolutionTextureView | undefined;
   activate?(scale: number): void;
   deactivate?(): void;
   setScale?(scale: number): void;
   setSize?(width: number, height: number): void;
   retain(node: IResolutionSubrectNode, targets: readonly RenderTarget[]): void;
+  release(node: IResolutionSubrectNode): void;
   dispose(): void;
 }
 
 export class ResolutionSubrect implements IResolutionSubrect {
   readonly viewSize = new Vector2();
+  readonly #fullSize = new Vector2();
   readonly #nodes = new Map<IResolutionSubrectNode, IRetainedNode>();
   readonly #targets = new Map<RenderTarget, IRetainedTarget>();
   #active = false;
@@ -111,6 +114,7 @@ export class ResolutionSubrect implements IResolutionSubrect {
   setSize(width: number, height: number): void {
     if (this.#disposed) throw new Error("TN_RESOLUTION_SUBRECT: disposed controller");
     validateSize(width, height);
+    this.#fullSize.set(width, height);
     this.viewSize.set(quantize(width * this.#scale), quantize(height * this.#scale));
     for (const binding of this.#nodes.values()) binding.node.setSize(width, height);
   }
@@ -158,7 +162,8 @@ export class ResolutionSubrect implements IResolutionSubrect {
             binding.viewWidth = Math.max(1, Math.round(width));
             binding.viewHeight = Math.max(1, Math.round(height));
           }
-          if (capacityChanged) original.call(target, binding.width, binding.height, depth);
+          if (capacityChanged || target.width !== binding.width || target.height !== binding.height)
+            original.call(target, binding.width, binding.height, depth);
           if (!this.#reserving) this.#applyViewport(binding);
         },
       };
@@ -194,6 +199,7 @@ export class ResolutionSubrect implements IResolutionSubrect {
     };
     node.setSize = binding.wrapped;
     this.#nodes.set(node, binding);
+    if (this.#active && this.#fullSize.x > 0) node.setSize(this.#fullSize.x, this.#fullSize.y);
   }
 
   textureView(texture: Texture): IResolutionTextureView | undefined {
@@ -203,6 +209,17 @@ export class ResolutionSubrect implements IResolutionSubrect {
       }
     }
     return undefined;
+  }
+
+  release(node: IResolutionSubrectNode): void {
+    const binding = this.#nodes.get(node);
+    if (!binding) return;
+    if (node.setSize === binding.wrapped) node.setSize = binding.original;
+    for (const { target, original, wrapped } of binding.targets) {
+      if (target.setSize === wrapped) target.setSize = original;
+      this.#targets.delete(target);
+    }
+    this.#nodes.delete(node);
   }
 
   dispose(): void {

@@ -191,3 +191,45 @@ it("owns subrect installations while keeping the full drawing buffer", async () 
     else Reflect.deleteProperty(globalThis, "navigator");
   }
 });
+
+it("restores actual capacity after deactivation and reactivation", () => {
+  const target = new RenderTarget();
+  const controller = new ResolutionSubrect();
+  controller.retain({ setSize: (w, h) => target.setSize(w, h) }, [target]);
+  controller.activate(0.5);
+  controller.setSize(1920, 1080);
+  controller.deactivate();
+  expect([target.width, target.height]).toEqual([960, 540]);
+  controller.activate(1);
+  expect([target.width, target.height]).toEqual([1920, 1080]);
+  expect(target.viewport.toArray()).toEqual([0, 0, 1920, 1080]);
+  controller.dispose();
+});
+
+it("sizes targets registered after lazy shader setup at the current scale", () => {
+  const controller = new ResolutionSubrect();
+  controller.activate(0.72);
+  controller.setSize(1280, 720);
+  const target = new RenderTarget();
+  controller.retain({ setSize: (w, h) => target.setSize(w, h) }, [target]);
+  expect([target.width, target.height]).toEqual([1280, 720]);
+  expect(target.viewport.toArray()).toEqual([0, 0, 928, 520]);
+  controller.dispose();
+});
+
+it("releases a retired stage before subsequent scale changes", () => {
+  const controller = new ResolutionSubrect();
+  const target = new RenderTarget();
+  const node = { setSize: (w: number, h: number) => target.setSize(w, h) };
+  const original = node.setSize;
+  controller.retain(node, [target]);
+  controller.activate(1);
+  controller.setSize(1280, 720);
+  controller.release(node);
+  expect(node.setSize).toBe(original);
+  expect(controller.textureView(target.texture)).toBeUndefined();
+  const resize = vi.spyOn(target, "setSize");
+  controller.setScale(0.72);
+  expect(resize).not.toHaveBeenCalled();
+  controller.dispose();
+});

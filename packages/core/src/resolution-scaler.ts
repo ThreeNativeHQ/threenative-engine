@@ -201,8 +201,6 @@ export interface IResolutionScalerOptions {
    * lifts the floor for as long as it is installed.
    */
   readonly temporalUpscale?: () => boolean;
-  /** Enable continuous estimates even when the observed surface does not expose a sub-rectangle. */
-  readonly continuous?: boolean | (() => boolean);
 }
 
 /** A closed frame-budget window's presentation distribution and optional GPU observation. */
@@ -257,7 +255,6 @@ export class ResolutionScaler {
   /** The lowest rung this platform may take; the whole ladder's last index when it states none. */
   readonly #minIndex: number;
   readonly #temporalUpscale: (() => boolean) | undefined;
-  readonly #continuous: boolean | (() => boolean) | undefined;
   #scaleSource: Exclude<ScaleSource, "pinned"> = "auto";
   #cleanWindows = 0;
   #cooldown = 0;
@@ -285,7 +282,9 @@ export class ResolutionScaler {
   // downward step; `#insensitiveFloor` is the rung a refunded one proved worth holding (no
   // downward step may cross it while it stands), `#insensitiveSignal` its measured GPU time, and
   // `#insensitiveRise` the consecutive windows of sustained rise that clear both.
-  #insensitiveProbe: { fromIndex: number; toIndex: number; signal: number } | undefined = undefined;
+  #insensitiveProbe:
+    | { fromIndex: number; toIndex: number; fromScale?: number; toScale?: number; signal: number }
+    | undefined = undefined;
   #insensitiveFloor = -1;
   #insensitiveSignal = 0;
   #insensitiveRise = 0;
@@ -302,7 +301,6 @@ export class ResolutionScaler {
     this.#minIndex =
       minScale === undefined ? RESOLUTION_SCALER.rungs.length - 1 : rungIndex(minScale, "minScale");
     this.#temporalUpscale = temporalUpscale;
-    this.#continuous = options.continuous;
   }
 
   /**
@@ -485,7 +483,7 @@ export class ResolutionScaler {
     this.#insensitiveProbe = undefined;
     const gain = (probe.signal - gpuMs) / probe.signal;
     if (gain >= RESOLUTION_SCALER.insensitiveGainFraction) return undefined;
-    const restored = RESOLUTION_SCALER.rungs[probe.fromIndex] ?? 1;
+    const restored = probe.fromScale ?? RESOLUTION_SCALER.rungs[probe.fromIndex] ?? 1;
     this.#index = probe.fromIndex;
     this.#continuousScale = restored;
     this.#insensitiveFloor = probe.fromIndex;
@@ -494,7 +492,11 @@ export class ResolutionScaler {
     this.#cleanWindows = 0;
     // The restore is itself a resize and must not feed the controller.
     this.#cooldown = RESOLUTION_SCALER.cooldownWindows;
-    this.#emitInsensitive(RESOLUTION_SCALER.rungs[probe.toIndex] ?? 1, restored, gain);
+    this.#emitInsensitive(
+      probe.toScale ?? RESOLUTION_SCALER.rungs[probe.toIndex] ?? 1,
+      restored,
+      gain,
+    );
     return restored;
   }
 
@@ -566,9 +568,7 @@ export class ResolutionScaler {
   }
 
   #continuousActive(window: IScalerWindow): boolean {
-    const explicit =
-      typeof this.#continuous === "function" ? this.#continuous() : this.#continuous === true;
-    return explicit || window.surface?.resolutionSubrect === true;
+    return window.surface?.resolutionSubrect === true;
   }
 
   #observeContinuous(
@@ -585,10 +585,26 @@ export class ResolutionScaler {
         this.#atFloor = this.#continuousScale <= floor;
         return undefined;
       }
+      if (this.#insensitiveHold > 0 || this.#insensitiveFloor >= 0) return undefined;
       const estimate = this.#continuousScale * Math.sqrt(this.budgetMs / gpuMs);
       const target = this.#quantizeContinuous(Math.max(floor, estimate), window);
       this.#atFloor = target <= floor;
-      return this.#continuousChange(Math.max(floor, target), false);
+      const fromIndex = this.#index;
+      const fromScale = this.#continuousScale;
+      const changed = this.#continuousChange(Math.max(floor, target), false);
+      if (
+        changed !== undefined &&
+        this.#scaleSource === "auto" &&
+        1 - (changed / fromScale) ** 2 >= RESOLUTION_SCALER.insensitiveMinPixelDrop
+      )
+        this.#insensitiveProbe = {
+          fromIndex,
+          toIndex: this.#index,
+          fromScale,
+          toScale: changed,
+          signal: gpuMs,
+        };
+      return changed;
     }
     this.#atFloor = false;
     if (stalled || this.#scaleSource === "auto-pinned") return undefined;
