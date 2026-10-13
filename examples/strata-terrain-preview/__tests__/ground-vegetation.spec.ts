@@ -48,3 +48,29 @@ it("anchors the fern crown while keeping scanned fronds within the existing card
   }
   geometry.dispose();
 });
+
+it("keeps meadow blades slender with a soft bow and tapered tips", () => {
+  const point = new Vector3();
+  const opposite = new Vector3();
+  for (const seed of [73, 281, 991]) {
+    for (let species = 0; species < 3; species++) {
+      const geometry = grassClump(seed, species);
+      const position = geometry.getAttribute("position");
+      for (let blade = 0; blade < 14; blade++) {
+        const base = blade * 12;
+        const width = point
+          .fromBufferAttribute(position, base)
+          .distanceTo(opposite.fromBufferAttribute(position, base + 1));
+        const tipWidth = point
+          .fromBufferAttribute(position, base + 10)
+          .distanceTo(opposite.fromBufferAttribute(position, base + 11));
+        const firstRise = position.getY(base + 2) - position.getY(base);
+        const tipRise = position.getY(base + 10) - position.getY(base + 8);
+        expect(width / position.getY(base + 10)).toBeLessThan(0.035);
+        expect(tipWidth / width).toBeLessThanOrEqual(0.03);
+        expect(tipRise / firstRise).toBeLessThan(0.8);
+      }
+      geometry.dispose();
+    }
+  }
+});

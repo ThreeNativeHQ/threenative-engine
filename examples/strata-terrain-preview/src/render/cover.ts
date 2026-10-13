@@ -103,24 +103,13 @@ export function boulder(seed: number): BufferGeometry {
   return geometry;
 }
 
-/**
- * One grass clump's blade count and height, in metres. Knee-high meadow grass, not a lawn.
- *
- * Twelve blades, not seven, and wider and taller than the first pass: at eye height a seven-blade
- * clump one clump every half metre reads as scattered wires on a green plane, and the count that
- * fixes it is the count of blades, not the number of clumps. The curve is deeper too, because a
- * straight blade is a line and a curved one catches the sun along its length.
- */
+/** Knee-high meadow grass: fourteen slender curved blades per clump. */
 export const GRASS = {
   blades: 14,
   /** Height range of a clump, in metres. */
   height: [0.5, 0.95],
-  /**
-   * Blade width range, in metres. A grass blade is two or three millimetres of edge-on leaf and a
-   * sedge's is nearer fifteen; four centimetres of it, seen from a metre and a half, is a strap of
-   * agave, which is what the first pass of this lane grew.
-   */
-  width: [0.017, 0.031],
+  /** Blade width range, in metres, capped against each blade's own height below. */
+  width: [0.006, 0.012],
   /** How far a blade leans from vertical at its tip, as a share of its length. */
   bend: 0.72,
   /** Wind sway at the tip, in metres. */
@@ -238,11 +227,11 @@ export function grassClump(seed: number, species = 0): BufferGeometry {
   const random = createRandom(seed);
   const buffer = new CoverBuffer();
   const segments = 3;
-  // Meadow grass, fine arching fescue and upright broad sedge share one opaque material.
+  // Meadow grass, fine arching fescue and upright sedge share one opaque material.
   const habits = [
     { height: 1, width: 1, bend: 1, spread: 0.075 },
     { height: 0.85, width: 0.7, bend: 1.35, spread: 0.11 },
-    { height: 1.1, width: 1.25, bend: 0.6, spread: 0.055 },
+    { height: 0.95, width: 1.1, bend: 0.8, spread: 0.055 },
   ] as const;
   const habit = habits[species % habits.length] ?? habits[0];
   // Root occlusion: the bottom of a clump sits in its own shade, and a blade that starts at the same
@@ -262,8 +251,9 @@ export function grassClump(seed: number, species = 0): BufferGeometry {
   // grass in the same metre, and a clump that is always `GRASS.height`'s midpoint is the other half
   // of the lattice.
   const clumpHeight = 0.62 + random() * 0.62;
+  const phase = random() * Math.PI * 2;
   for (let blade = 0; blade < GRASS.blades; blade += 1) {
-    const azimuth = random() * Math.PI * 2;
+    const azimuth = phase + blade * 2.399963229728653 + (random() - 0.5) * 0.6;
     // Per blade, not per clump: a clump whose blades are all one height is a fan, and the outer
     // blades of a real clump are the ones that have fallen over.
     const height =
@@ -273,21 +263,24 @@ export function grassClump(seed: number, species = 0): BufferGeometry {
     const bend = GRASS.bend * (0.35 + random() * 1.1) * habit.bend;
     // Blades lean outward from the clump's own centre, so the clump is round, not a flat fan.
     const outward = new Vector3(Math.cos(azimuth), 0, Math.sin(azimuth));
-    const width = (GRASS.width[0] + random() * (GRASS.width[1] - GRASS.width[0])) * habit.width;
+    const width = Math.min(
+      (GRASS.width[0] + random() * (GRASS.width[1] - GRASS.width[0])) * habit.width,
+      height * 0.022,
+    );
     const side = new Vector3(-Math.sin(azimuth), 0, Math.cos(azimuth));
     const basal = habit.spread * Math.sqrt(random());
     // The blade's spine at `at`: rising, and leaning over further the higher it goes.
     const spine = (at: number) =>
       new Vector3(
-        outward.x * (basal + height * bend * at * at),
-        height * at,
-        outward.z * (basal + height * bend * at * at),
+        outward.x * (basal + height * bend * (0.2 * at + 0.8 * at * at)),
+        height * (at - 0.3 * at ** 3),
+        outward.z * (basal + height * bend * (0.2 * at + 0.8 * at * at)),
       );
     for (let i = 0; i < segments; i += 1) {
       const at0 = i / segments;
       const at1 = (i + 1) / segments;
-      const half0 = (width * (1 - at0 * 0.92)) / 2;
-      const half1 = (width * (1 - at1 * 0.92)) / 2;
+      const half0 = (width * (0.02 + 0.98 * (1 - at0) ** 1.3)) / 2;
+      const half1 = (width * (0.02 + 0.98 * (1 - at1) ** 1.3)) / 2;
       const a = spine(at0).addScaledVector(side, -half0);
       const b = spine(at0).addScaledVector(side, half0);
       const c = spine(at1).addScaledVector(side, half1);
