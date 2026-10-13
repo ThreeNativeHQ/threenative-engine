@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <cmath>
 #include <map>
@@ -46,6 +47,7 @@
 #include "engine/abi/abi_internal.h"
 #include "engine/inspect/endpoint.h"
 #include "engine/player/run.h"
+#include "mystral/platform/input.h"
 #include "mystral/platform/ui_overlay.h"
 #include <SDL3/SDL.h>
 #include "engine/scene/camera.h"
@@ -192,6 +194,16 @@ class V8Game {
     std::shared_ptr<void> sceneHold_, cameraHold_;
     std::set<std::string> held_;  // keys the game sees as held, by DOM key and by code, filled each tick
     std::set<std::string> heldCodes_;  // the same keys by code alone (`KeyW`), for the keydown events core reads
+    /** A person's input from the window (platform/input.cpp's DOM-shaped events), queued until the tick that delivers it. */
+    struct WindowInput {
+        std::string type, code, key, pointerType;
+        double x = 0, y = 0, movementX = 0, movementY = 0, deltaX = 0, deltaY = 0;
+        int button = 0, buttons = 0, pointerId = 1;
+        bool pointer = false;
+    };
+    std::deque<WindowInput> windowInput_;
+    void installWindowInput();
+    void deliverWindowInput(v8::Local<v8::Context> ctx);
     inspect::Endpoint* endpoint_ = nullptr;
     std::string assetPath_;
     std::vector<uint8_t> assetBytes_;
@@ -818,6 +830,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
         return error = "TN_NATIVE_PHYSICS_MISSING: resident installation failed", false;
 #endif
 
+    installWindowInput();
     v8::Local<v8::External> held = v8::External::New(isolate_, &held_);
     ctx->Global()
         ->Set(ctx, v8str(isolate_, "__tnHeldCodes"),
@@ -978,6 +991,10 @@ int V8Game::view(std::string& error) {
 }
 
 V8Game::~V8Game() {
+    mystral::platform::setKeyboardCallback({});
+    mystral::platform::setMouseCallback({});
+    mystral::platform::setPointerCallback({});
+    mystral::platform::setWheelCallback({});
     if (isolate_ == nullptr)
         return;
     {
@@ -997,6 +1014,76 @@ V8Game::~V8Game() {
         tn_diagnostic_release(&diagnostic);
     }
     services_.reset();
+}
+
+// The legacy host's translation puts SDL's keys, mouse and wheel in DOM shape; this queues them for the
+// next tick, where core's canvas listeners see them as a page's would. Auto-repeat is dropped: a held
+// key is already down.
+void V8Game::installWindowInput() {
+    using namespace mystral::platform;
+    setKeyboardCallback([this](const KeyboardEventData& e) {
+        if (e.repeat) return;
+        windowInput_.push_back({.type = e.type, .code = e.code, .key = e.key});
+    });
+    setMouseCallback([this](const MouseEventData& e) {
+        windowInput_.push_back({.type = e.type, .x = e.clientX, .y = e.clientY, .movementX = e.movementX,
+                                .movementY = e.movementY, .button = e.button, .buttons = e.buttons});
+    });
+    setPointerCallback([this](const PointerEventData& e) {
+        windowInput_.push_back({.type = e.type, .pointerType = e.pointerType, .x = e.clientX, .y = e.clientY,
+                                .movementX = e.movementX, .movementY = e.movementY, .button = e.button,
+                                .buttons = e.buttons, .pointerId = e.pointerId, .pointer = true});
+    });
+    setWheelCallback([this](const WheelEventData& e) {
+        windowInput_.push_back({.type = e.type, .x = e.clientX, .y = e.clientY, .deltaX = e.deltaX, .deltaY = e.deltaY});
+    });
+}
+
+void V8Game::deliverWindowInput(v8::Local<v8::Context> ctx) {
+    if (windowInput_.empty()) return;
+    v8::Local<v8::Value> dispatch;
+    const bool ready = ctx->Global()->Get(ctx, v8str(isolate_, "__tnDispatchInput")).ToLocal(&dispatch) && dispatch->IsFunction();
+    for (const WindowInput& input : windowInput_) {
+        if (input.type == "keydown") {
+            held_.insert(input.key);
+            held_.insert(input.code);
+            heldCodes_.insert(input.code);
+        } else if (input.type == "keyup") {
+            held_.erase(input.key);
+            held_.erase(input.code);
+            heldCodes_.erase(input.code);
+        }
+        if (!ready) continue;
+        v8::Local<v8::Object> event = v8::Object::New(isolate_);
+        const auto number = [&](const char* name, double value) {
+            event->Set(ctx, v8str(isolate_, name), v8::Number::New(isolate_, value)).Check();
+        };
+        event->Set(ctx, v8str(isolate_, "type"), v8str(isolate_, input.type)).Check();
+        if (!input.code.empty()) {
+            event->Set(ctx, v8str(isolate_, "code"), v8str(isolate_, input.code)).Check();
+            event->Set(ctx, v8str(isolate_, "key"), v8str(isolate_, input.key)).Check();
+        }
+        number("clientX", input.x);
+        number("clientY", input.y);
+        number("movementX", input.movementX);
+        number("movementY", input.movementY);
+        number("deltaX", input.deltaX);
+        number("deltaY", input.deltaY);
+        number("deltaMode", 0);
+        number("button", input.button);
+        number("buttons", input.buttons);
+        if (input.pointer) {
+            number("pointerId", input.pointerId);
+            event->Set(ctx, v8str(isolate_, "pointerType"), v8str(isolate_, input.pointerType)).Check();
+        }
+        v8::TryCatch tryCatch(isolate_);
+        v8::Local<v8::Value> argument = event, ignored;
+        if (!dispatch.As<v8::Function>()->Call(ctx, ctx->Global(), 1, &argument).ToLocal(&ignored)) {
+            v8::String::Utf8Value message(isolate_, tryCatch.Exception());
+            std::printf("[Playtest] TN_V8_INPUT_FAILED: %s\n", *message ? *message : "an input listener threw");
+        }
+    }
+    windowInput_.clear();
 }
 
 void V8Game::tick(double dt) {
@@ -1027,6 +1114,7 @@ void V8Game::tick(double dt) {
                                                          event.pointerId);
         }
     }
+    deliverWindowInput(ctx);
     // Finished decodes settle and ended sources fire `onended` before the game's update reads them.
     mystral::audio::processAudioEvents();
     v8::TryCatch tryCatch(isolate_);

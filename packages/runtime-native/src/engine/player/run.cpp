@@ -10,6 +10,9 @@
 #include <android/log.h>
 #endif
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <dlfcn.h>
+#endif
 #include <chrono>
 #include <ctime>
 #include <array>
@@ -31,6 +34,23 @@
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/presentation.h"
 #include "mystral/webgpu_compat.h"
+
+// The legacy host's SDL-to-DOM input translation (platform/input.cpp), which declares none of these.
+namespace mystral::platform {
+void processKeyboardEvent(const SDL_KeyboardEvent& event, bool isDown);
+void processMouseMotion(const SDL_MouseMotionEvent& event);
+void processMouseButton(const SDL_MouseButtonEvent& event, bool isDown);
+void processMouseWheel(const SDL_MouseWheelEvent& event);
+
+// input.cpp's touch path scales by the window; the player owns exactly one, and does not link platform/window.cpp.
+void getWindowSize(int* width, int* height) {
+    int count = 0;
+    SDL_Window** windows = SDL_GetWindows(&count);
+    *width = *height = 0;
+    if (windows != nullptr && count > 0) SDL_GetWindowSize(windows[0], width, height);
+    SDL_free(windows);
+}
+}  // namespace mystral::platform
 
 using namespace tn::engine;
 
@@ -244,6 +264,31 @@ struct Window {
     uint32_t height = kHeight;
 };
 
+#if defined(__linux__) && !defined(__ANDROID__)
+/**
+ * A window manager shows `_NET_WM_NAME` (UTF-8). SDL's static X11 build leaves it unset and writes
+ * `WM_NAME` through the locale, so a title with a dash shows as "MIDWAY â Open Pacific" in the title
+ * bar. libX11 is already loaded by SDL (RTLD_NOLOAD finds it); the player sets the property itself.
+ */
+void publishUtf8Title(SDL_Window* window, const std::string& title) {
+    void* x11 = dlopen("libX11.so.6", RTLD_NOW | RTLD_NOLOAD);
+    if (x11 == nullptr) return;
+    using InternAtom = unsigned long (*)(void*, const char*, int);
+    using ChangeProperty = int (*)(void*, unsigned long, unsigned long, unsigned long, int, int, const unsigned char*, int);
+    using Flush = int (*)(void*);
+    const auto intern = reinterpret_cast<InternAtom>(dlsym(x11, "XInternAtom"));
+    const auto change = reinterpret_cast<ChangeProperty>(dlsym(x11, "XChangeProperty"));
+    const auto flush = reinterpret_cast<Flush>(dlsym(x11, "XFlush"));
+    const SDL_PropertiesID properties = SDL_GetWindowProperties(window);
+    void* display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+    const auto id = static_cast<unsigned long>(SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+    if (intern == nullptr || change == nullptr || flush == nullptr || display == nullptr || id == 0) return;
+    change(display, id, intern(display, "_NET_WM_NAME", 0), intern(display, "UTF8_STRING", 0), 8, 0 /* PropModeReplace */,
+           reinterpret_cast<const unsigned char*>(title.data()), static_cast<int>(title.size()));
+    flush(display);
+}
+#endif
+
 /** The legacy host's platform presentation flags, without web-view or UI branches. */
 bool openWindow(Window& window) {
 #if defined(__ANDROID__)
@@ -270,6 +315,9 @@ bool openWindow(Window& window) {
         std::printf("[Playtest] SDL_CreateWindow failed: %s\n", SDL_GetError());
         return false;
     }
+#if defined(__linux__) && !defined(__ANDROID__)
+    publishUtf8Title(window.handle, surfaceConfig().title);
+#endif
     int width = 0, height = 0;
     SDL_GetWindowSize(window.handle, &width, &height);
     if (width <= 0 || height <= 0)
@@ -329,17 +377,27 @@ bool pumpEvents(Window& window, const Game& game) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             return false;
         // The mouse reaches an attached UI first, as on the legacy host (PRD-554), in window-normalized
-        // coordinates.
-        if (game.uiPointer && window.width > 0 && window.height > 0 &&
-            (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
-             event.type == SDL_EVENT_MOUSE_MOTION)) {
+        // coordinates; what the UI declines is the game's.
+        const bool mouse = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+                           event.type == SDL_EVENT_MOUSE_MOTION;
+        if (game.uiPointer && window.width > 0 && window.height > 0 && mouse) {
             const bool motion = event.type == SDL_EVENT_MOUSE_MOTION;
             const float x = motion ? event.motion.x : event.button.x, y = motion ? event.motion.y : event.button.y;
             const SDL_MouseButtonFlags held = SDL_GetMouseState(nullptr, nullptr);
             int buttons = (held & SDL_BUTTON_LMASK ? 1 : 0) | (held & SDL_BUTTON_RMASK ? 2 : 0) | (held & SDL_BUTTON_MMASK ? 4 : 0);
             const char* type = motion ? "pointermove" : event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "pointerdown" : "pointerup";
-            game.uiPointer(type, x / float(window.width), y / float(window.height), buttons);
-            continue;
+            if (game.uiPointer(type, x / float(window.width), y / float(window.height), buttons)) continue;
+        }
+        // A person's keys, mouse and wheel become the DOM events the game's listeners read, through the
+        // legacy host's translation (platform/input.cpp); a game runtime installs the callbacks.
+        switch (event.type) {
+            case SDL_EVENT_KEY_DOWN: mystral::platform::processKeyboardEvent(event.key, true); continue;
+            case SDL_EVENT_KEY_UP: mystral::platform::processKeyboardEvent(event.key, false); continue;
+            case SDL_EVENT_MOUSE_MOTION: mystral::platform::processMouseMotion(event.motion); continue;
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: mystral::platform::processMouseButton(event.button, true); continue;
+            case SDL_EVENT_MOUSE_BUTTON_UP: mystral::platform::processMouseButton(event.button, false); continue;
+            case SDL_EVENT_MOUSE_WHEEL: mystral::platform::processMouseWheel(event.wheel); continue;
+            default: break;
         }
         if (event.type != SDL_EVENT_WINDOW_RESIZED && event.type != SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
             continue;
