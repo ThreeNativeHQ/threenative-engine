@@ -18,6 +18,7 @@
 //     a serializer or a call the caller can write.
 
 #include "engine/foundation/buffers.h"
+#include "engine/foundation/uuid.h"
 #include "engine/foundation/math/Matrix.h"
 #include "engine/foundation/math/Primitives.h"
 #include "engine/foundation/math/Vector.h"
@@ -143,6 +144,7 @@ public:
     std::shared_ptr<Sphere> boundingSphere;
     std::map<std::string, std::string> parameters;  // already-JSON values, keyed by parameter name
     std::string name;
+    std::string uuid = generateUuid();  // three's: unique per geometry
     std::string type = "BufferGeometry";
     uint64_t id = 0;
     bool transformed = false;

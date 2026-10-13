@@ -2544,6 +2544,7 @@ sizeAttenuation: boolean;
 toneMapped: boolean;
 transparent: boolean;
 readonly type: string;
+readonly uuid: string;
 visible: boolean;
 color: Color;
 map: Texture | null;

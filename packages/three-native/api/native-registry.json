@@ -798,7 +798,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -922,7 +923,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1210,7 +1212,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1309,7 +1312,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1430,7 +1434,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1507,7 +1512,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1896,7 +1902,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1995,7 +2002,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -2512,7 +2520,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -2638,7 +2647,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "instanceCount",
@@ -3171,7 +3181,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -3522,6 +3533,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4243,6 +4255,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4306,6 +4319,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "vertexNode",
         "visible"
@@ -4375,6 +4389,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4446,6 +4461,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4535,6 +4551,7 @@
         "transmission",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4656,6 +4673,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4758,6 +4776,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "vertexNode",
         "visible"
@@ -5044,7 +5063,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -5534,7 +5554,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -5923,7 +5944,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -6000,7 +6022,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -6278,7 +6301,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -6719,7 +6743,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -7264,6 +7289,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -7331,6 +7357,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "vertexNode",
         "visible"
@@ -7479,7 +7506,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -7556,7 +7584,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -7633,7 +7662,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",

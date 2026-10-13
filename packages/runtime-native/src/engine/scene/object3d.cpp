@@ -6,6 +6,8 @@
 
 #include "engine/scene/object3d.h"
 
+#include "engine/foundation/uuid.h"
+
 #include <algorithm>
 #include <cstring>
 #include <random>
@@ -222,19 +224,7 @@ Object3D::Object3D() : transform_(acquireTransform()),
     quaternion(transform_.page->quaternions[transform_.index]), scale(transform_.page->scales[transform_.index]),
     matrix(transform_.page->matrices[transform_.index]), matrixWorld(transform_.page->worlds[transform_.index]),
     id_(nextObjectId++) {
-    // RFC 4122 version/variant bits, as three's MathUtils.generateUUID; identity lives natively.
-    static thread_local std::mt19937 random(std::random_device{}());
-    constexpr char hex[] = "0123456789abcdef";
-    std::array<uint8_t, 16> bytes{};
-    for (size_t i = 0; i < bytes.size(); i += 4) {
-        const uint32_t value = random();
-        for (size_t j = 0; j < 4; ++j) bytes[i + j] = static_cast<uint8_t>(value >> (8 * j));
-    }
-    bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
-    for (size_t i = 0; i < bytes.size(); ++i) {
-        if (i == 4 || i == 6 || i == 8 || i == 10) uuid += '-';
-        uuid += hex[bytes[i] >> 4]; uuid += hex[bytes[i] & 15];
-    }
+    uuid = generateUuid();
     up = defaultUp;
     matrixAutoUpdate = defaultMatrixAutoUpdate;
     matrixWorldAutoUpdate = defaultMatrixWorldAutoUpdate;

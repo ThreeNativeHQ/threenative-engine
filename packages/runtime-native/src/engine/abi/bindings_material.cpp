@@ -121,6 +121,7 @@ void registerMaterialBase(ClassBinding& b) {
     };
     b.getters["type"] = [](void* self) { return string(std::string(as<Material>(self)->typeName())); };
     b.getters["id"] = [](void* self) { return Value::of(double(as<Material>(self)->id)); };
+    b.getters["uuid"] = [](void* self) { return string(as<Material>(self)->uuid); };
     b.getters["name"] = [](void* self) { return string(as<Material>(self)->name); };
     b.setters["name"] = [](void* self, const Value& v) {
         if (v.kind != Value::Kind::String) throw Unsupported{"name must be a string"};

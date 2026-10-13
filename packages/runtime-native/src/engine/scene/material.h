@@ -15,6 +15,7 @@
 #include <string_view>
 
 #include "engine/foundation/math/Color.h"
+#include "engine/foundation/uuid.h"
 #include "engine/foundation/math/Vector.h"
 #include "engine/scene/texture.h"
 #include "engine/shader/position_node.h"
@@ -38,6 +39,7 @@ public:
     shader::MaterialNodes nodes;
     uint32_t id;  // three's material id counter; a clone takes the next one
     std::string name;
+    std::string uuid = generateUuid();  // three's: unique per material, new for a clone
 
     // Material
     bool spriteMaterial = false;
