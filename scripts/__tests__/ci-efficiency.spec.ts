@@ -390,7 +390,7 @@ describe("PRD-373 fail-closed required verdict", () => {
    * repository's candidate SHA, so the verdict reaches the selection gate instead of stopping at
    * the candidate assertion. The empty diff is deliberately classified `full`, so it cannot serve.
    */
-  function prosePlan(): Record<string, unknown> {
+  function prosePlan(file = "NOTES.md"): Record<string, unknown> {
     const root = makeTempDirSync("threenative-ci-required-prose-");
     const git = (...args: string[]) =>
       spawnSync("git", args, {
@@ -409,7 +409,8 @@ describe("PRD-373 fail-closed required verdict", () => {
     git("add", "-A");
     git("commit", "--quiet", "-m", "base");
     const base = git("rev-parse", "HEAD").stdout.trim();
-    writeFileSync(path.join(root, "NOTES.md"), "prose\n");
+    mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    writeFileSync(path.join(root, file), "prose\n");
     git("add", "-A");
     git("commit", "--quiet", "-m", "prose");
     const head = git("rev-parse", "HEAD").stdout.trim();
@@ -536,6 +537,13 @@ describe("PRD-373 fail-closed required verdict", () => {
       const narrowed = verify(prosePlan(), {}, { ...environment, TN_CI_HEAD_REF: headRef });
       expect(narrowed.status, narrowed.stdout + narrowed.stderr).toBe(1);
       expect(narrowed.stderr).toContain("CI_REQUIRED_QUALIFICATION_MINIMUM");
+    }
+  });
+
+  it("classifies the generated speed-loop record as prose, not a full board", () => {
+    // Only scripts/ci-speed-loop.mjs reads these files, and no CI job runs that script.
+    for (const file of ["docs/ci-speed/ledger.json", "docs/ci-speed/index.html"]) {
+      expect(prosePlan(file).selection).toBe("prose");
     }
   });
 

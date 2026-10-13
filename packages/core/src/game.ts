@@ -82,7 +82,7 @@ import {
   type RendererKind,
   createRenderer,
 } from "./renderer.js";
-import { ResolutionScaler } from "./resolution-scaler.js";
+import { RESOLUTION_SCALER, ResolutionScaler } from "./resolution-scaler.js";
 import type {
   ICtx,
   IStartupStatus,
@@ -1429,6 +1429,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // Phones keep the device ladder; a desktop stops before its bottom, where a picture
             // with nothing reconstructing it stops being a faster frame and becomes a blur.
             minScale: resolvePlatformResolutionFloor(getPlatform().os),
+            // The adapter family picks the first rung; the first eligible window still decides.
+            start:
+              renderer.gpuClass === undefined
+                ? undefined
+                : RESOLUTION_SCALER.startScaleByGpuClass[renderer.gpuClass.class],
             targetFps: initialTarget.targetFps,
             // No floor lift from motion data: consuming velocity is not upscaling. Three's TRAA
             // accumulates at the canvas's own size, so lifting the floor for it let a forest frame
@@ -1436,6 +1441,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // display-resolution frame may pass `temporalUpscale`, and none ships today.
           })
         : undefined;
+    // A class that starts below the ceiling must draw there from the first frame; the scaler only
+    // reports a scale, and nothing else would apply it until a window steps.
+    if (scaler !== undefined && scaler.scale !== 1)
+      renderer.setResolutionScale(scaler.scale, scaler.scaleSource);
     // The panel's own rate, once a window of presented frames can say it. The native host's
     // present counter is the only series there that counts displays rather than loop iterations;
     // on the web one rAF callback is one vblank, so the median presented interval is the period.
@@ -1460,6 +1469,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         ? undefined
         : new FrameBudget({
             ...this.#config.frameBudget,
+            simulation: {
+              tick: () => gameLoop.tick(),
+              get step() {
+                return gameLoop.step;
+              },
+            },
             // The scaler reads the same windows the marker reports, so what it acted on and what
             // the record shows are the same measurement rather than two sampling paths.
             onWindow: (reported) => {
@@ -1487,6 +1502,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 scaler.retarget(heldTargetFps);
               }
               renderer.observeRenderChainBudget?.(reported);
+              this.#computeDriven.observeBudget(reported);
               const projection = this.#projection;
               // Printed every window, projecting or declined. `TN_RENDER_PROJECTION` says once
               // whether the optimizer engaged; this says, repeatedly, what it is still leaving on
@@ -1622,7 +1638,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // say nothing new.
     const devMetricsEnabled = isDevLaunch();
     let postedVerdict: string | undefined;
-    const gameLoop = new FixedStepLoop({
+    const gameLoop: FixedStepLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
       maxSteps: this.#config.maxSteps,
@@ -1683,6 +1699,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               this.#renderer,
               camera,
               startupCoverActive() && !startupReadiness.ready,
+              gameLoop,
             );
           } finally {
             endSpan(SPANS.compute);

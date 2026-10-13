@@ -756,11 +756,13 @@ jobs:
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:4175/ >/dev/null && break; sleep 1; done
-          SCAFFOLD_URL=http://127.0.0.1:4175 node --input-type=module - <<'NODE'
+          SCAFFOLD_URL=http://127.0.0.1:4175 sh scripts/xvfb.sh node --input-type=module - <<'NODE'
           import { chromium } from "@playwright/test";
+          import { WEBGPU_BROWSER_ARGS } from "./packages/playtest/dist/runner/index.js";
 
           const browser = await chromium.launch({
-            args: ["--disable-gpu-sandbox", "--ignore-gpu-blocklist"],
+            headless: false,
+            args: WEBGPU_BROWSER_ARGS,
           });
           const page = await browser.newPage();
           const errors = [];

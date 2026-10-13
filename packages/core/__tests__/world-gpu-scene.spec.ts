@@ -1165,6 +1165,8 @@ describe("WorldCells with the GPU-driven main pass", () => {
       prefetchSeconds: 0,
       ring: 1,
       surface,
+      // This measures prop dispatch; keep terrain residency without rebuilding dense morph buffers.
+      terrain: { tileResolution: 9 },
       url: "/world/world.json",
     });
     const renderer = {
@@ -1224,6 +1226,7 @@ describe("WorldCells with the GPU-driven main pass", () => {
       prefetchSeconds: 0,
       ring: 1,
       surface,
+      terrain: { tileResolution: 9 },
       url: "/world/world.json",
     });
     cpu.update(renderer, camera);

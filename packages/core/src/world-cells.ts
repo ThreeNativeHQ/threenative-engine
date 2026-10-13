@@ -5002,11 +5002,22 @@ export class WorldCells extends Group implements IComputeDriven {
     // walked and re-sorted, every resident cell refiltered, every terrain tile re-levelled, all of
     // it to reach the set it already holds. Skipped while both hold. A move, a load, a build, a
     // deferred admission or a shadow level not yet told runs the pass exactly as before.
+    const terrainView =
+      this.#terrain !== undefined &&
+      this.#camera !== undefined &&
+      this.#renderer?.domElement?.height !== undefined
+        ? {
+            camera: this.#camera,
+            viewportHeight: this.#renderer.domElement.height,
+            maxPixelError: this.#autoLodMaxPixelError,
+            hysteresis: this.#lodHysteresis,
+          }
+        : undefined;
     if (this.#residencyStale(x, z)) {
       this.#residencyPoint.set(x, this.#followY(), z);
       try {
-        this.#terrain?.follow({ x, z }, budget);
-        this.#terrain?.process(renderer);
+        this.#terrain?.follow({ x, z }, budget, terrainView);
+        this.#terrain?.process(renderer, camera, undefined, terrainView);
       } catch (error) {
         if (!(error instanceof TerrainTileBudgetError)) throw error;
         this.#pressure.bytes += 1;
@@ -5034,11 +5045,12 @@ export class WorldCells extends Group implements IComputeDriven {
     } else if (
       // A blend in flight is not a settled ring, and the blend is advanced by `process` alone —
       // `follow` only re-levels tiles. A follow point standing still used to skip both, so a
-      // three-frame tile morph froze on its first frame until the player moved again. Only the
-      // transition frames pay it: `blendingTiles` is 0 the rest of the time.
+      // three-frame tile morph froze on its first frame until the player moved again.
+      // With a render view, settled tiles also recheck cached errors against the current projection.
+      terrainView !== undefined ||
       (this.#terrain?.blendingTiles ?? 0) > 0
     ) {
-      this.#terrain?.process(renderer);
+      this.#terrain?.process(renderer, camera, undefined, terrainView);
     }
     const props = new AdmissionBudget(budgetMs - Math.min(budget.spentMs, terrainMs), this.#now);
     this.#drain(props);

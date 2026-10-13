@@ -274,7 +274,7 @@ Today the bundle key (`renderer.cpp:2702-2722`) moves with depth order (`sortDra
 
 #### Phase v4.1: File the v4 work from the candidates
 **Status:** NOT STARTED
-TN today: HZB declined ([PRD-489](../done/PRD-489-gpu-scene-occlusion-culling.md), would-cull 0.013); distance cull, merged chunks and dynamic resolution in core only ([PRD-564](../unreal-source-borrowing/PRD-564-the-resolution-scale-changes-without-reallocating-a-target.md)); mesh LOD and streaming in core plus engine CPU decisions (`renderer/lod/model_lod`, `world/cells`, `world/tiles`); terrain LOD in [PRD-566](../unreal-source-borrowing/PRD-566-terrain-lod-morphs-on-the-gpu-and-picks-by-screen-error.md); async loading via `package_loads`; texture streaming only proposed ([PRD-VQ-10](./PRD-VQ-10-texture-mip-residency.md)); no frame allocator, target pool or async compute.
+TN today: HZB declined ([PRD-489](../done/PRD-489-gpu-scene-occlusion-culling.md), would-cull 0.013); distance cull, merged chunks and dynamic resolution in core only ([PRD-564](../Unreal/performance/PRD-564-the-resolution-scale-changes-without-reallocating-a-target.md)); mesh LOD and streaming in core plus engine CPU decisions (`renderer/lod/model_lod`, `world/cells`, `world/tiles`); terrain LOD in [PRD-566](../done/PRD-566-terrain-lod-morphs-on-the-gpu-and-picks-by-screen-error.md); async loading via `package_loads`; texture streaming only proposed ([PRD-VQ-10](../Unreal/performance/PRD-VQ-10-texture-mip-residency.md)); no frame allocator, target pool or async compute.
 - [ ] Engine distance culling, LOD gaps, streaming and a frame allocator are measured on the scorecard and the ones that earn it get boxes here. proof: v1.9 scorecard rows for each candidate
 - [ ] Bigger scenes hold the frame rate, and `ready` and first frame improve; S is green. proof: scorecard A/B against the v3 build, then the S commands
 
@@ -305,7 +305,7 @@ The game side reads the DOM directly (23 core files read `document.` or `window.
 
 PRD-553 on F (JS-to-Wasm calls, upload bytes);
 [PRD-519](../native-engine/PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) (batching, LOD, GPU-scene kernel);
-[PRD-570](../unreal-source-borrowing/PRD-570-a-character-costs-what-the-camera-sees-of-it.md) (core animation rate);
+[PRD-570](../Unreal/animation/PRD-570-a-character-costs-what-the-camera-sees-of-it.md) (core animation rate);
 [PRD-327](./critical/PRD-327-first-use-pipeline-compilation-leaves-the-main-loop.md),
 [PRD-540](./critical/PRD-540-the-compile-walk-leaves-the-main-thread.md) and
 [PRD-368](../assets/PRD-368-compiled-pipelines-survive-a-relaunch.md) (legacy pipelines);

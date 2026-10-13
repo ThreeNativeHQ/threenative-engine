@@ -124,6 +124,38 @@ describe("ResolutionScaler", () => {
     expect(scaler.scale).toBe(0.85);
   });
 
+  // PRD-563: a class start is a guess, and measurement always wins over it.
+  describe("starting on the rung an adapter class names", () => {
+    const start = RESOLUTION_SCALER.startScaleByGpuClass["mobile-low"];
+
+    it("starts one rung down for mobile-low and at the ceiling for every other class", () => {
+      expect(start).toBe(0.85);
+      expect(new ResolutionScaler({ start, targetFps: 60 }).scale).toBe(0.85);
+      for (const unnamed of [
+        "discrete",
+        "integrated",
+        "software",
+        "unknown",
+        "mobile-high",
+      ] as const)
+        expect(RESOLUTION_SCALER.startScaleByGpuClass[unnamed]).toBeUndefined();
+      expect(new ResolutionScaler({ targetFps: 60 }).scale).toBe(1.0);
+    });
+
+    it("steps down from the class rung on the first measured miss", () => {
+      const scaler = new ResolutionScaler({ start, targetFps: 60 });
+      feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows);
+      expect(scaler.observe(budget(UNDER_TARGET))).toBeLessThan(0.85);
+    });
+
+    it("climbs back to the ceiling after four clean windows when the GPU holds the target", () => {
+      const scaler = new ResolutionScaler({ start, targetFps: 60 });
+      feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows + 3);
+      expect(scaler.scale).toBe(0.85);
+      expect(scaler.observe(budget(AT_TARGET))).toBe(1.0);
+    });
+  });
+
   it("climbs only after four consecutive windows at the target, and slowly", () => {
     const scaler = new ResolutionScaler({ start: 0.61, targetFps: 60 });
     feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows + 3);

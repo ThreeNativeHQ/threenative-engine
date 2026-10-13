@@ -43,10 +43,10 @@ async function run(target: "android" | "desktop" | "ios", assert: unknown, scree
     capabilities: ["browser.screenshot", "browser.console", "runtime.diagnostics"],
     start: async () => undefined, close: async () => undefined, waitForBridge: async () => true,
     call: async <T>(method: string, argument?: unknown): Promise<T> => {
-      if (method === "describe") return { protocolVersion: PLAYTEST_PROTOCOL_VERSION, capabilities: ["runtime.fixedStep", "runtime.diagnostics"], limits: PLAYTEST_PROTOCOL_LIMITS, name: "tone-fixture" } as T;
+      if (method === "describe") return { protocolVersion: PLAYTEST_PROTOCOL_VERSION, capabilities: ["runtime.network", "runtime.fixedStep", "runtime.diagnostics"], limits: PLAYTEST_PROTOCOL_LIMITS, name: "tone-fixture" } as T;
       if (method === "ready") return { ready: true } as T;
       if (method === "advance") { tick += argument as number; return undefined as T; }
-      if (method === "sample") return { clock: { mode: "fixed-step", tick }, diagnostics: [], entities: [], resources: {} } as T;
+      if (method === "sample") return { clock: { mode: "fixed-step", tick }, diagnostics: [], entities: [], resources: {}, network: { requests: 0, entries: [] } } as T;
       throw new Error(`Unexpected transport operation ${method}`);
     },
   };

@@ -34,6 +34,23 @@ function isQualityTier(value: string): value is QualityTier {
 }
 
 /**
+ * Where each GPU family starts, from `ctx.renderer.gpuClass`.
+ *
+ * A start, not a ceiling: the measured frame-budget windows move the look from here, and an
+ * explicit `tier` above still wins. A class absent from this table — `unknown`, an adapter no
+ * family rule matched — falls back to the `mobile` flag, exactly as before families existed.
+ * Edit the right-hand side to change what a family looks like; nothing outside this file reads it.
+ */
+const START_TIER_BY_GPU_CLASS: Readonly<Record<string, QualityTier | undefined>> = {
+  software: "low",
+  "mobile-low": "low",
+  "mobile-mid": "low",
+  "mobile-high": "medium",
+  integrated: "medium",
+  discrete: "high",
+};
+
+/**
  * Picks the tier: an explicit `tier` always wins, otherwise the platform decides.
  *
  * Fails closed. An unrecognised tier name throws with the value it was handed rather than
@@ -41,7 +58,12 @@ function isQualityTier(value: string): value is QualityTier {
  * turned out to have no effect.
  */
 export function resolveQualityTier(
-  request: { readonly mobile?: boolean; readonly software?: boolean; readonly tier?: string } = {},
+  request: {
+    readonly gpuClass?: string;
+    readonly mobile?: boolean;
+    readonly software?: boolean;
+    readonly tier?: string;
+  } = {},
 ): QualityTier {
   const requested = request.tier;
   if (requested !== undefined) {
@@ -58,6 +80,9 @@ export function resolveQualityTier(
   // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
   // `tier` above still wins over it.
   if (request.software === true) return "low";
+  const family =
+    request.gpuClass === undefined ? undefined : START_TIER_BY_GPU_CLASS[request.gpuClass];
+  if (family !== undefined) return family;
   return request.mobile === true ? "low" : "high";
 }
 

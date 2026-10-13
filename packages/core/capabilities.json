@@ -1769,11 +1769,20 @@
     },
     {
       "aliases": [],
-      "constraints": ["geometry, color, and timing remain supplied by the game"],
+      "constraints": [
+        "geometry, color, and timing remain supplied by the game",
+        "the emitter measures its own bounds and stops computing and drawing after graceSeconds outside the camera view",
+        "a game needs no emitting = visible gate, and an emitter with no measured bounds is never culled for leaving the view",
+        "when measured GPU cost passes the frame budget, the smallest projected emitters pause first, and cull.reason reads outside-view or over-budget"
+      ],
       "example": "const particles = new GPUParticles3D(particleOptions);",
       "importPath": "@threenative/core",
       "kind": "class",
-      "overrides": [],
+      "overrides": [
+        "onCull: \"clear\" restarts a returning effect, the default \"pause\" resumes it with buffers intact",
+        "bounds supplies a fixed local Box3 and skips GPU measurement, padding enlarges the world box, boundsEveryFrames sets the measurement cadence",
+        "graceSeconds sets the seconds outside the view before culling, and Infinity disables view culling"
+      ],
       "package": "@threenative/core",
       "signature": "export class GPUParticles3D extends Sprite implements IComputeDriven { … }",
       "situations": [
@@ -4931,6 +4940,20 @@
       "summary": "Fail closed when a screenshot is blank or uniform.",
       "supersedes": [],
       "symbol": "assertCaptureNotBlank"
+    },
+    {
+      "aliases": [],
+      "constraints": ["keeps the uniform-frame checks and replaces only the bright-pixel floor"],
+      "example": "assertDesktopCaptureNotBlank(png, \"panned-culled.png\");",
+      "importPath": "@threenative/playtest/capture",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function assertDesktopCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }",
+      "situations": ["guard a native desktop capture of a 3D scene"],
+      "summary": "Fail closed when a desktop-host frame shows no rendered content. A native desktop frame has no HTML overlay, so the browser bright-pixel floor does not apply.",
+      "supersedes": [],
+      "symbol": "assertDesktopCaptureNotBlank"
     },
     {
       "aliases": [],

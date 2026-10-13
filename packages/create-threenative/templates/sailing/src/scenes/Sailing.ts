@@ -110,6 +110,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
       godraysLight: sun,
       mobile: isMobile(),
       software,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     const loading = createLoadingScreen(ctx);
     const camera = ctx.camera as PerspectiveCamera;

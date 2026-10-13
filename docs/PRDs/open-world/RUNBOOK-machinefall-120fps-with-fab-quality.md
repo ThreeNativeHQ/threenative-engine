@@ -224,7 +224,7 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
     is no walk to compare. Nothing ticked, nothing to capture, and that arm must not merge; the row
     needs one instrumented run to separate the gate's node builds from its own per-update shadow
     invalidation before this mechanism is retried. Details in "Where we stand".
-- [ ] **A8 · [PRD-539](../rendering/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md): temporal reconstruction closes the GPU gap (successor of PRD-455).** After: A7. ⏱🌍👁
+- [ ] **A8 · [PRD-539](../Unreal/performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md): temporal reconstruction closes the GPU gap (successor of PRD-455).** After: A7. ⏱🌍👁
 - [ ] **A9 · PRD-478 acceptance.** After: A8. ⏱🌍👁
   - Done when: AC-1, AC-2 and AC-3 are ticked on a quiet host 🙋, and PRD-478 is in `done/`.
 - [ ] **A10 · PRD-477 Phases 2–3 and AC-1: budgets and switches become engine decisions.** After: A9. ⏱🌍👁
@@ -240,11 +240,11 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 - [x] **B2 · [PRD-485](../done/PRD-485-high-quality-assets-go-through-the-cook.md): high-quality assets go through the cook.** After: B1 for its Android box only. 🎨👁
   - fab-import-proof, lumen-hall and metahuman-lab drop their escape hatches.
   - **Done 2026-10-06:** the last box, Android, passes on the emulator (not a phone): `fab-import-native.playtest.json --target android` 6/6 with 0 diagnostics, the Hornbeam cooked to KTX2 + Meshopt under Android V8. It needed Android V8 to admit KTX2/Meshopt and the native host to map ETC2/EAC/ASTC formats. The PRD moved to `done/`.
-- [ ] **B3 · Texture residency:** [VQ-10](../performance/PRD-VQ-10-texture-mip-residency.md) together with [PRD-454](PRD-454-worldcells-budget-real-resources.md). After: B2. ⏱🌍👁
+- [ ] **B3 · Texture residency:** [VQ-10](../Unreal/performance/PRD-VQ-10-texture-mip-residency.md) together with [PRD-454](PRD-454-worldcells-budget-real-resources.md). After: B2. ⏱🌍👁
   - Machinefall's 1024 texture cap is lifted to 2048 inside a hard GPU byte budget, with no black frames.
 - [ ] **B4 · [PRD-377](../assets/PRD-377-auto-lod-is-on-by-default.md) Phase 4: AutoLOD on by default.** After: B2. ⏱🎨👁
 - [ ] **B5 · [PRD-486](PRD-486-characters-get-a-lod-chain.md): characters get a LOD chain.** After: B4. ⏱🎨👁
-- [ ] **B6 · [PRD-487](PRD-487-imported-materials-keep-their-detail.md): imported materials keep their detail.** After: B2. 🎨👁
+- [ ] **B6 · [PRD-487](../Unreal/assets/PRD-487-imported-materials-keep-their-detail.md): imported materials keep their detail.** After: B2. 🎨👁
   - It needs a change in the asset-mcp repo; that repo's PRs target its `main`.
 - [ ] **B7 · [PRD-488](PRD-488-foliage-moves-in-the-wind.md): foliage moves in the wind.** After: B6, and A5 for its shadow box. ⏱🌍👁
 - [ ] **B8 · [PRD-351](../assets/PRD-351-compression-never-looks-worse-than-a-floor.md): compression quality floor.** After: B2. 🎨👁

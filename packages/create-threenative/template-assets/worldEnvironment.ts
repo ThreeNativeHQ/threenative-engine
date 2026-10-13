@@ -78,6 +78,8 @@ const TONEMAP: Record<TonemapMode, number> = {
 };
 
 export interface IWorldEnvironmentOptions {
+  /** World-pass MSAA samples. Omit to inherit the renderer; 0 leaves post AA in charge. */
+  readonly samples?: number;
   /** Screen-space indirect diffuse light. Godot calls this `ssil_enabled`. */
   readonly ssgiEnabled?: boolean;
   readonly ssgiQuality?: SsgiQuality;
@@ -410,7 +412,8 @@ export type OutputRenderer = {
  * unless it reads that line.
  */
 export class WorldEnvironment {
-  readonly #options: Required<IWorldEnvironmentOptions>;
+  readonly #options: Required<Omit<IWorldEnvironmentOptions, "samples">> &
+    Pick<IWorldEnvironmentOptions, "samples">;
 
   constructor(options: IWorldEnvironmentOptions = {}) {
     const quality = options.ssgiQuality ?? "medium";
@@ -434,6 +437,7 @@ export class WorldEnvironment {
       );
     }
     this.#options = {
+      samples: options.samples,
       // A kit with no stages of its own is the common case, so both default to empty rather
       // than to a branch every call site has to remember.
       authoredStageNames: options.authoredStageNames ?? [],
@@ -532,7 +536,7 @@ export class WorldEnvironment {
     }
     raw.toneMappingExposure = 1;
 
-    const scenePass = pass(scene, camera);
+    const scenePass = pass(scene, camera, { samples: options.samples });
     // Normals come from the multi-render-target alongside the colour. SSGI can derive them
     // from depth alone, but the derived normal is flat across a triangle, which shows up as
     // faceted bounce on exactly the smooth surfaces GI is bought for. Metalness and

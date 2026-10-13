@@ -20,6 +20,7 @@ export type PlaytestCapability =
   | "runtime.fixedStep"
   | "runtime.geometry"
   | "runtime.physics"
+  | "runtime.network"
   | "runtime.performance"
   | "runtime.pipelineCensus"
   | "runtime.renderChain"
@@ -61,6 +62,7 @@ export const PLAYTEST_CAPABILITY_REGISTRY: readonly IPlaytestCapabilityDescripto
   capability("runtime.fixedStep", "Advances an application-owned deterministic tick."),
   capability("runtime.geometry", "Answers one armed per-object geometry capture for the frame it was requested on."),
   capability("runtime.physics", "Samples bounded application-owned physics observations."),
+  capability("runtime.network", "Captures native fetch requests and failures through the host mailbox."),
   capability("runtime.performance", "Samples bounded per-render frame cost and renderer counts."),
   capability("runtime.pipelineCensus", "Samples bounded shader and pipeline creation observations."),
   capability("runtime.renderChain", "Reports the render stages, quality tier, and velocity route actually applied."),

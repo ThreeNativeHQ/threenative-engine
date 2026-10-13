@@ -95,6 +95,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     setupCamera(ctx.camera as PerspectiveCamera);
     const loading = createLoadingScreen(ctx);
