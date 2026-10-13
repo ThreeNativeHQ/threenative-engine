@@ -163,7 +163,10 @@ export function worldCaptureManifest(
       assert(
         previous !== undefined &&
           frame.timeMs > previous.timeMs &&
-          frame.position[0] > previous.position[0],
+          (worldName === DEFAULT_WORLD
+            ? frame.position[0] > previous.position[0]
+            : !isDeepStrictEqual(frame.position, previous.position) ||
+              isDeepStrictEqual(frame.position, lastWalk.position)),
         "walk is not chronological or forward-moving",
       );
     }
