@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-570 — A character costs what the camera sees of it
 
-**Status:** PARTIAL — baseline instrumentation is implemented; runtime measurements remain unverified.
-**Priority:** P2 — AC-1 is open: every rig evaluates its full pose every frame, near or far, on screen or off. Phase 1 has not yet measured how much that costs.
+**Status:** PARTIAL — CPU attribution, paired AC-1 reduction, matched pose judgment and native desktop behavior are verified; GPU attribution, shooter and final qualification remain open.
+**Priority:** P2 — finish GPU attribution, the conditional skin-once decision and shooter acceptance.
 **Complexity:** 5 (MEDIUM) — 1–5 engine files (`animation.ts`, `projection-skinned.ts`, `render-camera-cull.ts`) (+1), skipped-frame accumulation and interpolation state carries across frames (+2), a skin-once compute pass is a new mechanism, gated by Phase 1 (+2); risk override: none
 **Owner:** João
 **Depends on:** None. Coordinate with [PRD-486](../../open-world/PRD-486-characters-get-a-lod-chain.md): its posed-bounds rule (Phase 2) is the bound this PRD reads when that lands, and its mannequin crowd is a shared subject.
@@ -139,7 +139,7 @@ which is compatibility mode, not the core WebGPU that this engine requests.
 #### Phase 1: The cost is measured
 **Status:** PARTIAL — fixture and exact CPU spans implemented; accepted cost windows remain open pending a quiet hardware series; the matching cached NVIDIA environment is verified.
 **Files:** `examples/skinned-crowd/src/scenes/Crowd.ts`, `examples/skinned-crowd/src/game.ts`, `examples/skinned-crowd/playtests/crowd-rate.playtest.json` (new), `packages/core/src/profiling/Spans.ts`, `packages/core/src/projection-skinned.ts`, `packages/core/__tests__/projection-skinned.spec.ts` (exact write probe).
-- [ ] [local] The crowd scenario reports CPU milliseconds for `AnimationPlayer.update` and `SkinnedBatch.write` at 32, 128 and 256 rigs, with the result recorded under `## Decisions`. proof: `crowd-rate.playtest.json` with `playtest perf` and span probes.
+- [x] [local] The crowd scenario reports CPU milliseconds for `AnimationPlayer.update` and `SkinnedBatch.write` at 32, 128 and 256 rigs, with the result recorded under `## Decisions`. proof: `crowd-rate.playtest.json` with `playtest perf` and span probes.
 - [ ] [local] The same scenario reports GPU milliseconds for skinned draws in the main and shadow passes, against an arm where the crowd is static. The result decides Phase 3 under `## Decisions`. proof: the same playtest, both arms, `TN_FRAME_BUDGET` `main`/`shadow` buckets.
 
 #### Phase 2: Rigs evaluate at the rate their screen size earns
@@ -405,3 +405,6 @@ native claim; late-baseline rejection still applies and every PRD gate remains o
 - 2026-10-12 (manager verification after camera-target repair): the current animation-rate, projection-skinned and render-camera-cull specs pass 64/64 across three files; `pnpm api:surface:check` passes for 14 packages and 413 symbols. Full final verification remains pending.
 
 - 2026-10-12 (AC-1 measured): immutable production bundle, matching NVIDIA 615.71.09 userspace/kernel, RTX 2080 / NVIDIA Turing WebGPU. Four 128-rig runs in rate1 → auto → auto → rate1 order, each with startup window 1 discarded and three complete 120-render windows. Combined AnimationPlayer.update + full SkinnedBatch.write call CPU means: pair A 3.987 → 2.130 ms (46.57% lower); reversed pair B 2.667 → 1.420 ms (46.75% lower). Both pairs exceed 40%; aggregate 46.64%. Every window is ready, with 128 animation/palette calls per frame, 120 span/render frames, 120 main/shadow timestamp samples, 3/1 main/shadow draws, 70,659/70,656 triangles, pinned 1280×720 scale 1, 4× samples. Each scenario and `playtest perf --require-windows 3` passes. Artifacts and immutable bundle hashes: `artifacts/prd570-final-series-attempt1/`. Background CPU load varied (roughly 17–23), so absolute CPU/FPS figures are not quiet-machine throughput claims; both independently paired reduction ratios agree within 0.2 percentage points. The fresh matched visual judgment above completes the Phase 2 AC-1 box.
+
+- 2026-10-12 (Phase 1 CPU attribution): rate-1 animated controls from the same immutable production build and RTX 2080 series: 32 rigs: animation 0.563 ms + palette-call 0.287 ms = 0.850 ms; 128 rigs: animation 2.552 ms + palette-call 0.775 ms = 3.327 ms; 256 rigs: animation 4.703 ms + palette-call 2.673 ms = 7.377 ms. Per run, startup window 1 is discarded; three complete 120-render/span windows pass scenario readiness and `playtest perf --require-windows 3`. The 128-rig result combines both reversed-order control runs. These are measured call costs under the recorded shared-host CPU load, not quiet-machine FPS claims. GPU observations from this first series are retained but not used to decide Phase 3 because competing Chrome/native runs overlapped; the locked repeat is pending.
+- 2026-10-12 (final static qualification): `pnpm typecheck` and `pnpm lint` both exit 0 after the camera fix and public convention documentation. Logs: `artifacts/prd570-final-typecheck.log` and `artifacts/prd570-final-lint.log`.
