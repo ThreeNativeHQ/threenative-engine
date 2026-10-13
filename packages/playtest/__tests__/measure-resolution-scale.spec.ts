@@ -13,6 +13,8 @@ const fixture = vi.hoisted(() => {
   };
   return {
     browserLaunch: vi.fn(),
+    captureLease: { release: vi.fn() },
+    acquireCaptureLease: vi.fn(),
     createProject: vi.fn(),
     createServer: vi.fn(),
     display,
@@ -36,6 +38,7 @@ vi.mock("node:module", () => ({
 vi.mock("playwright", () => ({ chromium: { launch: fixture.browserLaunch } }));
 vi.mock("vite", () => ({ createServer: fixture.createServer }));
 vi.mock("../src/runner/captureEnvironment.js", () => ({ provideDisplay: fixture.provideDisplay }));
+vi.mock("../src/runner/runner-support.js", () => ({ acquireRunnerCaptureLock: fixture.acquireCaptureLease }));
 vi.mock("../../create-threenative/src/index.ts", () => ({ createProject: fixture.createProject }));
 
 const importMeasurement = () => {
@@ -46,6 +49,8 @@ const importMeasurement = () => {
 beforeEach(() => {
   vi.resetModules();
   fixture.browserLaunch.mockReset();
+  fixture.captureLease.release.mockReset().mockResolvedValue(undefined);
+  fixture.acquireCaptureLease.mockReset().mockResolvedValue(fixture.captureLease);
   fixture.createProject.mockReset().mockResolvedValue(undefined);
   fixture.createServer.mockReset().mockResolvedValue(fixture.server);
   fixture.display.release.mockReset().mockResolvedValue(undefined);
@@ -64,6 +69,8 @@ test("startup failures close acquired resources and preserve the originating err
   await expect(importMeasurement()).rejects.toBe(displayError);
   expect(fixture.server.close).toHaveBeenCalledOnce();
   expect(fixture.browserLaunch).not.toHaveBeenCalled();
+  expect(fixture.acquireCaptureLease).toHaveBeenCalledOnce();
+  expect(fixture.captureLease.release).toHaveBeenCalledOnce();
 
   const browserError = new Error("browser launch failed");
   fixture.server.close.mockClear();
@@ -80,4 +87,21 @@ test("startup failures close acquired resources and preserve the originating err
   await expect(importMeasurement()).rejects.toBe(listenError);
   expect(fixture.server.close).toHaveBeenCalledOnce();
   expect(fixture.provideDisplay).not.toHaveBeenCalled();
+});
+
+test("capture acquisition failure closes the server before opening a display", async () => {
+  const error = new Error("capture lease timeout");
+  fixture.acquireCaptureLease.mockRejectedValue(error);
+  await expect(importMeasurement()).rejects.toBe(error);
+  expect(fixture.server.close).toHaveBeenCalledOnce();
+  expect(fixture.provideDisplay).not.toHaveBeenCalled();
+  expect(fixture.captureLease.release).not.toHaveBeenCalled();
+});
+
+test("capture lease is released even when display cleanup rejects", async () => {
+  const error = new Error("display cleanup failed");
+  fixture.browserLaunch.mockRejectedValue(new Error("browser launch failed"));
+  fixture.display.release.mockRejectedValue(error);
+  await expect(importMeasurement()).rejects.toBe(error);
+  expect(fixture.captureLease.release).toHaveBeenCalledOnce();
 });

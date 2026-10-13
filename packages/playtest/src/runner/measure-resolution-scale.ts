@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { WEBGPU_BROWSER_ARGS } from "./browser.js";
 import { provideDisplay } from "./captureEnvironment.js";
+import { acquireRunnerCaptureLock } from "./runner-support.js";
 import { PlaywrightTransport, bridgeWaitTimeoutMs } from "./bridgeClient.js";
 import { waitForStartupReady } from "./startupReady.js";
 import {
@@ -41,11 +42,13 @@ const pending = <T>(name: string, operation: () => Promise<T>): Promise<T> =>
 let server: Awaited<ReturnType<typeof serveStarter>> | undefined;
 let display: Awaited<ReturnType<typeof provideDisplay>> | undefined;
 let browser: Browser | undefined;
+let captureLease: Awaited<ReturnType<typeof acquireRunnerCaptureLock>> | undefined;
 const measurements: IResolutionScaleRun[] = [];
 try {
   const startedServer = await pending("starter.bootstrap", () => serveStarter(output, checkpoint));
   server = startedServer;
   const url = startedServer.resolvedUrls!.local[0]!;
+  captureLease = await pending("capture.lease", () => acquireRunnerCaptureLock());
   const providedDisplay = await pending("display.provide", () => provideDisplay());
   display = providedDisplay;
   checkpointDisplay.value = providedDisplay.strategy;
@@ -259,9 +262,13 @@ try {
     }
   }
 } finally {
-  await browser?.close();
-  await display?.release();
-  await server?.close();
+  try {
+    await browser?.close();
+    await display?.release();
+    await server?.close();
+  } finally {
+    await captureLease?.release();
+  }
 }
 
 async function serveStarter(
