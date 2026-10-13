@@ -14,7 +14,7 @@ import {
   resolutionScaleGate,
   resolutionScalePending,
 } from "./resolution-scale-probe.js";
-import type { IPlaytestBridgeDescription, IPlaytestBridgeReady } from "../protocol.js";
+import { PLAYTEST_STARTUP_READY_TIMEOUT_MS, type IPlaytestBridgeDescription, type IPlaytestBridgeReady } from "../protocol.js";
 
 import type { IResolutionScaleRun, IResolutionScaleRow } from "./resolution-scale-probe.js";
 
@@ -84,7 +84,7 @@ try {
     page.on("console", (message) => logs.push(message.text()));
     page.on("pageerror", (error) => logs.push(`PAGE_ERROR:${error.message}`));
     try {
-      await pending("page.goto", () => page.goto(url, { waitUntil: "domcontentloaded", timeout: bridgeWaitTimeoutMs() }));
+      await pending("page.goto", () => page.goto(url, { waitUntil: "domcontentloaded", timeout: PLAYTEST_STARTUP_READY_TIMEOUT_MS }));
       const transport = new PlaywrightTransport(page);
       const bootError = async () =>
         (await page.locator("[data-threenative-canvas-error]").allTextContents()).join("\n");
