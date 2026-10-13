@@ -107,7 +107,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
   readonly #boundsEveryFrames: number;
   readonly #partials: StorageBufferNode<"vec4"> | undefined;
   readonly #reduce: ComputeNode | undefined;
-  readonly #readback: GPUReadback | undefined;
+  #readback: GPUReadback | undefined;
   #frame = 0;
   #lastMeasure = 0;
   #lands = 0;
@@ -277,7 +277,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
   ): void {
     if (this.#released || !this.emitting) return;
     if (renderer === undefined) throw new Error("GPUParticles3D is not attached to a renderer.");
-    const readback = this.#readback;
+    let readback = this.#readback;
     if (readback !== undefined && readback.stats.lands !== this.#lands) {
       this.#lands = readback.stats.lands;
       this.#measuredBounds = readback.data === undefined ? undefined : foldBounds(readback.data);
@@ -312,6 +312,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
       this.#transitions += 1;
       if (state === "running" && this.#onCull === "clear") this.restart();
       this.#state = state;
+      readback = this.#readback;
     }
     this.#reason = reason;
     if (reason !== undefined) {
@@ -341,6 +342,16 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
     if (this.#renderer === undefined)
       throw new Error("GPUParticles3D is not attached to a renderer.");
     this.#renderer.compute(this.#start);
+    // Restarted positions invalidate old bounds, including a copy still in flight.
+    this.#readback?.dispose();
+    this.#readback =
+      this.#partials === undefined
+        ? undefined
+        : new GPUReadback({ attribute: this.#partials.value, everyFrames: 1 });
+    this.#measuredBounds = undefined;
+    this.#lands = 0;
+    this.#outsideSince = undefined;
+    this.#lastMeasure = this.#frame - this.#boundsEveryFrames;
   }
 
   detach(): void {

@@ -613,6 +613,18 @@ export class Gallery extends Scene<GalleryState> {
         const running = emitters.filter((emitter) => emitter.cull.state === "running");
         const partialShedding =
           paused.some((emitter) => emitter.cull.reason === "over-budget") && running.length > 0;
+        if (
+          !partialObserved &&
+          budgetKnob.gpuEstimateMs !== undefined &&
+          budgetKnob.gpuComputeMs !== undefined &&
+          Number.isFinite(budgetKnob.gpuEstimateMs) &&
+          Number.isFinite(budgetKnob.gpuComputeMs) &&
+          budgetKnob.gpuComputeMs > 0 &&
+          budgetKnob.gpuComputeMs <= budgetKnob.gpuEstimateMs
+        ) {
+          // Track the measured bucket until partial shedding lands; one old sample can fully shed forever.
+          budgetKnob.maxFps = 1000 / (budgetKnob.gpuEstimateMs - budgetKnob.gpuComputeMs / 2);
+        }
         frameCtx.state.set({ partialShedding });
         if (partialShedding && !partialObserved) {
           partialObserved = true;

@@ -172,6 +172,48 @@ describe("particle bounds and culling", () => {
     expect(emitter.cull.state).toBe("running");
   });
 
+  it.each([false, true])(
+    "restart discards old bounds, including pending=%s samples",
+    async (pending) => {
+      const outside = partialsOf([new Vector3(100, 0, -5)]);
+      const inside = partialsOf([new Vector3(0, 0, -5)]);
+      const gpu = renderer([]);
+      let land: ((bytes: ArrayBuffer) => void) | undefined;
+      gpu.readback = vi.fn(
+        () =>
+          new Promise<ArrayBuffer>((resolve) => {
+            land = resolve;
+          }),
+      );
+      const emitter = particles({ boundsEveryFrames: 1, graceSeconds: 0 });
+      const view = camera();
+      emitter.attachRenderer(gpu);
+      emitter.process(gpu, view);
+      if (!pending) {
+        land?.(outside.buffer);
+        await Promise.resolve();
+        emitter.process(gpu, view);
+        expect(emitter.cull.reason).toBe("outside-view");
+      }
+      emitter.restart();
+      if (pending) {
+        land?.(outside.buffer);
+        await Promise.resolve();
+      }
+      const before = emitter.dispatches;
+      emitter.process(gpu, view);
+      expect(emitter.measuredBounds).toBeUndefined();
+      expect(emitter.cull.state).toBe("running");
+      expect(emitter.dispatches).toBe(before + 1);
+      land?.(inside.buffer);
+      await Promise.resolve();
+      emitter.process(gpu, view);
+      expect(emitter.measuredBounds).toEqual(new Box3().setFromPoints([new Vector3(0, 0, -5)]));
+      expect(emitter.cull.state).toBe("running");
+      emitter.detach();
+    },
+  );
+
   it.each(["pause", "clear"] as const)(
     "culls a landed sample after grace and resumes with %s",
     async (onCull) => {

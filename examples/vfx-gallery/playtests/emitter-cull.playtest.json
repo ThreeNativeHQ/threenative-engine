@@ -59,6 +59,11 @@
       "label": "recovery-gate",
       "waitForResource": { "id": "state", "path": "overBudgetPaused", "equals": 0 },
       "timeoutMs": 30000
+    },
+    {
+      "label": "recovery-dispatch-gate",
+      "waitForResource": { "id": "state", "path": "runningDispatchRatio", "gte": 0.99 },
+      "timeoutMs": 10000
     }
   ],
   "assert": {
