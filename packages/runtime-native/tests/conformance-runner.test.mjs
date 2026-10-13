@@ -121,6 +121,13 @@ test("the GPU scene BVH row requires a hardware adapter", () => {
   assert.equal(row?.requiresHardwareAdapter, true);
 });
 
+test("World GPU readback captures through its frame-299 proof deadline", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const row = registry.tests.find(({ id }) => id === "world-gpu-scene-readback");
+  assert.equal(row?.captureFrames, 300);
+  assert.equal(row?.nativeFrames, 300);
+});
+
 test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () => {
   // Fixture is the real web report from the Android parity run that failed on 2026-08-31, with the
   // adapter refusals reclassified the way the runner now reports them.

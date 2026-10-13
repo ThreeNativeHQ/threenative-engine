@@ -933,7 +933,7 @@
       "scene": "conformance/scenes/shared/world-gpu-scene-readback.js",
       "browserRecipe": "webgpu",
       "requiresHardwareAdapter": true,
-      "captureFrames": 120,
+      "captureFrames": 300,
       "nativeFrames": 300,
       "tolerance": {
         "pixelMismatchRatio": 0.08,

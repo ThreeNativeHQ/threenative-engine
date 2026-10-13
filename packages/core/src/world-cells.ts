@@ -7817,21 +7817,21 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Every dressed main mesh's own draw, and what this class's **live** state says it must be holding.
+   * Every dressed main mesh's own draw, and what the dispatch's gate table says it must be holding.
    *
    * The scene's own validation mirrors its own kernel, so a key, a record, a gate table and a mesh
    * that do not correspond are one both sides reproduce and a check that reports `ok` over a forest
    * drawn with another tree's geometry. These are the three numbers that are not the scene's: the
    * mesh's own name, the record its own geometry points at (`indirectOffset`, which a dress wrote),
-   * and the instances the owner's own state selects for that name — `asset.distances` as
-   * {@link levelAt} reads it right now, `cullDistance(definition.maxDistance)`, the camera's own six
-   * planes over the scene's own placements, and each part's own offset composed in exactly as the
-   * dispatch composes it.
+   * and the instances the owner's part transforms compose for that name. The level and cull gates
+   * come from the scene's current slot table, because a replacement keeps its old mesh and source
+   * records drawing until the new representation is attached; the camera's own six planes over the
+   * scene's own placements and each part's own offset remain independently composed here.
    *
    * Not the per-cell records this path's own refilter left behind: the GPU scene bypasses that
-   * refilter, so the moment it does, the records a mesh is checked against are a snapshot of a
-   * level selection that no longer applies. A far placement is then compared against a set that
-   * counted it at its near level, and the check reads `ok` over the picture it cannot see.
+   * refilter, and a queued replacement deliberately leaves those records and their old mesh live
+   * until the swap. Using the dispatch's table keeps that transition in the same representation as
+   * the GPU reference while the mesh binding and composed matrices remain an independent check.
    */
   #gpuDraws(): readonly IMeshDraw[] {
     const camera = this.#camera;
@@ -7887,26 +7887,31 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Every adopted asset's own gates as they stand right now, keyed by id.
+   * The dispatch's current gates with the owner's part offsets, keyed by asset id.
    *
-   * The part offsets are copied out of each part's `Matrix4` once per check, because the composition
-   * reads them as `Float32Array`s and a part's matrix is what the dispatch already composed with.
+   * A queued source replacement leaves the old slot and mesh drawing until its swap. Taking
+   * distances, cull and impostor state from the same slot table the kernel reads keeps this check
+   * on that old representation for the transition, while the local matrices still come from the
+   * owner rather than from the scene's own reference data.
    */
   #liveGates(): Map<string, ILiveAsset> {
     const out = new Map<string, ILiveAsset>();
-    for (const asset of this.#assets.values()) {
-      if (asset.levels.length === 0) continue;
+    const slots = this.#gpuScene.gates();
+    for (const [slot, gates] of slots.entries()) {
+      const id = this.#gpuScene.slotAsset(slot);
+      const asset = id === undefined ? undefined : this.#assets.get(id);
+      if (asset === undefined || asset.levels.length === 0) continue;
       const locals: Float32Array[][] = [];
-      for (const parts of asset.levels) {
+      for (const parts of asset.levels.slice(0, gates.distances.length)) {
         const level: Float32Array[] = [];
         for (const part of parts) level.push(Float32Array.from(part.local.elements));
         locals.push(level);
       }
       out.set(asset.id, {
-        cull: cullDistance(asset.definition.maxDistance),
-        distances: asset.distances,
+        cull: gates.cull,
+        distances: gates.distances,
         id: asset.id,
-        impostor: asset.impostor !== undefined,
+        impostor: gates.impostor,
         locals,
       });
     }

@@ -5,6 +5,7 @@ import {
   BoxGeometry,
   type BufferAttribute,
   type BufferGeometry,
+  Frustum,
   Group,
   InstancedInterleavedBuffer,
   InstancedMesh,
@@ -53,6 +54,7 @@ import {
 } from "../src/render/world-impostor-surface.js";
 import { type IImpostorRawRenderer, WorldImpostorAtlas } from "../src/render/world-impostor.js";
 import type { IRendererLike } from "../src/renderer.js";
+import { type IKernelInput, WorldGpuScene, cullAndSelect } from "../src/world-gpu-scene.js";
 import { type IWorldAsset, type IWorldRun, cellPlacements } from "../src/world-package.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
 
@@ -384,6 +386,49 @@ function rendererStub(options: { readonly throwOnRender?: boolean } = {}): IRend
   } as unknown as IRendererLike;
 }
 
+/** Return the committed kernel answer through the public readback seam, including its gate table. */
+function gpuValidationRenderer(scene: WorldGpuScene, camera: PerspectiveCamera): IRendererLike {
+  const base = rendererStub();
+  const raw = base.raw as IImpostorRawRenderer;
+  const input = (): IKernelInput => {
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
+    const planes = new Float32Array(24);
+    for (const [index, plane] of frustum.planes.entries()) {
+      const at = index * 4;
+      planes[at] = plane.normal.x;
+      planes[at + 1] = plane.normal.y;
+      planes[at + 2] = plane.normal.z;
+      planes[at + 3] = plane.constant;
+    }
+    return {
+      camera: {
+        planes,
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z,
+      },
+      count: scene.placements.length,
+      placements: scene.placements,
+      regionCount: scene.regions.length,
+      regions: scene.regions,
+      slots: scene.gates(),
+    };
+  };
+  return {
+    compute: (): void => {},
+    kind: "webgpu",
+    raw: { ...raw, backend: { hasFeature: (): boolean => true } },
+    readback: async (attribute: { readonly array: Uint32Array | Float32Array }) => {
+      const result = cullAndSelect(input());
+      for (const region of scene.regions) result.args[region.argsIndex * 5] = region.indexCount;
+      const bytes = attribute.array instanceof Uint32Array ? result.args : result.drawn;
+      return bytes.slice().buffer;
+    },
+  } as unknown as IRendererLike;
+}
+
 async function flush(rounds = 12): Promise<void> {
   for (let round = 0; round < rounds; round += 1)
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -498,6 +543,46 @@ describe("WorldCells automatic impostors", () => {
     // The bake is independent of the GPU-driven main pass: this renderer is WebGPU but carries no
     // GPU-scene features, so the scene stays off while the atlas still lands on the CPU path.
     expect(world.stats().gpuScene.on).toBe(false);
+    world.dispose();
+  });
+
+  it("holds mesh validation to the dispatch gates during an impostor handoff", async () => {
+    stubManifestFetch(pineOnly());
+    const keyed = vi.spyOn(WorldGpuScene.prototype, "key");
+    const world = await loadPine(treeLoader(), {
+      autoLod: { fovY: 120, viewportHeight: 100 },
+      gpuScene: true,
+      gpuSceneValidate: true,
+    });
+    await flushed(world);
+    const camera = new PerspectiveCamera(120, 1, 0.1, 10_000);
+    camera.position.set(200, 4, -32);
+    camera.lookAt(-32, 4, -32);
+    camera.updateMatrixWorld(true);
+    const first = rendererStub();
+    const firstRenderer = {
+      ...first,
+      raw: { ...(first.raw as IImpostorRawRenderer), backend: { hasFeature: (): boolean => true } },
+    } as unknown as IRendererLike;
+    // The first render enables the scene and advances bake view 1; only then does the world's key
+    // dressing expose the scene instance needed by the readback fixture.
+    world.update(firstRenderer, camera);
+    await flush();
+    const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
+    const renderer = gpuValidationRenderer(scene, camera);
+    // Offset the cadence so the first check lands on the exact update that finishes the 16-view bake.
+    for (let dispatch = 0; dispatch < 14; dispatch += 1) scene.dispatch(renderer, camera);
+    for (let view = 0; view < 15; view += 1) {
+      world.update(renderer, camera);
+      await flush();
+    }
+    await flush();
+
+    expect(world.stats().impostor.assets).toBe(1);
+    expect(scene.validation.compared).toBeGreaterThan(0);
+    expect(scene.validation.mismatched).toBe(0);
+    expect(scene.validation.matricesMismatched).toBe(0);
+    expect(scene.validation.meshMismatched).toBe(0);
     world.dispose();
   });
 
