@@ -20,11 +20,15 @@ import { starterAssetsDir } from "@threenative/terrain/kit";
 const here = dirname(dirname(fileURLToPath(import.meta.url)));
 const out = join(here, "assets");
 // vite.config.ts publicDir, served at the root.
-const roots = [{ dir: await starterAssetsDir(), mount: "", required: true }];
+const roots = [
+  { dir: await starterAssetsDir(), mount: "", required: true },
+  { dir: join(here, "src/world"), mount: "world", required: true },
+];
 
 let linked = 0;
 function mirror(source, target) {
   for (const entry of readdirSync(source, { withFileTypes: true })) {
+    if (source === join(here, "src/world") && !entry.name.endsWith(".placements.bin")) continue;
     const from = join(source, entry.name);
     const to = join(target, entry.name);
     if (entry.isDirectory()) {

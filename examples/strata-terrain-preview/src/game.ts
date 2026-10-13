@@ -10,16 +10,19 @@ import {
 } from "@threenative/physics";
 import {
   CapsuleGeometry,
+  Float32BufferAttribute,
   Mesh,
   MeshStandardMaterial,
   OrthographicCamera,
   PerspectiveCamera,
   Vector3,
 } from "three";
+import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { BIOMES, type WorldName } from "./render/biomes.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { type ICanopyComparison, loadPack, loadSkyLight } from "./render/pack.js";
+import { loadPlacements } from "./render/placements.js";
 import { loadPreparedProps } from "./render/prepared.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
 import {
@@ -34,105 +37,11 @@ import {
   variantFor,
 } from "./render/props.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
-import { type IPlacementField, scatterProps } from "./render/scatter.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
-import { type IBakedWorld, createTerrain, paintCanopy } from "./render/terrain.js";
+import { type IBakedWorld, createTerrain } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
 import { medianOfGrowingSamples as median } from "./viewStatistics.js";
 import baked from "./world/baked.json";
-
-/**
- * The fixed benchmark framings, in world metres, per world.
- *
- * Fixed rather than relative to the player so a capture at seed 73 is the same picture on every
- * machine, and so the rubric's "close ground/vegetation view" and "landscape overview" are two
- * numbers rather than two moods. `eye` is the height above the terrain under the camera, which is
- * what makes "eye height ~1.7 m" true on a slope instead of true only on a flat.
- *
- * The meadow focus is where the ground is grass with spruces on it and a slope to look along, and
- * it is also where the dense grass goes: ground cover is placed around this point, not around the
- * origin, because a meadow is a place rather than a texture.
- */
-/** Every framing the `V` key can hold, whether or not the current world has one for it. */
-type ViewName =
-  | "ridge"
-  | "mesa"
-  | "plain"
-  | "horizon-sea"
-  | "meadow-close"
-  | "overview"
-  | "player"
-  | "river";
-
-interface IBenchmarkPose {
-  /** World x and z of the eye, and the height above the terrain under it. */
-  readonly at: readonly [number, number];
-  readonly eye: number;
-  /** Absolute elevation for an overview over surveyed scenery beyond the playable collider. */
-  readonly eyeY?: number;
-  /** World x and z to look at, and the height above the terrain under *that*. */
-  readonly look: readonly [number, number];
-  readonly lookUp: number;
-  /**
-   * An absolute world height to look at instead, for a target with no ground under it: a sea
-   * horizon is a direction, and thirty metres below the surface three hundred metres out is how a
-   * hillside tips its view down far enough for the water to be a band rather than a line.
-   */
-  readonly lookY?: number;
-}
-
-interface IBenchmark {
-  /** Where this world's ground cover is placed. */
-  readonly focus: { readonly x: number; readonly z: number };
-  readonly poses: Readonly<Record<string, IBenchmarkPose>>;
-  /** The order the `V` key walks, and the framings the playtest screenshots. */
-  readonly views: readonly ViewName[];
-}
-
-const BENCHMARK: Record<WorldName, IBenchmark> = {
-  alpine: {
-    focus: { x: 180, z: -190 },
-    poses: {
-      ridge: { at: [220, -220], eye: 150, look: [-75, 40], lookUp: 0, lookY: 320 },
-      overview: { at: [850, -1000], eye: 0, eyeY: 760, look: [-55, 35], lookUp: 0, lookY: 330 },
-    },
-    views: ["player", "ridge", "overview"],
-  },
-  desert: {
-    focus: { x: 170, z: 180 },
-    poses: {
-      mesa: { at: [195, 190], eye: 3.2, look: [-35, -30], lookUp: 20 },
-      overview: { at: [200, 200], eye: 165, look: [-40, -30], lookUp: 10 },
-    },
-    views: ["player", "mesa", "overview"],
-  },
-  tundra: {
-    focus: { x: 150, z: 160 },
-    poses: {
-      plain: { at: [166, 180], eye: 2.2, look: [-65, -50], lookUp: 2 },
-      overview: { at: [180, 180], eye: 62, look: [-20, -50], lookUp: 2 },
-    },
-    views: ["player", "plain", "overview"],
-  },
-  forest: {
-    focus: { x: 150, z: -100 },
-    poses: {
-      "meadow-close": { at: [165, -95], eye: 1.7, look: [-70, -180], lookUp: 2.2 },
-      overview: { at: [190, 170], eye: 65, look: [-70, 25], lookUp: 5 },
-      river: { at: [-145, -120], eye: 1.7, look: [-110, -185], lookUp: 0 },
-    },
-    views: ["player", "meadow-close", "overview", "river"],
-  },
-  coastal: {
-    focus: { x: 80, z: 5 },
-    poses: {
-      "meadow-close": { at: [110, -35], eye: 1.7, look: [155, 100], lookUp: 1.5 },
-      overview: { at: [-140, -120], eye: 75, look: [160, 115], lookUp: 0 },
-      "horizon-sea": { at: [185, 145], eye: 6, look: [220, 450], lookUp: 0, lookY: 1.5 },
-    },
-    views: ["player", "meadow-close", "overview", "horizon-sea"],
-  },
-};
 
 /** The last closed frame-budget window, published into state by the scene. */
 const budget = {
@@ -205,6 +114,7 @@ const initialState = {
   streamingAdmissionMs: 0,
   streamingAdmissionBacklog: 0,
   timeToReadyMs: -1,
+  enterMs: -1,
   tasksAvailable: false,
   longestLoadTaskMs: -1,
   afterFirstFrameTaskMs: -1,
@@ -279,11 +189,28 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
   return class TerrainScene extends Scene<TerrainState, IPhysicsContext> {
     static override readonly initialState = initialState;
     #data: IBakedWorld | undefined;
-    override async load(): Promise<void> {
+    #erosionSamples = { flow: 0, deposition: 0 };
+    #scatter: Awaited<ReturnType<typeof loadPlacements>> | undefined;
+    #terrain: ReturnType<typeof createTerrain> | undefined;
+    #fallbackParts: ReturnType<typeof buildPropVariants> | undefined;
+    override async load(ctx: TerrainCtx): Promise<void> {
       this.#data =
         world === "forest" || world === "coastal"
           ? baked[world]
           : (await worldLoads[world]()).default;
+      this.#scatter = await loadPlacements(ctx.assets, world);
+      // Prepare scenery while the scene loads; enter only attaches it.
+      this.#terrain = createTerrain(this.#data, ctx.assets, BIOMES[world]);
+      this.#sky = createOutdoorSky(ctx.camera, BIOMES[world]);
+      this.#lake = createLakes(this.#data.lakes ?? [], this.#terrain.field, world === "forest");
+      this.#erosionSamples = {
+        flow: this.#data.erosion?.flow.filter((value) => value > 0).length ?? 0,
+        deposition: this.#data.erosion?.deposition.filter((value) => value > 0).length ?? 0,
+      };
+      this.#fallbackParts = buildPropVariants(
+        undefined,
+        world === "alpine" ? 2 : world === "tundra" ? 1.4 : undefined,
+      );
     }
     #player: CharacterBody3D | undefined;
     #surfaces: { advance: (elapsed: number) => void } | undefined;
@@ -294,6 +221,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
     #lake: IRiverWater | undefined;
 
     override enter(ctx: TerrainCtx): void {
+      const enterStart = performance.now();
       ctx.add(ctx.camera);
       const data = this.#data;
       if (!data) throw new Error(`World ${world} was not loaded`);
@@ -390,7 +318,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       });
       ctx.afterPhysics(() => loading.update());
       const biome = BIOMES[world];
-      const { field, mesh } = createTerrain(data, ctx.assets, biome);
+      const terrain = this.#terrain;
+      if (!terrain) throw new Error(`World ${world} terrain was not loaded`);
+      const { field, mesh } = terrain;
       ctx.add(mesh);
       // Scenery: nothing moves the ground, so its transform is composed once instead of every frame.
       markStatic(mesh);
@@ -418,7 +348,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // far ridges fade into and the tone curve. It used to be a flat `Color` background, a
       // hand-set `FogExp2`, a sun with a five metre shadow box that missed everything, and no tone
       // mapping at all; the numbers behind all of that now live in `src/render/sky.ts`.
-      const sky = createOutdoorSky(ctx.camera, biome);
+      const sky = this.#sky;
+      if (!sky) throw new Error(`World ${world} sky was not loaded`);
       ctx.add(sky.daylight);
       ctx.add(sky.atmosphere);
       ctx.add(sky.sun);
@@ -541,8 +472,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // The water in the channels the bake carved. A world with no river gets nothing. Water draws on
       // its own layer so the lake's mirror can leave it out; the eye sees both.
       ctx.camera.layers.enable(WATER_LAYER);
-      const lake = createLakes(data.lakes ?? [], field, world === "forest");
-      this.#lake = lake;
+      const lake = this.#lake;
       if (lake) {
         const centre = lake.mesh.geometry.getAttribute("position");
         const at = data.lakes?.[0]?.at;
@@ -582,20 +512,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // world where the ground is need a world that has been stepped: the ray query walks the
       // heightfield's own triangles and the collider is not in the space until the solver runs.
       // Asking in `enter` returns "no ground here" for every prop on a perfectly solid hillside.
-      const erosionFlowSamples = data.erosion?.flow.filter((value) => value > 0).length ?? 0;
-      const erosionDepositSamples =
-        data.erosion?.deposition.filter((value) => value > 0).length ?? 0;
-      const propField: IPlacementField = {
-        world,
-        colors: data.colors,
-        erosion: data.erosion,
-        field,
-        resolution: data.size === 0 ? 0 : field.rows,
-        size: data.size,
-        waterLevel: data.waterLevel,
-        lakes: data.lakes,
-        rivers: data.rivers,
-      };
+      const erosionFlowSamples = this.#erosionSamples.flow;
+      const erosionDepositSamples = this.#erosionSamples.deposition;
       // Every fixed camera stands in a clearing: a trunk a metre from the lens is a green wall, not a
       // framing, and the seed decides where trees land, so the eyes are kept open by rule.
       const river = createRivers(
@@ -612,16 +530,14 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         ctx.add(river.mesh);
         ctx.entities.add("river", { mesh: river.mesh, dispose: () => river.dispose() });
       }
-      const scatter = scatterProps(
-        propField,
-        BENCHMARK[world].focus,
-        Object.values(BENCHMARK[world].poses)
-          .filter((pose) => pose.eye < 20)
-          .map((pose) => [pose.at[0], pose.at[1], 10] as const),
-      );
-      paintCanopy(mesh, data, scatter.placements);
+      const scatter = this.#scatter;
+      if (!scatter || scatter.canopy.length !== data.resolution ** 2)
+        throw new Error(`World ${world} placements do not match the terrain`);
+      mesh.geometry.setAttribute("canopy", new Float32BufferAttribute(scatter.canopy, 1));
       const fallbackSaplingHeight = world === "alpine" ? 2 : world === "tundra" ? 1.4 : undefined;
-      let propParts = buildPropVariants(undefined, fallbackSaplingHeight);
+      const fallbackParts = this.#fallbackParts;
+      if (!fallbackParts) throw new Error(`World ${world} prop variants were not loaded`);
+      let propParts = fallbackParts;
       const flat = flatPropMaterials();
       let props: Awaited<ReturnType<typeof createStreamedProps>>;
       let readyTimePending = false;
@@ -1184,6 +1100,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         // After the camera is placed, not before: the band is a function of where the eye is, and
         // the framing is what moved it.
       });
+      ctx.state.set({ enterMs: performance.now() - enterStart });
     }
 
     override update(ctx: TerrainCtx, dt: number): void {

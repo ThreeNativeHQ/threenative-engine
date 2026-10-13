@@ -598,6 +598,13 @@
     "resources": [
       {
         "id": "GameState",
+        "path": "enterMs",
+        "gte": 0,
+        "lte": 50,
+        "allowTrivial": "Measured synchronous scene enter; baked scatter must not run in enter."
+      },
+      {
+        "id": "GameState",
         "path": "lakePlacementError",
         "lte": 0.02,
         "allowTrivial": "The drawn lake centre must match the baked [x,z] basin. The value stays at 1 when no lake is drawn, so an absent lake fails too."

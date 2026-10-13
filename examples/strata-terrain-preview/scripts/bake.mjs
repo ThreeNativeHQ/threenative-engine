@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { Heightfield } from "@threenative/core/world";
+import { BufferGeometry, Float32BufferAttribute, Mesh } from "three";
+import { register } from "tsx/esm/api";
+
+register();
 import { Mask, Terrain, bakeMesh } from "@threenative/terrain";
 import { terrainPalette } from "../src/render/palette.js";
 
@@ -301,6 +306,10 @@ const fingerprint = createHash("sha256")
     ),
   )
   .update(JSON.stringify(terrainPalette))
+  .update(await readFile(new URL("../src/render/scatter.ts", import.meta.url)))
+  .update(await readFile(new URL("../src/render/terrain.ts", import.meta.url)))
+  .update(await readFile(new URL("../src/render/benchmark.ts", import.meta.url)))
+  .update(await readFile(new URL("../src/render/placements.ts", import.meta.url)))
   .update(await readFile(new URL(import.meta.url)))
   .update(await readFile(new URL("../../../packages/terrain/dist/index.js", import.meta.url)))
   .digest("hex");
@@ -319,7 +328,12 @@ if (!(isEntry && process.argv.includes("--force"))) {
     const undrawn = Object.keys(recipes).filter((name) => !drawn.has(name));
     const stale = (
       await Promise.all(
-        ["baked.json", "horizon.json", ...undrawn.map((name) => `${name}.json`)].map((file) =>
+        [
+          "baked.json",
+          "horizon.json",
+          ...undrawn.map((name) => `${name}.json`),
+          ...Object.keys(recipes).map((name) => `${name}.placements.bin`),
+        ].map((file) =>
           stat(new URL(file, outputDir)).then(
             (s) => s.mtimeMs > out.mtimeMs,
             () => true,
@@ -411,6 +425,40 @@ if (!baked) {
   for (const [name, world] of Object.entries(worlds))
     if (!drawn.has(name))
       await writeFile(new URL(`${name}.json`, outputDir), JSON.stringify(world));
+  // Import after the JSON outputs exist: terrain's horizon reads the newly baked continuation.
+  const { scatterProps } = await import("../src/render/scatter.js");
+  const { paintCanopy } = await import("../src/render/terrain.js");
+  const { BENCHMARK } = await import("../src/render/benchmark.js");
+  const { encodePlacements } = await import("../src/render/placements.js");
+  for (const [name, data] of Object.entries(worlds)) {
+    const field = new Heightfield({
+      rows: data.resolution,
+      columns: data.resolution,
+      width: data.size,
+      depth: data.size,
+      origin: { x: 0, z: 0 },
+      heights: Float32Array.from(data.heights),
+    });
+    const scatter = scatterProps(
+      { ...data, field, world: name },
+      BENCHMARK[name].focus,
+      Object.values(BENCHMARK[name].poses)
+        .filter((pose) => pose.eye < 20)
+        .map((pose) => [...pose.at, 10]),
+    );
+    const mesh = new Mesh(new BufferGeometry());
+    mesh.geometry.setAttribute(
+      "canopy",
+      new Float32BufferAttribute(new Float32Array(data.resolution ** 2), 1),
+    );
+    paintCanopy(mesh, data, scatter.placements);
+    const table = encodePlacements(scatter, mesh.geometry.getAttribute("canopy").array);
+    await writeFile(new URL(`${name}.placements.bin`, outputDir), new Uint8Array(table));
+    mesh.geometry.dispose();
+    console.log(
+      `${name}: ${scatter.placements.length} baked placements; ${table.byteLength} bytes`,
+    );
+  }
   await writeFile(new URL(".bake-stamp", outputDir), `${fingerprint}\n`);
   console.log(
     `Cold bake total: ${((performance.now() - bakeStarted) / 1000).toFixed(2)} s; five worlds plus continuation.`,

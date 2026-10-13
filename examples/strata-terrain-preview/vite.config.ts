@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { terrainEditor } from "@threenative/terrain/editor/server";
@@ -28,6 +28,7 @@ import { type Plugin, defineConfig } from "vite";
  */
 function preparedAssets(): Plugin {
   const roots: { mount: string; dir: string; flat: boolean }[] = [
+    { dir: "./src/world", flat: true, mount: "/world" },
     { dir: "./local-assets/temperate", flat: false, mount: "/temperate" },
     { dir: "./local-assets/temperate/basis", flat: true, mount: "/basis" },
     { dir: "./local-assets/prepared", flat: true, mount: "/prepared" },
@@ -79,6 +80,14 @@ function preparedAssets(): Plugin {
     name: "strata-prepared-assets",
     configureServer: serve,
     configurePreviewServer: serve,
+    generateBundle() {
+      for (const world of ["forest", "coastal", "alpine", "desert", "tundra"])
+        this.emitFile({
+          type: "asset",
+          fileName: `world/${world}.placements.bin`,
+          source: readFileSync(new URL(`./src/world/${world}.placements.bin`, import.meta.url)),
+        });
+    },
   };
 }
 
