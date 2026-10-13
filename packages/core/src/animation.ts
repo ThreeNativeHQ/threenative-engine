@@ -41,7 +41,10 @@ export interface IAnimationPlayerOptions {
    * the clip's motion back as if it were the body's.
    */
   readonly strideRoot?: Object3D;
-  /** Evaluate by measured screen size by default; a positive integer names a frame interval. */
+  /**
+   * Evaluate by measured screen size by default; a positive integer names a frame interval.
+   * Public action time-scale interpolations are protected at effective rate 1 until they settle.
+   */
   readonly updateRate?: "auto" | number;
 }
 
@@ -326,6 +329,8 @@ export class AnimationPlayer {
   readonly #pendingActionTimes = new Map<AnimationAction, number>();
   readonly #evaluationScales = new Map<AnimationAction, number>();
   readonly #evaluationPaused = new Set<AnimationAction>();
+  readonly #timeScaleInterpolations = new Set<AnimationAction>();
+  #evaluating = false;
   #evaluated = false;
   #actions = new Map<string, AnimationAction>();
   #current: string | undefined;
@@ -381,6 +386,7 @@ export class AnimationPlayer {
       const action = this.mixer.clipAction(clip);
       if (action === null)
         throw new Error(`Animation clip '${clip.name}' could not create an action.`);
+      this.#observeTimeScaleInterpolation(action);
       this.#actions.set(clip.name, action);
       this.#clips.set(clip.name, clip);
     }
@@ -432,10 +438,31 @@ export class AnimationPlayer {
     )
       return 1;
     if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasLoopListeners) return 1;
+    if (this.#timeScaleInterpolations.size > 0) return 1;
     if (this.#updateRate !== "auto") return this.#updateRate;
     const state = this.#rateState;
     if (state.source === undefined) return 1;
     return state.frame === state.source.animationFrame ? state.rate : 8;
+  }
+
+  #observeTimeScaleInterpolation(action: AnimationAction): void {
+    const warp = action.warp.bind(action);
+    const stopWarping = action.stopWarping.bind(action);
+    const crossFadeFrom = action.crossFadeFrom.bind(action);
+    action.warp = (startTimeScale, endTimeScale, duration) => {
+      if (!this.#evaluating) this.#flushPending();
+      this.#timeScaleInterpolations.add(action);
+      return warp(startTimeScale, endTimeScale, duration);
+    };
+    action.crossFadeFrom = (fadeOutAction, duration, warp) => {
+      if (!this.#evaluating) this.#flushPending();
+      return crossFadeFrom(fadeOutAction, duration, warp);
+    };
+    action.stopWarping = () => {
+      const result = stopWarping();
+      this.#timeScaleInterpolations.delete(action);
+      return result;
+    };
   }
 
   get current(): string | undefined {
@@ -590,7 +617,11 @@ export class AnimationPlayer {
     if (clipGroundSpeed < CLIP_GROUND_FLOOR) {
       // Not locomotion. An idle, a reload or a death is authored at the rate it is authored at,
       // and warping it by how fast the body happens to be sliding is a bug, not a convention.
-      if (this.#strideSynced && action.getEffectiveTimeScale() === this.#strideRate)
+      if (
+        this.#strideSynced &&
+        !this.#timeScaleInterpolations.has(action) &&
+        action.getEffectiveTimeScale() === this.#strideRate
+      )
         action.setEffectiveTimeScale(1);
       this.#strideGroundSpeed = groundSpeed;
       this.#strideRate = 1;
@@ -606,7 +637,8 @@ export class AnimationPlayer {
     // event happens at, however still the body stands: its own root motion is the movement, so
     // re-timing it against a stationary body only slows the event down. A travelling death clip
     // clamped to the rate floor held a corpse upright through its whole death in the sandbox.
-    const applies = this.#strideSync && this.#mode === "loop";
+    const applies =
+      this.#strideSync && this.#mode === "loop" && !this.#timeScaleInterpolations.has(action);
     if (applies) action.setEffectiveTimeScale(rate);
     this.#strideGroundSpeed = groundSpeed;
     this.#strideRate = rate;
@@ -626,7 +658,7 @@ export class AnimationPlayer {
     for (const [name, action] of this.#actions) {
       if (!action.isScheduled() || action.getEffectiveWeight() <= 0) continue;
       const ground = this.#measureOf(name).groundSpeed;
-      if (ground < CLIP_GROUND_FLOOR) continue;
+      if (ground < CLIP_GROUND_FLOOR || this.#timeScaleInterpolations.has(action)) continue;
       const wanted = groundSpeed < STRIDE_SPEED_FLOOR ? STRIDE_RATE_MIN : groundSpeed / ground;
       action.setEffectiveTimeScale(Math.min(STRIDE_RATE_MAX, Math.max(STRIDE_RATE_MIN, wanted)));
     }
@@ -938,9 +970,11 @@ export class AnimationPlayer {
         }
       }
     }
+    this.#evaluating = true;
     try {
       this.mixer.update(elapsed);
     } finally {
+      this.#evaluating = false;
       this.mixer.timeScale = mixerScale;
       for (const action of this.#evaluationPaused) action.paused = true;
       this.#evaluationPaused.clear();
@@ -992,6 +1026,7 @@ export class AnimationPlayer {
     this.#blendDuration = 0;
     this.#blendElapsed = 0;
     this.#blendStarts.clear();
+    this.#timeScaleInterpolations.clear();
     this.#resetStride();
   }
 

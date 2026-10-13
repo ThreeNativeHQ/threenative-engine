@@ -3,6 +3,7 @@ import {
   AnimationMixer,
   Bone,
   Group,
+  LoopOnce,
   Mesh,
   MeshBasicMaterial,
   NumberKeyframeTrack,
@@ -326,68 +327,165 @@ describe("AnimationPlayer update rate", () => {
   });
 
   it.each(["warp", "halt"] as const)(
-    "preserves Three action time-scale interpolation at rate 1 (%s)",
+    "preserves Three action time-scale interpolation at rates 1, 4 and 8 (%s)",
     (operation) => {
-      const clip = new AnimationClip("warp", 1, [
-        new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, 1]),
-      ]);
-      const expectedRoot = new Group();
-      const expectedMixer = new AnimationMixer(expectedRoot);
-      const expectedAction = expectedMixer.clipAction(clip).play();
-      const actual = new AnimationPlayer({
-        root: new Group(),
-        clips: [clip],
-        strideSync: false,
-        updateRate: 1,
-      });
-      actual.play("warp");
-      const actualAction = actual.mixer.clipAction(actual.clip("warp"));
-      if (operation === "warp") {
-        expectedAction.warp(1, 2, 0.5);
-        actualAction.warp(1, 2, 0.5);
-      } else {
-        expectedAction.halt(0.5);
-        actualAction.halt(0.5);
-      }
-      for (let frame = 0; frame < 60; frame += 1) {
-        expectedMixer.update(1 / 60);
-        actual.update(1 / 60);
+      for (const rate of [1, 4, 8]) {
+        const clip = new AnimationClip("warp", 10, [
+          new NumberKeyframeTrack(".rotation[x]", [0, 10], [0, 1]),
+        ]);
+        const expectedRoot = new Group();
+        const expectedMixer = new AnimationMixer(expectedRoot);
+        const expectedAction = expectedMixer.clipAction(clip).play();
+        const actual = new AnimationPlayer({
+          root: new Group(),
+          clips: [clip],
+          strideSync: false,
+          updateRate: rate,
+        });
+        actual.play("warp");
+        const actualAction = actual.mixer.clipAction(actual.clip("warp"));
+        let skippedBeforeWarp = false;
+        for (let frame = 0; frame < Math.max(3, rate); frame += 1) {
+          expectedMixer.update(1 / 60);
+          actual.update(1 / 60);
+          skippedBeforeWarp ||= !actual.updateRateReport.evaluated;
+        }
+        if (rate > 1) expect(skippedBeforeWarp).toBe(true);
+        if (operation === "warp") {
+          expectedAction.warp(1, 2, 0.5);
+          actualAction.warp(1, 2, 0.5);
+        } else {
+          expectedAction.halt(0.5);
+          actualAction.halt(0.5);
+        }
+        let protectedFrames = 0;
+        for (let frame = 0; frame < 300; frame += 1) {
+          expectedMixer.update(1 / 60);
+          actual.update(1 / 60);
+          expect(actualAction.getEffectiveTimeScale()).toBeCloseTo(
+            expectedAction.getEffectiveTimeScale(),
+            10,
+          );
+          if (actual.updateRateReport.evaluated)
+            expect(actualAction.time).toBeCloseTo(expectedAction.time, 10);
+          if (
+            !expectedAction.paused &&
+            expectedAction.getEffectiveTimeScale() !== expectedAction.timeScale
+          ) {
+            protectedFrames += 1;
+            expect(actual.updateRateReport).toMatchObject({ rate: 1, evaluated: true });
+          }
+        }
+        actual.update(0, true);
         expect(actualAction.time).toBeCloseTo(expectedAction.time, 10);
         expect(actualAction.getEffectiveTimeScale()).toBeCloseTo(
           expectedAction.getEffectiveTimeScale(),
           10,
         );
+        expect(protectedFrames).toBeGreaterThan(0);
+        actual.dispose();
+        expectedMixer.uncacheRoot(expectedRoot);
       }
-      actual.update(0, true);
-      expect(actualAction.time).toBeCloseTo(expectedAction.time, 10);
-      expect(actualAction.getEffectiveTimeScale()).toBeCloseTo(
-        expectedAction.getEffectiveTimeScale(),
-        10,
-      );
-      actual.dispose();
-      expectedMixer.uncacheRoot(expectedRoot);
     },
   );
 
-  it("does not cancel a public warp while throttling", () => {
-    const clip = new AnimationClip("warp", 1, [
-      new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, 1]),
-    ]);
+  it("preserves unequal-duration warp-enabled crossfades at every requested rate", () => {
+    const clips = [
+      new AnimationClip("from", 4, [new NumberKeyframeTrack(".rotation[x]", [0, 4], [0, 1])]),
+      new AnimationClip("to", 10, [new NumberKeyframeTrack(".rotation[y]", [0, 10], [0, 1])]),
+    ];
+    for (const rate of [1, 4, 8]) {
+      const expectedRoot = new Group();
+      const expectedMixer = new AnimationMixer(expectedRoot);
+      const expectedFrom = expectedMixer.clipAction(clips[0] as AnimationClip).play();
+      const expectedTo = expectedMixer
+        .clipAction(clips[1] as AnimationClip)
+        .setEffectiveWeight(1)
+        .play();
+      const actual = new AnimationPlayer({
+        root: new Group(),
+        clips,
+        strideSync: false,
+        updateRate: rate,
+      });
+      actual.play("from");
+      const actualFrom = actual.mixer.clipAction(actual.clip("from")).play();
+      const actualTo = actual.mixer.clipAction(actual.clip("to")).setEffectiveWeight(1).play();
+      let skippedBeforeCrossfade = false;
+      for (let frame = 0; frame < Math.max(3, rate); frame += 1) {
+        expectedMixer.update(1 / 60);
+        actual.update(1 / 60);
+        skippedBeforeCrossfade ||= !actual.updateRateReport.evaluated;
+      }
+      if (rate > 1) expect(skippedBeforeCrossfade).toBe(true);
+      expectedTo.crossFadeFrom(expectedFrom, 0.5, true);
+      actualTo.crossFadeFrom(actualFrom, 0.5, true);
+      let protectedFrames = 0;
+      for (let frame = 0; frame < 120; frame += 1) {
+        expectedMixer.update(1 / 60);
+        actual.update(1 / 60);
+        const evaluated = actual.updateRateReport.evaluated;
+        let protectedThisFrame = false;
+        for (const [actualAction, expectedAction] of [
+          [actualFrom, expectedFrom],
+          [actualTo, expectedTo],
+        ] as const) {
+          expect(actualAction.getEffectiveTimeScale()).toBeCloseTo(
+            expectedAction.getEffectiveTimeScale(),
+            10,
+          );
+          if (evaluated) {
+            expect(actualAction.time).toBeCloseTo(expectedAction.time, 10);
+            expect(actualAction.getEffectiveWeight()).toBeCloseTo(
+              expectedAction.getEffectiveWeight(),
+              10,
+            );
+          }
+          if (expectedAction.getEffectiveTimeScale() !== expectedAction.timeScale)
+            protectedThisFrame = true;
+        }
+        if (protectedThisFrame) {
+          protectedFrames += 1;
+          expect(actual.updateRateReport).toMatchObject({ rate: 1, evaluated: true });
+        }
+      }
+      actual.update(0, true);
+      expect(actualFrom.time).toBeCloseTo(expectedFrom.time, 10);
+      expect(actualTo.time).toBeCloseTo(expectedTo.time, 10);
+      expect(protectedFrames).toBeGreaterThan(0);
+      actual.dispose();
+      expectedMixer.uncacheRoot(expectedRoot);
+    }
+  });
+
+  it("does not recursively flush when a public warp starts in a mixer callback", () => {
+    const clips = [
+      new AnimationClip("loop", 1, [new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, 1])]),
+      new AnimationClip("once", 0.05, [new NumberKeyframeTrack(".rotation[y]", [0, 0.05], [0, 1])]),
+    ];
     const actual = new AnimationPlayer({
       root: new Group(),
-      clips: [clip],
+      clips,
       strideSync: false,
       updateRate: 8,
     });
-    actual.play("warp");
-    const action = actual.mixer.clipAction(actual.clip("warp"));
-    action.warp(1, 2, 0.5);
+    actual.play("loop");
+    const loopAction = actual.mixer.clipAction(actual.clip("loop"));
+    const onceAction = actual.mixer.clipAction(actual.clip("once")).setLoop(LoopOnce, 1).play();
     let warped = false;
-    for (let frame = 0; frame < 16; frame += 1) {
-      actual.update(1 / 60);
-      if (actual.updateRateReport.evaluated && action.getEffectiveTimeScale() > 1) warped = true;
-    }
+    let callbackRate = 0;
+    actual.mixer.addEventListener("finished", ({ action }) => {
+      if (action === onceAction) {
+        warped = true;
+        loopAction.warp(1, 2, 0.1);
+        callbackRate = actual.updateRateReport.rate;
+      }
+    });
+    expect(() => {
+      for (let frame = 0; frame < 30; frame += 1) actual.update(1 / 60);
+    }).not.toThrow();
     expect(warped).toBe(true);
+    expect(callbackRate).toBe(1);
     actual.dispose();
   });
 
