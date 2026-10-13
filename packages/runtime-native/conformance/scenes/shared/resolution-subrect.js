@@ -57,6 +57,7 @@ export function startScene(canvas, dimensions) {
 
     for (const scale of [SCALE, 1, SCALE]) {
       controller.setScale(scale);
+      controller.setSize(dimensions.width, dimensions.height);
       pipeline.render();
       assertTransition(scale);
     }
