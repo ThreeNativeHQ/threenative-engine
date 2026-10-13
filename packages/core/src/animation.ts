@@ -2,6 +2,8 @@ import {
   type AnimationAction,
   type AnimationClip,
   AnimationMixer,
+  type AnimationMixerEventMap,
+  type EventListener,
   LoopOnce,
   LoopRepeat,
   type Object3D,
@@ -237,6 +239,52 @@ type AnimationMode = "loop" | "once";
 let nextAnimationOffset = 0;
 const ANIMATION_RATE_STATE_KEY = "threenative.animationRateState";
 
+type LoopListener = EventListener<AnimationMixerEventMap["loop"], "loop", LoopAwareAnimationMixer>;
+type FinishedListener = EventListener<
+  AnimationMixerEventMap["finished"],
+  "finished",
+  LoopAwareAnimationMixer
+>;
+
+class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
+  readonly #loopListeners = new Set<LoopListener>();
+
+  get hasLoopListeners(): boolean {
+    return this.#loopListeners.size > 0;
+  }
+
+  override addEventListener(type: "loop", listener: LoopListener): void;
+  override addEventListener(type: "finished", listener: FinishedListener): void;
+  override addEventListener(
+    type: "loop" | "finished",
+    listener: LoopListener | FinishedListener,
+  ): void {
+    if (type === "loop") {
+      const loopListener = listener as LoopListener;
+      if (!this.hasEventListener(type, loopListener)) this.#loopListeners.add(loopListener);
+      super.addEventListener(type, loopListener);
+      return;
+    }
+    super.addEventListener(type, listener as FinishedListener);
+  }
+
+  override removeEventListener(type: "loop", listener: LoopListener): void;
+  override removeEventListener(type: "finished", listener: FinishedListener): void;
+  override removeEventListener(
+    type: "loop" | "finished",
+    listener: LoopListener | FinishedListener,
+  ): void {
+    if (type === "loop") {
+      const loopListener = listener as LoopListener;
+      const wasRegistered = this.hasEventListener(type, loopListener);
+      super.removeEventListener(type, loopListener);
+      if (wasRegistered) this.#loopListeners.delete(loopListener);
+      return;
+    }
+    super.removeEventListener(type, listener as FinishedListener);
+  }
+}
+
 export class AnimationPlayer {
   readonly mixer: AnimationMixer;
   readonly root: Object3D;
@@ -292,7 +340,7 @@ export class AnimationPlayer {
     const owner = new.target.name || "AnimationPlayer";
     this.root = options.root;
     this.updateRate = options.updateRate ?? "auto";
-    this.mixer = new AnimationMixer(options.root);
+    this.mixer = new LoopAwareAnimationMixer(options.root);
     this.#preparation = options.preparation;
     this.#strideSync = options.strideSync ?? true;
     this.#strideRoot = options.strideRoot ?? options.root;
@@ -358,6 +406,7 @@ export class AnimationPlayer {
       this.#blendElapsed < this.#blendDuration
     )
       return 1;
+    if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasLoopListeners) return 1;
     if (this.#updateRate !== "auto") return this.#updateRate;
     const state = this.#rateState;
     if (state.source === undefined) return 1;

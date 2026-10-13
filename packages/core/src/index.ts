@@ -22,7 +22,8 @@ export const version = "0.3.4";
  * that frame interval. `updateRateReport` reports the effective rate, whether a named override is
  * active, and whether the latest update evaluated. One-shots and fades stay full-rate; root-motion
  * `AnimationComposer` advances every tick, and auto camera-ray targets and camera-parented rigs
- * stay full-rate.
+ * stay full-rate. A public `mixer` `"loop"` listener also promotes the player to full-rate so
+ * Three.js preserves one loop callback per tick; `updateRateReport` reports that effective rate.
  * @situation play an animation on a character
  * @situation switch a character between idle and attack clips
  * @situation stop a walking character's feet from sliding or spinning
@@ -35,7 +36,7 @@ export const version = "0.3.4";
  * @constraint a one-shot clip always plays at its authored rate; the matched rate re-times loops only
  * @constraint the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so
  * @override strideSync controls whether the matched rate is applied while stride is still measured
- * @override updateRate: "auto" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval
+ * @override updateRate: "auto" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval; a public `mixer` `"loop"` listener promotes effective evaluation to 1 to preserve event timing
  * @example const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
  */
 export { AnimationPlayer } from "./animation.js";
@@ -84,7 +85,8 @@ export { BlendSpace1D, BlendSpace2D } from "./animation-blend.js";
  * default; `updateRate: 1` evaluates every frame, another positive safe integer requests that
  * interval, and `updateRateReport` exposes the effective rate, override status and latest result.
  * One-shots and fades stay full-rate; root-motion `AnimationComposer` advances every tick, and
- * auto camera-ray targets and camera-parented rigs stay full-rate.
+ * auto camera-ray targets and camera-parented rigs stay full-rate. A public `mixer` `"loop"`
+ * listener also promotes effective evaluation to 1 so Three.js emits one loop callback per tick.
  * @situation put an animated character in the scene
  * @situation my imported character renders deformed
  * @situation instance an imported rigged character
@@ -96,7 +98,7 @@ export { BlendSpace1D, BlendSpace2D } from "./animation-blend.js";
  * @constraint requiredClips fails closed at load time if any requested clip is missing or binds 0 tracks
  * @override strideSync controls whether locomotion playback rate matches ground covered
  * @override size normalises the instance to real-world metres with skin-aware measurement
- * @override updateRate: "auto" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval
+ * @override updateRate: "auto" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval; a public `mixer` `"loop"` listener promotes effective evaluation to 1 to preserve event timing
  * @example import { SkeletalMesh3D } from "@threenative/core";
  * const character = new SkeletalMesh3D({
  *   source: gltf.scene, clips: gltf.animations, requiredClips: ["idle", "walk"],

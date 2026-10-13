@@ -117,6 +117,43 @@ describe("AnimationPlayer update rate", () => {
     candidate.dispose();
   });
 
+  it("preserves loop listener timing at a requested reduced rate", () => {
+    const clip = new AnimationClip("loop", 0.05, [
+      new NumberKeyframeTrack(".rotation[x]", [0, 0.05], [0, 1]),
+    ]);
+    const baseline = new AnimationPlayer({
+      root: new Group(),
+      clips: [clip],
+      strideSync: false,
+      updateRate: 1,
+    });
+    const candidate = new AnimationPlayer({
+      root: new Group(),
+      clips: [clip],
+      strideSync: false,
+      updateRate: 8,
+    });
+    baseline.play("loop");
+    candidate.play("loop");
+    const expected: { frame: number; loopDelta: number; clip: string }[] = [];
+    const actual: { frame: number; loopDelta: number; clip: string }[] = [];
+    let frame = 0;
+    baseline.mixer.addEventListener("loop", ({ action, loopDelta }) =>
+      expected.push({ frame, loopDelta, clip: action.getClip().name }),
+    );
+    candidate.mixer.addEventListener("loop", ({ action, loopDelta }) =>
+      actual.push({ frame, loopDelta, clip: action.getClip().name }),
+    );
+    for (; frame < 60; frame += 1) {
+      baseline.update(1 / 60);
+      candidate.update(1 / 60);
+    }
+    expect(actual).toEqual(expected);
+    expect(actual.length).toBeGreaterThan(0);
+    baseline.dispose();
+    candidate.dispose();
+  });
+
   it("flushes elapsed time before weighted phase sync and keeps transition weights exact", () => {
     const baseline = player(1);
     const candidate = player(8);

@@ -377,6 +377,13 @@ describe("SkinnedBatch palette", () => {
     let skipped = false;
     while (!skipped) {
       player.update(1 / 60);
+      if (player.updateRateReport.evaluated) {
+        root.updateMatrixWorld(true);
+        batch.begin();
+        batch.write(slot, mesh);
+        batch.end();
+        first.set(batch.palette);
+      }
       skipped = !player.updateRateReport.evaluated;
     }
     root.updateMatrixWorld(true);
