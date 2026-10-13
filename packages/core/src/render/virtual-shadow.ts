@@ -2049,7 +2049,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
    */
   #planPasses(level: ILevel, levelPages: number, frame: NodeFrame): IPartialPass[] | undefined {
     if (!this.options.partialRedraw) return undefined;
-    // quality-allow: Three's frame type does not declare the renderer's shadow map type
     const renderer = (frame as { renderer?: { shadowMap?: { type?: number } } }).renderer;
     if (renderer?.shadowMap?.type === VSMShadowMap) return undefined;
     if (this.#dirtyPages(level) * 2 > levelPages) return undefined;
@@ -2128,8 +2127,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const keys = this.#gpuKeys;
     if (keys === undefined) return;
     const shadow = level.shadow;
-    // quality-allow: the light's own shadow owns this update, and the stock node calls it too.
     // #aim already baked the full receiver matrix before narrowing a partial camera.
+    // quality-allow: the light's own shadow owns this update, and the stock node calls it too.
     if (level.pass === undefined) shadow.updateMatrices(level.light as unknown as DirectionalLight);
     _shadowProjection.multiplyMatrices(
       shadow.camera.projectionMatrix,
@@ -3102,6 +3101,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           if (this.#autoDepth) this.#measureDepth(level, centre, keepsDepth);
           this.#place(level, centre);
           if (passes !== undefined) {
+            // quality-allow: the light's own shadow owns this update, and the stock node calls it too.
             level.shadow.updateMatrices(level.light as unknown as DirectionalLight);
             this.#readDepthRow(level, _proposedDepth);
             if (
