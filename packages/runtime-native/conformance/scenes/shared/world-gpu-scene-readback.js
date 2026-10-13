@@ -55,7 +55,7 @@ function assertReadbackLifecycle(detail, targets, releases) {
     [...releases.values()].every((count) => count >= 2),
     "World GPU readback targets did not both release on repeated checks.",
   );
-  detail.disposed = true;
+  detail.originalDisposed = true;
 }
 
 function scheduleDisposal(renderer, world, detail, targets, releases, onDone) {
@@ -63,14 +63,26 @@ function scheduleDisposal(renderer, world, detail, targets, releases, onDone) {
   void Promise.resolve(idle).then(() => {
     world.dispose();
     assertReadbackLifecycle(detail, targets, releases);
-    onDone();
+    return onDone();
   }).catch((error) => {
+    detail.reloadFailures += 1;
     detail.failure = String(error);
   });
 }
 
-function observeWorldFrame(world, detail) {
-  if (visibleWorldMeshes(world) > 0) detail.nonemptyFrames += 1;
+function observeWorldFrame(world, detail, phase) {
+  if (visibleWorldMeshes(world) > 0) {
+    if (phase === "original") detail.originalNonemptyFrames += 1;
+    else {
+      detail.reloadNonemptyFrames += 1;
+      if (detail.reloadMarkerReported === false) {
+        console.info(
+          `TN_WORLD_GPU_SCENE_READBACK original=disposed originalNonempty=${String(detail.originalNonemptyFrames)} censuses=${String(detail.censuses)} targetIdentities=${String(detail.targetIdentities)} releaseEvents=${String(detail.releaseEvents)} disposeEvents=${String(detail.disposeEvents)} reload=ready reloadNonempty=${String(detail.reloadNonemptyFrames)} reloadFailures=${String(detail.reloadFailures)} validation=off reason=post-disposal-reload`,
+        );
+        detail.reloadMarkerReported = true;
+      }
+    }
+  }
   if (detail.failure !== "") throw new Error(detail.failure);
 }
 
@@ -79,8 +91,18 @@ function canDispose(detail, disposePending) {
 }
 
 function assertProofDeadline(frame, detail) {
-  if (frame >= 299 && detail.disposed === false)
-    throw new Error("World GPU readback proof did not complete two checks and disposal.");
+  if (frame >= 299 && (detail.originalDisposed === false || detail.reloadReady === false || detail.reloadNonemptyFrames === 0))
+    throw new Error(
+      `World GPU readback proof did not render the reloaded world: originalDisposed=${String(detail.originalDisposed)} reloadReady=${String(detail.reloadReady)} reloadNonempty=${String(detail.reloadNonemptyFrames)}.`,
+    );
+}
+
+function reportFinalMarker(frame, detail) {
+  if (frame < 299 || detail.finalMarkerReported || detail.reloadNonemptyFrames === 0) return;
+  console.info(
+    `TN_WORLD_GPU_SCENE_READBACK final original=disposed originalNonempty=${String(detail.originalNonemptyFrames)} censuses=${String(detail.censuses)} targetIdentities=${String(detail.targetIdentities)} releaseEvents=${String(detail.releaseEvents)} disposeEvents=${String(detail.disposeEvents)} reload=ready reloadNonempty=${String(detail.reloadNonemptyFrames)} reloadFailures=${String(detail.reloadFailures)} validation=off reason=post-disposal-reload`,
+  );
+  detail.finalMarkerReported = true;
 }
 
 export async function startScene(canvas, dimensions) {
@@ -91,12 +113,17 @@ export async function startScene(canvas, dimensions) {
     async ({ camera, renderer, scene }) => {
       const detail = {
         censuses: 0,
-        disposed: false,
         disposeEvents: 0,
         failure: "",
-        nonemptyFrames: 0,
+        originalDisposed: false,
+        originalNonemptyFrames: 0,
         readbacks: 0,
         releaseEvents: 0,
+        reloadFailures: 0,
+        finalMarkerReported: false,
+        reloadMarkerReported: false,
+        reloadNonemptyFrames: 0,
+        reloadReady: false,
         targetIdentities: 0,
       };
       const targets = new Map();
@@ -155,40 +182,48 @@ export async function startScene(canvas, dimensions) {
           return target.buffer.slice(0);
         },
       };
-      const follow = new THREE.Object3D();
-      const world = await WorldCells.load({
-        url: "/world/world.json",
-        surface: new THREE.MeshBasicMaterial({ color: 0x356859 }),
-        follow,
-        ring: 0,
-        budgets: { bytes: 8 * 1024 * 1024, instances: 8, residentCells: 1 },
-        data: { manifest: MANIFEST, placements: PLACEMENTS },
-        gpuScene: true,
-        gpuSceneValidate: true,
-        bundles: false,
-        impostors: false,
-        terrain: false,
-        loadModel: async () => decodedModel(),
-      });
+      const loadWorld = (gpuSceneValidate) =>
+        WorldCells.load({
+          url: "/world/world.json",
+          surface: new THREE.MeshBasicMaterial({ color: 0x356859 }),
+          follow: new THREE.Object3D(),
+          ring: 0,
+          budgets: { bytes: 8 * 1024 * 1024, instances: 8, residentCells: 1 },
+          data: { manifest: MANIFEST, placements: PLACEMENTS },
+          gpuScene: true,
+          gpuSceneValidate,
+          bundles: false,
+          impostors: false,
+          terrain: false,
+          loadModel: async () => decodedModel(),
+        });
+      const world = await loadWorld(true);
       scene.add(world);
       let frame = 0;
       let disposePending = false;
-      let frozen = false;
+      let renderedWorld = world;
       return {
         detail,
         render() {
-          if (frozen) return;
           frame += 1;
-          world.update(worldRenderer, camera);
+          if (renderedWorld !== undefined)
+            renderedWorld.update(worldRenderer, camera);
           renderer.render(scene, camera);
-          observeWorldFrame(world, detail);
+          if (renderedWorld !== undefined)
+            observeWorldFrame(renderedWorld, detail, detail.reloadReady ? "reload" : "original");
           if (canDispose(detail, disposePending)) {
             disposePending = true;
-            scheduleDisposal(renderer, world, detail, targets, releases, () => {
-              frozen = true;
+            scheduleDisposal(renderer, world, detail, targets, releases, async () => {
+              renderedWorld = undefined;
+              console.info(
+                "TN_WORLD_GPU_SCENE_READBACK reload validation=off reason=post-disposal-reload",
+              );
+              renderedWorld = await loadWorld(false);
+              scene.add(renderedWorld);
+              detail.reloadReady = true;
             });
-            return;
           }
+          reportFinalMarker(frame, detail);
           assertProofDeadline(frame, detail);
         },
       };
