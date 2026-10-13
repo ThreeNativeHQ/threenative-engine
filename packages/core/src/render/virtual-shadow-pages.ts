@@ -705,6 +705,53 @@ export function projectBounds(
   return { low: middle - reach, high: middle + reach };
 }
 
+/** An inclusive rectangle of pages on one level, in the clipmap's absolute page coordinates. */
+export interface IPageRect {
+  maxX: number;
+  maxY: number;
+  minX: number;
+  minY: number;
+}
+
+/**
+ * The inclusive pages an interval on one light axis covers, never fewer than one. The same
+ * arithmetic as {@link DirectionalClipmap.boundsToPageRange}, applied to a projected interval.
+ */
+export function pageSpan(
+  low: number,
+  high: number,
+  pageWorldSize: number,
+): { max: number; min: number } {
+  const min = Math.floor(low / pageWorldSize);
+  return { max: Math.max(min, Math.floor((high - EPSILON) / pageWorldSize)), min };
+}
+
+/** Pages in a rectangle. */
+export function pageArea(rect: IPageRect): number {
+  return (rect.maxX - rect.minX + 1) * (rect.maxY - rect.minY + 1);
+}
+
+/** Whether `outer` holds every page of `inner`; false when there is no `outer`. */
+export function containsPages(outer: IPageRect | undefined, inner: IPageRect): boolean {
+  return (
+    outer !== undefined &&
+    outer.minX <= inner.minX &&
+    outer.minY <= inner.minY &&
+    outer.maxX >= inner.maxX &&
+    outer.maxY >= inner.maxY
+  );
+}
+
+/** Grow `into` to hold `rect`, or become a copy of it. Returns the grown rectangle. */
+export function unionPageRect(into: IPageRect | undefined, rect: IPageRect): IPageRect {
+  if (into === undefined) return { ...rect };
+  into.minX = Math.min(into.minX, rect.minX);
+  into.minY = Math.min(into.minY, rect.minY);
+  into.maxX = Math.max(into.maxX, rect.maxX);
+  into.maxY = Math.max(into.maxY, rect.maxY);
+  return into;
+}
+
 /**
  * Remembers each tracked caster's last bounds and dirties every page the old and new bounds
  * cover on every level when they change. Unchanged bounds dirty nothing.
