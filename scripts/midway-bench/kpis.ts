@@ -188,8 +188,24 @@ export interface ITrend {
   target?: number;
   targetLabel: string;
   points: ITrendPoint[];
+  /** Benchmark lines: the three.js (legacy) median and the latest web Wasm value, when they have one. */
+  benchmarks: { arm: Arm; label: string; value: number }[];
   /** Percent better than the first desktop point (positive is better; every trend is lower-is-better). */
   deltaPct?: number;
+}
+
+function benchmarksOf(runs: readonly IMidwayRun[], get: (r: IMidwayRun) => number | undefined) {
+  const legacy = median(
+    runs
+      .filter((r) => r.arm === "legacy")
+      .map(get)
+      .filter(finite),
+  );
+  const wasm = ends(runs, "native", get).last?.value;
+  return [
+    ...(legacy === undefined ? [] : [{ arm: "legacy" as const, label: "three.js", value: legacy }]),
+    ...(wasm === undefined ? [] : [{ arm: "native" as const, label: "web Wasm", value: wasm }]),
+  ];
 }
 
 export function trendsOf(runs: readonly IMidwayRun[]): ITrend[] {
@@ -206,6 +222,7 @@ export function trendsOf(runs: readonly IMidwayRun[]): ITrend[] {
       const v = get(r);
       return v === undefined ? [] : [{ dir: r.dir, arm: r.arm, v }];
     });
+    const benchmarks = benchmarksOf(runs, get);
     const desktop = points.filter((p) => p.arm === "desktop");
     const first = desktop[0]?.v;
     const last = desktop.at(-1)?.v;
@@ -215,6 +232,7 @@ export function trendsOf(runs: readonly IMidwayRun[]): ITrend[] {
       unit,
       targetLabel,
       points,
+      benchmarks,
       ...(target === undefined ? {} : { target }),
       ...(first && last !== undefined && desktop.length > 1
         ? { deltaPct: ((first - last) / first) * 100 }
@@ -336,6 +354,33 @@ export function breakdownOf(runs: readonly IMidwayRun[]) {
   };
 }
 
+export interface IGapSide {
+  ms: number;
+  absMs: number;
+  /** Percent of the three.js time: positive is slower, negative is faster. */
+  pct: number;
+  direction: "slower" | "faster" | "equal";
+  dir: string;
+}
+
+/** Desktop native and web Wasm against three.js on main-thread ms per frame, latest run of each. */
+export function gapOf(runs: readonly IMidwayRun[]) {
+  const legacy = legacyMs(runs);
+  const side = (arm: Arm): IGapSide | undefined => {
+    const last = ends(runs, arm, mainThreadMs).last;
+    if (!last || legacy === undefined) return undefined;
+    const absMs = last.value - legacy;
+    return {
+      ms: last.value,
+      absMs,
+      pct: (absMs / legacy) * 100,
+      direction: absMs > 0 ? "slower" : absMs < 0 ? "faster" : "equal",
+      dir: last.run.dir,
+    };
+  };
+  return { legacyMs: legacy, desktop: side("desktop"), wasm: side("native") };
+}
+
 export function midwayOf(runs: readonly IMidwayRun[], prdText?: string) {
   const prd = prdText === undefined ? undefined : prdProgress(prdText);
   return {
@@ -344,6 +389,7 @@ export function midwayOf(runs: readonly IMidwayRun[], prdText?: string) {
     trends: trendsOf(runs),
     abPairs: abPairsOf(runs),
     breakdown: breakdownOf(runs),
+    gap: gapOf(runs),
     groups: groupsOf(runs),
     legacyMs: legacyMs(runs),
     runs,

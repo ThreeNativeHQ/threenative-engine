@@ -18,6 +18,7 @@ import {
 import {
   abPairsOf,
   breakdownOf,
+  gapOf,
   groupsOf,
   kpisOf,
   midwayOf,
@@ -314,5 +315,41 @@ describe("progress, trends and PRD boxes", () => {
     expect(abPairsOf(set([14, 15, 16], [10, 11, 14]))[0]?.verdict).toBe("reject");
     expect(abPairsOf(set([14, 15, 16], []))[0]?.verdict).toBe("pending");
     expect(abPairsOf([run("solo-desktop", frame(5))])).toEqual([]);
+  });
+
+  it("reports the native and web Wasm gap to three.js in ms and percent", () => {
+    const list = [
+      run("r1-legacy", budget(10)),
+      run("r2-legacy", budget(12)),
+      run("d1-desktop", frame(14.3)),
+      run("c1-native", budget(8.8)),
+    ];
+    const gap = gapOf(list);
+    expect(gap.legacyMs).toBe(11);
+    expect(gap.desktop).toMatchObject({ direction: "slower", dir: "d1-desktop" });
+    expect(gap.desktop?.absMs).toBeCloseTo(3.3);
+    expect(gap.desktop?.pct).toBeCloseTo(30);
+    expect(gap.wasm?.direction).toBe("faster");
+    expect(gap.wasm?.pct).toBeCloseTo(-20);
+    expect(gapOf([run("d1-desktop", frame(5))])).toEqual({
+      legacyMs: undefined,
+      desktop: undefined,
+      wasm: undefined,
+    });
+  });
+
+  it("gives each trend its three.js and web Wasm benchmark lines when they exist", () => {
+    const list = [
+      run("r1-legacy", [budget(10), proj(6000)].join("\n")),
+      run("c1-native", budget(9)),
+      run("d1-desktop", [frame(14), ui(60), proj(5000)].join("\n")),
+    ];
+    const by = Object.fromEntries(trendsOf(list).map((t) => [t.id, t.benchmarks]));
+    expect(by.ms).toEqual([
+      { arm: "legacy", label: "three.js", value: 10 },
+      { arm: "native", label: "web Wasm", value: 9 },
+    ]);
+    expect(by.matrix).toEqual([{ arm: "legacy", label: "three.js", value: 6000 }]);
+    expect(by.hud).toEqual([]);
   });
 });
