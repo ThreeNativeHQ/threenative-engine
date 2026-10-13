@@ -10,6 +10,9 @@
 #include <android/log.h>
 #endif
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <dlfcn.h>
+#endif
 #include <chrono>
 #include <ctime>
 #include <array>
@@ -261,6 +264,31 @@ struct Window {
     uint32_t height = kHeight;
 };
 
+#if defined(__linux__) && !defined(__ANDROID__)
+/**
+ * A window manager shows `_NET_WM_NAME` (UTF-8). SDL's static X11 build leaves it unset and writes
+ * `WM_NAME` through the locale, so a title with a dash shows as "MIDWAY â Open Pacific" in the title
+ * bar. libX11 is already loaded by SDL (RTLD_NOLOAD finds it); the player sets the property itself.
+ */
+void publishUtf8Title(SDL_Window* window, const std::string& title) {
+    void* x11 = dlopen("libX11.so.6", RTLD_NOW | RTLD_NOLOAD);
+    if (x11 == nullptr) return;
+    using InternAtom = unsigned long (*)(void*, const char*, int);
+    using ChangeProperty = int (*)(void*, unsigned long, unsigned long, unsigned long, int, int, const unsigned char*, int);
+    using Flush = int (*)(void*);
+    const auto intern = reinterpret_cast<InternAtom>(dlsym(x11, "XInternAtom"));
+    const auto change = reinterpret_cast<ChangeProperty>(dlsym(x11, "XChangeProperty"));
+    const auto flush = reinterpret_cast<Flush>(dlsym(x11, "XFlush"));
+    const SDL_PropertiesID properties = SDL_GetWindowProperties(window);
+    void* display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+    const auto id = static_cast<unsigned long>(SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+    if (intern == nullptr || change == nullptr || flush == nullptr || display == nullptr || id == 0) return;
+    change(display, id, intern(display, "_NET_WM_NAME", 0), intern(display, "UTF8_STRING", 0), 8, 0 /* PropModeReplace */,
+           reinterpret_cast<const unsigned char*>(title.data()), static_cast<int>(title.size()));
+    flush(display);
+}
+#endif
+
 /** The legacy host's platform presentation flags, without web-view or UI branches. */
 bool openWindow(Window& window) {
 #if defined(__ANDROID__)
@@ -287,6 +315,9 @@ bool openWindow(Window& window) {
         std::printf("[Playtest] SDL_CreateWindow failed: %s\n", SDL_GetError());
         return false;
     }
+#if defined(__linux__) && !defined(__ANDROID__)
+    publishUtf8Title(window.handle, surfaceConfig().title);
+#endif
     int width = 0, height = 0;
     SDL_GetWindowSize(window.handle, &width, &height);
     if (width <= 0 || height <= 0)
