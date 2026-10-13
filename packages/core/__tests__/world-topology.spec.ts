@@ -1,7 +1,47 @@
 import { describe, expect, it } from "vitest";
+import { terrainHeight } from "../../../examples/abyss-framework/src/world/terrainSampler.js";
+import { evaluateWorldTopology } from "../../playtest/src/evaluators/world-gameplay.js";
 import { summarizeWorldTopology } from "../src/world-topology.js";
+import { Heightfield } from "../src/world.js";
 
 describe("summarizeWorldTopology", () => {
+  it("the terrain probe's canonical kilometre field meets every landform floor", () => {
+    const field = Heightfield.fromSampler({
+      columns: 1025,
+      rows: 1025,
+      width: 1024,
+      depth: 1024,
+      origin: { x: 0, z: 0 },
+      sampleHeight: terrainHeight,
+      worldPasses: {
+        gpu: false,
+        dispatchBudget: 4,
+        erosion: {
+          depositionRate: 0.35,
+          erosionRate: 0.22,
+          evaporation: 0.04,
+          iterations: 4,
+          rainfall: 0.08,
+          sedimentCapacity: 0.7,
+          timeStep: 0.05,
+        },
+      },
+    });
+    try {
+      const result = evaluateWorldTopology({
+        columns: field.columns,
+        rows: field.rows,
+        width: field.width,
+        depth: field.depth,
+        heights: field.heights,
+        flow: field.flow,
+      });
+      expect(result.failed, JSON.stringify(result.metrics)).toEqual([]);
+    } finally {
+      field.detach();
+    }
+  });
+
   it("orders a hand-computed ridge as 2, a flat field as 1", () => {
     // A 3x3 valley: both sides drain into the bottom-middle outlet, two first-order
     // tributaries meeting there raise its Horton-Strahler order to 2.

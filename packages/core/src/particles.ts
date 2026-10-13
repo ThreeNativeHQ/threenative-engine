@@ -272,6 +272,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
     renderer = this.#renderer,
     camera?: Camera,
     _covered?: boolean,
+    _view?: undefined,
     simulatedSeconds?: number,
   ): void {
     if (this.#released || !this.emitting) return;

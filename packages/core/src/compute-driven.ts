@@ -42,6 +42,7 @@ export interface IComputeDriven {
     renderer: IRendererLike,
     camera?: Camera,
     covered?: boolean,
+    view?: undefined,
     simulatedSeconds?: number,
   ): void;
   detach(): void;
@@ -143,7 +144,8 @@ export class ComputeDrivenRegistry {
       }
       if ((entry.driven.processCadence ?? "fixed") !== cadence) continue;
       if (startupOnly && entry.driven.processDuringStartup !== true) continue;
-      entry.driven.process(renderer, camera, startupOnly, simulatedSeconds);
+      // TerrainTiles owns the fourth argument for its LOD view.
+      entry.driven.process(renderer, camera, startupOnly, undefined, simulatedSeconds);
     }
   }
 

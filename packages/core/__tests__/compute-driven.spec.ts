@@ -613,7 +613,7 @@ it("uses the loop clock for significance grace and forwards seconds without chan
     registry.observeBudget(window);
     registry.processRender(renderer, view, true, simulation);
     expect(probe.budget.yield).toHaveBeenLastCalledWith(true);
-    expect(process).toHaveBeenLastCalledWith(renderer, view, true, 4);
+    expect(process).toHaveBeenLastCalledWith(renderer, view, true, undefined, 4);
     registry.observeBudget({ ...window, gpuMs: 0, simulatedSeconds: 10 });
     tick = 299;
     registry.processRender(renderer, view, true, simulation);
@@ -621,7 +621,7 @@ it("uses the loop clock for significance grace and forwards seconds without chan
     tick = 300;
     registry.processRender(renderer, view, true, simulation);
     expect(probe.budget.yield).toHaveBeenLastCalledWith(false);
-    expect(process).toHaveBeenLastCalledWith(renderer, view, true, 5);
+    expect(process).toHaveBeenLastCalledWith(renderer, view, true, undefined, 5);
     expect(wall).not.toHaveBeenCalled();
   } finally {
     wall.mockRestore();

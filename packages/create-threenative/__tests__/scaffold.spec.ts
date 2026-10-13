@@ -248,22 +248,21 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
   // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
   // createProject on the merged tree.
-  // Recomputed 2026-10-12 for PRD-569: the onCull note folds into the VFX paragraph line, keeping
-  // action-rpg under its 100-line cap. Only action-rpg's AGENTS.md and CLAUDE.md changed; measured through createProject.
-  "action-rpg": "7d92d3fdc1ac23ffb54e6abe4945a946de5a65ff516c8d0a97cccb9b9f34769a",
-  minimal: "0202ac5dd7ac436e474f55dd9ec2f5f43da3d67c219b2351405e960ca8f1a71e",
-  platformer: "edf75a6bfbb3b0ab7513b7e8fc3a8441b9aa41ff5f544ab77c201f1fcd8d8faf",
-  puzzle: "c5739a462298a6b1a0c2ba27ebca8c276fa89ccd6464d8b49f43b2da0e9e9f72",
-  racing: "deff5eb215f9d3be8007f2f0bc4530618035db36418c05aee292791a07ca76a9",
-  rain: "643494c2812208b8db1c24e38c06053d7fe349bb25692802c8acf3511e08dd43",
-  rts: "8dfd9b5cb3d441463389b842ff2b3cde015d81ed4d86dad089f8cd2e2916f15f",
-  runner: "1844ee1b87ef97d51aad6d157715bdc74df39b39a08d822403f92b2d9e4a3302",
+  // PRD-566/569 merge: measured all thirteen trees, including action-rpg onCull instructions.
+  "action-rpg": "cdedb47ee03791a866fdb6ca98c51e61ba05ad75dab5aa23925a3d153acfa389",
+  minimal: "8d834289ea3940529d925f53a4946cc718771dc4fb8577c2199ba6a29faf51d4",
+  platformer: "f5d4a0362bd3a6f7bb3f8530178e22d5cbe0bd8625d0c83121b53f8f5aa3a2ec",
+  puzzle: "cdacbec8e3543a394263bd73c42d7482b61c433df6cb60ce42bc8306f91f71e9",
+  racing: "cec5c42b232f5f858fdefae9275b324378c2914d5113185e3ec3a748162caf23",
+  rain: "05027f3370b26deb260e158240a09904ea54e593a8184767eead660810bf7551",
+  rts: "6f331bb87e10340cd33263edbff4f7ce1fc40d24b601ea786a06ea41e1f065a5",
+  runner: "4f7a6b3ace688771a7c96e67062a8b696d0b50c09376183f2f02eead97361c12",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "a524164861fad5282f55b69a9515529604afb8f73ad25e4bcd51c7b93ce17a82",
-  shooter: "816c172e0c9d86fa1be9a866a09b3b377a336f0038e5ed3600d7f153cc753301",
-  snow: "e4be666568eeb003b274486d791a183867c5b0e176f2888650305475c4dc820a",
-  starter: "cb2221f6a07dd981fb19be00477e3304fe8add983eb17e0c7066d68164489b30",
-  "tower-defense": "54184c2d75fe452ada59a5a3ce00e326e485b9288153b5617320fbcaa88b47fb",
+  sailing: "9c9edb14b880fc446e9b921b60dd99053f45032f053c4fcb5cc820a323c43904",
+  shooter: "699758de47b7642a38b998dad0437b17c6a68df046d8807ddbaf35a61d9f1423",
+  snow: "837eee8058f3bf043eabe5161207e62fbc5accd83cd1353902b79bb55f2dd1cf",
+  starter: "21b5ccb273b27ff8b711c7b2c5f42345adb7ab941fa19e605b64b01626f5aa68",
+  "tower-defense": "95e514738bd04ba2a561f3500d877af1d0c540a9e40fb00829770455006fd14c",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

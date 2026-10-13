@@ -241,15 +241,15 @@ describe("particle bounds and culling", () => {
     emitter.position.set(100, 0, -5);
     emitter.attachRenderer(gpu);
     const wallTime = performance.now();
-    emitter.process(gpu, view, false, 4);
-    emitter.process(gpu, view, false, 4.99);
+    emitter.process(gpu, view, false, undefined, 4);
+    emitter.process(gpu, view, false, undefined, 4.99);
     expect(emitter.cull.state).toBe("running");
-    emitter.process(gpu, view, false, 5);
+    emitter.process(gpu, view, false, undefined, 5);
     expect(emitter.cull.reason).toBe("outside-view");
     expect(emitter.dispatches).toBe(2);
     expect(performance.now()).toBe(wallTime);
     emitter.position.x = 0;
-    emitter.process(gpu, view, false, 5);
+    emitter.process(gpu, view, false, undefined, 5);
     expect(emitter.cull.state).toBe("running");
   });
 

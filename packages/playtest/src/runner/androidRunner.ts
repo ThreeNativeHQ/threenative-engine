@@ -6,6 +6,7 @@ import { assertCaptureNotBlank, assertDesktopCaptureNotBlank } from "../capture.
 import {
   loadPlaytestScenario,
   playtestDiagnostic,
+  resolveDiagnosticsPolicy,
   playtestStepHoldTicks,
   playtestStepWaitTicks,
   type IPlaytestFramebufferCoverageObservation,
@@ -239,7 +240,7 @@ async function runDevicePlaytestInternal(
     setupApplication = bridge.setupApplication;
     await throwIfAborted(target);
     // Startup owns temporary operation timeouts during first-use compilation. Complete that
-    // gate before the scenario warmup, whose full tick count must run against the ready world.
+    // gate before the scenario's frame warmup against the ready world.
     const attached = bridge;
     const startupOutcome = scenario.awaitStartup === false
       ? undefined
@@ -253,7 +254,11 @@ async function runDevicePlaytestInternal(
         pump: () => attached.advance(1),
       });
     await throwIfAborted(target);
-    if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
+    // Device requests are polled on animation frames; observe warmup draws, as the browser does,
+    // without spending simulation ticks before the scenario starts.
+    for (let frame = 0; frame < scenario.warmupFrames; frame += 1) {
+      await bridge.sample({ entities: [], include: [] });
+    }
     await throwIfAborted(target);
 
     const entityIds = observedEntityIds(scenario);
@@ -540,13 +545,16 @@ async function runDevicePlaytestInternal(
       ), target.name);
     }
     const consoleEntries = await target.driver.captureConsole();
+    const networkEntries = target.name === "desktop" && resolveDiagnosticsPolicy(scenario.assert?.diagnostics, target.name).noNetworkErrors
+      ? desktopNetworkEntries(after)
+      : [];
     const report = buildReport(
       config,
       scenario,
       before,
       after,
       consoleEntries,
-      [],
+      networkEntries,
       accumulatedPathLength(pathPositions),
       {},
       true,
@@ -573,7 +581,7 @@ async function runDevicePlaytestInternal(
     // there whichever target produced the run.
     await writeObservationArtifacts(config.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
-      network: [],
+      network: networkEntries,
       runtimeTrace: undefined,
     });
     return {
@@ -1133,12 +1141,8 @@ function unsupportedAssertion(
       target,
     );
   }
-  // Only an explicit `true`. The omitted case is no longer the same question: since
-  // `resolveDiagnosticsPolicy` learned the run target, a device lane defaults the network channel
-  // *off* with the reason recorded, rather than defaulting it on and comparing it to an
-  // observation that is hardwired empty. A scenario that spells out `true` is still asking the
-  // target for something it cannot do, and still fails here by name.
-  if (scenario.assert?.diagnostics?.noNetworkErrors === true) {
+  // Desktop consumes the host fetch observation; the other device lanes still lack an observer.
+  if (scenario.assert?.diagnostics?.noNetworkErrors === true && target !== "desktop") {
     return unsupportedDiagnostic(
       "network assertions",
       `Run this assertion on --target browser; ${targetLabel(target)} device transport has no CDP network observer. Remove the explicit network assertion, or declare "diagnostics": { "noNetworkErrors": false, "networkErrorsOptOutReason": "..." } to record a scenario-owned waiver.`,
@@ -1200,4 +1204,17 @@ function unreadableCoverageObservation(error: unknown): IPlaytestFramebufferCove
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+
+function desktopNetworkEntries(snapshot: IPlaytestObservationSnapshot): Array<{ method: string; url: string }> {
+  const network = snapshot.network;
+  if (network === undefined || network === null || !Number.isSafeInteger(network.requests)
+    || network.requests < 0 || !Array.isArray(network.entries) || network.entries.length > 256
+    || network.requests < network.entries.length || network.entries.some((entry) =>
+      entry === null || typeof entry !== "object" || typeof entry.method !== "string"
+      || entry.method.length === 0 || typeof entry.url !== "string" || entry.url.length === 0)) {
+    throw new Error("TN_PLAYTEST_NETWORK_UNOBSERVED: desktop host network observation is missing or malformed.");
+  }
+  return network.entries;
 }

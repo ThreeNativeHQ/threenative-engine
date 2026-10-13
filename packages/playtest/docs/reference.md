@@ -77,8 +77,10 @@ means something on one target is a fork of the harness. `--live-clock` adds
 the game entry evaluates.
 
 A device target that cannot be reached fails `TN_PLAYTEST_DEVICE_FAILED`; it never degrades
-to a browser run. Where a target genuinely lacks an observer — device transport has no CDP
-network observer — the assertion **errors and names the working target**, it does not skip.
+to a browser run. Desktop observes HTTP and asset fetch failures through the native host mailbox
+and checks network errors by default. Missing, malformed or overflowing observations fail closed.
+Android and iOS still lack a runner network observer; an explicit network assertion **errors and
+names the working target**, it does not skip.
 The negative-control scenarios in `examples/native-smoke/playtests/` (`-misspelled`,
 `-wrong-value`) prove the device path still fails closed; run them when you change transport
 or observation code.

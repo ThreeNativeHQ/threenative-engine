@@ -89,7 +89,11 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       && this.child.signalCode === null;
   }
 
-  async prepare(_endpoint: string, mailboxRoot?: string): Promise<void> {
+  async prepare(
+    _endpoint: string,
+    mailboxRoot?: string,
+    viewport?: { height: number; width: number },
+  ): Promise<void> {
     if (this.child !== undefined && await this.isAlive()) {
       throw new Error("Desktop playtest executable is already running.");
     }
@@ -119,7 +123,12 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       // never reaches this line with one.
       ...(this.options.liveClock === true ? { TN_PLAYTEST_CLOCK: "wall-clock" } : {}),
     };
-    const child = spawn(this.options.executable, [...(this.options.args ?? [])], {
+    const child = spawn(this.options.executable, [
+      ...(this.options.args ?? []),
+      ...(viewport === undefined
+        ? []
+        : ["--width", String(viewport.width), "--height", String(viewport.height), "--windowed"]),
+    ], {
       cwd: this.options.cwd,
       detached: process.platform !== "win32",
       env: environment,
