@@ -227,6 +227,14 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-free-run.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_free_run PROPERTIES LABELS "native-engine")
+    # PRD-554: a game's web HUD is drawn over the player's frame and takes a press (needs the opt-in overlay
+    # build, -DTN_ENGINE_PLAYER_UI_OVERLAY=ON, and the built playtest runner; it starts its own Xvfb).
+    if(TN_ENGINE_PLAYER_UI_OVERLAY)
+        add_test(NAME native_engine_player_ui_overlay
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-ui-overlay.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_ui_overlay PROPERTIES LABELS "native-engine" TIMEOUT 300)
+    endif()
     add_test(NAME native_engine_player_async_bridge
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-async-bridge.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
