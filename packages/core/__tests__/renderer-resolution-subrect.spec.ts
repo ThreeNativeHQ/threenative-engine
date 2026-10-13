@@ -233,3 +233,20 @@ it("releases a retired stage before subsequent scale changes", () => {
   expect(resize).not.toHaveBeenCalled();
   controller.dispose();
 });
+
+it("does not resize retained nodes twice when only scale changes", () => {
+  const target = new RenderTarget();
+  const resize = vi.fn((w: number, h: number) => target.setSize(w, h));
+  const controller = new ResolutionSubrect();
+  controller.retain({ setSize: resize }, [target]);
+  controller.activate(1);
+  controller.setSize(1280, 720);
+  resize.mockClear();
+  controller.setScale(0.72);
+  const calls = resize.mock.calls.length;
+  controller.setSize(1280, 720);
+  expect(resize).toHaveBeenCalledTimes(calls);
+  expect(controller.viewSize.toArray()).toEqual([928, 520]);
+  expect(target.viewport.toArray()).toEqual([0, 0, 928, 520]);
+  controller.dispose();
+});

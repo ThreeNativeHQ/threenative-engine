@@ -106,6 +106,8 @@ export class ResolutionSubrect implements IResolutionSubrect {
     if (this.#disposed) throw new Error("TN_RESOLUTION_SUBRECT: disposed controller");
     validateScale(scale);
     this.#scale = scale;
+    if (this.#fullSize.x > 0)
+      this.viewSize.set(quantize(this.#fullSize.x * scale), quantize(this.#fullSize.y * scale));
     for (const binding of this.#nodes.values()) {
       if (binding.width > 0) binding.node.setSize(binding.width, binding.height);
     }
@@ -114,6 +116,7 @@ export class ResolutionSubrect implements IResolutionSubrect {
   setSize(width: number, height: number): void {
     if (this.#disposed) throw new Error("TN_RESOLUTION_SUBRECT: disposed controller");
     validateSize(width, height);
+    if (this.#active && this.#fullSize.x === width && this.#fullSize.y === height) return;
     this.#fullSize.set(width, height);
     this.viewSize.set(quantize(width * this.#scale), quantize(height * this.#scale));
     for (const binding of this.#nodes.values()) binding.node.setSize(width, height);
