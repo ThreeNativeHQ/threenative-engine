@@ -17,7 +17,7 @@ const roots = publicWorkspacePackages(path.resolve("packages", "..")).map(({ dir
 interface IManifest {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
-  bin?: Record<string, string>;
+  bin?: string | Record<string, string>;
   exports?: Record<string, string | Record<string, string>>;
   name: string;
   optionalDependencies?: Record<string, string>;
@@ -225,7 +225,12 @@ describe("registry publication", () => {
             `${packageJson.name} ${entry} -> ${target}`,
           ).resolves.toBeUndefined();
       }
-      for (const [name, target] of Object.entries(packageJson.bin ?? {}))
+      // npm's string form names the one binary after the package.
+      const bins =
+        typeof packageJson.bin === "string"
+          ? { [packageJson.name]: packageJson.bin }
+          : (packageJson.bin ?? {});
+      for (const [name, target] of Object.entries(bins))
         await expect(
           access(path.resolve("packages", root, target)),
           `${packageJson.name} bin ${name} -> ${target}`,

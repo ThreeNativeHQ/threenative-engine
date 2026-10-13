@@ -1473,6 +1473,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               get step() {
                 return gameLoop.step;
               },
+              get clockFrozen() {
+                return gameLoop.clockFrozen;
+              },
             },
             // The scaler reads the same windows the marker reports, so what it acted on and what
             // the record shows are the same measurement rather than two sampling paths.

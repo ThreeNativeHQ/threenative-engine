@@ -422,10 +422,12 @@ export interface IFrameBudgetWindow {
 export interface IFrameBudgetSimulation {
   readonly tick: () => number;
   readonly step: number;
+  /** False selects presented-frame windows; frozen or unspecified clocks use simulation ticks. */
+  readonly clockFrozen?: boolean;
 }
 
 export interface IFrameBudgetOptions {
-  /** Simulation ticks per report window when a clock is supplied, otherwise presented frames. Default 300. */
+  /** Simulation ticks per window unless the clock is live or absent, then presented frames. Default 300. */
   readonly reportEvery?: number;
   /** Minimum measured rendered frames per report window. Default 1. */
   readonly minFrames?: number;
@@ -1299,9 +1301,9 @@ export class FrameBudget {
   }
 
   #maybeReport(): void {
-    // Callers without a loop clock retain presented-frame window boundaries.
+    // Live clocks must keep reporting even while simulation is held or has not advanced.
     const elapsed =
-      this.#simulation === undefined
+      this.#simulation === undefined || this.#simulation.clockFrozen === false
         ? this.#framesInWindow
         : this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick());
     if (elapsed < this.reportEvery || this.#framesInWindow < this.minFrames) return;
