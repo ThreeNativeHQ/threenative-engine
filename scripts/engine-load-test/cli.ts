@@ -54,7 +54,8 @@ import {
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const artifactRoot = path.join(repoRoot, "artifacts/engine-load-test");
-const TN_PORT = 5199;
+// TN_BENCH_PORT moves the web arms off 5199 on a host where another server holds it.
+const TN_PORT = Number(process.env.TN_BENCH_PORT ?? 5199);
 const TN_DIST = path.join(repoRoot, "examples/engine-load-test/dist");
 const GODOT_PORT = 5198;
 const DEFAULT_LANE_MANIFEST = path.join(repoRoot, "scripts/performance-regression/lanes.json");

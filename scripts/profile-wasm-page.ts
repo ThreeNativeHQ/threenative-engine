@@ -112,9 +112,14 @@ async function cpu(page: Page, seconds: number) {
         : name(node);
   const groups = new Map<string, number>();
   const inclusive = new Map<string, number>();
+  const self = new Map<string, number>();
   for (const [id, n] of counts) {
     const node = byId.get(id) as IProfileNode;
     groups.set(group(node), (groups.get(group(node)) ?? 0) + n);
+    const own = name(node)
+      .replace(/std::__2::/gu, "")
+      .slice(0, 140);
+    self.set(own, (self.get(own) ?? 0) + n);
     const seen = new Set<string>();
     for (let at: number | undefined = id; at !== undefined; at = parents.get(at)) {
       const key = name(byId.get(at) as IProfileNode)
@@ -130,7 +135,12 @@ async function cpu(page: Page, seconds: number) {
       .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
       .map(([key, n]) => ({ name: key, percent: Number(((100 * n) / total).toFixed(1)) }));
-  return { samples: total, groups: share(groups, 12), inclusive: share(inclusive, 30) };
+  return {
+    samples: total,
+    groups: share(groups, 12),
+    inclusive: share(inclusive, 30),
+    self: share(self, 20),
+  };
 }
 
 async function calls(page: Page) {
@@ -281,6 +291,9 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
     `cpu (${r.profile.samples} samples): ${r.profile.groups.map((g) => `${g.name} ${g.percent}%`).join(", ")}`,
   );
   for (const row of r.profile.inclusive)
+    console.log(`  ${String(row.percent).padStart(5)}%  ${row.name}`);
+  console.log("self time:");
+  for (const row of r.profile.self)
     console.log(`  ${String(row.percent).padStart(5)}%  ${row.name}`);
   if (r.gpu) {
     console.log(

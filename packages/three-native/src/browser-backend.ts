@@ -406,6 +406,7 @@ export function defineBrowserClasses(
   const callbackFunctions = new WeakMap<object, Map<string, (...args: unknown[]) => unknown>>();
   const callbackNames = new Map<string, Set<string>>(); // by handle key, to clear on collection
   const held = new Set<object>();
+  let cursor = held.values(); // collect()'s place in `held`
   // userData is the game's: it lives with the wrapper, which `held` keeps while the engine references it.
   const userData = new WeakMap<object, unknown>();
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
@@ -1056,10 +1057,21 @@ export function defineBrowserClasses(
     classes,
     wrap,
     collect() {
-      const candidates = [...held];
+      // An eighth of the held wrappers each safe point, round robin (a live Set iterator): asking all
+      // of them cost about 1 ms a frame at 4,096 meshes. Holding a wrapper a few frames longer only
+      // delays its release; a game that drops objects faster than this settles near 8 frames of drops.
+      const budget = Math.ceil(held.size / 8);
+      const candidates: object[] = [];
+      while (candidates.length < budget) {
+        const next = cursor.next();
+        if (!next.done) {
+          candidates.push(next.value);
+          continue;
+        }
+        cursor = held.values();
+        if (candidates.length > 0) break;
+      }
       const counts = runtime.engineReferences?.(candidates.map(refOf));
-      // ponytail: every held wrapper is asked each safe point, in one call; keep a dirty set if a
-      // scene's held count shows in a profile.
       candidates.forEach((wrapper, i) => {
         const referenced =
           counts !== undefined
