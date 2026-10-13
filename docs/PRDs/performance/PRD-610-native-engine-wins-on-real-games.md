@@ -1,6 +1,6 @@
 # PRD-610 — The native engine wins on real games
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — the C++ engine is the epic's value proposition, and on Midway it is slower than three.js on both desktop and web (AC-6 and AC-7 open).
 **Complexity:** 6 (MEDIUM)
 **Owner:** João
@@ -87,12 +87,12 @@ AC-1 to AC-8 are the boxes under the execution phases, one phase each: Phase 1 h
 ## Execution Phases
 
 #### Phase 1: One frame per present
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/runtime-native/src/engine/player/core-host.mjs`, `packages/runtime-native/src/engine/player/run.cpp`, the player metrics emitter, a new `tests/native-engine/player-*.mjs` ctest.
 **Implementation:** gate `flushFrames` on present in free-run. Keep fixed-step simulation ticks if gameplay needs them. Log the frame budget every 300 frames.
 **Verification:** the AC-1 ctest red then green. The existing paced, real-input and overlay player ctests stay green. A Midway CPU-per-frame before/after on Xvfb (the prelude A/B gave 90.5 to 39.4 ms) covers AC-2.
 
-- [ ] AC-1 [local]: in free-run with a slow tick, core rAF, the matrix walk and the cull each run exactly once per presented frame. proof: player ctest (`tests/native-engine/`, red at 5 per frame before the fix) — Evidence: pending.
+- [x] AC-1 [local]: in free-run with a slow tick, core rAF, the matrix walk and the cull each run exactly once per presented frame. proof: player ctest (`tests/native-engine/`, red at 5 per frame before the fix) — Evidence: ctest `native_engine_player_frame_per_present` (25 ms frame callback, free-run): red on the old `core-host.mjs` at `…,1,1,2,3,4,5,5,5,5,5` callbacks per drawn frame, green at 1 per frame over 36 frames. The matrix walk and the cull run inside core's frame callback, so they follow it. `ctest -L native-engine -R player` 21/21 pass (2026-10-13).
 - [ ] AC-2 [local]: the player logs `TN_FRAME_BUDGET` every 300 frames during free-run flight. proof: Midway `flight.sh desktop` log with at least 3 in-flight budget lines — Evidence: pending.
 
 #### Phase 2: Cut the per-frame engine passes

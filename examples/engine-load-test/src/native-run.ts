@@ -51,9 +51,6 @@ declare const __TN_BENCH_CONFIG__: Readonly<{
 const config = __TN_BENCH_CONFIG__;
 const axes = parseAxesRecord(config.axes);
 const onEngine = __TN_PLATFORM__ === "engine-desktop";
-// The engine player ticks at 60 Hz and would otherwise hand the harness one rAF per tick, not per drawn
-// frame: an uncapped run would measure the tick rate. Frame callbacks follow the presented frame instead.
-if (onEngine) (globalThis as { __tnFramePaced?: boolean }).__tnFramePaced = true;
 
 function nextFrame(): Promise<number> {
   return new Promise((resolve) => requestAnimationFrame((timestamp) => resolve(timestamp)));

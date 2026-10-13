@@ -238,6 +238,11 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-free-run.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_free_run PROPERTIES LABELS "native-engine")
+    # PRD-610: a slow free-running frame runs its frame callbacks once per drawn frame, not once per catch-up tick.
+    add_test(NAME native_engine_player_frame_per_present
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-frame-per-present.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_frame_per_present PROPERTIES LABELS "native-engine")
     # PRD-554: a game's web HUD is drawn over the player's frame and takes a press (needs the opt-in overlay
     # build, -DTN_ENGINE_PLAYER_UI_OVERLAY=ON, and the built playtest runner; it starts its own Xvfb).
     if(TN_ENGINE_PLAYER_UI_OVERLAY)
