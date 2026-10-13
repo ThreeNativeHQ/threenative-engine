@@ -2238,6 +2238,92 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     node.dispose();
   });
 
+  it("should redraw the whole level when an authored span travels the camera off its depth origin", () => {
+    const { camera, light, scene } = shadowWorld();
+    // The span this scene authors: `lightDistance` and `depthRange` pin near and far, so no render
+    // ever derives them and every level's depth axis is the one below.
+    const node = setupNode(light, { clipExtents: [250], depthRange: 400, lightDistance: 200 });
+    settle(node, camera);
+    const resident = new Vector3(0, 0, 0);
+    const before = projected(node, 0, resident);
+    const held = levelCamera(node, 0);
+    const near = held.near;
+    const far = held.far;
+    // The camera travels along the light only: the snapped u/v window stands still, so no window
+    // moves and the level keeps the camera the map was drawn from.
+    camera.position.addScaledVector(SUN, 4);
+    node.updateBefore(frameFor(camera));
+    expect(projected(node, 0, resident).toArray()).toEqual(before.toArray());
+    // A caster inside the authored span arrives: an ordinary local admission.
+    const low = new Mesh(new BoxGeometry(4, 4, 4), new MeshStandardMaterial());
+    low.position.set(-6, 2, 0);
+    low.castShadow = true;
+    scene.add(low);
+    scene.updateMatrixWorld(true);
+    const draws = nextRedraw(node, camera, () =>
+      node.invalidateRegion({ min: { x: -10, y: 0, z: -4 }, max: { x: 0, y: 4, z: 4 } }, true),
+    );
+    expect(draws).toHaveLength(1);
+    // The span alone cannot see this: it is the same near and far the map was drawn with, so the
+    // camera's world-space depth origin is the only thing that says the encoding moved.
+    expect(levelCamera(node, 0).near).toBe(near);
+    expect(levelCamera(node, 0).far).toBe(far);
+    expect(
+      draws[0]?.partial,
+      "a kept texel cannot be read from a camera it was not drawn from",
+    ).toBe(false);
+    // And the whole redraw re-encodes the map from that camera, which moves the depth of the point
+    // the map has held since the first render.
+    expect(projected(node, 0, resident).z).not.toBeCloseTo(before.z, 3);
+    node.dispose();
+  });
+
+  it("should redraw the whole level when a derived span translates without changing width", () => {
+    const { camera, light, scene } = shadowWorld();
+    // One caster whose span the level derives, so its eye and its near/far both come from that one
+    // box: the same 40 m of depth, and then the same 40 m of depth 4 m further along the sun.
+    for (const child of [...scene.children]) if (child instanceof Mesh) scene.remove(child);
+    const stand = (metres: number): Mesh => {
+      const box = new Mesh(new BoxGeometry(4, 20, 4), new MeshStandardMaterial());
+      box.position.set(0, 10, 0).addScaledVector(SUN, metres);
+      box.castShadow = true;
+      scene.add(box);
+      scene.updateMatrixWorld(true);
+      return box;
+    };
+    const first = stand(0);
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    settle(node, camera);
+    const resident = new Vector3(0, 0, 0);
+    const before = projected(node, 0, resident);
+    const held = levelCamera(node, 0);
+    const near = held.near;
+    const far = held.far;
+    // The same box stands 4 m along the sun. The old one leaves and the new one arrives, so the
+    // level's whole span moves with it: near and far come out the numbers they were, and only the
+    // eye is somewhere else.
+    scene.remove(first);
+    const second = stand(4);
+    const at = second.position;
+    const draws = nextRedraw(node, camera, () =>
+      node.invalidateRegion(
+        { min: { x: at.x - 6, y: 0, z: at.z - 6 }, max: { x: at.x + 6, y: 20, z: at.z + 6 } },
+        true,
+      ),
+    );
+    expect(draws).toHaveLength(1);
+    expect(levelCamera(node, 0).near).toBe(near);
+    expect(levelCamera(node, 0).far).toBe(far);
+    // Same span, other origin: a kept texel holds the depth measured from the camera that drew it,
+    // so a camera that moved along the light re-encodes every texel the rectangle keeps.
+    expect(
+      draws[0]?.partial,
+      "a kept texel cannot be read from a camera it was not drawn from",
+    ).toBe(false);
+    expect(projected(node, 0, resident).z).not.toBeCloseTo(before.z, 3);
+    node.dispose();
+  });
+
   it("shades both sides of the fine guard edge with the same canopy in every level under load", () => {
     const { camera, light, scene } = world();
     light.position.set(0, 100, 100);

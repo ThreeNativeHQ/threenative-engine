@@ -487,6 +487,10 @@ const DEFAULT_EXPENSIVE_REFRESH_SHARE = 0.4;
  * grows without limit as the sun sets.
  */
 const MIN_SUN_COSINE = 0.05;
+// Metres of camera travel along the light that counts as no travel, the same tolerance the page
+// bounds are compared with: a derived origin is a sum of two doubles, so the same camera reached by
+// different arithmetic reads a few ulps apart, and a micrometre cannot move a shadow.
+const ORIGIN_EPSILON = 1e-6;
 
 /**
  * World spheres one level render collects: centre, radius, shadow flags, the box's own height
@@ -2957,12 +2961,16 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // The pages this render counted as rectangles, kept for the derived span below that turns
         // them into the whole level and has to say so in the counters it already spent.
         let countedPages = 0;
+        // The depth origin of the camera the map was drawn from, in world light space. The span
+        // below reads it before the grant replaces the centre it is measured from.
+        let drawnOrigin = 0;
         if (grant) {
           // A level's first render places its window; only later renders are travel.
           if (Number.isFinite(level.minX)) {
             this.#windowSteps +=
               Math.abs(window.minX - level.minX) + Math.abs(window.minY - level.minY);
           }
+          drawnOrigin = level.centerW + level.eye;
           level.minX = window.minX;
           level.minY = window.minY;
           level.centerW = this.clipmap.centerLight.w;
@@ -3047,18 +3055,22 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // texels. Both are undone the moment the render is over — by `#restoreHidden`, which the
           // mover maps and the main pass both need back.
           this.#probe(level, centre, index, stat);
+          // A rectangle redraws only the pages it names and keeps every other texel, and a kept
+          // texel holds its depth as the camera that drew it encoded it: an absolute distance along
+          // the light, measured from that camera's own origin. A span this render derived moves
+          // both, and an origin that moved moves the encoding even when near, far and the width
+          // between them are the same numbers the map already holds: a level whose casters all
+          // translate along the sun, or an authored span whose camera travels with a window that
+          // did not move. Either way the level draws whole instead of leaving numbers no camera the
+          // map was not drawn from can read.
           const drawnNear = level.depthNear;
           const drawnFar = level.depthFar;
           if (this.#autoDepth) this.#deriveDepth(level, centre);
-          // A rectangle redraws only the pages it names and keeps every other texel, and a kept
-          // texel holds its depth as the span that drew it encoded it. A span this render derived
-          // re-encodes every one of them, so the level draws whole instead of leaving numbers the
-          // map no longer holds. Nothing else here can move the encoding: a centre that travels
-          // along the light slides the camera down its own axis, and the receiver matrix and every
-          // kept texel land where they did.
           if (
             passes !== undefined &&
-            (level.depthNear !== drawnNear || level.depthFar !== drawnFar)
+            (level.depthNear !== drawnNear ||
+              level.depthFar !== drawnFar ||
+              Math.abs(level.centerW + level.eye - drawnOrigin) > ORIGIN_EPSILON)
           ) {
             const whole = this.clipmap.pagesPerAxis ** 2 - countedPages;
             this.#pagesDirty += whole;

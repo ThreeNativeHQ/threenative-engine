@@ -168,11 +168,13 @@ export class ShadowPartialProbe {
 
   /**
    * Travel `metres` along the light, so the page window stands still and only the depth centre
-   * moves. Every texel a level keeps then belongs to a camera that is nowhere near where the map
-   * was drawn from, which is the case the pinned `lightDistance` of this scene cannot show.
+   * moves: the camera a level keeps its map from is then somewhere else along its own axis, which
+   * the pinned `lightDistance` of this scene cannot show. The clipmap's own basis is the light axis
+   * this node places every camera on; the light's world position is only a direction when its target
+   * sits at the origin.
    */
   async #travelAlongLight(metres: number): Promise<void> {
-    this.cameraOffset.addScaledVector(this.#shadow.light.position.clone().normalize(), metres);
+    this.cameraOffset.addScaledVector(this.#shadow.clipmap.basisW, metres);
     await this.#frames(2);
   }
 

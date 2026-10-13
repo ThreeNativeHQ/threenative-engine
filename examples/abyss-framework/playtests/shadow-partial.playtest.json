@@ -147,8 +147,8 @@
       {
         "component": "shadowPartialTravelledPartial",
         "entity": "world",
-        "equals": 1,
-        "allowTrivial": "1 only when every redraw of the step drew fewer pages than a whole level."
+        "equals": 0,
+        "allowTrivial": "0 is the whole-level fallback: the camera moved along the sun, so the map's depth origin moved and every texel the redraw kept was encoded from the old camera. Anything else is 1."
       },
       {
         "component": "shadowPartialTravelledAdmission",
