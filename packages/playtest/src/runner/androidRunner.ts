@@ -2,7 +2,7 @@ import type { IPlaytestToneObservation } from "../tone.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { assertCaptureNotBlank } from "../capture.js";
+import { assertCaptureNotBlank, assertDesktopCaptureNotBlank } from "../capture.js";
 import {
   loadPlaytestScenario,
   playtestDiagnostic,
@@ -664,7 +664,10 @@ async function captureDeviceScreenshot(
   atStep?: string,
 ): Promise<void> {
   await target.driver.screenshot(path);
-  const stats = assertCaptureNotBlank(await readFile(path), path);
+  const png = await readFile(path);
+  // The browser bright-pixel floor rejected the native desktop frame panned-culled.png (PRD-569).
+  // Its content ratio is at least 0.0044, so desktop takes the content floor.
+  const stats = target.name === "desktop" ? assertDesktopCaptureNotBlank(png, path) : assertCaptureNotBlank(png, path);
   if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
 }
 

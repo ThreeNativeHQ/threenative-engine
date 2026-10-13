@@ -4,7 +4,7 @@
 **Priority:** P2 — AC-1 to AC-3 are open: a `GPUParticles3D` burst begins with its particles at random points of their lives, and a second hit moves the first hit's live particles.
 **Complexity:** 6 (MEDIUM) — 6–10 files (`particles.ts`, its spec, a conformance scene and registry row, the gallery probe, the action-rpg template) (+2), new public method and option set (+2), ring state that carries across frames (+2); risk override: none
 **Owner:** unassigned
-**Depends on:** None. Coordinate with [PRD-569](PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md): its `"clear"` cull reaction calls `restart()`, which this PRD defines for spawn-driven emitters. Respects [PRD-316](PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md) (§3): the new surface moves no appearance decision into core.
+**Depends on:** None. Coordinate with [PRD-569](../../done/PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md): its `"clear"` cull reaction calls `restart()`, which this PRD defines for spawn-driven emitters. Respects [PRD-316](PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md) (§3): the new surface moves no appearance decision into core.
 
 ## Context
 

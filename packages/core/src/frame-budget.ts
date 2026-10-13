@@ -268,6 +268,8 @@ export interface IFrameBudgetWindow {
   readonly window: number;
   /** Loop frames counted in this window, hitches excluded — one per present on the web. */
   readonly frames: number;
+  /** Fixed simulation ticks in this window multiplied by the loop's step, when supplied. */
+  readonly simulatedSeconds?: number;
   /** Frames excluded from the window because their present gap exceeded `hitchMs`. */
   readonly hitches: number;
   /**
@@ -422,9 +424,17 @@ export interface IFrameBudgetWindow {
   };
 }
 
+export interface IFrameBudgetSimulation {
+  readonly tick: () => number;
+  readonly step: number;
+}
+
 export interface IFrameBudgetOptions {
-  /** Presented frames per report window. Default 300. */
+  /** Simulation ticks per report window when a clock is supplied, otherwise presented frames. Default 300. */
   readonly reportEvery?: number;
+  /** Minimum measured rendered frames per report window. Default 1. */
+  readonly minFrames?: number;
+  readonly simulation?: IFrameBudgetSimulation;
   /** A present gap at or above this is a hitch, not a frame. Default 2000 ms. */
   readonly hitchMs?: number;
   /** Ring capacity per series. Default 1024. */
@@ -595,7 +605,10 @@ export class FrameBudget {
   #longestTaskMs = 0;
   #afterFirstFrameTaskMs = 0;
   readonly reportEvery: number;
+  readonly minFrames: number;
   readonly hitchMs: number;
+  readonly #simulation: IFrameBudgetSimulation | undefined;
+  #windowStartTick: number | undefined;
   #report: (line: string) => void;
   #wallClock: () => number;
   #onWindow: ((window: IFrameBudgetWindow) => void) | undefined;
@@ -668,11 +681,13 @@ export class FrameBudget {
   #firstTaskFrameStart: number | undefined;
 
   constructor(options: IFrameBudgetOptions = {}) {
+    this.#simulation = options.simulation;
     this.reportEvery = requirePositiveInteger(
       options.reportEvery,
       DEFAULT_REPORT_EVERY,
       "reportEvery",
     );
+    this.minFrames = requirePositiveInteger(options.minFrames, 1, "minFrames");
     this.hitchMs = requirePositiveNumber(options.hitchMs, DEFAULT_HITCH_MS, "hitchMs");
     const capacity = requirePositiveInteger(options.capacity, DEFAULT_CAPACITY, "capacity");
     this.#report = options.report ?? ((line) => console.log(line));
@@ -759,6 +774,7 @@ export class FrameBudget {
     if (this.#open)
       throw new Error("FrameBudget.beginFrame called before the previous frame ended.");
     this.#open = true;
+    this.#windowStartTick ??= this.#simulation?.tick();
     this.#frameStart = nowMs;
     if (this.#firstFrameStart === undefined) this.#firstFrameStart = nowMs;
     this.#firstTaskFrameStart ??= nowMs;
@@ -1185,6 +1201,13 @@ export class FrameBudget {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
       frames: this.#framesInWindow,
+      ...(this.#simulation === undefined
+        ? {}
+        : {
+            simulatedSeconds:
+              (this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick())) *
+              this.#simulation.step,
+          }),
       hitches: this.#hitchesInWindow,
       phases,
       presented,
@@ -1281,7 +1304,12 @@ export class FrameBudget {
   }
 
   #maybeReport(): void {
-    if (this.#framesInWindow < this.reportEvery) return;
+    // Callers without a loop clock retain presented-frame window boundaries.
+    const elapsed =
+      this.#simulation === undefined
+        ? this.#framesInWindow
+        : this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick());
+    if (elapsed < this.reportEvery || this.#framesInWindow < this.minFrames) return;
     const completed = this.window();
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);
     this.#windowIndex += 1;
@@ -1308,6 +1336,7 @@ export class FrameBudget {
     }
     for (const source of MAIN_DRAW_SOURCES) this.#passDrawSourceRings[source].reset();
     this.#framesInWindow = 0;
+    this.#windowStartTick = this.#simulation?.tick();
     this.#hitchesInWindow = 0;
     this.#renderOverTarget = 0;
     this.#gpuOverTarget = 0;
