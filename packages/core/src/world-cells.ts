@@ -6620,6 +6620,21 @@ export class WorldCells extends Group implements IComputeDriven {
         `wideMissing=${String(wideMissing)} seeded=${String(this.#gpuSeeded)} ` +
         `queued=${String(this.#jobs.length)}`,
     );
+    const hlod = this.stats().hlod;
+    let proxyDraws = 0;
+    let replacedSources = 0;
+    for (const state of this.#cellProxies) {
+      if (!state.active) continue;
+      proxyDraws += state.prepared?.meshes.length ?? 0;
+      replacedSources += state.hidden.size;
+    }
+    console.info(
+      `TN_WORLD_HLOD on=${String(hlod.on)} loaded=${String(hlod.loaded)} ` +
+        `compiled=${String(hlod.compiled)} observed=${String(hlod.observed)} ` +
+        `active=${String(hlod.active)} pending=${String(hlod.pending)} ` +
+        `draws=${String(proxyDraws)} replaced=${String(replacedSources)} ` +
+        `bytes=${String(hlod.bytes)} refused=${String(hlod.refused)} failures=${String(hlod.failures)}`,
+    );
     // The bundles on their own line, because the pair reads against a different question: how many
     // objects are recorded, and how many times the recording was thrown away and redone. A walk
     // streaming and culling holds `records` at the keys and chunks that came and went; a walk that

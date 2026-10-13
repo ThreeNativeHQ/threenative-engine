@@ -911,6 +911,21 @@
       "required": true
     },
     {
+      "id": "world-hlod-lifecycle",
+      "title": "hand-placed chunk HLOD swap, protected shadow/collision source and eviction",
+      "category": "world",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-hlod-lifecycle.js",
+      "browserRecipe": "webgpu",
+      "captureFrames": 180,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "world-terrain-inline-hash",
       "title": "terrain merge and seam jobs settle inline on a workerless host",
       "category": "world",

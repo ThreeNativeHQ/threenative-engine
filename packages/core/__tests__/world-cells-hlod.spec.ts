@@ -263,6 +263,36 @@ describe("WorldCells HLOD uses the existing cell admission lifecycle", () => {
       world.dispose();
     }
   });
+  it("reports proxy draws and replaced source meshes only after observation", async () => {
+    let now = 0;
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const world = await load({ admissionNow: () => now });
+    const render = renderer();
+    try {
+      await pump(world, render);
+      now = 5_001;
+      world.update(render, camera);
+      const before = info.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.startsWith("TN_WORLD_HLOD"));
+      expect(before).toHaveLength(1);
+      expect(before[0]).toContain("observed=0 active=0");
+      expect(before[0]).toContain("draws=0 replaced=0");
+      observe(world, render);
+      await pump(world, render, 1);
+      now = 10_002;
+      world.update(render, camera);
+      const after = info.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.startsWith("TN_WORLD_HLOD"));
+      expect(after).toHaveLength(2);
+      expect(after[1]).toContain("observed=1 active=1");
+      expect(after[1]).toContain("draws=1 replaced=1");
+    } finally {
+      world.dispose();
+      info.mockRestore();
+    }
+  });
   it("declines proxy IO when its existing world budget cannot retain source plus decoded copies", async () => {
     const loader = vi.fn(async (url: string) => model(url.endsWith("proxy.glb") ? 1 : 2));
     const world = await load({
