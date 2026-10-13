@@ -1,4 +1,6 @@
 import {
+  DataTexture,
+  EquirectangularReflectionMapping,
   Group,
   InstancedMesh,
   Mesh,
@@ -59,6 +61,38 @@ class EmptyScene extends Scene {
 }
 
 describe("IGame", () => {
+  it("reports render traps once per scene entry, including re-entry", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    class Traps extends Scene {
+      override enter(ctx: ICtx): void {
+        const texture = new DataTexture(new Uint8Array(8 * 65 * 4), 8, 65);
+        texture.mapping = EquirectangularReflectionMapping;
+        ctx.scene.environment = texture;
+        ctx.scene.add(new Mesh(undefined, new MeshBasicMaterial({ opacity: 0.5 })));
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      renderer: renderer(testCanvas()),
+      scenes: { traps: Traps },
+      start: "traps",
+    });
+    const markers = (): string[] =>
+      error.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => /TN_ENVIRONMENT_TOO_SMALL|TN_OPACITY_IGNORED/u.test(line));
+    try {
+      await game.start();
+      await Promise.resolve();
+      expect(markers()).toHaveLength(2);
+      await game.goto("traps");
+      expect(markers()).toHaveLength(4);
+    } finally {
+      game.stop();
+      error.mockRestore();
+    }
+  });
+
   it.each([false, true])(
     "reports a manifest rejection during Scene.load (transition: %s)",
     async (transition) => {

@@ -726,6 +726,9 @@ async function main(): Promise<void> {
   );
   try {
     if (nativeRuntime !== undefined) {
+      // Stage the asset manifest and run from its root, as packaged native games do.
+      const { compileAssets } = await import("../packages/assets/dist/index.js");
+      await compileAssets({ cwd: fixture, output: artifacts });
       execFileSync(
         process.execPath,
         [
@@ -786,7 +789,7 @@ async function main(): Promise<void> {
             })
           : await runDesktopPlaytest({
               artifactDirectory: directory,
-              projectPath: fixture,
+              projectPath: artifacts,
               scenarioPath,
               target: "desktop",
               desktop: {

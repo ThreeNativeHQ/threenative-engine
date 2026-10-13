@@ -45,7 +45,11 @@ export interface IAdaptiveQualityOptions {
 
 /** The game owns this policy. Platform selects the first look; measured load selects later ones. */
 export function createAdaptiveQuality(
-  request: { readonly mobile?: boolean; readonly tier?: string } = {},
+  request: {
+    readonly gpuClass?: string;
+    readonly mobile?: boolean;
+    readonly tier?: string;
+  } = {},
   options: IAdaptiveQualityOptions = {},
 ) {
   const policy = {

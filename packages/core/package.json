@@ -87,7 +87,7 @@
   "dependencies": {
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
-    "threenative-asset-mcp": "0.9.5",
+    "threenative-asset-mcp": "0.11.0",
     "threenative-sculpt-mcp": "0.2.1",
     "zustand": "catalog:"
   },

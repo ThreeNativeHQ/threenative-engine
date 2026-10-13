@@ -1,5 +1,5 @@
 import { readPath, jsonEqual, trivialAssertionDiagnostic, componentAssertionDiagnostic, axisIndex } from '../assertion-report.js';
-// Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
+// Extracted from assertion-evaluators.ts (PRD-182 Phase 2).
 import type { IEvaluationContext } from "./context.js";
 import { hasFinalComponentExpectation, rejectsTrivialAssertion, componentValueChecks, aerodynamicForceSampleCount, aerodynamicControlValues, aerodynamicTorqueAtLabel, evaluatePathAssertion, evaluateTagCountAssertion, evaluateStateAssertion } from "./helpers.js";
 
@@ -27,14 +27,14 @@ export function emitWorldGameplay(ctx: IEvaluationContext): void {
       ];
       const checks = [
         ...valueChecks,
-        // Same absent-value trap as evaluatePathAssertion: a component that was
-        // never observed must not satisfy "this value did not change".
+        // A temporal comparison needs both observations; appearance or disappearance is not a measured change.
         ...(assertion.changed === undefined
           ? []
-          : [(before !== undefined || after !== undefined)
+          : [(before !== undefined && after !== undefined)
             && (assertion.changed ? !jsonEqual(before, after) : jsonEqual(before, after))]),
       ];
       const trivial = rejectsTrivialAssertion("components")
+        && assertion.changed === undefined
         && valueChecks.length > 0
         && before !== undefined
         && componentValueChecks(assertion, before).every(Boolean);

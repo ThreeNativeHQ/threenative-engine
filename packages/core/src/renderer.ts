@@ -12,6 +12,12 @@ import {
 import { ComputeTimingScopes, type IComputeTimingReceipt } from "./compute-timing.js";
 import type { IFrameSurfaceState } from "./frame-budget.js";
 import {
+  GPU_CLASS_MARKER,
+  type IGpuClassification,
+  SOFTWARE_ADAPTER,
+  classifyGpu,
+} from "./gpu-class.js";
+import {
   GpuFrameObservation,
   type IGpuFrameObservation,
   type IGpuFrameObservationOptions,
@@ -195,6 +201,16 @@ export interface IRendererLike {
    * exposes the same four `adapter.info` fields, so the same read works on every target.
    */
   readonly softwareAdapter?: string;
+  /**
+   * The GPU family the adapter belongs to, the rule that named it and the four raw `adapter.info`
+   * fields it was read from; absent when no adapter reported (a WebGL2 fallback).
+   *
+   * A fact about the machine, like `softwareAdapter`, and the better input for a start tier: it
+   * tells a Mali-G52 from a Mali-G715 and an iGPU from a discrete card, where `mobile` and
+   * `software` cannot. `unknown` means no rule matched; treat it as the behaviour before this
+   * existed. Measurement still outranks it, and the class only picks where the first window starts.
+   */
+  readonly gpuClass?: IGpuClassification;
   /** Advances the GPU sample once before a presented frame's simulation and render passes. */
   beginFrame?(): void;
   compute(node: unknown, span?: "depthPyramid"): void;
@@ -539,6 +555,7 @@ function wrapRenderer(
   timestampCapable: boolean,
   timestampFrameInterval: number,
   softwareAdapter?: string,
+  gpuClass?: IGpuClassification,
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
   // Keep caller identity separately: RenderPipeline may wrap its public output node.
@@ -780,6 +797,7 @@ function wrapRenderer(
     surfaceDrawingBufferHeight: () => applied.height,
     alphaAntialiasing: () => alphaAntialiasing.report(),
     ...(softwareAdapter === undefined ? {} : { softwareAdapter }),
+    ...(gpuClass === undefined ? {} : { gpuClass }),
     domElement: raw.domElement,
     kind,
     raw,
@@ -1315,16 +1333,6 @@ async function createWebGpuPipelineCensus(
 }
 
 /**
- * Which field of `adapter.info` names a CPU rasteriser.
- *
- * Every field is searched because which one carries the giveaway depends on the platform: Linux
- * Dawn puts `swiftshader` in `architecture`, Mesa reports `llvmpipe` in `description`, and a
- * headless Windows run says `Microsoft Basic Render Driver` in `device`.
- */
-const SOFTWARE_ADAPTER =
-  /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/i;
-
-/**
  * The adapters `navigator.gpu` has handed this page, kept for the life of the module.
  *
  * A local `const adapter = await requestAdapter()` is the shape every WebGPU sample uses, and it is
@@ -1350,6 +1358,8 @@ interface IWebGpuAdapterFacts {
   readonly identity?: string;
   /** The field value that names a CPU rasteriser; absent when none of them does. */
   readonly software?: string;
+  /** The family the four fields classify as; absent when the adapter reported no info at all. */
+  readonly gpuClass?: IGpuClassification;
 }
 
 async function readWebGpuAdapterFacts(raw: RendererInstance): Promise<IWebGpuAdapterFacts> {
@@ -1385,6 +1395,11 @@ async function readWebGpuAdapterFacts(raw: RendererInstance): Promise<IWebGpuAda
         ? {}
         : { identity: `webgpu:${entries.map(([field, value]) => `${field}=${value}`).join("|")}` }),
       ...(software === undefined ? {} : { software }),
+      gpuClass: classifyGpu(
+        Object.fromEntries(
+          fields.map((field) => [field, typeof info[field] === "string" ? info[field] : ""]),
+        ),
+      ),
     };
   } catch {
     return {};
@@ -1504,7 +1519,10 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
         timestampCapable,
         gpuTimestampFrameInterval,
         adapter.software,
+        adapter.gpuClass,
       );
+      if (adapter.gpuClass !== undefined)
+        report(`${GPU_CLASS_MARKER}:${JSON.stringify(adapter.gpuClass)}`);
     } catch {
       renderer = undefined;
     }

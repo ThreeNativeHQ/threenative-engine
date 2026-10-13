@@ -4,7 +4,7 @@
 **Priority:** P1 — Open: one virtual shadow level per frame, zero streamed shadow builds, 60 fps by default.
 **Complexity:** 7 (HIGH): 11+ implementation files, a new clustered-batch system, streaming state across frames. Risk override: none.
 **Owner:** engine
-**Depends on:** [PRD-459 smooth streaming](PRD-459-smooth-streaming-one-admission-budget-per-frame.md) (per-frame admission budget, prefetch, pipeline prewarm), [PRD-453 per-instance LOD](PRD-453-worldcells-use-existing-lods.md), [PRD-456 distant cell proxies](PRD-456-distant-world-cell-proxies.md), [PRD-457 shadow pages](../rendering/PRD-457-virtual-shadows-scale-by-measurement.md), and [PRD-377 AutoLOD on by default](../assets/PRD-377-auto-lod-is-on-by-default.md). This PRD owns only what those leave out (below). It does not repeat their work.
+**Depends on:** [PRD-459 smooth streaming](PRD-459-smooth-streaming-one-admission-budget-per-frame.md) (per-frame admission budget, prefetch, pipeline prewarm), [PRD-453 per-instance LOD](PRD-453-worldcells-use-existing-lods.md), [PRD-456 distant cell proxies](PRD-456-distant-world-cell-proxies.md), [PRD-457 shadow pages](../Unreal/rendering/PRD-457-virtual-shadows-scale-by-measurement.md), and [PRD-377 AutoLOD on by default](../assets/PRD-377-auto-lod-is-on-by-default.md). This PRD owns only what those leave out (below). It does not repeat their work.
 
 ## Context
 

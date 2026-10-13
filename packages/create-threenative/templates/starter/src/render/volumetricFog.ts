@@ -58,7 +58,7 @@ export const STARTER_MIST: Omit<IVolumetricFogOptions, "renderer"> = {
  * Off, unsupported and zero-density return before allocating any graph/target/material.
  *
  * While a medium lives it owns the scene's fog: `sky.ts` renders the same air through
- * `scene.fog`, so two of them would double it. Disposal puts the authored fog back, unless
+ * `scene.fog` and `scene.fogNode`, so two of them would double it. Disposal puts the authored fog back, unless
  * the game authored a new one while the medium lived — that later fog is then the live one.
  */
 export function createVolumetricFog(
@@ -72,7 +72,9 @@ export function createVolumetricFog(
   const volumes = options.volumes.filter((volume) => volume.density > 0);
   if (volumes.length === 0) return undefined;
   const authoredFog = scene.fog;
+  const authoredFogNode = scene.fogNode;
   scene.fog = null;
+  scene.fogNode = null;
   let graph: IFogVolumeGraph | undefined;
   let disposed = false;
   return {
@@ -99,7 +101,10 @@ export function createVolumetricFog(
       if (graph !== undefined) throw new Error("volumetricFog: compose once per owned graph.");
       if (scenePass.camera !== camera)
         throw new Error("volumetricFog: scene depth must come from this camera.");
-      if (Reflect.get(scenePass.scene, "fog") != null)
+      if (
+        Reflect.get(scenePass.scene, "fog") != null ||
+        Reflect.get(scenePass.scene, "fogNode") != null
+      )
         throw new Error("volumetricFog: scene fog duplicates the same medium.");
       graph = composeFogVolume(camera, options, volumes, scenePass);
       return graph.compose;
@@ -110,7 +115,10 @@ export function createVolumetricFog(
       graph?.target.dispose();
       graph?.material.dispose();
       graph = undefined;
-      if (scene.fog == null) scene.fog = authoredFog;
+      if (scene.fog == null && scene.fogNode == null) {
+        scene.fog = authoredFog;
+        scene.fogNode = authoredFogNode;
+      }
     },
   };
 }

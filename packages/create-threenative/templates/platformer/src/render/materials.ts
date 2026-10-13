@@ -53,14 +53,19 @@ export function toon(
   );
 }
 
-/** Unlit, for things that must stay bright whatever the sun is doing. */
+/** Unlit, for things that stay bright whatever the sun does; opacity below 1 enables transparency. */
 export function flat(
   color: ColorRepresentation,
   options: { depthWrite?: boolean; fog?: boolean; opacity?: number; side?: typeof DoubleSide } = {},
 ): MeshBasicMaterial {
   return cached(
     `flat|${String(color)}|${JSON.stringify(options)}`,
-    () => new MeshBasicMaterial({ color, ...options }),
+    () =>
+      new MeshBasicMaterial({
+        color,
+        ...options,
+        transparent: options.opacity !== undefined && options.opacity < 1,
+      }),
   );
 }
 

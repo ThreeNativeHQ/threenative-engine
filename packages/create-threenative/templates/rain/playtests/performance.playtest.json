@@ -8,7 +8,17 @@
       "maxTriangles": 40000,
       "minFps": 30
     },
-    "renderChain": { "tier": "high", "stages": { "includes": ["stormPost"] } }
+    "renderChain": {
+      "tier": "high",
+      "perAdapter": {
+        "integrated": { "stages": { "includes": ["stormPost"] }, "tier": "medium" },
+        "mobile-high": { "stages": { "includes": ["stormPost"] }, "tier": "medium" },
+        "mobile-low": { "stages": { "includes": ["stormPost"] }, "tier": "low" },
+        "mobile-mid": { "stages": { "includes": ["stormPost"] }, "tier": "low" },
+        "software": { "stages": { "includes": ["stormPost"] }, "tier": "low" }
+      },
+      "stages": { "includes": ["stormPost"] }
+    }
   },
   "name": "rain-production-performance",
   "schemaVersion": 1,

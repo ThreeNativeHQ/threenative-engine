@@ -258,7 +258,7 @@ jobs:
     name: Native collector evidence coverage
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -831,7 +831,9 @@ jobs:
     if: >-
       needs.scope.outputs.selection != 'prose' &&
       inputs.ios_only == false
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # Report assembly only - artifact download, `pnpm install` and JSON reports, no compile or GPU
+    # leg (unlike desktop-parity:906) - so it joins the light lane instead of queuing behind builds.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 20
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}

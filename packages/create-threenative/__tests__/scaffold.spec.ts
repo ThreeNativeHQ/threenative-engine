@@ -191,7 +191,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // PRD-584: the terrain MCP server was added to every template (2026-10-11), so all thirteen trees move.
 // PRD-591/593: measured all thirteen actual trees after readiness manifest and generated patch changes.
 // Restoring only the previous shared patch/manifest/reference bytes recovers every prior hash.
+// PR483 integration: measured all thirteen trees after merging develop and regenerating the shared patch.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
   // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
   // Measured through all thirteen actual createProject trees on the Oct 4 published-head
@@ -234,20 +236,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // strata branch: measured through createProject on the merged tree.
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
-  "action-rpg": "6e64e2f0565370283534798a25f525af7fec6bfcb65eae85736e7d2489346c1a",
-  minimal: "de25a977ace261346c8782ed391bf3e0ab557723ebd0a5da795cbd5c92eb863f",
-  platformer: "0688807b7d6afcd4b0a5f8bcccf2226d901e674db750d3ff12ddc5f9882fc52b",
-  puzzle: "a9edfa25a4013543ee22dca20dde1580b89cd4e702bcf07fbe1e3006e0eb29d5",
-  racing: "bb637b90b3856db3b194b97d19211202ff623492236d2f70c28f08ed64f3ea58",
-  rain: "c0ccf6d6caf6106ef70239b3b909db29e077d7e1d4d5b51f033a2d58010a074e",
-  rts: "03c2acca96f8e57efcf587ac2b18bdbc74ae43732de1c695688f96361e07d277",
-  runner: "4f662644e22d7305567118f3c8f560cda3146a8fd390f92addd2ea54f687701d",
+  "action-rpg": "c46945c7fe8de2f1759b92bad2184f76ec1a869adbc51e941d01608f11d53a8d",
+  minimal: "5c7c6d88c07144efa32a3e5905627243bacb0134a43097ecfdadb9f85858344c",
+  platformer: "253ee34f134016080b7863d3f5c53839332f1ce536f722f41b0f550120067ba2",
+  puzzle: "4bc15f5c1e50334e25b003b7445e303f3ae81ec96fa42fb275634efa2805ed63",
+  racing: "cced7af9deb512dfdec6171def321dc0f7159863e51a31be0e7906ead948f87c",
+  rain: "6cafa0d2d8e17155d6e6e25b9b752bb5d0fa9b57bbd53078d636f0091eebe4f9",
+  rts: "a456fc470ec6e9669fd56aeaf537b84dbd89e64fa17c72485b6a2d7d50e1ee02",
+  runner: "bf76f66cf246a4368842c1fe03ad00021d961ef33cab2195ff7e415c4f72ba16",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "f3b210daa9cb6c1991e5b26f3cd84131918651f70b2ba9f86bca60e93b6c96a8",
-  shooter: "088a4be56c7aacc1178717bbe3e439f8c5bfa41753bc94ce4e068989cec21958",
-  snow: "a909b9eadcf4e3f8da71ea5eeaa3d841487a2b380d9fcf43ad7f4228b64c9325",
-  starter: "aa082895b04bf92e87d328e365f4343341cf379192e2223b834d84be69727a7f",
-  "tower-defense": "3a7a0a5320ba7995a6fa1a53b5b210bd37494434de65d80c7f2c8b61b7cf2b32",
+  sailing: "5cc43f3f20c7da3f41f99edc735e59ec59168336709f4a4915e6bd81de833540",
+  shooter: "eaae5b8415dbf47d516c12dcccd58504414116b2f3ae8b67953c276f8ae007b2",
+  snow: "2d87c066fcc6fc39c34d30d13916658510e4c7d28089006c41b618910cf0fd5c",
+  starter: "75b007986b9e82b57f8acd4384aeb47d1905410d1e26dcf197a165f960cb1a9f",
+  "tower-defense": "902523825a523bb6df3b76ae201b819abc1a43f79da17a13a5d3fbb42f6791d4",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -434,6 +436,7 @@ const PLATFORMER_PATHS = [
   "src/render/postprocessing.ts",
   "src/render/props.ts",
   "src/render/sky.ts",
+  "src/render/skyEnvironment.ts",
   "src/render/scenery.ts",
   "src/render/walkers.ts",
   "src/render/waterfall.ts",
@@ -551,6 +554,9 @@ describe("create-threenative", () => {
         );
         expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
         actual[template] = await scaffoldTreeHash(target);
+        if (template === "platformer") {
+          await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
+        }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
     } finally {
@@ -1129,7 +1135,7 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   it("should parse the no-install and template flags", () => {
     expect(parseArgs(["my-game", "--template", "minimal", "--no-install"])).toEqual({

@@ -836,6 +836,61 @@ describe("createRenderer", () => {
     }
   });
 
+  it("classifies the adapter and prints TN_GPU_CLASS once with the rule and raw fields", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const info = {
+      architecture: "bifrost",
+      description: "Mali-G52 MC2",
+      device: "",
+      vendor: "arm",
+    };
+    const requestAdapter = vi.fn(async () => ({ info }));
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: { requestAdapter } },
+    });
+    const lines: string[] = [];
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        report: (line) => lines.push(line),
+        webgpuFactory: () => ({
+          backend: { gpu: { requestAdapter } },
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+
+      expect(renderer.gpuClass).toEqual({ class: "mobile-low", fields: info, rule: "mali-model" });
+      expect(lines.filter((line) => line.startsWith("TN_GPU_CLASS:"))).toEqual([
+        `TN_GPU_CLASS:${JSON.stringify(renderer.gpuClass)}`,
+      ]);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("reports no gpuClass when the renderer fell back to WebGL2", async () => {
+    const canvas = testCanvas();
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    expect(renderer.gpuClass).toBeUndefined();
+    renderer.dispose();
+  });
+
   it("reports no software adapter for a hardware one rather than claiming a proof", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

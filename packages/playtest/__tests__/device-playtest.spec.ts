@@ -1106,6 +1106,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
           ...(options.setup === true ? ["entity.setup"] : []),
           "runtime.fixedStep",
           "runtime.diagnostics",
+          "runtime.network",
           ...(resourceReadyAtTick === undefined ? [] : ["runtime.resources"]),
           ...(options.startupPolls === undefined ? [] : ["runtime.startup"]),
           "scene.nodes",
@@ -1141,6 +1142,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
         return {
           clock: { mode: "fixed-step", tick },
           diagnostics: [],
+          network: { requests: 0, entries: [] },
           entities: [
             { id: options.entity ?? "player", transform: { position: [x, options.height ?? 0, 0] }, visible: true },
             { bounds: { height: 40, width: 40, x: 300, y: 160 }, id: "cube", visible: true },

@@ -35,36 +35,39 @@ function fixture() {
   };
 }
 describe("impact-driven template coverage", () => {
-  it.each(["pull_request"])("selects only an exact changed kit for %s", (eventName) => {
-    const f = fixture();
-    try {
-      const head = f.change("packages/create-threenative/templates/shooter/src/game.ts");
-      const plan = classify({
-        root: f.root,
-        base: f.base,
-        head,
-        candidateSha: head,
-        target: "develop",
-        eventName,
-      });
-      expect(plan.selection).toBe("template");
-      expect(plan.templateMatrix.template).toEqual(["shooter"]);
-      expect(plan.goldenMatrix.template).toEqual(["shooter"]);
-      for (const name of ["test-native", "native-platforms", "test-browser", "benchmark"])
-        expect(plan.jobs[name].required).toBe(false);
-      for (const name of [
-        "build-artifacts",
-        "template-nonvisual",
-        "golden-path-template",
-        "supply-chain",
-      ])
-        expect(plan.jobs[name].required).toBe(true);
-      expect(validatePlan(plan)).toEqual(plan);
-    } finally {
-      rmSync(f.root, { recursive: true, force: true });
-    }
-  });
-  it.each(["pull_request"])("keeps CI and docs narrow on %s", (eventName) => {
+  it.each(["pull_request", "merge_group"])(
+    "selects only an exact changed kit for %s",
+    (eventName) => {
+      const f = fixture();
+      try {
+        const head = f.change("packages/create-threenative/templates/shooter/src/game.ts");
+        const plan = classify({
+          root: f.root,
+          base: f.base,
+          head,
+          candidateSha: head,
+          target: "develop",
+          eventName,
+        });
+        expect(plan.selection).toBe("template");
+        expect(plan.templateMatrix.template).toEqual(["shooter"]);
+        expect(plan.goldenMatrix.template).toEqual(["shooter"]);
+        for (const name of ["test-native", "native-platforms", "test-browser", "benchmark"])
+          expect(plan.jobs[name].required).toBe(false);
+        for (const name of [
+          "build-artifacts",
+          "template-nonvisual",
+          "golden-path-template",
+          "supply-chain",
+        ])
+          expect(plan.jobs[name].required).toBe(true);
+        expect(validatePlan(plan)).toEqual(plan);
+      } finally {
+        rmSync(f.root, { recursive: true, force: true });
+      }
+    },
+  );
+  it.each(["pull_request", "merge_group"])("keeps CI and docs narrow on %s", (eventName) => {
     for (const [file, selection] of [
       ["docs/PRDs/inert.md", "prose"],
       ["scripts/ci-required.mjs", "ci"],
@@ -124,7 +127,7 @@ describe("impact-driven template coverage", () => {
       rmSync(f.root, { recursive: true, force: true });
     }
   });
-  it("normalizes the queue target and includes every constituent template change", () => {
+  it("normalizes the queue target and unions every constituent template change", () => {
     const f = fixture();
     try {
       f.change("packages/create-threenative/templates/shooter/src/x.ts");
@@ -137,10 +140,14 @@ describe("impact-driven template coverage", () => {
         target: "refs/heads/develop",
         eventName: "merge_group",
       });
-      expect(plan.selection).toBe("full");
-      expect(plan.templateMatrix.template).toEqual(TEMPLATE_NAMES);
-      expect(plan.goldenMatrix.template).toEqual(["starter", "platformer"]);
-      expect(plan.unitMatrix.shard).toEqual(["1/4", "2/4", "3/4", "4/4"]);
+      // The queue is narrowed exactly like a pull request into develop: the changed kits prove
+      // themselves and starter exercises the default scaffold route.
+      expect(plan.selection).toBe("template");
+      expect(plan.qualification).toBe(false);
+      expect(plan.templateMatrix.template).toEqual(["shooter", "snow"]);
+      expect(plan.goldenMatrix.template).toEqual(["shooter"]);
+      expect(plan.unitMatrix.shard).toEqual(["1/1"]);
+      expect(validatePlan(plan)).toEqual(plan);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -149,7 +156,10 @@ describe("impact-driven template coverage", () => {
     const f = fixture();
     try {
       const head = f.change("packages/create-threenative/templates/shooter/README.md");
-      for (const target of ["develop", "main"]) {
+      for (const [target, selection] of [
+        ["develop", "prose"],
+        ["main", "full"],
+      ] as const) {
         const plan = classify({
           root: f.root,
           base: f.base,
@@ -158,7 +168,7 @@ describe("impact-driven template coverage", () => {
           target,
           eventName: "merge_group",
         });
-        expect(plan.selection).toBe("full");
+        expect(plan.selection).toBe(selection);
       }
     } finally {
       rmSync(f.root, { recursive: true, force: true });
@@ -177,9 +187,9 @@ describe("impact-driven template coverage", () => {
         target: "develop",
         eventName: "merge_group",
       });
-      expect(plan.selection).toBe("full");
+      expect(plan.selection).toBe("template");
       expect(plan.checks.ci).toBe(true);
-      expect(plan.templateMatrix.template).toEqual(TEMPLATE_NAMES);
+      expect(plan.templateMatrix.template).toEqual(["shooter"]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -211,7 +221,9 @@ describe("impact-driven template coverage", () => {
     const f = fixture();
     const clone = makeTempDirSync("ci-shallow-queue-");
     try {
-      const head = f.change("docs/x.md");
+      // A shared-runtime change keeps the queue plan narrow enough for a review lane while still
+      // requiring the exact-candidate Integration join, which is what this gate re-derives.
+      const head = f.change("packages/core/src/scene.ts");
       const plan = classify({
         root: f.root,
         base: f.base,
@@ -220,6 +232,7 @@ describe("impact-driven template coverage", () => {
         target: "develop",
         eventName: "merge_group",
       });
+      expect(plan.jobs.integration.required).toBe(true);
       const cloned = spawnSync(
         "git",
         ["clone", "--quiet", "--depth", "1", `file://${f.root}`, clone],
@@ -237,6 +250,7 @@ describe("impact-driven template coverage", () => {
           env: {
             ...process.env,
             TN_CI_EVENT: "merge_group",
+            TN_CI_BASE_REF: "refs/heads/develop",
             TN_CI_BASE_SHA: f.base,
             TN_CI_HEAD_SHA: head,
             TN_CI_NEEDS: JSON.stringify(needs),
@@ -284,6 +298,8 @@ describe("impact-driven template coverage", () => {
         { base: "unknown", head },
         { base: f.base, head: f.base },
       ] as const) {
+        // An unresolved base/head identity cannot prove what the queue would merge, so it stays
+        // exhaustive even though every other develop queue input is narrowed.
         expect(
           classify({
             root: f.root,
@@ -291,8 +307,8 @@ describe("impact-driven template coverage", () => {
             candidateSha: head,
             target: "develop",
             eventName: "merge_group",
-          }).selection,
-        ).toBe("full");
+          }),
+        ).toMatchObject({ selection: "full", qualification: true, nativeTier: "full" });
       }
     } finally {
       rmSync(f.root, { recursive: true, force: true });

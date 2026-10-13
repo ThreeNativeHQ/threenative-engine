@@ -179,6 +179,13 @@ test("rejects a resident-tile topology that is smaller than the declared measure
   ).toBe(true);
 });
 
+test("retains terrain walk frame times for the blend-tail measurement", () => {
+  const scenario = JSON.parse(
+    readFileSync(path.resolve("examples/abyss-framework/playtests/terrain.playtest.json"), "utf8"),
+  );
+  expect(scenario.assert.performance).toEqual({ minFps: 1 });
+});
+
 test("requires the terrain scenario to prove an LOD transition after its baseline", () => {
   const scenario = JSON.parse(
     readFileSync(path.resolve("examples/abyss-framework/playtests/terrain.playtest.json"), "utf8"),
@@ -189,9 +196,9 @@ test("requires the terrain scenario to prove an LOD transition after its baselin
   expect(lod).toMatchObject({ changed: true });
   expect(lod).not.toHaveProperty("allowTrivial");
   expect(lod).not.toHaveProperty("gte");
-  expect(component("maxSeamGap")).toMatchObject({ gte: 0.000001, lte: 64 });
+  expect(component("maxSeamGap")).toMatchObject({ changed: true, gte: 0.000001, lte: 64 });
   expect(component("maxSeamGap")).not.toHaveProperty("allowTrivial");
-  expect(component("stitchedEdges")).toMatchObject({ entity: "terrain", gte: 1 });
+  expect(component("stitchedEdges")).toMatchObject({ changed: true, entity: "terrainCpuReference", gte: 1 });
   expect(component("stitchedEdges")).not.toHaveProperty("allowTrivial");
   expect(component("maxVisualSeamGap")).toMatchObject({ lte: 0 });
   expect(component("skirtVertexCount")).toMatchObject({ gte: 1 });
@@ -229,4 +236,136 @@ test("rejects a zero raw seam observation", () => {
   expect(result.assertions).toContainEqual(
     expect.objectContaining({ id: "component.terrain.maxSeamGap.value", pass: false }),
   );
+});
+
+test.each<{
+  name: string;
+  before?: number;
+  after?: number;
+  changed?: boolean;
+  equals?: number;
+  gte?: number;
+  lte?: number;
+  pass: boolean;
+  trivial?: boolean;
+}>([
+  {
+    name: "changed value within an initially satisfied range",
+    changed: true,
+    before: 2,
+    after: 3,
+    gte: 1,
+    lte: 4,
+    pass: true,
+  },
+  {
+    name: "unchanged value within an initially satisfied range",
+    changed: false,
+    before: 2,
+    after: 2,
+    gte: 1,
+    lte: 4,
+    pass: true,
+  },
+  {
+    name: "changed comparator unmet",
+    changed: true,
+    before: 2,
+    after: 2,
+    gte: 1,
+    lte: 4,
+    pass: false,
+  },
+  {
+    name: "unchanged comparator unmet",
+    changed: false,
+    before: 2,
+    after: 3,
+    gte: 1,
+    lte: 4,
+    pass: false,
+  },
+  {
+    name: "changed value outside numeric range",
+    changed: true,
+    before: 2,
+    after: 5,
+    gte: 1,
+    lte: 4,
+    pass: false,
+  },
+  {
+    name: "unchanged value outside numeric range",
+    changed: false,
+    before: 5,
+    after: 5,
+    gte: 1,
+    lte: 4,
+    pass: false,
+  },
+  {
+    name: "changed value matching equality",
+    changed: true,
+    before: 2,
+    after: 3,
+    equals: 3,
+    pass: true,
+  },
+  {
+    name: "unchanged value matching equality",
+    changed: false,
+    before: 2,
+    after: 2,
+    equals: 2,
+    pass: true,
+  },
+  {
+    name: "changed value violating equality",
+    changed: true,
+    before: 2,
+    after: 3,
+    equals: 2,
+    pass: false,
+  },
+  {
+    name: "initially satisfied numeric range alone stays trivial",
+    before: 2,
+    after: 3,
+    gte: 1,
+    lte: 4,
+    pass: false,
+    trivial: true,
+  },
+  {
+    name: "numeric range crossed after the baseline",
+    before: 0,
+    after: 3,
+    gte: 1,
+    lte: 4,
+    pass: true,
+  },
+  ...[true, false].flatMap((changed) => [
+    { name: `${changed}: missing baseline`, changed, after: 2, gte: 1, pass: false },
+    { name: `${changed}: missing current`, changed, before: 2, pass: false },
+    { name: `${changed}: missing both`, changed, pass: false },
+  ]),
+])("component temporal comparison: $name", ({ name: _name, before, after, pass, ...expected }) => {
+  const input = report({});
+  if (input.observations?.components === undefined)
+    throw new Error("Expected component observations.");
+  input.observations.components.probe = { metric: { before, after } };
+  const { trivial = false, ...comparison } = expected;
+  const result = evaluateRichPlaytestAssertions({
+    report: input,
+    scenario: scenario({ components: [{ entity: "probe", component: "metric", ...comparison }] }),
+  });
+  expect(result.assertions.find(({ id }) => id === "component.probe.metric.value")).toMatchObject({
+    pass,
+    details: { trivial },
+  });
+  const rejectedAsTrivial = result.diagnostics.some(
+    ({ code, message }) =>
+      code === "TN_PLAYTEST_ASSERTION_TRIVIAL" && message.includes("component.probe.metric.value"),
+  );
+  expect(rejectedAsTrivial).toBe(trivial);
 });

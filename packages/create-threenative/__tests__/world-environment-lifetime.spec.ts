@@ -5,6 +5,31 @@ import type { Node } from "three/webgpu";
 import { expect, it, vi } from "vitest";
 import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
 
+it.each([undefined, 0, 4])(
+  "honours authored world-pass samples %s without removing post AA",
+  (samples) => {
+    let observed: number | undefined;
+    let requested: readonly string[] | undefined;
+    const renderer: OutputRenderer = {
+      kind: "webgpu",
+      raw: {},
+      createRenderChain(options) {
+        observed = (options.worldPass as { options: { samples?: number } }).options.samples;
+        requested = options.request?.stages;
+        return { applied: { stages: [], dropped: [] }, dispose() {} };
+      },
+    };
+    const applied = new WorldEnvironment({ gtaoEnabled: true, samples }).apply(
+      renderer,
+      new Scene(),
+      new PerspectiveCamera(),
+    );
+    expect(observed).toBe(samples);
+    expect(requested).toContain("antialias");
+    applied.dispose?.();
+  },
+);
+
 it("releases the bloom effect and its materialized input when its chain is replaced", () => {
   const releases: ReturnType<typeof vi.fn>[] = [];
   const renderer: OutputRenderer = {

@@ -176,6 +176,7 @@
         "@threenative/core#RenderChain": "export class RenderChain { … }",
         "@threenative/core#renderListValidationRequested": "export function renderListValidationRequested(): boolean { … }",
         "@threenative/core#RenderListValidator": "export class RenderListValidator { … }",
+        "@threenative/core#renderTrapAudit": "export function renderTrapAudit(scene: Object3D & { … }",
         "@threenative/core#replay": "export function replay< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, >(options: IReplayOptions = { … }",
         "@threenative/core#resetAudioCueLedger": "export function resetAudioCueLedger(): void { … }",
         "@threenative/core#resetStaticTransforms": "export function resetStaticTransforms(): void { … }",

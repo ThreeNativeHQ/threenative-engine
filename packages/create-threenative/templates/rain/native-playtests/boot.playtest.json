@@ -8,6 +8,16 @@
   "steps": [{ "kind": "wait", "waitTicks": 120, "release": true }],
   "assert": {
     "resources": [{ "id": "state", "path": "elapsed", "changed": true }],
-    "renderChain": { "tier": "high", "stages": { "includes": ["stormPost"] } }
+    "renderChain": {
+      "tier": "high",
+      "perAdapter": {
+        "integrated": { "stages": { "includes": ["stormPost"] }, "tier": "medium" },
+        "mobile-high": { "stages": { "includes": ["stormPost"] }, "tier": "medium" },
+        "mobile-low": { "stages": { "includes": ["stormPost"] }, "tier": "low" },
+        "mobile-mid": { "stages": { "includes": ["stormPost"] }, "tier": "low" },
+        "software": { "stages": { "includes": ["stormPost"] }, "tier": "low" }
+      },
+      "stages": { "includes": ["stormPost"] }
+    }
   }
 }
