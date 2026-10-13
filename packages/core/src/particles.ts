@@ -342,7 +342,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
     if (this.#renderer === undefined)
       throw new Error("GPUParticles3D is not attached to a renderer.");
     this.#renderer.compute(this.#start);
-    // Restarted positions invalidate old bounds, including a copy still in flight.
+    // Restarted positions invalidate old bounds, including a pending copy.
     this.#readback?.dispose();
     this.#readback =
       this.#partials === undefined
