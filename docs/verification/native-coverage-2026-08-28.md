@@ -13,20 +13,20 @@ targets could not be built and are named below.
 | `src/cli/` | 1690 | 1242 | 73.49% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2785 | 2212 | 79.43% |
-| `src/platform/` | 1460 | 1003 | 68.70% |
+| `src/js/` | 2794 | 2221 | 79.49% |
+| `src/platform/` | 1502 | 1042 | 69.37% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
-| `src/runtime.cpp` | 2410 | 1886 | 78.26% |
+| `src/runtime.cpp` | 2376 | 1855 | 78.07% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9802 | 7501 | 76.53% |
+| `src/webgpu/` | 9895 | 7572 | 76.52% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24730** | **19390** | **78.41%** |
+| `src/workers/` | 615 | 524 | 85.20% |
+| **TOTAL** | **24840** | **19475** | **78.40%** |
 
-Source digest: `sha256:53fe120fe5582b1199d07506367f09423f1cbcbcda8438ce09515959c65e9ad0`
+Source digest: `sha256:4c495f5a95407433e35eee7e5bd69003c4603cd44ff9cd82c5f44da25a1b3dc9`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -40,8 +40,8 @@ change requires this opt-in command to refresh the record.
 | `src/cli/` | 68.49% |
 | `src/fs/` | 75.43% |
 | `src/http/` | 86.95% |
-| `src/js/` | 74.43% |
-| `src/platform/` | 63.70% |
+| `src/js/` | 74.49% |
+| `src/platform/` | 64.37% |
 | `src/raytracing/` | 81.55% |
 | `src/runtime.cpp` | 73.26% |
 | `src/screenshot_gate.cpp` | 88.89% |
@@ -54,7 +54,110 @@ change requires this opt-in command to refresh the record.
 
 ## Not compiled in this configuration
 
+- `src/adapters/v8/adapter.cpp`
+- `src/adapters/v8/host_main.cpp`
+- `src/adapters/v8/math_bridge.cpp`
+- `src/adapters/v8/tsl.cpp`
 - `src/debug/debug_server.cpp`
+- `src/engine/abi/abi.cpp`
+- `src/engine/abi/bindings_geometry.cpp`
+- `src/engine/abi/bindings_material.cpp`
+- `src/engine/abi/bindings_math.cpp`
+- `src/engine/abi/bindings_mathutils.cpp`
+- `src/engine/abi/bindings_scene.cpp`
+- `src/engine/abi/identity.cpp`
+- `src/engine/abi/tsl_call.cpp`
+- `src/engine/animation/interpolant.cpp`
+- `src/engine/animation/mixer.cpp`
+- `src/engine/animation/property_binding.cpp`
+- `src/engine/animation/schedule.cpp`
+- `src/engine/animation/skinning/palette.cpp`
+- `src/engine/animation/skinning/skeleton.cpp`
+- `src/engine/assets/gltf/cgltf_impl.cpp`
+- `src/engine/assets/gltf/image_decode.cpp`
+- `src/engine/assets/gltf/loader.cpp`
+- `src/engine/assets/package.cpp`
+- `src/engine/assets/probe_volume.cpp`
+- `src/engine/assets/sha256.cpp`
+- `src/engine/foundation/buffers.cpp`
+- `src/engine/foundation/handles.cpp`
+- `src/engine/foundation/math/Color.cpp`
+- `src/engine/foundation/math/Euler.cpp`
+- `src/engine/foundation/math/Matrix.cpp`
+- `src/engine/foundation/math/Primitives.cpp`
+- `src/engine/foundation/math/Quaternion.cpp`
+- `src/engine/foundation/math/Vector.cpp`
+- `src/engine/foundation/math/ieee754.cpp`
+- `src/engine/foundation/members.cpp`
+- `src/engine/foundation/reachability.cpp`
+- `src/engine/inspect/endpoint.cpp`
+- `src/engine/player/demo.cpp`
+- `src/engine/player/mailbox.cpp`
+- `src/engine/player/main.cpp`
+- `src/engine/player/run.cpp`
+- `src/engine/player/skinned_crowd.cpp`
+- `src/engine/player/v8_main.cpp`
+- `src/engine/player/world_walk.cpp`
+- `src/engine/renderer/chain/plan.cpp`
+- `src/engine/renderer/compute.cpp`
+- `src/engine/renderer/device_state.cpp`
+- `src/engine/renderer/geometry_cache.cpp`
+- `src/engine/renderer/gpu_resources.cpp`
+- `src/engine/renderer/graph/history.cpp`
+- `src/engine/renderer/graph/render_graph.cpp`
+- `src/engine/renderer/lod/model_lod.cpp`
+- `src/engine/renderer/package_loader.cpp`
+- `src/engine/renderer/pipeline_cache.cpp`
+- `src/engine/renderer/post/effects.cpp`
+- `src/engine/renderer/post/traa.cpp`
+- `src/engine/renderer/presentation.cpp`
+- `src/engine/renderer/probes/capture.cpp`
+- `src/engine/renderer/probes/schedule.cpp`
+- `src/engine/renderer/probes/volume.cpp`
+- `src/engine/renderer/projection/instanced_batch.cpp`
+- `src/engine/renderer/render_database.cpp`
+- `src/engine/renderer/render_target_pass.cpp`
+- `src/engine/renderer/renderer.cpp`
+- `src/engine/renderer/shadows/virtual/atlas.cpp`
+- `src/engine/renderer/shadows/virtual/pages.cpp`
+- `src/engine/renderer/visibility/camera_cull.cpp`
+- `src/engine/scene/camera.cpp`
+- `src/engine/scene/curves.cpp`
+- `src/engine/scene/geometries.cpp`
+- `src/engine/scene/geometry.cpp`
+- `src/engine/scene/lights.cpp`
+- `src/engine/scene/material.cpp`
+- `src/engine/scene/nodes.cpp`
+- `src/engine/scene/object3d.cpp`
+- `src/engine/scene/projected_cull.cpp`
+- `src/engine/scene/raycaster.cpp`
+- `src/engine/scene/shape_utils.cpp`
+- `src/engine/scene/static_transform.cpp`
+- `src/engine/shader/graph/graph.cpp`
+- `src/engine/shader/graph/post_effects.cpp`
+- `src/engine/shader/graph/serialized.cpp`
+- `src/engine/shader/graph/smaa_tables.cpp`
+- `src/engine/shader/ir.cpp`
+- `src/engine/shader/output.cpp`
+- `src/engine/shader/package.cpp`
+- `src/engine/shader/sprite.cpp`
+- `src/engine/shader/standard.cpp`
+- `src/engine/shader/tonemap.cpp`
+- `src/engine/shader/wgsl.cpp`
+- `src/engine/wasm/web_host.cpp`
+- `src/engine/world/admission/package_loads.cpp`
+- `src/engine/world/cells/world_cells.cpp`
+- `src/engine/world/events/completion_queue.cpp`
+- `src/engine/world/fluids/fluid_field.cpp`
+- `src/engine/world/fluids/fluid_particles.cpp`
+- `src/engine/world/gpu_scene/cull_kernel.cpp`
+- `src/engine/world/gpu_scene/gpu_scene.cpp`
+- `src/engine/world/loop/fixed_step.cpp`
+- `src/engine/world/package/world_package.cpp`
+- `src/engine/world/particles/gpu_particles.cpp`
+- `src/engine/world/physics_sync.cpp`
+- `src/engine/world/terrain/heights.cpp`
+- `src/engine/world/tiles/terrain_tiles.cpp`
 - `src/gltf/gltf_loader.cpp`
 - `src/js/jsc_engine.mm`
 - `src/js/quickjs_engine.cpp`
