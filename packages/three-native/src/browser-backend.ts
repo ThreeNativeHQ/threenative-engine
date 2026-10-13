@@ -283,7 +283,6 @@ export function defineBrowserClasses(
   // `readDoubles`), and a fixed member (`position`, `matrixWorld`) is kept after its first answer.
   // Writes still go through the engine's setters, which it reacts to.
   const addresses = new WeakMap<object, number>();
-  const kept = new WeakMap<object, Map<string, unknown>>();
   // Each object's kept `rotation` Euler -> the object, whose quaternion a rotation write syncs.
   const rotations = new WeakMap<object, object>();
   // Properties only the object's own setter or methods change: `name` and `type` (read per track and
@@ -318,18 +317,14 @@ export function defineBrowserClasses(
       };
     }
     if (binding.fixedMembers?.includes(property) && !binding.setters.includes(property))
+      // The first read defines the member as the object's own read-only property, as three's
+      // Object3D has it: every later read is a plain property load, never this getter (R5 reads
+      // position and rotation three times per cube per frame).
       return function (this: object) {
-        let members = kept.get(this);
-        if (members === undefined) {
-          members = new Map();
-          kept.set(this, members);
-        }
-        if (!members.has(property)) {
-          const member = fromEngine(runtime.get(refOf(this), property));
-          members.set(property, member);
-          if (property === "rotation") rotations.set(member as object, this);
-        }
-        return members.get(property);
+        const member = fromEngine(runtime.get(refOf(this), property));
+        Object.defineProperty(this, property, { value: member, writable: false });
+        if (property === "rotation") rotations.set(member as object, this);
+        return member;
       };
     return undefined;
   };

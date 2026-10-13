@@ -300,6 +300,21 @@ describe("three's math values on the browser back end", () => {
     expect(asked.slice(8).flat()).not.toContain(dropped);
   });
 
+  it("keeps a fixed member as the object's own property, as three's Object3D has it", () => {
+    const { runtime, calls } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const group = new (classes.Group as new () => { position: object })();
+    const position = group.position;
+    expect(Object.getOwnPropertyDescriptor(group, "position")).toMatchObject({
+      value: position,
+      writable: false,
+      enumerable: false,
+    });
+    const gets = calls.filter((call) => call === "get position").length;
+    expect(group.position).toBe(position);
+    expect(calls.filter((call) => call === "get position")).toHaveLength(gets);
+  });
+
   it("keeps a mesh's geometry and an attribute's shape until they are set", () => {
     const { runtime } = memoryRuntime();
     const reads: string[] = [];
