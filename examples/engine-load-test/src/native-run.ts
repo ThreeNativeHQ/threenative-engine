@@ -4,7 +4,7 @@
 import { MatrixWorldPass } from "../../../packages/core/src/matrix-world.js";
 import { RenderCameraCull } from "../../../packages/core/src/render-camera-cull.js";
 import { SceneRenderProjection } from "../../../packages/core/src/renderProjection.js";
-import { drawnFrameReader } from "./frame-read.js";
+import { downscaleFrame, drawnFrameReader } from "./frame-read.js";
 import { type ICharacterCrowd, createLoadTestHarness } from "./game.js";
 import { ladderRank } from "./ladder.js";
 import {
@@ -243,6 +243,19 @@ async function main(createFoxCrowd: () => Promise<ICharacterCrowd>): Promise<voi
         console.log(
           `rung ${mode}@${objectCount} frame p50 ${percentile(frameMs, 0.5).toFixed(2)} | step p50 ${percentile(stepMs, 0.5).toFixed(2)} | collapse p50 ${percentile(collapseMs, 0.5).toFixed(2)} | game p50 ${(percentile(stepMs, 0.5) - percentile(collapseMs, 0.5)).toFixed(2)} ms | movingParts ${harness.collapseMovingParts()}`,
         );
+        // Close the CPU marker before the existing read-back stalls the GPU. No scene step follows the last measured draw.
+        const lastRung = rungs[rungs.length - 1] as Record<string, unknown>;
+        await harness.probeFrame((fullPixels, width, height) => {
+          const pixels = downscaleFrame(fullPixels, width, height);
+          const chunks: string[] = [];
+          for (let offset = 0; offset < pixels.length; offset += 4096)
+            chunks.push(
+              Array.from({ length: Math.min(4096, pixels.length - offset) }, (_, index) =>
+                (pixels[offset + index] as number).toString(16).padStart(2, "0"),
+              ).join(""),
+            );
+          lastRung.frameRgba = { width: 160, height: 90, data: chunks.join("") };
+        });
       }
     }
   }

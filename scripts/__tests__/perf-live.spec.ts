@@ -36,6 +36,7 @@ describe("perf-live", () => {
       rungs: [
         {
           mode,
+          framePath: path.resolve("scripts/__tests__/fixtures/engine-load-test/scene.png"),
           objectCount: 4096,
           repeat: 0,
           positionHash: "h",

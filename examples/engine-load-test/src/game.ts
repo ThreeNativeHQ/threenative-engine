@@ -177,7 +177,9 @@ export interface ILoadTestHarness {
    * It draws the same scene the timed loop draws, once, after warmup — the read-back is a GPU stall
    * and must never land inside a measured window.
    */
-  probeFrame(): Promise<IFrameStats>;
+  probeFrame(
+    save?: (pixels: ArrayLike<number>, width: number, height: number) => void,
+  ): Promise<IFrameStats>;
   render(): Promise<void>;
   renderer: WebGPURenderer;
   setRung(rung: ILoadTestRung): void;
@@ -861,15 +863,16 @@ export async function createLoadTestHarness(
      * re-authored scene — a probe that rendered something else would pass a ladder rung that
      * measured a blank screen.
      */
-    probeFrame: async () => {
+    probeFrame: async (save) => {
       if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
       const size = renderer.getDrawingBufferSize(drawingBufferSize);
       // A host whose post pass does not draw into a render target reads the frame it last drew
       // instead (the engine player). It is the frame a player sees, post chain included.
-      if (postPipeline !== undefined && readFrame !== undefined) {
+      if (readFrame !== undefined) {
         const pixels = await readFrame();
         if (pixels.length !== size.x * size.y * 4)
           throw new Error(`TN_BENCH_PROBE_SIZE:${pixels.length}!=${size.x}x${size.y}`);
+        save?.(pixels, size.x, size.y);
         return frameStats(pixels, size.x, size.y);
       }
       const target = new RenderTarget(size.x, size.y);
@@ -878,6 +881,7 @@ export async function createLoadTestHarness(
         await renderFrame();
         renderer.setRenderTarget(null);
         const pixels = await renderer.readRenderTargetPixelsAsync(target, 0, 0, size.x, size.y);
+        save?.(pixels as ArrayLike<number>, size.x, size.y);
         return frameStats(pixels as ArrayLike<number>, size.x, size.y);
       } finally {
         renderer.setRenderTarget(null);

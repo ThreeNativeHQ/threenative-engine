@@ -593,7 +593,10 @@ export function heroOf(points: readonly IPoint[], now: number) {
     };
   const ratio = latest.ratioNoPresent;
   const lane = laneOf(latest.label);
-  const previous = series.slice(0, -1).findLast((p) => laneOf(p.label) === lane);
+  const previous = series
+    .slice(0, -1)
+    .reverse()
+    .find((p) => laneOf(p.label) === lane);
   const reason = staleReason(points, now);
   return {
     status: (reason === undefined ? valueColor(ratio) : "yellow") as Status,

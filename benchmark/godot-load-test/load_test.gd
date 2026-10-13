@@ -783,6 +783,27 @@ func _finish_rung() -> void:
 			rung["foxMeasurement"] = _fox_measurement
 		if not _render_check.is_empty():
 			rung["renderCheck"] = _render_check
+	# The existing viewport read-back, after the last measured draw; PNG transport is persisted by the runner.
+	var frame_image: Image = get_viewport().get_texture().get_image().duplicate()
+	frame_image.convert(Image.FORMAT_RGBA8)
+	var source: Image = frame_image.duplicate()
+	frame_image.resize(160, 90, Image.INTERPOLATE_NEAREST)
+	# Image.resize has no box filter: replace the resized pixels with area-weighted RGBA means.
+	var scale_x := source.get_width() / 160.0
+	var scale_y := source.get_height() / 90.0
+	for y in range(90):
+		var top := y * scale_y
+		var bottom := (y + 1) * scale_y
+		for x in range(160):
+			var left := x * scale_x
+			var right := (x + 1) * scale_x
+			var total := Color(0, 0, 0, 0)
+			for sy in range(floori(top), ceili(bottom)):
+				for sx in range(floori(left), ceili(right)):
+					var weight := (minf(bottom, sy + 1) - maxf(top, sy)) * (minf(right, sx + 1) - maxf(left, sx))
+					total += source.get_pixel(sx, sy) * weight
+			frame_image.set_pixel(x, y, total / (scale_x * scale_y))
+	rung["framePng"] = Marshalls.raw_to_base64(frame_image.save_png_to_buffer())
 	_rungs.append(rung)
 	_plan_index += 1
 	if _plan_index >= _plan.size():
