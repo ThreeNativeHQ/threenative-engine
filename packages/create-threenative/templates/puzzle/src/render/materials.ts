@@ -83,7 +83,7 @@ export const crateBraceMaterial = new MeshStandardMaterial({ color: CRATE_BRACE,
  */
 export const phaseMaterial = new MeshStandardMaterial({
   color: palette.accent,
-  emissive: new Color(palette.accent).multiplyScalar(0.34),
+  emissive: new Color(palette.accent).multiplyScalar(0.55),
   metalness: 0,
   opacity: 0.55,
   roughness: 0.1,

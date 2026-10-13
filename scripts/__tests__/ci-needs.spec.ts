@@ -7,6 +7,8 @@ import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { formatJobTimings, formatRunSummary, summaryRows } from "../ci-run-summary.js";
 import { ciJobGraph, ciNeedsFindings, declaredNeeds, jobSections } from "../ci-workflow.js";
 
+const { selectionPlan } = await import(new URL("../ci-change-scope.mjs", import.meta.url).href);
+
 const repo = path.resolve(import.meta.dirname, "../..");
 const ciPath = path.join(repo, ".github/workflows/ci.yml");
 
@@ -889,8 +891,8 @@ describe("PRD-481 the runner class is compared per job, because every board is m
   });
 });
 
-/** The verdict gate on a non-reuse plan, with every job's own result supplied by the caller. */
-function verifyWarmPlan(
+/** The verdict gate on a narrowed plan, with every job's own result supplied by the caller. */
+function verifyNarrowedPlan(
   fixture: IReuseFixture,
   plan: Record<string, unknown>,
   results: Record<string, string>,
@@ -908,8 +910,11 @@ function verifyWarmPlan(
     env: {
       ...process.env,
       TN_CI_NEEDS: JSON.stringify(needs),
-      TN_CI_EVENT: "push",
+      // The merge queue is a develop review lane, so it carries the narrowed plans the gate reads.
+      TN_CI_EVENT: "merge_group",
       TN_CI_BASE_REF: "develop",
+      TN_CI_BASE_SHA: fixture.candidate,
+      TN_CI_HEAD_SHA: fixture.candidate,
       GITHUB_ACTIONS: "true",
       GITHUB_REPOSITORY: "three-native/fixture",
       GITHUB_RUN_ID: String(SELF_RUN_ID),
@@ -917,13 +922,13 @@ function verifyWarmPlan(
   });
 }
 
-describe("PRD-481 a develop push only warms the caches every pull request reads", () => {
+describe("a develop push qualifies its tree and still warms the caches every pull request reads", () => {
   // GitHub scopes a pull request's cache to `refs/pull/N/merge`, which no other pull request can
   // read. Only a run on the base branch publishes something every pull request into develop reads,
   // and before this lane nothing ran on develop at all — so every pull request paid a full native
   // rebuild (199 s of host plus ~120 s of V8/QuickJS contract executables) and a workspace dist
   // build of its own.
-  it("selects warm on a develop push, with only the two cache producers required", () => {
+  it("qualifies a develop push with the full board and still requires both cache producers", () => {
     const fixture = reuseFixture();
     fakeActionsApi(fixture);
     listSourceRun(fixture);
@@ -931,16 +936,17 @@ describe("PRD-481 a develop push only warms the caches every pull request reads"
       event: "push",
       target: "develop",
     });
-    expect(plan).toMatchObject({ selection: "warm", reusedRunId: 0 });
+    // PRD-550: a push promotes an exact tree, so it runs every job and every native row. Both cache
+    // publishers are part of that board, so the base branch stays warm for every pull request.
+    expect(plan).toMatchObject({ selection: "full", qualification: true, reusedRunId: 0 });
     const jobs = plan.jobs as Record<string, { required: boolean }>;
     expect(
       Object.entries(jobs)
         .filter(([, job]) => job.required)
         .map(([name]) => name)
         .sort(),
-    ).toEqual(["build-artifacts", "test-native"]);
-    // No gate ran, so the run owes no native matrix and asks for no reused verdict.
-    expect(plan.nativeTier).toBe("none");
+    ).toEqual(Object.keys(jobs).sort());
+    expect(plan.nativeTier).toBe("full");
   });
 
   it("keeps a push to main on the full board", () => {
@@ -951,7 +957,7 @@ describe("PRD-481 a develop push only warms the caches every pull request reads"
     expect(plan).toMatchObject({ selection: "full", nativeTier: "full" });
   });
 
-  it("leaves a pull request and the merge queue on develop exactly as they were", () => {
+  it("leaves a pull request and the merge queue on develop on the same plan", () => {
     const fixture = reuseFixture();
     fakeActionsApi(fixture);
     listSourceRun(fixture);
@@ -996,20 +1002,27 @@ describe("PRD-481 a develop push only warms the caches every pull request reads"
     });
   });
 
-  it("passes the warm verdict on its two producers and fails without them", () => {
+  it("passes a narrowed queue plan on its two producers and fails without them", () => {
+    // The gate reads the plan's own required set, whatever the event. `warm` still exists as a
+    // selection, so it still proves the gate asks for its producers and nothing more.
     const fixture = reuseFixture();
     fakeActionsApi(fixture);
-    const plan = classifyCandidate(fixture, fixture.candidate, {
-      event: "push",
-      target: "develop",
-    });
-    const green = verifyWarmPlan(fixture, plan, {
+    const plan = selectionPlan(
+      "warm",
+      "cache publishers only",
+      [],
+      fixture.candidate,
+      false,
+      0,
+      "develop",
+    );
+    const green = verifyNarrowedPlan(fixture, plan, {
       "build-artifacts": "success",
       "test-native": "success",
     });
     expect(green.status, green.stdout + green.stderr).toBe(0);
     expect(green.stdout).toContain("build-artifacts: required (success)");
-    const red = verifyWarmPlan(fixture, plan, { "build-artifacts": "success" });
+    const red = verifyNarrowedPlan(fixture, plan, { "build-artifacts": "success" });
     expect(red.status).toBe(1);
     expect(red.stderr).toContain("CI_REQUIRED_JOB_NOT_SUCCESS: test-native");
   });

@@ -20,7 +20,7 @@ The asset itself: `SM_EuropeanHornbeam_Forest_01.glb` is 126,934,280 B, a single
 
 Uncooked UE5 Megascans import as LOD0 only. The importer decompresses the largest `FMeshDescription` payload and never the smaller LOD payloads (`threenative-asset-mcp/README.md:354`). AutoLOD can rebuild a chain from LOD0. Nobody has measured whether it accepts a 755k-triangle foliage primitive: its non-manifold check (`packages/assets/src/lod/eligibility.ts:209`) declines any edge shared by more than two triangles.
 
-**Out of scope:** runtime capability selection and the Android guard (VQ-01); first-party `.uasset` ingest ([PRD-352](../assets/PRD-352-unreal-ingest-is-first-party.md)); consuming the unmapped textures ([PRD-487](../open-world/PRD-487-imported-materials-keep-their-detail.md)); skeletal LOD ([PRD-486](../open-world/PRD-486-characters-get-a-lod-chain.md)).
+**Out of scope:** runtime capability selection and the Android guard (VQ-01); first-party `.uasset` ingest ([PRD-352](../Unreal/assets/PRD-352-unreal-ingest-is-first-party.md)); consuming the unmapped textures ([PRD-487](../Unreal/assets/PRD-487-imported-materials-keep-their-detail.md)); skeletal LOD ([PRD-486](../open-world/PRD-486-characters-get-a-lod-chain.md)).
 
 ## Solution
 

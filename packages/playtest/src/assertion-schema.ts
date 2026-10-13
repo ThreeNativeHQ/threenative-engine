@@ -346,7 +346,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     observationPath: "runtimeDiagnostics",
     requiredCapabilities: ["browser.console", "browser.network", "runtime.diagnostics"],
     resultIdPrefix: "diagnostics",
-    supportedOn: ["web"],
+    supportedOn: ["web", "desktop"],
     triviality: "not-applicable",
     trivialityRationale: "It evaluates captured error and readiness channels across the run; no initial scalar value can satisfy those diagnostics by itself.",
   },
@@ -619,7 +619,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Stage ids to include, exclude, or find as an ordered subsequence in the applied chain.", name: "stages", type: "object" },
       { description: "Applied stage ids whose build returned a different graph node than its input; this is graph evidence, not pixel attribution.", name: "contributions", type: "object" },
       { description: "Temporal history rejection ceiling as a fraction from 0 to 1.", name: "velocity", type: "object" },
-      { description: "What the chain must be on each adapter class the harness classified from its own adapter.info reading; an unclassifiable adapter fails rather than matching either branch.", name: "perAdapter", type: "object" },
+      { description: "What the chain must be on each adapter class (hardware, software) and each GPU family (discrete, integrated, mobile-high, mobile-mid, mobile-low) the harness classified from its own adapter.info reading; a family row overrides hardware only when the observed fields prove the family, and an unclassifiable adapter fails rather than matching any branch.", name: "perAdapter", type: "object" },
     ],
     cardinality: "object",
     kind: "renderChain",
@@ -697,13 +697,14 @@ export function requiredPlaytestCapabilities(
         // native target; an explicit true remains required everywhere.
         const policy = resolveDiagnosticsPolicy(scenario.assert.diagnostics, target);
         if (policy.noConsoleErrors) required.add("browser.console");
-        if (policy.noNetworkErrors) required.add("browser.network");
+        if (policy.noNetworkErrors) required.add(target === "desktop" ? "runtime.network" : "browser.network");
         if (policy.noRuntimeDiagnostics) required.add("runtime.diagnostics");
       } else {
         entry.requiredCapabilities.forEach((capability) => required.add(capability));
       }
     }
   }
+  if (target === "desktop" && resolveDiagnosticsPolicy(scenario.assert?.diagnostics, target).noNetworkErrors) required.add("runtime.network");
   for (const entry of PLAYTEST_SETUP_REGISTRY) {
     if (scenario.setup?.[entry.kind] !== undefined) {
       entry.requiredCapabilities.forEach((capability) => required.add(capability));

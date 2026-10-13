@@ -538,6 +538,7 @@ export interface IPlaytestObservationSnapshot {
    * `runtime.physics`.
    */
   physicsSteps?: number;
+  network?: { requests: number; entries: Array<{ method: string; url: string }> };
   performance?: IPlaytestPerformanceObservation;
   /** Bounded shader/pipeline creation capture supplied by the engine when diagnostics are enabled. */
   pipelineCensus?: JsonValue;

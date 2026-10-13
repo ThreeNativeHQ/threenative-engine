@@ -51,6 +51,9 @@ constexpr const char* kScript = R"JS((async () => {
   ]) {
     device.features.has(f);
   }
+  // float32-filterable is optional. An adapter that offers it must enable it for linear sampling.
+  if (adapterFeatures.has("float32-filterable") && !device.features.has("float32-filterable"))
+    throw new Error("adapter offers float32-filterable but the device did not enable it");
 
   // Error scopes
   device.pushErrorScope('validation');

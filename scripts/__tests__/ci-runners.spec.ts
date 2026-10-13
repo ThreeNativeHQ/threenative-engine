@@ -143,3 +143,185 @@ describe.skipIf(process.platform !== "linux")("local runner physical core alloca
     expect(result.stderr).toContain("affinity");
   });
 });
+
+// Runs `balance` against a fake `gh` and `sleep`: the fake `sleep` advances a tick counter and
+// applies the scheduled mutation, so the loop ends deterministically through the real stop file.
+function runBalance(
+  options: {
+    readonly varsFail?: boolean;
+    readonly deleteHeavyOnTick?: number;
+    readonly stopOnTick?: number;
+    readonly stopBefore?: boolean;
+    readonly stopDuringVarReadAt?: number;
+    readonly initialVars?: string;
+    readonly idle?: string;
+  } = {},
+) {
+  const fixture = makeTempDirSync("runner-balance-");
+  const bin = path.join(fixture, "bin");
+  mkdirSync(bin);
+  const idleFile = path.join(fixture, "idle");
+  const varsFile = path.join(fixture, "vars");
+  const failFile = path.join(fixture, "vars-fail");
+  const ticksFile = path.join(fixture, "ticks");
+  const readsFile = path.join(fixture, "var-reads");
+  const callsFile = path.join(fixture, "gh-calls");
+  const stateDir = path.join(fixture, "threenative", "ci-runners");
+  mkdirSync(stateDir, { recursive: true });
+  const stopFile = path.join(stateDir, "stop");
+
+  writeFileSync(idleFile, options.idle ?? "tn-local tn-local-light\n");
+  writeFileSync(varsFile, options.initialVars ?? "");
+  writeFileSync(callsFile, "");
+  if (options.varsFail) writeFileSync(failFile, "");
+  if (options.stopBefore) writeFileSync(stopFile, "");
+
+  const dropVar = (name: string): string =>
+    `grep -v "^${name}=" '${varsFile}' 2>/dev/null > '${varsFile}.tmp' || true\nmv '${varsFile}.tmp' '${varsFile}'`;
+
+  const gh = `#!/bin/sh
+printf '%s\\n' "$*" >> '${callsFile}'
+case "$*" in
+  *"repo view"*) printf 'test/repo\\n'; exit 0 ;;
+esac
+if [ "$1" = "variable" ]; then
+  shift
+  case "$1" in
+    set)
+      name="$2"; shift 2; body=""
+      while [ $# -gt 0 ]; do case "$1" in --body) body="$2"; shift 2 ;; *) shift ;; esac; done
+      grep -v "^$name=" '${varsFile}' 2>/dev/null > '${varsFile}.tmp' || true
+      printf '%s=%s\\n' "$name" "$body" >> '${varsFile}.tmp'
+      mv '${varsFile}.tmp' '${varsFile}'
+      exit 0 ;;
+    delete)
+      ${dropVar("$2")}
+      exit 0 ;;
+    get)
+      value=$(grep "^$2=" '${varsFile}' 2>/dev/null | head -1 | cut -d= -f2-)
+      [ -n "$value" ] && { printf '%s\\n' "$value"; exit 0; }
+      exit 1 ;;
+  esac
+fi
+if [ "$1" = "api" ]; then
+  case "$*" in
+    *"actions/variables"*)
+      reads=$(cat '${readsFile}' 2>/dev/null || echo 0); reads=$((reads + 1))
+      echo "$reads" > '${readsFile}'
+      ${options.stopDuringVarReadAt === undefined ? ":" : `[ "$reads" -ge ${options.stopDuringVarReadAt} ] && : > '${stopFile}'`}
+      [ -e '${failFile}' ] && exit 1
+      # Same shape as the real --jq filter: the name, or NAME:invalid for a wrong label; never the value.
+      awk -F= '$1 == "TN_RUNNER" { print ($2 == "tn-local") ? "TN_RUNNER" : "TN_RUNNER:invalid" }
+               $1 == "TN_RUNNER_LIGHT" { print ($2 == "tn-local-light") ? "TN_RUNNER_LIGHT" : "TN_RUNNER_LIGHT:invalid" }' '${varsFile}' 2>/dev/null
+      exit 0 ;;
+    *"actions/runners"*)
+      cat '${idleFile}' 2>/dev/null; exit 0 ;;
+  esac
+fi
+exit 0
+`;
+
+  const mutations: string[] = [];
+  if (options.deleteHeavyOnTick !== undefined) {
+    mutations.push(
+      `[ "$ticks" -eq ${options.deleteHeavyOnTick} ] && {\n  ${dropVar("TN_RUNNER")}\n}`,
+    );
+  }
+  if (options.stopOnTick !== undefined) {
+    mutations.push(`[ "$ticks" -eq ${options.stopOnTick} ] && : > '${stopFile}'`);
+  }
+  const sleep = `#!/bin/sh
+ticks=$(cat '${ticksFile}' 2>/dev/null || echo 0); ticks=$((ticks + 1))
+echo "$ticks" > '${ticksFile}'
+${mutations.join("\n")}
+exit 0
+`;
+
+  for (const [name, body] of [
+    ["gh", gh],
+    ["sleep", sleep],
+  ] as const) {
+    const command = path.join(bin, name);
+    writeFileSync(command, body);
+    chmodSync(command, 0o755);
+  }
+
+  const result = spawnSync("bash", [script, "balance"], {
+    encoding: "utf8",
+    cwd: fixture,
+    timeout: 20_000,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      HOME: fixture,
+      XDG_STATE_HOME: fixture,
+      TN_RUNNERS_ENV: path.join(fixture, "missing-env"),
+    },
+  });
+  return {
+    status: result.status,
+    calls: readFileSync(callsFile, "utf8"),
+    vars: readFileSync(varsFile, "utf8"),
+  };
+}
+
+describe.skipIf(process.platform !== "linux")("local runner balancer routing", () => {
+  it("advertises idle capacity only after two consecutive idle polls", () => {
+    const { status, vars } = runBalance({ stopOnTick: 2 });
+    expect(status).toBe(0);
+    expect(vars).toContain("TN_RUNNER=tn-local\n");
+    expect(vars).toContain("TN_RUNNER_LIGHT=tn-local-light\n");
+  });
+
+  it("does not advertise before the second idle poll", () => {
+    const { status, vars } = runBalance({ stopOnTick: 1 });
+    expect(status).toBe(0);
+    expect(vars).not.toContain("TN_RUNNER=");
+  });
+
+  it("wrong-label routing variable: clears a stale label while the pool is busy", () => {
+    const { status, vars } = runBalance({
+      initialVars: "TN_RUNNER=some-other-label\n",
+      idle: "",
+      stopOnTick: 2,
+    });
+    expect(status).toBe(0);
+    expect(vars).not.toContain("TN_RUNNER=");
+  });
+
+  it("wrong-label routing variable: corrects it to the expected label once idle is confirmed", () => {
+    const { status, vars } = runBalance({
+      initialVars: "TN_RUNNER=some-other-label\n",
+      stopOnTick: 2,
+    });
+    expect(status).toBe(0);
+    expect(vars).toContain("TN_RUNNER=tn-local\n");
+  });
+
+  it("re-advertises a routing variable deleted externally while capacity stays idle", () => {
+    const { status, calls, vars } = runBalance({ deleteHeavyOnTick: 2, stopOnTick: 4 });
+    expect(status).toBe(0);
+    expect(vars).toContain("TN_RUNNER=tn-local\n");
+    expect(
+      calls.split("\n").filter((line) => line.includes("variable set TN_RUNNER ")),
+    ).toHaveLength(2);
+  });
+
+  it("does not advertise when the routing-variable list cannot be read", () => {
+    const { status, vars } = runBalance({ varsFail: true, stopOnTick: 3 });
+    expect(status).toBe(0);
+    expect(vars).not.toContain("TN_RUNNER");
+  });
+
+  it("never advertises when the stop file already exists", () => {
+    const { status, calls } = runBalance({ stopBefore: true });
+    expect(status).toBe(0);
+    expect(calls).not.toContain("variable set");
+  });
+
+  it("stops without re-advertising when a teardown begins mid-poll", () => {
+    const { status, calls } = runBalance({ stopDuringVarReadAt: 2, stopOnTick: 5 });
+    expect(status).toBe(0);
+    expect(calls).not.toContain("variable set");
+  });
+});

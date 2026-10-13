@@ -21,6 +21,22 @@ await writeFile(
   path.join(output, "attempt.json"),
   `${JSON.stringify({ sourceSha, status: "started" }, null, 2)}\n`,
 );
+// PRD-550 phase 1. The temporal-off cost arm prices actual frame submission against split-control
+// noise, so a runner other jobs share reports their load as render cost and `p95NoiseExcessMs` goes
+// red on unrelated work. That arm runs on the performance-regression lane; the history arm, which is
+// the correctness gate, stays on the merge path.
+const requested =
+  process.argv
+    .slice(2)
+    .find((value) => value.startsWith("--variant="))
+    ?.slice("--variant=".length) ?? "both";
+if (!["history", "cost", "both"].includes(requested)) {
+  throw new Error(
+    `usage: verify-velocity-history.ts [--variant=<history|cost|both>], got ${requested}`,
+  );
+}
+const runHistory = requested !== "cost";
+const runCost = requested !== "history";
 try {
   execFileSync("pnpm", ["exec", "vite", "build", "--config", "velocity.vite.config.ts"], {
     cwd: path.join(root, "examples/abyss-framework"),
@@ -89,7 +105,8 @@ try {
       failures: ["movingPixels", "oracleMaxErrorPixels", "footprintMaxErrorPixels"],
     },
   ];
-  for (const { variant, query, kind, failures } of variants) {
+  const historyVariants = runHistory ? variants : [];
+  for (const { variant, query, kind, failures } of historyVariants) {
     const artifactDirectory = path.join(output, variant);
     const report = await runStandalonePlaytest({
       allowSoftwareAdapter: true,
@@ -156,14 +173,17 @@ try {
     );
   }
   const temporalOffCost = [];
-  for (const costVariant of [
-    { name: "temporal-off-cost", query: "", failures: [] },
-    {
-      name: "temporal-off-after-consumer-diagnostic",
-      query: "?from-temporal",
-      failures: [],
-    },
-  ]) {
+  const costVariants = runCost
+    ? [
+        { name: "temporal-off-cost", query: "", failures: [] },
+        {
+          name: "temporal-off-after-consumer-diagnostic",
+          query: "?from-temporal",
+          failures: [],
+        },
+      ]
+    : [];
+  for (const costVariant of costVariants) {
     const costDirectory = path.join(output, costVariant.name);
     const costReport = await runStandalonePlaytest({
       allowSoftwareAdapter: true,
@@ -221,18 +241,28 @@ try {
       diagnostics: costReport.diagnostics,
     });
   }
-  assert.ok(
-    !(await readFile(path.join(output, "without-history/after.png"))).equals(
-      await readFile(path.join(output, "tracked/after.png")),
-    ),
-    "Actual velocity visualization must change when history is removed.",
-  );
+  if (runHistory) {
+    assert.ok(
+      !(await readFile(path.join(output, "without-history/after.png"))).equals(
+        await readFile(path.join(output, "tracked/after.png")),
+      ),
+      "Actual velocity visualization must change when history is removed.",
+    );
+  }
+  const qualification = [
+    runHistory && "actual WebGPU velocity MRT readback and screenshots",
+    runCost &&
+      "software-only temporal-off CPU submission cost, including three temporal-consumer on/off transitions",
+  ]
+    .filter(Boolean)
+    .join(" plus ")
+    .concat("; no native, ghosting or hardware-performance claim");
   await writeFile(
     path.join(output, "summary.json"),
-    `${JSON.stringify({ sourceSha, pass: true, qualification: "actual WebGPU velocity MRT readback and screenshots plus software-only temporal-off CPU submission cost, including three temporal-consumer on/off transitions; no native, ghosting or hardware-performance claim", temporalOffCost, variants: results.map(({ variant, report }) => ({ variant, pass: report.pass, capture: report.capture, motion: report.observations?.resources.motion, diagnostics: report.diagnostics })) }, null, 2)}\n`,
+    `${JSON.stringify({ sourceSha, variant: requested, pass: true, qualification, temporalOffCost, variants: results.map(({ variant, report }) => ({ variant, pass: report.pass, capture: report.capture, motion: report.observations?.resources.motion, diagnostics: report.diagnostics })) }, null, 2)}\n`,
   );
   console.log(
-    `Velocity history: expected motion/control outcomes observed, including exact skinned coverage and the original world-history control. Artifacts: ${output}`,
+    `Velocity ${requested}: expected outcomes observed for ${String(runHistory ? "the authored motion/control variants, including exact skinned coverage and the original world-history control" : "the temporal-off submission cost arm")}. Artifacts: ${output}`,
   );
 } catch (error) {
   await writeFile(

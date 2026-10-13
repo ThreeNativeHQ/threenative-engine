@@ -2393,7 +2393,7 @@ export async function compileAssets(
       await measureBudget({}, layout.outputRoot, layout.runtimeDecoderCapabilities, layout.budget),
     ))
       console.log(line);
-    await rm(manifestPath, { force: true });
+    await writeManifest(manifestPath, layout.outputRoot, undefined, {});
     await rm(receiptPath, { force: true });
     await rm(pendingReceiptPath, { force: true });
     return { concurrencyUsed: 1, passCosts: [], skipped: 0, skippedCompression: [], written: 0 };
@@ -2585,16 +2585,14 @@ export async function compileAssets(
   let textureCount = 0;
   let compressedModelCount = 0;
 
-  // An empty (or dotfile-only) source must never publish an empty manifest: the runtime treats
-  // a served manifest as authoritative and would reject every load against it. A source that
-  // held inputs last build drops its stale manifest here, restoring the no-manifest fallback.
+  // Asset-free projects still serve the manifest the runtime loader requests.
   if (logicals.length === 0) {
     for (const line of formatBudget(
       await measureBudget({}, layout.outputRoot, layout.runtimeDecoderCapabilities, layout.budget),
     ))
       console.log(line);
     await removeStaleReceiptOutputs(layout.outputRoot, writtenBefore, new Set());
-    if (previous.raw !== undefined) await rm(manifestPath, { force: true });
+    await writeManifest(manifestPath, layout.outputRoot, previous.raw, {});
     await rm(receiptPath, { force: true });
     await rm(pendingReceiptPath, { force: true });
     const report = await runHealthReport([], layout.targets);
