@@ -117,7 +117,7 @@ patchedDependencies:
     hash: e5decbc72f46c0747e26e2ca910e92936f157872011d75fbd32d3d3bcf0d3c1a
     path: patches/@tailwindcss__node@4.3.3.patch
   three@0.185.1:
-    hash: f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f
+    hash: 21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d
     path: packages/core/patches/three@0.185.1.patch
   tsup@8.5.1:
     hash: bdcba0cb0e0023b6ee572aae9dd40456c0c3bb0edd9c2abd290caed6ebef0770
@@ -198,7 +198,7 @@ importers:
         version: 19.2.0(react@19.2.0)
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@tailwindcss/vite':
         specifier: 'catalog:'
@@ -245,7 +245,7 @@ importers:
     dependencies:
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       vite:
         specifier: 'catalog:'
@@ -264,7 +264,7 @@ importers:
         version: link:../../packages/physics
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -289,7 +289,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@threenative/playtest':
         specifier: workspace:*
@@ -323,7 +323,7 @@ importers:
         version: link:../../packages/playtest
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -354,7 +354,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -382,7 +382,7 @@ importers:
         version: link:../../packages/physics
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@threenative/playtest':
         specifier: workspace:*
@@ -410,7 +410,7 @@ importers:
         version: link:../../packages/playtest
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -429,7 +429,7 @@ importers:
         version: link:../../packages/physics
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -448,7 +448,7 @@ importers:
     dependencies:
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -473,7 +473,7 @@ importers:
         version: 0.33.0(react@19.2.0)
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@tailwindcss/vite':
         specifier: 'catalog:'
@@ -522,7 +522,7 @@ importers:
         version: link:../../packages/physics
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/react':
         specifier: 'catalog:'
@@ -556,7 +556,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -578,11 +578,11 @@ importers:
         version: 0.2.0(@types/react@19.2.0)(react@19.2.0)
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@threenative/playtest':
         specifier: 0.2.0
-        version: 0.2.0(playwright@1.62.1)(three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f))
+        version: 0.2.0(playwright@1.62.1)(three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d))
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
@@ -610,7 +610,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -638,7 +638,7 @@ importers:
         version: link:../../packages/playtest
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -663,7 +663,7 @@ importers:
         version: link:../../packages/playtest
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -685,7 +685,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -707,7 +707,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -729,7 +729,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -757,7 +757,7 @@ importers:
         version: link:../../packages/playtest
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -782,7 +782,7 @@ importers:
         version: link:../../packages/playtest
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@threenative/runtime-native':
         specifier: workspace:*
@@ -810,7 +810,7 @@ importers:
         version: link:../../packages/procedural-animals
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@threenative/assets':
         specifier: workspace:*
@@ -838,7 +838,7 @@ importers:
         version: link:../../packages/playtest
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@threenative/assets':
         specifier: workspace:*
@@ -872,7 +872,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -897,7 +897,7 @@ importers:
         version: link:../../packages/physics
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@threenative/terrain':
         specifier: workspace:*
@@ -928,7 +928,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@threenative/playtest':
         specifier: workspace:*
@@ -984,10 +984,10 @@ importers:
         version: 0.35.4(@types/node@20.19.43)
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
       three-mesh-bvh:
         specifier: 'catalog:'
-        version: 0.9.14(three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f))
+        version: 0.9.14(three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d))
       wasm-media-encoders:
         specifier: 0.7.0
         version: 0.7.0
@@ -1045,13 +1045,13 @@ importers:
     dependencies:
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
       three-mesh-bvh:
         specifier: 'catalog:'
-        version: 0.9.14(three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f))
+        version: 0.9.14(three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d))
       threenative-asset-mcp:
-        specifier: 0.11.0
-        version: 0.11.0(@types/node@20.19.43)
+        specifier: 0.12.0
+        version: 0.12.0(@types/node@20.19.43)
       threenative-sculpt-mcp:
         specifier: 0.2.1
         version: 0.2.1(@types/node@20.19.43)
@@ -1124,7 +1124,7 @@ importers:
         version: 1.1.1
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@threenative/assets':
         specifier: workspace:*
@@ -1197,7 +1197,7 @@ importers:
         version: 0.3.22
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
       tsup:
         specifier: 8.5.1
         version: 8.5.1(patch_hash=bdcba0cb0e0023b6ee572aae9dd40456c0c3bb0edd9c2abd290caed6ebef0770)(@typescript/typescript6@6.0.2)(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)
@@ -1228,7 +1228,7 @@ importers:
         version: 0.3.22
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
       tsup:
         specifier: 8.5.1
         version: 8.5.1(patch_hash=bdcba0cb0e0023b6ee572aae9dd40456c0c3bb0edd9c2abd290caed6ebef0770)(@typescript/typescript6@6.0.2)(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)
@@ -1259,7 +1259,7 @@ importers:
         version: 0.3.22
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
       tsup:
         specifier: 8.5.1
         version: 8.5.1(patch_hash=bdcba0cb0e0023b6ee572aae9dd40456c0c3bb0edd9c2abd290caed6ebef0770)(@typescript/typescript6@6.0.2)(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)
@@ -1271,10 +1271,10 @@ importers:
     dependencies:
       procedural-animals:
         specifier: 'catalog:'
-        version: https://codeload.github.com/majidmanzarpour/threejs-procedural-animals/tar.gz/c95ae49346aa8e140a924376cec6cf0073d99512(three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f))
+        version: https://codeload.github.com/majidmanzarpour/threejs-procedural-animals/tar.gz/c95ae49346aa8e140a924376cec6cf0073d99512(three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d))
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@threenative/assets':
         specifier: workspace:*
@@ -1302,7 +1302,7 @@ importers:
     dependencies:
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/node':
         specifier: 20.19.43
@@ -1349,7 +1349,7 @@ importers:
         version: 0.3.22
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
       vitest:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@20.19.43)(@vitest/coverage-v8@4.1.10)(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.0)(jiti@2.7.0)(tsx@4.23.5))
@@ -1376,7 +1376,7 @@ importers:
         version: 0.3.22
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
       tsup:
         specifier: 'catalog:'
         version: 8.5.1(patch_hash=bdcba0cb0e0023b6ee572aae9dd40456c0c3bb0edd9c2abd290caed6ebef0770)(@typescript/typescript6@6.0.2)(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)
@@ -1394,7 +1394,7 @@ importers:
         version: 0.8.3
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
     devDependencies:
       '@types/node':
         specifier: 20.19.43
@@ -3765,8 +3765,8 @@ packages:
   three@0.185.1:
     resolution: {integrity: sha512-5aojFCXKwnjBRZvUnt3WFfEcvUJgkN5LlijRFN95hMy8WVkG4I0QNcJE+OuWvuJ0bOdStrbfXn0pkd6/QyiAlg==}
 
-  threenative-asset-mcp@0.11.0:
-    resolution: {integrity: sha512-zsF6KFiOwLxxPfbvJTYC8+EeWFPWlrNwzJj8d7jnoPnZyNupGpj9Kk8FxqNG9Z6bIlRNZZO6+jRV7xoJF2IExQ==}
+  threenative-asset-mcp@0.12.0:
+    resolution: {integrity: sha512-nlvM7vHPyHtAmNEwZ4usQXPfinpDC52oQr8NsOhUx0GbrdY+XzlJjFyUimdf9U8CSy56vTekSqOHudj0fWl96Q==}
     engines: {node: '>=20.19.0'}
     hasBin: true
 
@@ -4749,8 +4749,8 @@ snapshots:
 
   '@threenative/core@0.2.0(@types/react@19.2.0)(react@19.2.0)':
     dependencies:
-      three: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
-      three-mesh-bvh: 0.9.14(three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f))
+      three: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
+      three-mesh-bvh: 0.9.14(three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d))
       zustand: 5.0.14(@types/react@19.2.0)(react@19.2.0)
     transitivePeerDependencies:
       - '@types/react'
@@ -4758,19 +4758,19 @@ snapshots:
       - react
       - use-sync-external-store
 
-  '@threenative/playtest@0.2.0(playwright@1.62.1)(three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f))':
+  '@threenative/playtest@0.2.0(playwright@1.62.1)(three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d))':
     dependencies:
       pngjs: 7.0.0
     optionalDependencies:
       playwright: 1.62.1
-      three: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+      three: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
 
-  '@threenative/playtest@0.3.2(playwright@1.62.0)(three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f))':
+  '@threenative/playtest@0.3.2(playwright@1.62.0)(three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d))':
     dependencies:
       pngjs: 7.0.0
     optionalDependencies:
       playwright: 1.62.0
-      three: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+      three: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
 
   '@threenative/runtime-native@0.2.0':
     dependencies:
@@ -5684,9 +5684,9 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  procedural-animals@https://codeload.github.com/majidmanzarpour/threejs-procedural-animals/tar.gz/c95ae49346aa8e140a924376cec6cf0073d99512(three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)):
+  procedural-animals@https://codeload.github.com/majidmanzarpour/threejs-procedural-animals/tar.gz/c95ae49346aa8e140a924376cec6cf0073d99512(three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)):
     dependencies:
-      three: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+      three: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
 
   proj4@2.22.0(geotiff@3.0.5):
     dependencies:
@@ -5963,23 +5963,23 @@ snapshots:
     dependencies:
       any-promise: 1.3.0
 
-  three-mesh-bvh@0.9.14(three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)):
+  three-mesh-bvh@0.9.14(three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)):
     dependencies:
-      three: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+      three: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
 
-  three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f): {}
+  three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d): {}
 
-  threenative-asset-mcp@0.11.0(@types/node@20.19.43):
+  threenative-asset-mcp@0.12.0(@types/node@20.19.43):
     dependencies:
       '@gltf-transform/core': 4.4.2
       '@gltf-transform/extensions': 4.4.2
       '@gltf-transform/functions': 4.4.2(@types/node@20.19.43)
       '@modelcontextprotocol/server': 2.0.0
-      '@threenative/playtest': 0.3.2(playwright@1.62.0)(three@0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f))
+      '@threenative/playtest': 0.3.2(playwright@1.62.0)(three@0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d))
       '@zip.js/zip.js': 2.8.34
       playwright: 1.62.0
       sharp: 0.35.4(@types/node@20.19.43)
-      three: 0.185.1(patch_hash=f3c6b1fca2a168855ac231df8aea1b0ffd76a4a8bf228355a029ece9618b227f)
+      three: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
       zod: 4.4.3
     transitivePeerDependencies:
       - '@types/node'

@@ -15,6 +15,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   type Object3D,
+  PerspectiveCamera,
   Texture,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +36,7 @@ vi.mock("../src/assets.js", async (importOriginal) => {
 });
 
 import { type IAssetLoader, createAssetLoader } from "../src/assets.js";
+import type { IRendererLike } from "../src/renderer.js";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
 
 /**
@@ -2510,6 +2512,92 @@ describe("WorldCells", () => {
     for (const dispose of released) expect(dispose).toHaveBeenCalledTimes(1);
     expect(world.assetRefCounts()).toEqual({});
     world.dispose();
+  });
+
+  it("does not read a raster viewport for a world without terrain", async () => {
+    stubFixtureFetch();
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow: followAt(0, 0),
+      loadModel: async () => new Group(),
+      ring: 0,
+      surface,
+      terrain: false,
+      gpuScene: false,
+      url: "/world/world.json",
+    });
+    const renderer = {
+      info: { render: { drawCalls: 0 } },
+      get domElement() {
+        throw new Error("No terrain viewport requested");
+      },
+      kind: "webgl",
+      raw: {},
+      compileAsync: vi.fn(async () => undefined),
+      uploadAttributes: vi.fn(() => 1),
+    } as unknown as IRendererLike;
+    try {
+      expect(() => world.update(renderer, new PerspectiveCamera())).not.toThrow();
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("passes the resolved props pixel policy and current raster view to settled terrain", async () => {
+    stubFixtureFetch();
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow: followAt(0, 0),
+      loadModel: async () => new Group(),
+      ring: 0,
+      surface,
+      terrain: { tileResolution: 9 },
+      autoLod: { maxPixelError: 0.75 },
+      gpuScene: false,
+      lodHysteresis: 0.2,
+      url: "/world/world.json",
+    });
+    const renderer = {
+      info: { render: { drawCalls: 0 } },
+      domElement: { height: 720 },
+      kind: "webgl",
+      raw: {},
+      compileAsync: vi.fn(async () => undefined),
+      uploadAttributes: vi.fn(() => 1),
+    } as unknown as IRendererLike;
+    const camera = new PerspectiveCamera(60, 1280 / 720, 0.1, 10_000);
+    camera.position.set(0, 0, 4000);
+    camera.lookAt(0, 0, 0);
+    const terrain = terrainOf(world);
+    const follow = vi.spyOn(terrain, "follow");
+    const process = vi.spyOn(terrain, "process");
+    try {
+      world.update(renderer, camera);
+      expect(follow.mock.calls[0]?.[2]).toEqual({
+        camera,
+        viewportHeight: 720,
+        maxPixelError: 0.75,
+        hysteresis: 0.2,
+      });
+      await flushed(world);
+      for (let frame = 0; frame < 4; frame++) world.update(renderer, camera);
+      follow.mockClear();
+      process.mockClear();
+      renderer.domElement.height = 1440;
+      camera.position.z = 2000;
+      world.update(renderer, camera);
+      expect(follow).not.toHaveBeenCalled();
+      expect(process).toHaveBeenCalledOnce();
+      expect(process.mock.calls[0]?.[3]).toEqual({
+        camera,
+        viewportHeight: 1440,
+        maxPixelError: 0.75,
+        hysteresis: 0.2,
+      });
+      expect(terrain.residentTileCount).toBe(1);
+    } finally {
+      world.dispose();
+    }
   });
 
   it("keeps terrain resident at its own radius while the cell ring stays at the ring", async () => {

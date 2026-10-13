@@ -463,7 +463,7 @@ globalThis.Request = Request;
 // Fetch function - supports file://, http://, and https://
 // HTTP requests are now async via libuv (non-blocking)
 // Accepts either a URL string or a Request object (Three.js passes a Request).
-async function fetch(input, options = {}) {
+async function fetchRequest(input, options = {}) {
   let url;
   if (input && typeof input === "object" && typeof input.url === "string") {
     // Unwrap a Request object: pull url + per-request fields unless overridden.
@@ -575,6 +575,27 @@ async function fetch(input, options = {}) {
     });
   });
 }
+
+// Retain actual fetch failures from startup through the final playtest observation.
+const networkEntries = [];
+let networkRequests = 0;
+async function fetch(input, options = {}) {
+  const url = input && typeof input.url === "string" ? input.url : String(input);
+  const method = options.method || input?.method || "GET";
+  networkRequests++;
+  try {
+    const response = await fetchRequest(input, options);
+    if (!response.ok && networkEntries.length <= 256) networkEntries.push({ method, url });
+    return response;
+  } catch (error) {
+    if (networkEntries.length <= 256) networkEntries.push({ method, url });
+    throw error;
+  }
+}
+fetch.network = () => {
+  if (networkEntries.length > 256) throw new Error("TN_PLAYTEST_NETWORK_OVERFLOW: more than 256 failed requests.");
+  return { requests: networkRequests, entries: networkEntries.map((entry) => ({ ...entry })) };
+};
 
 // Also expose globally
 globalThis.fetch = fetch;

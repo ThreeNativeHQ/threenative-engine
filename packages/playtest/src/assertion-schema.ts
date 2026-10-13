@@ -346,7 +346,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     observationPath: "runtimeDiagnostics",
     requiredCapabilities: ["browser.console", "browser.network", "runtime.diagnostics"],
     resultIdPrefix: "diagnostics",
-    supportedOn: ["web"],
+    supportedOn: ["web", "desktop"],
     triviality: "not-applicable",
     trivialityRationale: "It evaluates captured error and readiness channels across the run; no initial scalar value can satisfy those diagnostics by itself.",
   },
@@ -697,13 +697,14 @@ export function requiredPlaytestCapabilities(
         // native target; an explicit true remains required everywhere.
         const policy = resolveDiagnosticsPolicy(scenario.assert.diagnostics, target);
         if (policy.noConsoleErrors) required.add("browser.console");
-        if (policy.noNetworkErrors) required.add("browser.network");
+        if (policy.noNetworkErrors) required.add(target === "desktop" ? "runtime.network" : "browser.network");
         if (policy.noRuntimeDiagnostics) required.add("runtime.diagnostics");
       } else {
         entry.requiredCapabilities.forEach((capability) => required.add(capability));
       }
     }
   }
+  if (target === "desktop" && resolveDiagnosticsPolicy(scenario.assert?.diagnostics, target).noNetworkErrors) required.add("runtime.network");
   for (const entry of PLAYTEST_SETUP_REGISTRY) {
     if (scenario.setup?.[entry.kind] !== undefined) {
       entry.requiredCapabilities.forEach((capability) => required.add(capability));
