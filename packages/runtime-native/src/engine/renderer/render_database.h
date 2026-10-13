@@ -54,6 +54,7 @@ class RenderDatabase {
     /** Records found by hashing the object, and record sweeps run; a steady frame does neither (PRD-573 v1.11). */
     [[nodiscard]] uint64_t recordLookups() const { return recordLookups_; }
     [[nodiscard]] uint64_t recordSweeps() const { return recordSweeps_; }
+    [[nodiscard]] uint64_t sphereMeasures() const { return sphereMeasures_; }
     /** Why the last render left something out (TN_NATIVE_MATERIAL_UNSUPPORTED, TN_NATIVE_LIGHTS_UNSUPPORTED...). */
     [[nodiscard]] const std::vector<std::string>& diagnostics() const { return diagnostics_; }
 
@@ -227,7 +228,7 @@ class RenderDatabase {
     std::vector<uint32_t> floatKeys_;
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;
-    uint64_t recordLookups_ = 0, recordSweeps_ = 0;
+    uint64_t recordLookups_ = 0, recordSweeps_ = 0, sphereMeasures_ = 0;
     // A float32 copy per attribute. The source is held weakly: a freed store (or one whose address a
     // new store took) reads as expired, so a stale copy is never served and a dead entry can be swept.
     struct Converted {
