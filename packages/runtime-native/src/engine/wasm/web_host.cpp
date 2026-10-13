@@ -60,7 +60,7 @@ int fail(const std::string& message) {
     return 1;
 }
 
-void configureSurface() {
+void configureWebSurface() {
     WGPUSurfaceConfiguration config = {};
     config.device = device;
     config.format = surfaceFormat;
@@ -78,7 +78,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     device = result;
     queue = wgpuDeviceGetQueue(device);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
-    configureSurface();
+    configureWebSurface();
     if (pendingPost) renderer->setPostGraph(pendingPost);
     state = Ready;
 }
@@ -178,7 +178,7 @@ extern "C" int tnw_web_resize(uint32_t w, uint32_t h) {
     if (!validSize(w, h)) return fail("TN_WASM_RESIZE: size invalid");
     width = w;
     height = h;
-    if (renderer) configureSurface();
+    if (renderer) configureWebSurface();
     return 0;
 }
 
