@@ -1,5 +1,7 @@
 # PRD-473 — Streamed open worlds hold 120 fps: a GPU-driven world
 
+**Checkout verification, 2026-10-13:** Workspace build, typecheck and lint passed. After building the missing V8/QuickJS test executables, the native package passed 137 test files / 1,584 tests (62 skipped), physics parity and publint. The continuing root suite exposed a stale asset-MCP registry pin (`0.11.0`) against the declared/installed dependency (`0.12.0`); the focused test reproduced the mismatch before repair and the full `mcp-install.spec.ts` passed 32/32 afterward. The root suite has not yet finished successfully. The real cooked-Machinefall framewise diagnostic remains unverified: its first run exposed a missing `compileAsync` delegation in the owned diagnostic adapter; the repaired adapter is being rerun. No AC-1 through AC-4 tick follows from these checks.
+
 **Status:** PARTIAL — filed 2026-09-28; PR375 GPU-scene continuity and the runtime impostor path are in flight (see execution status below).
 **Priority:** P1 — Open: GPU culls and LOD-selects batched instances, bundles replay static draws.
 **Complexity:** 9 (HIGH): compute culling, indirect draws, cached draw commands, runtime impostor bake and cook-time HLOD across core, assets and the three patch. Risk override: none.
