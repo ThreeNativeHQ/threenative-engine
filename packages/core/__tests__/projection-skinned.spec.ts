@@ -371,6 +371,48 @@ describe("SkinnedBatch palette", () => {
     batch.dispose();
   });
 
+  it("writes gameplay root movement on a skipped animation frame", () => {
+    const root = new Group();
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    root.add(mesh);
+    const player = new AnimationPlayer({ root, clips: [], strideSync: false, updateRate: 4 });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    const slot = batch.claim(mesh) as number;
+    const recorder = new SpanRecorder();
+    setSpanRecorder(recorder);
+    try {
+      player.update(0, true);
+      root.updateMatrixWorld(true);
+      batch.begin();
+      batch.write(slot, mesh);
+      batch.end();
+      recorder.endFrame(1);
+      recorder.window();
+
+      while (player.updateRateReport.evaluated) player.update(1 / 60);
+      root.position.x = 10;
+      root.updateMatrixWorld(true);
+      batch.begin();
+      batch.write(slot, mesh);
+      batch.end();
+      recorder.endFrame(1);
+      expect(batch.palette[12]).toBeCloseTo(10);
+      expect(batch.history?.[12]).toBeCloseTo(0);
+      expect(recorder.window()?.spans.skinnedWrite?.perFrame).toBe(1);
+
+      batch.begin();
+      batch.write(slot, mesh);
+      batch.end();
+      recorder.endFrame(1);
+      expect(batch.history?.[12]).toBeCloseTo(batch.palette[12] as number);
+      expect(recorder.window()?.spans.skinnedWrite).toBeUndefined();
+    } finally {
+      setSpanRecorder(undefined);
+      player.dispose();
+      batch.dispose();
+    }
+  });
+
   it("updates auto-rate state for source rigs behind the projected skinned batch", () => {
     const root = new Group();
     const mesh = rig(rigGeometry(), new MeshStandardMaterial());

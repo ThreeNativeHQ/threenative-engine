@@ -1,6 +1,7 @@
 import {
   InstancedBufferGeometry,
   type Material,
+  Matrix4,
   Mesh,
   type Object3D,
   type Skeleton,
@@ -217,6 +218,7 @@ export class SkinnedBatch {
   readonly #bindScratch = new Float64Array(16);
   readonly #updated = new WeakMap<Skeleton, number>();
   readonly #writtenEvaluations = new WeakMap<Object3D, number>();
+  readonly #writtenWorldMatrices = new WeakMap<Object3D, Matrix4>();
   #frame = 0;
   #dirty = false;
   #sourceVersion: number;
@@ -335,6 +337,7 @@ export class SkinnedBatch {
     if (slot === undefined) return;
     this.instances.delete(rig);
     this.#writtenEvaluations.delete(rig);
+    this.#writtenWorldMatrices.delete(rig);
     this.hide(slot);
     this.free.push(slot);
   }
@@ -369,10 +372,12 @@ export class SkinnedBatch {
    */
   write(slot: number, rig: SkinnedMesh): void {
     const state = animationRateStateOf(rig);
+    const writtenWorld = this.#writtenWorldMatrices.get(rig);
     if (
       state !== undefined &&
       !state.evaluated &&
-      this.#writtenEvaluations.get(rig) === state.evaluation
+      this.#writtenEvaluations.get(rig) === state.evaluation &&
+      writtenWorld?.equals(rig.matrixWorld)
     )
       return;
     beginSpan(SPANS.skinnedWrite);
@@ -407,7 +412,12 @@ export class SkinnedBatch {
         }
       }
       this.#dirty = true;
-      if (state !== undefined) this.#writtenEvaluations.set(rig, state.evaluation);
+      if (state !== undefined) {
+        this.#writtenEvaluations.set(rig, state.evaluation);
+        const nextWorld = writtenWorld ?? new Matrix4();
+        nextWorld.copy(rig.matrixWorld);
+        this.#writtenWorldMatrices.set(rig, nextWorld);
+      }
     } finally {
       endSpan(SPANS.skinnedWrite);
     }
