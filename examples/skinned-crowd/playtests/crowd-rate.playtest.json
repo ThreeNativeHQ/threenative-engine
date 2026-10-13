@@ -1,7 +1,7 @@
 {
   "name": "crowd-rate-measured-baseline",
   "schemaVersion": 1,
-  "subject": "Run with ?tnFrameSpans=1&crowdCount=32|128|256&crowdArm=animated|held|static. CPU spans cover actual AnimationPlayer.update and SkinnedBatch.write calls; held versus baked static controls report main and shadow GPU buckets separately.",
+  "subject": "Run with ?tnFrameSpans=1&crowdCount=32|128|256&crowdArm=animated|held|static&crowdRate=auto|1. CPU spans cover actual AnimationPlayer.update and SkinnedBatch.write calls; crowdRate=1 is the named control and crowdRate=auto must reduce palette writes; held versus baked static controls report main and shadow GPU buckets separately.",
   "target": "web",
   "viewport": {
     "width": 1280,

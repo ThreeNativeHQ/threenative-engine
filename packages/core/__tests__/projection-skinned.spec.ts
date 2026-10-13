@@ -1,12 +1,16 @@
 import {
+  AnimationClip,
   Bone,
   BufferGeometry,
   Float32BufferAttribute,
+  Group,
   type InstancedBufferGeometry,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  NumberKeyframeTrack,
   type Object3D,
+  PerspectiveCamera,
   Scene,
   Skeleton,
   SkinnedMesh,
@@ -15,8 +19,10 @@ import {
 import { positionLocal } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import { AnimationPlayer } from "../src/animation.js";
 import { SpanRecorder, setSpanRecorder } from "../src/profiling/Spans.js";
 import { SkinnedBatch, isSimilarityTransform } from "../src/projection-skinned.js";
+import { RenderCameraCull } from "../src/render-camera-cull.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
@@ -309,6 +315,89 @@ describe("SkinnedBatch palette", () => {
     batch.end();
     // Back from hidden: history is its own pose, not the collapsed zeros.
     expect([...(batch.history as Float32Array)]).toEqual([...batch.palette]);
+  });
+
+  it("skips a palette write on a skipped animation frame and carries the whole step on evaluation", () => {
+    const root = new Group();
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    root.add(mesh);
+    const player = new AnimationPlayer({
+      root,
+      clips: [
+        new AnimationClip("turn", 1, [
+          new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, Math.PI]),
+        ]),
+      ],
+      strideSync: false,
+      updateRate: 4,
+    });
+    player.play("turn");
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    const slot = batch.claim(mesh) as number;
+    player.update(0, true);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    const first = batch.palette.slice();
+
+    let skipped = false;
+    while (!skipped) {
+      player.update(1 / 60);
+      skipped = !player.updateRateReport.evaluated;
+    }
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    expect([...(batch.history as Float32Array)]).toEqual([...batch.palette]);
+
+    while (!player.updateRateReport.evaluated) player.update(1 / 60);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    expect([...(batch.history as Float32Array)]).toEqual([...first]);
+    expect([...batch.palette]).not.toEqual([...first]);
+
+    player.updateRate = 1;
+    player.update(1 / 60);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    expect([...(batch.history as Float32Array)]).not.toEqual([...batch.palette]);
+    player.dispose();
+    batch.dispose();
+  });
+
+  it("updates auto-rate state for source rigs behind the projected skinned batch", () => {
+    const root = new Group();
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    root.add(mesh);
+    root.position.z = -100;
+    root.updateMatrixWorld(true);
+    const player = new AnimationPlayer({
+      root,
+      clips: [],
+      strideSync: false,
+    });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: false });
+    batch.claim(mesh);
+    batch.begin();
+    batch.write(0, mesh);
+    batch.end();
+    const scene = new Scene();
+    scene.add(batch.mesh);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    scene.updateMatrixWorld(true);
+    const cull = new RenderCameraCull();
+    cull.apply(scene, camera, 720);
+    cull.restore();
+    expect(player.updateRateReport.rate).toBeGreaterThan(1);
+    cull.dispose();
+    player.dispose();
+    batch.dispose();
   });
 
   it("collapses a released slot so it draws nothing", () => {

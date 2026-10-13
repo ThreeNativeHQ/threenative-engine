@@ -42,15 +42,19 @@ const query = new URLSearchParams(globalThis.location?.search ?? "");
 const requestedCount = query.get("crowdCount");
 const count = requestedCount === null ? SIDE * SIDE : Number(requestedCount);
 const arm = query.get("crowdArm") ?? "animated";
+const requestedRate = query.get("crowdRate") ?? "auto";
+const updateRate = requestedRate === "1" ? 1 : requestedRate === "auto" ? "auto" : undefined;
 if (requestedCount !== null && ![32, 128, 256].includes(count))
   throw new Error("crowdCount must be 32, 128 or 256.");
 if (!["animated", "held", "static"].includes(arm))
   throw new Error("crowdArm must be animated, held or static.");
+if (updateRate === undefined) throw new Error("crowdRate must be auto or 1.");
 const measuring = requestedCount !== null;
 
 export const crowdRate: Record<string, unknown> = {
   count,
   arm,
+  updateRate,
   measuring,
   ready: false,
   measured: null,
@@ -97,7 +101,11 @@ export function crowdSpans(line: string): void {
       : animation === undefined) &&
     (arm === "static"
       ? palette === undefined
-      : palette?.perFrame === count && palette.frames === 120) &&
+      : palette !== undefined &&
+        palette.frames === 120 &&
+        (arm === "held" || updateRate === 1
+          ? palette.perFrame === count
+          : palette.perFrame > 0 && palette.perFrame < count)) &&
     Number.isFinite(crowdRate.gpuMainMs) &&
     Number.isFinite(crowdRate.gpuShadowMs) &&
     Number(crowdRate.mainDraws) > 0 &&
@@ -304,6 +312,7 @@ export class Crowd extends Scene {
                 clips: [clip],
                 requiredClips: ["sway"],
                 strideSync: false,
+                updateRate,
               });
         const mesh = player?.root ?? new Object3D();
         mesh.name = `walker-${index}`;

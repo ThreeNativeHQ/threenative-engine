@@ -72,11 +72,16 @@ interface IPositionVersion {
 /** A sphere nearer than this to the camera would divide by zero; treat it as this far away. */
 const MIN_DISTANCE = 1e-4;
 
+/** Internal mirror metadata: a skinned batch carries its authored source rigs to the camera gate. */
+const ANIMATION_RATE_SOURCES_KEY = "threenative.animationRateSources";
+
 /** Internal observations shared with AnimationPlayer, owned by the root rather than the game. */
 export interface IAnimationRateState {
   rate: number;
   frame: number;
   source: RenderCameraCull | undefined;
+  evaluated: boolean;
+  evaluation: number;
 }
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
 
@@ -295,6 +300,7 @@ export class RenderCameraCull {
     // trusted — the pooled tracer, particle and whitewater batches set it for exactly that
     // reason. A second, stricter cull does not get to override the opt-out.
     if (object.frustumCulled === false) {
+      this.#observeAnimationSources(object);
       this.#observeAnimation(object, undefined);
       this.#exemptFrustumCulled += 1;
       return;
@@ -334,8 +340,7 @@ export class RenderCameraCull {
     const dz = this.#center.z - this.#cameraZ;
     const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const worldRadius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
-    const projectedDiameter =
-      (2 * worldRadius * this.#scale) / Math.max(distance - worldRadius, MIN_DISTANCE);
+    const projectedDiameter = projectedDiameterPixels(worldRadius, distance, this.#scale);
     if (projectedDiameter >= this.#minimumPixels) return;
     object.visible = false;
     this.#hidden[this.#hiddenCount] = object;
@@ -346,12 +351,14 @@ export class RenderCameraCull {
   #observeAnimation(
     object: Object3D,
     sphere: IBoundingSphereLike | typeof DYNAMIC_BOUNDS | undefined,
+    notRendered = false,
   ): void {
     for (let root: Object3D | null = object; root !== null; root = root.parent) {
       const state = animationRateStates.get(root);
       if (state === undefined) continue;
-      let rate = 1;
+      let rate = notRendered ? 8 : 1;
       if (
+        !notRendered &&
         this.#cameraResolved &&
         sphere !== undefined &&
         sphere !== DYNAMIC_BOUNDS &&
@@ -365,7 +372,7 @@ export class RenderCameraCull {
           this.#center.y - this.#cameraY,
           this.#center.z - this.#cameraZ,
         );
-        const pixels = (2 * radius * this.#scale) / Math.max(distance - radius, MIN_DISTANCE);
+        const pixels = projectedDiameterPixels(radius, distance, this.#scale);
         // PRD-570's provisional pixel bands; the visual gate still has to earn these thresholds.
         rate = this.#frustum.intersectsSphere(this.#animationSphere.set(this.#center, radius))
           ? pixels >= 128
@@ -385,6 +392,30 @@ export class RenderCameraCull {
     }
   }
 
+  #observeAnimationSources(object: Object3D): void {
+    const sources = object.userData[ANIMATION_RATE_SOURCES_KEY];
+    if (!(sources instanceof Map)) return;
+    for (const source of sources.keys()) {
+      const visible = this.#isVisibleInWorld(source);
+      if (this.#isCameraAttached(source)) {
+        this.#observeAnimation(source, undefined);
+        continue;
+      }
+      this.#observeAnimation(
+        source,
+        visible ? boundsOf(source, this.#positionVersions) : undefined,
+        !visible,
+      );
+    }
+  }
+
+  #isVisibleInWorld(object: Object3D): boolean {
+    for (let node: Object3D | null = object; node !== null; node = node.parent) {
+      if (!node.visible) return false;
+    }
+    return true;
+  }
+
   #isCameraAttached(object: Object3D): boolean {
     const camera = this.#camera;
     if (camera === undefined) return false;
@@ -393,6 +424,15 @@ export class RenderCameraCull {
     }
     return false;
   }
+}
+
+/** Pure projected-diameter formula shared by the draw gate and per-rig animation policy. */
+export function projectedDiameterPixels(
+  radius: number,
+  distance: number,
+  pixelsPerWorldUnit: number,
+): number {
+  return (2 * radius * pixelsPerWorldUnit) / Math.max(distance - radius, MIN_DISTANCE);
 }
 
 function boundsOf(

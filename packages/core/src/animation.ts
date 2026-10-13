@@ -235,6 +235,7 @@ export interface IAnimationPlayOptions {
 
 type AnimationMode = "loop" | "once";
 let nextAnimationOffset = 0;
+const ANIMATION_RATE_STATE_KEY = "threenative.animationRateState";
 
 export class AnimationPlayer {
   readonly mixer: AnimationMixer;
@@ -243,6 +244,8 @@ export class AnimationPlayer {
     rate: 1,
     frame: 0,
     source: undefined,
+    evaluated: true,
+    evaluation: 0,
   };
   readonly #staggerOffset = nextAnimationOffset++;
   #updateRate: "auto" | number = "auto";
@@ -326,6 +329,7 @@ export class AnimationPlayer {
     }
     this.mixer.addEventListener("finished", this.#onFinished);
     animationRateStates.set(this.root, this.#rateState);
+    this.root.userData[ANIMATION_RATE_STATE_KEY] = this.#rateState;
   }
 
   get updateRate(): "auto" | number {
@@ -806,6 +810,7 @@ export class AnimationPlayer {
     const rate = this.#effectiveUpdateRate();
     this.#updateFrame += 1;
     this.#skippedFrames += 1;
+    this.#rateState.evaluated = false;
     this.#evaluated =
       force ||
       (this.#updateFrame + this.#staggerOffset) % rate === 0 ||
@@ -880,6 +885,8 @@ export class AnimationPlayer {
     if (this.#current !== undefined && !wasFinished && this.mixer.time !== before)
       this.#advancedFrames += 1;
     this.#advanceBlend(dt);
+    this.#rateState.evaluation += 1;
+    this.#rateState.evaluated = true;
   }
 
   stop(): void {
@@ -919,6 +926,8 @@ export class AnimationPlayer {
     this.#preparation = undefined;
     if (animationRateStates.get(this.root) === this.#rateState)
       animationRateStates.delete(this.root);
+    if (this.root.userData[ANIMATION_RATE_STATE_KEY] === this.#rateState)
+      delete this.root.userData[ANIMATION_RATE_STATE_KEY];
   }
 }
 

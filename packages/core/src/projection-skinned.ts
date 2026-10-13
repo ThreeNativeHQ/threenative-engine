@@ -35,6 +35,14 @@ import {
 
 import { SPANS, beginSpan, endSpan } from "./profiling/Spans.js";
 
+const ANIMATION_RATE_SOURCES_KEY = "threenative.animationRateSources";
+const ANIMATION_RATE_STATE_KEY = "threenative.animationRateState";
+
+interface IAnimationRateStateLike {
+  readonly evaluated: boolean;
+  readonly evaluation: number;
+}
+
 /**
  * The skinned lane of the render projection: every rig that shares a geometry and material is one
  * instanced draw per pass instead of one draw per rig per pass.
@@ -208,6 +216,7 @@ export class SkinnedBatch {
   readonly #fresh: number[] = [];
   readonly #bindScratch = new Float64Array(16);
   readonly #updated = new WeakMap<Skeleton, number>();
+  readonly #writtenEvaluations = new WeakMap<Object3D, number>();
   #frame = 0;
   #dirty = false;
   #sourceVersion: number;
@@ -272,6 +281,7 @@ export class SkinnedBatch {
 
     this.mesh = new Mesh(geometry, material);
     this.mesh.matrixAutoUpdate = false;
+    this.mesh.userData[ANIMATION_RATE_SOURCES_KEY] = this.instances;
     // The palette spans every rig; only the per-rig sources have meaningful bounds.
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = first.castShadow;
@@ -324,6 +334,7 @@ export class SkinnedBatch {
     const slot = this.instances.get(rig);
     if (slot === undefined) return;
     this.instances.delete(rig);
+    this.#writtenEvaluations.delete(rig);
     this.hide(slot);
     this.free.push(slot);
   }
@@ -357,6 +368,13 @@ export class SkinnedBatch {
    * bind mode `matrixWorld · bindMatrixInverse` is the identity and is skipped.
    */
   write(slot: number, rig: SkinnedMesh): void {
+    const state = animationRateStateOf(rig);
+    if (
+      state !== undefined &&
+      !state.evaluated &&
+      this.#writtenEvaluations.get(rig) === state.evaluation
+    )
+      return;
     beginSpan(SPANS.skinnedWrite);
     try {
       const skeleton = rig.skeleton;
@@ -389,6 +407,7 @@ export class SkinnedBatch {
         }
       }
       this.#dirty = true;
+      if (state !== undefined) this.#writtenEvaluations.set(rig, state.evaluation);
     } finally {
       endSpan(SPANS.skinnedWrite);
     }
@@ -423,4 +442,18 @@ export class SkinnedBatch {
     this.mesh.material.dispose();
     this.instances.clear();
   }
+}
+
+function animationRateStateOf(object: Object3D): IAnimationRateStateLike | undefined {
+  for (let node: Object3D | null = object; node !== null; node = node.parent) {
+    const value = node.userData[ANIMATION_RATE_STATE_KEY];
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as IAnimationRateStateLike).evaluated === "boolean" &&
+      typeof (value as IAnimationRateStateLike).evaluation === "number"
+    )
+      return value as IAnimationRateStateLike;
+  }
+  return undefined;
 }
