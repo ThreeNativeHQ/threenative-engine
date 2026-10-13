@@ -279,6 +279,7 @@ export interface IPerformanceIdentity {
 }
 
 export interface IRungSummary {
+  godotRatio?: number;
   /** Median across repeats of the host process's CPU ms per frame in the timed window; undefined when no repeat carried it. */
   cpuMsPerFrame?: number;
   drawCalls: number;
@@ -972,7 +973,7 @@ function countHitches(frameMs: readonly number[]): number {
  * percentiles, hitches and draw calls come from the frame series, so the only counter a driver can
  * leave out is `pipelineCompiles`, and a rung that did not report one is a hole, never a zero.
  */
-export function scoreboardRows(report: IRunReport): IRungSummary[] {
+export function scoreboardRows(report: IRunReport, godot?: IRunReport): IRungSummary[] {
   report.rungs.forEach((rung, index) => {
     const path = `report.rungs[${index}] (${rung.mode}@${rung.objectCount})`;
     if (!Number.isInteger(rung.drawCalls) || rung.drawCalls < 1)
@@ -987,7 +988,20 @@ export function scoreboardRows(report: IRunReport): IRungSummary[] {
         `${path} reported no pipelineCompiles (${String(compiles)}); a scoreboard row needs the counter, not a default`,
       );
   });
-  return summarize(report);
+  const rows = summarize(report);
+  if (godot === undefined) return rows;
+  if (godot.arm !== "godot-desktop")
+    throw new BenchError("TN_BENCH_BAD_SHAPE", "godotRatio requires godot-desktop");
+  const reference = scoreboardRows(godot);
+  return rows.map((row) => {
+    const match = reference.find(
+      (other) => other.mode === row.mode && other.objectCount === row.objectCount,
+    );
+    if (!["R2", "R3", "R5"].includes(row.mode) || match === undefined) return row;
+    if (row.p50 <= 0 || match.p50 <= 0)
+      throw new BenchError("TN_BENCH_BAD_SHAPE", "godotRatio requires positive frame p50");
+    return { ...row, godotRatio: match.p50 / row.p50 };
+  });
 }
 
 /** A per-frame series a rung may carry: a non-empty array of non-negative numbers, or absent. */

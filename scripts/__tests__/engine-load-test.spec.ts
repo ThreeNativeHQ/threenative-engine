@@ -3495,6 +3495,28 @@ describe("the scoreboard counters", () => {
     });
   });
 
+  it("reports Godot/native p50 on R2, R3 and R5 without inventing unsupported Godot rows", () => {
+    const modes = ["R2", "R3", "R5"] as const;
+    const native = report({
+      arm: "tn-desktop",
+      rungs: modes.map((mode) => rung({ mode, frameMs: series(10), pipelineCompiles: 0 })),
+    });
+    const godot = report({
+      arm: "godot-desktop",
+      engine: { name: "godot", version: "4.7.1" },
+      rungs: modes.map((mode) => rung({ mode, frameMs: series(25) })),
+    });
+    const rows = scoreboardRows(native, godot);
+    expect(rows.map((row) => row.godotRatio)).toEqual([2.5, 2.5, 2.5]);
+    const unsupported = { ...godot, rungs: godot.rungs.slice(0, 2) };
+    expect(scoreboardRows(native, unsupported).map((row) => row.godotRatio)).toEqual([
+      2.5,
+      2.5,
+      undefined,
+    ]);
+    expect(scoreboardRows(unsupported)).toHaveLength(2);
+    expect(scoreboardRows(native).every((row) => row.godotRatio === undefined)).toBe(true);
+  });
   it("counts no hitch on a flat series", () => {
     const [row] = scoreboardRows(report({ rungs: [rung({ pipelineCompiles: 0 })] }));
     expect(row?.hitches).toBe(0);

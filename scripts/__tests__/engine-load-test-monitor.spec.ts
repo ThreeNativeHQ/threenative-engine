@@ -1024,6 +1024,8 @@ describe("the realistic-scene ladder on the monitor page", () => {
     const section = sectionOf(html);
     // 1000 / the median p50 of the retained runs, and the verdict is the scoreboard's own rule.
     expect(section).toContain("Full scene at 1080p: ThreeNative 59.9 fps vs Godot 50.0 fps");
+    expect(section).toContain(">godotRatio</th>");
+    expect(section).toContain("<td>1.20</td>");
     expect(section).toContain('<span class="pill win-tn">TN</span>');
     expect(section).toContain("ThreeNative — 1.2x faster on a typical frame");
     // Every rung, what it added, and both engines' medians with the spread beside them.

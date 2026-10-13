@@ -1,5 +1,5 @@
 /**
- * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--json]`
+ * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--memory] [--json]`
  *
  * Profiles a running game page the way a Wasm-engine performance question needs: frame time from
  * requestAnimationFrame, a Chrome CPU profile grouped into engine Wasm, JavaScript and WebGPU calls
@@ -13,11 +13,14 @@
  * `--profiling-funcs`; without it the Wasm rows are numbered. Diagnose with it; the steady-state
  * counter gates (render_database_test steady_state, wasm-engine-boot's renderer scenario) hold a fix.
  */
+import { pathToFileURL } from "node:url";
 import { type Page, chromium } from "@playwright/test";
 import {
   PERFORMANCE_BROWSER_ARGS,
   WEBGPU_BROWSER_ARGS,
 } from "../packages/playtest/src/runner/browser.js";
+
+import { absolutesVerdict, parseWebMetrics, readHostLoad } from "./engine-load-test/report.js";
 
 interface IOptions {
   url: string;
@@ -27,10 +30,11 @@ interface IOptions {
   calls: boolean;
   gpuCalls: boolean;
   json: boolean;
+  memory: boolean;
   allowSoftware: boolean;
 }
 
-function options(argv: readonly string[]): IOptions {
+export function options(argv: readonly string[]): IOptions {
   const value = (name: string) => {
     const at = argv.indexOf(`--${name}`);
     return at === -1 ? undefined : argv[at + 1];
@@ -38,7 +42,7 @@ function options(argv: readonly string[]): IOptions {
   const url = value("url");
   if (url === undefined)
     throw new Error(
-      "usage: profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--json]",
+      "usage: profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--memory] [--json]",
     );
   const seconds = Number(value("seconds") ?? 5);
   const warmupMs = Number(value("warmup-ms") ?? 12000);
@@ -53,6 +57,7 @@ function options(argv: readonly string[]): IOptions {
     calls: argv.includes("--calls"),
     gpuCalls: argv.includes("--gpu-calls"),
     json: argv.includes("--json"),
+    memory: argv.includes("--memory"),
     allowSoftware: argv.includes("--allow-software"),
   };
 }
@@ -233,7 +238,7 @@ async function gpuCalls(page: Page) {
   );
 }
 
-async function measure(url: string, o: IOptions) {
+export async function measure(url: string, o: IOptions) {
   const browser = await chromium.launch({
     headless: false,
     args: [...WEBGPU_BROWSER_ARGS, ...PERFORMANCE_BROWSER_ARGS],
@@ -264,13 +269,33 @@ async function measure(url: string, o: IOptions) {
         `TN_PROFILE_SOFTWARE_ADAPTER: '${adapter}' is not a hardware WebGPU adapter (pass --allow-software to measure it anyway)`,
       );
     await page.waitForTimeout(o.warmupMs);
+    const reading = readHostLoad();
+    const hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
     const frame = await frames(page);
     const profile = await cpu(page, o.seconds);
     const census = o.calls ? await calls(page) : undefined;
     const gpu = o.gpuCalls ? await gpuCalls(page) : undefined;
+    const memory = o.memory
+      ? await page.evaluate(() => ({
+          jsHeapUsedBytes: (performance as { memory?: { usedJSHeapSize?: number } }).memory
+            ?.usedJSHeapSize,
+          wasmMemoryBytes: (
+            globalThis as { __tnWasmMemoryBytes?: () => number }
+          ).__tnWasmMemoryBytes?.(),
+        }))
+      : undefined;
+    if (memory) {
+      for (const field of ["wasmMemoryBytes", "jsHeapUsedBytes"] as const) {
+        const value = memory[field];
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+          throw new Error(`TN_PROFILE_MEMORY_MISSING: ${field} is unavailable`);
+      }
+    }
     if (errors.length > 0) throw new Error(`TN_PROFILE_PAGE_ERROR: ${errors[0]}`);
     return {
       url,
+      hostLoad,
+      ...(memory ? { memory: parseWebMetrics({ memory }).memory } : {}),
       adapter,
       frame,
       profile,
@@ -284,6 +309,13 @@ async function measure(url: string, o: IOptions) {
 
 function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   console.log(`\n== ${label}: ${r.url}\nadapter ${r.adapter}`);
+  console.log(
+    `host load ${r.hostLoad.load1} on ${r.hostLoad.cores} cores, absolutes ${r.hostLoad.absolutes}`,
+  );
+  if (r.memory)
+    console.log(
+      `memory: Wasm ${r.memory.wasmMemoryBytes} bytes, JS heap used ${r.memory.jsHeapUsedBytes} bytes`,
+    );
   console.log(
     `frame p50 ${r.frame.p50.toFixed(2)} ms, p95 ${r.frame.p95.toFixed(2)} ms, ${r.frame.fps.toFixed(0)} fps`,
   );
@@ -308,18 +340,20 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   }
 }
 
-const o = options(process.argv.slice(2));
-const subject = await measure(o.url, o);
-const control =
-  o.control === undefined ? undefined : await measure(o.control, { ...o, calls: false });
-if (o.json) console.log(JSON.stringify({ subject, ...(control ? { control } : {}) }, null, 2));
-else {
-  print("subject", subject);
-  if (control) {
-    print("control", control);
-    const ratio = subject.frame.p50 / control.frame.p50;
-    console.log(
-      `\nsubject/control frame p50: ${ratio.toFixed(2)}x (${ratio > 1 ? "subject slower" : "subject faster"})`,
-    );
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const o = options(process.argv.slice(2));
+  const subject = await measure(o.url, o);
+  const control =
+    o.control === undefined ? undefined : await measure(o.control, { ...o, calls: false });
+  if (o.json) console.log(JSON.stringify({ subject, ...(control ? { control } : {}) }, null, 2));
+  else {
+    print("subject", subject);
+    if (control) {
+      print("control", control);
+      const ratio = subject.frame.p50 / control.frame.p50;
+      console.log(
+        `\nsubject/control frame p50: ${ratio.toFixed(2)}x (${ratio > 1 ? "subject slower" : "subject faster"})`,
+      );
+    }
   }
 }
