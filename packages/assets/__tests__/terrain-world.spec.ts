@@ -467,7 +467,7 @@ describe("cookTerrainWorld", () => {
             const type = normal.getComponentType();
             normal
               .setArray(
-                Float32Array.from(normal.getArray() ?? [], (v) =>
+                Float32Array.from((normal.getArray() ?? []) as ArrayLike<number>, (v) =>
                   MathUtils.decodeNormalizedInt(v, type),
                 ),
               )

@@ -9,7 +9,7 @@ import { runInNewContext } from "node:vm";
 import type { IAssetLoader } from "@threenative/core";
 import { MATERIAL_IDS, Terrain } from "@threenative/terrain";
 import { starterAssetsDir } from "@threenative/terrain/kit";
-import { DataTexture, type Texture } from "three";
+import { type DataArrayTexture, DataTexture, type Texture } from "three";
 import { float } from "three/tsl";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
@@ -251,7 +251,9 @@ it.each(["fallback", "licensed", "cancelled"])(
           const value = (child as unknown as { value?: Texture }).value;
           if (value?.isTexture) sampled.add(value);
         });
-        expect([...sampled].some((image) => image.isDataArrayTexture)).toBe(false);
+        expect([...sampled].some((image) => (image as DataArrayTexture).isDataArrayTexture)).toBe(
+          false,
+        );
         expect(sampled.size).toBeGreaterThan(0);
       }
       material.dispose();

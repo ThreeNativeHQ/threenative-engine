@@ -138,7 +138,7 @@ it("omits render-attachment usage for sampled 3D textures while preserving attac
   const utils = new utilsModule.default(backend);
   for (const needsMipmaps of [false, true]) {
     const texture = new Data3DTexture(new Uint8Array(32), 2, 2, 2);
-    texture.internalFormat = "rgba8unorm";
+    texture.internalFormat = "rgba8unorm" as unknown as typeof texture.internalFormat;
     utils.createTexture(texture, { width: 2, height: 2, depth: 2, needsMipmaps });
     expect(createTexture.mock.calls.at(-1)?.[0]).toMatchObject({
       dimension: "3d",

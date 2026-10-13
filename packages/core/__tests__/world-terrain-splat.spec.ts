@@ -10,6 +10,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { float, vec3 } from "three/tsl";
 import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { IAssetLoader } from "../src/assets.js";
 import {
   type ITerrainSplatMaterialContext,
   type ITerrainSplatSample,
@@ -127,7 +128,7 @@ function world(layers: Record<string, string> | undefined): unknown {
   };
 }
 
-function served(files: Record<string, unknown>): { assets: never; requested: string[] } {
+function served(files: Record<string, unknown>): { assets: IAssetLoader; requested: string[] } {
   const requested: string[] = [];
   vi.stubGlobal(
     "fetch",
@@ -146,7 +147,7 @@ function served(files: Record<string, unknown>): { assets: never; requested: str
       return bitmap(4, 4);
     },
   };
-  return { assets: assets as never, requested };
+  return { assets: assets as unknown as IAssetLoader, requested };
 }
 
 /** An uncompressed layer of a given size, as the asset loader hands one back (an ImageBitmap). */

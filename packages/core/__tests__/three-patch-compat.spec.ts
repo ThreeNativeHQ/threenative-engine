@@ -98,7 +98,9 @@ async function legacyPredecessor(path: string, oldHash: string): Promise<string>
   const root = await tempRoot();
   const file = join(root, path);
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, FIXTURE.targetTexts[path], "utf8");
+  const targetText = FIXTURE.targetTexts[path];
+  expect(targetText).toBeDefined();
+  await writeFile(file, targetText as string, "utf8");
   const block = FIXTURE.originalUpgradePatch.split(/(?=^diff --git )/mu).find((section) => {
     const candidate = /^diff --git a\/(\S+) /mu.exec(section)?.[1];
     const hash = /^index ([a-f0-9]{40})\.\./mu.exec(section)?.[1];

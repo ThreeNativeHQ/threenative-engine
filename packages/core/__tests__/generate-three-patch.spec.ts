@@ -6,14 +6,24 @@ import { brotliDecompressSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
-// @ts-expect-error -- the generator is plain ESM with no type declarations.
-import {
-  assemblePatches,
-  blobHash,
-  generateThreePatch,
-  parseSourceDeltaPaths,
-  validatePin,
-} from "../scripts/generate-three-patch.mjs";
+const generatorPath = "../scripts/generate-three-patch.mjs";
+const { assemblePatches, blobHash, generateThreePatch, parseSourceDeltaPaths, validatePin } =
+  (await import(generatorPath)) as {
+    assemblePatches(options: {
+      stockDir: string;
+      patchedDir: string;
+      pin: { baseFinalHashes: Record<string, string> };
+    }): Promise<{ basePatch: string; upgradePatch: string }>;
+    blobHash(contents: string | Uint8Array): string;
+    generateThreePatch(options: {
+      packageRoot: string;
+      archive?: string;
+      check?: boolean;
+      planner?: () => Promise<{ basePatch: string; upgradePatch: string }>;
+    }): Promise<{ status: "written" | "matched" }>;
+    parseSourceDeltaPaths(sourceDelta: string): string[];
+    validatePin(pin: unknown): Record<string, unknown>;
+  };
 
 const realPatchDir = join(dirname(fileURLToPath(import.meta.url)), "..", "three-patch");
 
@@ -177,11 +187,11 @@ describe("assemblePatches", () => {
 
     const { basePatch, upgradePatch } = await assemblePatches({ patchedDir, pin, stockDir });
     expect(Object.keys(pin.baseFinalHashes)).toHaveLength(30);
-    expect(pin.frozenCompatPairs).toHaveLength(33);
+    expect(pin.frozenCompatPairs).toHaveLength(35);
 
     const json = JSON.parse(upgradePatch);
     expect(Object.keys(json.generatedFinalHashes)).toHaveLength(30);
-    expect(json.acceptedLegacyCompatPairs).toHaveLength(33);
+    expect(json.acceptedLegacyCompatPairs).toHaveLength(35);
     expect(Object.keys(json.acceptedLegacyFinalHashes)).toHaveLength(30);
     expect(json.generatedFinalHashes[rel]).toBe(blobHash("// current renderer\n"));
     expect(json.acceptedLegacyFinalHashes[rel]).toBe(pin.baseFinalHashes[rel]);

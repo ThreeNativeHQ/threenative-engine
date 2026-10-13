@@ -148,16 +148,16 @@ function cookedGlb(
                 sharedVertexBuffers: true,
                 strategy: "discrete",
               },
-            },
+            } as Record<string, unknown>,
             indices: 1,
             mode: 4,
           },
         ],
       },
     ],
-    nodes: instanced
+    nodes: (instanced
       ? [{ extensions: { EXT_mesh_gpu_instancing: { attributes: { TRANSLATION: 3 } } }, mesh: 0 }]
-      : [{ mesh: 0 }],
+      : [{ mesh: 0 }]) as Array<{ mesh: number; extensions?: Record<string, unknown> }>,
     scene: 0,
     scenes: [{ nodes: [0] }],
   };

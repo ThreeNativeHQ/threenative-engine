@@ -87,9 +87,9 @@ function loadBasis(): Promise<IBasisModule> {
       onRuntimeInitialized?: () => void;
     }) => void;
     const wasmBinary = readFileSync(wasmPath);
-    const module: IBasisModule & { onRuntimeInitialized?: () => void } = {
+    const module: IBasisModule & { wasmBinary: Uint8Array; onRuntimeInitialized?: () => void } = {
       wasmBinary,
-    } as never;
+    } as unknown as IBasisModule & { wasmBinary: Uint8Array };
     await new Promise<void>((resolve) => {
       module.onRuntimeInitialized = resolve;
       factory(module);
