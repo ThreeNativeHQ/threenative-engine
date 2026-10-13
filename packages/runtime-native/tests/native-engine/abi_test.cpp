@@ -19,6 +19,11 @@
 #include <string>
 #include <stdexcept>
 
+namespace tn::binding {
+// How many times the matrix walk's node count was recounted (bindings_scene.cpp).
+uint64_t subtreeSizeWalks();
+}  // namespace tn::binding
+
 extern "C" uintptr_t tnw_attribute_view(const tn_handle_t* attribute, uint64_t* out);
 extern "C" void tnw_attribute_view_release(uintptr_t lease);
 extern "C" uintptr_t tnw_attribute_defer(const tn_handle_t* attribute, uintptr_t pull, uintptr_t forget);
@@ -1295,9 +1300,57 @@ void material_uuid() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-573 web perf: core's per-frame `__tnUpdateMatrixWorld` answers the nodes it covered. Counting them
+// walked the whole tree a second time every frame (2.3% of Midway's CPU profile); the count changes only
+// when the hierarchy does, so it is recounted then and not otherwise.
+void matrix_walk_count() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, group{}, mesh{}, extra{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &mesh, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &extra, &d.value) == TN_OK);
+    tn_value_t out{};
+    const tn_value_t groupArg = ref(group), meshArg = ref(mesh), extraArg = ref(extra);
+    CHECK(tn_invoke(scene, "add", &groupArg, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_invoke(group, "add", &meshArg, 1, &out, &d.value) == TN_OK);
+    const auto covered = [&] {
+        tn_value_t walked{};
+        CHECK(tn_invoke(scene, "__tnUpdateMatrixWorld", nullptr, 0, &walked, &d.value) == TN_OK);
+        CHECK(walked.kind == TN_VALUE_NUMBER);
+        return walked.number;
+    };
+    const uint64_t before = tn::binding::subtreeSizeWalks();
+    CHECK(covered() == 3);
+    for (int frame = 0; frame < 5; ++frame) CHECK(covered() == 3);
+    CHECK(tn::binding::subtreeSizeWalks() - before == 1);  // six frames, one recount
+    CHECK(tn_invoke(group, "add", &extraArg, 1, &out, &d.value) == TN_OK);
+    CHECK(covered() == 4 && covered() == 4);  // a changed hierarchy is recounted, then cached again
+    CHECK(tn::binding::subtreeSizeWalks() - before == 2);
+    CHECK(tn_invoke(group, "remove", &extraArg, 1, &out, &d.value) == TN_OK);
+    CHECK(covered() == 3);
+    // Two roots asked in turn (the scene and a projection mirror) are each counted once, not once per ask.
+    tn_handle_t mirror{}, leaf{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &mirror, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &leaf, &d.value) == TN_OK);
+    const tn_value_t leafArg = ref(leaf);
+    CHECK(tn_invoke(mirror, "add", &leafArg, 1, &out, &d.value) == TN_OK);
+    const uint64_t pairBefore = tn::binding::subtreeSizeWalks();
+    for (int frame = 0; frame < 4; ++frame) {
+        CHECK(covered() == 3);
+        tn_value_t walked{};
+        CHECK(tn_invoke(mirror, "__tnUpdateMatrixWorld", nullptr, 0, &walked, &d.value) == TN_OK && walked.number == 2);
+    }
+    CHECK(tn::binding::subtreeSizeWalks() - pairBefore == 2);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
-             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid})
+             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count})

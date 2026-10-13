@@ -107,6 +107,9 @@ export interface IBrowserEngine {
   wrap(ref: IEngineRef): object;
 }
 
+/** Safe points a pass over the settled wrappers spans. */
+const SETTLED_PASS = 64;
+
 const REF = Symbol("tn.engineRef");
 
 type TypedArray =
@@ -420,9 +423,13 @@ export function defineBrowserClasses(
   // the collector sees; `held` roots a wrapper while the engine may still call it.
   const callbackFunctions = new WeakMap<object, Map<string, (...args: unknown[]) => unknown>>();
   const callbackNames = new Map<string, Set<string>>(); // by handle key, to clear on collection
-  const held = new Set<object>();
-  let cursor = held.values(); // collect()'s place in `held`
-  let peak = 0; // the most wrappers held since this pass of `cursor` began
+  const held = new Set<object>(); // handed out since the last safe point: asked at the next one
+  const settled = new Set<object>(); // the engine referenced it when asked: asked again a pass at a time
+  const hold = (wrapper: object): void => {
+    if (!settled.has(wrapper)) held.add(wrapper);
+  };
+  let cursor = settled.values(); // collect()'s place in `settled`
+  let peak = 0; // the most wrappers settled since this pass of `cursor` began
   // userData is the game's: it lives with the wrapper, which `held` keeps while the engine references it.
   const userData = new WeakMap<object, unknown>();
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
@@ -468,7 +475,7 @@ export function defineBrowserClasses(
       throw new TypeError(`TN_BROWSER_TYPE_UNKNOWN: no class for engine type ${ref.type}`);
     // Held until the next safe point decides: the engine may reference what it just handed out.
     const wrapper = adopt(Object.create(cls.prototype) as object, ref);
-    held.add(wrapper);
+    hold(wrapper);
     return wrapper;
   };
   const refOf = (self: unknown): IEngineRef => {
@@ -497,7 +504,7 @@ export function defineBrowserClasses(
     }
     if (typeof value === "object" && REF in value) {
       // A wrapper passed into the engine is held until the next safe point decides (collect()).
-      held.add(value);
+      hold(value);
       return (value as IWrapped)[REF];
     }
     // An options object (`new ExtrudeGeometry(shape, { depth })`) crosses as a record of scalars and
@@ -921,7 +928,7 @@ export function defineBrowserClasses(
           functions.set(callback, fn as (...args: unknown[]) => unknown);
           callbackFunctions.set(this, functions);
           callbackNames.set(ref.key, (callbackNames.get(ref.key) ?? new Set()).add(callback));
-          held.add(this);
+          hold(this);
         },
       });
     }
@@ -967,7 +974,7 @@ export function defineBrowserClasses(
                   ref.key,
                   (callbackNames.get(ref.key) ?? new Set()).add(type as string),
                 );
-                held.add(this);
+                hold(this);
               }
             }
             if (!list.includes(listener)) list.push(listener);
@@ -1096,24 +1103,27 @@ export function defineBrowserClasses(
     wrap,
     crossings: () => crossings,
     collect() {
-      // An eighth of the held wrappers each safe point, round robin (a live Set iterator): asking all
-      // of them cost about 1 ms a frame at 4,096 meshes. The eighth is of the pass's peak, so releases
-      // during a pass do not shrink it: a pass takes at most eight safe points, and a wrapper the
+      // A wrapper handed out since the last safe point is asked now: the engine either references it (it
+      // settles) or does not (JS alone keeps it). A settled wrapper is asked again a sixty-fourth of the
+      // settled set per safe point, round robin (a live Set iterator): Midway settles about 50,000
+      // scene-attached wrappers, and asking an eighth of them every frame cost 2.5 ms of a 21 ms frame.
+      // The sixty-fourth is of the pass's peak, so releases during a pass do not shrink it: a wrapper the
       // engine lets go is asked within two passes (tests/browser-backend-gc.ts). Holding a wrapper a
-      // few frames longer only delays its release.
-      peak = Math.max(peak, held.size);
-      const budget = Math.ceil(peak / 8);
-      const candidates: object[] = [];
-      while (candidates.length < budget) {
+      // little longer only delays its release.
+      peak = Math.max(peak, settled.size);
+      const budget = Math.ceil(peak / SETTLED_PASS);
+      const candidates: object[] = [...held];
+      const fresh = candidates.length;
+      while (candidates.length < fresh + budget) {
         const next = cursor.next();
         if (!next.done) {
           candidates.push(next.value);
           continue;
         }
-        cursor = held.values();
-        peak = held.size;
+        cursor = settled.values();
+        peak = settled.size;
         // An emptied set would restart forever: a safe point that let the last wrapper go hung here.
-        if (candidates.length > 0 || held.size === 0) break;
+        if (candidates.length > fresh || settled.size === 0) break;
       }
       const counts = runtime.engineReferences?.(candidates.map(refOf));
       candidates.forEach((wrapper, i) => {
@@ -1122,7 +1132,10 @@ export function defineBrowserClasses(
             ? (counts[i] as number) > 0
             : callbackNames.has(refOf(wrapper).key) &&
               runtime.get(refOf(wrapper), "parent") !== null;
-        if (!referenced) held.delete(wrapper);
+        if (i < fresh) {
+          held.delete(wrapper);
+          if (referenced) settled.add(wrapper);
+        } else if (!referenced) settled.delete(wrapper);
       });
     },
   };

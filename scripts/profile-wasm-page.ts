@@ -13,8 +13,10 @@
  * `--profiling-funcs`; without it the Wasm rows are numbered. Diagnose with it; the steady-state
  * counter gates (render_database_test steady_state, wasm-engine-boot's renderer scenario) hold a fix.
  */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { type Page, chromium } from "@playwright/test";
+import { type CDPSession, type Page, chromium } from "@playwright/test";
 import {
   PERFORMANCE_BROWSER_ARGS,
   WEBGPU_BROWSER_ARGS,
@@ -36,6 +38,8 @@ interface IOptions {
   cpuWork: boolean;
   /** Selectors clicked in order after load, before the warm-up: real input into the game's own UI. */
   clicks: string[];
+  /** Directory that receives each page's raw Chrome .cpuprofile, named by the page's port. */
+  saveProfile?: string;
 }
 
 export function options(argv: readonly string[]): IOptions {
@@ -64,6 +68,9 @@ export function options(argv: readonly string[]): IOptions {
     memory: argv.includes("--memory"),
     allowSoftware: argv.includes("--allow-software"),
     cpuWork: argv.includes("--cpu-work"),
+    ...(value("save-profile") === undefined
+      ? {}
+      : { saveProfile: value("save-profile") as string }),
     clicks: argv.flatMap((arg, i) => {
       if (arg !== "--click") return [];
       const selector = argv[i + 1];
@@ -144,16 +151,33 @@ interface IProfileNode {
   children?: number[];
 }
 
-async function cpu(page: Page, seconds: number, withWork: boolean) {
+/** The renderer main thread's CPU seconds so far: unlike the sampled wall clock, a busy host does not inflate it. */
+async function threadSeconds(cdp: CDPSession): Promise<number> {
+  const { metrics } = (await cdp.send("Performance.getMetrics")) as {
+    metrics: { name: string; value: number }[];
+  };
+  const found = metrics?.find((metric) => metric.name === "ThreadTime");
+  if (found === undefined) throw new Error("TN_PROFILE_THREAD_TIME: Chrome reported no ThreadTime");
+  return found.value;
+}
+
+async function cpu(page: Page, seconds: number, withWork: boolean, saveAs?: string) {
   const framesBefore = withWork ? await presentedFrames(page) : 0;
   const cdp = await page.context().newCDPSession(page);
+  if (withWork) await cdp.send("Performance.enable");
+  const threadBefore = withWork ? await threadSeconds(cdp) : 0;
   await cdp.send("Profiler.enable");
   await cdp.send("Profiler.setSamplingInterval", { interval: 200 });
   await cdp.send("Profiler.start");
   await page.waitForTimeout(seconds * 1000);
   const { profile } = (await cdp.send("Profiler.stop")) as { profile: ICpuProfile };
+  if (saveAs) writeFileSync(saveAs, JSON.stringify(profile));
+  const frames = withWork ? (await presentedFrames(page)) - framesBefore : 0;
   const work = withWork
-    ? cpuWork(profile, (await presentedFrames(page)) - framesBefore)
+    ? {
+        ...cpuWork(profile, frames),
+        threadMsPerFrame: (1000 * ((await threadSeconds(cdp)) - threadBefore)) / frames,
+      }
     : undefined;
   const byId = new Map(profile.nodes.map((node) => [node.id, node]));
   const parents = new Map<number, number>();
@@ -342,7 +366,12 @@ export async function measure(url: string, o: IOptions) {
     const reading = readHostLoad();
     const hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
     const frame = await frames(page);
-    const profile = await cpu(page, o.seconds, o.cpuWork);
+    if (o.saveProfile !== undefined) mkdirSync(o.saveProfile, { recursive: true });
+    const saveAs =
+      o.saveProfile === undefined
+        ? undefined
+        : join(o.saveProfile, `${new URL(url).port}.cpuprofile`);
+    const profile = await cpu(page, o.seconds, o.cpuWork, saveAs);
     const census = o.calls ? await calls(page) : undefined;
     const gpu = o.gpuCalls ? await gpuCalls(page) : undefined;
     const memory = o.memory
@@ -392,7 +421,7 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   );
   if (r.profile.work)
     console.log(
-      `cpu work ${r.profile.work.busyMsPerFrame.toFixed(2)} ms per frame over ${r.profile.work.frames} frames`,
+      `cpu work ${r.profile.work.busyMsPerFrame.toFixed(2)} ms per frame (thread CPU ${r.profile.work.threadMsPerFrame.toFixed(2)} ms) over ${r.profile.work.frames} frames`,
     );
   console.log(
     `cpu (${r.profile.samples} samples): ${r.profile.groups.map((g) => `${g.name} ${g.percent}%`).join(", ")}`,
@@ -419,7 +448,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const o = options(process.argv.slice(2));
   const subject = await measure(o.url, o);
   const control =
-    o.control === undefined ? undefined : await measure(o.control, { ...o, calls: false });
+    o.control === undefined
+      ? undefined
+      : await measure(o.control, { ...o, calls: false, memory: false });
   if (o.json) console.log(JSON.stringify({ subject, ...(control ? { control } : {}) }, null, 2));
   else {
     print("subject", subject);

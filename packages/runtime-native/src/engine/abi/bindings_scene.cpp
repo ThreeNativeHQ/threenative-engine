@@ -34,6 +34,7 @@
 #include "engine/scene/object3d.h"
 
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cstdint>
 #include <memory>
@@ -215,10 +216,32 @@ void registerObject3DEvents(ClassBinding& b) {
 // light or LOD hides its children. A hash, so a match is a claim at 2^-53 and a mismatch only sends
 // the caller to its own exact walk.
 // The nodes at and under `root`: what a walk of its subtree covers.
-double subtreeSize(const Object3D& root) {
+std::atomic<uint64_t> gSubtreeWalks{0};
+
+double countSubtree(const Object3D& root) {
     double count = 1;
-    for (const Object3D* child : root.children) count += subtreeSize(*child);
+    for (const Object3D* child : root.children) count += countSubtree(*child);
     return count;
+}
+
+// The count moves only with the hierarchy (an add, a remove, a destructor: Object3D::hierarchyVersion), and
+// core's matrix pass asks for it every frame for each root it applies to (the scene, a projection mirror),
+// so the answers are kept per root until the version moves.
+double subtreeSize(const Object3D& root) {
+    struct Counted {
+        uint64_t version = 0;
+        std::unordered_map<const Object3D*, double> byRoot;
+    };
+    thread_local Counted counted;
+    const uint64_t version = Object3D::hierarchyVersion();
+    if (counted.version != version) {
+        counted.byRoot.clear();
+        counted.version = version;
+    }
+    const auto known = counted.byRoot.find(&root);
+    if (known != counted.byRoot.end()) return known->second;
+    gSubtreeWalks.fetch_add(1, std::memory_order_relaxed);
+    return counted.byRoot.emplace(&root, countSubtree(root)).first->second;
 }
 
 double structureStamp(Object3D& root) {
@@ -1712,6 +1735,8 @@ void registerBatchedMesh(ClassBinding& b) {
 }
 
 }  // namespace
+
+uint64_t subtreeSizeWalks() { return gSubtreeWalks.load(std::memory_order_relaxed); }
 
 std::string& pendingListenerError() {
     thread_local std::string error;

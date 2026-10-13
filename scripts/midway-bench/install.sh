@@ -45,3 +45,7 @@ for (const [key, name] of Object.entries(names)) {
 writeFileSync("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
 JS
 CI=1 pnpm install --no-frozen-lockfile
+# vite keeps the pre-bundled engine glue (its minified import names) under a version hash, and a browser caches it
+# as immutable: a new Wasm build under an old glue crashes at boot (setVertexBuffer or adapter.info of undefined).
+# Restart the dev server after an install, and never serve a game copy that vite cached before it.
+rm -rf "${GAME:?}/node_modules/.vite"

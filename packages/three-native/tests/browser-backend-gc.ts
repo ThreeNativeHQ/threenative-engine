@@ -86,8 +86,8 @@ check(
 );
 check(weakDetached.deref() === undefined, "a detached subtree nothing reaches is collected");
 
-// The safe point asks an eighth of a pass's peak each time (PRD-573 web cut 5): a removed object is asked
-// within two passes, sixteen safe points, so a game that adds and removes objects does not leak.
+// A settled wrapper is asked a sixty-fourth of a pass's peak per safe point (PRD-573 web perf): a removed
+// object is asked within two passes, 128 safe points, so a game that adds and removes objects does not leak.
 const weakRemoved: WeakRef<Node3D>[] = [];
 (() => {
   const batch = Array.from({ length: 400 }, () => new Object3D());
@@ -98,12 +98,12 @@ const weakRemoved: WeakRef<Node3D>[] = [];
     weakRemoved.push(new WeakRef(node));
   }
 })();
-for (let i = 0; i < 16; i++) collect();
+for (let i = 0; i < 130; i++) collect();
 await collectAll();
 const leaked = weakRemoved.filter((weak) => weak.deref() !== undefined).length;
 check(
   leaked === 0,
-  `removed objects are released within sixteen safe points (${leaked} of 400 left)`,
+  `removed objects are released within 130 safe points (${leaked} of 400 left)`,
 );
 
 if (failures.length > 0) {
