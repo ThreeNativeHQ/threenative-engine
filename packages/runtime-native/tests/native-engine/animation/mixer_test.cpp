@@ -51,6 +51,25 @@ void events() {
     CHECK(diffs == 0);
 }
 
+// A track is applied once a frame over memory the rest of the frame evicted, so what an update reads
+// of a PropertyMixer (its weights, its buffer pointer, the binding's node and target) must sit in the
+// first two cache lines, ahead of the binding's parsed path and diagnostics. The mixer prefetches
+// those two lines; a layout that spreads them over four loses most of that.
+void track_hot_fields() {
+    auto root = std::make_shared<Object3D>();
+    root->name = "bone";
+    PropertyMixer track(PropertyBinding(root, "bone.quaternion"), TrackType::Quaternion, 4);
+    const char* base = reinterpret_cast<const char*>(&track);
+    const auto at = [&](const void* member) { return static_cast<std::size_t>(reinterpret_cast<const char*>(member) - base); };
+    CHECK(at(&track.valueSize) < 64);
+    CHECK(at(&track.buffer) < 64);
+    CHECK(at(&track.cumulativeWeight) < 64);
+    CHECK(at(&track.cumulativeWeightAdditive) < 128);
+    // `path` is the binding's first cold member: the node, target and flags an apply reads precede it.
+    CHECK(at(&track.binding.path) - at(&track.binding) >= 32);
+    CHECK(at(&track.binding.path) < 128);
+}
+
 } // namespace
 
-TN_TEST_MAIN({"mixer", mixer}, {"events", events})
+TN_TEST_MAIN({"mixer", mixer}, {"events", events}, {"track_hot_fields", track_hot_fields})

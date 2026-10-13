@@ -62,13 +62,26 @@ class PropertyMixer {
     void accumulate(int accuIndex, double weight);
     void accumulateAdditive(double weight);
     void apply(int accuIndex);
+    /** The two prefetch stages of the mixer's loops (see `PropertyBinding::prefetchNode`). */
+    void prefetchData() const {
+        __builtin_prefetch(buffer.data(), 1, 3);
+        binding.prefetchNode();
+    }
+    void prefetchColumns() const { binding.prefetchColumns(); }
     void saveOriginalState();
     void restoreOriginalState();
 
-    PropertyBinding binding;
+    // What every update reads sits first, with the binding's own hot members right behind it, so a
+    // track costs two cache lines rather than the four a declaration-order layout spreads it over.
     const std::size_t valueSize;
     std::vector<double> buffer;
     double cumulativeWeight = 0, cumulativeWeightAdditive = 0;
+
+  private:
+    TrackType type_;
+
+  public:
+    PropertyBinding binding;
     int useCount = 0, referenceCount = 0;
     std::optional<std::size_t> cacheIndex;
     const Object3D* rootKey = nullptr; // three keys bindings by root uuid; the root is the key here
@@ -79,7 +92,6 @@ class PropertyMixer {
     void mixAdditive(std::size_t dst, std::size_t src, double t);
     void setIdentity();
 
-    TrackType type_;
     static constexpr std::size_t kOrigIndex = 3, kAddIndex = 4, kWorkIndex = 5;
 };
 
