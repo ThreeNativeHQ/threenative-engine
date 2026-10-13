@@ -90,7 +90,7 @@ export function crowdSpans(line: string): void {
   crowdRate.animationFrames = animation?.frames ?? null;
   crowdRate.paletteFrames = palette?.frames ?? null;
   crowdRate.animationCalls = animation?.perFrame ?? 0;
-  crowdRate.paletteWrites = palette?.perFrame ?? 0;
+  crowdRate.paletteCalls = palette?.perFrame ?? 0;
   crowdRate.ready =
     window.overflowed === 0 &&
     window.window === crowdRate.window &&
@@ -101,11 +101,7 @@ export function crowdSpans(line: string): void {
       : animation === undefined) &&
     (arm === "static"
       ? palette === undefined
-      : palette !== undefined &&
-        palette.frames === 120 &&
-        (arm === "held" || updateRate === 1
-          ? palette.perFrame === count
-          : palette.perFrame > 0 && palette.perFrame < count)) &&
+      : palette !== undefined && palette.frames === 120 && palette.perFrame === count) &&
     Number.isFinite(crowdRate.gpuMainMs) &&
     Number.isFinite(crowdRate.gpuShadowMs) &&
     Number(crowdRate.mainDraws) > 0 &&
@@ -123,7 +119,7 @@ export function crowdSpans(line: string): void {
       animationUpdateMs: finiteOrNull(crowdRate.animationUpdateMs),
       skinnedWriteMs: finiteOrNull(crowdRate.skinnedWriteMs),
       animationCalls: finiteOrNull(crowdRate.animationCalls),
-      paletteWrites: finiteOrNull(crowdRate.paletteWrites),
+      paletteCalls: finiteOrNull(crowdRate.paletteCalls),
       gpuSamples: finiteOrNull(crowdRate.gpuSamples),
       gpuMainSamples: finiteOrNull(crowdRate.gpuMainSamples),
       gpuShadowSamples: finiteOrNull(crowdRate.gpuShadowSamples),

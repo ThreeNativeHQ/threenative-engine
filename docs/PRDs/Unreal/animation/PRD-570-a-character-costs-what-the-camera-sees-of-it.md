@@ -349,3 +349,14 @@ native claim; late-baseline rejection still applies and every PRD gate remains o
   exits 0 with `adapter nvidia turing`, a nonblank rendered scene and 0 console errors. The first
   doctor attempt was intentionally invalid because the owned preview was stopped and returned
   `ERR_CONNECTION_REFUSED`; the corrected doctor run used the preview on port 57170 and passed.
+
+- 2026-10-12, skinned-write measurement coverage corrected: the first focused regression run was
+  red because a stationary skipped `SkinnedBatch.write` call had no `skinnedWrite` span
+  (`undefined`, expected `perFrame=1`), although its `skeleton.update` spy was not called. The
+  existing span now brackets the whole `write()` function, including the animation-rate lookup,
+  world-matrix guard and early return; the focused animation/projection contracts pass 43/43.
+  `skinnedWrite.perFrame` is therefore function-call count, including skipped stationary calls,
+  while the regression still proves skipped calls do not update the skeleton or rewrite the
+  palette. The crowd receipt exposes this scope as `paletteCalls`, and readiness requires exactly
+  `count` calls per frame for animated, held and auto/rate-1 arms; no call-count reduction is
+  expected from auto-rate policy. Historical `paletteWrites` evidence above is retained as-is.

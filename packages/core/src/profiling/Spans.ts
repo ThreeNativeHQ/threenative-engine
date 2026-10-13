@@ -76,7 +76,7 @@ export const SPANS = {
   terrainSeam: 15,
   /** One actual AnimationPlayer.update call, measured by the crowd fixture. */
   animationUpdate: 16,
-  /** One actual SkinnedBatch.write call, including skeleton.update and palette copy. */
+  /** One actual SkinnedBatch.write call, including its guard and any skeleton/palette work. */
   skinnedWrite: 17,
 } as const;
 

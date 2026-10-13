@@ -371,17 +371,17 @@ export class SkinnedBatch {
    * bind mode `matrixWorld · bindMatrixInverse` is the identity and is skipped.
    */
   write(slot: number, rig: SkinnedMesh): void {
-    const state = animationRateStateOf(rig);
-    const writtenWorld = this.#writtenWorldMatrices.get(rig);
-    if (
-      state !== undefined &&
-      !state.evaluated &&
-      this.#writtenEvaluations.get(rig) === state.evaluation &&
-      writtenWorld?.equals(rig.matrixWorld)
-    )
-      return;
     beginSpan(SPANS.skinnedWrite);
     try {
+      const state = animationRateStateOf(rig);
+      const writtenWorld = this.#writtenWorldMatrices.get(rig);
+      if (
+        state !== undefined &&
+        !state.evaluated &&
+        this.#writtenEvaluations.get(rig) === state.evaluation &&
+        writtenWorld?.equals(rig.matrixWorld)
+      )
+        return;
       const skeleton = rig.skeleton;
       if (this.#updated.get(skeleton) !== this.#frame) {
         skeleton.update();

@@ -378,6 +378,7 @@ describe("SkinnedBatch palette", () => {
     const player = new AnimationPlayer({ root, clips: [], strideSync: false, updateRate: 4 });
     const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
     const slot = batch.claim(mesh) as number;
+    const skeletonUpdate = vi.spyOn(mesh.skeleton, "update");
     const recorder = new SpanRecorder();
     setSpanRecorder(recorder);
     try {
@@ -400,14 +401,17 @@ describe("SkinnedBatch palette", () => {
       expect(batch.history?.[12]).toBeCloseTo(0);
       expect(recorder.window()?.spans.skinnedWrite?.perFrame).toBe(1);
 
+      skeletonUpdate.mockClear();
       batch.begin();
       batch.write(slot, mesh);
       batch.end();
       recorder.endFrame(1);
+      expect(skeletonUpdate).not.toHaveBeenCalled();
       expect(batch.history?.[12]).toBeCloseTo(batch.palette[12] as number);
-      expect(recorder.window()?.spans.skinnedWrite).toBeUndefined();
+      expect(recorder.window()?.spans.skinnedWrite?.perFrame).toBe(1);
     } finally {
       setSpanRecorder(undefined);
+      skeletonUpdate.mockRestore();
       player.dispose();
       batch.dispose();
     }
