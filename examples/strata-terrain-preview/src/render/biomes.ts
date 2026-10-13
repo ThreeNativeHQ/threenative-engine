@@ -32,6 +32,8 @@ export interface IBiome {
   readonly world: WorldName;
   readonly grassTint: RGB;
   readonly stoneTint: RGB;
+  /** Prop-only tint; terrain rock keeps its own grading. */
+  readonly propStoneTint?: RGB;
   readonly snowTint: RGB;
   readonly distantStone: RGB;
   readonly snow: readonly [number, number, number];
@@ -114,6 +116,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
   coastal: {
     ...temperate,
     world: "coastal",
+    propStoneTint: [1, 1, 1],
     sun: { ...temperate.sun, intensity: 5.2, direction: [-180, 150, -120] },
     fill: { ...temperate.fill, intensity: 0.66 },
     haze: { ...temperate.haze, density: 0.0008 },
@@ -173,6 +176,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
   desert: {
     ...temperate,
     world: "desert",
+    propStoneTint: [1.08, 0.85, 0.64],
     horizon: "mesa",
     grassTint: [1, 1, 1],
     stoneTint: [1.16, 0.82, 0.55],

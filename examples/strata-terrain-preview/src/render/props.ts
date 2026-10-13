@@ -410,6 +410,22 @@ export function preparePose(
               : BOULDER_BURIAL) * height;
     }
   }
+  // Bury the flat footprint on the downhill side too; a centre-only snap leaves a visible lip.
+  if (grounding && !transform && ["boulder", "riverrock", "scree"].includes(placement.asset)) {
+    const base = geometry.boundingBox?.min.y;
+    const positions = geometry.getAttribute("position");
+    const point = new Vector3();
+    let gap = 0;
+    model.updateMatrix();
+    for (let i = 0; i < positions.count; i++) {
+      if (Math.abs(positions.getY(i) - (base ?? Number.POSITIVE_INFINITY)) > 1e-5) continue;
+      point.fromBufferAttribute(positions, i).applyMatrix4(model.matrix);
+      const height = groundAt(placement, point.toArray()).height;
+      if (height === null) throw new Error(`Missing ground under rock '${placement.id}'`);
+      gap = Math.max(gap, point.y - height + 0.08);
+    }
+    model.position.y -= gap;
+  }
   let cragBaseClearance: number | undefined;
   let cragRingSamples: number | undefined;
   if (

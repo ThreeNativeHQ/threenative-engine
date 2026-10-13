@@ -91,6 +91,13 @@ export interface ISurfaceMaps {
   readonly roughness: string;
 }
 
+/** CC0 dry stone for beach and desert props; ARM uses AO in R and roughness in G. */
+export const DRY_STONE_MAPS = {
+  diffuse: "rock_boulder_dry/rock_boulder_dry_diff_512.jpg",
+  normal: "rock_boulder_dry/rock_boulder_dry_nor_gl_512.jpg",
+  arm: "rock_boulder_dry/rock_boulder_dry_arm_512.jpg",
+} as const;
+
 /** The bark and stone the props bind, and the soil the bases of both fade into. */
 export const PROP_MAPS: Record<"bark" | "stone", ISurfaceMaps> = {
   bark: {
