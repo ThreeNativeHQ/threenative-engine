@@ -316,6 +316,8 @@ export type ThreeNativeFramePhase = "hostGap" | "overlay" | "render" | "residual
 export type ThreeNativeRenderPassKind = "main" | "shadow" | "reflection" | "nested";
 
 export interface IThreeNativeConfig {
+  /** Web engine backend; defaults to upstream Three.js (`"legacy"`). */
+  readonly engine?: "legacy" | "native";
   readonly app?: {
     readonly id?: string;
     readonly name?: string;

@@ -819,14 +819,32 @@ export async function buildWeb(
   try {
     await mkdir(path.dirname(staging), { recursive: true });
     await mkdir(path.dirname(driver), { recursive: true });
-    await writeFile(driver, webBuildDriver(cwd, assets));
+    const native = config.engine === "native";
+    const configIndex = viteArgs.findIndex(
+      (arg) => arg === "--config" || arg.startsWith("--config="),
+    );
+    const configArg = configIndex === -1 ? undefined : viteArgs[configIndex];
+    const configFile = configArg?.includes("=")
+      ? configArg.slice(configArg.indexOf("=") + 1)
+      : viteArgs[configIndex + 1];
+    const forwardedArgs =
+      native && configIndex !== -1
+        ? viteArgs.filter(
+            (_, index) =>
+              index !== configIndex && (configArg !== "--config" || index !== configIndex + 1),
+          )
+        : viteArgs;
+    await writeFile(
+      driver,
+      webBuildDriver(cwd, assets, native, configIndex === -1 ? undefined : configFile),
+    );
     await run(
       process.execPath,
       [
         path.join(packageRoot(cwd, "vite"), "bin/vite.js"),
         "build",
-        ...stagedViteArgs(viteArgs, staging),
-        ...ownConfigArgs(viteArgs, driver, assets === path.resolve(cwd, "public")),
+        ...stagedViteArgs(forwardedArgs, staging),
+        ...ownConfigArgs(forwardedArgs, driver, !native && assets === path.resolve(cwd, "public")),
       ],
       cwd,
     );
@@ -867,17 +885,29 @@ export async function buildWeb(
  *
  * A `publicDir` the project set itself is left alone, detected by the same signal the choice has
  * in every Vite version: the key is present in its own config (`false` is a choice too). A caller
- * who passed `--config` gets exactly the config they named, for the same reason.
+ * who passed `--config` keeps that config; the native engine switch still applies.
  */
-function webBuildDriver(cwd: string, assets: string): string {
+function webBuildDriver(cwd: string, assets: string, native = false, configFile?: string): string {
   const literal = (value: string): string => JSON.stringify(value);
   return `${[
     'import { defineConfig, loadConfigFromFile, mergeConfig } from "vite";',
+    ...(native
+      ? [
+          `import { createWebBrandPlugin } from ${literal(path.join(packageRoot(cwd, "create-threenative"), "dist/index.js"))};`,
+        ]
+      : []),
     "",
     `const root = ${literal(cwd)};`,
     `const assets = ${literal(assets)};`,
     "export default defineConfig(async ({ command, mode }) => {",
-    "  const own = (await loadConfigFromFile({ command, mode }, undefined, root))?.config ?? {};",
+    `  const own = (await loadConfigFromFile({ command, mode }, ${configFile === undefined ? "undefined" : literal(path.resolve(cwd, configFile))}, root))?.config ?? {};`,
+    ...(native
+      ? [
+          '  if (!(own.plugins ?? []).flat(Infinity).some((plugin) => plugin?.name === "threenative-web-brand"))',
+          "    own.plugins = [...(own.plugins ?? []), createWebBrandPlugin()];",
+          '  own.build = { target: "es2022", ...own.build };',
+        ]
+      : []),
     "  return mergeConfig(own, own.publicDir === undefined ? { publicDir: assets } : {});",
     "});",
     "",

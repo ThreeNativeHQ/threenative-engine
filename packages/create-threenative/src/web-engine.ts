@@ -96,7 +96,7 @@ export interface IWebEngineOptions {
 /**
  * Routes a web build's upstream three imports to the Wasm engine (PRD-540) when `engine` is
  * `"native"`. Deep imports into three's own source would bundle the upstream engine beside it, so
- * they fail the build. Every template's Vite config lists it, so `pnpm dev` follows the setting.
+ * they fail the build. The scaffold's web branding plugin applies the config switch for Vite.
  */
 export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEnginePlugin {
   let root = options.root;

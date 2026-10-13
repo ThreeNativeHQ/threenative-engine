@@ -27,6 +27,8 @@
   },
   "type": "module",
   "files": [
+    "build/web/tn-native-engine-web.mjs",
+    "build/web/tn-native-engine-web.wasm",
     "LICENSE",
     "NOTICE",
     "README.md",

@@ -36,6 +36,7 @@ export type {
 } from "@threenative/core";
 
 export interface IResolvedThreeNativeConfig {
+  readonly engine: "legacy" | "native";
   readonly app: {
     readonly id: string;
     readonly name: string;
@@ -923,6 +924,12 @@ async function validateBootSplash(
     ...(backgroundColor === undefined ? {} : { backgroundColor }),
     ...(image === undefined ? {} : { image }),
   };
+}
+
+function validateEngine(raw: unknown): "legacy" | "native" {
+  if (raw === undefined) return "legacy";
+  if (raw === "legacy" || raw === "native") return raw;
+  return fail("TN_CONFIG_ENGINE_INVALID", 'engine must be "legacy" or "native".');
 }
 
 /** Which renderer draws `src/ui/`. @see IThreeNativeConfig.ui */
@@ -1984,6 +1991,7 @@ async function loadConfigInternal(
       if (raw !== undefined) {
         assertKeys(raw, "config", [
           "app",
+          "engine",
           "display",
           "bootSplash",
           "window",
@@ -2014,6 +2022,7 @@ async function loadConfigInternal(
       }
       return {
         app,
+        engine: validateEngine(raw?.engine),
         display: validateDisplay(raw?.display),
         window: validateWindow(raw?.window, app.name),
         nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),

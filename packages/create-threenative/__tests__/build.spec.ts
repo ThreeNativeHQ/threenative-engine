@@ -216,6 +216,7 @@ describe("threenative build", () => {
 
   it("resolves every declared brand input through the live packaging-config caller", async () => {
     const config = {
+      engine: "legacy" as const,
       app: {
         build: 4,
         icon: "public/icon.png",
@@ -353,6 +354,47 @@ describe("threenative build", () => {
     }
     // Each template ships assets/sky.jpg, so each buildWeb pays a real texture cook (~84 s total).
   }, 240_000);
+
+  it.each([
+    { args: [] },
+    { args: ["--config", "custom.vite.ts"] },
+    { args: ["--config=custom.vite.ts"] },
+  ])("honors native engine config on the CLI web path with args %j", async ({ args }) => {
+    const root = await cookedOutputProject();
+    await rm(path.join(root, "assets"), { recursive: true });
+    await symlink(
+      path.resolve("packages/create-threenative"),
+      path.join(root, "node_modules/create-threenative"),
+      "dir",
+    );
+    const runtime = path.join(root, "node_modules/@threenative/runtime-native");
+    await mkdir(path.join(runtime, "build/web"), { recursive: true });
+    await writeFile(path.join(runtime, "package.json"), '{"name":"@threenative/runtime-native"}');
+    await writeFile(
+      path.join(runtime, "build/web/tn-native-engine-web.mjs"),
+      "export default async function createModule() { return {}; }\n",
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { engine: "native" };\n',
+    );
+    await writeFile(
+      path.join(root, "src/main.ts"),
+      'import { Mesh } from "three"; console.info(Mesh);\n',
+    );
+    await writeFile(
+      path.join(root, "custom.vite.ts"),
+      'export default { build: { target: "es2022" } };\n',
+    );
+    await buildWeb(root, args);
+    const assets = path.join(root, "dist/assets");
+    const chunks = (await readdir(assets)).filter((name) => name.endsWith(".js"));
+    const output = (
+      await Promise.all(chunks.map((name) => readFile(path.join(assets, name), "utf8")))
+    ).join("\n");
+    expect(output).toContain("is not available on the Wasm engine");
+    expect(output).not.toContain("Object3D.add: object not an instance of THREE.Object3D.");
+  });
 
   // PRD-448. The web build publishes the way a native artifact already does, so the last working
   // `dist` is what a player is served until a build that finished replaces it. A Vite run that

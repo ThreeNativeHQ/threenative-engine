@@ -54,6 +54,24 @@ it("should carry asset exclusions from the real config loader into the compiler"
   expect(manifest.entries["keep.txt"]).toBeDefined();
   expect(manifest.entries["library.glb"]).toBeUndefined();
 });
+it.each([undefined, "legacy", "native"])(
+  "resolves engine %j with legacy as the default",
+  async (engine) => {
+    const root = await project();
+    await config(root, `export default ${JSON.stringify({ engine })};`);
+    expect((await loadConfig(root)).engine).toBe(engine ?? "legacy");
+  },
+);
+
+it.each(["unknown", null, 1, false, {}])(
+  "rejects invalid engine %j with a named error",
+  async (engine) => {
+    const root = await project();
+    await config(root, `export default ${JSON.stringify({ engine })};`);
+    await expect(loadConfig(root)).rejects.toThrow("TN_CONFIG_ENGINE_INVALID");
+  },
+);
+
 const VALID_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAXUlEQVR4AaXBQRHEAAgEwclWHGDivIBckIWG3Hf/dD/frz9MdOK2BhedOHEkjsTRG524rcFFJ25rcOJIHImjd2tw0YnbGlx04sSROBJHb3TitgYXnbitwYkjcSSO/o/fGRJxtqYFAAAAAElFTkSuQmCC",
   "base64",
@@ -277,6 +295,7 @@ describe("threenative.config.ts", () => {
     );
 
     await expect(loadConfig(root)).resolves.toEqual({
+      engine: "legacy",
       app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
       display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
       window: {

@@ -5,9 +5,10 @@
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { build } from "vite";
+import { build, createServer } from "vite";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { createWebBrandPlugin } from "../src/web-brand.js";
 import { WASM_ENGINE_ENTRY, WEB_ENGINE_ID, createWebEnginePlugin } from "../src/web-engine.js";
 
 const roots: string[] = [];
@@ -56,13 +57,31 @@ async function project(withWasm: boolean): Promise<string> {
   return root;
 }
 
-async function bundle(root: string, native: boolean): Promise<string> {
+async function bundle(
+  root: string,
+  native: boolean,
+  configured: boolean | "baseline" = false,
+): Promise<string> {
+  const brand = createWebBrandPlugin();
+  const baseline = {
+    name: brand.name,
+    configResolved: brand.configResolved,
+    transformIndexHtml: brand.transformIndexHtml,
+    generateBundle: brand.generateBundle,
+  };
   await build({
     configFile: false,
     logLevel: "silent",
     root,
     build: { outDir: "dist", minify: false, target: "es2022" },
-    plugins: native ? [createWebEnginePlugin({ root, engine: "native" })] : [],
+    plugins:
+      configured === "baseline"
+        ? [baseline]
+        : configured
+          ? [brand]
+          : native
+            ? [createWebEnginePlugin({ root, engine: "native" })]
+            : [],
   });
   const assets = path.join(root, "dist/assets");
   const files = (await readdir(assets)).filter((name) => name.endsWith(".js"));
@@ -72,6 +91,88 @@ async function bundle(root: string, native: boolean): Promise<string> {
 }
 
 describe("createWebEnginePlugin", () => {
+  it("uses config alone for Vite build and dev", async () => {
+    const root = await project(true);
+    await mkdir(path.join(root, "src"));
+    await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { engine: "native" };\n',
+    );
+    const output = await bundle(root, false, true);
+    expect(output).toContain("is not available on the Wasm engine");
+    expect(output).not.toContain(UPSTREAM_OBJECT3D);
+    const server = await createServer({
+      root,
+      configFile: false,
+      plugins: [createWebBrandPlugin()],
+      server: { middlewareMode: true, ws: false },
+    });
+    try {
+      expect(await server.pluginContainer.resolveId("three")).toMatchObject({ id: WEB_ENGINE_ID });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("keeps unset and explicit legacy output byte-identical to today's build", async () => {
+    const root = await project(false);
+    await mkdir(path.join(root, "src"));
+    await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
+    const snapshot = async () => {
+      const dist = path.join(root, "dist");
+      const files = (await readdir(dist, { recursive: true }))
+        .sort()
+        .filter((name) => /\.(?:js|html|webmanifest)$/u.test(name));
+      return Promise.all(
+        files.map(async (name) => [
+          name,
+          (await readFile(path.join(dist, name))).toString("base64"),
+        ]),
+      );
+    };
+    await bundle(root, false, "baseline");
+    const baseline = await snapshot();
+    await bundle(root, false, true);
+    expect(await snapshot()).toEqual(baseline);
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { engine: "legacy" };\n',
+    );
+    await bundle(root, false, true);
+    expect(await snapshot()).toEqual(baseline);
+  });
+
+  it("bundles the browser binding and addon modules into the published CLI", async () => {
+    const { default: configs } = await import("../tsup.config.js");
+    const entries = (Array.isArray(configs) ? configs : [configs]).flatMap((config) =>
+      typeof config !== "function" && config.entry && !Array.isArray(config.entry)
+        ? Object.keys(config.entry)
+        : [],
+    );
+    for (const name of [
+      "web-engine-runtime",
+      "web-engine-mesh-bvh",
+      "web-engine-buffer-geometry-utils",
+      "web-engine-hdr-loader",
+      "web-engine-gltf-loader",
+      "web-engine-post-effects",
+    ])
+      expect(entries).toContain(name);
+  });
+
+  it("ships only the web engine module and Wasm sidecar from the native build directory", async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL("../../runtime-native/package.json", import.meta.url), "utf8"),
+    );
+    expect(manifest.files).toContain(WASM_ENGINE_ENTRY);
+    expect(manifest.files).toContain("build/web/tn-native-engine-web.wasm");
+    expect(manifest.files.filter((file: string) => file.startsWith("build"))).toEqual([
+      WASM_ENGINE_ENTRY,
+      "build/web/tn-native-engine-web.wasm",
+    ]);
+  });
+
   it("does nothing for a legacy project, so the same dev config serves both engines", () => {
     for (const plugin of [createWebEnginePlugin(), createWebEnginePlugin({ engine: "legacy" })])
       for (const id of ["three", "three/webgpu", "three/tsl", "three-mesh-bvh"])
