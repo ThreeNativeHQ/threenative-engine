@@ -1101,10 +1101,11 @@ describe("the CPU reference's pyramid occlusion test", () => {
  * The GPU scene wired into `WorldCells`, default off and proven with the flag on.
  *
  * The claims are the ones the walk has to earn: a moving follow point spends nothing on the CPU work
- * the dispatch replaced — no main regroup, no `maxDistance`/`lods` refilter — residency still feeds
- * the source buffer both ways, and every main key's mesh is dressed against the scene's own buffers
- * rather than its own. The renderer is a stub that reports the three features, because what is under
- * test is the wiring and the counters, not a draw.
+ * the dispatch replaced — no main regroup and no cull/LOD replacement — while the retained aggregate
+ * scan remains observable. Residency still feeds the complete source buffer both ways, and every main
+ * key's mesh is dressed against the scene's own buffers rather than its own. The renderer is a stub
+ * that reports the three features, because what is under test is the wiring and the counters, not a
+ * hardware draw.
  */
 describe("WorldCells with the GPU-driven main pass", () => {
   it("keeps every multi-part placement drawable after partial eviction and readmission", async () => {
@@ -1153,7 +1154,7 @@ describe("WorldCells with the GPU-driven main pass", () => {
     world.dispose();
   });
 
-  it("spends no regroup, counts replacement LOD work, feeds the source buffer, and dresses every main key", async () => {
+  it("spends no regroup or replacement LOD work, feeds the source buffer, and dresses every main key", async () => {
     stubManifestFetch();
     const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
     const world = await WorldCells.load({
@@ -1206,18 +1207,19 @@ describe("WorldCells with the GPU-driven main pass", () => {
     // option off the same walk repacks every time the window moves.
     expect(after.mainCull.repacks - settled.mainCull.repacks).toBe(0);
     expect(after.mainCull.windows - settled.mainCull.windows).toBe(0);
-    // GPU cull-gate replacements still enter the shared CPU selector to build source records. The
-    // dispatch removes per-instance LOD work, but this replacement-level work remains visible.
-    expect(after.levelRefilters - settled.levelRefilters).toBeGreaterThan(0);
+    // The aggregate pass still runs as the follow point moves, but complete GPU source admission
+    // means it finds no cull/LOD replacement to rebuild. The dispatch owns those two decisions.
+    expect(after.refilters - settled.refilters).toBeGreaterThan(0);
+    expect(after.refilterEntries - settled.refilterEntries).toBe(0);
+    expect(after.levelRefilters - settled.levelRefilters).toBe(0);
     expect(after.gpuScene.dispatches - settled.gpuScene.dispatches).toBe(200);
     expect(after.gpuScene.instances).toBeGreaterThan(0);
     expect(world.stats().failures).toBe(0);
     const gpuRebuilds = after.refilterEntries - settled.refilterEntries;
     world.dispose();
 
-    // The refilter still runs, because a build culls at `maxDistance` and the dispatch can only
-    // select a placement it was given; but only the cull gate is read, never a `lods` switch the
-    // dispatch makes itself, so the same walk rebuilds strictly less than the CPU path does.
+    // The CPU path retains its maxDistance/lods source filtering, so this control still does actual
+    // replacement selection on the same walk.
     stubManifestFetch();
     const cpuFollow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
     const cpu = await WorldCells.load({
@@ -2455,17 +2457,17 @@ describe("WorldCells whose GPU scene comes up under a built ring", () => {
       });
       cpu.update();
       await flushed(cpu);
-      const expected = mainKeys(cpu).reduce((sum, mesh) => sum + mesh.count, 0);
+      // GPU source residency is the raw resident placement count, not the CPU path's already
+      // maxDistance-filtered draw count. The dispatch applies that cull later.
+      const expected = cpu.stats().instances;
       expect(world.stats().gpuScene.instances).toBe(expected);
       expect(mainReport).toContain(`instances=${String(expected)} `);
-      const matrices = mainKeys(cpu)
-        .flatMap((mesh) =>
-          Array.from({ length: mesh.count }, (_, index) =>
-            mesh.instanceMatrix.array.slice(index * 16, (index + 1) * 16).join(","),
-          ),
-        )
-        .sort();
       const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
+      const matrices = scene.placements
+        .filter((one) => one.slot >= 0)
+        .map((one) => one.matrix.join(","))
+        .sort();
+      expect(matrices).toHaveLength(expected);
       const assertSources = (): void => {
         expect(
           scene.placements
@@ -2762,9 +2764,9 @@ describe("WorldCells caster admission while the GPU scene is still being seeded"
 
 describe("WorldCells GPU scene source records past the build-time cull", () => {
   it("gives the dispatch a placement that was past maxDistance once the camera walks into its range", async () => {
-    // One cell, two props 42 m apart under a 40 m `maxDistance`: the build at the first culls the
-    // second. With the GPU scene on the refilter was skipped, so walking to the midpoint, where
-    // both are in range, never gave the second a source record: ground cover never appeared.
+    // One cell, two props 42 m apart under a 40 m `maxDistance`: the dispatch culls the second at
+    // the first pose, but GPU admission must retain its source record so the midpoint can draw it
+    // without a CPU replacement.
     const centre = cellCentre(0, 0);
     const pkg: IWorldPackage = {
       assets: {
@@ -2820,14 +2822,16 @@ describe("WorldCells GPU scene source records past the build-time cull", () => {
       }),
     );
     const follow = { position: { ...centre } };
+    const sourceBudget = { bytes: 2 * 32, instances: 2, residentCells: 1 };
     const renderer = {
       compute: (): void => {},
       kind: "webgpu",
       raw: { backend: { hasFeature: (): boolean => true } },
     } as unknown as IRendererLike;
+    const keyed = vi.spyOn(WorldGpuScene.prototype, "key");
     const world = await WorldCells.load({
       admissionBudgetMs: Number.POSITIVE_INFINITY,
-      budgets,
+      budgets: sourceBudget,
       follow,
       gpuScene: true,
       loadModel: async () => plainModel(),
@@ -2840,7 +2844,38 @@ describe("WorldCells GPU scene source records past the build-time cull", () => {
     await flushed(world);
 
     expect(world.stats().gpuScene.on).toBe(true);
-    expect(world.stats().gpuScene.instances).toBe(1);
+    expect(world.stats().gpuScene.instances).toBe(2);
+    expect(world.stats().pressure.instances).toBe(0);
+    expect(world.stats().pressure.bytes).toBe(0);
+    const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
+    const key = keyOf(scene, "prop:0:0");
+    const slot = scene.placements[0]?.slot ?? -1;
+    expect(slot).toBeGreaterThanOrEqual(0);
+    const drawnAt = (x: number, z: number): number => {
+      const planes = new Float32Array(24);
+      const input: IKernelInput = {
+        camera: { planes, x, y: 0, z },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      };
+      const actual = kernelDrawn(cullAndSelect(input), input);
+      const expected = cpuReference(
+        scene.placements,
+        { planes, x, z },
+        slot,
+        [0],
+        40 - 40 / 8,
+        key,
+        1,
+      );
+      expect(actual).toEqual(expected);
+      return actual.get(key)?.length ?? 0;
+    };
+    expect(drawnAt(centre.x, centre.z)).toBe(1);
+    const beforeWalk = world.stats();
     follow.position.x = centre.x + 15;
     follow.position.z = centre.z + 15;
     for (let frame = 0; frame < 10; frame += 1) {
@@ -2848,6 +2883,10 @@ describe("WorldCells GPU scene source records past the build-time cull", () => {
       await flushed(world);
     }
     expect(world.stats().gpuScene.instances).toBe(2);
+    expect(drawnAt(follow.position.x, follow.position.z)).toBe(2);
+    const afterWalk = world.stats();
+    expect(afterWalk.refilterEntries - beforeWalk.refilterEntries).toBe(0);
+    expect(afterWalk.levelRefilters - beforeWalk.levelRefilters).toBe(0);
     world.dispose();
   });
 });

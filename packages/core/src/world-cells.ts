@@ -602,8 +602,10 @@ export interface IWorldCellsLoadOptions {
   /**
    * The GPU-driven main pass: one compute dispatch culls and LOD-selects every resident placement
    * into a shared matrix buffer, and each main key draws its own region of it through an indirect
-   * record. The CPU keeps only the coarse per-cell visibility, so a walking camera costs no repack
-   * and no `maxDistance`/`lods` refilter.
+   * record. The CPU keeps only coarse per-cell visibility and admits the complete resident
+   * `maxDistance` source set; a walking camera therefore costs no instance repack or cull/LOD
+   * replacement. An explicit `placementReach` remains an admission boundary because it has no GPU
+   * slot equivalent.
    *
    * `true` by default where the backend can run it: it needs compute, storage buffers and
    * `drawIndexedIndirect`, and a backend without them falls back to exactly this class's CPU path —
@@ -759,7 +761,9 @@ export interface IWorldCellsStats {
   readonly refilters: number;
   /**
    * Cumulative replacement builds that entered CPU placement-level selection. Initial admission is
-   * excluded; GPU cull-gate replacements are included because the CPU selector still runs.
+   * excluded; GPU `maxDistance`/LOD movement is not a replacement because its complete resident
+   * source set stays available to dispatch selection. Explicit `placementReach` replacements are
+   * included because reach remains a CPU admission boundary.
    */
   readonly levelRefilters: number;
   /**
@@ -794,11 +798,13 @@ export interface IWorldCellsStats {
   /**
    * What the GPU-driven main pass is doing, and why it is not: `on` is the answer, `reason` is the
    * one line `TN_WORLD_GPU_SCENE` printed, and `dispatches` is what the walk actually paid for its
-   * per-instance work. `mainCull.repacks` stays at `0` while it is on, but `levelRefilters` reports
-   * replacement builds that still execute CPU placement-level selection, including cull-only source
-   * replacements. The aggregate `refilters` counter can also rise for the retained cull-only scan.
-   * `dressed` over `meshes` is the marker line's own pair, and it is the one that says the scene has
-   * meshes to draw with: an `on` with `0` dressed is a ring the CPU path is still drawing.
+   * per-instance work. `mainCull.repacks` stays at `0` while it is on, and `levelRefilters` reports
+   * replacement builds that still execute CPU placement-level selection. GPU `maxDistance`/LOD
+   * movement is not a replacement because the source set stays resident for dispatch selection.
+   * The aggregate `refilters` counter can still rise for its retained scan, and explicit
+   * `placementReach` replacements remain visible. `dressed` over `meshes` is the marker line's own
+   * pair, and it is the one that says the scene has meshes to draw with: an `on` with `0` dressed is
+   * a ring the CPU path is still drawing.
    */
   readonly gpuScene: {
     readonly on: boolean;
@@ -4070,9 +4076,9 @@ class AdmissionBudget implements IAdmissionBudget {
  *
  * The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per
  * resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through
- * `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods`
- * levels, hard budgets and generation-tokened cancellation all live here; every geometry, material
- * and surface still comes from the package's GLBs and the game.
+ * `loadAll` + `addInSlices`. Ring residency, CPU per-asset `maxDistance` filtering, GPU dispatch
+ * culling, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live
+ * here; every geometry, material and surface still comes from the package's GLBs and the game.
  *
  * An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch`
  * each, and a scattered part whose own material is transparent draws as an alpha cutout unless the
@@ -5004,10 +5010,9 @@ export class WorldCells extends Group implements IComputeDriven {
       );
       // The refilter is a scan of every resident cell, so it runs on its own cadence rather than
       // with the residency pass above; see `#refilterStale` and `LEVEL_REFILTER_STEP_METRES`.
-      // The GPU scene selects the level per instance on the dispatch, but a build still culls at
-      // `maxDistance` from where it ran, and a placement it culled has no source record to select:
-      // with the pass skipped, ground cover built from a cell's far side never appeared as the
-      // camera walked in. With the scene on, `#staleIn` reads the cull gate alone.
+      // GPU source admission keeps every resident maxDistance candidate, so the dispatch's slot
+      // cull and level gates handle a moving camera without a CPU replacement. `#staleIn` still
+      // watches placementReach, whose per-record admission boundary has no GPU slot equivalent.
       if (this.#refilterStale(x, z)) {
         this.#refilterPoint.set(x, this.#followY(), z);
         this.#refilterEpoch = this.#residencyEpoch;
@@ -6667,8 +6672,10 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Filter one slice of a run's placements into the batches they draw from, culling on the position
-   * this build was queued for and switching level where an asset's `lods` say to.
+   * Filter one slice of a run's placements into the batches they draw from, applying the CPU
+   * maxDistance/reach filters at the build position and switching level where an asset's `lods` say
+   * to. GPU admission retains maxDistance candidates for the dispatch; placementReach stays here
+   * because it is an explicit per-record source boundary.
    */
   #addPlacements(job: IBuildJob, from: number, to: number): void {
     const { asset, filterX, filterZ } = job;
@@ -6698,7 +6705,7 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#placementReach === undefined
           ? Math.hypot(x - filterX, z - filterZ)
           : Math.hypot(x - filterX, y - job.filterY, z - filterZ);
-      if (inner !== undefined && distance > inner) continue;
+      if (this.#gpuScene.on === false && inner !== undefined && distance > inner) continue;
       const reach = this.#placementReach?.[job.run.offset + index];
       if (reach !== undefined && distance > reach) continue;
       this.#position.set(x, y, z);
@@ -9327,10 +9334,10 @@ export class WorldCells extends Group implements IComputeDriven {
         continue;
       const asset = this.#assets.get(entry.asset);
       if (asset === undefined) continue;
-      // With the GPU scene on the dispatch switches levels itself, so only the cull gate changes
-      // which placements a build hands it; an asset with no cull has nothing to rebuild for.
-      const cull = cullDistance(asset.definition.maxDistance);
-      const gates = this.#gpuScene.on ? (cull === undefined ? [] : [cull]) : asset.gates;
+      // GPU admission retains every resident maxDistance candidate, and the slot's cull plus level
+      // gates select it in the dispatch. Only the CPU path refilters those gates here; an explicit
+      // placementReach still queues a replacement because it remains a source-admission boundary.
+      const gates = this.#gpuScene.on ? [] : asset.gates;
       const [builtNear, builtFar] = this.#span(cell, entry.lastFilterX, entry.lastFilterZ);
       let low = Math.min(near, builtNear);
       // Ends included, so a placement exactly on a gate is one of the reasons to rebuild.
@@ -9371,10 +9378,10 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Queue a refilter for every batch whose follow point has moved far enough to have crossed a
-   * boundary: a cull distance, or one of the asset's `lods` switches. This is the same step the
-   * `maxDistance` filter always took, with the level switch added to the distances it can be
-   * crossed at, so there is still no per-frame refiltering pass.
+   * Queue a refilter for every batch whose follow point has moved far enough to have crossed a CPU
+   * source-admission boundary: maxDistance/lod gates on the CPU path, or placementReach in either
+   * path. GPU maxDistance/lod gates stay in the dispatch, so they do not enter this replacement
+   * queue.
    *
    * Two things keep that pass from costing a frame. A cell's placements all sit inside one
    * rectangle, so the two points that matter — where the batch was built and where the follow point
