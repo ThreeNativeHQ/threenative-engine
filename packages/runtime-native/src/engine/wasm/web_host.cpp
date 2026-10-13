@@ -48,6 +48,7 @@ OutputState output{std::nullopt, 1, true};
 bool outputChanged = true;
 bool shadowMap = false;
 int shadowMapType = 1;  // PCFShadowMap
+uint32_t sampleCount = 1;  // three's samples: 1 or 4x MSAA
 
 std::string text(WGPUStringView value) {
     if (value.data == nullptr) return {};
@@ -202,6 +203,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     // failure, never a bare WebAssembly.Exception in the page.
     std::string refused;
     try {
+        renderer->setSampleCount(sampleCount);
         Renderer::PresentScope present(*renderer, view, surfaceFormat);
         database.render(*renderer, *scene, *camera, {r, g, b, a});
     } catch (const std::exception& error) {
@@ -285,11 +287,12 @@ extern "C" int tnw_web_read_target_take(uint32_t id, uint8_t* out, uint32_t capa
  * leaves the renderer running.
  */
 extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const char* colorSpace, int shadowEnabled,
-                                      double shadowType) {
+                                      double shadowType, double samples) {
     std::string refusal;
     const auto next = outputStateOf(toneMapping, exposure, colorSpace, refusal);
     // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
     if (next && shadowType != 1 && shadowType != 2) refusal = "shadowMap.type must be PCFShadowMap or PCFSoftShadowMap";
+    if (samples != 1 && samples != 4) refusal = "samples must be 1 or 4";
     if (!refusal.empty()) {
         if (state != Failed) failure = "TN_NATIVE_RENDERER_STATE: " + refusal;
         return 1;
@@ -301,6 +304,7 @@ extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const
     }
     shadowMap = shadowEnabled != 0;
     shadowMapType = static_cast<int>(shadowType);
+    sampleCount = static_cast<uint32_t>(samples);
     return 0;
 }
 

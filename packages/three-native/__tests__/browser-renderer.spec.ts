@@ -33,7 +33,7 @@ function host() {
     setCallback: () => undefined,
   };
   const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
-  const state = vi.fn(() => 0);
+  const state = vi.fn((..._args: number[]) => 0);
   let next = 16;
   const module = {
     HEAPU8: new Uint8Array(256),
@@ -41,7 +41,10 @@ function host() {
     lengthBytesUTF8: (text: string) => text.length,
     stringToUTF8: () => undefined,
     UTF8ToString: () => "",
-    _malloc: () => (next += 64),
+    _malloc: () => {
+      next += 64;
+      return next;
+    },
     _free: () => undefined,
     _tnw_web_init: () => 0,
     _tnw_web_poll: () => 1,
