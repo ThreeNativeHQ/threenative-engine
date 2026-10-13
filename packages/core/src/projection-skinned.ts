@@ -207,6 +207,7 @@ export class SkinnedBatch {
   readonly bones: number;
   readonly capacity: number;
   readonly instances = new Map<Object3D, number>();
+  readonly #slotRigs = new Map<number, Object3D>();
   readonly free: number[] = [];
   used = 0;
   readonly #current: Float32Array;
@@ -327,6 +328,7 @@ export class SkinnedBatch {
       this.used += 1;
     }
     this.instances.set(rig, slot);
+    this.#slotRigs.set(slot, rig);
     this.#fresh.push(slot);
     return slot;
   }
@@ -336,6 +338,7 @@ export class SkinnedBatch {
     const slot = this.instances.get(rig);
     if (slot === undefined) return;
     this.instances.delete(rig);
+    this.#slotRigs.delete(slot);
     this.#writtenEvaluations.delete(rig);
     this.#writtenWorldMatrices.delete(rig);
     this.hide(slot);
@@ -354,15 +357,24 @@ export class SkinnedBatch {
 
   /** Marks a slot whose history must restart from its next pose. */
   restart(slot: number): void {
+    this.#invalidate(slot);
     this.#fresh.push(slot);
   }
 
   /** Collapses one slot for this frame; a hidden rig keeps its slot. */
   hide(slot: number): void {
+    this.#invalidate(slot);
     const stride = this.bones * 16;
     this.#current.fill(0, slot * stride, (slot + 1) * stride);
     this.#previous?.fill(0, slot * stride, (slot + 1) * stride);
     this.#dirty = true;
+  }
+
+  #invalidate(slot: number): void {
+    const rig = this.#slotRigs.get(slot);
+    if (rig === undefined) return;
+    this.#writtenEvaluations.delete(rig);
+    this.#writtenWorldMatrices.delete(rig);
   }
 
   /**
@@ -451,6 +463,7 @@ export class SkinnedBatch {
     this.#previousAttribute?.dispose();
     this.mesh.material.dispose();
     this.instances.clear();
+    this.#slotRigs.clear();
   }
 }
 

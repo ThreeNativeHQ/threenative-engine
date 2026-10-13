@@ -317,6 +317,39 @@ describe("SkinnedBatch palette", () => {
     expect([...(batch.history as Float32Array)]).toEqual([...batch.palette]);
   });
 
+  it.each([4, 8])("rewrites a hidden slot after a skipped update at rate %i", (updateRate) => {
+    const root = new Group();
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    root.add(mesh);
+    const player = new AnimationPlayer({ root, clips: [], strideSync: false, updateRate });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    const slot = batch.claim(mesh) as number;
+
+    player.update(0, true);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    expect(batch.palette.some((value) => value !== 0)).toBe(true);
+
+    batch.begin();
+    batch.hide(slot);
+    batch.end();
+    do player.update(1 / 60);
+    while (player.updateRateReport.evaluated);
+
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.restart(slot);
+    batch.write(slot, mesh);
+    batch.end();
+    expect(batch.palette.some((value) => value !== 0)).toBe(true);
+    expect([...(batch.history as Float32Array)]).toEqual([...batch.palette]);
+
+    player.dispose();
+    batch.dispose();
+  });
+
   it("skips a palette write on a skipped animation frame and carries the whole step on evaluation", () => {
     const root = new Group();
     const mesh = rig(rigGeometry(), new MeshStandardMaterial());
