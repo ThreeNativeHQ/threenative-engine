@@ -132,6 +132,13 @@ describe("profile:wasm-page startup, input and CPU work", () => {
     expect(() => options(["--url", "u", "--click", "--json"])).toThrow("--click needs a selector");
   });
 
+  it("parses --save-profile as the directory for the raw .cpuprofile files", () => {
+    expect(options(["--url", "u", "--save-profile", "/tmp/p"])).toMatchObject({
+      saveProfile: "/tmp/p",
+    });
+    expect(options(["--url", "u"]).saveProfile).toBeUndefined();
+  });
+
   it("clicks in order before the warm-up, stamps startup, and reports CPU work per frame", async () => {
     state.presented = [100, 140];
     const run = await measure(

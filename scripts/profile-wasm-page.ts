@@ -13,6 +13,8 @@
  * `--profiling-funcs`; without it the Wasm rows are numbered. Diagnose with it; the steady-state
  * counter gates (render_database_test steady_state, wasm-engine-boot's renderer scenario) hold a fix.
  */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type Page, chromium } from "@playwright/test";
 import {
@@ -36,6 +38,8 @@ interface IOptions {
   cpuWork: boolean;
   /** Selectors clicked in order after load, before the warm-up: real input into the game's own UI. */
   clicks: string[];
+  /** Directory that receives each page's raw Chrome .cpuprofile, named by the page's port. */
+  saveProfile?: string;
 }
 
 export function options(argv: readonly string[]): IOptions {
@@ -64,6 +68,9 @@ export function options(argv: readonly string[]): IOptions {
     memory: argv.includes("--memory"),
     allowSoftware: argv.includes("--allow-software"),
     cpuWork: argv.includes("--cpu-work"),
+    ...(value("save-profile") === undefined
+      ? {}
+      : { saveProfile: value("save-profile") as string }),
     clicks: argv.flatMap((arg, i) => {
       if (arg !== "--click") return [];
       const selector = argv[i + 1];
@@ -144,7 +151,7 @@ interface IProfileNode {
   children?: number[];
 }
 
-async function cpu(page: Page, seconds: number, withWork: boolean) {
+async function cpu(page: Page, seconds: number, withWork: boolean, saveAs?: string) {
   const framesBefore = withWork ? await presentedFrames(page) : 0;
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Profiler.enable");
@@ -152,6 +159,7 @@ async function cpu(page: Page, seconds: number, withWork: boolean) {
   await cdp.send("Profiler.start");
   await page.waitForTimeout(seconds * 1000);
   const { profile } = (await cdp.send("Profiler.stop")) as { profile: ICpuProfile };
+  if (saveAs) writeFileSync(saveAs, JSON.stringify(profile));
   const work = withWork
     ? cpuWork(profile, (await presentedFrames(page)) - framesBefore)
     : undefined;
@@ -342,7 +350,12 @@ export async function measure(url: string, o: IOptions) {
     const reading = readHostLoad();
     const hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
     const frame = await frames(page);
-    const profile = await cpu(page, o.seconds, o.cpuWork);
+    if (o.saveProfile !== undefined) mkdirSync(o.saveProfile, { recursive: true });
+    const saveAs =
+      o.saveProfile === undefined
+        ? undefined
+        : join(o.saveProfile, `${new URL(url).port}.cpuprofile`);
+    const profile = await cpu(page, o.seconds, o.cpuWork, saveAs);
     const census = o.calls ? await calls(page) : undefined;
     const gpu = o.gpuCalls ? await gpuCalls(page) : undefined;
     const memory = o.memory
@@ -419,7 +432,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const o = options(process.argv.slice(2));
   const subject = await measure(o.url, o);
   const control =
-    o.control === undefined ? undefined : await measure(o.control, { ...o, calls: false });
+    o.control === undefined
+      ? undefined
+      : await measure(o.control, { ...o, calls: false, memory: false });
   if (o.json) console.log(JSON.stringify({ subject, ...(control ? { control } : {}) }, null, 2));
   else {
     print("subject", subject);
