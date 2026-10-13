@@ -487,10 +487,6 @@ const DEFAULT_EXPENSIVE_REFRESH_SHARE = 0.4;
  * grows without limit as the sun sets.
  */
 const MIN_SUN_COSINE = 0.05;
-// Metres of camera travel along the light that counts as no travel, the same tolerance the page
-// bounds are compared with: a derived origin is a sum of two doubles, so the same camera reached by
-// different arithmetic reads a few ulps apart, and a micrometre cannot move a shadow.
-const ORIGIN_EPSILON = 1e-6;
 
 /**
  * World spheres one level render collects: centre, radius, shadow flags, the box's own height
@@ -3070,7 +3066,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
             passes !== undefined &&
             (level.depthNear !== drawnNear ||
               level.depthFar !== drawnFar ||
-              Math.abs(level.centerW + level.eye - drawnOrigin) > ORIGIN_EPSILON)
+              Math.fround(level.centerW + level.eye) !== Math.fround(drawnOrigin))
           ) {
             const whole = this.clipmap.pagesPerAxis ** 2 - countedPages;
             this.#pagesDirty += whole;
