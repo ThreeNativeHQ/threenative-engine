@@ -62,7 +62,7 @@ export function collectTrivialityOptOuts(assertions: readonly IPlaytestAssertion
   });
 }
 
-/** Capture the largest rendered canvas without composited DOM overlays. */
+/** Capture the largest rendered canvas bounds without waiting for locator screenshot stability. */
 export async function captureVisualSurface(
   page: Page,
   artifactPath?: string,
@@ -81,7 +81,15 @@ export async function captureVisualSurface(
     return largestIndex;
   });
   if (sourceIndex < 0) return undefined;
-  const content = await canvases.nth(sourceIndex).screenshot();
+  const canvas = canvases.nth(sourceIndex);
+  const bounds = await canvas.boundingBox();
+  if (
+    bounds === null
+    || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
+    || bounds.width <= 0
+    || bounds.height <= 0
+  ) return undefined;
+  const content = await page.screenshot({ clip: bounds });
   if (artifactPath !== undefined) await writeFile(artifactPath, content);
   return content;
 }
