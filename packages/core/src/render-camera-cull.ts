@@ -1,4 +1,4 @@
-import { type Camera, Frustum, Matrix4, type Object3D, Sphere, Vector3 } from "three";
+import { type Camera, Frustum, Matrix4, type Object3D, Ray, Sphere, Vector3 } from "three";
 
 import { isRenderable } from "./projection-plan.js";
 
@@ -15,7 +15,8 @@ import { isRenderable } from "./projection-plan.js";
  * skipped only when its **world bounding sphere** projects to fewer pixels than
  * {@link DEFAULT_MINIMUM_PROJECTED_PIXELS} *in the camera about to render it*, and only when
  * nothing offers a reason to keep it: {@link alwaysRender}, a shadow caster, a camera-attached
- * object, an object that already set `frustumCulled = false`, or a bound that is absent,
+ * object, the known bound intersecting the camera's forward centre ray, an object that already set
+ * `frustumCulled = false`, or a bound that is absent,
  * degenerate (a zero or non-finite radius is not a size) or stale (the position buffer was
  * rewritten after the sphere was computed — a changed buffer is recomputed, never trusted). The
  * one flag it writes is `Object3D.visible`,
@@ -172,6 +173,7 @@ export class RenderCameraCull {
   #cameraZ = 0;
   #scale = 0;
   #cameraResolved = true;
+  readonly #animationRay = new Ray();
   #considered = 0;
   #culled = 0;
   #exemptCameraAttached = 0;
@@ -262,6 +264,10 @@ export class RenderCameraCull {
       this.#cameraX = elements[12] as number;
       this.#cameraY = elements[13] as number;
       this.#cameraZ = elements[14] as number;
+      this.#animationRay.origin.set(this.#cameraX, this.#cameraY, this.#cameraZ);
+      this.#animationRay.direction
+        .set(-(elements[8] as number), -(elements[9] as number), -(elements[10] as number))
+        .normalize();
       // The main frustum is what tells an off-camera shadow caster from a visible but unresolvable
       // one. Perspective cameras keep `matrixWorldInverse` in step inside `updateMatrixWorld`.
       this.#projectionScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -367,22 +373,28 @@ export class RenderCameraCull {
       ) {
         this.#center.copy(sphere.center).applyMatrix4(object.matrixWorld);
         const radius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
-        const distance = Math.hypot(
-          this.#center.x - this.#cameraX,
-          this.#center.y - this.#cameraY,
-          this.#center.z - this.#cameraZ,
-        );
-        const pixels = projectedDiameterPixels(radius, distance, this.#scale);
-        // PRD-570's provisional pixel bands; the visual gate still has to earn these thresholds.
-        rate = this.#frustum.intersectsSphere(this.#animationSphere.set(this.#center, radius))
-          ? pixels >= 128
-            ? 1
-            : pixels >= 32
-              ? 2
-              : pixels >= 8
-                ? 4
-                : 8
-          : 8;
+        // A known bound on the camera's forward centre ray is the conservative observable target
+        // signal. Test each source independently so a nearer bound cannot hide a farther target.
+        if (this.#animationRay.intersectsSphere(this.#animationSphere.set(this.#center, radius)))
+          rate = 1;
+        else {
+          const distance = Math.hypot(
+            this.#center.x - this.#cameraX,
+            this.#center.y - this.#cameraY,
+            this.#center.z - this.#cameraZ,
+          );
+          const pixels = projectedDiameterPixels(radius, distance, this.#scale);
+          // PRD-570's provisional pixel bands; the visual gate still has to earn these thresholds.
+          rate = this.#frustum.intersectsSphere(this.#animationSphere.set(this.#center, radius))
+            ? pixels >= 128
+              ? 1
+              : pixels >= 32
+                ? 2
+                : pixels >= 8
+                  ? 4
+                  : 8
+            : 8;
+        }
       }
       if (state.source === this && state.frame === this.#animationFrame)
         state.rate = Math.min(state.rate, rate);

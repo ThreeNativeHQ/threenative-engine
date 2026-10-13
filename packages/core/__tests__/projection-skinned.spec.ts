@@ -371,6 +371,48 @@ describe("SkinnedBatch palette", () => {
     batch.dispose();
   });
 
+  it("keeps an unparented camera target at full rate behind a projected skinned batch", () => {
+    const scene = new Scene();
+    const geometry = rigGeometry();
+    const material = new MeshStandardMaterial();
+    const entries = Array.from({ length: 8 }, (_, index) => {
+      const root = new Group();
+      root.position.set(index * 5, 0, -120);
+      const mesh = rig(geometry, material);
+      root.add(mesh);
+      scene.add(root);
+      const player = new AnimationPlayer({
+        root,
+        clips: [
+          new AnimationClip("turn", 1, [
+            new NumberKeyframeTrack(".rotation[z]", [0, 1], [0, Math.PI]),
+          ]),
+        ],
+        strideSync: false,
+      });
+      player.play("turn");
+      return { player, root };
+    });
+    const projection = new SceneRenderProjection(scene);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1_000);
+    camera.lookAt(0, 0, -120);
+    scene.updateMatrixWorld(true);
+    projection.reconcile();
+    expect(projection.report.skinnedBatches).toBe(1);
+
+    const cull = new RenderCameraCull();
+    cull.apply(projection.root, camera, 720);
+    cull.restore();
+    for (const entry of entries) entry.player.update(1 / 60);
+
+    expect(entries[0]?.player.updateRateReport).toMatchObject({ rate: 1, overridden: false });
+    expect(entries[1]?.player.updateRateReport.rate).toBe(4);
+
+    cull.dispose();
+    projection.dispose();
+    for (const entry of entries) entry.player.dispose();
+  });
+
   it("writes gameplay root movement on a skipped animation frame", () => {
     const root = new Group();
     const mesh = rig(rigGeometry(), new MeshStandardMaterial());
@@ -421,7 +463,9 @@ describe("SkinnedBatch palette", () => {
     const root = new Group();
     const mesh = rig(rigGeometry(), new MeshStandardMaterial());
     root.add(mesh);
-    root.position.z = -100;
+    // Keep this policy subject off the centre ray: this test measures projected size behind the
+    // batch, not camera target recognition.
+    root.position.set(10, 0, -100);
     root.updateMatrixWorld(true);
     const player = new AnimationPlayer({
       root,

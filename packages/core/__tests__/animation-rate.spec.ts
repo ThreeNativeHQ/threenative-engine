@@ -189,6 +189,10 @@ describe("AnimationPlayer update rate", () => {
     const rig = player();
     expect(rig.updateRate).toBe("auto");
     const view = rendered(rig, -10);
+    // Keep this policy subject off the centre ray: this test measures projected size, not camera
+    // target recognition.
+    rig.root.position.x = 2;
+    view.render();
     rig.update(1 / 60);
     expect(rig.updateRateReport).toMatchObject({ rate: 1, overridden: false });
     rig.root.position.z = -100;
@@ -208,6 +212,23 @@ describe("AnimationPlayer update rate", () => {
     view.render();
     rig.update(1 / 60);
     expect(rig.updateRateReport.rate).toBe(1);
+    view.cull.dispose();
+    rig.dispose();
+  });
+
+  it("keeps a distant unparented camera target at full rate and retargeting drops promotion", () => {
+    const rig = player();
+    const view = rendered(rig, -120);
+    view.camera.lookAt(rig.root.position);
+    view.render();
+    rig.update(1 / 60);
+    expect(rig.updateRateReport).toMatchObject({ rate: 1, overridden: false });
+
+    view.camera.lookAt(10, 0, -120);
+    view.render();
+    rig.update(1 / 60);
+    expect(rig.updateRateReport).toMatchObject({ rate: 4, overridden: false });
+
     view.cull.dispose();
     rig.dispose();
   });
@@ -244,6 +265,8 @@ describe("AnimationPlayer update rate", () => {
   it("returns a previously distant rig to full rate when attached to the render camera", () => {
     const rig = player();
     const view = rendered(rig);
+    rig.root.position.x = 10;
+    view.render();
     rig.update(1 / 60);
     expect(rig.updateRateReport.rate).toBeGreaterThan(1);
     view.scene.add(view.camera);

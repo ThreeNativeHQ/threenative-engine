@@ -45,6 +45,8 @@ const count = requestedCount === null ? SIDE * SIDE : Number(requestedCount);
 const arm = query.get("crowdArm") ?? "animated";
 const requestedRate = query.get("crowdRate") ?? "auto";
 const focusDepth = query.get("crowdFocus");
+const freezeFrameText = query.get("crowdFreezeFrame");
+const visualFreezeFrame = freezeFrameText === null ? undefined : Number(freezeFrameText);
 const updateRate = requestedRate === "1" ? 1 : requestedRate === "auto" ? "auto" : undefined;
 if (requestedCount !== null && ![32, 128, 256].includes(count))
   throw new Error("crowdCount must be 32, 128 or 256.");
@@ -53,6 +55,11 @@ if (!["animated", "held", "static"].includes(arm))
 if (updateRate === undefined) throw new Error("crowdRate must be auto or 1.");
 if (focusDepth !== null && !["10", "40", "120"].includes(focusDepth))
   throw new Error("crowdFocus must be 10, 40 or 120.");
+if (
+  visualFreezeFrame !== undefined &&
+  (!Number.isSafeInteger(visualFreezeFrame) || visualFreezeFrame < 1)
+)
+  throw new Error("crowdFreezeFrame must be a positive safe integer.");
 const measuring = requestedCount !== null;
 
 export const crowdRate: Record<string, unknown> = {
@@ -63,6 +70,10 @@ export const crowdRate: Record<string, unknown> = {
   ready: false,
   measured: null,
 };
+if (visualFreezeFrame !== undefined) {
+  crowdRate.visualFreezeFrame = visualFreezeFrame;
+  crowdRate.visualFrozen = false;
+}
 
 const finiteOrNull = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -344,18 +355,35 @@ export class Crowd extends Scene {
       crowdRate.nearDepth = 10;
       crowdRate.midDepth = 40;
       crowdRate.farDepth = 120;
+      let visualRenderFrame = 0;
+      let visualFrozen = false;
       ctx.beforeRender(() => {
-        // Both frozen controls redraw shadows, so a cached shadow is never priced as skinning saved.
-        for (const shadow of shadows) shadow.needsUpdate = true;
-        if (arm === "animated")
-          for (const player of players) {
-            beginSpan(SPANS.animationUpdate);
-            try {
-              player.update(1 / 60);
-            } finally {
-              endSpan(SPANS.animationUpdate);
+        if (!visualFrozen) {
+          visualRenderFrame += 1;
+          // Both frozen controls redraw shadows, so a cached shadow is never priced as skinning
+          // saved.
+          for (const shadow of shadows) shadow.needsUpdate = true;
+          if (arm === "animated")
+            for (const player of players) {
+              beginSpan(SPANS.animationUpdate);
+              try {
+                player.update(1 / 60);
+              } finally {
+                endSpan(SPANS.animationUpdate);
+              }
             }
+          if (visualFreezeFrame !== undefined) {
+            const rates = players.map((player) => player.updateRateReport.rate);
+            crowdRate.visualRenderFrame = visualRenderFrame;
+            crowdRate.visualLogicalSeconds = visualRenderFrame / 60;
+            crowdRate.visualEvaluationTimes = players.map((player) => player.mixer.time);
+            crowdRate.visualRates = rates;
+            crowdRate.visualEvaluated = players.map((player) => player.updateRateReport.evaluated);
+            crowdRate.visualThrottledRigs = rates.filter((rate) => rate > 1).length;
+            visualFrozen = visualRenderFrame >= visualFreezeFrame;
+            crowdRate.visualFrozen = visualFrozen;
           }
+        }
         ctx.state.set({ crowdRate: { ...crowdRate } });
       });
       return;
