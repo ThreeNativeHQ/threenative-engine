@@ -247,6 +247,18 @@ it.each(["stationary", "nonchronological"])(
   },
 );
 
+it("rejects an endpoint hold that departs before returning to the endpoint", async () => {
+  const f = await fixture();
+  const report = asOtherWorld(read(path.join(f.root, "report.json")), (i) => {
+    const step = Math.min(i, 32);
+    return step === 17 || step === 18 || step === 32 ? 12 : step;
+  });
+  write(path.join(f.root, "report.json"), report);
+  const result = run(f.root, "--scenario", "machinefall-world-capture", "--world", "Machinefall");
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain("walk is not chronological or forward-moving");
+});
+
 it("still rejects a WorldProbe walk interval that reverses X", async () => {
   const f = await fixture();
   const report = read(path.join(f.root, "report.json"));

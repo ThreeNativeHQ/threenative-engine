@@ -166,7 +166,9 @@ export function worldCaptureManifest(
           (worldName === DEFAULT_WORLD
             ? frame.position[0] > previous.position[0]
             : !isDeepStrictEqual(frame.position, previous.position) ||
-              isDeepStrictEqual(frame.position, lastWalk.position)),
+              frames
+                .slice(index, 33)
+                .every((remaining) => isDeepStrictEqual(remaining.position, frame.position))),
         "walk is not chronological or forward-moving",
       );
     }
