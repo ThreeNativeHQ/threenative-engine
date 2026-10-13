@@ -31,7 +31,11 @@ import { defineTextureSources } from "./texture-sources.js";
 
 const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
 
-/** A value that throws `diagnostic` on any call, construction or property access. */
+/**
+ * A value that throws `diagnostic` on any call, construction or property access. Its `prototype`
+ * alone reads, so a module may declare a subclass (core's `VirtualShadowNode extends ShadowBaseNode`)
+ * and fail only when it constructs one.
+ */
 function refused(name: string, diagnostic: string): unknown {
   const fail = (): never => {
     throw new Error(`${diagnostic}: ${name} is not available on the Wasm engine.`);
@@ -39,7 +43,7 @@ function refused(name: string, diagnostic: string): unknown {
   return new Proxy(function refusedExport() {}, {
     apply: fail,
     construct: fail,
-    get: fail,
+    get: (target, key) => (key === "prototype" ? target.prototype : fail()),
     set: fail,
     has: fail,
     ownKeys: fail,
