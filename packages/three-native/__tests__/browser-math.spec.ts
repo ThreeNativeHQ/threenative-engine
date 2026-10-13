@@ -275,6 +275,31 @@ describe("three's math values on the browser back end", () => {
     expect(calls.at(-1)).toBe("set x");
   });
 
+  it("asks the engine about an eighth of the held wrappers per safe point, and all of them in eight", () => {
+    const { runtime } = memoryRuntime();
+    const asked: string[][] = [];
+    const engine = defineBrowserClasses(registry, {
+      ...runtime,
+      invoke: () => null,
+      engineReferences(refs) {
+        asked.push(refs.map((ref) => ref.key));
+        return refs.map((ref) => (ref.key === dropped ? 0 : 1));
+      },
+    });
+    const Group = engine.classes.Group as new () => { add(child: object): void };
+    const scene = new Group();
+    const children = Array.from({ length: 80 }, () => new Group());
+    for (const child of children) scene.add(child);
+    const dropped = asked.length === 0 ? "Group:40" : ""; // the 41st child: the engine let it go
+    for (let i = 0; i < 8; i++) engine.collect();
+    expect(asked.map((keys) => keys.length)).toEqual([10, 10, 10, 10, 10, 10, 10, 10]);
+    expect(new Set(asked.flat()).size).toBe(80);
+    // The dropped wrapper left the held set; the next pass asks about 79.
+    for (let i = 0; i < 8; i++) engine.collect();
+    expect(asked.slice(8).flat()).toHaveLength(79);
+    expect(asked.slice(8).flat()).not.toContain(dropped);
+  });
+
   it("keeps a mesh's geometry and an attribute's shape until they are set", () => {
     const { runtime } = memoryRuntime();
     const reads: string[] = [];
