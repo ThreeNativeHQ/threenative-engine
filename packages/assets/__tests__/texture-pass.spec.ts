@@ -7,9 +7,9 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import * as imageQualityModule from "../src/image-quality.js";
-import { transcodeKtx2ToAstc } from "../src/image-quality.js";
+import { decodeBasisKtx2, transcodeKtx2ToAstc } from "../src/image-quality.js";
 import { type IAssetSourceConfig, compileAssets, texturePass } from "../src/index.js";
-import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../src/ktx2-encoder.js";
+import { KTX2_ENCODER_VERSION, decodeAstcKtx2, encodeToKTX2 } from "../src/ktx2-encoder.js";
 import { encodeTextureLadder } from "../src/passes/model-textures.js";
 import { parsePng } from "../src/png.js";
 
@@ -39,6 +39,19 @@ async function compileOne(
     manifest,
     outputBytes: await readFile(path.join(root, "public", String(entry.output))),
   };
+}
+
+/** Flat levels run from 30 at the top-left to 240 at the bottom-right. A flip moves each level to another corner. */
+function quadrantLevel(size: number, x: number, y: number): number {
+  return 30 + 70 * ((y < size / 2 ? 0 : 2) + (x < size / 2 ? 0 : 1));
+}
+
+/** Grey quadrants. Hashed noise from -16 to 15 levels keeps ASTC inexact after a resize. */
+function quadrantPng(size: number, noisy = false): Buffer {
+  const noise = (x: number, y: number) =>
+    (((Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d)) >>> 16) % 32) - 16;
+  const level = (x: number, y: number) => quadrantLevel(size, x, y) + (noisy ? noise(x, y) : 0);
+  return rgbaPng({ blue: level, green: level, height: size, red: level, width: size });
 }
 
 function ktx2Magic(bytes: Buffer): boolean {
@@ -335,6 +348,63 @@ describe("the ktx2 texture pass", () => {
     expect(Math.max(ktx2.pixelWidth, ktx2.pixelHeight)).toBeLessThanOrEqual(10);
     expect(ktx2.pixelWidth % 4).toBe(0);
     expect(ktx2.pixelHeight % 4).toBe(0);
+  });
+
+  it("stores standalone ASTC rows bottom-up, so an upload without flipY matches the PNG", async () => {
+    const size = 64;
+    const result = await texturePass({
+      astc: true,
+      overrides: [{ glob: "colour.png", codec: "uastc" }],
+    }).apply(quadrantPng(size), "colour.png");
+    if (Buffer.isBuffer(result)) throw new Error("texture was not encoded");
+    expect(result.entry?.format).toBe("astc4x4");
+    const decoded = await decodeAstcKtx2(result.buffer, size, size);
+    const red = (x: number, y: number) => decoded[(y * size + x) * 4] ?? Number.NaN;
+    // Decoded row y must hold source row size - 1 - y. A column flip or no flip fails these samples.
+    for (const y of [8, 56])
+      for (const x of [8, 56])
+        expect(Math.abs(red(x, y) - quadrantLevel(size, x, size - 1 - y))).toBeLessThanOrEqual(16);
+  });
+
+  it("keeps PNG orientation for codec none, retained PNG and non-ASTC output", async () => {
+    const size = 64;
+    const input = quadrantPng(size, true);
+    const none = await texturePass({
+      astc: true,
+      overrides: [{ glob: "colour.png", codec: "none" }],
+    }).apply(input, "colour.png");
+    if (Buffer.isBuffer(none)) throw new Error("codec none did not pass the source through");
+    expect(none.buffer).toEqual(input);
+
+    // No lossy encoder meets this floor, so the pass retains the resized PNG.
+    const retained = await texturePass({
+      astc: true,
+      floor: { meanDeltaE00: 0, ssim: 1 },
+      maxSize: 32,
+    }).apply(input, "colour.png");
+    if (Buffer.isBuffer(retained)) throw new Error("texture was not retained");
+    expect(retained.entry?.format).toBe("none");
+    const png = PNG.sync.read(retained.buffer);
+    // An 8x8 window mean cancels the hashed noise. A row flip moves each mean to another quadrant.
+    const mean = (cx: number, cy: number) => {
+      let sum = 0;
+      for (let y = cy - 4; y < cy + 4; y += 1)
+        for (let x = cx - 4; x < cx + 4; x += 1) sum += png.data[(y * 32 + x) * 4] ?? Number.NaN;
+      return sum / 64;
+    };
+    for (const y of [8, 24])
+      for (const x of [8, 24])
+        expect(Math.abs(mean(x, y) - quadrantLevel(size, x * 2, y * 2))).toBeLessThanOrEqual(16);
+
+    // The Basis path keeps source row order. A row flip would move level 30 to level 170 here.
+    // The flat source keeps this single-pixel sample free of the hashed noise.
+    const basis = await texturePass({
+      overrides: [{ glob: "colour.png", codec: "uastc" }],
+    }).apply(quadrantPng(size), "colour.png");
+    if (Buffer.isBuffer(basis)) throw new Error("texture was not encoded");
+    const decodedBasis = await decodeBasisKtx2(basis.buffer, size, size);
+    const basisRed = decodedBasis[(8 * size + 8) * 4] ?? Number.NaN;
+    expect(Math.abs(basisRed - quadrantLevel(size, 8, 8))).toBeLessThanOrEqual(16);
   });
 
   it("should cap standalone colour and normal textures through the encoder decoder without upscaling or changing none bytes", async () => {

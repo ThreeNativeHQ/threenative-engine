@@ -113,7 +113,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
     appliesTo: ["texture"],
     configuration: {
       encoder: KTX2_ENCODER_VERSION,
-      ...(options.astc === true ? { gpuFormat: "astc4x4-final-quality-v3" } : {}),
+      ...(options.astc === true ? { gpuFormat: "astc4x4-final-quality-v4-bottom-up" } : {}),
       instrument: IMAGE_QUALITY_IDENTITY,
       floor: resolveImageQualityFloor(options.floor),
       keepSmallerSource: true,
@@ -165,7 +165,19 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
       if (target.width % BLOCK_SIZE !== 0 || target.height % BLOCK_SIZE !== 0) {
         return unalignedOutcome(input, logicalPath, choice.codec, choice.explicit, target);
       }
-      const selected = await encodeTextureLadder(data, target.width, target.height, {
+      // Standalone ASTC uploads without the flipY that PNG gets, so its first stored row is the bottom row.
+      // The ladder scores these pixels. The PNG fallback below keeps reading `data`.
+      let encodeInput = data;
+      if (options.astc === true) {
+        const stride = target.width * 4;
+        encodeInput = new Uint8Array(data.length);
+        for (let row = 0; row < target.height; row += 1)
+          encodeInput.set(
+            data.subarray((target.height - 1 - row) * stride, (target.height - row) * stride),
+            row * stride,
+          );
+      }
+      const selected = await encodeTextureLadder(encodeInput, target.width, target.height, {
         slots: [choice.normalMap ? "normalTexture" : "baseColorTexture"],
         floor: options.floor,
         srgb: !choice.normalMap,
