@@ -368,3 +368,10 @@ native claim; late-baseline rejection still applies and every PRD gate remains o
   `measuring=false`) and is green after it for native flag selection, legacy no-flag mode and
   explicit `crowdCount=32` precedence. Crowd typecheck and build pass; the native desktop box
   remains open for the manager's post-build scenario.
+
+- 2026-10-12, the manager's native run at `c579311ed` passed all 14 resource assertions and
+  measured the 128-rig auto fixture, but exited only on `TN_PLAYTEST_NETWORK_ERROR` for the
+  missing `assets.manifest.json` (`artifacts/prd570-desktop-c579311ed/`). The geometry-only crowd
+  now ships the standard empty manifest in `public/`; Crowd build copies and parses it at
+  `dist/assets.manifest.json` as `{"version":1,"entries":{}}`. The native desktop box remains
+  open pending rerun with the built dist asset root.
