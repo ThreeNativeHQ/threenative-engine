@@ -84,7 +84,7 @@ import {
   withHostLoad,
 } from "../engine-load-test/report.js";
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
-import { KILL_GRACE_MS, runCapturing } from "../engine-load-test/run-desktop.js";
+import { KILL_GRACE_MS, benchDisplay, runCapturing } from "../engine-load-test/run-desktop.js";
 import { engineDefines, engineEnvironment, playerSurface } from "../engine-load-test/run-engine.js";
 import {
   WEB_ENGINE_WASM,
@@ -3671,6 +3671,12 @@ describe("the tn-engine-desktop arm", () => {
       warmup: 40,
       width: 1920,
     });
+  });
+
+  it("puts both desktop arms on one display, so a pair never splits between :0 and Xvfb", () => {
+    expect(benchDisplay({ DISPLAY: ":0" })).toBe(":0");
+    expect(benchDisplay({ DISPLAY: ":0", TN_BENCH_DISPLAY: ":7" })).toBe(":7");
+    expect(benchDisplay({})).toBe("");
   });
 
   it("opens the player at the requested surface, uncapped, and reads per-frame CPU only on request", () => {

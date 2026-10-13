@@ -12,6 +12,7 @@ import { HostCpuRecorder, procCpuSource, withHostCpu } from "./host-cpu.js";
 import { BenchError } from "./report.js";
 import {
   type IDesktopLadder,
+  benchDisplay,
   desktopTimeoutMs,
   metricsEnvironment,
   resolveFoxAsset,
@@ -119,7 +120,7 @@ export async function runTnEngineDesktop(
   let surface = "";
   let source: ReturnType<typeof procCpuSource> | undefined;
   const recorder = new HostCpuRecorder({ read: () => source?.read() });
-  const display = process.env.TN_BENCH_DISPLAY ?? "";
+  const display = benchDisplay();
   const env = engineEnvironment(options, {
     ...x11Environment(),
     ...(display === "" ? {} : { DISPLAY: display }),

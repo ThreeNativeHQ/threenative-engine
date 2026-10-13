@@ -27,6 +27,11 @@ export interface IDesktopLadder {
   width: number;
 }
 
+/** The display every desktop arm runs on; "" means each arm provisions its own Xvfb. One resolver, so a pair never splits across displays. */
+export function benchDisplay(env: NodeJS.ProcessEnv = process.env): string {
+  return env.TN_BENCH_DISPLAY ?? env.DISPLAY ?? "";
+}
+
 // The native host talks to X11 and this machine's session is Wayland, so the run is wrapped in a
 // virtual X server. `SDL_VIDEODRIVER=x11` is required as well: with `WAYLAND_DISPLAY` still set,
 // SDL picks Wayland, the host reports "X11 display not available", and the arm never starts.
@@ -340,8 +345,8 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
   };
   // Use Godot's display by default. A caller may explicitly select another display; with no
   // display at all, the headless lane still provisions Xvfb below.
-  const display = process.env.TN_BENCH_DISPLAY ?? process.env.DISPLAY;
-  if (display !== undefined && display.length > 0) {
+  const display = benchDisplay();
+  if (display.length > 0) {
     return withHostCpu(
       await runCapturing(binary, hostArgs, {
         ...capture,
