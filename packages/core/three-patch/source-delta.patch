@@ -336,15 +336,19 @@ index b89834b9166c75fd946ade24db265bf8c367d244..18e2b7943393fd07b7989b1e3a5231a6
  
  			if ( interleavedMatrix !== null ) {
  
-@@ -216,11 +218,28 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+@@ -216,11 +218,32 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
  
  		const instancedMesh = builder.object;
  
 -		OnObjectUpdate( ( { object } ) => {
 +		const updatePrevious = ( object, array ) => {
 +
-+			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			const history = _previousInstanceMatrices.get( object );
++			if ( array !== matrices.array && history.lastSource === array && history.lastVersion === matrices.version ) return;
++			const { previousInstanceMatrix } = history;
 +			previousInstanceMatrix.array.set( array );
++			history.lastSource = array;
++			history.lastVersion = matrices.version;
 +			previousInstanceMatrix.needsUpdate = true;
 +			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
 +			if ( interleaved !== undefined ) interleaved.needsUpdate = true;

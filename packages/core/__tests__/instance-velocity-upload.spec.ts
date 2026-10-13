@@ -163,6 +163,29 @@ describe("instance matrix uploads at the actual draw boundary", () => {
     f.tracker.clear();
   });
 
+  it("retains direct Three history when a dynamic array changes without a version bump", () => {
+    const f = fixture(true, true, false);
+    const initial = f.draw().current;
+    f.crowd.setMatrixAt(1, new Matrix4().makeTranslation(3, 0, -4));
+    expect(f.draw().previous).toEqual(initial);
+    expect(f.draw().previous).toEqual(f.crowd.instanceMatrix.array);
+  });
+
+  it("does not upload unchanged scheduled history after its first committed draw", () => {
+    const f = fixture(false);
+    f.draw();
+    f.tracker.commit(f.scene);
+    f.tracker.update(f.scene);
+    const initial = f.draw().updates;
+    f.tracker.commit(f.scene);
+    for (let draw = 0; draw < 4; draw += 1) {
+      f.tracker.update(f.scene);
+      expect(f.draw().updates).toBe(initial);
+      f.tracker.commit(f.scene);
+    }
+    f.tracker.clear();
+  });
+
   it("allocates no history and performs no uploads on unchanged temporal-off draws", () => {
     const f = fixture(false, false);
     expect(f.previous).toBeUndefined();
