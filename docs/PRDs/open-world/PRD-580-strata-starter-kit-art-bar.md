@@ -1,6 +1,6 @@
 # PRD-580 — Strata starter-kit art bar
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P2 — Five starter kits still need a score of at least 4 on every visual rubric row.
 **Complexity:** 3 (LOW); risk override: none
 **Owner:** ThreeNative maintainers
@@ -15,6 +15,8 @@ on 2026-10-09. Work proceeds in order: forest, coastal, alpine, desert, tundra.
 A fresh judge subagent must score at least 4 on every rubric row for each kit.
 Ground, trees_rocks and lighting_depth are required. Water and artifacts also
 apply where the kit rubric names them. A nonblank capture is not art acceptance.
+
+Owner-directed work (2026-10-12): João requested two dedicated arms for realistic procedural trees and ground vegetation, with distinct species/variations and high-quality Poly Haven textures that remain inexpensive to render. Tree work owns tree geometry/materials; ground work owns grasses, ferns, shrubs and flowers. Both preserve a sealed source baseline and use existing instancing, LOD, wind and asset preparation, followed by two headed before/after captures and an independent visual judge. Preview improvements must later reach the generated starter kits through newly versioned assets; published archive 0.1.0 remains immutable. The existing rubric and per-kit runtime gates remain required.
 
 ## Solution
 
@@ -43,7 +45,7 @@ All rows must reach 4. Lowering that threshold needs an owner decision first.
 
 ### Phase 1: Forest art
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/terrain/starter/forest/`, shared CC0 starter assets and the existing forest kit scene.
 **Implementation:** Replace faceted crowns and improve rock geometry, ground detail, shadows and sky. Keep all appearance editable.
 
