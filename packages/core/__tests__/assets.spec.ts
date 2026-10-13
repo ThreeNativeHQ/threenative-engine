@@ -832,7 +832,7 @@ describe("IAssetLoader compressed textures", () => {
       loader.detectSupport({
         isWebGPURenderer: true,
         hasFeature: (name: string) => name === "texture-compression-astc",
-      } as Parameters<KTX2Loader["detectSupport"]>[0]);
+      } as unknown as Parameters<KTX2Loader["detectSupport"]>[0]);
       const init = vi.spyOn(loader, "init").mockImplementation(() => {
         throw new Error("unexpected transcoder init");
       });
@@ -893,20 +893,24 @@ describe("IAssetLoader compressed textures", () => {
           };
       const disposed = vi.fn();
       let parsed: CompressedTexture | undefined;
-      vi.spyOn(KTX2Loader.prototype, "load").mockImplementation(
-        function (_url, onLoad, _onProgress, onError) {
-          this.parse(
-            bytes.buffer,
-            (texture) => {
-              parsed = texture;
-              texture.addEventListener("dispose", disposed);
-              onLoad?.(texture);
-            },
-            onError,
-          );
-          return undefined;
-        },
-      );
+      vi.spyOn(KTX2Loader.prototype, "load").mockImplementation(function (
+        this: KTX2Loader,
+        _url,
+        onLoad,
+        _onProgress,
+        onError,
+      ) {
+        this.parse(
+          bytes.buffer,
+          (texture: CompressedTexture) => {
+            parsed = texture;
+            texture.addEventListener("dispose", disposed);
+            onLoad?.(texture);
+          },
+          onError,
+        );
+        return undefined;
+      });
       const init = vi.spyOn(KTX2Loader.prototype, "init").mockImplementation(() => {
         throw new Error("unexpected transcoder init");
       });
