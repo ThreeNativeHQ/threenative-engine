@@ -140,7 +140,14 @@ function setupNode(light: DirectionalLight, options = {}): VirtualShadowNode {
 
 /** The real render belongs to three's renderer; the draw itself is not what these tests measure. */
 function stubLevelRenders(node: VirtualShadowNode): void {
-  for (const levelNode of [...node.levelNodes, ...node.moverNodes]) {
+  for (const [index, levelNode] of node.levelNodes.entries()) {
+    const light = node.levelLights[index] as DirectionalLight;
+    (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+      // Stock whole draws compose the receiver matrix; partial draws keep that full matrix.
+      if (light.shadow.camera.view?.enabled !== true) light.shadow.updateMatrices(light);
+    };
+  }
+  for (const levelNode of node.moverNodes) {
     (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () =>
       undefined;
   }
@@ -1320,6 +1327,238 @@ describe("VirtualShadowNode invalidation coalescing", () => {
   });
 
   /**
+   * One 500 m level of 64² pages, settled, and the render that follows `ask` on the next frame
+   * past its delay. Returns what that one render added to the page counters.
+   */
+  function pagesOfRedraw(ask: (node: VirtualShadowNode) => void): {
+    byAdmission: number;
+    byEviction: number;
+    pagesDirty: number;
+    pagesRedrawn: number;
+  } {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    const renders = countRenders(node);
+    const before = { ...node.stats };
+    ask(node);
+    for (let step = 0; step < 40 && renders[0] === 0; step += 1) {
+      time += 0.1;
+      node.updateBefore(frameFor(camera, time));
+    }
+    expect(renders[0]).toBe(1);
+    const after = node.stats;
+    return {
+      byAdmission: after.byAdmission - before.byAdmission,
+      byEviction: after.byEviction - before.byEviction,
+      pagesDirty: after.pagesDirty - before.pagesDirty,
+      pagesRedrawn: after.pagesRedrawn - before.pagesRedrawn,
+    };
+  }
+
+  /** A streamed cell near the camera: a few pages of the level's 64 x 64. */
+  const CELL = { min: { x: 20, y: 0, z: 20 }, max: { x: 36, y: 8, z: 36 } };
+  const PAGES = 64 * 64;
+
+  it("should mark exactly the pages a region overlaps dirty", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    settleOnClock(node, camera);
+    const expected = node.clipmap.boundsToPageKeys(CELL, 0).length;
+    expect(expected).toBeGreaterThan(0);
+    expect(expected).toBeLessThan(PAGES / 2);
+    const redraw = pagesOfRedraw((asked) => asked.invalidateRegion(CELL, true));
+    expect(redraw.pagesDirty).toBe(expected);
+  });
+
+  it("should split admission redraws from eviction redraws", () => {
+    expect(pagesOfRedraw((node) => node.invalidateRegion(CELL, true))).toMatchObject({
+      byAdmission: 1,
+      byEviction: 0,
+    });
+    expect(pagesOfRedraw((node) => node.invalidateRegion(CELL))).toMatchObject({
+      byAdmission: 0,
+      byEviction: 1,
+    });
+    // One eviction among admissions makes the redraw an eviction one.
+    expect(
+      pagesOfRedraw((node) => {
+        node.invalidateRegion(CELL, true);
+        node.invalidateRegion(CELL);
+      }),
+    ).toMatchObject({ byAdmission: 0, byEviction: 1 });
+  });
+
+  it("should use the region's admission marker unless explicitly overridden", () => {
+    const admitted = { ...CELL, admission: true };
+    expect(pagesOfRedraw((node) => node.invalidateRegion(admitted))).toMatchObject({
+      byAdmission: 1,
+      byEviction: 0,
+    });
+    expect(pagesOfRedraw((node) => node.invalidateRegion(admitted, false))).toMatchObject({
+      byAdmission: 0,
+      byEviction: 1,
+    });
+    expect(
+      pagesOfRedraw((node) => node.invalidateRegion({ ...CELL, admission: false }, true)),
+    ).toMatchObject({ byAdmission: 1, byEviction: 0 });
+  });
+
+  it("should mark the whole level for an ask with no region", () => {
+    expect(pagesOfRedraw((node) => node.invalidateAll())).toMatchObject({
+      byEviction: 1,
+      pagesDirty: PAGES,
+    });
+  });
+
+  it("should mark the whole level when more than half the pages are dirty", () => {
+    const wide = { min: { x: -200, y: 0, z: -200 }, max: { x: 200, y: 8, z: 200 } };
+    expect(pagesOfRedraw((node) => node.invalidateRegion(wide, true)).pagesDirty).toBe(PAGES);
+  });
+
+  it("should redraw the whole level when its window moved", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    const renders = countRenders(node);
+    const before = { ...node.stats };
+    node.invalidateRegion(CELL, true);
+    camera.position.set(400, 5, 0);
+    for (let step = 0; step < 40 && renders[0] === 0; step += 1) {
+      time += 0.1;
+      node.updateBefore(frameFor(camera, time));
+    }
+    expect(renders[0]).toBe(1);
+    expect(node.stats.pagesDirty - before.pagesDirty).toBe(PAGES);
+    expect(node.stats.byMove - before.byMove).toBe(1);
+    expect(node.stats.byAdmission - before.byAdmission).toBe(0);
+  });
+
+  /** What the level-0 shadow camera was aimed at on each render the node took after `ask`. */
+  interface IAimedRender {
+    enabled: boolean;
+    height: number;
+    width: number;
+    x: number;
+    y: number;
+  }
+
+  function aimedRenders(
+    ask: (node: VirtualShadowNode) => void,
+    options: { partialRedraw?: boolean } = {},
+  ): { aimed: IAimedRender[]; node: VirtualShadowNode } {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64, ...options });
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    const aimed: IAimedRender[] = [];
+    const shadowCamera = (node.levelLights[0] as unknown as { shadow: { camera: unknown } }).shadow
+      .camera as unknown as {
+      view: { enabled: boolean; height: number; offsetX: number; offsetY: number; width: number };
+    } | null;
+    (node.levelNodes[0] as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow =
+      () => {
+        const view = shadowCamera?.view;
+        aimed.push({
+          enabled: view?.enabled === true,
+          height: view?.height ?? 0,
+          width: view?.width ?? 0,
+          x: view?.offsetX ?? 0,
+          y: view?.offsetY ?? 0,
+        });
+      };
+    ask(node);
+    for (let step = 0; step < 40 && aimed.length === 0; step += 1) {
+      time += 0.1;
+      node.updateBefore(frameFor(camera, time));
+    }
+    return { aimed, node };
+  }
+
+  it("should aim one rectangle of exactly the dirty pages for an admission", () => {
+    const { aimed, node } = aimedRenders((asked) => asked.invalidateRegion(CELL, true));
+    expect(aimed).toHaveLength(1);
+    const [pass] = aimed as [IAimedRender];
+    expect(pass.enabled).toBe(true);
+    expect(pass.width * pass.height).toBe(node.clipmap.boundsToPageKeys(CELL, 0).length);
+    expect(node.stats.pagesRedrawn).toBe(PAGES + pass.width * pass.height);
+    // The camera is whole again once the render is over, so the receivers sample the full map.
+    const camera = (node.levelLights[0] as unknown as { shadow: { camera: unknown } }).shadow
+      .camera as unknown as { view: { enabled: boolean } };
+    expect(camera.view.enabled).toBe(false);
+  });
+
+  it("should preserve the full receiver matrix during GPU-key partial redraws", () => {
+    vi.stubGlobal("__tnShadowGpuKeys", 1);
+    try {
+      const { camera, light, scene } = world();
+      const keys = vi.fn();
+      Object.assign(scene, { tnShadowGpuKeys: keys });
+      const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+      camera.position.set(0, 5, 0);
+      let time = settleOnClock(node, camera);
+      const shadow = (node.levelLights[0] as DirectionalLight).shadow;
+      const full = shadow.matrix.clone();
+      keys.mockClear();
+      const sampled: number[][] = [];
+      (node.levelNodes[0] as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow =
+        () => {
+          expect(shadow.camera.view?.enabled).toBe(true);
+          sampled.push([...shadow.matrix.elements]);
+        };
+      node.invalidateRegion(CELL, true);
+      for (let step = 0; step < 40 && sampled.length === 0; step += 1) {
+        time += 0.1;
+        node.updateBefore(frameFor(camera, time));
+      }
+      expect(keys).toHaveBeenCalled();
+      expect(sampled).toEqual([full.elements]);
+      expect(shadow.camera.view?.enabled).toBe(false);
+      expect(shadow.matrix.elements).toEqual(full.elements);
+      node.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("should draw an eviction and an admission as two rectangles", () => {
+    const elsewhere = { min: { x: -60, y: 0, z: -60 }, max: { x: -44, y: 8, z: -44 } };
+    const { aimed } = aimedRenders((asked) => {
+      asked.invalidateRegion(CELL, true);
+      asked.invalidateRegion(elsewhere);
+    });
+    expect(aimed).toHaveLength(2);
+    expect(aimed.every((pass) => pass.enabled)).toBe(true);
+  });
+
+  it("should draw the whole level when partial redraw is off", () => {
+    const { aimed } = aimedRenders((asked) => asked.invalidateRegion(CELL, true), {
+      partialRedraw: false,
+    });
+    expect(aimed).toEqual([{ enabled: false, height: 0, width: 0, x: 0, y: 0 }]);
+  });
+
+  it("should draw the whole level when more than half the pages are dirty", () => {
+    const wide = { min: { x: -200, y: 0, z: -200 }, max: { x: 200, y: 8, z: 200 } };
+    const { aimed } = aimedRenders((asked) => asked.invalidateRegion(wide, true));
+    expect(aimed.map((pass) => pass.enabled)).toEqual([false]);
+  });
+
+  it("should round-trip the page counters through the marker line", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    settleOnClock(node, camera);
+    const parsed = readVirtualShadowMarker(
+      `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify(node.stats)}`,
+    );
+    expect(parsed).toMatchObject({ byAdmission: 0, byEviction: 0, pagesDirty: PAGES });
+  });
+
+  /**
    * One 500 m level, as Machinefall runs it, whose last redraw resolved at `redrawMs` of GPU. Returns
    * how long after the first of a stream of asks (one a frame) the level redrew for them.
    */
@@ -1903,6 +2142,283 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     const withoutTower = levelCamera(node, 0).far - levelCamera(node, 0).near;
     expect(withTower).toBeGreaterThan(withoutTower);
     expect(holds(node, 0, new Vector3(0, 10 + TALL_RADIUS, 24 * Math.SQRT2))).toBe(false);
+    node.dispose();
+  });
+
+  /**
+   * Where a world point lands in a level's map: the texel it writes and the depth stored there.
+   * That is the receiver matrix the level samples every fragment through, so a texel the map kept
+   * and a point outside the rectangle have to agree on it.
+   */
+  function projected(node: VirtualShadowNode, level: number, point: Vector3): Vector3 {
+    const light = levelLight(node, level) as unknown as DirectionalLight;
+    light.shadow.updateMatrices(light);
+    return point.clone().applyMatrix4(light.shadow.matrix);
+  }
+
+  interface IRenderedRedraw {
+    far: number;
+    near: number;
+    partial: boolean;
+  }
+
+  /** What one level's next redraw drew with: its rectangle, and the depth it drew it in. */
+  function nextRedraw(
+    node: VirtualShadowNode,
+    camera: PerspectiveCamera,
+    ask: () => void,
+  ): IRenderedRedraw[] {
+    const draws: IRenderedRedraw[] = [];
+    (node.levelNodes[0] as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow =
+      () => {
+        const level = levelCamera(node, 0);
+        draws.push({ far: level.far, near: level.near, partial: level.view?.enabled === true });
+      };
+    ask();
+    for (let step = 0; step < 40 && draws.length === 0; step += 1)
+      node.updateBefore(frameFor(camera));
+    return draws;
+  }
+
+  it("should redraw the whole level when a streamed caster moves the span a partial redraw would keep", () => {
+    const { camera, light, mass, scene } = shadowWorld();
+    // Without the 500 m slab, whose own 708 m of span every other caster fits inside: a tower here
+    // can move the span it has to be covered in.
+    mass.removeFromParent();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    settle(node, camera);
+    // A ground point the map already holds, and the span it holds it in.
+    const resident = new Vector3(0, 0, 0);
+    const before = projected(node, 0, resident);
+    const held = levelCamera(node, 0);
+    const near = held.near;
+    const far = held.far;
+    // A 120 m tower streams into the window: 120 m of depth the map was never drawn with.
+    const tower = new Mesh(new BoxGeometry(6, 120, 6), new MeshStandardMaterial());
+    tower.position.set(30, 60, 30);
+    tower.castShadow = true;
+    scene.add(tower);
+    scene.updateMatrixWorld(true);
+    const draws = nextRedraw(node, camera, () =>
+      node.invalidateRegion({ min: { x: 20, y: 0, z: 20 }, max: { x: 44, y: 120, z: 44 } }, true),
+    );
+    expect(draws).toHaveLength(1);
+    expect(levelCamera(node, 0).near).not.toBeCloseTo(near, 3);
+    // A rectangle redraws only the pages it names and keeps every other texel, and a kept texel
+    // holds its depth as the span that drew it encoded it. So a moved span is a whole redraw.
+    expect(draws[0]?.partial, "a kept texel cannot be read with a span it was not drawn in").toBe(
+      false,
+    );
+    // And the redraw that replaced it re-encodes the whole map with it, so the point keeps its texel.
+    const after = projected(node, 0, resident);
+    expect(after.x).toBeCloseTo(before.x, 9);
+    expect(after.y).toBeCloseTo(before.y, 9);
+    node.dispose();
+  });
+
+  it("should keep a partial redraw partial while its span holds, across a camera move along the light", () => {
+    const { camera, light, scene } = shadowWorld();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    settle(node, camera);
+    const resident = new Vector3(0, 0, 0);
+    const before = projected(node, 0, resident);
+    const held = levelCamera(node, 0);
+    const near = held.near;
+    const far = held.far;
+    // The camera travels along the light only: the page window stands still, so the level keeps
+    // its map, and the point it holds still projects to the same texel and the same depth.
+    camera.position.addScaledVector(SUN, 4);
+    node.updateBefore(frameFor(camera));
+    expect(projected(node, 0, resident).toArray()).toEqual(before.toArray());
+    // A caster inside the span it already holds is the ordinary streamed admission.
+    const low = new Mesh(new BoxGeometry(4, 4, 4), new MeshStandardMaterial());
+    low.position.set(-6, 2, 0);
+    low.castShadow = true;
+    scene.add(low);
+    scene.updateMatrixWorld(true);
+    const draws = nextRedraw(node, camera, () =>
+      node.invalidateRegion({ min: { x: -10, y: 0, z: -4 }, max: { x: 0, y: 4, z: 4 } }, true),
+    );
+    expect(draws).toEqual([{ far, near, partial: true }]);
+    // The kept texels were drawn in this span, so the receiver matrix still reads them the same.
+    expect(projected(node, 0, resident).toArray()).toEqual(before.toArray());
+    node.dispose();
+  });
+
+  it("should keep the drawn span when an eviction shrinks a derived span, so kept texels still decode", () => {
+    const { camera, light, mass, scene } = shadowWorld();
+    // Without the 500 m slab, a 120 m tower is the top of the span the level derives.
+    mass.removeFromParent();
+    const tower = new Mesh(new BoxGeometry(6, 120, 6), new MeshStandardMaterial());
+    tower.position.set(30, 60, 30);
+    tower.castShadow = true;
+    scene.add(tower);
+    scene.updateMatrixWorld(true);
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    settle(node, camera);
+    const resident = new Vector3(0, 0, 0);
+    const before = projected(node, 0, resident);
+    const near = levelCamera(node, 0).near;
+    const far = levelCamera(node, 0).far;
+    // The walk's common ask: the caster at the top of the span leaves. A re-derived span would move
+    // the camera down the light and every texel outside the rectangle would decode deeper than the
+    // ground under it, which is the shadow walk03 lost.
+    tower.removeFromParent();
+    scene.updateMatrixWorld(true);
+    const draws = nextRedraw(node, camera, () =>
+      node.invalidateRegion({ min: { x: 20, y: 0, z: 20 }, max: { x: 40, y: 120, z: 40 } }),
+    );
+    expect(draws).toEqual([{ far, near, partial: true }]);
+    expect(projected(node, 0, resident).toArray()).toEqual(before.toArray());
+    // The next whole render measures the smaller span again.
+    node.invalidateAll();
+    settle(node, camera);
+    expect(levelCamera(node, 0).far - levelCamera(node, 0).near).toBeLessThan(far - near);
+    node.dispose();
+  });
+
+  it("should redraw the whole level when an authored span travels the camera off its depth origin", () => {
+    const { camera, light, scene } = shadowWorld();
+    // The span this scene authors: `lightDistance` and `depthRange` pin near and far, so no render
+    // ever derives them and every level's depth axis is the one below.
+    const node = setupNode(light, { clipExtents: [250], depthRange: 400, lightDistance: 200 });
+    settle(node, camera);
+    const resident = new Vector3(0, 0, 0);
+    const before = projected(node, 0, resident);
+    const held = levelCamera(node, 0);
+    const near = held.near;
+    const far = held.far;
+    // The camera travels along the light only: the snapped u/v window stands still, so no window
+    // moves and the level keeps the camera the map was drawn from.
+    camera.position.addScaledVector(SUN, 4);
+    node.updateBefore(frameFor(camera));
+    expect(projected(node, 0, resident).toArray()).toEqual(before.toArray());
+    // A caster inside the authored span arrives: an ordinary local admission.
+    const low = new Mesh(new BoxGeometry(4, 4, 4), new MeshStandardMaterial());
+    low.position.set(-6, 2, 0);
+    low.castShadow = true;
+    scene.add(low);
+    scene.updateMatrixWorld(true);
+    const draws = nextRedraw(node, camera, () =>
+      node.invalidateRegion({ min: { x: -10, y: 0, z: -4 }, max: { x: 0, y: 4, z: 4 } }, true),
+    );
+    expect(draws).toHaveLength(1);
+    // The span alone cannot see this: it is the same near and far the map was drawn with, so the
+    // camera's world-space depth origin is the only thing that says the encoding moved.
+    expect(levelCamera(node, 0).near).toBe(near);
+    expect(levelCamera(node, 0).far).toBe(far);
+    expect(
+      draws[0]?.partial,
+      "a kept texel cannot be read from a camera it was not drawn from",
+    ).toBe(false);
+    // And the whole redraw re-encodes the map from that camera, which moves the depth of the point
+    // the map has held since the first render.
+    expect(projected(node, 0, resident).z).not.toBeCloseTo(before.z, 3);
+    node.dispose();
+  });
+
+  it("should redraw the whole level when a derived span translates without changing width", () => {
+    const { camera, light, scene } = shadowWorld();
+    // One caster whose span the level derives, so its eye and its near/far both come from that one
+    // box: the same 40 m of depth, and then the same 40 m of depth 4 m further along the sun.
+    for (const child of [...scene.children]) if (child instanceof Mesh) scene.remove(child);
+    const stand = (metres: number): Mesh => {
+      const box = new Mesh(new BoxGeometry(4, 20, 4), new MeshStandardMaterial());
+      box.position.set(0, 10, 0).addScaledVector(SUN, metres);
+      box.castShadow = true;
+      scene.add(box);
+      scene.updateMatrixWorld(true);
+      return box;
+    };
+    const first = stand(0);
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64 });
+    settle(node, camera);
+    const resident = new Vector3(0, 0, 0);
+    const before = projected(node, 0, resident);
+    const held = levelCamera(node, 0);
+    const near = held.near;
+    const far = held.far;
+    // The same box stands 4 m along the sun. The old one leaves and the new one arrives, so the
+    // level's whole span moves with it: near and far come out the numbers they were, and only the
+    // eye is somewhere else.
+    scene.remove(first);
+    const second = stand(4);
+    const at = second.position;
+    const draws = nextRedraw(node, camera, () =>
+      node.invalidateRegion(
+        { min: { x: at.x - 6, y: 0, z: at.z - 6 }, max: { x: at.x + 6, y: 20, z: at.z + 6 } },
+        true,
+      ),
+    );
+    expect(draws).toHaveLength(1);
+    expect(levelCamera(node, 0).near).toBe(near);
+    expect(levelCamera(node, 0).far).toBe(far);
+    // Same span, other origin: a kept texel holds the depth measured from the camera that drew it,
+    // so a camera that moved along the light re-encodes every texel the rectangle keeps.
+    expect(
+      draws[0]?.partial,
+      "a kept texel cannot be read from a camera it was not drawn from",
+    ).toBe(false);
+    expect(projected(node, 0, resident).z).not.toBeCloseTo(before.z, 3);
+    node.dispose();
+  });
+
+  /**
+   * The depth origin a level's camera sits at, read off its own placement rather than off the
+   * node's numbers: the light's own position on the axis between its target and itself. A world-space
+   * double, and the number a partial redraw used to compare instead of what the map is read through.
+   */
+  function levelOrigin(node: VirtualShadowNode, level: number): number {
+    const light = levelLight(node, level) as unknown as DirectionalLight;
+    const back = light.position.clone().sub(light.target.position).normalize();
+    return light.position.dot(back);
+  }
+
+  it("should redraw the whole level when two world origins share a float32 bin and the depth they encode does not", () => {
+    const { camera, light, scene } = shadowWorld();
+    // A camera sixteen megametres up the sun. Its float32 bin is two metres wide, and the authored
+    // `lightDistance` and `depthRange` put it there, so the receiver depth three composes from that
+    // origin is `(origin - near) / (far - near)`: the near subtraction and the division the origin
+    // cannot be compared through. Two origins inside one bin, and one float32 ulp of depth apart.
+    const node = setupNode(light, { clipExtents: [250], depthRange: 400, lightDistance: 16777216 });
+    settle(node, camera);
+    const resident = new Vector3(0, 0, 0);
+    const before = Math.fround(projected(node, 0, resident).z);
+    const drawnOrigin = levelOrigin(node, 0);
+    const held = { minX: node.clipmap.getWindow(0).minX, minY: node.clipmap.getWindow(0).minY };
+    // Forty centimetres along the light: a fifth of an origin bin, and less than a snapped page can
+    // see, so the level keeps the window and the camera its map was drawn from.
+    camera.position.addScaledVector(SUN, 0.4);
+    node.updateBefore(frameFor(camera));
+    expect(node.clipmap.getWindow(0).minX, "no snapped window moves").toBe(held.minX);
+    expect(node.clipmap.getWindow(0).minY, "no snapped window moves").toBe(held.minY);
+    // A caster inside the authored span arrives: an ordinary local admission.
+    const low = new Mesh(new BoxGeometry(4, 4, 4), new MeshStandardMaterial());
+    low.position.set(-6, 2, 0);
+    low.castShadow = true;
+    scene.add(low);
+    scene.updateMatrixWorld(true);
+    const draws: { depth: number; origin: number; partial: boolean }[] = [];
+    (node.levelNodes[0] as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow =
+      () => {
+        draws.push({
+          depth: Math.fround(projected(node, 0, resident).z),
+          origin: levelOrigin(node, 0),
+          partial: levelCamera(node, 0).view?.enabled === true,
+        });
+      };
+    node.invalidateRegion({ min: { x: -10, y: 0, z: -4 }, max: { x: 0, y: 4, z: 4 } }, true);
+    for (let step = 0; step < 40 && draws.length === 0; step += 1)
+      node.updateBefore(frameFor(camera));
+    expect(draws).toHaveLength(1);
+    // The premise, in the two numbers it is about: one float32 bin holds both world origins, and one
+    // float32 ulp of the depth a receiver reads is the difference between them.
+    expect(Math.fround(draws[0]?.origin ?? 0)).toBe(Math.fround(drawnOrigin));
+    expect(draws[0]?.depth).not.toBe(before);
+    expect(
+      draws[0]?.partial,
+      "a kept texel cannot be read through a depth offset it was not written under",
+    ).toBe(false);
     node.dispose();
   });
 

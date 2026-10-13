@@ -352,7 +352,7 @@ export class CellRender {
 
   /**
    * Streamed records changed since the shadow levels were last told, and when they were last told.
-   * One blanket `invalidate` a second, and only for a game that passed the hook: the companions
+   * One invalidation batch a second, and only for a game that passed the hook: the companions
    * used to make the hook necessary, and now the levels cull clusters themselves.
    */
   // `true` so the first `update` runs a residency pass: `#residencyStale` reads it, and a fresh
@@ -362,11 +362,12 @@ export class CellRender {
   #shadowToldAt = Number.NEGATIVE_INFINITY;
 
   /**
-   * The union of the bounds of the records that moved since the levels were last told, so the tell
-   * carries the region rather than the whole cascade. `undefined` is a change with no region to
-   * name — the prewarm's blanket ask — and is handed on as no argument at all.
+   * Separate unions of evicted and admitted records since the levels were last told. An unknown
+   * region sets `#shadowFull`, so a narrower later change cannot discard the blanket ask.
    */
   #shadowRegion: IShadowRegion | undefined;
+  #shadowAdmissionRegion: IShadowRegion | undefined;
+  #shadowFull = false;
 
   /** When `TN_WORLD_MAIN_CULL` was last printed; see {@link #reportMainCull}. */
   #mainCullToldAt = 0;
@@ -807,8 +808,10 @@ export class CellRender {
     }
     // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
     // that drew the old ones are stale. One flag, told at most once a second.
-    if (job.fresh.length > 0 || job.replaced.length > 0)
-      this.shadowRecordsMoved(this.changedBounds(job.fresh, job.replaced));
+    if (job.fresh.some((entry) => entry.batch.count > 0))
+      this.shadowRecordsMoved(this.changedBounds(job.fresh), true);
+    if (job.replaced.some((entry) => entry.batch.count > 0))
+      this.shadowRecordsMoved(this.changedBounds(job.replaced));
     // This run's near representation is attached, so the far mesh stops drawing its original roots in
     // the same synchronous block: a cell is never drawn by both and never by neither. A no-op until
     // the asset's atlas lands; see `#syncFarSegments` for the build-time half and `#restoreFar`.
@@ -817,19 +820,22 @@ export class CellRender {
   }
 
   /**
-   * The world bounds of the records these groups moved: the union of what each batch held, in and
-   * out. Both sides, because a record that leaves is ground a level was drawing; `undefined` when
-   * neither held one, and then the tell is the blanket one.
+   * The world bounds of these records. A missing bound keeps the tell a blanket one.
    */
-  changedBounds(fresh: readonly ICellBatch[], replaced: readonly ICellBatch[]): Box3 | undefined {
+  changedBounds(batches: readonly ICellBatch[]): Box3 | undefined {
     let union: Box3 | undefined;
-    for (const group of [fresh, replaced])
-      for (const entry of group) {
-        const box = entry.shadowBounds;
-        if (box === undefined) continue;
-        if (union === undefined) union = box.clone();
-        else union.union(box);
-      }
+    for (const entry of batches) {
+      if (entry.batch.count === 0) continue;
+      const box = entry.shadowBounds;
+      if (
+        box === undefined ||
+        box.isEmpty() ||
+        ![...box.min.toArray(), ...box.max.toArray()].every(Number.isFinite)
+      )
+        return undefined;
+      if (union === undefined) union = box.clone();
+      else union.union(box);
+    }
     return union;
   }
 
@@ -913,15 +919,27 @@ export class CellRender {
    * changed in the same second. A change with no bounds is a blanket one: it has to be, because
    * there is nothing narrower to say.
    */
-  shadowRecordsMoved(bounds?: Box3): void {
+  shadowRecordsMoved(bounds?: Box3, admission = false): void {
     this.#shadowMoved = true;
-    if (bounds === undefined || bounds.isEmpty()) return;
-    const current = this.#shadowRegion;
+    if (
+      bounds === undefined ||
+      bounds.isEmpty() ||
+      ![bounds.min.x, bounds.min.y, bounds.min.z, bounds.max.x, bounds.max.y, bounds.max.z].every(
+        Number.isFinite,
+      )
+    ) {
+      this.#shadowFull = true;
+      return;
+    }
+    const current = admission ? this.#shadowAdmissionRegion : this.#shadowRegion;
     if (current === undefined) {
-      this.#shadowRegion = {
+      const region: IShadowRegion = {
+        ...(admission ? { admission: true } : {}),
         max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
         min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
       };
+      if (admission) this.#shadowAdmissionRegion = region;
+      else this.#shadowRegion = region;
       return;
     }
     current.min.x = Math.min(current.min.x, bounds.min.x);
@@ -933,7 +951,7 @@ export class CellRender {
   }
 
   /**
-   * Tell the shadow levels once, if anything changed and a second has passed.
+   * Tell the shadow levels in up to two calls, if anything changed and a second has passed.
    *
    * The companions used to make this the expensive call it still is; the levels redraw from
    * scratch, so the cadence is the only lever and once a second is the one that keeps a walk's
@@ -949,6 +967,8 @@ export class CellRender {
     if (this.#invalidateShadows === undefined) {
       this.#shadowMoved = false;
       this.#shadowRegion = undefined;
+      this.#shadowAdmissionRegion = undefined;
+      this.#shadowFull = false;
       return;
     }
     const now = this.#host.now();
@@ -956,9 +976,23 @@ export class CellRender {
     this.#shadowToldAt = now;
     this.#shadowMoved = false;
     const region = this.#shadowRegion;
+    const admission = this.#shadowAdmissionRegion;
+    const full = this.#shadowFull;
     this.#shadowRegion = undefined;
-    if (region === undefined) this.#invalidateShadows();
-    else this.#invalidateShadows(region);
+    this.#shadowAdmissionRegion = undefined;
+    this.#shadowFull = false;
+    if (full || (region === undefined && admission === undefined)) this.#invalidateShadows();
+    else {
+      if (region !== undefined) this.#invalidateShadows(region);
+      if (admission !== undefined) this.#invalidateShadows(admission);
+    }
+  }
+
+  resetShadows(): void {
+    this.#shadowMoved = false;
+    this.#shadowRegion = undefined;
+    this.#shadowAdmissionRegion = undefined;
+    this.#shadowFull = false;
   }
 
   /**
@@ -2383,7 +2417,7 @@ export class CellRender {
   }
   publishChunkBounds(cell: IResidentCell, box: Box3 | undefined, proxies: number): void {
     if (box !== undefined) {
-      if (proxies > 0) this.shadowRecordsMoved(box);
+      if (proxies > 0) this.shadowRecordsMoved(box, true);
       // A bundled chunk is drawn or not by its cell's record, and that record is answered from
       // the cell's cull volume — which is built from the cell's placements. A chunk is a cell's
       // other half, so a cell holding chunks and no scatter would have an empty volume and never

@@ -126,11 +126,11 @@ export interface IWorldCellsLoadOptions {
      */
     readonly castDistance?: number;
     /**
-     * Called at most once a second after streamed records changed, so the shadow levels that read
-     * them redraw. `VirtualShadowNode.invalidateAll` is the whole of it, and a call with no region
-     * is exactly that. Not called per frame, and not called at all when nothing changed.
+     * Called in a batch at most once a second after streamed records changed, so the shadow levels
+     * that read them redraw. A call with no region asks `VirtualShadowNode.invalidateAll`;
+     * nothing changed means no call.
      *
-     * When it is called about records, it is called with the union of the bounds of the records
+     * Admissions and evictions are separate calls, each with the union of the bounds of the records
      * that changed — the placement position widened by the asset's own bounds, unioned over the
      * records of this update and nothing else, so a hook that forwards it to
      * `VirtualShadowNode.invalidateRegion` redraws the levels whose window covers them and leaves
@@ -497,6 +497,8 @@ export interface IPrewarmEntry {
  * in is the object that crosses the boundary.
  */
 export interface IShadowRegion {
+  /** Only added casters; their redraw can retain the existing depth. */
+  admission?: boolean;
   min: { x: number; y: number; z: number };
   max: { x: number; y: number; z: number };
 }

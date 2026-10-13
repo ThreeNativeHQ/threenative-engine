@@ -1678,6 +1678,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#spawnWaiters.clear();
     this.#prewarm.releaseHooks();
     for (const cell of [...this.#resident.values()]) this.#evict(cell);
+    this.#render.resetShadows();
     // Every chunk is gone by now, so the surfaces the world owns on their behalf are the last thing
     // holding them, and they are released here rather than by whichever chunk contributed them.
     this.#chunks.releaseMaterials();
@@ -2427,7 +2428,7 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const entry of cell.batches) this.#render.clearSegment(entry);
     // The same invalidation `#swap` makes, for the eviction path: the records that just left the
     // ring are ground the levels were drawing, and they are named one batch at a time.
-    this.#render.shadowRecordsMoved(this.#render.changedBounds(cell.batches, []));
+    this.#render.shadowRecordsMoved(this.#render.changedBounds(cell.batches));
     cell.batches.length = 0;
     // The cell's record of those chunks goes with them, so a replay can never draw a cell the world
     // has released — before they leave the group, which is where it counts what it holds. See

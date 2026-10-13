@@ -239,7 +239,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // strata branch: measured through createProject on the merged tree.
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
-  "action-rpg": "dd6ac8d7ba67d9dbdb458dd274ec807c95e7a5289227c5bd7e61fb0be78bd00d",
+  "action-rpg": "d61c3347d16d3090f5b422627f6a513d40b96aafbf25ad7bd263f086f180e3ef",
   minimal: "40889ceb608ec4d8913fd7c7f25aa573c60d2f620fd4b24569c9095cbaf3c0dd",
   platformer: "db7683e749b58a40460260fd2c421217ff02bf3befb48c664419e46a9e50f9a0",
   puzzle: "a4a50d742eae5ebf871f55a7cbd9222282d2f9f652b9e4539f4dd6eaf75f55f8",
