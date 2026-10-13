@@ -296,6 +296,7 @@ export function trendsOf(runs: readonly IMidwayRun[]): ITrend[] {
   return [
     trend("ms", "Main-thread ms per frame", "ms", legacy, "three.js", mainThreadMs),
     trend("hud", "HUD round trip p95", "ms", TARGETS.hudP95Ms, "target", (r) => r.ui?.p95),
+    trend("instr", "Instructions per frame (M)", "M", undefined, "", instrM),
     trend(
       "matrix",
       "Matrix walk visited",
@@ -307,43 +308,109 @@ export function trendsOf(runs: readonly IMidwayRun[]): ITrend[] {
   ];
 }
 
+/** Main-thread user-space instructions per frame in millions: steady on a shared host where ms swings. */
+export const instrM = (r: IMidwayRun) => {
+  const k = r.desktop?.medians.cpuFrameKInstructions;
+  return k === undefined ? undefined : k / 1000;
+};
+
+export interface IAbRun {
+  dir: string;
+  pkg: string;
+  ms: number;
+  /** Millions of instructions per frame, when the run carries the counter. */
+  instr?: number;
+  round: number;
+}
+export interface IAbStep {
+  from: string;
+  to: string;
+  /** Keep rule: every run of `to` beats every run of `from` (lower is better). */
+  verdict: "keep" | "reject";
+  /** Medians on the decision metric. */
+  medianFrom: number;
+  medianTo: number;
+  msFrom: number;
+  msTo: number;
+}
 export interface IAbPair {
   stem: string;
   arm: Arm;
-  a: { dir: string; pkg: string; ms: number }[];
-  b: { dir: string; pkg: string; ms: number }[];
-  /** Keep rule: every B beats every A (lower ms per frame). */
+  /** Instructions per frame when every run of the group carries it, ms per frame otherwise. */
+  metric: "instr" | "ms";
+  arms: { name: string; runs: IAbRun[] }[];
+  /** Consecutive arms compared: `a` then `b`, or `base` then `ac3` then `ac4`. */
+  steps: IAbStep[];
   verdict: "keep" | "reject" | "pending";
-  medianA?: number;
-  medianB?: number;
 }
 
-/** Pairs groups named `<stem>-a` and `<stem>-b` of the same arm. */
+/** `<stem>-<arm><round>` with a one-digit round: `walk-a1`, `instr-base1`, `instr-ac31` (arm `ac3`, round 1). */
+const ROTATION = /^(.+)-([a-z][a-z0-9]*)(\d)$/;
+
+/** Arms are alphabetical when they are single letters (`a`, `b`), otherwise in the order they first ran. */
+function ordered(arms: { name: string; first: number; runs: IAbRun[] }[]) {
+  const letters = arms.every((a) => a.name.length === 1);
+  return [...arms].sort((x, y) => (letters ? x.name.localeCompare(y.name) : x.first - y.first));
+}
+
+/** Groups runs by `<stem>-<arm><round>` tags and applies the keep rule between consecutive arms. */
 export function abPairsOf(runs: readonly IMidwayRun[]): IAbPair[] {
-  const sides = new Map<string, { stem: string; arm: Arm; a: IAbPair["a"]; b: IAbPair["b"] }>();
+  const groups = new Map<
+    string,
+    { stem: string; arm: Arm; arms: Map<string, { name: string; first: number; runs: IAbRun[] }> }
+  >();
   for (const r of runs) {
-    const m = /^(.+)-([ab])$/.exec(r.group);
+    const m = ROTATION.exec(r.tag);
     const ms = mainThreadMs(r);
     if (!m || ms === undefined) continue;
-    const key = `${m[1]}\0${r.arm}`;
-    const entry = sides.get(key) ?? { stem: m[1] as string, arm: r.arm, a: [], b: [] };
-    entry[m[2] as "a" | "b"].push({ dir: r.dir, pkg: buildOf(r), ms });
-    sides.set(key, entry);
+    const g = groups.get(`${m[1]}\0${r.arm}`) ?? {
+      stem: m[1] as string,
+      arm: r.arm,
+      arms: new Map(),
+    };
+    const arm = g.arms.get(m[2] as string) ?? { name: m[2] as string, first: r.mtimeMs, runs: [] };
+    const instr = instrM(r);
+    arm.first = Math.min(arm.first, r.mtimeMs);
+    arm.runs.push({
+      dir: r.dir,
+      pkg: buildOf(r),
+      ms,
+      round: Number(m[3]),
+      ...(instr === undefined ? {} : { instr }),
+    });
+    g.arms.set(arm.name, arm);
+    groups.set(`${m[1]}\0${r.arm}`, g);
   }
-  return [...sides.values()]
-    .filter((s) => s.a.length || s.b.length)
-    .map((s) => {
-      const [a, b] = [s.a.map((x) => x.ms), s.b.map((x) => x.ms)];
-      const ready = a.length > 0 && b.length > 0;
-      const mA = median(a);
-      const mB = median(b);
+  return [...groups.values()].map((g) => {
+    const arms = ordered([...g.arms.values()]);
+    const metric = arms.every((a) => a.runs.every((r) => r.instr !== undefined)) ? "instr" : "ms";
+    const val = (r: IAbRun) => (metric === "instr" ? (r.instr as number) : r.ms);
+    const steps = arms.slice(1).map((to, i): IAbStep => {
+      const from = arms[i] as (typeof arms)[number];
+      const [f, t] = [from.runs.map(val), to.runs.map(val)];
       return {
-        ...s,
-        verdict: !ready ? "pending" : Math.max(...b) < Math.min(...a) ? "keep" : "reject",
-        ...(mA === undefined ? {} : { medianA: mA }),
-        ...(mB === undefined ? {} : { medianB: mB }),
+        from: from.name,
+        to: to.name,
+        verdict: Math.max(...t) < Math.min(...f) ? "keep" : "reject",
+        medianFrom: median(f) as number,
+        medianTo: median(t) as number,
+        msFrom: median(from.runs.map((r) => r.ms)) as number,
+        msTo: median(to.runs.map((r) => r.ms)) as number,
       };
     });
+    return {
+      stem: g.stem,
+      arm: g.arm,
+      metric,
+      arms: arms.map((a) => ({ name: a.name, runs: a.runs })),
+      steps,
+      verdict: !steps.length
+        ? "pending"
+        : steps.some((s) => s.verdict === "reject")
+          ? "reject"
+          : "keep",
+    };
+  });
 }
 
 export interface IGroup {
@@ -446,6 +513,7 @@ export function buildsOf(runs: readonly IMidwayRun[]) {
     firstSeen: m.firstSeen,
     runs: m.runs.length,
     ms: m.value,
+    instrM: medOf(m.runs, instrM),
     hudP95: medOf(m.runs, (r) => r.ui?.p95),
     matrixLast: medOf(m.runs, (r) => r.matrix?.last),
     parityPass: m.runs.filter((r) => r.parity?.pass).length,

@@ -21,6 +21,7 @@ import {
   buildsOf,
   gapOf,
   groupsOf,
+  instrM,
   kpisOf,
   midwayOf,
   prdProgress,
@@ -321,15 +322,60 @@ describe("progress, trends and PRD boxes", () => {
       ...a.map((v, i) => run(`t-a${i + 1}-desktop`, frame(v))),
       ...b.map((v, i) => run(`t-b${i + 1}-desktop`, frame(v))),
     ];
-    expect(abPairsOf(set([14, 15, 16], [10, 11, 12]))[0]).toMatchObject({
-      stem: "t",
-      verdict: "keep",
-      medianA: 15,
-      medianB: 11,
-    });
+    const keep = abPairsOf(set([14, 15, 16], [10, 11, 12]))[0];
+    expect(keep).toMatchObject({ stem: "t", verdict: "keep", metric: "ms" });
+    expect(keep?.steps[0]).toMatchObject({ from: "a", to: "b", medianFrom: 15, medianTo: 11 });
     expect(abPairsOf(set([14, 15, 16], [10, 11, 14]))[0]?.verdict).toBe("reject");
     expect(abPairsOf(set([14, 15, 16], []))[0]?.verdict).toBe("pending");
     expect(abPairsOf([run("solo-desktop", frame(5))])).toEqual([]);
+  });
+
+  it("decides on instructions per frame when every run carries them, and shows ms beside it", () => {
+    const fi = (cpu: number, kinstr: number) =>
+      `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: cpu, cpuFrameKInstructions: kinstr })}`;
+    // ms says B is slower (host noise), instructions say every B beats every A.
+    const list = [
+      run("t-a1-desktop", fi(10, 52_000)),
+      run("t-a2-desktop", fi(11, 51_500)),
+      run("t-b1-desktop", fi(13, 48_000)),
+      run("t-b2-desktop", fi(12, 49_000)),
+    ];
+    const pair = abPairsOf(list)[0];
+    expect(pair).toMatchObject({ metric: "instr", verdict: "keep" });
+    expect(pair?.steps[0]).toMatchObject({
+      medianFrom: 51.75,
+      medianTo: 48.5,
+      msFrom: 10.5,
+      msTo: 12.5,
+    });
+    // One run without the counter drops the whole group back to ms, where B loses.
+    const mixed = [...list.slice(0, 3), run("t-b2-desktop", frame(12))];
+    expect(abPairsOf(mixed)[0]).toMatchObject({ metric: "ms", verdict: "reject" });
+    expect(instrM(list[0] as IMidwayRun)).toBe(52);
+    expect(buildsOf(list)[0]?.instrM).toBeCloseTo(50.25);
+    expect(trendsOf(list).find((t) => t.id === "instr")?.points[0]?.v).toBeCloseTo(50.25);
+  });
+
+  it("compares consecutive arms of a three-arm rotation tag", () => {
+    const fi = (kinstr: number) =>
+      `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: 10, cpuFrameKInstructions: kinstr })}`;
+    const rot = (base: number[], ac3: number[], ac4: number[]) => [
+      ...base.map((v, i) => run(`instr-base${i + 1}-desktop`, fi(v))),
+      ...ac3.map((v, i) => run(`instr-ac3${i + 1}-desktop`, fi(v))),
+      ...ac4.map((v, i) => run(`instr-ac4${i + 1}-desktop`, fi(v))),
+    ];
+    const [pair] = abPairsOf(rot([60_000, 61_000], [55_000, 56_000], [50_000, 51_000]));
+    expect(pair?.stem).toBe("instr");
+    expect(pair?.arms.map((a) => a.name)).toEqual(["base", "ac3", "ac4"]);
+    expect(pair?.arms[1]?.runs.map((r) => r.round)).toEqual([1, 2]);
+    expect(pair?.steps.map((s) => [s.from, s.to, s.verdict])).toEqual([
+      ["base", "ac3", "keep"],
+      ["ac3", "ac4", "keep"],
+    ]);
+    expect(pair?.verdict).toBe("keep");
+    const worse = abPairsOf(rot([60_000, 61_000], [55_000, 56_000], [50_000, 57_000]))[0];
+    expect(worse?.steps.map((s) => s.verdict)).toEqual(["keep", "reject"]);
+    expect(worse?.verdict).toBe("reject");
   });
 
   it("reports the native and web Wasm gap to three.js in ms and percent", () => {

@@ -23,6 +23,7 @@ const PLAYER_KEYS = [
   "gameJsCpuMs",
   "presentCpuMs",
   "bridgeCalls",
+  "cpuFrameKInstructions",
 ] as const;
 
 export interface IScan<T> {

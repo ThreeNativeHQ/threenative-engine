@@ -82,7 +82,7 @@
   </div>
 </section>
 <section class="card"><h2>Trend per build (median of its runs) · dashed line is the target</h2><div class="row3" id="trend"></div><div class="legend" id="trendLegend" style="margin-top:6px"></div></section>
-<section class="card"><h2>A/B groups · keep rule: every B beats every A</h2><div class="row3" id="ab"></div></section>
+<section class="card"><h2>A/B groups · keep rule: every run of the next arm beats every run of the previous arm</h2><div class="row3" id="ab"></div></section>
 <section class="card"><details open><summary>Desktop builds and every run</summary><div class="scroll" id="builds" style="margin:8px 0"></div><div class="scroll" id="runs" style="margin-top:8px"></div></details></section>
 </main>
 <script>
@@ -185,15 +185,20 @@ function trend(t) {
   return `<div><div class="charthead"><b>${t.title}</b><span class="grow"></span>${badge}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t.title)} per build">${grid}${shade}${hlines(y, L, W - R, t.unit, { bench: t.benchmarks, target: t.target, targetLabel: t.targetLabel })}${lines}${none}${ticks}</svg></div>`;
 }
 
+const ARM_COLORS = ["var(--legacy)", "var(--desktop)", "var(--wasm)", "var(--green)", "var(--soft)"];
 function ab(p, legacy) {
-  const rows = Math.max(p.a.length, p.b.length), W = 420, H = 190, L = 34, T = 22, B = 26, hi = Math.max(...p.a.map((r) => r.ms), ...p.b.map((r) => r.ms), legacy ?? 0, 1) * 1.15;
-  const slot = (W - L - 92) / rows, bw = Math.min(34, slot / 2 - 4), y = (v) => H - B - (v / hi) * (H - B - T);
-  const bar = (r, i, side) => { if (!r) return ""; const cx = L + slot * i + slot / 2, bx = cx + (side === "a" ? -bw - 2 : 2); return `<rect x="${bx}" y="${y(r.ms)}" width="${bw}" height="${H - B - y(r.ms)}" rx="4" fill="${side === "a" ? "var(--legacy)" : "var(--desktop)"}"><title>${esc(r.dir)} (${esc(r.pkg)}): ${r.ms.toFixed(2)} ms</title></rect><text class="val" style="font-size:11px" x="${bx + bw / 2}" y="${y(r.ms) - 4}" text-anchor="middle">${r.ms.toFixed(1)}</text>`; };
-  const bars = Array.from({ length: rows }, (_, i) => bar(p.a[i], i, "a") + bar(p.b[i], i, "b") + `<text x="${L + slot * i + slot / 2}" y="${H - 8}" text-anchor="middle" style="font-size:9px">${esc(p.a[i]?.pkg ?? "-")} | ${esc(p.b[i]?.pkg ?? "-")}</text>`).join("");
-  const chip = { keep: ["pass", "KEEP B"], reject: ["fail", "REJECT B"], pending: ["", "needs A and B"] }[p.verdict];
-  const delta = p.medianA && p.medianB ? `median A ${p.medianA.toFixed(1)} → B ${p.medianB.toFixed(1)} ms (${((p.medianB / p.medianA - 1) * 100).toFixed(0)}%)` : "";
-  const why = p.verdict === "keep" ? "every B beats every A" : p.verdict === "reject" ? `worst B ${Math.max(...p.b.map((r) => r.ms)).toFixed(1)} is not below best A ${Math.min(...p.a.map((r) => r.ms)).toFixed(1)}` : "";
-  return `<div><div class="charthead"><b>${esc(p.stem)} · ${p.arm}</b><span class="grow"></span><span class="chip ${chip[0]}">${chip[1]}</span></div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="A versus B ms per frame"><line x1="${L}" x2="${W - 88}" y1="${H - B}" y2="${H - B}" stroke="var(--line)"/>${bars}${legacy === undefined ? "" : hlines(y, L, W - 88, "ms", { bench: [{ arm: "legacy", label: "three.js", value: legacy }], target: legacy, targetLabel: "target" })}</svg><div class="legend"><span style="--c:var(--legacy)">A</span><span style="--c:var(--desktop)">B</span><span>${delta}${why ? ` · ${why}` : ""}</span></div></div>`;
+  const instr = p.metric === "instr", unit = instr ? "M instr" : "ms", val = (r) => (instr ? r.instr : r.ms);
+  const rounds = [...new Set(p.arms.flatMap((a) => a.runs.map((r) => r.round)))].sort((x, y) => x - y), n = p.arms.length;
+  const W = 420, H = 190, L = 34, T = 22, B = 26, right = instr ? 12 : 92, showLine = !instr && legacy !== undefined;
+  const hi = Math.max(...p.arms.flatMap((a) => a.runs.map(val)), showLine ? legacy : 0, 1) * 1.15, y = (v) => H - B - (v / hi) * (H - B - T);
+  const slot = (W - L - right) / rounds.length, bw = Math.min(30, (slot - 8) / n);
+  const bars = rounds.map((round, i) => p.arms.map((a, j) => { const r = a.runs.find((x) => x.round === round); if (!r) return ""; const bx = L + slot * i + (slot - n * bw) / 2 + j * bw; return `<rect x="${bx}" y="${y(val(r))}" width="${bw - 2}" height="${H - B - y(val(r))}" rx="4" fill="${ARM_COLORS[j % ARM_COLORS.length]}"><title>${esc(r.dir)} (${esc(r.pkg)}): ${val(r).toFixed(2)} ${unit}, ${r.ms.toFixed(2)} ms</title></rect><text class="val" style="font-size:${n > 2 ? 9.5 : 11}px" x="${bx + (bw - 2) / 2}" y="${y(val(r)) - 4}" text-anchor="middle">${val(r).toFixed(1)}</text>`; }).join("") + `<text x="${L + slot * i + slot / 2}" y="${H - 8}" text-anchor="middle" style="font-size:9px">round ${round}</text>`).join("");
+  const chip = { keep: ["pass", "KEEP"], reject: ["fail", "REJECT"], pending: ["", "needs two arms"] }[p.verdict];
+  const metricChip = `<span class="chip">${instr ? "instructions per frame" : "ms per frame"}</span>`;
+  const legend = p.arms.map((a, j) => `<span style="--c:${ARM_COLORS[j % ARM_COLORS.length]}">${esc(a.name)} (${esc([...new Set(a.runs.map((r) => r.pkg))].join(", "))})</span>`).join("");
+  const pct = (a, b) => `${((b / a - 1) * 100).toFixed(1)}%`;
+  const steps = p.steps.map((st) => `<div class="legend" style="margin-top:2px;flex-wrap:nowrap;align-items:flex-start"><span class="chip ${st.verdict === "keep" ? "pass" : "fail"}">${st.verdict === "keep" ? "KEEP" : "REJECT"}</span><span>${esc(st.to)} vs ${esc(st.from)}: median ${st.medianFrom.toFixed(1)} → ${st.medianTo.toFixed(1)} ${unit} (${pct(st.medianFrom, st.medianTo)})${st.verdict === "keep" ? ", every run beats every run" : ", an overlap"}${instr ? ` · ms ${st.msFrom.toFixed(1)} → ${st.msTo.toFixed(1)} (${pct(st.msFrom, st.msTo)}), noisy on shared host` : ""}</span></div>`).join("");
+  return `<div><div class="charthead"><b>${esc(p.stem)} · ${p.arm}</b><span class="grow"></span>${metricChip}<span class="chip ${chip[0]}">${chip[1]}</span></div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="A/B ${unit} per round"><line x1="${L}" x2="${W - right + 4}" y1="${H - B}" y2="${H - B}" stroke="var(--line)"/>${bars}${showLine ? hlines(y, L, W - right + 4, "ms", { bench: [{ arm: "legacy", label: "three.js", value: legacy }], target: legacy, targetLabel: "target" }) : ""}</svg><div class="legend">${legend}</div>${steps}</div>`;
 }
 
 function render(d) {
@@ -204,8 +209,8 @@ function render(d) {
   $("trend").innerHTML = d.trends.map(trend).join("");
   $("trendLegend").innerHTML = legendOf(Object.keys(ARM)) + '<span style="--c:var(--green)">dashed: PRD-610 target</span><span style="--c:var(--legacy)">solid line: three.js benchmark</span><span style="--c:var(--red)">shaded: gap to three.js</span>';
   $("ab").innerHTML = d.abPairs.map((p) => ab(p, d.legacyMs)).join("") || '<span class="mute">no A/B tags yet (name runs like walk-a1 and walk-b1)</span>';
-  $("builds").innerHTML = `<table><tr><th>Build (oldest first)</th><th>Runs</th><th>ms / frame (median)</th><th>HUD p95</th><th>Matrix last</th><th>Parity PASS</th><th>First seen</th></tr>${d.builds.map((b, i) => `<tr><td>${esc(b.build)}${i === d.builds.length - 1 ? ' <span class="chip pass">newest</span>' : ""}</td><td>${b.runs}</td><td>${n(b.ms)}</td><td>${n(b.hudP95, 1)}</td><td>${n(b.matrixLast, 0)}</td><td>${b.parityPass}/${b.runs}</td><td>${new Date(b.firstSeen).toLocaleString()}</td></tr>`).join("")}</table>`;
-  $("runs").innerHTML = `<table><tr><th>Run</th><th>Package</th><th>Updated</th><th>ms / frame</th><th>Frame p95</th><th>HUD p95</th><th>Matrix last</th><th>Cull %</th><th>Parity</th><th>Skipped lines</th></tr>${[...d.runs].reverse().map((r) => `<tr><td>${esc(r.dir)}${r.profiled ? ' <span class="chip" title="perf record and TN_UI_SNAPSHOT_TRACE were attached">profiled, not timed</span>' : ""}</td><td>${esc(r.pkg ?? "—")}</td><td>${new Date(r.mtimeMs).toLocaleString()}</td><td>${r.status === "ok" ? n(ms(r)) : "no samples"}</td><td>${n(r.desktop?.frameP95 ?? r.budget?.frameP95)}</td><td>${n(r.ui?.p95, 1)}</td><td>${n(r.matrix?.last, 0)}</td><td>${n(r.cullPct)}</td><td>${parity(r)}</td><td>${r.skipped}</td></tr>`).join("")}</table>`;
+  $("builds").innerHTML = `<table><tr><th>Build (oldest first)</th><th>Runs</th><th>ms / frame (median)</th><th>Instr / frame (M)</th><th>HUD p95</th><th>Matrix last</th><th>Parity PASS</th><th>First seen</th></tr>${d.builds.map((b, i) => `<tr><td>${esc(b.build)}${i === d.builds.length - 1 ? ' <span class="chip pass">newest</span>' : ""}</td><td>${b.runs}</td><td>${n(b.ms)}</td><td>${n(b.instrM, 1)}</td><td>${n(b.hudP95, 1)}</td><td>${n(b.matrixLast, 0)}</td><td>${b.parityPass}/${b.runs}</td><td>${new Date(b.firstSeen).toLocaleString()}</td></tr>`).join("")}</table>`;
+  $("runs").innerHTML = `<table><tr><th>Run</th><th>Package</th><th>Updated</th><th>ms / frame</th><th>Instr / frame (M)</th><th>Frame p95</th><th>HUD p95</th><th>Matrix last</th><th>Cull %</th><th>Parity</th><th>Skipped lines</th></tr>${[...d.runs].reverse().map((r) => `<tr><td>${esc(r.dir)}${r.profiled ? ' <span class="chip" title="perf record and TN_UI_SNAPSHOT_TRACE were attached">profiled, not timed</span>' : ""}</td><td>${esc(r.pkg ?? "—")}</td><td>${new Date(r.mtimeMs).toLocaleString()}</td><td>${r.status === "ok" ? n(ms(r)) : "no samples"}</td><td>${n(r.desktop?.medians.cpuFrameKInstructions === undefined ? undefined : r.desktop.medians.cpuFrameKInstructions / 1000, 1)}</td><td>${n(r.desktop?.frameP95 ?? r.budget?.frameP95)}</td><td>${n(r.ui?.p95, 1)}</td><td>${n(r.matrix?.last, 0)}</td><td>${n(r.cullPct)}</td><td>${parity(r)}</td><td>${r.skipped}</td></tr>`).join("")}</table>`;
 }
 
 async function tick() {
