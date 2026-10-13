@@ -23,8 +23,8 @@ interface ICanvasLike {
   ): { getImageData(x: number, y: number, w: number, h: number): IPixels } | null;
 }
 
-/** three's Texture defaults: an image is flipped and linear-filtered, unlike DataTexture's. */
-const IMAGE_DEFAULTS = { flipY: true, magFilter: 1006, minFilter: 1008 };
+/** three's Texture defaults: an image is flipped, linear-filtered and mipmapped, unlike DataTexture's. */
+const IMAGE_DEFAULTS = { flipY: true, generateMipmaps: true, magFilter: 1006, minFilter: 1008 };
 
 function isCanvas(image: unknown): image is ICanvasLike {
   return typeof (image as Partial<ICanvasLike>)?.getContext === "function";
