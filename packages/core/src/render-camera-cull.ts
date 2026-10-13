@@ -155,6 +155,7 @@ export function alwaysRender(object: Object3D, enabled = true): void {
  */
 export class RenderCameraCull {
   #animationFrame = 0;
+  #animationPrepared = false;
   readonly #animationSphere = new Sphere();
   readonly #enabled: boolean;
   readonly #minimumPixels: number;
@@ -162,6 +163,7 @@ export class RenderCameraCull {
   readonly #frustum = new Frustum();
   readonly #projectionScreen = new Matrix4();
   readonly #hidden: Object3D[] = [];
+  readonly #animationVisitor: (object: Object3D) => void;
   readonly #visitor: (object: Object3D) => void;
   /** Last position-buffer version seen per geometry, so a rewritten dynamic bound is recomputed. */
   readonly #positionVersions = new WeakMap<object, IPositionVersion>();
@@ -191,6 +193,7 @@ export class RenderCameraCull {
     }
     this.#enabled = requested !== false;
     this.#minimumPixels = requested === false ? DEFAULT_MINIMUM_PROJECTED_PIXELS : requested;
+    this.#animationVisitor = (object) => this.#visitAnimation(object);
     this.#visitor = (object) => this.#visit(object);
   }
 
@@ -216,6 +219,24 @@ export class RenderCameraCull {
   }
 
   /**
+   * Publishes camera-driven animation metadata without changing draw visibility.
+   *
+   * The game calls this before scene `beforeRender` callbacks and projection packing, then calls
+   * {@link apply} after those phases for the one visibility cull that feeds the draw.
+   */
+  prepareAnimation(
+    root: { traverseVisible(callback: (object: Object3D) => void): void },
+    camera: Camera,
+    viewportHeight: number,
+  ): void {
+    this.restore();
+    this.#animationFrame += 1;
+    this.#animationPrepared = true;
+    this.#prepareCamera(camera, viewportHeight);
+    root.traverseVisible(this.#animationVisitor);
+  }
+
+  /**
    * Hides every renderable under `root` that this camera resolves to fewer than the threshold,
    * then calls `restore` implicitly on the next call. Call {@link restore} after the render.
    *
@@ -229,7 +250,8 @@ export class RenderCameraCull {
     viewportHeight: number,
   ): void {
     this.restore();
-    this.#animationFrame += 1;
+    if (!this.#animationPrepared) this.#animationFrame += 1;
+    this.#animationPrepared = false;
     this.#considered = 0;
     this.#culled = 0;
     this.#exemptCameraAttached = 0;
@@ -238,6 +260,25 @@ export class RenderCameraCull {
     this.#exemptWithoutBounds = 0;
     this.#exemptDynamicBounds = 0;
     this.#exemptFrustumCulled = 0;
+    this.#prepareCamera(camera, viewportHeight);
+    root.traverseVisible(this.#visitor);
+  }
+
+  /** Undoes every hide this gate made, leaving the authored scene as the game left it. */
+  restore(): void {
+    for (let index = 0; index < this.#hiddenCount; index += 1) {
+      (this.#hidden[index] as Object3D).visible = true;
+    }
+    this.#hiddenCount = 0;
+  }
+
+  dispose(): void {
+    this.restore();
+    this.#animationPrepared = false;
+    this.#camera = undefined;
+  }
+
+  #prepareCamera(camera: Camera, viewportHeight: number): void {
     this.#cameraResolved = true;
     this.#camera = undefined;
     // The walk runs whether or not the gate is enabled: turning the convention off must not turn
@@ -272,20 +313,24 @@ export class RenderCameraCull {
       this.#projectionScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       this.#frustum.setFromProjectionMatrix(this.#projectionScreen);
     }
-    root.traverseVisible(this.#visitor);
   }
 
-  /** Undoes every hide this gate made, leaving the authored scene as the game left it. */
-  restore(): void {
-    for (let index = 0; index < this.#hiddenCount; index += 1) {
-      (this.#hidden[index] as Object3D).visible = true;
+  #visitAnimation(object: Object3D): void {
+    if (!isRenderable(object)) return;
+    if (this.#isCameraAttached(object)) {
+      this.#observeAnimation(object, undefined);
+      return;
     }
-    this.#hiddenCount = 0;
-  }
-
-  dispose(): void {
-    this.restore();
-    this.#camera = undefined;
+    if (object.userData[ALWAYS_RENDER_KEY] === true) {
+      this.#observeAnimation(object, undefined);
+      return;
+    }
+    if (object.frustumCulled === false) {
+      this.#observeAnimationSources(object);
+      this.#observeAnimation(object, undefined);
+      return;
+    }
+    this.#observeAnimation(object, boundsOf(object, this.#positionVersions));
   }
 
   #visit(object: Object3D): void {

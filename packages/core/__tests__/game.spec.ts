@@ -498,17 +498,17 @@ describe("IGame", () => {
   it("applies camera animation policy before beforeRender projection work", async () => {
     const canvas = testCanvas();
     let frame: ((time: number) => void) | undefined;
-    let cullCalls = 0;
-    let cullsBeforeBeforeRender = 0;
-    const cull = vi.spyOn(RenderCameraCull.prototype, "apply").mockImplementation(() => {
-      cullCalls += 1;
+    let preparationCalls = 0;
+    let preparationsBeforeBeforeRender = 0;
+    const cull = vi.spyOn(RenderCameraCull.prototype, "prepareAnimation").mockImplementation(() => {
+      preparationCalls += 1;
     });
     class PolicyOrderScene extends Scene {
       static override readonly initialState = {};
 
       override enter(ctx: ICtx): void {
         ctx.beforeRender(() => {
-          cullsBeforeBeforeRender = cullCalls;
+          preparationsBeforeBeforeRender = preparationCalls;
         });
       }
     }
@@ -538,8 +538,69 @@ describe("IGame", () => {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
       frame(16);
-      expect(cullCalls).toBeGreaterThan(0);
-      expect(cullsBeforeBeforeRender).toBeGreaterThan(0);
+      expect(preparationCalls).toBeGreaterThan(0);
+      expect(preparationsBeforeBeforeRender).toBeGreaterThan(0);
+    } finally {
+      game.stop();
+      cull.mockRestore();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("culls after beforeRender moves geometry into camera space", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let mesh: Mesh | undefined;
+    const drawnVisibilities: boolean[] = [];
+    const cull = vi.spyOn(RenderCameraCull.prototype, "apply");
+    class CullOrderScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        mesh = ctx.add(new Mesh(new SphereGeometry(0.1, 8, 6), new MeshBasicMaterial()));
+        mesh.position.z = -1_000;
+        mesh.updateMatrixWorld(true);
+        ctx.beforeRender(() => {
+          mesh?.position.set(0, 0, -10);
+          mesh?.updateMatrixWorld(true);
+        });
+      }
+    }
+    const game = defineGame({
+      camera: { projection: "perspective", fov: 60, near: 0.1, far: 2_000 },
+      render: { projection: false, minimumProjectedPixels: 2 },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => {
+            drawnVisibilities.push(mesh?.visible === true);
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: CullOrderScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined || mesh === undefined)
+        throw new Error("Game did not start its loop.");
+      frame(16);
+      expect(mesh.position.z).toBe(-10);
+      expect(cull).toHaveBeenCalledOnce();
+      expect(drawnVisibilities.at(-1)).toBe(true);
     } finally {
       game.stop();
       cull.mockRestore();

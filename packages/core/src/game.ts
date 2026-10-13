@@ -1706,15 +1706,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // walk that follows sees a transform nobody had to remember to announce.
           refreshStaticTransforms();
           // Camera-rate metadata is an input to scene-owned beforeRender work and the projection
-          // palette write, not a post-draw observation. Publish it before either can skip a rig.
+          // palette write, not a post-draw observation. Publish it before either can skip a rig;
+          // this pass observes animation only and does not decide draw visibility.
           const drawingBufferHeight = renderer.surface().drawingBufferHeight;
-          const cullApplyStart = spans === undefined ? 0 : spanNow();
-          this.#cameraCull?.apply(
+          const cullPrepareStart = spans === undefined ? 0 : spanNow();
+          this.#cameraCull?.prepareAnimation(
             this.#projection?.root ?? threeScene,
             camera,
             drawingBufferHeight,
           );
-          if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullApplyStart);
+          if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullPrepareStart);
           // Scene prep that must read the frame's last solved state before the projection packs and
           // the renderer draws. Inside the world-render block it cannot land on a held loader frame.
           if (this.#beforeRenderCallbacks.size > 0) {
@@ -1777,6 +1778,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           } finally {
             endSpan(SPANS.lod);
           }
+          // Visibility is decided against the transforms and LOD selection that will actually be
+          // drawn. The earlier animation-only pass has already published the rate for this frame.
+          const cullApplyStart = spans === undefined ? 0 : spanNow();
+          this.#cameraCull?.apply(
+            this.#projection?.root ?? threeScene,
+            camera,
+            drawingBufferHeight,
+          );
+          if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullApplyStart);
           const capturing = geometryCapture.armed();
           if (capturing) {
             // The mirror is what the renderer sees; arming the authored scene would attribute the
