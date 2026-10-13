@@ -137,7 +137,7 @@ which is compatibility mode, not the core WebGPU that this engine requests.
 ## Execution Phases
 
 #### Phase 1: The cost is measured
-**Status:** PARTIAL — the previous CPU attribution requires a rerun after the hidden-slot cache repair; GPU main/shadow attribution and the Phase 3 decision remain open.
+**Status:** PARTIAL — GPU main/shadow attribution is verified; current CPU attribution requires a rerun after the runtime repairs.
 **Files:** `examples/skinned-crowd/src/scenes/Crowd.ts`, `examples/skinned-crowd/src/game.ts`, `examples/skinned-crowd/playtests/crowd-rate.playtest.json` (new), `packages/core/src/profiling/Spans.ts`, `packages/core/src/projection-skinned.ts`, `packages/core/__tests__/projection-skinned.spec.ts` (exact write probe).
 - [ ] [local] The crowd scenario reports CPU milliseconds for `AnimationPlayer.update` and `SkinnedBatch.write` at 32, 128 and 256 rigs, with the result recorded under `## Decisions`. proof: `crowd-rate.playtest.json` with `playtest perf` and span probes. Reopened 2026-10-13 after the hidden-slot cache repair; manager rerun required.
 - [x] [local] The same scenario reports GPU milliseconds for skinned draws in the main and shadow passes, against an arm where the crowd is static. The result decides Phase 3 under `## Decisions`. proof: the same playtest, both arms, `TN_FRAME_BUDGET` `main`/`shadow` buckets.
@@ -152,7 +152,7 @@ which is compatibility mode, not the core WebGPU that this engine requests.
 - [ ] [local] The native desktop host runs the crowd scenario with the policy on. proof: `node packages/playtest/dist/runner/cli.js examples/skinned-crowd/playtests/crowd-rate.playtest.json --target desktop`. 2026-10-12: current Linux V8/Dawn host built with `pnpm native:build`; `TN_FRAME_SPANS=1` and the matching NVIDIA env, `build:desktop`, then the same scenario with `--target desktop --project examples/skinned-crowd/dist --executable packages/runtime-native/build/tn-linux/mystral --host-arg run --host-arg <absolute bundle>` exit 0. All 14 resource checks pass (3 existing invariant waivers), ready window 2, 128 auto rigs, 120 animation/palette frames and observed main/shadow samples; zero console/network/runtime diagnostics. Artifacts: `artifacts/prd570-desktop-210264de2/`. Reopened 2026-10-13 after the hidden-slot cache repair; manager rerun required.
 
 #### Phase 3: Skinning runs once per frame, if Phase 1 earns it
-**Status:** NOT STARTED
+**Status:** COMPLETE — skin-once declined: measured held-minus-static main-plus-shadow GPU overhead is below 0.5 ms at 32, 128 and 256 rigs on Intel Iris Xe.
 **Files:** `packages/core/src/projection-skinned.ts`, `packages/core/src/render/velocity.ts`, `packages/core/__tests__/projection-skinned.spec.ts`
 - [x] [local] With the skin-once pass, the crowd's main-plus-shadow GPU time falls against Phase 1's arm, and the existing velocity-history assertions stay green. If Phase 1 shows less than 0.5 ms, the decline is recorded under `## Decisions` instead. proof: `crowd-rate.playtest.json` perf arms and `pnpm exec vitest run packages/core/__tests__/projection-skinned.spec.ts`.
 
