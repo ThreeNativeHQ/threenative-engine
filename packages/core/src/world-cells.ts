@@ -428,10 +428,10 @@ export interface IWorldCellsLoadOptions {
    * Filtered by the existing admission/refilter budget, never by a separate culler.
    */
   readonly placementReach?: Float32Array;
-  /** Inward return margin for authored CPU LODs, in [0, 1). Requires gpuScene:false and impostors:false (the default).
+  /** Inward return margin for authored CPU LODs, in [0, 1). Requires gpuScene:false and impostors:false.
    * Omitted, selection uses the existing direct gates. State survives cell eviction/revisit. */
   readonly lodHysteresis?: number;
-  /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Requires impostors:false (the default).
+  /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Requires impostors:false.
    * Default content sharing and missing-alpha-part coverage remain enabled when omitted. */
   readonly preserveAuthoredParts?: boolean;
   /** Already decoded immutable world-v1 data; URL still supplies the base for model paths. */
@@ -697,11 +697,9 @@ export interface IWorldCellsLoadOptions {
   readonly mainGpuShare?: number;
   /**
    * Bake a whole-asset octahedral impostor for every alpha-cutout foliage asset and append it as the
-   * asset's terminal, two-triangle LOD, default false.
+   * asset's terminal, two-triangle LOD, default true.
    *
-   * Opt-in until the impostor casts a forest's shadow: it replaces the coarsest level the wide
-   * shadow levels draw, and its two-triangle card leaves the road and forest floor almost unshaded
-   * (PR #375 visual regression), so a default world keeps its source levels as shadow casters.
+   * Set false to keep the authored/generated source levels for debugging or a visual comparison.
    *
    * The bake runs inside the render cadence — one of its sixteen views per `process` — so it costs a
    * slice of a frame rather than a hitch, and it starts only after the asset's own model has been
@@ -4611,7 +4609,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#bundlesWanted = init.bundles ?? asked !== "off";
     this.#bundleReason =
       init.bundles === undefined ? (asked === "default" ? "default" : "launch") : "option";
-    this.#impostors = init.impostors ?? false;
+    this.#impostors = init.impostors ?? true;
     this.#impostorBudgetBytes = DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES;
     this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
     this.#preserveAuthoredParts = init.preserveAuthoredParts ?? false;
