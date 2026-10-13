@@ -646,7 +646,10 @@ describe("IGame", () => {
           render: (scene: { traverse(callback: (object: Mesh) => void): void }) => {
             scene.traverse((object) => {
               if (object.isMesh === true && object.renderOrder === 1) {
-                exactDraws.push({ visible: object.visible, z: object.matrixWorld.elements[14] ?? 0 });
+                exactDraws.push({
+                  visible: object.visible,
+                  z: object.matrixWorld.elements[14] ?? 0,
+                });
               }
             });
           },
