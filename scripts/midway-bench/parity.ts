@@ -22,6 +22,7 @@ import { PNG } from "pngjs";
 export const FRAMES: Readonly<Record<string, string>> = {
   takeoff: "takeoff.png.png",
   cockpit: "cockpit.png.png",
+  reargun: "reargun.png.png",
   after: "after.png",
 };
 export const GRID = { columns: 8, rows: 6 };

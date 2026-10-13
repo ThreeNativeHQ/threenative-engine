@@ -62,6 +62,20 @@
       "waitTicks": 30,
       "release": true,
       "screenshot": "cockpit.png"
+    },
+    {
+      "kind": "input",
+      "label": "rear-gunner",
+      "press": "KeyY",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "gun-view",
+      "waitTicks": 60,
+      "release": true,
+      "screenshot": "reargun.png"
     }
   ],
   "assert": {
