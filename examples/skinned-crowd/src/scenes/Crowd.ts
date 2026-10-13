@@ -9,6 +9,7 @@ import {
   beginSpan,
   endSpan,
   lodPixelScale,
+  spansRequested,
 } from "@threenative/core";
 import {
   AnimationClip,
@@ -39,7 +40,7 @@ const HEIGHT = 2;
 const SWAY_SECONDS = 2;
 
 const query = new URLSearchParams(globalThis.location?.search ?? "");
-const requestedCount = query.get("crowdCount");
+const requestedCount = query.get("crowdCount") ?? (spansRequested() ? "128" : null);
 const count = requestedCount === null ? SIDE * SIDE : Number(requestedCount);
 const arm = query.get("crowdArm") ?? "animated";
 const requestedRate = query.get("crowdRate") ?? "auto";

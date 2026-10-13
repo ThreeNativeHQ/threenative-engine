@@ -360,3 +360,11 @@ native claim; late-baseline rejection still applies and every PRD gate remains o
   palette. The crowd receipt exposes this scope as `paletteCalls`, and readiness requires exactly
   `count` calls per frame for animated, held and auto/rate-1 arms; no call-count reduction is
   expected from auto-rate policy. Historical `paletteWrites` evidence above is retained as-is.
+
+- 2026-10-12, portable crowd-rate selection corrected: `Crowd.ts` now uses the shipped
+  `spansRequested()` launch helper when no `crowdCount` query is present, so native
+  `TN_FRAME_SPANS=1` selects the 128-rig animated auto-rate measuring fixture without a browser
+  location. The focused actual-module check was red before the change (`count=64`,
+  `measuring=false`) and is green after it for native flag selection, legacy no-flag mode and
+  explicit `crowdCount=32` precedence. Crowd typecheck and build pass; the native desktop box
+  remains open for the manager's post-build scenario.
