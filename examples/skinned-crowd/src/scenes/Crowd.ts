@@ -67,6 +67,7 @@ export const crowdRate: Record<string, unknown> = {
   arm,
   updateRate,
   measuring,
+  window: 0,
   ready: false,
   measured: null,
 };
