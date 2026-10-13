@@ -22,10 +22,20 @@
 // `(x/W)^g / (1 + (x/W)^g)` with `W = 4, g = 1/2.2` cost 4.3. `__tests__/grade.spec.ts` holds the
 // arithmetic; the value of the transform's own seat is that an identity table there is under one
 // step by construction rather than by a fitted curve.
-import { type Data3DTexture, DataUtils, FloatType, HalfFloatType } from "three";
+import { type Data3DTexture, DataUtils, FloatType, HalfFloatType, type Vector2 } from "three";
 import { film } from "three/addons/tsl/display/FilmNode.js";
 import { lut3D } from "three/addons/tsl/display/Lut3DNode.js";
-import { float, renderOutput, texture3D, time, uv } from "three/tsl";
+import {
+  clamp,
+  convertToTexture,
+  float,
+  renderOutput,
+  screenUV,
+  texture3D,
+  time,
+  uniform,
+  uv,
+} from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { QualityTier } from "./quality.js";
 import type { ChainStage } from "./worldEnvironment.js";
@@ -58,6 +68,19 @@ export interface IGradeSettings {
 export interface IGradeTable {
   readonly size: number;
   readonly texture: Data3DTexture;
+}
+
+type ResolutionSubrectView = {
+  readonly viewFraction: Vector2;
+  readonly halfTexel: Vector2;
+};
+
+function subrectColour(input: Node<"vec4">, view: ResolutionSubrectView | undefined): Node<"vec4"> {
+  if (view === undefined) return input;
+  const fraction = uniform(view.viewFraction);
+  const halfTexel = uniform(view.halfTexel);
+  const uvNode = clamp(screenUV.mul(fraction), halfTexel, fraction.sub(halfTexel));
+  return convertToTexture(input).sample(uvNode) as unknown as Node<"vec4">;
 }
 
 /**
@@ -117,16 +140,19 @@ export function gradeStages(
   return [
     {
       name: "grade",
+      supportsResolutionSubrect: true,
       afterOutputTransform: true,
       available: () => refusal("grade", settings, loaded),
-      build: (input) => {
+      build: (input, context) => {
         if (table === undefined)
           throw new Error(
             "grade built before its table loaded; available() should have refused it.",
           );
         // The pipeline's own transform, applied here because `afterOutputTransform` took it away
         // from the renderer. Same tone curve, same encode, same exposure — applied once.
-        const display = renderOutput(input as Node<"vec4">);
+        const display = renderOutput(
+          subrectColour(input as Node<"vec4">, context.resolutionSubrect),
+        );
         const graded = lut3D(
           display,
           texture3D(table.texture),
@@ -141,11 +167,12 @@ export function gradeStages(
     },
     {
       name: "grain",
+      supportsResolutionSubrect: true,
       after: "grade",
       available: () => refusal("grain", settings, loaded),
-      build: (input) =>
+      build: (input, context) =>
         film(
-          input as Node<"vec4">,
+          subrectColour(input as Node<"vec4">, context.resolutionSubrect),
           float(settings.grainIntensity),
           // `film()` adds the clock to whatever uv it is handed, so a still grain hands it back.
           settings.grainAnimated ? undefined : uv().sub(time),

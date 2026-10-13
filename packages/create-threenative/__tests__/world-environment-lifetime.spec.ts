@@ -252,3 +252,78 @@ it("releases the unique direct installation receipt rather than the legacy node 
   expect(dispose).toHaveBeenCalledTimes(1);
   expect(clearOutputNode).not.toHaveBeenCalled();
 });
+
+it("admits default spatial stages and explicitly refuses unadapted graphs", () => {
+  const handle = { active: false, retain: vi.fn(), textureView: () => undefined, dispose: vi.fn() };
+  const optionsSeen: Parameters<NonNullable<OutputRenderer["createRenderChain"]>>[0][] = [];
+  const renderer: OutputRenderer = {
+    kind: "webgpu",
+    raw: {},
+    createResolutionSubrect: () => handle,
+    createRenderChain(options) {
+      optionsSeen.push(options);
+      return { applied: { stages: [], dropped: [] }, dispose() {} };
+    },
+  };
+  const graph = new WorldEnvironment({ gtaoEnabled: true, bloomEnabled: true }).apply(
+    renderer,
+    new Scene(),
+    new PerspectiveCamera(),
+  );
+  const options = optionsSeen[0];
+  expect(options?.resolutionSubrect).toBe(handle);
+  for (const name of ["ambientOcclusion", "bloom", "vignette", "antialias"])
+    expect(options?.stages?.find((stage) => stage.name === name)?.supportsResolutionSubrect).toBe(
+      true,
+    );
+  for (const name of ["ssgi", "ssr", "godRays", "sharpen"])
+    expect(
+      options?.stages?.find((stage) => stage.name === name)?.supportsResolutionSubrect,
+    ).not.toBe(true);
+  expect(handle.retain).toHaveBeenCalled();
+  graph.dispose?.();
+  expect(handle.dispose).toHaveBeenCalledOnce();
+});
+
+it.each([
+  {
+    name: "custom base colour",
+    environment: new WorldEnvironment({ bloomEnabled: true }),
+    target: { baseColour: (scenePass: ReturnType<typeof import("three/tsl").pass>) => scenePass },
+    refusal: "baseColour",
+  },
+  {
+    name: "automatic exposure",
+    environment: new WorldEnvironment({ autoExposureEnabled: true, bloomEnabled: true }),
+    target: undefined,
+    refusal: "autoExposure",
+  },
+])("keeps the sub-rectangle fallback for $name", ({ environment, target, refusal }) => {
+  const createResolutionSubrect = vi.fn(() => ({
+    active: false,
+    retain: vi.fn(),
+    dispose: vi.fn(),
+  }));
+  const createRenderChain = vi.fn(
+    (_options: Parameters<NonNullable<OutputRenderer["createRenderChain"]>>[0]) => ({
+      applied: { stages: [], dropped: [] },
+      dispose() {},
+    }),
+  );
+  const report = vi.spyOn(console, "info").mockImplementation(() => {});
+  try {
+    const renderer: OutputRenderer = {
+      kind: "webgpu",
+      raw: {},
+      createRenderChain,
+      createResolutionSubrect,
+    };
+    const applied = environment.apply(renderer, new Scene(), new PerspectiveCamera(), target);
+    expect(createResolutionSubrect).not.toHaveBeenCalled();
+    expect(createRenderChain.mock.calls[0]?.[0].resolutionSubrect).toBeUndefined();
+    expect(report.mock.calls.some(([line]) => line.includes(refusal))).toBe(true);
+    applied.dispose?.();
+  } finally {
+    report.mockRestore();
+  }
+});

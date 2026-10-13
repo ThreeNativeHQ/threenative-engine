@@ -21,7 +21,9 @@ import {
   MaterialBlending,
   NeutralToneMapping,
   type PerspectiveCamera,
+  type RenderTarget,
   type Scene,
+  type Vector2,
 } from "three";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
@@ -33,6 +35,7 @@ import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import {
+  clamp,
   color,
   convertToTexture,
   float,
@@ -45,6 +48,7 @@ import {
   roughness,
   screenUV,
   smoothstep,
+  uniform,
   vec2,
   vec4,
 } from "three/tsl";
@@ -276,6 +280,10 @@ export interface IWorldEnvironmentTarget {
  * compiler checks the composition instead of taking a cast's word for it.
  */
 type ChainNode = Node<"vec4">;
+type ResolutionSubrectView = {
+  readonly viewFraction: Vector2;
+  readonly halfTexel: Vector2;
+};
 /**
  * The scene pass's depth texture, as the pass itself types it.
  *
@@ -286,6 +294,7 @@ export type DepthTextureNode = ReturnType<ReturnType<typeof pass>["getTextureNod
 type ChainTier = "high" | "medium" | "low" | "off";
 type ChainContext = {
   readonly tier: ChainTier;
+  readonly resolutionSubrect?: ResolutionSubrectView;
   /**
    * The sampled velocity texture, present only when this chain request provisioned one.
    *
@@ -308,6 +317,7 @@ export interface IWorldEnvironmentStageContext {
 
 export type ChainStage = {
   readonly name: string;
+  readonly supportsResolutionSubrect?: boolean;
   readonly before?: string;
   readonly after?: string;
   /**
@@ -344,6 +354,7 @@ export type ChainStage = {
  */
 function stage(definition: {
   readonly name: ChainStage["name"];
+  readonly supportsResolutionSubrect?: boolean;
   readonly dispose?: () => void;
   readonly available?: (context: ChainContext) => boolean | string;
   readonly build: (input: ChainNode, context: ChainContext) => ChainNode;
@@ -365,6 +376,16 @@ function denoised(node: ReturnType<typeof denoise>): ChainNode {
   return node as unknown as ChainNode;
 }
 type OutputInstallation = { isCurrent(): boolean; dispose(): void };
+type ResolutionSubrectTarget = {
+  setSize(width: number, height: number, depth?: number): void;
+};
+type ResolutionSubrectController = {
+  readonly active?: boolean;
+  readonly view?: ResolutionSubrectView;
+  retain(node: ResolutionSubrectTarget, targets: readonly RenderTarget[]): void;
+  textureView?(texture: unknown): unknown;
+  dispose(): void;
+};
 type OutputSetter =
   | ((node: unknown, worldPass?: unknown) => void)
   | ((node: unknown, worldPass?: unknown) => OutputInstallation);
@@ -372,6 +393,7 @@ type OutputSetter =
 export type OutputRenderer = {
   kind: string;
   raw: unknown;
+  createResolutionSubrect?: () => ResolutionSubrectController;
   /**
    * Installs a node graph directly. Only reached when a `baseColour` is composed and every
    * stage is off: the chain installs nothing for an empty stage list, and dropping the game's
@@ -397,6 +419,7 @@ export type OutputRenderer = {
       };
     };
     stages?: readonly ChainStage[];
+    resolutionSubrect?: ResolutionSubrectController;
   }) => {
     applied: { dropped: readonly { name: string; reason: string }[]; stages: readonly string[] };
     dispose(): void;
@@ -534,9 +557,24 @@ export class WorldEnvironment {
       this.#reportApplied([], dropped);
       return { dropped, stages: [] };
     }
+    const resolutionSubrectRefusal =
+      target.baseColour !== undefined
+        ? { name: "baseColour", reason: "custom base colour sampling is not supported" }
+        : options.autoExposureEnabled
+          ? { name: "autoExposure", reason: "automatic exposure sampling is not supported" }
+          : undefined;
+    if (resolutionSubrectRefusal !== undefined)
+      console.info(
+        `TN_RESOLUTION_SUBRECT ${JSON.stringify({ applied: [], refused: [resolutionSubrectRefusal] })}`,
+      );
     raw.toneMappingExposure = 1;
 
     const scenePass = pass(scene, camera, { samples: options.samples });
+    const resolutionSubrect =
+      requested.length === 0 || resolutionSubrectRefusal !== undefined
+        ? undefined
+        : renderer.createResolutionSubrect?.();
+    resolutionSubrect?.retain(scenePass, [scenePass.renderTarget]);
     // Normals come from the multi-render-target alongside the colour. SSGI can derive them
     // from depth alone, but the derived normal is flat across a triangle, which shows up as
     // faceted bounce on exactly the smooth surfaces GI is bought for. Metalness and
@@ -595,7 +633,32 @@ export class WorldEnvironment {
         owned.renderTarget.dispose();
         owned._quadMesh.material.dispose();
       }
+      resolutionSubrect?.dispose();
       scenePass.dispose();
+    };
+    const remappedTextures = new WeakMap<object, ReturnType<typeof convertToTexture>>();
+    const subrectTexture = (
+      input: ChainNode,
+      context: ChainContext,
+    ): ReturnType<typeof convertToTexture> => {
+      const texture = convertToTexture(input);
+      const view = context.resolutionSubrect;
+      if (view === undefined) return texture;
+      const existing = remappedTextures.get(texture);
+      if (existing !== undefined) return existing;
+      const fraction = uniform(view.viewFraction);
+      const halfTexel = uniform(view.halfTexel);
+      const originalSample = texture.sample.bind(texture);
+      texture.sample = (uvNode) =>
+        originalSample(
+          clamp((uvNode as Node<"vec2">).mul(fraction), halfTexel, fraction.sub(halfTexel)),
+        );
+      remappedTextures.set(texture, texture);
+      return texture;
+    };
+    const subrectColour = (input: ChainNode, context: ChainContext): ChainNode => {
+      if (context.resolutionSubrect === undefined) return input;
+      return subrectTexture(input, context).sample(screenUV) as unknown as ChainNode;
     };
     const giDenoise = (node: ChainNode): ChainNode =>
       options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
@@ -649,8 +712,13 @@ export class WorldEnvironment {
       }),
       stage({
         name: "ambientOcclusion",
-        build: (input) => {
-          const contact = ao(depth(), normal(), view);
+        supportsResolutionSubrect: true,
+        build: (input, context) => {
+          const contact = ao(
+            subrectTexture(depth(), context),
+            subrectTexture(normal(), context),
+            view,
+          );
           contact.radius.value = options.gtaoRadius;
           contact.scale.value = options.gtaoScale;
           contact.samples.value = options.gtaoSamples;
@@ -665,9 +733,16 @@ export class WorldEnvironment {
           // sampling otherwise reads as a speckled halo around every contact — around feet on a
           // plain floor most of all — which is exactly the "not smooth" a player notices first.
           const occlusion = options.denoiseEnabled
-            ? denoised(denoise(contact.getTextureNode(), depth(), normal(), view))
-            : contact;
-          return input.mul(occlusion.r);
+            ? denoised(
+                denoise(
+                  subrectTexture(contact.getTextureNode(), context),
+                  subrectTexture(depth(), context),
+                  subrectTexture(normal(), context),
+                  view,
+                ),
+              )
+            : subrectTexture(contact.getTextureNode(), context);
+          return subrectColour(input, context).mul(occlusion.r);
         },
       }),
       stage({
@@ -753,12 +828,14 @@ export class WorldEnvironment {
       }),
       stage({
         name: "bloom",
+        supportsResolutionSubrect: true,
         dispose: () => {
           releaseBloom();
           releaseBloom = () => {};
         },
-        build: (input) => {
-          const texture = convertToTexture(input);
+        build: (input, context) => {
+          const texture = subrectTexture(input, context);
+          const colour = subrectColour(input, context);
           const effect = bloom(
             texture,
             options.bloomStrength,
@@ -778,19 +855,21 @@ export class WorldEnvironment {
               scratch._quadMesh.material.dispose();
             }
           };
-          return input.add(effect);
+          return colour.add(effect);
         },
       }),
       stage({
         name: "vignette",
-        build: (input) => {
+        supportsResolutionSubrect: true,
+        build: (input, context) => {
+          const colour = subrectColour(input, context);
           // Radius measured from the centre in screen-diagonal units, so the corner is 1
           // and the falloff does not change shape when the window does. It starts at 0.55 —
           // well outside the subject in a 16:9 frame — so the vignette is a corner, not a
           // spotlight.
           const radius = screenUV.sub(vec2(0.5, 0.5)).mul(vec2(1.78, 1)).length().mul(1.04);
           const fall = smoothstep(float(0.55), float(1.02), radius).mul(options.vignetteAmount);
-          return input.mul(fall.oneMinus());
+          return colour.mul(fall.oneMinus());
         },
       }),
       {
@@ -798,8 +877,9 @@ export class WorldEnvironment {
         // stage after it would put the stairsteps back.
         name: "antialias",
         after: "gradualBackground",
-        build: (input) => {
-          const colour = input as ChainNode;
+        supportsResolutionSubrect: true,
+        build: (input, context) => {
+          const colour = subrectColour(input as ChainNode, context);
           // SMAA and FXAA find edges by local contrast and expect display-range colour, but this is
           // the linear HDR frame before the tone curve — a sun-lit edge at 20 against sky at 3
           // would blend into a bright halo. The reversible Karis weighting squeezes it into [0, 1)
@@ -880,6 +960,7 @@ export class WorldEnvironment {
         },
       },
       stages,
+      resolutionSubrect,
       worldPass: scenePass,
     });
     this.#reportApplied(chain.applied.stages, chain.applied.dropped);

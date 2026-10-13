@@ -99,6 +99,7 @@ export interface IFramePhaseSample {
  * convention off does not turn its measurement off.
  */
 export interface IFrameSurfaceState {
+  readonly resolutionSubrect?: boolean;
   /** The applied drawing-buffer scale, in `(0, 1]`. */
   readonly resolutionScale: number;
   /**
@@ -136,12 +137,15 @@ function requireSurface(surface: IFrameSurfaceState): IFrameSurfaceState {
     compiling,
     drawingBufferHeight,
     drawingBufferWidth,
+    resolutionSubrect,
     resolutionScale,
     sampleCount,
     scaleSource,
   } = surface;
   if (compiling !== undefined && typeof compiling !== "boolean")
     throw new Error("Frame budget surface compiling must be a boolean when observed.");
+  if (resolutionSubrect !== undefined && typeof resolutionSubrect !== "boolean")
+    throw new Error("Frame budget surface resolutionSubrect must be a boolean when observed.");
   if (typeof atFloor !== "boolean")
     throw new Error(
       `Frame budget surface atFloor must say whether the scaler had room left, received ${String(atFloor)}.`,
@@ -172,6 +176,7 @@ function requireSurface(surface: IFrameSurfaceState): IFrameSurfaceState {
     ...(compiling === undefined ? {} : { compiling }),
     drawingBufferHeight,
     drawingBufferWidth,
+    ...(resolutionSubrect === undefined ? {} : { resolutionSubrect }),
     resolutionScale,
     sampleCount,
     scaleSource,
