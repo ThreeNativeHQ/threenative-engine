@@ -135,6 +135,16 @@ describe("browser texture sources", () => {
     expect(() => new Texture(42)).toThrow("TN_BROWSER_TEXTURE_SOURCE");
   });
 
+  it("gives an adopted image three's mipmap chain, so a minified dial or label does not shimmer (Midway's cockpit)", () => {
+    const { bound, writes } = recording();
+    const Texture = bound.Texture as Ctor;
+    new Texture({ data: new Uint8ClampedArray([1, 2, 3, 4]), width: 1, height: 1 });
+    const set = (property: string) => writes.filter(([, name]) => name === property);
+    // minFilter 1008 is LinearMipmapLinear: the engine only builds levels when generateMipmaps is true.
+    expect(set("minFilter").map(([, , value]) => value)).toEqual([1008]);
+    expect(set("generateMipmaps").map(([, , value]) => value)).toEqual([true]);
+  });
+
   it("loads an ImageBitmap as three's ImageBitmapLoader does: fetch, then createImageBitmap", async () => {
     const { bound } = recording();
     const blob = new Blob([new Uint8Array([1])]);
