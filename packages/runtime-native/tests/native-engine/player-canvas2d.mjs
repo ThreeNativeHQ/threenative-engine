@@ -43,11 +43,22 @@ const probe = () => {
   image.data.fill(255);
   ctx.putImageData(image, 0, 0);
   const put = Array.from(ctx.getImageData(0, 0, 1, 1).data);
+  const t = document.createElement("canvas");
+  t.width = 128;
+  t.height = 64;
+  const tc = t.getContext("2d");
+  tc.clearRect(0, 0, 128, 64);
+  tc.fillStyle = "#c0baa1";
+  tc.font = "600 24px monospace";
+  tc.textAlign = "center";
+  tc.textBaseline = "middle";
+  tc.fillText("NO STEP", 64, 32);
+  const inked = Array.from(tc.getImageData(0, 0, 128, 64).data).filter((v, i) => i % 4 === 3 && v > 0).length;
   const map = new CanvasTexture(c);
   map.colorSpace = SRGBColorSpace;
   const material = new MeshStandardMaterial({ map, bumpMap: map, metalness: 0.84, roughness: 0.38, bumpScale: 0.0035 });
   scene.add(new Mesh(new BoxGeometry(), material));
-  return { document: true, context: true, gradient: typeof gradient.addColorStop, pixel, put, canvasTexture: map.isCanvasTexture === true };
+  return { document: true, context: true, gradient: typeof gradient.addColorStop, inked, pixel, put, canvasTexture: map.isCanvasTexture === true };
 };
 globalThis.__THREENATIVE_PLAYTEST_BRIDGE__ = {
   describe: async () => ({ name: "canvas2d", canvas: probe(), capabilities: [] }),
@@ -93,6 +104,7 @@ try {
   assert.equal(canvas?.document, true, `the player has no document: ${JSON.stringify(canvas)}`);
   assert.equal(canvas.context, true, `canvas.getContext("2d") answered null: ${JSON.stringify(canvas)}`);
   assert.equal(canvas.gradient, "function", "createRadialGradient returns a gradient with addColorStop");
+  assert(canvas.inked > 100, `fillText drew ${canvas.inked} pixels (labels and placards need text)`);
   assert.deepEqual(canvas.pixel, [0x20, 0x24, 0x28, 255], "fillRect pixels read back through getImageData");
   assert.deepEqual(canvas.put, [255, 255, 255, 255], "putImageData pixels read back through getImageData");
   assert.equal(canvas.canvasTexture, true, "a CanvasTexture over the canvas builds");
