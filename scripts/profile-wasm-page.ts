@@ -16,7 +16,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { type Page, chromium } from "@playwright/test";
+import { type CDPSession, type Page, chromium } from "@playwright/test";
 import {
   PERFORMANCE_BROWSER_ARGS,
   WEBGPU_BROWSER_ARGS,
@@ -151,17 +151,33 @@ interface IProfileNode {
   children?: number[];
 }
 
+/** The renderer main thread's CPU seconds so far: unlike the sampled wall clock, a busy host does not inflate it. */
+async function threadSeconds(cdp: CDPSession): Promise<number> {
+  const { metrics } = (await cdp.send("Performance.getMetrics")) as {
+    metrics: { name: string; value: number }[];
+  };
+  const found = metrics?.find((metric) => metric.name === "ThreadTime");
+  if (found === undefined) throw new Error("TN_PROFILE_THREAD_TIME: Chrome reported no ThreadTime");
+  return found.value;
+}
+
 async function cpu(page: Page, seconds: number, withWork: boolean, saveAs?: string) {
   const framesBefore = withWork ? await presentedFrames(page) : 0;
   const cdp = await page.context().newCDPSession(page);
+  if (withWork) await cdp.send("Performance.enable");
+  const threadBefore = withWork ? await threadSeconds(cdp) : 0;
   await cdp.send("Profiler.enable");
   await cdp.send("Profiler.setSamplingInterval", { interval: 200 });
   await cdp.send("Profiler.start");
   await page.waitForTimeout(seconds * 1000);
   const { profile } = (await cdp.send("Profiler.stop")) as { profile: ICpuProfile };
   if (saveAs) writeFileSync(saveAs, JSON.stringify(profile));
+  const frames = withWork ? (await presentedFrames(page)) - framesBefore : 0;
   const work = withWork
-    ? cpuWork(profile, (await presentedFrames(page)) - framesBefore)
+    ? {
+        ...cpuWork(profile, frames),
+        threadMsPerFrame: (1000 * ((await threadSeconds(cdp)) - threadBefore)) / frames,
+      }
     : undefined;
   const byId = new Map(profile.nodes.map((node) => [node.id, node]));
   const parents = new Map<number, number>();
@@ -405,7 +421,7 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   );
   if (r.profile.work)
     console.log(
-      `cpu work ${r.profile.work.busyMsPerFrame.toFixed(2)} ms per frame over ${r.profile.work.frames} frames`,
+      `cpu work ${r.profile.work.busyMsPerFrame.toFixed(2)} ms per frame (thread CPU ${r.profile.work.threadMsPerFrame.toFixed(2)} ms) over ${r.profile.work.frames} frames`,
     );
   console.log(
     `cpu (${r.profile.samples} samples): ${r.profile.groups.map((g) => `${g.name} ${g.percent}%`).join(", ")}`,

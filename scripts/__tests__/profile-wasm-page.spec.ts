@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   load: 2,
   memory: {} as Record<string, unknown>,
   presented: [0, 0] as number[],
+  thread: [1, 1.002] as number[],
   clicks: [] as string[],
 }));
 vi.mock("node:os", () => ({
@@ -23,19 +24,22 @@ vi.mock("@playwright/test", () => ({
         context: () => ({
           newCDPSession: async () => ({
             send: async (method: string) =>
-              method === "Profiler.stop"
-                ? {
-                    // 1 ms busy in `work`, 3 ms in `(idle)`: a quarter of the window is CPU work.
-                    profile: {
-                      nodes: [
-                        { id: 1, callFrame: { functionName: "(idle)", url: "" } },
-                        { id: 2, callFrame: { functionName: "work", url: "" } },
-                      ],
-                      samples: [1, 2, 1, 1],
-                      timeDeltas: [1000, 1000, 1000, 1000],
-                    },
-                  }
-                : {},
+              method === "Performance.getMetrics"
+                ? // the thread's CPU seconds: 2 ms more at the second read
+                  { metrics: [{ name: "ThreadTime", value: state.thread.shift() ?? 0 }] }
+                : method === "Profiler.stop"
+                  ? {
+                      // 1 ms busy in `work`, 3 ms in `(idle)`: a quarter of the window is CPU work.
+                      profile: {
+                        nodes: [
+                          { id: 1, callFrame: { functionName: "(idle)", url: "" } },
+                          { id: 2, callFrame: { functionName: "work", url: "" } },
+                        ],
+                        samples: [1, 2, 1, 1],
+                        timeDeltas: [1000, 1000, 1000, 1000],
+                      },
+                    }
+                  : {},
           }),
         }),
         evaluate: async (fn: (() => unknown) | string) => {
@@ -66,6 +70,7 @@ afterEach(() => {
   state.load = 2;
   state.memory = {};
   state.presented = [0, 0];
+  state.thread = [1, 1.002];
   state.clicks = [];
   vi.unstubAllGlobals();
 });
@@ -147,8 +152,9 @@ describe("profile:wasm-page startup, input and CPU work", () => {
     );
     expect(state.clicks).toEqual(["#start-deck", "#go"]);
     expect(run.startupMs).toBeGreaterThanOrEqual(0);
-    // 1 ms of work in a 4 ms window over 40 presented frames.
-    expect(run.profile.work).toEqual({ busyMsPerFrame: 1 / 40, frames: 40, wallMs: 4 });
+    // 1 ms of work in a 4 ms window over 40 presented frames; the thread spent 2 ms of CPU in them.
+    expect(run.profile.work).toMatchObject({ busyMsPerFrame: 1 / 40, frames: 40, wallMs: 4 });
+    expect(run.profile.work?.threadMsPerFrame).toBeCloseTo(2 / 40, 6);
     expect(run.frame).toMatchObject({ p50: 10, hitches: 1 });
   });
 });
