@@ -1,6 +1,6 @@
 {
-  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.11.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.11.0 serves all 49 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
-  "version": "0.11.0",
+  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.12.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.12.0 serves all 51 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
+  "version": "0.12.0",
   "profile": null,
   "recommended": [
     "ambientcg_list_files",
@@ -45,6 +45,8 @@
     "audio_inspect_asset",
     "audio_list_sources",
     "audio_search_assets",
+    "blendkit_import_asset",
+    "blendkit_status",
     "creature_check",
     "creature_compile",
     "creature_guide",
@@ -799,6 +801,63 @@
         }
       },
       "required": ["listingIdOrUrl", "outputDir", "acceptFabEula"]
+    },
+    "blendkit_status": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "blendkit_import_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "pattern": "^blendkit:[0-9a-f-]{36}$",
+          "description": "asset_search/asset_get id, blendkit:<uuid>."
+        },
+        "outputDir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Private directory for the GLB and its provenance file. Keep the output out of version control and game builds."
+        },
+        "purpose": {
+          "type": "string",
+          "enum": ["project-use", "redistribution"],
+          "description": "project-use: your own project, files kept private. redistribution is always refused in this release, for CC0 items too."
+        },
+        "acceptLicense": {
+          "type": "boolean",
+          "const": true,
+          "description": "Acknowledge this item's license as reported by asset_get."
+        },
+        "projectUseConsent": {
+          "type": "boolean",
+          "description": "true confirms this single item is acquired for your own project. Required."
+        },
+        "resolution": {
+          "default": "resolution_2K",
+          "type": "string",
+          "enum": [
+            "ORIGINAL",
+            "resolution_0_5K",
+            "resolution_1K",
+            "resolution_2K",
+            "resolution_4K",
+            "resolution_8K"
+          ]
+        },
+        "maxBytes": {
+          "default": 1073741824,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 4294967296
+        }
+      },
+      "required": ["assetId", "outputDir", "purpose", "acceptLicense", "projectUseConsent"],
+      "additionalProperties": false
     },
     "polyhaven_search_assets": {
       "type": "object",
@@ -2006,6 +2065,8 @@
     "fab_list_owned": "List every listing already in the signed-in Fab library, optionally filtered to the ones that publish an Unreal artifact fab_import_asset can convert. Each listing's `artifacts` array lists every Unreal artifact separately with its artifactId, oldest engine (its source format) and decoder route (umodel, mesh-description or cue4parse). Search free assets first with fab_search_assets; reach for this when you want something already paid for. Read-only — it never claims or purchases.",
     "asset_import_unreal": "Convert a local directory of Unreal .uasset/.umap files into self-contained model and scene GLBs under a game's assets directory, with reconstructed PBR materials, actor transforms, and a provenance report. Works on any already-downloaded Unreal pack, whatever downloaded it. Every GLB result reports `sizeMeters`, its bounding-box size in the file's own units: a value near 890 for something meant to be 9 m means the source was authored in centimetres and the game must scale it.",
     "fab_import_asset": "Download an Unreal asset the signed-in Fab account already owns and convert it to source GLBs in one step. Uses the FabCLI session the user established themselves; it never logs in, claims, or purchases anything. Every GLB result reports `sizeMeters`, its bounding-box size in the file's own units: a value near 890 for something meant to be 9 m means the source was authored in centimetres and the game must scale it.",
+    "blendkit_status": "Report whether the user's official Blendkit-Client is running on loopback, its version and GLB recipe, whether live Blendkit access is enabled, and the exact setup steps that are missing. Local only: it never contacts Blendkit.",
+    "blendkit_import_asset": "Acquire one free Blendkit model (an asset_search id, blendkit:<uuid>) through the user's own Blendkit-Client, convert it with the Client's bundled export_glb recipe under headless Blender, inspect the GLB, and write a provenance file. Requires the item's license acknowledgement and explicit project-use consent. Output is for private use only: the Blendkit Terms forbid open-format models such as GLB in software and apply that to CC0 items too, so never commit, publish or ship it in game builds, demos or starter kits. Raw redistribution (purpose redistribution) is always refused, CC0 included. Existing outputs are never overwritten. Never purchases, signs in or bulk-downloads. Off until documented provider permission is configured (see blendkit_status).",
     "polyhaven_search_assets": "Search CC0 HDRIs, textures, and models from Poly Haven. Results include explicit Poly Haven attribution.",
     "polyhaven_get_asset": "Get normalized metadata, authorship, dimensions, and CC0 license information for one Poly Haven asset.",
     "polyhaven_list_categories": "List Poly Haven category labels and asset counts for HDRIs, textures, or models.",
