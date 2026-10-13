@@ -1,0 +1,170 @@
+{
+ "01-map-walk-01-camp": {
+  "A": "cand",
+  "B": "base"
+ },
+ "02-map-walk-02-first-stream": {
+  "A": "cand",
+  "B": "base"
+ },
+ "03-map-walk-03-highway": {
+  "A": "cand",
+  "B": "base"
+ },
+ "04-map-walk-04-bridge": {
+  "A": "cand",
+  "B": "base"
+ },
+ "05-map-views-v1-camp_overview": {
+  "A": "base",
+  "B": "cand"
+ },
+ "06-map-views-v2-highway_air": {
+  "A": "base",
+  "B": "cand"
+ },
+ "07-map-views-v3-bridge_deck": {
+  "A": "base",
+  "B": "cand"
+ },
+ "08-map-views-v4-bridge_from_river": {
+  "A": "cand",
+  "B": "base"
+ },
+ "09-play-phase477-pose-end": {
+  "A": "base",
+  "B": "cand"
+ },
+ "10-play-phase477-pose-start": {
+  "A": "base",
+  "B": "cand"
+ },
+ "11-play-phase477-walk-01": {
+  "A": "cand",
+  "B": "base"
+ },
+ "12-play-phase477-walk-02": {
+  "A": "base",
+  "B": "cand"
+ },
+ "13-play-phase477-walk-03": {
+  "A": "base",
+  "B": "cand"
+ },
+ "14-play-phase477-walk-04": {
+  "A": "base",
+  "B": "cand"
+ },
+ "15-play-phase477-walk-05": {
+  "A": "base",
+  "B": "cand"
+ },
+ "16-play-phase477-walk-06": {
+  "A": "base",
+  "B": "cand"
+ },
+ "17-play-phase477-walk-07": {
+  "A": "base",
+  "B": "cand"
+ },
+ "18-play-phase477-walk-08": {
+  "A": "cand",
+  "B": "base"
+ },
+ "19-play-phase477-walk-09": {
+  "A": "base",
+  "B": "cand"
+ },
+ "20-play-phase477-walk-10": {
+  "A": "cand",
+  "B": "base"
+ },
+ "21-play-phase477-walk-11": {
+  "A": "base",
+  "B": "cand"
+ },
+ "22-play-phase477-walk-12": {
+  "A": "cand",
+  "B": "base"
+ },
+ "23-play-phase477-walk-13": {
+  "A": "base",
+  "B": "cand"
+ },
+ "24-play-phase477-walk-14": {
+  "A": "cand",
+  "B": "base"
+ },
+ "25-play-phase477-walk-15": {
+  "A": "cand",
+  "B": "base"
+ },
+ "26-play-phase477-walk-16": {
+  "A": "base",
+  "B": "cand"
+ },
+ "27-play-phase477-walk-17": {
+  "A": "base",
+  "B": "cand"
+ },
+ "28-play-phase477-walk-18": {
+  "A": "cand",
+  "B": "base"
+ },
+ "29-play-phase477-walk-19": {
+  "A": "base",
+  "B": "cand"
+ },
+ "30-play-phase477-walk-20": {
+  "A": "base",
+  "B": "cand"
+ },
+ "31-play-phase477-walk-21": {
+  "A": "cand",
+  "B": "base"
+ },
+ "32-play-phase477-walk-22": {
+  "A": "cand",
+  "B": "base"
+ },
+ "33-play-phase477-walk-23": {
+  "A": "base",
+  "B": "cand"
+ },
+ "34-play-phase477-walk-24": {
+  "A": "cand",
+  "B": "base"
+ },
+ "35-play-phase477-walk-25": {
+  "A": "base",
+  "B": "cand"
+ },
+ "36-play-phase477-walk-26": {
+  "A": "cand",
+  "B": "base"
+ },
+ "37-play-phase477-walk-27": {
+  "A": "cand",
+  "B": "base"
+ },
+ "38-play-phase477-walk-28": {
+  "A": "cand",
+  "B": "base"
+ },
+ "39-play-phase477-walk-29": {
+  "A": "base",
+  "B": "cand"
+ },
+ "40-play-phase477-walk-30": {
+  "A": "cand",
+  "B": "base"
+ },
+ "41-play-phase477-walk-31": {
+  "A": "cand",
+  "B": "base"
+ },
+ "42-play-phase477-walk-32": {
+  "A": "base",
+  "B": "cand"
+ }
+}
