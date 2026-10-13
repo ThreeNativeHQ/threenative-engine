@@ -659,7 +659,15 @@ void V8Game::pollCompilations() {
     v8::HandleScope scope(isolate_);
     auto ctx = js_.Get(isolate_);
     v8::Context::Scope contextScope(ctx);
+    // Promises settle after the list is final: V8 runs a continuation as the resolving call returns, and a
+    // continuation that calls compileAsync again grows (and moves) the list under a live iterator.
+    struct Settled {
+        v8::Global<v8::Promise::Resolver> resolver;
+        std::optional<std::string> error;
+    };
+    std::vector<Settled> settled;
     for (auto it = compilations_.begin(); it != compilations_.end();) {
+        std::optional<std::string> error;
         try {
             if (!it->pipelines) {
                 renderer_->setOutput(it->output);
@@ -677,11 +685,16 @@ void V8Game::pollCompilations() {
                 else if (!pipeline->get()) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: async creation returned null");
             }
             if (pending) { ++it; continue; }
-            it->resolver.Get(isolate_)->Resolve(ctx, v8::Undefined(isolate_)).Check();
-        } catch (const std::exception& error) {
-            it->resolver.Get(isolate_)->Reject(ctx, v8::Exception::Error(v8str(isolate_, error.what()))).Check();
+        } catch (const std::exception& failure) {
+            error = failure.what();
         }
+        settled.push_back({std::move(it->resolver), std::move(error)});
         it = compilations_.erase(it);
+    }
+    for (Settled& done : settled) {
+        const auto resolver = done.resolver.Get(isolate_);
+        if (done.error) resolver->Reject(ctx, v8::Exception::Error(v8str(isolate_, *done.error))).Check();
+        else resolver->Resolve(ctx, v8::Undefined(isolate_)).Check();
     }
 }
 

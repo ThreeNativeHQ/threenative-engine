@@ -523,8 +523,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         src/engine/player/run.cpp src/engine/player/skinned_crowd.cpp src/engine/player/world_walk.cpp
         src/platform/ui_overlay.cpp)
     tn_native_engine_target(tn_engine_player)
-    # The UI seam is shared with the legacy host; the web view and CSS backends are not linked here.
-    target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=0)
+    # The UI seam is shared with the legacy host; the CSS backend is never linked here. The web view is
+    # opt-in (a game with ui.renderer "web" draws its HUD through it), so the default graph stays JS- and
+    # web-view-free.
+    option(TN_ENGINE_PLAYER_UI_OVERLAY "Link the desktop web-view UI overlay into the engine players (Linux; needs node scripts/build-native-ui-overlay.mjs and webkit2gtk-4.1)" OFF)
+    if(TN_ENGINE_PLAYER_UI_OVERLAY)
+        include(cmake/NativeEnginePlayerUiOverlay.cmake)
+    else()
+        target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=0)
+    endif()
     target_link_libraries(tn_engine_player PUBLIC tn_engine_inspect tn_engine_scene tn_engine_world
         tn_engine_renderer tn_host_services tn_engine_world_admission)
     target_include_directories(tn_engine_player PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
