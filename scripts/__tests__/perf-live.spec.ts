@@ -424,7 +424,7 @@ describe("perf-live", () => {
   });
 
   it("colours a KPI value: green at the target, orange above parity, red below it", () => {
-    expect([0.79, 1, 1.04, 1.99, 2, 3].map(valueColor)).toEqual([
+    expect([0.79, 1, 1.04, 2.99, 3, 4].map(valueColor)).toEqual([
       "red",
       "orange",
       "orange",
@@ -443,7 +443,7 @@ describe("perf-live", () => {
   });
 
   it("says 'cheaper' at parity or better and 'costs' below it", () => {
-    expect(sentenceOf(1.04)).toBe("Native is 1.04× cheaper than legacy on R5. Target 2×.");
+    expect(sentenceOf(1.04)).toBe("Native is 1.04× cheaper than legacy on R5. Target 3×.");
     expect(sentenceOf(0.5)).toContain("Native costs 2.00× legacy");
   });
 
@@ -471,7 +471,7 @@ describe("perf-live", () => {
     const r5 = point("v/r5", "R5", now - HOUR, 1.5);
     expect(staleReason([r5], now)).toBeUndefined();
     expect(heroOf([r5], now)).toMatchObject({ status: "orange", ratio: 1.5 });
-    expect(heroOf([point("v/old", "R5", now - 7 * HOUR, 2.5)], now)).toMatchObject({
+    expect(heroOf([point("v/old", "R5", now - 7 * HOUR, 3.5)], now)).toMatchObject({
       status: "yellow",
       valueColor: "green",
     });

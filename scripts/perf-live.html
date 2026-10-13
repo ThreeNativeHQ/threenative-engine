@@ -107,8 +107,8 @@
 </details>
 </main>
 <script>
-const TARGET = 2;
-const WEB_TARGET = 1.3; // owner, 2026-10-12: tn-web p50 ÷ tn-engine-web p50, main-thread wall time
+const TARGET = 3;
+const WEB_TARGET = 2; // owner, 2026-10-13 (was 1.3, met at 1.41x): tn-web p50 ÷ tn-engine-web p50, main-thread wall time
 const STALE_HOURS = 6;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const $ = (id) => document.getElementById(id);

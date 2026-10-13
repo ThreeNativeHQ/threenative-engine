@@ -501,7 +501,7 @@ export function webOf(rows: readonly IRow[]): {
 }
 
 /** The KPI target: native costs at most half the legacy CPU per frame. */
-export const TARGET = 2;
+export const TARGET = 3; // owner, 2026-10-13: aim past the v1 KPI (2x) at 3x native desktop
 /** The hero turns yellow when the newest R5 KPI point is older than this. */
 export const STALE_MS = 6 * 3_600_000;
 /** An R2/R3 point counts as "newer" only when it lands more than this after R5 (one measuring session). */
