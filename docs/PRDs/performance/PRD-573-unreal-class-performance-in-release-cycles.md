@@ -177,6 +177,7 @@ R5 CPU budget, 2026-10-12 (perf plus `/proc` stime, R5@4096 1920x1080, RTX 2080 
   - Present on a real display is 0.10 to 0.16 ms on both arms. The Xvfb present of about 75 ms was the only thing holding the inclusive number near 1x.
   - Engine hitch counts (5 to 12, against 0 to 1) are relative to each arm's own median, so they are a watch item, not a tail regression. Absolute p95 and p99 are lower on the engine at every rung.
   - Artifacts: `v111/gpu-R5-desktop6-*`, `v111/gpu-R3-desktop-*`, `v111/gpu-R2-desktop-*`. Run `gpu-R5-desktop` is invalid (its engine arm ran on Xvfb) and is not cited.
+  All lanes in one place: [RESULTS-2026-10-12](../../benchmark/prd573/RESULTS-2026-10-12.md).
   Cuts after the KPI, merged in 5947a9404:
   - `88d18f1af`: animation hot fields plus prefetch. Animation fell from 0.81–1.18 to 0.47–0.66 ms, every B run below every A run, ctest `track_hot_fields`.
   - `7fe2159fe`: `decide()` casts once per class run. It saves about 0.08 ms in `decide`, with no frame-level claim.
