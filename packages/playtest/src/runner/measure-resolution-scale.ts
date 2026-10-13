@@ -17,6 +17,8 @@ import {
 } from "./resolution-scale-probe.js";
 import { PLAYTEST_STARTUP_READY_TIMEOUT_MS, type IPlaytestBridgeDescription, type IPlaytestBridgeReady } from "../protocol.js";
 
+import type { ITraceEvent } from "./trace.js";
+
 import type { IResolutionScaleRun, IResolutionScaleRow } from "./resolution-scale-probe.js";
 
 // Use a served starter with resolutionScale pinned to 1; all other render settings stay authored.
@@ -80,6 +82,7 @@ try {
       };
       partial: { collected: boolean; value?: Record<string, unknown> };
       rows?: IResolutionScaleRow[];
+      markers?: ITraceEvent[];
     } = { startup: { collected: false }, partial: { collected: false } };
     checkpointEvidence = evidence;
     const launchedBrowser = browser;
@@ -131,6 +134,21 @@ try {
       const navigations: string[] = [];
       page.on("framenavigated", (frame) => {
         if (frame === page.mainFrame()) navigations.push(frame.url());
+      });
+      const cdp = await context.newCDPSession(page);
+      const markers: ITraceEvent[] = [];
+      cdp.on("Tracing.dataCollected", (event: { value?: ITraceEvent[] }) => {
+        markers.push(
+          ...(event.value ?? []).filter((value) => value.name?.startsWith("TN_RESOLUTION_FRAME:")),
+        );
+      });
+      const traceComplete = new Promise<void>((resolve) =>
+        cdp.once("Tracing.tracingComplete", () => resolve()),
+      );
+      // Reuse the shipped CDP transport, with only markers; no CPU profile/render timeline.
+      await cdp.send("Tracing.start", {
+        traceConfig: { includedCategories: ["blink.user_timing"], excludedCategories: ["*"] },
+        transferMode: "ReportEvents",
       });
       await checkpoint("page.evaluate");
       const observed = await page
@@ -189,6 +207,22 @@ try {
             });
           throw error;
         });
+      let flushTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          (async () => {
+            await cdp.send("Tracing.end");
+            await traceComplete;
+          })(),
+          new Promise<never>((_resolve, reject) => {
+            flushTimer = setTimeout(() => reject(new Error("TN_RESOLUTION_TRACE_FLUSH_TIMEOUT")), bridgeWaitTimeoutMs());
+          }),
+        ]);
+      } finally {
+        clearTimeout(flushTimer);
+        await cdp.detach();
+      }
+      evidence.markers = markers;
       evidence.partial = { collected: true, value: observed.partial };
       if (observed.failure) {
         const error = new Error(observed.failure.message);
@@ -221,6 +255,7 @@ try {
             ...(control === undefined ? {} : { control }),
             preflight,
             rows,
+            markers,
             ...(gate === undefined ? {} : { gate }),
           },
           null,

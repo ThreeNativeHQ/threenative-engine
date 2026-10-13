@@ -134,6 +134,12 @@ export interface IResolutionScaleRow {
     frameMs: number;
     clockEpochStartMs?: number;
     clockEpochEndMs?: number;
+    clockCalibration?: {
+      performanceBeforeMs: number;
+      wallEpochMs: number;
+      performanceAfterMs: number;
+      marker: string;
+    };
     rafIntervalMs?: number;
     surface?: unknown;
   }[];
@@ -335,9 +341,17 @@ export function installResolutionScaleProbe(
         if (frame >= 0) {
           if (renderer.surface().resolutionScale !== scales[step])
             throw new Error("Forced scale was overridden");
+          // End clock is already captured; marker/calibration must stay outside measured work.
+          const performanceBeforeMs = performance.now();
+          const wallEpochMs = Date.now();
+          const performanceAfterMs = performance.now();
+          const marker = `TN_RESOLUTION_FRAME:${frame}`;
+          performance.mark(marker, { startTime: performanceAfterMs });
+          performance.clearMarks(marker);
           frames.push({
             frame,
             frameMs: now - start,
+            clockCalibration: { performanceBeforeMs, wallEpochMs, performanceAfterMs, marker },
             clockEpochStartMs: performance.timeOrigin + start,
             clockEpochEndMs: performance.timeOrigin + now,
             rafIntervalMs:

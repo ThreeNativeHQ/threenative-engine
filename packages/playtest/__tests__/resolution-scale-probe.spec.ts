@@ -182,6 +182,12 @@ it("captures exactly step +30 frames for each scale, counts allocations/builds, 
       device.createTexture({ size: [4, 4], format: "rgba8unorm" });
     },
   };
+  const marks = vi.spyOn(performance, "mark").mockImplementation((name, options) => {
+    expect(insideFrame).toBe(false);
+    expect(name).toMatch(/^TN_RESOLUTION_FRAME:\d+$/);
+    expect(options?.startTime).toBeTypeOf("number");
+    return {} as PerformanceMark;
+  });
   const result = installResolutionScaleProbe(budget, renderer, device, () => 4);
   for (let frame = 0; frame < 213; frame++) {
     if (frame === 151) builds++; // A pipeline created between windows must remain counted.
@@ -201,8 +207,55 @@ it("captures exactly step +30 frames for each scale, counts allocations/builds, 
   const first = rows[0]!.frames[0]!;
   expect(first.clockEpochEndMs! - first.clockEpochStartMs!).toBeCloseTo(first.frameMs, 2);
   expect(censusInsideFrames.every((inside) => !inside)).toBe(true);
+  expect(marks).toHaveBeenCalledTimes(93);
+  rows
+    .flatMap((row) => row.frames)
+    .forEach((frame) => {
+      const calibration = frame.clockCalibration!;
+      expect(calibration.marker).toBe(`TN_RESOLUTION_FRAME:${frame.frame}`);
+      expect(calibration.performanceBeforeMs).toBeLessThanOrEqual(calibration.performanceAfterMs);
+      expect(calibration.wallEpochMs).toBeGreaterThan(0);
+      expect(marks).toHaveBeenCalledWith(calibration.marker, {
+        startTime: calibration.performanceAfterMs,
+      });
+    });
+  marks.mockRestore();
   expect([budget.beginFrame, budget.endFrame, device.createTexture]).toEqual([begin, end, create]);
   log.mockRestore();
+});
+
+it("rejects missing marker instrumentation and restores the measurement seams", async () => {
+  const budget = {
+    beginFrame: vi.fn((_now: number, _clock: number) => {}),
+    endFrame: vi.fn((_now: number, _want: boolean) => {}),
+  };
+  const device = { createTexture: vi.fn() };
+  const originals = [budget.beginFrame, budget.endFrame, device.createTexture];
+  const renderer = {
+    surface: () => ({ resolutionScale: 0.85 }),
+    setResolutionScale: vi.fn(),
+    pipelineCensus: () => ({
+      complete: true,
+      counts: { deviceCreations: 0, failures: 0, pending: 0, droppedEvents: 0 },
+    }),
+  };
+  const marks = vi.spyOn(performance, "mark").mockImplementation(() => {
+    throw new Error("marker unavailable");
+  });
+  const result = installResolutionScaleProbe(budget, renderer, device, () => 4);
+  for (let frame = 0; frame < 120; frame++) {
+    budget.beginFrame(frame, frame);
+    budget.endFrame(frame + 1, true);
+  }
+  // The first measured frame requires a ready scale-1 surface before the forced step.
+  renderer.surface = () => ({
+    resolutionScale: renderer.setResolutionScale.mock.calls.length ? 0.85 : 1,
+  });
+  budget.beginFrame(120, 120);
+  budget.endFrame(121, true);
+  await expect(result).rejects.toThrow("marker unavailable");
+  expect([budget.beginFrame, budget.endFrame, device.createTexture]).toEqual(originals);
+  marks.mockRestore();
 });
 
 it("startup frame survives actual tsx serialization without browser helpers", async () => {

@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { EventEmitter } from "node:events";
 import { PLAYTEST_STARTUP_READY_TIMEOUT_MS } from "../src/protocol.js";
 
 const fixture = vi.hoisted(() => {
@@ -41,6 +42,14 @@ vi.mock("vite", () => ({ createServer: fixture.createServer }));
 vi.mock("../src/runner/captureEnvironment.js", () => ({ provideDisplay: fixture.provideDisplay }));
 vi.mock("../src/runner/runner-support.js", () => ({ acquireRunnerCaptureLock: fixture.acquireCaptureLease }));
 vi.mock("../../create-threenative/src/index.ts", () => ({ createProject: fixture.createProject }));
+vi.mock("../src/runner/bridgeClient.js", () => ({
+  PlaywrightTransport: class {
+    async waitForBridge() { return true; }
+    async call() { return {}; }
+  },
+  bridgeWaitTimeoutMs: () => 20_000,
+}));
+vi.mock("../src/runner/startupReady.js", () => ({ waitForStartupReady: async () => ({ phase: "ready" }) }));
 
 const importMeasurement = () => {
   vi.resetModules();
@@ -118,4 +127,36 @@ test("cold navigation uses the existing startup readiness budget and releases re
   expect(context.close).toHaveBeenCalledOnce();
   expect(browser.close).toHaveBeenCalledOnce();
   expect(fixture.captureLease.release).toHaveBeenCalledOnce();
+});
+
+test.each(["missing completion", "stalled stop", "completed"])("trace flush %s releases resources and clears its watchdog", async (mode) => {
+  vi.useFakeTimers();
+  const cdp = Object.assign(new EventEmitter(), {
+    send: vi.fn(async (method: string) => {
+      if (method !== "Tracing.end") return;
+      if (mode === "stalled stop") await new Promise(() => {});
+      if (mode === "completed") cdp.emit("Tracing.tracingComplete");
+    }),
+    detach: vi.fn().mockResolvedValue(undefined),
+  });
+  const page = {
+    on: vi.fn(), goto: vi.fn().mockResolvedValue(undefined),
+    evaluate: vi.fn().mockResolvedValue({ partial: {}, failure: { name: "Error", message: "observed failure" } }),
+  };
+  const context = { newPage: vi.fn().mockResolvedValue(page), newCDPSession: vi.fn().mockResolvedValue(cdp), close: vi.fn() };
+  const browser = { newContext: vi.fn().mockResolvedValue(context), close: vi.fn() };
+  fixture.browserLaunch.mockResolvedValue(browser);
+  try {
+    const result = expect(importMeasurement()).rejects.toThrow(mode === "completed" ? "observed failure" : "TN_RESOLUTION_TRACE_FLUSH_TIMEOUT");
+    await vi.waitFor(() => expect(cdp.send).toHaveBeenCalledWith("Tracing.end"));
+    if (mode !== "completed") await vi.advanceTimersByTimeAsync(20_000);
+    await result;
+    expect(cdp.detach).toHaveBeenCalledOnce();
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(browser.close).toHaveBeenCalledOnce();
+    expect(fixture.captureLease.release).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
 });
