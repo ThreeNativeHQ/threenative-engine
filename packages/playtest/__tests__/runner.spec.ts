@@ -341,7 +341,8 @@ test("fixed-step startup races retry without hiding a stopped loop", async () =>
 
   await advanceFixedStep(page, bridge, 10);
 
-  expect(attempts).toBe(2);
+  // The first one-tick request retries once; the remaining nine ticks each use one bounded request.
+  expect(attempts).toBe(11);
   expect(page.evaluate).toHaveBeenCalledTimes(1);
 });
 
