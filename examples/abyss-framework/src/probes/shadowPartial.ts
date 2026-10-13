@@ -317,8 +317,24 @@ export class ShadowPartialProbe {
     // Removing what the baseline never held must put the baseline back, texel for texel.
     this.results.shadowPartialRestoredMismatch = differing(baseline, depth);
     // Last, because the camera never comes back: every map after it was drawn somewhere else.
+    const travelledStart = {
+      byMove: this.#shadow.stats.byMove,
+      windowSteps: this.#shadow.stats.windowSteps,
+    };
+    const travelledDepthOffset = Math.fround(
+      (this.#shadow.levelLights[0] as DirectionalLight).shadow.matrix.elements[14] as number,
+    );
     await this.#travelAlongLight(6);
     await this.#step("Travelled", () => this.#scene.add(this.#box("c", -30, 10)), depth);
+    this.results.shadowPartialTravelledMoves = this.#shadow.stats.byMove - travelledStart.byMove;
+    this.results.shadowPartialTravelledWindowSteps =
+      this.#shadow.stats.windowSteps - travelledStart.windowSteps;
+    this.results.shadowPartialTravelledDepthChanged =
+      Math.fround(
+        (this.#shadow.levelLights[0] as DirectionalLight).shadow.matrix.elements[14] as number,
+      ) === travelledDepthOffset
+        ? 0
+        : 1;
     this.results.shadowPartialDone = 1;
     this.#done();
   }

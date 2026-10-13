@@ -722,6 +722,9 @@ const _shadowProjection = new Matrix4();
 const _oldWorld = new Matrix4();
 const _shadowFrustum = new Frustum();
 const _shadowPlanes = new Float32Array(24);
+/** The depth row a level's map was drawn under, and the one this frame proposes: uploaded float32. */
+const _drawnDepth = new Float32Array(4);
+const _proposedDepth = new Float32Array(4);
 /**
  * `world-gpu-scene`'s `COARSEST_SHADOW_LEVEL`, duplicated rather than imported: this module must not
  * know the world package, and the value is a level index the far side clamps to each asset's own.
@@ -2350,6 +2353,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
     camera.updateProjectionMatrix();
   }
 
+  /** Read the uploaded depth row without recomposing the camera that drew retained texels. */
+  #readDepthRow(level: ILevel, into: Float32Array): void {
+    const row = level.shadow.matrix.elements;
+    for (let at = 0; at < 4; at += 1) into[at] = row[2 + at * 4] as number;
+  }
+
   #init(): void {
     if (this.#initialised) return;
     this.#initialised = true;
@@ -2957,16 +2966,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // The pages this render counted as rectangles, kept for the derived span below that turns
         // them into the whole level and has to say so in the counters it already spent.
         let countedPages = 0;
-        // The depth origin of the camera the map was drawn from, in world light space. The span
-        // below reads it before the grant replaces the centre it is measured from.
-        let drawnOrigin = 0;
         if (grant) {
           // A level's first render places its window; only later renders are travel.
           if (Number.isFinite(level.minX)) {
             this.#windowSteps +=
               Math.abs(window.minX - level.minX) + Math.abs(window.minY - level.minY);
           }
-          drawnOrigin = level.centerW + level.eye;
           level.minX = window.minX;
           level.minY = window.minY;
           level.centerW = this.clipmap.centerLight.w;
@@ -3054,26 +3059,35 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // A rectangle redraws only the pages it names and keeps every other texel, and a kept
           // texel holds its depth as the camera that drew it encoded it: an absolute distance along
           // the light, measured from that camera's own origin. A span this render derived moves
-          // both, and an origin that moved moves the encoding even when near, far and the width
+          // both, and a camera that moved moves the encoding even when near, far and the width
           // between them are the same numbers the map already holds: a level whose casters all
           // translate along the sun, or an authored span whose camera travels with a window that
           // did not move. Either way the level draws whole instead of leaving numbers no camera the
-          // map was not drawn from can read.
+          // map was not drawn from can read. What decides it is the encoding itself — the depth row
+          // the kept texels are read through, in the float32 three uploads it — read from the map
+          // the level still holds and from the one this render proposes.
           const drawnNear = level.depthNear;
           const drawnFar = level.depthFar;
+          this.#readDepthRow(level, _drawnDepth);
           if (this.#autoDepth) this.#deriveDepth(level, centre);
-          if (
-            passes !== undefined &&
-            (level.depthNear !== drawnNear ||
-              level.depthFar !== drawnFar ||
-              Math.fround(level.centerW + level.eye) !== Math.fround(drawnOrigin))
-          ) {
-            const whole = this.clipmap.pagesPerAxis ** 2 - countedPages;
-            this.#pagesDirty += whole;
-            this.#pagesRedrawn += whole;
-            passes = undefined;
-          }
           this.#place(level, centre);
+          if (passes !== undefined) {
+            level.shadow.updateMatrices(level.light as unknown as DirectionalLight);
+            this.#readDepthRow(level, _proposedDepth);
+            if (
+              level.depthNear !== drawnNear ||
+              level.depthFar !== drawnFar ||
+              _proposedDepth[0] !== _drawnDepth[0] ||
+              _proposedDepth[1] !== _drawnDepth[1] ||
+              _proposedDepth[2] !== _drawnDepth[2] ||
+              _proposedDepth[3] !== _drawnDepth[3]
+            ) {
+              const whole = this.clipmap.pagesPerAxis ** 2 - countedPages;
+              this.#pagesDirty += whole;
+              this.#pagesRedrawn += whole;
+              passes = undefined;
+            }
+          }
           try {
             // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
             if (passes === undefined) {

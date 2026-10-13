@@ -144,7 +144,9 @@ export class WorldProbe extends Scene<WorldState> {
     this.#shadow = new VirtualShadowNode(sun, {
       clipExtents: [24, 96, 320],
       // Keep depth coordinates identical across caster changes so byte comparisons test redraws.
-      ...(SHADOW_PARTIAL ? { depthRange: 400, invalidationDelay: 0, lightDistance: 200 } : {}),
+      ...(SHADOW_PARTIAL
+        ? { depthRange: 400, followViewFocus: false, invalidationDelay: 0, lightDistance: 200 }
+        : {}),
     });
     sun.shadow.shadowNode = this.#shadow;
     // The framework's renderer ships with the shadow map off, because most games never ask for

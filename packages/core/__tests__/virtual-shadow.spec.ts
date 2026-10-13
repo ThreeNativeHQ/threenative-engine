@@ -140,7 +140,14 @@ function setupNode(light: DirectionalLight, options = {}): VirtualShadowNode {
 
 /** The real render belongs to three's renderer; the draw itself is not what these tests measure. */
 function stubLevelRenders(node: VirtualShadowNode): void {
-  for (const levelNode of [...node.levelNodes, ...node.moverNodes]) {
+  for (const [index, levelNode] of node.levelNodes.entries()) {
+    const light = node.levelLights[index] as DirectionalLight;
+    (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+      // Stock whole draws compose the receiver matrix; partial draws keep that full matrix.
+      if (light.shadow.camera.view?.enabled !== true) light.shadow.updateMatrices(light);
+    };
+  }
+  for (const levelNode of node.moverNodes) {
     (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () =>
       undefined;
   }
@@ -2321,6 +2328,65 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
       "a kept texel cannot be read from a camera it was not drawn from",
     ).toBe(false);
     expect(projected(node, 0, resident).z).not.toBeCloseTo(before.z, 3);
+    node.dispose();
+  });
+
+  /**
+   * The depth origin a level's camera sits at, read off its own placement rather than off the
+   * node's numbers: the light's own position on the axis between its target and itself. A world-space
+   * double, and the number a partial redraw used to compare instead of what the map is read through.
+   */
+  function levelOrigin(node: VirtualShadowNode, level: number): number {
+    const light = levelLight(node, level) as unknown as DirectionalLight;
+    const back = light.position.clone().sub(light.target.position).normalize();
+    return light.position.dot(back);
+  }
+
+  it("should redraw the whole level when two world origins share a float32 bin and the depth they encode does not", () => {
+    const { camera, light, scene } = shadowWorld();
+    // A camera sixteen megametres up the sun. Its float32 bin is two metres wide, and the authored
+    // `lightDistance` and `depthRange` put it there, so the receiver depth three composes from that
+    // origin is `(origin - near) / (far - near)`: the near subtraction and the division the origin
+    // cannot be compared through. Two origins inside one bin, and one float32 ulp of depth apart.
+    const node = setupNode(light, { clipExtents: [250], depthRange: 400, lightDistance: 16777216 });
+    settle(node, camera);
+    const resident = new Vector3(0, 0, 0);
+    const before = Math.fround(projected(node, 0, resident).z);
+    const drawnOrigin = levelOrigin(node, 0);
+    const held = { minX: node.clipmap.getWindow(0).minX, minY: node.clipmap.getWindow(0).minY };
+    // Forty centimetres along the light: a fifth of an origin bin, and less than a snapped page can
+    // see, so the level keeps the window and the camera its map was drawn from.
+    camera.position.addScaledVector(SUN, 0.4);
+    node.updateBefore(frameFor(camera));
+    expect(node.clipmap.getWindow(0).minX, "no snapped window moves").toBe(held.minX);
+    expect(node.clipmap.getWindow(0).minY, "no snapped window moves").toBe(held.minY);
+    // A caster inside the authored span arrives: an ordinary local admission.
+    const low = new Mesh(new BoxGeometry(4, 4, 4), new MeshStandardMaterial());
+    low.position.set(-6, 2, 0);
+    low.castShadow = true;
+    scene.add(low);
+    scene.updateMatrixWorld(true);
+    const draws: { depth: number; origin: number; partial: boolean }[] = [];
+    (node.levelNodes[0] as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow =
+      () => {
+        draws.push({
+          depth: Math.fround(projected(node, 0, resident).z),
+          origin: levelOrigin(node, 0),
+          partial: levelCamera(node, 0).view?.enabled === true,
+        });
+      };
+    node.invalidateRegion({ min: { x: -10, y: 0, z: -4 }, max: { x: 0, y: 4, z: 4 } }, true);
+    for (let step = 0; step < 40 && draws.length === 0; step += 1)
+      node.updateBefore(frameFor(camera));
+    expect(draws).toHaveLength(1);
+    // The premise, in the two numbers it is about: one float32 bin holds both world origins, and one
+    // float32 ulp of the depth a receiver reads is the difference between them.
+    expect(Math.fround(draws[0]?.origin ?? 0)).toBe(Math.fround(drawnOrigin));
+    expect(draws[0]?.depth).not.toBe(before);
+    expect(
+      draws[0]?.partial,
+      "a kept texel cannot be read through a depth offset it was not written under",
+    ).toBe(false);
     node.dispose();
   });
 

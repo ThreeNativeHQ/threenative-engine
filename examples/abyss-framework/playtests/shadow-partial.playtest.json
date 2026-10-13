@@ -145,6 +145,24 @@
         "allowTrivial": "Receiver matrix after the partial redraw must equal the forced whole-map receiver matrix."
       },
       {
+        "component": "shadowPartialTravelledMoves",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "No movement redraw can satisfy the depth-origin fallback proof."
+      },
+      {
+        "component": "shadowPartialTravelledWindowSteps",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "The snapped page windows must remain stationary throughout light-axis travel and admission."
+      },
+      {
+        "component": "shadowPartialTravelledDepthChanged",
+        "entity": "world",
+        "equals": 1,
+        "allowTrivial": "The uploaded receiver depth offset must change, proving the retained map's encoding became invalid."
+      },
+      {
         "component": "shadowPartialTravelledPartial",
         "entity": "world",
         "equals": 0,
