@@ -427,6 +427,8 @@ export interface IFrameBudgetSimulation {
 export interface IFrameBudgetOptions {
   /** Simulation ticks per report window when a clock is supplied, otherwise presented frames. Default 300. */
   readonly reportEvery?: number;
+  /** Minimum measured rendered frames per report window. Default 1. */
+  readonly minFrames?: number;
   readonly simulation?: IFrameBudgetSimulation;
   /** A present gap at or above this is a hitch, not a frame. Default 2000 ms. */
   readonly hitchMs?: number;
@@ -598,6 +600,7 @@ export class FrameBudget {
   #longestTaskMs = 0;
   #afterFirstFrameTaskMs = 0;
   readonly reportEvery: number;
+  readonly minFrames: number;
   readonly hitchMs: number;
   readonly #simulation: IFrameBudgetSimulation | undefined;
   #windowStartTick: number | undefined;
@@ -679,6 +682,7 @@ export class FrameBudget {
       DEFAULT_REPORT_EVERY,
       "reportEvery",
     );
+    this.minFrames = requirePositiveInteger(options.minFrames, 1, "minFrames");
     this.hitchMs = requirePositiveNumber(options.hitchMs, DEFAULT_HITCH_MS, "hitchMs");
     const capacity = requirePositiveInteger(options.capacity, DEFAULT_CAPACITY, "capacity");
     this.#report = options.report ?? ((line) => console.log(line));
@@ -1300,7 +1304,7 @@ export class FrameBudget {
       this.#simulation === undefined
         ? this.#framesInWindow
         : this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick());
-    if (elapsed < this.reportEvery) return;
+    if (elapsed < this.reportEvery || this.#framesInWindow < this.minFrames) return;
     const completed = this.window();
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);
     this.#windowIndex += 1;

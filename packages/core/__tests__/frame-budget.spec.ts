@@ -11,6 +11,29 @@ import { FixedStepLoop } from "../src/loop.js";
 import type { IRenderPassSample } from "../src/render-pass-budget.js";
 
 describe("frame budget simulation clock", () => {
+  it("waits for the requested rendered sample count after the simulation boundary", () => {
+    let tick = 0;
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = new FrameBudget({
+      simulation: { tick: () => tick, step: 1 / 60 },
+      reportEvery: 30,
+      minFrames: 30,
+      report: () => undefined,
+      onWindow: (window) => windows.push(window),
+    });
+    for (let frame = 0; frame < 30; frame += 1) {
+      budget.beginFrame(frame * 16, frame * 16);
+      tick += 30;
+      budget.endFrame(frame * 16 + 1);
+      expect(windows).toHaveLength(frame === 29 ? 1 : 0);
+    }
+    expect(windows[0]?.frames).toBe(30);
+    expect(windows[0]?.simulatedSeconds).toBe(15);
+    for (const minFrames of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => new FrameBudget({ minFrames })).toThrow("minFrames");
+    }
+  });
+
   it("closes after 60 ticks across three presented frames and starts the next window there", () => {
     let tick = 0;
     const windows: IFrameBudgetWindow[] = [];
