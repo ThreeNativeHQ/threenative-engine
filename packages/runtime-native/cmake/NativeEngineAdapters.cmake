@@ -275,6 +275,11 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas2d.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_canvas2d PROPERTIES LABELS "native-engine")
+    # A decal canvas copied into a texture canvas with drawImage keeps its text (Midway's NO STEP placards).
+    add_test(NAME native_engine_player_canvas_decal
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas-decal.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_canvas_decal PROPERTIES LABELS "native-engine")
     add_test(NAME native_engine_player_window_title
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-window-title.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
