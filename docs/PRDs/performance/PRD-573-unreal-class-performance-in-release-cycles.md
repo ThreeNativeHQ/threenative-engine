@@ -177,6 +177,11 @@ R5 CPU budget, 2026-10-12 (perf plus `/proc` stime, R5@4096 1920x1080, RTX 2080 
   - Present on a real display is 0.10 to 0.16 ms on both arms. The Xvfb present of about 75 ms was the only thing holding the inclusive number near 1x.
   - Engine hitch counts (5 to 12, against 0 to 1) are relative to each arm's own median, so they are a watch item, not a tail regression. Absolute p95 and p99 are lower on the engine at every rung.
   - Artifacts: `v111/gpu-R5-desktop6-*`, `v111/gpu-R3-desktop-*`, `v111/gpu-R2-desktop-*`. Run `gpu-R5-desktop` is invalid (its engine arm ran on Xvfb) and is not cited.
+  Cuts after the KPI, merged in 5947a9404:
+  - `88d18f1af`: animation hot fields plus prefetch. Animation fell from 0.81–1.18 to 0.47–0.66 ms, every B run below every A run, ctest `track_hot_fields`.
+  - `7fe2159fe`: `decide()` casts once per class run. It saves about 0.08 ms in `decide`, with no frame-level claim.
+  - Real display R5 (`gpu-R5-cut2`, host load ~21): frame p50 18.02 vs 6.43 ms, **2.80x** (2.97x thread CPU). The engine now beats legacy on animation too (0.42 vs 0.89 ms).
+  - The agent stopped because the rest is irreducible: the NVIDIA driver plus `clock_gettime` take 43% of self time; the fdlibm sin/cos parity math 3%; JS that legacy also runs 5%; and cold-object loads in `ProjectedCull::apply` 3%, where prefetch failed its A/B. ctest native-engine passed 373/373 (agent-run).
   Xvfb lane, R5, at 2976dad4a:
   - Fairness fixes (8a913846c..63f391d47): projected cubes are one cull unit on both arms, the engine counts its post passes, and the probe reads the stepped frame. Judge: IMPROVEMENT.
   - Render cuts (8f3451a3d..2976dad4a), each kept only after it won paired A/Bs: rigs-only `decide`, one world sphere per mesh, scene-order record slots, and a skipped sweep.
