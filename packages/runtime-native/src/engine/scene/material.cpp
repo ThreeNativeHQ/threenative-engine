@@ -13,6 +13,7 @@ Material::Material(MaterialType t, bool node) : type(t), nodeMaterial(node), id(
 std::shared_ptr<Material> Material::clone() const {
     auto copy = std::make_shared<Material>(*this);
     copy->id = nextMaterialId++;
+    copy->uuid = generateUuid();
     copy->version_ = 0;
     return copy;
 }
@@ -22,12 +23,14 @@ Material& Material::copy(const Material& source) {
     const MaterialType keptType = type;
     const bool keptNode = nodeMaterial, keptSprite = spriteMaterial, keptLine = lineMaterial;
     const uint32_t keptId = id, keptVersion = version_;
+    const std::string keptUuid = uuid;
     *this = source;
     type = keptType;
     nodeMaterial = keptNode;
     spriteMaterial = keptSprite;
     lineMaterial = keptLine;
     id = keptId;
+    uuid = keptUuid;
     version_ = keptVersion;
     needsUpdate();
     return *this;

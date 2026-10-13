@@ -352,6 +352,7 @@ void registerBufferGeometry(ClassBinding& b) {
     b.getters["name"] = [](void* self) { return string(as<BufferGeometry>(self)->name); };
     b.setters["name"] = [](void* self, const Value& v) { as<BufferGeometry>(self)->name = v.text; };
     b.getters["id"] = [](void* self) { return Value::of(double(as<BufferGeometry>(self)->id)); };
+    b.getters["uuid"] = [](void* self) { return string(as<BufferGeometry>(self)->uuid); };
     b.getters["revision"] = [](void* self) { return Value::of(double(as<BufferGeometry>(self)->revision())); };
     b.getters["drawRange.start"] = [](void* self) { return Value::of(as<BufferGeometry>(self)->drawRange.start); };
     b.getters["drawRange.count"] = [](void* self) { return Value::of(as<BufferGeometry>(self)->drawRange.count); };

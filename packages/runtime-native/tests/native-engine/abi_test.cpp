@@ -1263,9 +1263,41 @@ void attribute_defer() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// Midway cockpit: a game keys a batch, a cache or a dedupe map by `material.uuid`. An unbound uuid read
+// as undefined, so every material shared one key and a cockpit merged into its first material.
+void material_uuid() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto uuidOf = [&](tn_handle_t handle) {
+        tn_value_t out{};
+        CHECK(tn_get(handle, "uuid", &out, &d.value) == TN_OK && out.kind == TN_VALUE_STRING);
+        return text(out);
+    };
+    const auto v4 = [](const std::string& u) {
+        return u.size() == 36 && u[8] == '-' && u[13] == '-' && u[14] == '4' && u[18] == '-' &&
+               std::strchr("89ab", u[19]) != nullptr && u[23] == '-';
+    };
+    tn_handle_t a{}, b{}, standard{}, geometry{}, other{};
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &a, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &b, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshStandardMaterial", nullptr, 0, &standard, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "BufferGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "BufferGeometry", nullptr, 0, &other, &d.value) == TN_OK);
+    const std::string ua = uuidOf(a);
+    CHECK(v4(ua) && uuidOf(a) == ua);  // three's format, stable across reads
+    CHECK(uuidOf(b) != ua && uuidOf(standard) != ua && uuidOf(standard) != uuidOf(b));
+    CHECK(v4(uuidOf(geometry)) && uuidOf(geometry) != uuidOf(other));
+    tn_value_t out{};
+    CHECK(tn_invoke(a, "clone", nullptr, 0, &out, &d.value) == TN_OK && out.kind == TN_VALUE_HANDLE);
+    CHECK(uuidOf(out.handle) != ua);  // a clone is another material
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
-             {"attribute_defer", attribute_defer})
+             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid})

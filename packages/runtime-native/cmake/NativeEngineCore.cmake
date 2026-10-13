@@ -341,7 +341,8 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_typed_bytes=typed_bytes
     native_engine_abi_data_texture_bytes=data_texture_bytes
     native_engine_abi_attribute_view_writes=attribute_view_writes
-    native_engine_abi_attribute_defer=attribute_defer)
+    native_engine_abi_attribute_defer=attribute_defer
+    native_engine_abi_material_uuid=material_uuid)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/render_graph_test.cpp
