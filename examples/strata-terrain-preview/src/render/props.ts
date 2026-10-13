@@ -242,7 +242,11 @@ export function buildPropVariants(
       continue;
     }
     variants.set(`scrub:${i}`, [
-      { geometry: grassClump((VARIANTS.seed ^ (i * 0x165667b1)) >>> 0), role: "grass", variant: i },
+      {
+        geometry: grassClump((VARIANTS.seed ^ (i * 0x165667b1)) >>> 0, i),
+        role: "grass",
+        variant: i,
+      },
     ]);
   }
   for (let i = 0; i < VARIANTS.grass; i += 1) {
@@ -253,7 +257,7 @@ export function buildPropVariants(
       `grass:${i}`,
       ready ?? [
         {
-          geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0),
+          geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0, i),
           role: "grass",
           variant: i,
         },

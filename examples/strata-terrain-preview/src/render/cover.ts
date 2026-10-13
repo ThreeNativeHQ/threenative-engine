@@ -167,12 +167,18 @@ class CoverBuffer {
     corners: readonly Vector3[],
     normal: Vector3,
     colors: readonly Vector3[],
-    weight: number,
+    weight: number | readonly [number, number, number, number],
     uvs?: readonly (readonly [number, number])[],
   ): void {
     const base = this.sway.length;
     corners.forEach((point, i) =>
-      this.vertex(point, normal, colors[i] as Vector3, weight, uvs?.[i]),
+      this.vertex(
+        point,
+        normal,
+        colors[i] as Vector3,
+        typeof weight === "number" ? weight : (weight[i] as number),
+        uvs?.[i],
+      ),
     );
     this.index.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
@@ -228,10 +234,17 @@ const MEADOW_GREENS = [
  * tip. The bend is per blade and the direction is per blade, which is the entire difference between
  * "grass" and "several identical green triangles".
  */
-export function grassClump(seed: number): BufferGeometry {
+export function grassClump(seed: number, species = 0): BufferGeometry {
   const random = createRandom(seed);
   const buffer = new CoverBuffer();
   const segments = 3;
+  // Meadow grass, fine arching fescue and upright broad sedge share one opaque material.
+  const habits = [
+    { height: 1, width: 1, bend: 1, spread: 0.075 },
+    { height: 0.85, width: 0.7, bend: 1.35, spread: 0.11 },
+    { height: 1.1, width: 1.25, bend: 0.6, spread: 0.055 },
+  ] as const;
+  const habit = habits[species % habits.length] ?? habits[0];
   // Root occlusion: the bottom of a clump sits in its own shade, and a blade that starts at the same
   // brightness as its tip looks pasted onto the ground. The fade runs over the first third of the
   // blade, which is about as far down as the neighbours of a clump reach.
@@ -253,18 +266,22 @@ export function grassClump(seed: number): BufferGeometry {
     const azimuth = random() * Math.PI * 2;
     // Per blade, not per clump: a clump whose blades are all one height is a fan, and the outer
     // blades of a real clump are the ones that have fallen over.
-    const height = (GRASS.height[0] + random() * (GRASS.height[1] - GRASS.height[0])) * clumpHeight;
-    const bend = GRASS.bend * (0.35 + random() * 1.1);
+    const height =
+      (GRASS.height[0] + random() * (GRASS.height[1] - GRASS.height[0])) *
+      clumpHeight *
+      habit.height;
+    const bend = GRASS.bend * (0.35 + random() * 1.1) * habit.bend;
     // Blades lean outward from the clump's own centre, so the clump is round, not a flat fan.
     const outward = new Vector3(Math.cos(azimuth), 0, Math.sin(azimuth));
-    const width = GRASS.width[0] + random() * (GRASS.width[1] - GRASS.width[0]);
+    const width = (GRASS.width[0] + random() * (GRASS.width[1] - GRASS.width[0])) * habit.width;
     const side = new Vector3(-Math.sin(azimuth), 0, Math.cos(azimuth));
+    const basal = habit.spread * Math.sqrt(random());
     // The blade's spine at `at`: rising, and leaning over further the higher it goes.
     const spine = (at: number) =>
       new Vector3(
-        outward.x * height * bend * at * at,
+        outward.x * (basal + height * bend * at * at),
         height * at,
-        outward.z * height * bend * at * at,
+        outward.z * (basal + height * bend * at * at),
       );
     for (let i = 0; i < segments; i += 1) {
       const at0 = i / segments;
@@ -291,7 +308,7 @@ export function grassClump(seed: number): BufferGeometry {
           root.clone().lerp(tip, at1).multiplyScalar(rootAo(at1)),
           root.clone().lerp(tip, at1).multiplyScalar(rootAo(at1)),
         ],
-        at0 * at0,
+        [at0 * at0, at0 * at0, at1 * at1, at1 * at1],
       );
     }
   }
@@ -336,10 +353,11 @@ export function fernClump(seed: number): BufferGeometry {
   const phase = random() * Math.PI * 2;
   const white = new Vector3(1, 1, 1);
   for (let f = 0; f < fronds; f += 1) {
-    const azimuth = phase + (f / fronds) * Math.PI * 2 + (random() - 0.5) * 0.5;
+    const azimuth = phase + f * 2.399963229728653 + (random() - 0.5) * 0.35;
     const length = FERN.length[0] + random() * (FERN.length[1] - FERN.length[0]);
     const width = length * FERN.width * (0.8 + random() * 0.4);
-    const rise = FERN.rise * (0.7 + random() * 0.6);
+    const young = f / (fronds - 1);
+    const rise = FERN.rise * (0.7 + random() * 0.4 + young * 0.65);
     const outward = new Vector3(Math.cos(azimuth), 0, Math.sin(azimuth));
     const side = new Vector3(-Math.sin(azimuth), 0, Math.cos(azimuth));
     const rect = FROND_RECTS[Math.floor(random() * FROND_RECTS.length)] as readonly number[];
@@ -348,7 +366,7 @@ export function fernClump(seed: number): BufferGeometry {
     const spine = (at: number) =>
       outward
         .clone()
-        .multiplyScalar(length * (0.25 + 0.75 * at) * at)
+        .multiplyScalar(length * (1 - young * 0.35) * (0.25 + 0.75 * at) * at)
         .setY(length * rise * (2.2 * at - 1.6 * at * at));
     // A frond's own twist: the outer half rolls a little, so the clump is not a set of flat paddles.
     const roll = (random() - 0.5) * 0.6;
@@ -377,7 +395,7 @@ export function fernClump(seed: number): BufferGeometry {
         [a, b, c, d],
         normal,
         [shade(at0), shade(at0), shade(at1), shade(at1)],
-        at0 * at0,
+        [at0 * at0, at0 * at0, at1 * at1, at1 * at1],
         [
           [u0, va],
           [u1, va],
@@ -474,7 +492,7 @@ export function poppyCluster(
           stemGreen.clone().lerp(stemLight, at1),
           stemGreen.clone().lerp(stemLight, at1),
         ],
-        at0 * at0 * 0.8,
+        [at0 * at0 * 0.8, at0 * at0 * 0.8, at1 * at1 * 0.8, at1 * at1 * 0.8],
       );
     }
     // Five cupped petals, each a small strip of quads rather than one flat quad. A poppy is a bowl:
@@ -483,7 +501,7 @@ export function poppyCluster(
     // and as a line from anywhere else, which is what the last captures showed.
     const head = spine(1);
     const twist = random() * Math.PI * 2;
-    const radius = POPPY.disc;
+    const radius = POPPY.disc * (0.8 + random() * 0.4);
     // The dark centre every poppy has: the ring of stamens around the ovary, which is nearly black
     // and which is the single detail that makes a red disc read as a flower.
     const centreR = radius * POPPY.centre;
