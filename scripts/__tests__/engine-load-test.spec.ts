@@ -4180,6 +4180,35 @@ describe("the same-run pair guard", () => {
     );
   });
 
+  it("records the engine page's crossings every measured frame, census or not", async () => {
+    const driver = await readFile(
+      path.join(process.cwd(), "examples/engine-load-test/src/driver.ts"),
+      "utf8",
+    );
+    const entry = await readFile(
+      path.join(process.cwd(), "packages/three-native/src/browser-entry.ts"),
+      "utf8",
+    );
+    expect(entry).toMatch(/__tnCrossingCount = crossings/u);
+    expect(driver).toMatch(/__tnCrossingCount\?\.\(\)/u);
+    expect(driver).toMatch(
+      /if \(crossed !== undefined\) bridgeCalls\.push\(crossed - callsBefore\)/u,
+    );
+    expect(driver).toMatch(/bridgeCalls\.length === 0 \? \{\} : \{ bridgeCalls \}/u);
+  });
+
+  it("holds the web engine arm to the same crossing budget, on its page's bridgeCalls", () => {
+    const web = ["tn-web", "tn-engine-web"] as const;
+    const engine = (bridgeCalls: number) =>
+      arm("tn-engine-web", { rung: { bridgeCalls: series(bridgeCalls) } });
+    // 52: the web R5 frame on the host projection report (web-final-2-crossings).
+    expect(pairVerdict([arm("tn-web")], [engine(52)], web).problem).toBeUndefined();
+    // 38,308: the same page on core's JS mirror (web-baseline-crossings).
+    expect(pairVerdict([arm("tn-web")], [engine(38_308)], web).problem).toContain(
+      `R2@4096 crossings per frame (budget ${HOST_PROJECTION_CROSSING_BUDGET})`,
+    );
+  });
+
   it("refuses arms whose surface, present mode, frame clock or rasteriser differ", () => {
     const surface = pairVerdict(
       [arm("tn-desktop")],

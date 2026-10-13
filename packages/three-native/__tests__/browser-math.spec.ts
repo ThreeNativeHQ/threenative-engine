@@ -351,6 +351,117 @@ describe("three's math values on the browser back end", () => {
     expect([x, y, z, w]).toEqual([expected.x, expected.y, expected.z, expected.w]);
   });
 
+  it("counts every engine crossing, so a bench rung reports bridgeCalls", () => {
+    const { runtime, calls } = memoryRuntime();
+    const engine = defineBrowserClasses(registry, {
+      ...runtime,
+      invoke: () => null,
+      engineReferences: (refs) => refs.map(() => 1),
+    });
+    const Group = engine.classes.Group as new () => {
+      position: { y: number };
+      add(child: object): void;
+    };
+    const before = engine.crossings();
+    const scene = new Group();
+    const child = new Group();
+    scene.add(child);
+    void child.position; // one get, then an own property
+    void child.position;
+    child.position.y = 2; // a lane write: no crossing
+    engine.collect();
+    // 2 constructs, 1 invoke, 2 gets (position, then its __address once), 1 engineReferences: the
+    // in-place write itself is no crossing.
+    expect(engine.crossings() - before).toBe(6);
+    expect(calls.filter((call) => call.startsWith("set "))).toEqual([]);
+  });
+
+  it("copies and compares engine matrices over the heap view, with no crossing (web cut 2)", () => {
+    const { runtime, calls, heap } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      heapF64: () => heap,
+      get(self, property) {
+        // A matrix is 16 doubles; the fake heap spaces objects 8 doubles apart, so each matrix gets
+        // a spacer after it.
+        if (property === "matrixWorld") {
+          const matrix = runtime.construct("Matrix4", []);
+          runtime.construct("Object3D", []);
+          return matrix;
+        }
+        return runtime.get(self, property);
+      },
+    });
+    interface IMatrix {
+      elements: number[];
+      copy(other: IMatrix): IMatrix;
+      equals(other: IMatrix): boolean;
+    }
+    const Group = classes.Group as new () => { matrixWorld: IMatrix };
+    const a = new Group().matrixWorld;
+    const b = new Group().matrixWorld;
+    const values = Array.from({ length: 16 }, (_, i) => i + 0.5);
+    const [offset = 0] = registry.classes.Matrix4?.fields?.elements ?? [];
+    // Construction order on the fake heap (64 bytes an object): Group 0, a 64, spacer 128, Group 192,
+    // b 256, spacer 320.
+    const [aAt, bAt] = [64 + offset, 256 + offset];
+    heap.set(values, bAt / 8);
+    expect(a.equals(b)).toBe(false); // reads each address once
+    const before = calls.length;
+    expect(a.copy(b)).toBe(a);
+    expect(a.equals(b)).toBe(true);
+    expect([...heap.subarray(aAt / 8, aAt / 8 + 16)]).toEqual(values);
+    expect(calls.slice(before).filter((call) => /^(invoke|get|set) /u.test(call))).toEqual([]);
+  });
+
+  it("binds the host projection report as one engine call, which core's projection takes (web cut 3)", () => {
+    const { runtime } = memoryRuntime();
+    const invoked: string[] = [];
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      invoke(_self, method) {
+        invoked.push(method);
+        return "true,projected,4096,4096,1,0";
+      },
+    });
+    const scene = new (
+      classes.Scene as new () => {
+        __tnProjectionReport(...args: unknown[]): string;
+      }
+    )();
+    expect(typeof scene.__tnProjectionReport).toBe("function");
+    expect(scene.__tnProjectionReport(1000)).toBe("true,projected,4096,4096,1,0");
+    expect(invoked).toEqual(["__tnProjectionReport"]);
+  });
+
+  it("lets a removed object go within sixteen safe points (web cut 5's bounded pass)", () => {
+    const { runtime } = memoryRuntime();
+    const released = new Set<string>();
+    const asked = new Set<string>();
+    const engine = defineBrowserClasses(registry, {
+      ...runtime,
+      invoke: () => null,
+      engineReferences(refs) {
+        for (const ref of refs) asked.add(ref.key);
+        return refs.map((ref) => (released.has(ref.key) ? 0 : 1));
+      },
+    });
+    const Group = engine.classes.Group as new () => { add(child: object): void };
+    const scene = new Group();
+    const children = Array.from({ length: 80 }, () => new Group());
+    for (const child of children) scene.add(child);
+    engine.collect();
+    // The engine lets every child go; each must be asked again, and dropped, within sixteen safe points.
+    const keys = children.map((child) => engineRef(child)?.key as string);
+    for (const key of keys) released.add(key);
+    asked.clear();
+    for (let i = 0; i < 16; i++) engine.collect();
+    expect(keys.filter((key) => !asked.has(key))).toEqual([]);
+    asked.clear();
+    for (let i = 0; i < 16; i++) engine.collect();
+    expect(keys.filter((key) => asked.has(key))).toEqual([]); // gone from the held set
+  });
+
   it("keeps a mesh's geometry and an attribute's shape until they are set", () => {
     const { runtime } = memoryRuntime();
     const reads: string[] = [];

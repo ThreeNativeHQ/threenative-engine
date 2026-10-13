@@ -197,6 +197,11 @@ const censusTotal = (): number => {
   for (const count of callCounts?.values() ?? []) total += count;
   return total;
 };
+// The engine arm's crossing counter (`browser-entry.ts`): one increment per crossing, so it is on in every
+// timed run, and each measured frame reports its bridgeCalls for the pair's crossing budget.
+// Read per frame: the engine binds it when `three` loads, and tn-web never does.
+const crossingCount = (): number | undefined =>
+  (globalThis as { __tnCrossingCount?: () => number }).__tnCrossingCount?.();
 
 /** Startup and memory of a web arm, read in the page (PRD-573 slice 7). */
 export interface IWebMetrics {
@@ -370,7 +375,7 @@ export async function measureRung(
       if (callCounts !== undefined) censusAtOpen = census();
     }
     const submittedAt = clock.now();
-    const callsBefore = callCounts === undefined ? 0 : censusTotal();
+    const callsBefore = crossingCount() ?? (callCounts === undefined ? 0 : censusTotal());
     harness.step(frameIndex);
     await harness.render();
     const submitted = clock.now() - submittedAt;
@@ -388,7 +393,9 @@ export async function measureRung(
         threadCpuMs.push(Math.round(submitted * 1000) / 1000);
         taken.forEach((ms, index) => phaseMs[index]?.push(Math.round(ms * 1000) / 1000));
       }
-      if (callCounts !== undefined) bridgeCalls.push(censusTotal() - callsBefore);
+      const crossed = crossingCount();
+      if (crossed !== undefined) bridgeCalls.push(crossed - callsBefore);
+      else if (callCounts !== undefined) bridgeCalls.push(censusTotal() - callsBefore);
     }
     // Read before yielding: three's own rAF resets the per-frame counters, so a read after
     // `nextFrame()` reports zero draws no matter what was submitted.
@@ -438,7 +445,7 @@ export async function measureRung(
           threadCpuMs,
           phases: Object.fromEntries(PHASES.map((name, index) => [name, phaseMs[index] ?? []])),
         }),
-    ...(callCounts === undefined ? {} : { bridgeCalls }),
+    ...(bridgeCalls.length === 0 ? {} : { bridgeCalls }),
     ...(crossingTop === undefined ? {} : { crossingTop }),
     completedWorkMeanMs:
       completion === undefined ? null : (windowEnd - windowStart) / measuredFrames,

@@ -101,6 +101,8 @@ export interface IBrowserEngine {
    * so a detached subtree, its closures and its wrappers are collected.
    */
   collect(): void;
+  /** Engine crossings so far (construct, get, set, invoke, engineReferences): a bench rung's bridgeCalls. */
+  crossings(): number;
   /** The wrapper for an engine object the engine handed over (a loaded model's scene). */
   wrap(ref: IEngineRef): object;
 }
@@ -272,9 +274,27 @@ function defineTraversal(
  */
 export function defineBrowserClasses(
   registry: IRegistryDump,
-  runtime: IBrowserRuntime,
+  source: IBrowserRuntime,
   catalog?: ICatalogShape,
 ): IBrowserEngine {
+  // Every call into the engine counts, one increment each: the bench's crossing budget reads it per frame.
+  let crossings = 0;
+  const counted =
+    <A extends unknown[], R>(call: (...args: A) => R) =>
+    (...args: A): R => {
+      crossings++;
+      return call(...args);
+    };
+  const runtime: IBrowserRuntime = {
+    ...source,
+    construct: counted(source.construct),
+    get: counted(source.get),
+    set: counted(source.set),
+    invoke: counted(source.invoke),
+    ...(source.engineReferences === undefined
+      ? {}
+      : { engineReferences: counted(source.engineReferences) }),
+  };
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object }>();
   const typeNames = new Map<number, string>();
@@ -1073,6 +1093,7 @@ export function defineBrowserClasses(
   return {
     classes,
     wrap,
+    crossings: () => crossings,
     collect() {
       // An eighth of the held wrappers each safe point, round robin (a live Set iterator): asking all
       // of them cost about 1 ms a frame at 4,096 meshes. The eighth is of the pass's peak, so releases
@@ -1090,7 +1111,8 @@ export function defineBrowserClasses(
         }
         cursor = held.values();
         peak = held.size;
-        if (candidates.length > 0) break;
+        // An emptied set would restart forever: a safe point that let the last wrapper go hung here.
+        if (candidates.length > 0 || held.size === 0) break;
       }
       const counts = runtime.engineReferences?.(candidates.map(refOf));
       candidates.forEach((wrapper, i) => {
