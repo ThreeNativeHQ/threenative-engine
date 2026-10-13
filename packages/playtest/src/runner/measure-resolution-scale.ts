@@ -38,13 +38,17 @@ const checkpoint = async (pendingOperation: string): Promise<void> => {
 };
 const pending = <T>(name: string, operation: () => Promise<T>): Promise<T> =>
   resolutionScalePending(name, checkpoint, operation);
-const server = await pending("starter.bootstrap", () => serveStarter(output, checkpoint));
-const url = server.resolvedUrls!.local[0]!;
-const display = await pending("display.provide", () => provideDisplay());
-checkpointDisplay.value = display.strategy;
+let server: Awaited<ReturnType<typeof serveStarter>> | undefined;
+let display: Awaited<ReturnType<typeof provideDisplay>> | undefined;
 let browser: Browser | undefined;
 const measurements: IResolutionScaleRun[] = [];
 try {
+  const startedServer = await pending("starter.bootstrap", () => serveStarter(output, checkpoint));
+  server = startedServer;
+  const url = startedServer.resolvedUrls!.local[0]!;
+  const providedDisplay = await pending("display.provide", () => provideDisplay());
+  display = providedDisplay;
+  checkpointDisplay.value = providedDisplay.strategy;
   browser = await pending("browser.launch", () => chromium.launch({
     headless: false,
     args: [
@@ -54,7 +58,7 @@ try {
       "--disable-vulkan-surface",
       "--no-sandbox",
     ],
-    env: display.env,
+    env: providedDisplay.env,
   }));
   for (let run = 1; run <= (preflightOnly ? 1 : 3); run++) {
     checkpointRun = run;
@@ -197,7 +201,7 @@ try {
           {
             run,
             mode: preflightOnly ? "preflight" : "measurement",
-            display: display.strategy,
+            display: providedDisplay.strategy,
             startup,
             adapter,
             preflight,
@@ -236,7 +240,7 @@ try {
               run,
               mode: preflightOnly ? "preflight" : "measurement",
               status: "failed",
-              display: display.strategy,
+              display: providedDisplay.strategy,
               ...evidence,
               error: {
                 name: error instanceof Error ? error.name : "Error",
@@ -256,8 +260,8 @@ try {
   }
 } finally {
   await browser?.close();
-  await display.release();
-  await server.close();
+  await display?.release();
+  await server?.close();
 }
 
 async function serveStarter(
@@ -322,6 +326,11 @@ async function serveStarter(
     server: { host: "127.0.0.1", port: 0, fs: { allow: [repo] } },
   });
   await checkpoint("starter.listen");
-  await server.listen();
+  try {
+    await server.listen();
+  } catch (error) {
+    await server.close();
+    throw error;
+  }
   return server;
 }
