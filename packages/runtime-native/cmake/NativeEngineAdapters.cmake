@@ -115,6 +115,17 @@ target_sources(tn_player_v8_services PRIVATE src/audio/audio_context.cpp src/aud
     src/audio/async_audio_decode.cpp src/audio/vorbis_impl.c)
 target_include_directories(tn_player_v8_services PRIVATE ${THIRD_PARTY_DIR}/stb
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
+# The legacy host's Skia 2D canvas, so a game's procedural textures draw (document.createElement("canvas")).
+target_sources(tn_player_v8_services PRIVATE src/canvas/canvas2d.cpp src/canvas/canvas2d_bindings.cpp)
+if(TARGET skia::skia)
+    target_link_libraries(tn_player_v8_services PRIVATE skia::skia)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        find_package(Fontconfig REQUIRED)
+        find_package(Freetype REQUIRED)
+        target_link_libraries(tn_player_v8_services PRIVATE Fontconfig::Fontconfig Freetype::Freetype)
+    endif()
+    target_compile_definitions(tn-native-engine-player-v8 PRIVATE TN_PLAYER_CANVAS2D=1)
+endif()
 add_dependencies(tn_player_v8_services threenative-runtime-scripts)
 target_link_libraries(tn_player_v8_services PUBLIC tn_engine_player)
 if(TN_ENABLE_NATIVE_PHYSICS AND TARGET threenative-native-physics)
@@ -259,6 +270,11 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-compile-reentry.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_compile_reentry PROPERTIES LABELS "native-engine")
+    # A game's 2D canvas draws into a CanvasTexture (Midway's gun steel was flat near-white without it).
+    add_test(NAME native_engine_player_canvas2d
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas2d.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_canvas2d PROPERTIES LABELS "native-engine")
     add_test(NAME native_engine_player_window_title
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-window-title.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)

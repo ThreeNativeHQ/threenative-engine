@@ -67,6 +67,13 @@
 #include "mystral/physics/native_bindings.h"
 
 namespace mystral::js { std::unique_ptr<Engine> createV8Engine(); }
+#if TN_PLAYER_CANVAS2D
+#include "mystral/canvas/canvas2d.h"
+namespace mystral::canvas {
+js::JSValueHandle createCanvas2DContext(js::Engine* engine, int width, int height,
+                                        std::vector<std::unique_ptr<Canvas2DContext>>& ownedContexts);
+}
+#endif
 
 using namespace tn::engine;
 
@@ -177,6 +184,10 @@ class V8Game {
     uint64_t liveWrappers() const { return adapter_ ? adapter_->liveWrappers() : 0; }
 
   private:
+#if TN_PLAYER_CANVAS2D
+    // Declared before services_ so the contexts outlive the JS objects that point at them.
+    std::vector<std::unique_ptr<mystral::canvas::Canvas2DContext>> canvases_;
+#endif
     std::unique_ptr<mystral::js::Engine> services_;
     v8::Isolate* isolate_ = nullptr;
     tn_context_t* context_ = nullptr;  // the engine's context (engine objects), not the JS one
@@ -281,7 +292,68 @@ class V8Game {
     /** The engine object a JS wrapper stands for, when it is one of `cls` (or any Object3D for "Object3D"). */
     tn::binding::Object* engineObject(v8::Local<v8::Value> value, std::string_view cls);
     static void decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info);
+    void installDocument(v8::Local<v8::Context> ctx);
 };
+
+// `document.createElement("canvas")` for a game's procedural textures, over the legacy host's Skia 2D
+// context. The element's size is read when getContext("2d") runs, as a game sets width and height first.
+// A build without Skia answers getContext with null and says so once, never a context that draws nothing.
+constexpr const char* kDocumentShim = R"JS(
+(() => {
+  if (typeof globalThis.document !== "undefined") return;
+  const create2d = globalThis.__tnCreateCanvas2D;
+  let warned = false;
+  const canvas = () => {
+    const el = { tagName: "CANVAS", width: 300, height: 150, style: {}, __ctx: null, __size: "" };
+    el.getContext = (type) => {
+      if (type !== "2d") return null;
+      if (!create2d) {
+        if (!warned) {
+          warned = true;
+          console.warn("TN_PLAYER_CANVAS2D_UNAVAILABLE: this player build has no 2D canvas; canvas.getContext('2d') answers null");
+        }
+        return null;
+      }
+      const size = el.width + "x" + el.height;
+      if (el.__ctx === null || el.__size !== size) {
+        el.__ctx = create2d(el.width, el.height);
+        el.__ctx.canvas = el;
+        el.__size = size;
+      }
+      return el.__ctx;
+    };
+    el.toDataURL = () => { throw new Error("TN_PLAYER_CANVAS_TODATAURL: canvas.toDataURL is not available in the engine player"); };
+    return el;
+  };
+  globalThis.document = {
+    createElement: (tag) => {
+      if (String(tag).toLowerCase() === "canvas") return canvas();
+      throw new Error("TN_PLAYER_DOCUMENT: document.createElement('" + tag + "') is not available in the engine player");
+    },
+  };
+  globalThis.document.createElementNS = (_ns, tag) => globalThis.document.createElement(tag);
+})();
+)JS";
+
+void V8Game::installDocument(v8::Local<v8::Context> ctx) {
+#if TN_PLAYER_CANVAS2D
+    mystral::js::Engine* engine = services_.get();
+    engine->setGlobalProperty("__tnCreateCanvas2D",
+        engine->newFunction("__tnCreateCanvas2D", [this, engine](void*, const std::vector<mystral::js::JSValueHandle>& args) {
+            const int width = args.size() > 0 ? static_cast<int>(engine->toNumber(args[0])) : 300;
+            const int height = args.size() > 1 ? static_cast<int>(engine->toNumber(args[1])) : 150;
+            if (width <= 0 || height <= 0 || width > 16384 || height > 16384) {
+                engine->throwException("TN_PLAYER_CANVAS2D_SIZE: canvas size must be 1..16384 pixels");
+                return engine->newUndefined();
+            }
+            return mystral::canvas::createCanvas2DContext(engine, width, height, canvases_);
+        }));
+#endif
+    v8::Local<v8::Script> shim;
+    v8::Local<v8::Value> ignored;
+    if (!v8::Script::Compile(ctx, v8str(isolate_, kDocumentShim)).ToLocal(&shim) || !shim->Run(ctx).ToLocal(&ignored))
+        std::cerr << "TN_PLAYER_DOCUMENT: the document shim failed to install\n";
+}
 
 void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
@@ -825,6 +897,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     adapter_->install(ctx, ctx->Global());
     // WebAudio is the legacy host's (SDL output, worker decode); the three audio classes sit on it.
     mystral::audio::initializeAudioBindings(services_.get());
+    installDocument(ctx);
 #if TN_PLAYER_NATIVE_PHYSICS
     if (!mystral::physics::initializeNativePhysicsBindings(services_.get()))
         return error = "TN_NATIVE_PHYSICS_MISSING: resident installation failed", false;
