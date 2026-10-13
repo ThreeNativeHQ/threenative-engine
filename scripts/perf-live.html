@@ -33,6 +33,8 @@
   header { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:baseline; justify-content:space-between; }
   h1 { font-size:17px; margin:0; font-weight:650; }
   h2 { font-size:15px; margin:0 0 4px; font-weight:650; }
+  nav.tabs { display:flex; gap:6px; } nav.tabs a { padding:4px 12px; border-radius:999px; color:var(--mute); text-decoration:none; border:1px solid var(--line); }
+  nav.tabs a[aria-current] { background:var(--accent); border-color:var(--accent); color:#fff; }
   .mute { color:var(--mute); } .sm { font-size:12.5px; }
   .pill { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; background:var(--grey-bg); color:var(--mute); }
   #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px; }
@@ -88,6 +90,7 @@
 <main>
 <header>
   <h1>Epic scoreboard <span class="mute">· PRD-573 · native C++ engine vs legacy three.js</span></h1>
+  <nav class="tabs"><a href="/" aria-current="page">Epic scoreboard</a><a href="/midway">Midway</a></nav>
   <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
 </header>
 
