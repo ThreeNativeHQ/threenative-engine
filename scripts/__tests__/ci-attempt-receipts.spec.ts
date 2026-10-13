@@ -22,8 +22,14 @@ it("fetches every small page without requesting the 100-job response that return
       { total_count: 2, jobs: [{ id: 11, run_attempt: 2 }] },
     ]);
   });
-  expect(readAttemptJobs(identity).jobs.map((job) => job.id)).toEqual([10, 11]);
-  expect(execute.mock.calls[0][1]).toEqual([
+  expect(readAttemptJobs(identity)).toEqual({
+    totalCount: 2,
+    jobs: [
+      { id: 10, run_attempt: 2 },
+      { id: 11, run_attempt: 2 },
+    ],
+  });
+  expect(execute.mock.calls[0]?.[1]).toEqual([
     "api",
     "--paginate",
     "--slurp",
