@@ -948,7 +948,18 @@ index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a8
  
  		//
  
-@@ -124,9 +126,18 @@ class RenderObjects {
+@@ -119,7 +121,9 @@ class RenderObjects {
+ 			renderObject.updateClipping( clippingContext );
+ 
+-			if ( renderObject.needsGeometryUpdate ) {
++			const geometryChanged = renderObject.needsGeometryUpdate;
++
++			if ( geometryChanged ) {
+ 
+ 				renderObject.setGeometry( object.geometry );
+ 
+ 			}
+@@ -124,9 +128,18 @@ class RenderObjects {
  
  			}
  
@@ -963,7 +974,7 @@ index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a8
 +			const sourceReplaced = sourceTracked && renderObject._sourceMaterial !== sourceMaterial;
 +			const sourceChanged = sourceTracked && ( sourceReplaced || renderObject.sourceVersion !== sourceMaterial.version );
 +
-+			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
++			if ( geometryChanged || renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
 +
 +				if ( sourceReplaced || renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
  
