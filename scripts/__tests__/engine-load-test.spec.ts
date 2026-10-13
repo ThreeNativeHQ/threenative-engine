@@ -59,6 +59,7 @@ import {
 } from "../engine-load-test/browser.js";
 import { HostCpuRecorder, parseProcStat, withHostCpu } from "../engine-load-test/host-cpu.js";
 import {
+  HOST_PROJECTION_CROSSING_BUDGET,
   pairRows,
   pairVerdict,
   renderPairMarkdown,
@@ -4117,6 +4118,23 @@ describe("the same-run pair guard", () => {
         labels,
       ),
     ).toThrow(/TN_BENCH_PARITY/u);
+  });
+
+  it("refuses an R rung whose engine arm crosses the bridge like core's JS mirror did", () => {
+    const hosted = pairVerdict(
+      [arm("tn-desktop")],
+      [arm("tn-engine-desktop", { rung: { bridgeCalls: series(62) } })],
+      labels,
+    );
+    expect(hosted.problem).toBeUndefined();
+    const mirrored = pairVerdict(
+      [arm("tn-desktop")],
+      [arm("tn-engine-desktop", { rung: { bridgeCalls: series(17_669) } })],
+      labels,
+    );
+    expect(mirrored.problem).toContain(
+      `R2@4096 crossings per frame (budget ${HOST_PROJECTION_CROSSING_BUDGET})`,
+    );
   });
 
   it("refuses arms whose surface, present mode, frame clock or rasteriser differ", () => {

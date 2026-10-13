@@ -349,6 +349,7 @@ BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* nam
 }
 
 RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, bool materialize) {
+    ++recordLookups_;
     return record(mesh, records_[&mesh], materialize);
 }
 
@@ -789,6 +790,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             // The pointer survives while its record does; a moved or new mesh looks itself up once.
             Record*& found = slotRecords_[i];
             if (!found || found->meshId != child->id()) {
+                ++recordLookups_;
                 const auto it = records_.find(child);
                 found = it != records_.end() ? &it->second : nullptr;
             }
@@ -1303,6 +1305,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     // Objects that left the scene leave the database.
     // When every record in the map was seen this render, there is nothing to sweep.
     bool erased = false;
+    if (mapSeen_ != records_.size()) ++recordSweeps_;
     for (auto it = mapSeen_ == records_.size() ? records_.end() : records_.begin(); it != records_.end();) {
         if (it->second.seen != frame_) {
             it = records_.erase(it);

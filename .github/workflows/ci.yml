@@ -512,6 +512,19 @@ jobs:
         if: always()
         shell: bash
         run: ccache --show-stats --verbose
+      # PRD-573 v1.11: the engine player's 2x over the legacy host stands on counters, each pinned by one case:
+      # wrapper visits (step 1), the native matrix walk (2), host projection (3), three's math as JS (4a), transform
+      # views (4b) and the render database's slot records. They need the V8 adapter and the renderer, which the
+      # core-only native-engine job never builds; this job already carries V8, Dawn and Mesa's Vulkan.
+      - name: Build the engine player and run its 2x mechanism cases
+        working-directory: packages/runtime-native
+        run: |
+          set -euo pipefail
+          cmake --preset tn-linux -B build/tn-engine -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON
+          cmake --build build/tn-engine --target tn-native-engine-player-v8 --target tn-native-engine-v8-test \
+            --target tn-native-engine-render-database-test --parallel "$(nproc)"
+          ctest --test-dir build/tn-engine --no-tests=error --output-on-failure -R \
+            '^native_engine_(v8_(collect_visits|native_matrix_world|native_projection_report|crossing_histogram|js_math|js_math_views|js_math_members)|player_(crossing_budget|host_projection)|renderer_(steady_frame_hashes_no_record|records_survive_siblings)|batched_vs_unbatched)$'
       - name: Report the compiler cache hit rate
         if: always()
         shell: bash

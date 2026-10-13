@@ -552,6 +552,7 @@ int Session::initialize() {
         const double cpuFrameBegin = metrics ? threadCpuMs() : -1;
         if (spans) gameSpan(kHostFrameSpan, 0);
         double presentMs = 0, presentCpuMs = 0, gameCpuMs = -1;
+        double presentCpuStart = -1, presentCpuEnd = -1;
         bool presentTimed = false;
         std::optional<json::Value> frameSpans;
         const auto elapsed = [](auto begin) {
@@ -562,6 +563,7 @@ int Session::initialize() {
         if (game.afterRender)  // after the previous frame; between frames, never inside one
             game.afterRender();
         if (spans) gameSpan(kGcSpan, 1);
+        const double cpuAfterRender = metrics ? threadCpuMs() : -1;
         if (!refreshView()) { if (spans) gameSpan(kHostFrameSpan, 1); return; }
 
         if (presenter && (presenter->width() != window.width || presenter->height() != window.height)) {
@@ -612,7 +614,7 @@ int Session::initialize() {
                 // The swap call alone, on the clock the legacy host uses around wgpuSurfacePresent.
                 const double presentCpuBegin = metrics ? threadCpuMs() : -1;
                 presenter->present();
-                if (presentCpuBegin >= 0) { presentCpuMs = threadCpuMs() - presentCpuBegin; presentTimed = true; }
+                if (presentCpuBegin >= 0) { presentCpuEnd = threadCpuMs(); presentCpuMs = presentCpuEnd - presentCpuBegin; presentCpuStart = presentCpuBegin; presentTimed = true; }
 #if defined(__ANDROID__)
                 mystral::webgpu::paceToPresentationCap();
 #endif
@@ -665,6 +667,17 @@ int Session::initialize() {
                                       clock.tick(), updateTicks, gameCpuMs,
                                       cpuFrameBegin >= 0 ? updateCpuMs + threadCpuMs() - cpuFrameBegin - presentCpuMs : -1,
                                       presentTimed ? presentCpuMs : -1, renderCpuMs);
+            if (presentTimed && renderCpuMs >= 0) {
+                // The host segments outside the page's phases, so the bench's `other` splits on a clock (PRD-573 v1.11).
+                using V = json::Value;
+                auto members = sample.members();
+                members.emplace_back("hostCpuMs", V::makeObject({
+                    {"afterRender", V::makeNumber(cpuAfterRender - cpuFrameBegin)},
+                    {"prePresent", V::makeNumber(presentCpuStart - (renderCpuBegin + renderCpuMs))},
+                    {"postPresent", V::makeNumber(threadCpuMs() - presentCpuEnd)},
+                    {"update", V::makeNumber(updateCpuMs)}}));
+                sample = V::makeObject(std::move(members));
+            }
             if (spans) {
                 auto members = sample.members();
                 members.emplace_back("gameSpans", std::move(*frameSpans));

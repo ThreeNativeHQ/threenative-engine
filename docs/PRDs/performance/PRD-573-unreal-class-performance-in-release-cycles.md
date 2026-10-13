@@ -165,6 +165,19 @@ R5 CPU budget, 2026-10-12 (perf plus `/proc` stime, R5@4096 1920x1080, RTX 2080 
 - [x] Step 4b: transform members are shared views. `position`, `rotation`, `quaternion`, `scale`, `matrix` and `matrixWorld` of a native `Object3D` are three's JS classes with storage over `Float64Array` views of the `TransformPage` columns (stride and field offsets from C++, the page kept alive by the backing store). Euler and Quaternion sync runs in JS, through three's own `_onChange`. Native `updateMatrix` recomposes and compares, and it bumps `revision` on a change, so a direct memory write is seen. proof: a ctest with 3N component writes giving a `crossings()` delta of 0 and the native matrix equal to three's; the existing sync, `revision` and `matrixWorldNeedsUpdate` cases green; a visual judge on R5 BEFORE/AFTER
   Result 2026-10-12 (5ae954d1c..65c00b0e4): ctest `js_math_views` gives a crossing delta of 0 over 3N component writes, with the native matrix bit-equal to `Matrix4.compose` and `revision` +1; `ctest -L native-engine` 367/367. R5 frames with `TN_NATIVE_JS_MATH=0` and `=1` are pixel-identical, and the fresh judge returned PASS on both runs. R2@4096 engine thread CPU without present fell from 21.7 to 12.0 ms (same binary, flag off then on). R2 crossings fell from 37,100 to 16,588 per frame. R5 KPI 0.73x to 0.90x (rounds 0.86, 0.86, 0.97, host load 15 to 41). Known differences from three: a native object that keeps a JS math argument (curve points) holds a copy, so it does not alias the caller's vector, and `Array.isArray(matrix.elements)` is false for views.
 - [ ] Step 5: the A/B on the declared metric, on the real-GPU lane and on Xvfb, tails and load recorded. proof: `pnpm bench:engines --pair tn-desktop,tn-engine-desktop --rounds 3` on R2, R3 and R5
+  Partial 2026-10-12, Xvfb R5 only, at 2976dad4a:
+  - Fairness fixes (8a913846c..63f391d47): projected cubes are one cull unit on both arms, the engine counts its post passes, and the probe reads the stepped frame. Judge: IMPROVEMENT.
+  - Render cuts (8f3451a3d..2976dad4a), each kept only after it won paired A/Bs: rigs-only `decide`, one world sphere per mesh, scene-order record slots, and a skipped sweep.
+  - `ctest -L native-engine -LE tn-known-red` 371/371.
+  - The R5@4096 1920x1080 pair, 5 rounds, waives drawCalls only. Triangles are 155,919 on both arms.
+    - Thread CPU without present: 12.71 vs 6.05 ms, pooled **2.10x**. Per round: 1.73, 2.35, 2.03, 2.12, 2.12 (median 2.12).
+    - Inclusive frame p50: 96.35 vs 85.92 ms (1.12x). p95: 122.3 vs 117.0. p99: 137.8 vs 130.9.
+    - Engine phases, ms: render 1.53, other 1.64, animation 0.87 (legacy 0.68), game 0.79, matrixWorld 0.54, projection 0.44.
+    - Host load 10 to 21. Artifacts: `artifacts/engine-load-test/prd-573/v111/v1-confirm-*`.
+  - R3@4096 1280x720, 3 rounds, at 425114540: 13.23 vs 6.38 ms, pooled **2.07x** (rounds 2.15, 2.08, 2.01). Triangles are 155,907 on both arms. Inclusive p50 is 49.86 vs 42.05 ms (1.19x), and p99 is 64.4 vs 52.9 ms.
+  - R2@4096 1280x720, 3 rounds: 7.97 vs 4.71 ms, pooled 1.69x (rounds 1.71, 1.68, 1.98). Triangles are 98,307 on both arms. Inclusive p50 1.03x, but p99 is worse on the engine (76.7 vs 58.5 ms, 3 hitches).
+  - Engine `other` (the frame minus the five phases) is higher than legacy on every rung: R2 2.17/1.48 ms, R3 2.17/1.81 ms. It is the next target. Host load was 25 to 27 for R2/R3. Artifacts: `v111/v1-confirm-R2-*`, `v111/v1-confirm-R3-*`.
+  - Left: the real-GPU inclusive lane. The 2x claim waits for it.
 
 
 ## Cycle v2 — stop wasted work
