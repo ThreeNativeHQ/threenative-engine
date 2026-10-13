@@ -203,7 +203,7 @@ function readCounters(target: IRenderPassTarget): { draws: number; triangles: nu
   return { draws, triangles };
 }
 
-const installed = new WeakSet<object>();
+const installed = new WeakMap<object, RenderPassBudget>();
 
 /**
  * Resolved frames kept for GPU attribution. A resolve lags the frame it measures by a few frames,
@@ -213,11 +213,16 @@ const installed = new WeakSet<object>();
 const GPU_UID_FRAME_LIMIT = 64;
 
 /**
- * Names a render call by what three already calls it: the outermost call is the main camera, and a
- * nested call carries the scene name three or the reflector gave it.
+ * Three's shadow/reflection names take priority over the renderer's actual world root/camera.
+ * Standalone raw renders retain the outermost-main convention when no world draw is scoped.
  */
-function passKind(scene: unknown, depth: number): FramePassKind {
-  if (depth === 0) return "main";
+function passKind(
+  scene: unknown,
+  camera: unknown,
+  depth: number,
+  world: { scene: unknown; camera: unknown } | undefined,
+): FramePassKind {
+  if (world === undefined && depth === 0) return "main";
   const name =
     typeof scene === "object" &&
     scene !== null &&
@@ -226,6 +231,7 @@ function passKind(scene: unknown, depth: number): FramePassKind {
       : "";
   if (name.startsWith("Shadow Map")) return "shadow";
   if (/reflect/iu.test(name)) return "reflection";
+  if (world !== undefined && scene === world.scene && camera === world.camera) return "main";
   return "nested";
 }
 
@@ -258,6 +264,7 @@ export class RenderPassBudget {
   readonly #original: (scene: unknown, camera: unknown) => void;
   readonly #frame: IRenderPassSample[] = [];
   readonly #stack: IPassFrame[] = [];
+  #world: { scene: unknown; camera: unknown } | undefined;
   /** Timestamp uids each render call allocated, keyed by the Three.js frame they belong to. */
   readonly #gpuUids = new Map<number, IGpuUidEntry[]>();
   /** The last frame `nextGpuFrame` handed out; every earlier frame has been reported. */
@@ -280,7 +287,7 @@ export class RenderPassBudget {
         childTriangles: 0,
         entryDraws: counters.draws,
         entryTriangles: counters.triangles,
-        kind: passKind(scene, depth),
+        kind: passKind(scene, camera, depth, this.#world),
       };
       this.#stack.push(frame);
       try {
@@ -309,7 +316,7 @@ export class RenderPassBudget {
     };
     target.render = instrumented;
     this.#instrumentDraws(target.info);
-    installed.add(target);
+    installed.set(target, this);
   }
 
   /**
@@ -347,6 +354,22 @@ export class RenderPassBudget {
     if (installed.has(target)) return undefined;
     if (readCounters(target) === undefined) return undefined;
     return new RenderPassBudget(target);
+  }
+
+  /** The renderer's authored root/camera, including scene passes nested beneath post processing. */
+  static renderWorld(target: object, scene: unknown, camera: unknown, draw: () => void): void {
+    const budget = installed.get(target);
+    if (budget === undefined) {
+      draw();
+      return;
+    }
+    const previous = budget.#world;
+    budget.#world = { scene, camera };
+    try {
+      draw();
+    } finally {
+      budget.#world = previous;
+    }
   }
 
   /**

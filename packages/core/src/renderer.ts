@@ -27,7 +27,7 @@ import {
   type PipelineCensus,
   createPipelineCensus,
 } from "./pipeline-census.js";
-import type { ITimestampQueryPool } from "./render-pass-budget.js";
+import { type ITimestampQueryPool, RenderPassBudget } from "./render-pass-budget.js";
 import { AlphaAntialiasing, type IAlphaAntialiasingReport } from "./render/alpha-antialiasing.js";
 import {
   type IRenderChainBudgetWindow,
@@ -1125,7 +1125,7 @@ function wrapRenderer(
       if (!timestampFramesManaged) setTimestampTracking();
       renderingFrame += 1;
       try {
-        renderFrame(scene, camera);
+        RenderPassBudget.renderWorld(raw, scene, camera, () => renderFrame(scene, camera));
       } finally {
         renderingFrame -= 1;
       }
