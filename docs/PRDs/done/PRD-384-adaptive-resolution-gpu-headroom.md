@@ -1,7 +1,7 @@
 # PRD-384 — Adaptive resolution must distinguish host delay from GPU cost
 
-**Status:** PARTIAL
-**Priority:** P1 — Declared required by P1 PRD-539's temporal reconstruction (successor of PRD-455); one open box, native controller execution for the landed scaler.
+**Status:** DONE
+**Priority:** P1 — Declared required by P1 PRD-539's temporal reconstruction (successor of PRD-455); closed 2026-10-12; every box ticked.
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** Codex
 **Depends on:** PRD-228; Midway's installed PRD-382 engine branch
@@ -57,15 +57,21 @@ this repair. No claim is made to fix host scheduling or the game's overall frame
   recorded in the game's investigation; the capture rig does not establish a 60-fps target.
   Devastator: the same 90-second capture also passed, with 19 full-resolution `auto` samples,
   nine C-key presses and no browser errors; cockpit and final chase frames inspected.
-- [ ] AC-4 [local; actor: agent]: Typecheck, lint and test run; native controller execution
+- [x] AC-4 [local; actor: agent]: proof: `pnpm typecheck && pnpm lint && pnpm test` plus the native fixture below. Typecheck, lint and test run; native controller execution
   and fresh independent review cover the changed behavior. Report unrelated failures explicitly.
-  Native controller fixture ran on the installed Linux runtime with exit 0 and
-  `TN_SCALER_NATIVE_PASS`. This proves controller behavior, not a native Midway launch.
-  Independent read-only review passed; its age-8 boundary request was added and passed.
-  Whole-engine `pnpm test` reached native package tests: 18 failures from absent native build
-  artifacts, 1,029 passed, 62 skipped. Whole-engine lint reports pre-existing water-surface
-  formatting and ripple-field non-null assertions. Changed files pass Biome's error checks.
-  These unrelated full-suite prerequisites remain open; no full green or merge is claimed.
+  Re-run 2026-10-12 on develop 934de90ad: `pnpm typecheck` exit 0 (after the workspace build; the
+  first run failed with TS2307 only because no package was built). `pnpm lint` exit 0 (0 errors,
+  1,397 existing warnings). Core Vitest: 3,187 passed; the one failure (`world-gpu-scene.spec.ts`,
+  60 s timeout under load) passes alone, 97 of 97; scaler and frame-budget tests: 74 passed.
+  Native controller fixture `packages/core/__tests__/fixtures/resolution-scaler-native.ts`, bundled
+  with esbuild, ran on `mystral run --no-sdl` with the V8 build (`tn-linux-jsprofile`) and the
+  QuickJS build (`tn-linux-quickjs`): exit 0 and `TN_SCALER_NATIVE_PASS` on both. This proves
+  controller behavior on both native JS engines, not a native Midway launch.
+  Independent read-only review passed earlier; its age-8 boundary request was added and passed.
+  Unrelated failure: `pnpm test` exits 1 only in `packages/runtime-native` (21 failed, 1,550
+  passed, 70 skipped; timestamp-query, pump-silence, native-adapter-policy and three more files).
+  This fresh worktree has no native build artifacts and this change touches no native file.
+  No full-suite green is claimed.
 
 ## Unreal comparison (2026-10-09)
 
@@ -73,23 +79,24 @@ Read in UE 5.8.3 for the Unreal review request (ideas only, no code copied). Pat
 `Engine/Source/Runtime/`. The policy above is the one Unreal's controller uses, so no box changes:
 
 - Unreal sizes the fraction from GPU busy time only, as `sqrt(target / GPU ms)` times the current
-  fraction (`RenderCore/Private/DynamicRenderScaling.cpp:45-55`). A frame whose game or render
-  thread is over budget never counts as GPU over budget (`Engine/Private/DynamicResolution.cpp:281-290`).
-  That is this PRD's policy 2: host delay never buys back pixels.
+  fraction (`RenderCore/Private/DynamicRenderScaling.cpp:45-55`). By default no CPU time enters the
+  decision (`r.DynamicRes.UseCPUTimeLogic` is false, `Engine/Private/DynamicResolution.cpp:110-115`).
+  The legacy CPU-bound check, when on, keeps a game or render thread over budget from counting as
+  GPU over budget (`:281-290`). Both modes match this PRD's policy 2: host delay never buys back pixels.
 - Its targets leave headroom: a 10% GPU headroom below the frame budget
   (`DynamicResolution.cpp:46-50`), a 16-frame history weighted by 0.9 per older frame (`:65-75`),
   and an immediate change when every frame scanned is over budget (`:96-99`, `:337-347`, `:406`).
 - Its own comment says the square-root model ignores a fixed cost that does not scale with pixels
-  (`DynamicResolution.cpp:314-322`), so it can drop resolution further than needed. The insensitivity
-  guard in `resolution-scaler.ts` measures that fixed cost and refunds the step; Unreal does not.
+  (`DynamicResolution.cpp:309-322`), so it can drop resolution further than needed. The insensitivity
+  guard in `resolution-scaler.ts` measures that fixed cost and refunds the step; Unreal leaves it as a TODO.
   Keep it.
 
 The differences that remain are new work, not this repair: steps that reallocate nothing, a
 continuous fraction and a minimum change period are
-[PRD-564](../unreal-source-borrowing/PRD-564-the-resolution-scale-changes-without-reallocating-a-target.md); a start point
-from the GPU family is [PRD-563](../done/PRD-563-the-first-frame-starts-at-the-tier-the-gpu-family-holds.md);
+[PRD-564](../Unreal/performance/PRD-564-the-resolution-scale-changes-without-reallocating-a-target.md); a start point
+from the GPU family is [PRD-563](PRD-563-the-first-frame-starts-at-the-tier-the-gpu-family-holds.md);
 a weak GPU's late timestamps and the MSAA rung are
-[PRD-549](./PRD-549-the-engine-holds-60-fps-on-a-weak-gpu.md).
+[PRD-549](../performance/PRD-549-the-engine-holds-60-fps-on-a-weak-gpu.md).
 
 ## Integration
 

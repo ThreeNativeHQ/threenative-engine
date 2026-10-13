@@ -811,6 +811,9 @@ function pathFamily(file, selective) {
   // Doc links, evidence budgets and secret scans are re-validated on the develop nightly run and
   // at promotion. AGENTS.md/CLAUDE.md are instruction consumers and are handled above.
   if (file.endsWith(".md")) return "prose";
+  // The speed-loop record is generated data. Only scripts/ci-speed-loop.mjs reads it, and that
+  // script matches the scripts/ci-* CI rule, so a change to it still runs the CI lanes.
+  if (/^docs\/ci-speed\/(?:ledger\.json|index\.html)$/u.test(file)) return "prose";
   if (changedTemplates([file]).length > 0) return "template";
   return "a non-Markdown path";
 }

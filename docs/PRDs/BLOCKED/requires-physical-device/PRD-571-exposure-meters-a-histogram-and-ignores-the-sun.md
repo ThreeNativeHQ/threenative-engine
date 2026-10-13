@@ -19,7 +19,7 @@ Auto exposure is generated template source. The three files are byte-identical i
 templates (`md5sum` on 2026-10-09): `src/render/exposure.ts`, `src/render/exposureGraph.ts` and
 `src/render/autoExposure.ts`. It ships opt-in (`exposure.ts:29`, `enabled: false`).
 
-What the meter does today (`templates/starter/src/render/`):
+What the meter did before this PRD (`packages/create-threenative/templates/starter/src/render/`, line numbers from the pre-change files):
 
 - `exposureMeter` (`exposure.ts:45-50`) takes linear luminance, clamps it to `[0.0001, 8]`, and
   weights the bottom of the frame more (`1 + uv.y`) so that ground counts more than sky.
@@ -44,8 +44,8 @@ material side. Its "Out of scope" section gives exposure to PRD-339 and PRD-343,
 - **The default method is the histogram.** `AutoExposureMethod = AEM_Histogram`
   (`Engine/Source/Runtime/Engine/Private/Scene.cpp:494`). The low and high percents are 10 and 90
   (`Scene.cpp:495-496`). The histogram covers log2 luminance from −8 to 4 by default, or −10 to
-  20 EV100 when the extended range is on (`Scene.cpp:499-513`). The speeds are 3 up and 1 down
-  (`Scene.cpp:519-520`).
+  20 EV100 when the extended range is on (`Scene.cpp:503-513`). The speeds are 3 up and 1 down
+  (`Scene.cpp:520-521`). A project setting can replace the method default (`SceneView.cpp:190-194`).
 - **64 bins.** `HISTOGRAM_SIZE` is 64 (`Engine/Shaders/Private/PostProcessHistogramCommon.ush:89-90`).
   The build pass gives each thread its own histogram in group-shared memory, adds pixels to it with
   atomic adds, and then merges (`Engine/Shaders/Private/PostProcessHistogram.usf:69-72`, `:99-102`,
@@ -53,22 +53,22 @@ material side. Its "Out of scope" section gives exposure to PRD-339 and PRD-343,
 - **The average ignores both tails.** The average walks the bins from dark to bright. It first
   removes the darkest `low percent` of the total weight, then keeps weight only until it reaches
   the `high percent`. The result is the weighted mean of the kept bins in log2 space, and it
-  returns to linear with `exp2` (`PostProcessHistogramCommon.ush:150-186`). With 10/90, the
+  returns to linear with `exp2` (`PostProcessHistogramCommon.ush:150-186`). Unreal clamps both percents to 1..99 and caps the low value at the high value (`PostProcessEyeAdaptation.cpp:607-608`). Equal percents return a fixed 1.0 as a legacy case (`PostProcessHistogramCommon.ush:152-155`). With 10/90, the
   darkest 10% and the brightest 10% of the frame do not move the exposure.
 - **No weight means no change.** If nothing is left after the clip, the average falls back to the
-  minimum luminance, not to a division by zero (`PostProcessHistogramCommon.ush:176-179`).
+  minimum luminance, not to a division by zero (`PostProcessHistogramCommon.ush:178-181`).
 - **A meter mask weights the screen.** Each pixel's histogram weight comes from a mask texture
   (`PostProcessHistogramCommon.ush:37-38`, `:201-204`; used at `PostProcessHistogram.usf:141`).
   The default is a white texture
-  (`Engine/Source/Runtime/Renderer/Private/PostProcess/PostProcessEyeAdaptation.cpp:792-805`).
+  (`Engine/Source/Runtime/Renderer/Private/PostProcess/PostProcessEyeAdaptation.cpp:792-801`).
   TN's bottom weight in `exposureMeter` is the same idea as a function of UV.
 - **Adaptation runs in log2 space.** It uses exponential approach when the error is small and a
-  linear rate when the error is larger than a start distance (`PostProcessHistogramCommon.ush:208-240`).
+  linear rate when the error is larger than a start distance (`PostProcessHistogramCommon.ush:206-240`).
   TN already adapts in log2 space with a snap for large errors (`exposureGraph.ts:73-79`), so this
   PRD does not change adaptation.
 - **Local exposure is separate, and neutral by default.** UE also ships a bilateral-grid local
   exposure (`Engine/Shaders/Private/PostProcessLocalExposure.usf`), but its contrast scales and
-  detail strength default to 1.0 (`Scene.cpp:527-529`), which changes nothing. This PRD defers it
+  detail strength default to 1.0 (`Scene.cpp:526-529`), which changes nothing. This PRD defers it
   (see Decisions).
 
 ## Solution
@@ -117,6 +117,8 @@ that a sun disc of 1% of the frame does not move the exposure.
 | Histogram exposure metric | Game sets `enabled: true` in `src/render/exposure.ts` → `AutoExposureNode` (`autoExposure.ts`) → `adaptExposure` | Replaces the 1×1 mean as the luminance input. The mean reduction stays only if the gather arm reads its levels. | AC-1, Phase 1 |
 
 ## Decisions
+
+- 2026-10-12 (Unreal source review): All Unreal claims were checked against 5.8.3. The line ranges for the speeds (`520-521`), the range block (`503-513`), the empty-weight fallback (`178-181`) and the adaptation functions (`206-240`) were off by a few lines and are corrected. Two Unreal guards were missing: it clamps both percents to 1..99, and it returns a fixed 1.0 when they are equal. TN validates `0 <= low < high <= 100` and rejects equal values, so TN is stricter and the plan stays the same. No box changed.
 
 - 2026-10-09 (João, via the Unreal source review): local exposure (UE's bilateral grid) is
   deferred. UE ships it neutral by default (`Scene.cpp:527-529`), so it is not part of UE's
