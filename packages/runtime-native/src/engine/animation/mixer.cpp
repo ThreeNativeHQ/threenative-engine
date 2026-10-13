@@ -64,8 +64,8 @@ AnimationClip& AnimationClip::resetDuration() {
 // ---- PropertyMixer
 
 PropertyMixer::PropertyMixer(PropertyBinding propertyBinding, TrackType type, std::size_t size)
-    : binding(std::move(propertyBinding)), valueSize(size), buffer(size * (type == TrackType::Quaternion ? 6 : 5), 0.0),
-      type_(type) {}
+    : valueSize(size), buffer(size * (type == TrackType::Quaternion ? 6 : 5), 0.0), type_(type),
+      binding(std::move(propertyBinding)) {}
 
 // three's _select: a boolean property takes the source whole once its share reaches one half.
 void PropertyMixer::select(std::size_t dst, std::size_t src, double t) {
@@ -318,7 +318,23 @@ void AnimationAction::update(double t, double deltaTime, double timeDirection, i
                 propertyBindings_[j]->accumulateAdditive(w);
             }
         } else {
-            for (std::size_t j = 0; j != interpolants_.size(); ++j) {
+            // One pass a frame over data the rest of the frame evicted, so each track's loads start
+            // ahead of its use: its own objects `kFar` tracks ahead, the node and buffer they point at
+            // `kMid` ahead, and the node's transform columns `kNear` ahead of the write that needs them.
+            constexpr std::size_t kNear = 2, kMid = 4, kFar = 8;
+            const std::size_t n = interpolants_.size();
+            const auto objects = [&](std::size_t j) {
+                __builtin_prefetch(propertyBindings_[j], 1, 3);
+                __builtin_prefetch(reinterpret_cast<const char*>(propertyBindings_[j]) + 64, 1, 3);
+                __builtin_prefetch(interpolants_[j].get(), 1, 3);
+            };
+            for (std::size_t k = 0; k != std::min(n, kFar); ++k) objects(k);
+            for (std::size_t k = 0; k != std::min(n, kMid); ++k) propertyBindings_[k]->prefetchData();
+            for (std::size_t k = 0; k != std::min(n, kNear); ++k) propertyBindings_[k]->prefetchColumns();
+            for (std::size_t j = 0; j != n; ++j) {
+                if (j + kFar < n) objects(j + kFar);
+                if (j + kMid < n) propertyBindings_[j + kMid]->prefetchData();
+                if (j + kNear < n) propertyBindings_[j + kNear]->prefetchColumns();
                 interpolants_[j]->evaluate(clipTime);
                 propertyBindings_[j]->accumulate(accuIndex, w);
             }
