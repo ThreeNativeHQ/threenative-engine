@@ -202,6 +202,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // Prepare scenery while the scene loads; enter only attaches it.
       this.#terrain = createTerrain(this.#data, ctx.assets, BIOMES[world]);
       this.#sky = createOutdoorSky(ctx.camera, BIOMES[world]);
+      if (world === "coastal") {
+        this.#ocean = createOcean();
+        this.#water = createWaterMesh(this.#ocean, this.#data);
+      }
       this.#lake = createLakes(this.#data.lakes ?? [], this.#terrain.field, world === "forest");
       this.#erosionSamples = {
         flow: this.#data.erosion?.flow.filter((value) => value > 0).length ?? 0,
@@ -217,6 +221,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
     #elapsed = 0;
     #sky: IOutdoorSky | undefined;
     #ocean: ReturnType<typeof createOcean> | undefined;
+    #water: ReturnType<typeof createWaterMesh> | undefined;
     #river: IRiverWater | undefined;
     #lake: IRiverWater | undefined;
 
@@ -455,10 +460,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         },
       });
 
-      const ocean = world === "coastal" ? ctx.add(createOcean()) : undefined;
-      this.#ocean = ocean;
-      if (ocean) {
-        const water = createWaterMesh(ocean, data);
+      const ocean = this.#ocean ? ctx.add(this.#ocean) : undefined;
+      const water = this.#water;
+      if (ocean && water) {
         ctx.add(water);
         ctx.entities.add("sea", {
           object: ocean,
