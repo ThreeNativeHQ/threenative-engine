@@ -3,7 +3,7 @@
 // up to five times per drawn frame on Midway, and each pass made the next frame later (PRD-610 AC-1).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,3 +60,14 @@ const settled = perFrame.slice(3);
 assert(settled.length >= 10, `too few drawn frames to judge: ${perFrame.join(",")}`);
 assert(settled.every((count) => count === 1), `frame callbacks per drawn frame: ${settled.join(",")} (want 1 each)`);
 console.log(`PASS one frame callback per drawn frame over ${settled.length} frames`);
+
+// Each frame line also counts the main thread's user-space instructions, the A/B figure that host load does
+// not move (PRD-610). The 25 ms busy callback alone retires millions, so a frame under 1,000 K is a broken
+// counter. Only where the kernel grants a thread its own counter (perf_event_paranoid at most 2).
+const paranoid = Number(readFileSync("/proc/sys/kernel/perf_event_paranoid", "utf8"));
+if (paranoid <= 2) {
+  const counts = output.split("\n").filter((line) => line.startsWith("TN_PLAYER_FRAME:"))
+    .map((line) => JSON.parse(line.slice("TN_PLAYER_FRAME:".length)).cpuFrameKInstructions).slice(3, 20);
+  assert(counts.length >= 10 && counts.every((count) => count > 1000), `cpuFrameKInstructions per frame: ${counts.join(",")}`);
+  console.log(`PASS cpuFrameKInstructions on every frame (median ${counts.sort((a, b) => a - b)[counts.length >> 1]} K)`);
+}
