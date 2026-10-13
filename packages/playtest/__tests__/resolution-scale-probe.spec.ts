@@ -198,6 +198,8 @@ it("captures exactly step +30 frames for each scale, counts allocations/builds, 
   ]);
   expect(rows.map((row) => row.stepCensusAfter.counts.deviceCreations)).toEqual([4, 6, 7]);
   expect(rows[0]!.stepRatio).toBe(4);
+  const first = rows[0]!.frames[0]!;
+  expect(first.clockEpochEndMs! - first.clockEpochStartMs!).toBeCloseTo(first.frameMs, 2);
   expect(censusInsideFrames.every((inside) => !inside)).toBe(true);
   expect([budget.beginFrame, budget.endFrame, device.createTexture]).toEqual([begin, end, create]);
   log.mockRestore();

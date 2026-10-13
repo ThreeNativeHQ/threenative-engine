@@ -129,7 +129,14 @@ interface IResolutionScaleCensus {
 }
 export interface IResolutionScaleRow {
   scale: number;
-  frames: { frame: number; frameMs: number; rafIntervalMs?: number; surface?: unknown }[];
+  frames: {
+    frame: number;
+    frameMs: number;
+    clockEpochStartMs?: number;
+    clockEpochEndMs?: number;
+    rafIntervalMs?: number;
+    surface?: unknown;
+  }[];
   allocations: { bytes: number; [key: string]: unknown }[];
   textureBytes: number;
   pipelineBuilds: number;
@@ -331,6 +338,8 @@ export function installResolutionScaleProbe(
           frames.push({
             frame,
             frameMs: now - start,
+            clockEpochStartMs: performance.timeOrigin + start,
+            clockEpochEndMs: performance.timeOrigin + now,
             rafIntervalMs:
               previousTimestamp === undefined ? undefined : timestamp - previousTimestamp,
             surface: renderer.surface(),
