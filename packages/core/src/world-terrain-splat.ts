@@ -48,6 +48,14 @@ export interface ITerrainSplatLayer {
   readonly id: string;
   readonly tile: number;
   readonly tint: readonly [number, number, number];
+  /** Package-relative image paths; omitted entries retain `<textures>/<id>_<kind>.jpg`.
+   * Normal, ORM and height maps are still loaded only when their flags request them. */
+  readonly maps?: {
+    readonly diffuse?: string;
+    readonly normal?: string;
+    readonly orm?: string;
+    readonly height?: string;
+  };
   readonly normal?: boolean;
   /** `<id>_orm.jpg`: occlusion in r, roughness in g, metalness in b, read as linear data. */
   readonly orm?: boolean;
@@ -406,9 +414,30 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     layer: ITerrainSplatLayer,
     kind: "diff" | "nrm" | "orm" | "h",
   ): Promise<Texture> => {
-    const map = await assets.texture(`${dir}${table.textures}/${layer.id}_${kind}.jpg`, {
-      data: kind !== "diff",
-    });
+    if (
+      layer.maps !== undefined &&
+      (layer.maps === null || typeof layer.maps !== "object" || Array.isArray(layer.maps))
+    )
+      throw new Error(`loadTerrainSplat: layer '${layer.id}' maps needs a path object.`);
+    const paths = {
+      diff: layer.maps?.diffuse,
+      nrm: layer.maps?.normal,
+      orm: layer.maps?.orm,
+      h: layer.maps?.height,
+    };
+    const explicitPath = paths[kind];
+    if (
+      explicitPath !== undefined &&
+      (typeof explicitPath !== "string" ||
+        explicitPath.trim() === "" ||
+        /^(?:[/\\]|[a-z][a-z0-9+.-]*:)/iu.test(explicitPath))
+    )
+      throw new Error(
+        `loadTerrainSplat: layer '${layer.id}' ${kind} map needs a package-relative path.`,
+      );
+    const path =
+      explicitPath === undefined ? `${table.textures}/${layer.id}_${kind}.jpg` : explicitPath;
+    const map = await assets.texture(`${dir}${path}`, { data: kind !== "diff" });
     map.wrapS = RepeatWrapping;
     map.wrapT = RepeatWrapping;
     map.anisotropy = 8;

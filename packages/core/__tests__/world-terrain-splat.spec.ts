@@ -289,6 +289,86 @@ describe("loadTerrainSplat", () => {
     );
   });
 
+  it("uses package-relative map paths while retaining unnamed-map defaults", async () => {
+    const { assets, requested } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": {
+        ...table,
+        base: {
+          ...table.base,
+          maps: { diffuse: "art/moss_diff_1k.jpg", normal: "art/moss_nor_gl_1k.jpg" },
+        },
+        layers: table.layers.map((layer) =>
+          layer.id === "grass"
+            ? {
+                ...layer,
+                height: true,
+                maps: { orm: "art/grass_arm_1k.jpg", height: "art/grass_height.png" },
+              }
+            : layer,
+        ),
+      },
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    await loadTerrainSplat({ assets, url: "world/world.json" });
+    expect(requested.sort()).toEqual(
+      [
+        "world/art/moss_diff_1k.jpg",
+        "world/art/moss_nor_gl_1k.jpg",
+        "world/art/grass_arm_1k.jpg",
+        "world/art/grass_height.png",
+        "world/terrain/tex/litter_diff.jpg",
+        "world/terrain/tex/grass_diff.jpg",
+        "world/terrain/tex/grass_nrm.jpg",
+        "world/terrain/tex/rock_diff.jpg",
+      ].sort(),
+    );
+  });
+
+  it.each(["", "/absolute.jpg", "https://example.test/map.jpg", 42, null])(
+    "rejects malformed explicit map paths (%s)",
+    async (diffuse) => {
+      const { assets } = served({
+        "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+        "world/terrain/layers.json": { ...table, base: { ...table.base, maps: { diffuse } } },
+        "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+      });
+      await expect(loadTerrainSplat({ assets, url: "world/world.json" })).rejects.toThrow(
+        /package-relative path/u,
+      );
+    },
+  );
+
+  it.each([null, "art/moss.jpg", [], 42])("rejects malformed map containers (%s)", async (maps) => {
+    const { assets } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": { ...table, base: { ...table.base, maps } },
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    await expect(loadTerrainSplat({ assets, url: "world/world.json" })).rejects.toThrow(
+      /maps needs a path object/u,
+    );
+  });
+
+  it("propagates missing explicit maps instead of retrying the default map", async () => {
+    const { assets } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": {
+        ...table,
+        base: { ...table.base, maps: { diffuse: "missing.jpg" } },
+      },
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    const texture = vi.spyOn(assets, "texture").mockImplementation(async (path) => {
+      if (path === "world/missing.jpg") throw new Error("Missing explicit terrain map");
+      return bitmap(4, 4);
+    });
+    await expect(loadTerrainSplat({ assets, url: "world/world.json" })).rejects.toThrow(
+      "Missing explicit terrain map",
+    );
+    expect(texture).not.toHaveBeenCalledWith("world/terrain/tex/moss_diff.jpg", expect.anything());
+  });
+
   it("blends a layer's own map at the game's far tile, by distance, when the table asks", async () => {
     // A repeated ground map reads as a grid at grazing angles; the same map at a much larger tile,
     // mixed in with distance, breaks the period. Sizes and distances are the table's, not ours.

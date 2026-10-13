@@ -76,6 +76,7 @@ function layersTable() {
       id: `layer${slot}`,
       lo: 0.25,
       mask: `m${slot}`,
+      maps: slot === 0 ? { height: "shared/layer0-height.png" } : undefined,
       normal: true,
       orm: true,
       tile: 2,
@@ -83,7 +84,18 @@ function layersTable() {
     });
   }
   return {
-    base: { id: "base", normal: true, orm: true, tile: 2, tint: [0.85, 0.85, 0.88] },
+    base: {
+      id: "base",
+      maps: {
+        diffuse: "shared/base-color.png",
+        normal: "shared/base-nor_gl.png",
+        orm: "shared/base-arm.png",
+      },
+      normal: true,
+      orm: true,
+      tile: 2,
+      tint: [0.85, 0.85, 0.88],
+    },
     breakup: { push: 0.06, scale: 0.35 },
     layers,
     macro: { max: 1.1, min: 0.85, scale: 0.12 },
@@ -113,7 +125,14 @@ function packageAssets() {
       return [URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }))];
     },
     texture: async (path, options = {}) => {
-      const match = /^layers\/(?:base|layer(\d+))_(diff|nrm|orm|h)\.jpg$/u.exec(path);
+      // Explicit package paths resolve to the same fixtures as the convention-named maps.
+      const aliases = {
+        "shared/base-color.png": "layers/base_diff.jpg",
+        "shared/base-nor_gl.png": "layers/base_nrm.jpg",
+        "shared/base-arm.png": "layers/base_orm.jpg",
+        "shared/layer0-height.png": "layers/layer0_h.jpg",
+      };
+      const match = /^layers\/(?:base|layer(\d+))_(diff|nrm|orm|h)\.jpg$/u.exec(aliases[path] ?? path);
       assertCondition(match !== null, `terrain-splat-array: unexpected map '${path}'`);
       const texture = layerTexture(
         match[1] === undefined ? 0 : Number(match[1]),
