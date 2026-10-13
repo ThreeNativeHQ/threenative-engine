@@ -33,6 +33,7 @@ type Node3D = Record<string, unknown> & {
   userData: Record<string, unknown>;
   children: Node3D[];
   add(...objects: object[]): void;
+  remove(...objects: object[]): void;
 };
 const failures: string[] = [];
 const check = (ok: boolean, name: string) => {
