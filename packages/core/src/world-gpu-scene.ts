@@ -2321,7 +2321,7 @@ export class WorldGpuScene {
       return Promise.reject(new Error("World GPU frame validation needs a completed dispatch."));
     if (this.#validating)
       return Promise.reject(
-        new Error("World GPU frame validation already has a readback in flight."),
+        new Error("World GPU frame validation already has a pending readback."),
       );
     if (this.#manualDispatch === this.#dispatched)
       return Promise.reject(new Error("World GPU dispatch was already manually validated."));
