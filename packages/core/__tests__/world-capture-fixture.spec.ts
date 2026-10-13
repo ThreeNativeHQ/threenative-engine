@@ -52,6 +52,8 @@ async function probe() {
         if (name === "../render/terrain.js") return { terrainMaterial: () => ({}) };
         // Only the `?world&viewDistance` flight applies it, and this context has no location.
         if (name === "../render/worldFog.js") return { worldFog: () => undefined };
+        // Only `?world&shadowPartial` constructs the PRD-538 probe.
+        if (name === "../probes/shadowPartial.js") return { ShadowPartialProbe: class {} };
         throw new Error(`Unexpected fixture dependency ${name}`);
       },
     },
