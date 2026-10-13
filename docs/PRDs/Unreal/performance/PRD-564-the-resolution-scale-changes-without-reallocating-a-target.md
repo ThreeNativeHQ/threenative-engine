@@ -117,7 +117,7 @@ Implementation boundary: core retains target capacity, sets viewport/scissor, pu
 **Status:** PARTIAL — continuous scaler and conformance scene committed; native execution remains open.
 **Files:** `packages/core/src/resolution-scaler.ts`; `packages/runtime-native/conformance/scenes/shared/resolution-subrect.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] The controller takes continuous fractions (quantized to 8 px, 2% threshold, at least 8 frames apart, amortized up-steps), and PRD-384's existing scaler suites still pass. proof: red-green `pnpm exec vitest run packages/core/__tests__/resolution-scaler*.spec.ts`.
-- [ ] The native desktop host draws the same sub-rectangle frame as the browser. proof: `pnpm parity --target desktop --only-tests resolution-subrect`.
+- [x] The native desktop host draws the same sub-rectangle frame as the browser. proof: `pnpm parity --target desktop --only-tests resolution-subrect --reference artifacts/prd564/parity-web-a0 --out artifacts/prd564/parity-desktop-a0` with matching NVIDIA userspace — selected row PASS, 300 native frames, pixelMismatchRatio 0, perceptualDeltaE 0, no GPU validation errors. Both bounded reports retain 103 unselected rows as blocked and exit 2; no full-registry claim. Reports: `packages/runtime-native/artifacts/prd564/parity-{web,desktop}-a0/report.json`.
 
 ## Decisions
 
