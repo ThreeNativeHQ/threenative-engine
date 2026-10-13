@@ -137,16 +137,16 @@ which is compatibility mode, not the core WebGPU that this engine requests.
 ## Execution Phases
 
 #### Phase 1: The cost is measured
-**Status:** PARTIAL — fixture and exact CPU spans implemented; all measurement boxes remain open.
+**Status:** PARTIAL — fixture and exact CPU spans implemented; accepted cost windows remain open because the local NVIDIA Vulkan driver is mismatched.
 **Files:** `examples/skinned-crowd/src/scenes/Crowd.ts`, `examples/skinned-crowd/src/game.ts`, `examples/skinned-crowd/playtests/crowd-rate.playtest.json` (new), `packages/core/src/profiling/Spans.ts`, `packages/core/src/projection-skinned.ts`, `packages/core/__tests__/projection-skinned.spec.ts` (exact write probe).
 - [ ] [local] The crowd scenario reports CPU milliseconds for `AnimationPlayer.update` and `SkinnedBatch.write` at 32, 128 and 256 rigs, with the result recorded under `## Decisions`. proof: `crowd-rate.playtest.json` with `playtest perf` and span probes.
 - [ ] [local] The same scenario reports GPU milliseconds for skinned draws in the main and shadow passes, against an arm where the crowd is static. The result decides Phase 3 under `## Decisions`. proof: the same playtest, both arms, `TN_FRAME_BUDGET` `main`/`shadow` buckets.
 
 #### Phase 2: Rigs evaluate at the rate their screen size earns
-**Status:** NOT STARTED
+**Status:** PARTIAL — accumulated time, stagger, skipped writes and velocity-history coverage are implemented; visual, native and cost gates remain open.
 **Files:** `packages/core/src/animation.ts`, `packages/core/src/projection-skinned.ts`, `packages/core/src/render-camera-cull.ts`, `packages/core/__tests__/animation-rate.spec.ts` (new)
 - [x] [local] Accumulated `dt` keeps clip time, fade progress and the `finished` event identical to rate-1 playback over 300 frames, and a forced evaluation follows any skip longer than the rate. proof: red-green cases in `pnpm exec vitest run packages/core/__tests__/animation-rate.spec.ts`. 2026-10-11 green: `pnpm exec vitest run packages/core/__tests__/animation-rate.spec.ts` 26/26, red first on `updateRateReport` missing; rates 2/4/8 match rate-1 clip time over 300 frames, crossfade weights, interruption, weighted blends, `finished` timing and replay, forced evaluation, stop/pause/stride-rate integration all exact. Surface: `AnimationPlayer.updateRate` (`"auto"` | positive integer), `updateRateReport`, `update(dt, force)`. 111 existing animation/composition/cull regressions pass.
-- [ ] [local] Velocity history matches the pose that was drawn: zero on a skipped frame, the whole step on the evaluation frame, and no stale previous palette after a rate change or a first write. proof: a red-green case in `pnpm exec vitest run packages/core/__tests__/projection-skinned.spec.ts`.
+- [x] [local] Velocity history matches the pose that was drawn: zero on a skipped frame, the whole step on the evaluation frame, and no stale previous palette after a rate change or a first write. proof: a red-green case in `pnpm exec vitest run packages/core/__tests__/projection-skinned.spec.ts`. 2026-10-12 green: the focused animation/projection run passes 42/42, including skipped-frame zero-history, evaluation-frame whole-step, rate-1 history and projected-batch auto-rate cases; the implementation commits as `172b80bf3`.
 - [x] [local] Stagger offsets spread 128 rigs so that the evaluations in any one frame stay within 1.5× of the mean. Root-motion and `updateRate: 1` players never skip. proof: the same spec. 2026-10-11 green: same spec, 128 rigs at rates 2/4/8 over 240 frames, per-frame evaluations never exceed 1.5x the mean (mean = 128/rate); `updateRate: 1` and root-motion composers evaluate every tick. Auto-rate pixel bands (128/32/8 px) are provisional until AC-1's judge.
 - [ ] [local] AC-1 passes. A fresh judge subagent compares 10 m, 40 m and 120 m captures against rate 1 and finds no visible loss. proof: `crowd-rate.playtest.json` plus `pnpm visuals:ab --before <rate1> --after <auto> --out <dir>`.
 - [ ] [local] The native desktop host runs the crowd scenario with the policy on. proof: `node packages/playtest/dist/runner/cli.js examples/skinned-crowd/playtests/crowd-rate.playtest.json --target desktop`.
@@ -320,3 +320,16 @@ native claim; late-baseline rejection still applies and every PRD gate remains o
   error exit and one pass, so the budget fails on this lane without the policy too. The first
   gate run used the software adapter (swiftshader) and is void. AC-2 stays open: "stay green" is
   not met while `performance` is red, and a quiet-host baseline is the missing evidence.
+
+- 2026-10-12, runtime implementation and environment check: `172b80bf3` adds camera-projected
+  auto-rate observations for source rigs behind a `SkinnedBatch`, skips duplicate palette writes
+  when an `AnimationPlayer` did not evaluate, preserves the existing full-step velocity history,
+  and keeps `crowdRate=1` as the named control. Focused animation/projection tests pass 42/42;
+  core and skinned-crowd builds pass; Biome reports only the existing non-fatal complexity
+  warnings. The headed auto fixture reaches `TN_CROWD_RATE ready:true` with 49.75 palette writes
+  against 128 animation calls, but its adapter is `vendor=google, architecture=swiftshader` and
+  is not cost or visual proof. The NVIDIA-forced replay also selects SwiftShader and times out
+  readiness after repeated `GPUBuffer.mapAsync` external-instance errors. Setup diagnosis:
+  `/proc/driver/nvidia/version` is `615.71.09`, installed Vulkan/NVML libraries are `615.78.08`,
+  `vulkaninfo` finds no driver, and `nvidia-smi` reports a driver/library mismatch. No Phase 1,
+  AC-1, Phase 3, visual, native or AC-2 box is ticked from these runs.
