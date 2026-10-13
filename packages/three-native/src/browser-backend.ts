@@ -407,6 +407,7 @@ export function defineBrowserClasses(
   const callbackNames = new Map<string, Set<string>>(); // by handle key, to clear on collection
   const held = new Set<object>();
   let cursor = held.values(); // collect()'s place in `held`
+  let peak = 0; // the most wrappers held since this pass of `cursor` began
   // userData is the game's: it lives with the wrapper, which `held` keeps while the engine references it.
   const userData = new WeakMap<object, unknown>();
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
@@ -1058,9 +1059,12 @@ export function defineBrowserClasses(
     wrap,
     collect() {
       // An eighth of the held wrappers each safe point, round robin (a live Set iterator): asking all
-      // of them cost about 1 ms a frame at 4,096 meshes. Holding a wrapper a few frames longer only
-      // delays its release; a game that drops objects faster than this settles near 8 frames of drops.
-      const budget = Math.ceil(held.size / 8);
+      // of them cost about 1 ms a frame at 4,096 meshes. The eighth is of the pass's peak, so releases
+      // during a pass do not shrink it: a pass takes at most eight safe points, and a wrapper the
+      // engine lets go is asked within two passes (tests/browser-backend-gc.ts). Holding a wrapper a
+      // few frames longer only delays its release.
+      peak = Math.max(peak, held.size);
+      const budget = Math.ceil(peak / 8);
       const candidates: object[] = [];
       while (candidates.length < budget) {
         const next = cursor.next();
@@ -1069,6 +1073,7 @@ export function defineBrowserClasses(
           continue;
         }
         cursor = held.values();
+        peak = held.size;
         if (candidates.length > 0) break;
       }
       const counts = runtime.engineReferences?.(candidates.map(refOf));
