@@ -13,3 +13,9 @@ args = ["./packages/core/mcp/sculpt.mjs"]
 [mcp_servers.threenative-engine]
 command = "node"
 args = ["./packages/core/mcp/engine.mjs"]
+
+# Code navigation (definition, references, hover, diagnostics). Needs `mcp-language-server`
+# and `typescript-language-server` on PATH; npx cannot serve TypeScript 7 workspaces.
+[mcp_servers.lsp_typescript]
+command = "mcp-language-server"
+args = ["--workspace", ".", "--lsp", "typescript-language-server", "--", "--stdio"]
