@@ -56,7 +56,12 @@ describe("bindUpstreamExports", () => {
     const Renderer = bound.WebGPURenderer as new () => unknown;
     expect(() => new Renderer()).toThrow("TN_NATIVE_UNSUPPORTED_WEBGPURENDERER");
     expect(() => (bound.pass as () => unknown)()).toThrow("TN_NATIVE_UNSUPPORTED_PASS");
-    expect(() => (bound.RenderPipeline as { prototype: unknown }).prototype).toThrow(
+    // Defining a subclass is not a use: core declares `class VirtualShadowNode extends ShadowBaseNode`
+    // at module scope, and every game imports core. Constructing one is.
+    const Pipeline = bound.RenderPipeline as new () => object;
+    class Sub extends Pipeline {}
+    expect(() => new Sub()).toThrow("TN_NATIVE_UNSUPPORTED_RENDERPIPELINE");
+    expect(() => (bound.RenderPipeline as { render: unknown }).render).toThrow(
       "TN_NATIVE_UNSUPPORTED_RENDERPIPELINE",
     );
     const uncatalogued = names.find(

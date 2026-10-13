@@ -62,6 +62,8 @@ export function defineReflector(native: NativeReflector, classes: IReflectorClas
       bounces,
       depth,
       samples,
+      // three's NodeUpdateType.NONE: no JS update runs, so a caller can tell before it wraps one.
+      updateBeforeType: "none",
       get getVirtualCamera() {
         return getVirtualCamera;
       },
