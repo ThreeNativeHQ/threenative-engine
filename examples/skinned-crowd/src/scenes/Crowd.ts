@@ -88,6 +88,7 @@ export function crowdBudget(window: IFrameBudgetWindow): void {
   crowdRate.gpuSamples = window.gpu?.samples ?? null;
   crowdRate.window = window.window;
   crowdRate.renderFrames = window.frames;
+  crowdRate.simulatedSeconds = window.simulatedSeconds ?? null;
   crowdRate.mainDraws = window.passes?.main?.draws.mean ?? null;
   crowdRate.shadowDraws = window.passes?.shadow?.draws.mean ?? null;
   crowdRate.mainTriangles = window.passes?.main?.triangles.mean ?? null;
@@ -110,26 +111,37 @@ export function crowdSpans(line: string): void {
   crowdRate.ready =
     window.overflowed === 0 &&
     window.window === crowdRate.window &&
-    window.frames === 120 &&
-    crowdRate.renderFrames === 120 &&
+    Number.isSafeInteger(window.frames) &&
+    window.frames > 0 &&
+    window.frames === crowdRate.renderFrames &&
+    // reportEvery is 120 simulation ticks at the fixture's default 60 Hz, not 120 renders.
+    Number.isFinite(crowdRate.simulatedSeconds) &&
+    Number(crowdRate.simulatedSeconds) >= 120 / 60 &&
     (arm === "animated"
-      ? animation?.perFrame === count && animation.frames === 120
+      ? animation?.perFrame === count &&
+        animation.frames === window.frames &&
+        Number.isFinite(animation.mean)
       : animation === undefined) &&
     (arm === "static"
       ? palette === undefined
-      : palette !== undefined && palette.frames === 120 && palette.perFrame === count) &&
+      : palette !== undefined &&
+        palette.frames === window.frames &&
+        palette.perFrame === count &&
+        Number.isFinite(palette.mean)) &&
     Number.isFinite(crowdRate.gpuMainMs) &&
     Number.isFinite(crowdRate.gpuShadowMs) &&
     Number(crowdRate.mainDraws) > 0 &&
     Number(crowdRate.shadowDraws) > 0 &&
-    Number(crowdRate.gpuShadowSamples) > 0 &&
-    Number(crowdRate.gpuMainSamples) > 0;
+    [crowdRate.gpuSamples, crowdRate.gpuShadowSamples, crowdRate.gpuMainSamples].every(
+      (samples) => Number.isSafeInteger(samples) && Number(samples) > 0,
+    );
   if (crowdRate.measured === null && crowdRate.ready === true && window.window >= 2) {
     const surface = crowdRate.surface as IFrameBudgetWindow["surface"] | null;
     crowdRate.measured = Object.freeze({
       window: finiteOrNull(window.window),
       ready: true,
       renderFrames: finiteOrNull(crowdRate.renderFrames),
+      simulatedSeconds: finiteOrNull(crowdRate.simulatedSeconds),
       animationFrames: finiteOrNull(crowdRate.animationFrames),
       paletteFrames: finiteOrNull(crowdRate.paletteFrames),
       animationUpdateMs: finiteOrNull(crowdRate.animationUpdateMs),

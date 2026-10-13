@@ -105,7 +105,12 @@
       {
         "id": "state",
         "path": "crowdRate.measured.renderFrames",
-        "equals": 120
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.simulatedSeconds",
+        "gte": 2
       },
       {
         "id": "state",
