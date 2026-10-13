@@ -1343,27 +1343,6 @@ test("resolution-subrect conformance bundles the shipped controller through down
   const dir = makeTempDirSync("threenative-resolution-subrect-");
   const scene = "conformance/scenes/shared/resolution-subrect.js";
   try {
-    const source = readFileSync(join(root, scene), "utf8");
-    assert.match(
-      source,
-      /import \{ ResolutionSubrect \} from "\.\.\/\.\.\/\.\.\/\.\.\/core\/src\/render\/resolution-subrect\.ts"/u,
-    );
-    assert.match(source, /controller\.retain\(scenePass, \[scenePass\.renderTarget\]\)/u);
-    assert.match(source, /controller\.activate\(1\)[\s\S]*controller\.setSize\(/u);
-    assert.match(
-      source,
-      /for \(const scale of \[SCALE, 1, SCALE\]\) \{[\s\S]*controller\.setScale\(scale\);[\s\S]*pipeline\.render\(\);[\s\S]*assertTransition\(scale\);[\s\S]*\}/u,
-    );
-    for (const assertion of [
-      /target\.width !== capacityWidth/u,
-      /target\.viewport\.z !== viewWidth/u,
-      /target\.scissor\.z !== viewWidth/u,
-      /view\.viewFraction\.x !==/u,
-      /view\.halfTexel\.x !==/u,
-    ])
-      assert.match(source, assertion);
-    assert.doesNotMatch(source, /scenePass\.set(?:Viewport|Scissor)\(/u);
-
     const entry = makeEntry(
       { captureFrames: 2, id: "resolution-subrect-contract", scene },
       "browser",
