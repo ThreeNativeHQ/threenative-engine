@@ -36,7 +36,7 @@ Current baseline: `pnpm build` and `pnpm check:docs` passed; six documentation c
 
 ## Current integration state
 
-The batch has 50/62 verified phase boxes (repository bucket `prd:75%`) and 110/132 combined phase/acceptance boxes. PRDs 587, 588, 589, 590 and 592 are complete; all other original requirements remain open. The integration checkout above is retained for this active goal.
+The batch has 51/62 verified phase boxes (repository bucket `prd:75%`) and 112/132 combined phase/acceptance boxes. PRDs 587, 588, 589, 590 and 592 are complete; all other original requirements remain open. The integration checkout above is retained for this active goal.
 
 Develop integration resolves all six conflicted files, regenerates the Three patches with both morph pipeline sharing and bounded uploads, and fixes removed camera/renderer references through the extracted collaborator. Focused validation passes 261 tests with 4 skips; core typecheck, frozen install and scoped Biome pass. Full CI and remaining runtime/visual acceptance are not established by those checks.
 
