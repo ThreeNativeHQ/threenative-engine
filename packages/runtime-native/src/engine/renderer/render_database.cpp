@@ -509,6 +509,7 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
 // this prepare's camera frustum. InstancedMesh uses its instance-aware sphere, computed once when
 // null, as three does.
 bool RenderDatabase::boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere) {
+    ++sphereMeasures_;
     if (type == "Sprite") {
         sphere.set(Vector3(0, 0, 0), 0.7071067811865476);
     } else if (type == "InstancedMesh") {
