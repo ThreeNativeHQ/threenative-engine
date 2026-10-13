@@ -428,10 +428,10 @@ export interface IWorldCellsLoadOptions {
    * Filtered by the existing admission/refilter budget, never by a separate culler.
    */
   readonly placementReach?: Float32Array;
-  /** Inward return margin for authored CPU LODs, in [0, 1). Requires gpuScene:false and impostors:false.
+  /** Inward return margin for authored CPU LODs, in [0, 1). Requires gpuScene:false and impostors:false; omission keeps source levels.
    * Omitted, selection uses the existing direct gates. State survives cell eviction/revisit. */
   readonly lodHysteresis?: number;
-  /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Requires impostors:false.
+  /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Requires impostors:false; omission keeps source levels.
    * Default content sharing and missing-alpha-part coverage remain enabled when omitted. */
   readonly preserveAuthoredParts?: boolean;
   /** Already decoded immutable world-v1 data; URL still supplies the base for model paths. */
@@ -697,7 +697,8 @@ export interface IWorldCellsLoadOptions {
   readonly mainGpuShare?: number;
   /**
    * Bake a whole-asset octahedral impostor for every alpha-cutout foliage asset and append it as the
-   * asset's terminal, two-triangle LOD, default true.
+   * asset's terminal, two-triangle LOD, default true for ordinary worlds; omission keeps source
+   * levels when `preserveAuthoredParts` or `lodHysteresis` is set.
    *
    * Set false to keep the authored/generated source levels for debugging or a visual comparison.
    *
@@ -4609,7 +4610,8 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#bundlesWanted = init.bundles ?? asked !== "off";
     this.#bundleReason =
       init.bundles === undefined ? (asked === "default" ? "default" : "launch") : "option";
-    this.#impostors = init.impostors ?? true;
+    this.#impostors =
+      init.impostors ?? !(init.preserveAuthoredParts === true || init.lodHysteresis !== undefined);
     this.#impostorBudgetBytes = DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES;
     this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
     this.#preserveAuthoredParts = init.preserveAuthoredParts ?? false;

@@ -514,6 +514,23 @@ describe("WorldCells automatic impostors", () => {
     world.dispose();
   });
 
+  it.each([
+    ["authored parts", { preserveAuthoredParts: true }],
+    ["CPU LOD hysteresis", { gpuScene: false, lodHysteresis: 0.2 }],
+  ])("keeps source levels when %s omits impostors", async (_name, options) => {
+    stubManifestFetch(pineOnly());
+    const loader = treeLoader();
+    const world = await loadPine(loader, options);
+    await flushed(world);
+    runBake(world, rendererStub());
+    await flushed(world);
+
+    expect(world.stats().impostor.atlasBytes).toBe(0);
+    expect(partsOf(world, "pine", 2, 0).length).toBe(0);
+    expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
+    world.dispose();
+  });
+
   it("keeps the source levels when a bake fails, and counts the failure", async () => {
     stubManifestFetch(pineOnly());
     const loader = treeLoader();
