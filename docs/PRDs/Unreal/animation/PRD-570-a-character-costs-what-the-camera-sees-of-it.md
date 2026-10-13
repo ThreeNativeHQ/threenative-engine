@@ -401,6 +401,10 @@ native claim; late-baseline rejection still applies and every PRD gate remains o
   The visual, performance and shooter boxes remain open for the manager's actual gates and
   independent judge/review.
 
+  The 2026-10-13 follow-up compacted the shared updateRate paragraph to one physical line so all
+  templates remain under 100 lines; the scaffold constants were refreshed from all 13 actual
+  no-install trees after genuine 65-pass/1-hash-failure hash measurements.
+
 - 2026-10-12 (independent visual judgment, current camera-target build): a fresh read-only `gpt-5.6-sol` reviewer inspected all eight shuffled captures in `artifacts/prd570-visual-camera-target/visual-ab/blind/`, including duplicate controls, at actual render frame 120 and logical 2.0 seconds. Corrected scoped pose-integrity scores are 5/5 for every sample: no visible pose loss at 10/40/120 m against rate 1. The initial blank observation for sample-02 was rejected: it is byte-identical to sample-01 (SHA256 `e762bb465f89237bb88ac856eca2cda4055a6fe1bd10cc1d3af35e0905b5a908`); sequential image inspection corrected the verdict. Reviewer session `01a133c3-7425-77b0-ae9f-94956a9a0a3a`. These stills prove pose integrity, not temporal smoothness or a commercial-template art score. `visuals:ab` built the blind bundle and exited 2 pending its separate generic template-quality verdict schema; no generic visual-quality gate is claimed. The combined Phase 2 AC-1 box stays open until CPU reduction is verified.
 - 2026-10-12 (manager verification after camera-target repair): the current animation-rate, projection-skinned and render-camera-cull specs pass 64/64 across three files; `pnpm api:surface:check` passes for 14 packages and 413 symbols. Full final verification remains pending.
 
