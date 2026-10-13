@@ -2,9 +2,80 @@ import type { IAssetLoader } from "@threenative/core";
 import { DataTexture, LinearMipmapLinearFilter, RepeatWrapping, type Texture } from "three";
 import type { MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it } from "vitest";
-import { BIOMES } from "../src/render/biomes.js";
+import {
+  BIOMES as AUTHORED_BIOMES,
+  type IWorldBiome,
+  type WorldName,
+  alpineSnowCover,
+  elevationBand,
+  measureBiome,
+} from "../src/render/biomes.js";
+import { loadPack } from "../src/render/pack.js";
 import { createPropSurfaces, createRockGround } from "../src/render/propMaterials.js";
 import { createTerrain } from "../src/render/terrain.js";
+
+const BIOMES = Object.fromEntries(
+  Object.entries(AUTHORED_BIOMES).map(([world, biome]) => [world, measureBiome(biome, [-10, 90])]),
+) as Record<WorldName, IWorldBiome>;
+
+function scalarValues(node: { traverse: (visit: (child: unknown) => void) => void }): number[] {
+  const values: number[] = [];
+  node.traverse((child) => {
+    const value = (child as { value?: unknown }).value;
+    if (typeof value === "number") values.push(value);
+  });
+  return values;
+}
+
+it("resolves every world's actual bands under scale and offset without sharing snapshots", () => {
+  for (const authored of Object.values(AUTHORED_BIOMES)) {
+    const heights = [10, 110];
+    const first = measureBiome(authored, heights);
+    const snapshot = JSON.stringify(first);
+    heights[1] = 210;
+    const moved = measureBiome(authored, [525, 775]);
+    for (const key of Object.keys(first.heightBands) as Array<keyof typeof first.heightBands>) {
+      expect(moved.heightBands[key]).toEqual(
+        first.heightBands[key].map((value) => value * 2.5 + 500),
+      );
+    }
+    expect(moved.snowBand).toEqual(first.snowBand.map((value) => value * 2.5 + 500));
+    expect(first.elevationRange).toEqual([10, 110]);
+    expect(JSON.stringify(first)).toBe(snapshot);
+    expect(first).not.toBe(moved);
+  }
+  const alpine = measureBiome(AUTHORED_BIOMES.alpine, [0, 1000]);
+  const moved = measureBiome(AUTHORED_BIOMES.alpine, [500, 3000]);
+  expect(scalarValues(alpineSnowCover(alpine))).toEqual(expect.arrayContaining([600, 850]));
+  expect(scalarValues(alpineSnowCover(moved))).toEqual(expect.arrayContaining([2000, 2625]));
+});
+
+it.each([
+  { heights: [] },
+  { heights: [0, Number.NaN] },
+  { heights: [0, Number.POSITIVE_INFINITY] },
+  { heights: [0, Number.MAX_VALUE] },
+])("rejects malformed elevation samples %j", ({ heights }) => {
+  expect(() => measureBiome(AUTHORED_BIOMES.forest, heights)).toThrow(
+    /elevation.*(?:empty|nonfinite)/u,
+  );
+});
+
+it("keeps a flat world's actual range and emits finite constant elevation and snow graphs", () => {
+  const flat = measureBiome(AUTHORED_BIOMES.alpine, [123, 123, 123]);
+  expect(flat.elevationRange).toEqual([123, 123]);
+  expect(flat.snowBand).toEqual([123, 123]);
+  expect(scalarValues(elevationBand(flat, flat.snowBand))).toEqual([0]);
+  expect(scalarValues(alpineSnowCover(flat)).every(Number.isFinite)).toBe(true);
+  expect(scalarValues(alpineSnowCover(flat))).not.toContain(123);
+});
+
+it.each(["alpine", "tundra"] as const)(
+  "requires actual elevations before loading %s stones",
+  async (world) => {
+    await expect(loadPack(undefined, world)).rejects.toThrow(/measured terrain elevations/u);
+  },
+);
 
 /** Every texture a TSL node tree samples, so a test can see whether a map survived. */
 function sampledTextures(node: unknown): Set<Texture> {

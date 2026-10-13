@@ -18,7 +18,7 @@ import {
   Vector3,
 } from "three";
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
-import { BIOMES, type WorldName } from "./render/biomes.js";
+import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { type ICanopyComparison, loadPack, loadSkyLight } from "./render/pack.js";
@@ -98,6 +98,10 @@ const worldLoads = {
 };
 
 const initialState = {
+  elevationMin: 0,
+  elevationMax: 0,
+  snowFrom: 0,
+  snowTo: 0,
   canopyComparison: { normals: "authored", specular: "disabled" } as ICanopyComparison,
   showcase: false,
   worldReady: false,
@@ -189,6 +193,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
   return class TerrainScene extends Scene<TerrainState, IPhysicsContext> {
     static override readonly initialState = initialState;
     #data: IBakedWorld | undefined;
+    #biome: IWorldBiome | undefined;
     #erosionSamples = { flow: 0, deposition: 0 };
     #scatter: Awaited<ReturnType<typeof loadPlacements>> | undefined;
     #terrain: ReturnType<typeof createTerrain> | undefined;
@@ -198,10 +203,11 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         world === "forest" || world === "coastal"
           ? baked[world]
           : (await worldLoads[world]()).default;
+      this.#biome = measureBiome(BIOMES[world], this.#data.heights);
       this.#scatter = await loadPlacements(ctx.assets, world);
       // Prepare scenery while the scene loads; enter only attaches it.
-      this.#terrain = createTerrain(this.#data, ctx.assets, BIOMES[world]);
-      this.#sky = createOutdoorSky(ctx.camera, BIOMES[world]);
+      this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome);
+      this.#sky = createOutdoorSky(ctx.camera, this.#biome);
       if (world === "coastal") {
         this.#ocean = createOcean();
         this.#water = createWaterMesh(this.#ocean, this.#data);
@@ -322,7 +328,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         },
       });
       ctx.afterPhysics(() => loading.update());
-      const biome = BIOMES[world];
+      const biome = this.#biome;
+      if (!biome) throw new Error(`World ${world} elevations were not measured`);
       const terrain = this.#terrain;
       if (!terrain) throw new Error(`World ${world} terrain was not loaded`);
       const { field, mesh } = terrain;
@@ -632,7 +639,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         propsStage = "assets";
         const [prepared, pack, skyLight] = await Promise.all([
           loadPreparedProps(ctx.assets),
-          loadPack(ctx.assets, world, data, ctx.state.getState().canopyComparison),
+          loadPack(ctx.assets, world, data, ctx.state.getState().canopyComparison, biome),
           ctx.assets ? loadSkyLight(ctx.assets) : Promise.resolve(undefined),
         ]);
         preparedDispose = () => {
@@ -966,6 +973,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           }));
         ctx.state.set({
           viewGpu,
+          elevationMin: biome.elevationRange[0],
+          elevationMax: biome.elevationRange[1],
+          snowFrom: biome.snowBand[0],
+          snowTo: biome.snowBand[1],
           maxViewGpuMs: viewGpu.length ? Math.max(...viewGpu.map((group) => group.gpuMs)) : -1,
           measuredGpuViewCount: viewGpu.length,
           tasksAvailable: budget.tasksAvailable,

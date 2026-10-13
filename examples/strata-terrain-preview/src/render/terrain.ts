@@ -59,7 +59,14 @@ import { alpineRockColor, alpineRockTap, desertRockColor } from "./biomes.js";
 // disagree with the geometry.
 //
 // Texture budget: six albedos + four normals + curvature + two shadow levels × two = 15/16.
-import { type IBiome, biomeWeights } from "./biomes.js";
+import {
+  BIOMES,
+  type IBiome,
+  type IWorldBiome,
+  biomeWeights,
+  elevationBand,
+  measureBiome,
+} from "./biomes.js";
 import { createHorizonGeometry } from "./horizon.js";
 import { loadSkyLight, skyIrradiance } from "./pack.js";
 import {
@@ -114,9 +121,6 @@ interface ILayerMaps {
   diffuse: Texture;
   normal?: Texture;
 }
-
-/** Where the snow line sits, in metres, and the slope above which it cannot settle. */
-const SNOW = { from: 145, to: 195, sheds: 0.22 };
 
 /**
  * The beach band, in metres above the bake's own sea level.
@@ -498,6 +502,10 @@ export async function createGroundMaterial(
   curvature: IGroundCurvature,
   biome?: IBiome,
 ): Promise<MeshStandardNodeMaterial> {
+  const measured =
+    biome && "heightBands" in biome
+      ? (biome as IWorldBiome)
+      : measureBiome(biome ?? BIOMES.forest, data.heights);
   const maps: Partial<Record<LayerKey, ILayerMaps>> = {};
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.94 });
   material.userData.biome = biome?.world ?? "forest";
@@ -531,7 +539,11 @@ export async function createGroundMaterial(
   const flow = curvature.flow;
   const sediment = deposits;
   const rib = smoothstep(-0.02, -0.45, hollow);
-  const alpine = smoothstep(38, 66, positionWorld.y.add(breakUp.mul(5)));
+  const alpine = elevationBand(
+    measured,
+    measured.heightBands.alpine,
+    positionWorld.y.add(breakUp.mul(5)),
+  );
   // No recorded sea level means an inland world, and an inland world has no beach.
   const sand =
     data.waterLevel === null
@@ -572,14 +584,14 @@ export async function createGroundMaterial(
     // scarp's foot where the ground is steep and the debris has not arrived yet.
     // Soil holds on ordinary hills; only scarps expose bedrock (34–48 degrees).
     rock: smoothstep(0.17, 0.33, steep.add(rib.mul(0.04)).add(breakUp.mul(0.025)))
-      .mul(mix(0.65, 1, smoothstep(12, 70, positionWorld.y)))
+      .mul(mix(0.65, 1, elevationBand(measured, measured.heightBands.rock)))
       .mul(oneMinus(smoothstep(0.15, 0.8, hollow).mul(0.25))),
-    snow: smoothstep(float(SNOW.from), float(SNOW.to), positionWorld.y).mul(
-      smoothstep(SNOW.sheds, 0.06, steep),
+    snow: elevationBand(measured, measured.snowBand).mul(
+      smoothstep(measured.snowFractions[2], 0.06, steep),
     ),
   };
 
-  if (biome) Object.assign(weights, biomeWeights(biome, steep, hollow, breakUp));
+  Object.assign(weights, biomeWeights(measured, steep, hollow, breakUp));
   // Needle litter and crown shade under the placed stands, as a multiplicative floor tint.
   let forestFloor: Node<"float"> = float(0);
   // Transport, slope and shelter choose the splat; noise only frays the material's edge.
@@ -882,11 +894,17 @@ export async function createGroundMaterial(
         ).rgb
           .mul(vec3(0.62, 0.66, 0.67))
           .mul(strata.mul(0.35).add(1));
-        const treeline = smoothstep(110, 240, positionWorld.y.add(breakUp.mul(24)));
-        const face = smoothstep(0.14, 0.3, steep.add(strata.mul(0.055)));
-        const cap = smoothstep(225, 310, positionWorld.y.add(breakUp.mul(28))).mul(
-          oneMinus(smoothstep(0.18, 0.42, steep)),
+        const treeline = elevationBand(
+          measured,
+          measured.heightBands.treeline,
+          positionWorld.y.add(breakUp.mul(24)),
         );
+        const face = smoothstep(0.14, 0.3, steep.add(strata.mul(0.055)));
+        const cap = elevationBand(
+          measured,
+          measured.heightBands.cap,
+          positionWorld.y.add(breakUp.mul(28)),
+        ).mul(oneMinus(smoothstep(0.18, 0.42, steep)));
         const snow = triplanarAlbedo(layer("snow").diffuse, "snow", 8).rgb;
         const mountain = mix(mix(forest, crag, max(treeline, face)), snow, cap);
         material.colorNode = mix(

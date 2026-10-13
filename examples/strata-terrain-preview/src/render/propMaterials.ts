@@ -81,7 +81,7 @@ import {
   SOIL_MAP,
 } from "../world/terrainAssets.js";
 import {
-  type IBiome,
+  type IWorldBiome,
   alpineRockAlbedo,
   alpineRockColor,
   alpineSnowCover,
@@ -425,7 +425,7 @@ function intoGround(
 export async function createRockGround(
   assets?: IAssetLoader,
   ground?: IPropGround,
-  biome?: IBiome,
+  biome?: IWorldBiome,
 ) {
   // Beach stones keep their dry surface: the temperate contact band paints grass onto sand.
   if (!ground || biome?.world === "coastal" || biome?.world === "tundra") return undefined;
@@ -896,7 +896,7 @@ export function skyEnvironment(material: MeshStandardNodeMaterial, sky: Texture)
 export async function createPropSurfaces(
   assets?: IAssetLoader,
   ground?: IPropGround,
-  biome?: IBiome,
+  biome?: IWorldBiome,
   skyLight?: Texture,
 ): Promise<IPropSurfaces> {
   const seconds = uniform(0).setGroup(renderGroup) as unknown as Node<"float">;
@@ -1145,7 +1145,7 @@ export async function createPropSurfaces(
     stoneMaterial.colorNode = mix(
       alpineRockColor(rock),
       snow.mul(vec3(...biome.snowTint)),
-      smoothstep(0.12, 0.82, alpineSnowCover()),
+      smoothstep(0.12, 0.82, alpineSnowCover(biome)),
     );
   }
   if (biome?.world === "tundra") {
