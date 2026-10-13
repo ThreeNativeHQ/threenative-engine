@@ -74,16 +74,16 @@
   <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
 </header>
 <section class="hero">
-  <div class="card"><h2>Progress to the PRD-610 targets <span class="mute" style="text-transform:none;letter-spacing:0">· bar runs from the first recorded run to the target</span></h2><div id="kpis"></div></div>
+  <div class="card"><h2>Progress to the PRD-610 targets <span class="mute" style="text-transform:none;letter-spacing:0">· current is the newest build (median of its runs), the bar runs from the oldest build to the target</span></h2><div id="kpis"></div></div>
   <div class="stack">
     <div class="card"><h2>Native vs web gap, main-thread ms per frame</h2><div id="gap"></div></div>
     <div class="card"><h2>PRD-610 acceptance boxes</h2><div class="ring" id="ring"></div></div>
     <div class="card"><h2>Native vs web, main-thread ms per frame</h2><div class="twin" id="side"></div><div class="legend" id="sideLegend"></div></div>
   </div>
 </section>
-<section class="card"><h2>Trend per run · dashed line is the target</h2><div class="row3" id="trend"></div><div class="legend" id="trendLegend" style="margin-top:6px"></div></section>
+<section class="card"><h2>Trend per build (median of its runs) · dashed line is the target</h2><div class="row3" id="trend"></div><div class="legend" id="trendLegend" style="margin-top:6px"></div></section>
 <section class="card"><h2>A/B groups · keep rule: every B beats every A</h2><div class="row3" id="ab"></div></section>
-<section class="card"><details><summary>Every run, groups and parity</summary><div class="scroll" id="runs" style="margin-top:8px"></div></details></section>
+<section class="card"><details open><summary>Desktop builds and every run</summary><div class="scroll" id="builds" style="margin:8px 0"></div><div class="scroll" id="runs" style="margin-top:8px"></div></details></section>
 </main>
 <script>
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -109,14 +109,14 @@ function kpi(k) {
   const word = p < 0 ? `${Math.abs(p * 100).toFixed(0)}% worse than baseline` : p > 1 ? "past the target" : "of the way";
   return `<div class="kpi ${k.verdict}"><div class="top"><span class="name"><small>${k.id}${k.ticked ? " ✓" : ""}</small>${esc(k.title)}</span><span class="grow"></span><span class="big">${fmt(k.current)}<small>${unit}</small></span><span class="chip ${k.verdict}">${k.verdict.toUpperCase()}</span></div>
     <div class="bar" role="img" aria-label="${k.id} progress ${Math.round(p * 100)} percent"><i style="width:${fill}%"></i>${notch}</div>
-    <div class="foot"><span>start ${fmt(k.baseline)} ${unit} <span title="first recorded run">(${esc(short(k.baselineRun))})</span></span><span class="grow"></span><span class="pct">${p < 0 ? "−" : ""}${Math.abs(p * 100).toFixed(0)}%</span><span>${word}</span><span class="grow"></span><span>target <b>${tgt}</b></span></div>
-    <div class="foot"><span>${esc(short(k.run))}: ${esc(k.detail)}</span></div></div>`;
+    <div class="foot"><span>start ${fmt(k.baseline)} ${unit} <span title="oldest build">(${esc(k.baselineBuild)})</span></span><span class="grow"></span><span class="pct">${p < 0 ? "−" : ""}${Math.abs(p * 100).toFixed(0)}%</span><span>${word}</span><span class="grow"></span><span>target <b>${tgt}</b></span></div>
+    <div class="foot"><span><b>${esc(k.build)}</b> · median of ${k.runs} run${k.runs === 1 ? "" : "s"}: ${esc(k.detail)}</span></div></div>`;
 }
 
 function gapSide(g, name, color) {
   if (!g) return `<div class="gap"><b style="color:var(--mute)">${name}</b><span class="mute">no samples</span></div>`;
   const good = g.direction === "faster", word = g.direction === "equal" ? "level with" : `${Math.abs(g.pct).toFixed(0)}% ${g.direction} than`;
-  return `<div class="gap"><b style="color:${color}">${name}</b><span class="gapnum ${good ? "pass" : g.direction === "equal" ? "" : "fail"}">${g.pct > 0 ? "+" : g.pct < 0 ? "−" : ""}${Math.abs(g.pct).toFixed(0)}%<small> ${g.direction}</small></span><span>${g.ms.toFixed(1)} ms · ${g.absMs > 0 ? "+" : "−"}${Math.abs(g.absMs).toFixed(1)} ms ${good ? "ahead of" : "behind"} three.js</span><span class="mute sm">${name.toLowerCase()} is ${word} three.js (${esc(short(g.dir))})</span></div>`;
+  return `<div class="gap"><b style="color:${color}">${name}</b><span class="gapnum ${good ? "pass" : g.direction === "equal" ? "" : "fail"}">${g.pct > 0 ? "+" : g.pct < 0 ? "−" : ""}${Math.abs(g.pct).toFixed(0)}%<small> ${g.direction}</small></span><span>${g.ms.toFixed(1)} ms · ${g.absMs > 0 ? "+" : "−"}${Math.abs(g.absMs).toFixed(1)} ms ${good ? "ahead of" : "behind"} three.js</span><span class="mute sm">${name.toLowerCase()} is ${word} three.js (${esc(g.build)}, median of ${g.runs} run${g.runs === 1 ? "" : "s"})</span></div>`;
 }
 
 function renderGap(d) {
@@ -133,15 +133,14 @@ function ring(prd) {
 }
 
 function side(d) {
-  const latest = (arm) => d.runs.filter((r) => r.arm === arm && ms(r) !== undefined).at(-1);
-  const bars = Object.keys(ARM).map((arm) => ({ arm, r: latest(arm) }));
-  const W = 410, A = 320, H = 225, base = H - 34, top = 26, hi = Math.max(...bars.map((b) => (b.r ? ms(b.r) : 0)), 1) * 1.15, bw = 64, gap = (A - 3 * bw) / 4;
+  const g = d.gap, bars = [["desktop", g.desktop], ["native", g.wasm], ["legacy", g.legacyMs === undefined ? undefined : { ms: g.legacyMs, build: "three.js", runs: d.runs.filter((r) => r.arm === "legacy").length }]].map(([arm, m]) => ({ arm, v: m?.ms, build: m?.build, runs: m?.runs }));
+  const W = 410, A = 320, H = 225, base = H - 34, top = 26, hi = Math.max(...bars.map((b) => b.v ?? 0), 1) * 1.15, bw = 64, gap = (A - 3 * bw) / 4;
   const ref = d.legacyMs;
   const cols = bars.map((b, i) => {
-    const x = gap + i * (bw + gap), label = ARM[b.arm].replace(" (desktop)", "").replace("Native engine", "Native");
-    if (!b.r) return `<g><rect x="${x}" y="${top}" width="${bw}" height="${base - top}" rx="6" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${x + bw / 2}" y="${(base + top) / 2}" text-anchor="middle">no samples</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${label}</text></g>`;
-    const v = ms(b.r), h = (v / hi) * (base - top), chip = ref && b.arm !== "legacy" ? `${(ref / v).toFixed(2)}× three.js` : "reference";
-    return `<g><rect x="${x}" y="${base - h}" width="${bw}" height="${h}" rx="6" fill="${COLOR[b.arm]}"><title>${esc(b.r.dir)}</title></rect><text class="val" x="${x + bw / 2}" y="${base - h - 6}" text-anchor="middle">${v.toFixed(1)} ms</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${label}</text><text x="${x + bw / 2}" y="${H - 3}" text-anchor="middle" style="fill:${b.arm !== "legacy" && ref && ref / v < 1 ? "var(--red)" : "var(--mute)"}">${chip}</text></g>`;
+    const x = gap + i * (bw + gap), label = { desktop: "Native", native: "Web Wasm", legacy: "three.js" }[b.arm];
+    if (b.v === undefined) return `<g><rect x="${x}" y="${top}" width="${bw}" height="${base - top}" rx="6" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${x + bw / 2}" y="${(base + top) / 2}" text-anchor="middle">no samples</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${label}</text></g>`;
+    const v = b.v, h = (v / hi) * (base - top), chip = ref && b.arm !== "legacy" ? `${(ref / v).toFixed(2)}× three.js` : "reference";
+    return `<g><rect x="${x}" y="${base - h}" width="${bw}" height="${h}" rx="6" fill="${COLOR[b.arm]}"><title>${esc(b.build)} · median of ${b.runs} run${b.runs === 1 ? "" : "s"}</title></rect><text class="val" x="${x + bw / 2}" y="${base - h - 6}" text-anchor="middle">${v.toFixed(1)} ms</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${b.arm === "legacy" ? "" : `${label} · `}${esc(b.build ?? label)}</text><text x="${x + bw / 2}" y="${H - 3}" text-anchor="middle" style="fill:${b.arm !== "legacy" && ref && ref / v < 1 ? "var(--red)" : "var(--mute)"}">${chip}</text></g>`;
   }).join("");
   const refLine = ref ? hlines((v) => base - (v / hi) * (base - top), 0, A, "ms", { bench: [{ arm: "legacy", label: "three.js", value: ref }], target: ref, targetLabel: "target" }) : "";
   const bd = d.breakdown;
@@ -151,7 +150,7 @@ function side(d) {
     const total = parts.reduce((s, p) => s + p[3], 0), SW = 200, sb = H - 34, st = 46, bx = 40, sw = 80;
     let y = sb;
     const segs = parts.map(([, name, color, v]) => { const h = (v / total) * (sb - st); y -= h; return `<g><rect x="${bx}" y="${y}" width="${sw}" height="${Math.max(h, 0)}" fill="${color}"><title>${name}: ${v.toFixed(2)} ms</title></rect>${h > 13 ? `<text x="${bx + sw + 6}" y="${y + h / 2 + 4}" style="fill:var(--ink)">${name.split(" ")[0]} ${v.toFixed(1)}</text>` : ""}</g>`; }).join("");
-    stack = `<svg viewBox="0 0 ${SW} ${H}" role="img" aria-label="Desktop frame breakdown">${segs}<text class="val" x="${bx + sw / 2}" y="${st - 8}" text-anchor="middle">${total.toFixed(1)} ms</text><text x="${bx + sw / 2}" y="${st - 24}" text-anchor="middle">+ ${bd.present.toFixed(1)} present</text><text x="${bx + sw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">Desktop split</text><text x="${bx + sw / 2}" y="${H - 3}" text-anchor="middle">${esc(short(bd.dir))}</text></svg>`;
+    stack = `<svg viewBox="0 0 ${SW} ${H}" role="img" aria-label="Desktop frame breakdown">${segs}<text class="val" x="${bx + sw / 2}" y="${st - 8}" text-anchor="middle">${total.toFixed(1)} ms</text><text x="${bx + sw / 2}" y="${st - 24}" text-anchor="middle">+ ${bd.present.toFixed(1)} present</text><text x="${bx + sw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">Desktop split</text><text x="${bx + sw / 2}" y="${H - 3}" text-anchor="middle">${esc(bd.build)}</text></svg>`;
     legend = `<span style="--c:var(--wasm)">Game JS</span><span style="--c:var(--desktop)">Render</span><span style="--c:var(--soft)">Other main thread</span><span>present call (${bd.present.toFixed(1)} ms) is outside the KPI</span>`;
   }
   $("side").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Main-thread ms per frame by arm"><line x1="0" x2="${A}" y1="${base}" y2="${base}" stroke="var(--line)"/>${cols}${refLine}</svg>${stack}`;
@@ -172,7 +171,7 @@ function trend(t) {
   if (!pts.length) return `<div><div class="charthead"><b>${t.title}</b></div><p class="mute sm">no samples</p></div>`;
   const hi = Math.max(...pts.map((p) => p.v), ...t.benchmarks.map((b) => b.value), t.target ?? 0) * 1.12, x = (i) => L + (pts.length === 1 ? (W - L - R) / 2 : (i / (pts.length - 1)) * (W - L - R)), y = (v) => H - B - (v / hi) * (H - B - T);
   const grid = [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${y(hi * f)}" y2="${y(hi * f)}" stroke="var(--line)"/><text x="${L - 5}" y="${y(hi * f) + 3}" text-anchor="end">${num(hi * f, 0)}</text>`).join("");
-  const lines = Object.keys(ARM).map((arm) => { const mine = pts.map((p, i) => ({ p, i })).filter((q) => q.p.arm === arm); if (!mine.length) return ""; return `${mine.length > 1 ? `<polyline fill="none" stroke="${COLOR[arm]}" stroke-width="2.5" stroke-linejoin="round" points="${mine.map((q) => `${x(q.i)},${y(q.p.v)}`).join(" ")}"/>` : ""}${mine.map((q) => `<circle cx="${x(q.i)}" cy="${y(q.p.v)}" r="3.8" fill="${COLOR[arm]}"><title>${esc(q.p.dir)}: ${q.p.v.toFixed(2)} ${t.unit}</title></circle>`).join("")}`; }).join("");
+  const lines = Object.keys(ARM).map((arm) => { const mine = pts.map((p, i) => ({ p, i })).filter((q) => q.p.arm === arm); if (!mine.length) return ""; return `${mine.length > 1 ? `<polyline fill="none" stroke="${COLOR[arm]}" stroke-width="2.5" stroke-linejoin="round" points="${mine.map((q) => `${x(q.i)},${y(q.p.v)}`).join(" ")}"/>` : ""}${mine.map((q) => `<circle cx="${x(q.i)}" cy="${y(q.p.v)}" r="3.8" fill="${COLOR[arm]}"><title>${esc(q.p.build)} · median of ${q.p.runs} run${q.p.runs === 1 ? "" : "s"}: ${q.p.v.toFixed(2)} ${t.unit}</title></circle>`).join("")}`; }).join("");
   // Shaded gap between the native series and the three.js benchmark, labelled with the latest difference.
   const leg = t.benchmarks.find((b) => b.arm === "legacy"), dsk = pts.map((p, i) => ({ p, i })).filter((q) => q.p.arm === "desktop");
   let shade = "";
@@ -180,16 +179,17 @@ function trend(t) {
     const ly = y(leg.value), last = dsk.at(-1), abs = last.p.v - leg.value, pct = (abs / leg.value) * 100, col = abs > 0 ? "var(--red)" : "var(--green)";
     shade = `<polygon points="${dsk.map((q) => `${x(q.i)},${y(q.p.v)}`).join(" ")} ${x(last.i)},${ly} ${x(dsk[0].i)},${ly}" fill="${col}" opacity=".2"/><text x="${W - R - 6}" y="${(ly + y(last.p.v)) / 2 + 4}" text-anchor="end" ${halo}><tspan style="fill:${col};font-weight:700">${abs > 0 ? "+" : "−"}${Math.abs(abs).toFixed(1)} ms · ${Math.abs(pct).toFixed(0)}% ${abs > 0 ? "slower" : "faster"}</tspan></text>`;
   }
+  const showAll = pts.length <= 8, ticks = pts.map((p, i) => (showAll || i === 0 || i === pts.length - 1 ? `<text x="${x(i)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === pts.length - 1 ? "end" : "middle"}" style="font-size:9px">${esc(p.build)}</text>` : "")).join("");
   const none = t.benchmarks.length ? "" : `<text x="${L + 4}" y="${T + 4}">no three.js equivalent for this metric</text>`;
   const badge = t.deltaPct === undefined ? '<span class="chip">needs 2 desktop runs</span>' : `<span class="chip ${t.deltaPct >= 0 ? "pass" : "fail"}">${t.deltaPct >= 0 ? "▼" : "▲"} ${Math.abs(t.deltaPct).toFixed(0)}% ${t.deltaPct >= 0 ? "better" : "worse"} than baseline</span>`;
-  return `<div><div class="charthead"><b>${t.title}</b><span class="grow"></span>${badge}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t.title)} per run">${grid}${shade}${hlines(y, L, W - R, t.unit, { bench: t.benchmarks, target: t.target, targetLabel: t.targetLabel })}${lines}${none}<text x="${L}" y="${H - 8}">${esc(short(pts[0].dir))}</text><text x="${W - R}" y="${H - 8}" text-anchor="end">${esc(short(pts.at(-1).dir))}</text></svg></div>`;
+  return `<div><div class="charthead"><b>${t.title}</b><span class="grow"></span>${badge}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t.title)} per build">${grid}${shade}${hlines(y, L, W - R, t.unit, { bench: t.benchmarks, target: t.target, targetLabel: t.targetLabel })}${lines}${none}${ticks}</svg></div>`;
 }
 
 function ab(p, legacy) {
   const rows = Math.max(p.a.length, p.b.length), W = 420, H = 190, L = 34, T = 22, B = 26, hi = Math.max(...p.a.map((r) => r.ms), ...p.b.map((r) => r.ms), legacy ?? 0, 1) * 1.15;
   const slot = (W - L - 92) / rows, bw = Math.min(34, slot / 2 - 4), y = (v) => H - B - (v / hi) * (H - B - T);
-  const bar = (r, i, side) => { if (!r) return ""; const cx = L + slot * i + slot / 2, bx = cx + (side === "a" ? -bw - 2 : 2); return `<rect x="${bx}" y="${y(r.ms)}" width="${bw}" height="${H - B - y(r.ms)}" rx="4" fill="${side === "a" ? "var(--legacy)" : "var(--desktop)"}"><title>${esc(r.dir)}: ${r.ms.toFixed(2)} ms</title></rect><text class="val" style="font-size:11px" x="${bx + bw / 2}" y="${y(r.ms) - 4}" text-anchor="middle">${r.ms.toFixed(1)}</text>`; };
-  const bars = Array.from({ length: rows }, (_, i) => bar(p.a[i], i, "a") + bar(p.b[i], i, "b") + `<text x="${L + slot * i + slot / 2}" y="${H - 8}" text-anchor="middle">run ${i + 1}</text>`).join("");
+  const bar = (r, i, side) => { if (!r) return ""; const cx = L + slot * i + slot / 2, bx = cx + (side === "a" ? -bw - 2 : 2); return `<rect x="${bx}" y="${y(r.ms)}" width="${bw}" height="${H - B - y(r.ms)}" rx="4" fill="${side === "a" ? "var(--legacy)" : "var(--desktop)"}"><title>${esc(r.dir)} (${esc(r.pkg)}): ${r.ms.toFixed(2)} ms</title></rect><text class="val" style="font-size:11px" x="${bx + bw / 2}" y="${y(r.ms) - 4}" text-anchor="middle">${r.ms.toFixed(1)}</text>`; };
+  const bars = Array.from({ length: rows }, (_, i) => bar(p.a[i], i, "a") + bar(p.b[i], i, "b") + `<text x="${L + slot * i + slot / 2}" y="${H - 8}" text-anchor="middle" style="font-size:9px">${esc(p.a[i]?.pkg ?? "-")} | ${esc(p.b[i]?.pkg ?? "-")}</text>`).join("");
   const chip = { keep: ["pass", "KEEP B"], reject: ["fail", "REJECT B"], pending: ["", "needs A and B"] }[p.verdict];
   const delta = p.medianA && p.medianB ? `median A ${p.medianA.toFixed(1)} → B ${p.medianB.toFixed(1)} ms (${((p.medianB / p.medianA - 1) * 100).toFixed(0)}%)` : "";
   const why = p.verdict === "keep" ? "every B beats every A" : p.verdict === "reject" ? `worst B ${Math.max(...p.b.map((r) => r.ms)).toFixed(1)} is not below best A ${Math.min(...p.a.map((r) => r.ms)).toFixed(1)}` : "";
@@ -204,7 +204,8 @@ function render(d) {
   $("trend").innerHTML = d.trends.map(trend).join("");
   $("trendLegend").innerHTML = legendOf(Object.keys(ARM)) + '<span style="--c:var(--green)">dashed: PRD-610 target</span><span style="--c:var(--legacy)">solid line: three.js benchmark</span><span style="--c:var(--red)">shaded: gap to three.js</span>';
   $("ab").innerHTML = d.abPairs.map((p) => ab(p, d.legacyMs)).join("") || '<span class="mute">no A/B tags yet (name runs like walk-a1 and walk-b1)</span>';
-  $("runs").innerHTML = `<table><tr><th>Run</th><th>Updated</th><th>ms / frame</th><th>Frame p95</th><th>HUD p95</th><th>Matrix last</th><th>Cull %</th><th>Parity</th><th>Skipped lines</th></tr>${[...d.runs].reverse().map((r) => `<tr><td>${esc(r.dir)}</td><td>${new Date(r.mtimeMs).toLocaleString()}</td><td>${r.status === "ok" ? n(ms(r)) : "no samples"}</td><td>${n(r.desktop?.frameP95 ?? r.budget?.frameP95)}</td><td>${n(r.ui?.p95, 1)}</td><td>${n(r.matrix?.last, 0)}</td><td>${n(r.cullPct)}</td><td>${parity(r)}</td><td>${r.skipped}</td></tr>`).join("")}</table>`;
+  $("builds").innerHTML = `<table><tr><th>Build (oldest first)</th><th>Runs</th><th>ms / frame (median)</th><th>HUD p95</th><th>Matrix last</th><th>Parity PASS</th><th>First seen</th></tr>${d.builds.map((b, i) => `<tr><td>${esc(b.build)}${i === d.builds.length - 1 ? ' <span class="chip pass">newest</span>' : ""}</td><td>${b.runs}</td><td>${n(b.ms)}</td><td>${n(b.hudP95, 1)}</td><td>${n(b.matrixLast, 0)}</td><td>${b.parityPass}/${b.runs}</td><td>${new Date(b.firstSeen).toLocaleString()}</td></tr>`).join("")}</table>`;
+  $("runs").innerHTML = `<table><tr><th>Run</th><th>Package</th><th>Updated</th><th>ms / frame</th><th>Frame p95</th><th>HUD p95</th><th>Matrix last</th><th>Cull %</th><th>Parity</th><th>Skipped lines</th></tr>${[...d.runs].reverse().map((r) => `<tr><td>${esc(r.dir)}</td><td>${esc(r.pkg ?? "—")}</td><td>${new Date(r.mtimeMs).toLocaleString()}</td><td>${r.status === "ok" ? n(ms(r)) : "no samples"}</td><td>${n(r.desktop?.frameP95 ?? r.budget?.frameP95)}</td><td>${n(r.ui?.p95, 1)}</td><td>${n(r.matrix?.last, 0)}</td><td>${n(r.cullPct)}</td><td>${parity(r)}</td><td>${r.skipped}</td></tr>`).join("")}</table>`;
 }
 
 async function tick() {

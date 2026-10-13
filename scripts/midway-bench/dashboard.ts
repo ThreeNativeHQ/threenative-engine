@@ -222,6 +222,8 @@ export interface IMidwayRun {
   group: string;
   arm: Arm;
   mtimeMs: number;
+  /** The build that ran it: the `pkg-<name>` directory of the player path in the log (desktop runs). */
+  pkg?: string;
   /** `no samples` when the log held none; `ok` otherwise. */
   status: "ok" | "no samples";
   desktop?: IDesktopFrames;
@@ -252,6 +254,7 @@ export function runOf(
   const matrix = matrixWalk(log);
   const parity = parityText === undefined ? undefined : parityOf(parityText);
   const cullPct = cullOf(cullText);
+  const pkg = /\/((?:pkg|player)-[\w.-]+)\/tn-native-engine-player-v8/.exec(log)?.[1];
   const desktop = "frames" in player ? player.frames : undefined;
   const run: IMidwayRun = {
     dir,
@@ -267,6 +270,7 @@ export function runOf(
     ...(matrix ? { matrix } : {}),
     ...(parity ? { parity } : {}),
     ...(cullPct === undefined ? {} : { cullPct }),
+    ...(pkg ? { pkg } : {}),
     ...(parityText !== undefined && !parity ? { parityMalformed: true as const } : {}),
   };
   return run;

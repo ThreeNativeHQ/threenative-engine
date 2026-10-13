@@ -4,7 +4,15 @@
  * Fail closed: no data is `pending`, never `pass`, and a missing PRD file reports no progress.
  */
 import { readFile } from "node:fs/promises";
-import { type Arm, type IMidwayRun, finite, loadMidwayRuns, median, runsDir } from "./dashboard.js";
+import {
+  ARMS,
+  type Arm,
+  type IMidwayRun,
+  finite,
+  loadMidwayRuns,
+  median,
+  runsDir,
+} from "./dashboard.js";
 
 export const POSES = ["takeoff", "cockpit", "reargun"] as const;
 /** PRD-610 targets. */
@@ -62,33 +70,71 @@ export interface IKpi {
   baseline?: number;
   /** 0 at the baseline, 1 at the target; below 0 is a regression and above 1 is past the target. */
   progress?: number;
-  run?: string;
-  baselineRun?: string;
+  /** The newest build (the one `current` is the median of) and how many runs it has. */
+  build?: string;
+  runs?: number;
+  baselineBuild?: string;
   /** The PRD box for this AC is ticked. */
   ticked?: boolean;
   detail: string;
 }
 
-const parityNote = (run: IMidwayRun | undefined) =>
-  !run?.parity
+/** Parity of every run in a build: one missing or failed verdict makes the build's note. */
+const parityNote = (runs: readonly IMidwayRun[]) =>
+  runs.some((r) => !r.parity)
     ? "no parity.json"
-    : run.parity.pass && POSES.every((p) => run.parity?.frames[p]?.pass)
+    : runs.every((r) => r.parity?.pass && POSES.every((p) => r.parity?.frames[p]?.pass))
       ? undefined
       : "parity FAIL";
 
+const ARM_BUILD = { legacy: "three.js", native: "web Wasm", desktop: "unknown build" } as const;
+
+/** A run's build: its package name, or the arm's own name for arms that carry none. */
+export const buildOf = (r: IMidwayRun) => r.pkg ?? ARM_BUILD[r.arm];
+
 interface IMeasure {
-  run: IMidwayRun;
+  build: string;
+  /** The runs of this build that carry the value. */
+  runs: IMidwayRun[];
+  /** Median over those runs. */
   value: number;
+  /** Oldest run time of the build: builds are ordered by it. */
+  firstSeen: number;
 }
 
-/** Oldest and newest run of an arm that carry a value. */
-function ends(runs: readonly IMidwayRun[], arm: Arm, get: (r: IMidwayRun) => number | undefined) {
-  const hits = runs.flatMap((run): IMeasure[] => {
-    const value = run.arm === arm ? get(run) : undefined;
-    return value === undefined ? [] : [{ run, value }];
-  });
-  return { first: hits[0], last: hits.at(-1) };
+/** One median per build of an arm, oldest build first. */
+function measures(
+  runs: readonly IMidwayRun[],
+  arm: Arm,
+  get: (r: IMidwayRun) => number | undefined,
+): IMeasure[] {
+  const by = new Map<string, { runs: IMidwayRun[]; values: number[] }>();
+  for (const r of runs) {
+    const v = r.arm === arm ? get(r) : undefined;
+    if (v === undefined) continue;
+    const e = by.get(buildOf(r)) ?? { runs: [], values: [] };
+    e.runs.push(r);
+    e.values.push(v);
+    by.set(buildOf(r), e);
+  }
+  return [...by]
+    .map(([build, e]) => ({
+      build,
+      runs: e.runs,
+      value: median(e.values) as number,
+      firstSeen: Math.min(...e.runs.map((r) => r.mtimeMs)),
+    }))
+    .sort((x, y) => x.firstSeen - y.firstSeen);
 }
+
+/** The oldest and the newest build of an arm that carry a value. */
+function ends(runs: readonly IMidwayRun[], arm: Arm, get: (r: IMidwayRun) => number | undefined) {
+  const m = measures(runs, arm, get);
+  return { first: m[0], last: m.at(-1) };
+}
+
+const medOf = (list: readonly IMidwayRun[], get: (r: IMidwayRun) => number | undefined) =>
+  median(list.map(get).filter(finite));
 
 export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi[] {
   const legacy = legacyMs(runs);
@@ -115,14 +161,15 @@ export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi
       current: last.value,
       baseline: first.value,
       progress: progressOf(first.value, last.value, target),
-      run: last.run.dir,
-      baselineRun: first.run.dir,
+      build: last.build,
+      runs: last.runs.length,
+      baselineBuild: first.build,
       detail: detail(last),
     };
   };
   const ratioKpi = (id: string, title: string, arm: Arm, floor: "above" | "atLeast") => {
     const e = ends(runs, arm, ratio);
-    const bad = parityNote(e.last?.run);
+    const bad = parityNote(e.last?.runs ?? []);
     return make(
       id,
       title,
@@ -131,7 +178,7 @@ export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi
       TARGETS.ratio,
       e,
       (l) =>
-        `${(mainThreadMs(l.run) as number).toFixed(2)} ms vs legacy ${(legacy as number).toFixed(2)} ms, ${bad ?? "parity PASS"}. Run level, poses are not separated in the logs.`,
+        `${(medOf(l.runs, mainThreadMs) as number).toFixed(2)} ms vs legacy ${(legacy as number).toFixed(2)} ms, ${bad ?? "parity PASS"}. Run level, poses are not separated in the logs.`,
       (l) =>
         bad === undefined &&
         (floor === "above" ? l.value > TARGETS.ratio : l.value >= TARGETS.ratio),
@@ -146,7 +193,7 @@ export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi
       "nodes",
       TARGETS.matrixVisited,
       ends(runs, "desktop", (r) => r.matrix?.last),
-      (l) => `last ${l.value}, max ${l.run.matrix?.max} over ${l.run.matrix?.n} projection lines`,
+      (l) => `last ${l.value}, max ${Math.max(...l.runs.map((r) => r.matrix?.max ?? 0))}`,
       (l) => l.value <= TARGETS.matrixVisited,
     ),
     make(
@@ -167,8 +214,7 @@ export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi
       "ms",
       TARGETS.hudP95Ms,
       ends(runs, "desktop", (r) => r.ui?.p95),
-      (l) =>
-        `p50 ${l.run.ui?.p50.toFixed(1)} ms, p95 ${l.value.toFixed(1)} ms over ${l.run.ui?.n} snapshots`,
+      (l) => `p50 ${medOf(l.runs, (r) => r.ui?.p50)?.toFixed(1)} ms, p95 ${l.value.toFixed(1)} ms`,
       (l) => l.value < TARGETS.hudP95Ms,
     ),
     ratioKpi("AC-6", "Desktop vs three.js", "desktop", "above"),
@@ -176,10 +222,12 @@ export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi
   ];
 }
 
+/** One point per build: the median over that build's runs. */
 export interface ITrendPoint {
-  dir: string;
+  build: string;
   arm: Arm;
   v: number;
+  runs: number;
 }
 export interface ITrend {
   id: string;
@@ -190,7 +238,7 @@ export interface ITrend {
   points: ITrendPoint[];
   /** Benchmark lines: the three.js (legacy) median and the latest web Wasm value, when they have one. */
   benchmarks: { arm: Arm; label: string; value: number }[];
-  /** Percent better than the first desktop point (positive is better; every trend is lower-is-better). */
+  /** Percent better than the first desktop build (positive is better; every trend is lower-is-better). */
   deltaPct?: number;
 }
 
@@ -218,10 +266,16 @@ export function trendsOf(runs: readonly IMidwayRun[]): ITrend[] {
     targetLabel: string,
     get: (r: IMidwayRun) => number | undefined,
   ): ITrend => {
-    const points = runs.flatMap((r): ITrendPoint[] => {
-      const v = get(r);
-      return v === undefined ? [] : [{ dir: r.dir, arm: r.arm, v }];
-    });
+    const points = ARMS.flatMap((arm) => measures(runs, arm, get))
+      .sort((x, y) => x.firstSeen - y.firstSeen)
+      .map(
+        (m): ITrendPoint => ({
+          build: m.build,
+          arm: m.runs[0]?.arm as Arm,
+          v: m.value,
+          runs: m.runs.length,
+        }),
+      );
     const benchmarks = benchmarksOf(runs, get);
     const desktop = points.filter((p) => p.arm === "desktop");
     const first = desktop[0]?.v;
@@ -256,8 +310,8 @@ export function trendsOf(runs: readonly IMidwayRun[]): ITrend[] {
 export interface IAbPair {
   stem: string;
   arm: Arm;
-  a: { dir: string; ms: number }[];
-  b: { dir: string; ms: number }[];
+  a: { dir: string; pkg: string; ms: number }[];
+  b: { dir: string; pkg: string; ms: number }[];
   /** Keep rule: every B beats every A (lower ms per frame). */
   verdict: "keep" | "reject" | "pending";
   medianA?: number;
@@ -273,7 +327,7 @@ export function abPairsOf(runs: readonly IMidwayRun[]): IAbPair[] {
     if (!m || ms === undefined) continue;
     const key = `${m[1]}\0${r.arm}`;
     const entry = sides.get(key) ?? { stem: m[1] as string, arm: r.arm, a: [], b: [] };
-    entry[m[2] as "a" | "b"].push({ dir: r.dir, ms });
+    entry[m[2] as "a" | "b"].push({ dir: r.dir, pkg: buildOf(r), ms });
     sides.set(key, entry);
   }
   return [...sides.values()]
@@ -301,6 +355,7 @@ export interface IGroup {
   hudP95?: number;
   matrixLast?: number;
   parityPass: number;
+  pkgs: string[];
 }
 
 /** A/B grouping by tag prefix and arm: `walk-a1..a3` against `walk-b1..b3`. */
@@ -319,6 +374,7 @@ export function groupsOf(runs: readonly IMidwayRun[]): IGroup[] {
       arm: first.arm,
       runs: list.length,
       parityPass: list.filter((r) => r.parity?.pass).length,
+      pkgs: [...new Set(list.map(buildOf))],
       ...opt("cpuFrameMs", med(list, mainThreadMs)),
       ...opt(
         "frameP95",
@@ -336,21 +392,21 @@ export function groupsOf(runs: readonly IMidwayRun[]): IGroup[] {
   });
 }
 
-/** Latest desktop run's frame split: game JS, render, other main-thread work, and the present call. */
+/** Newest desktop build's frame split (median over its runs): game JS, render, other main-thread work, and the present call. */
 export function breakdownOf(runs: readonly IMidwayRun[]) {
-  const run = runs
-    .filter((r) => r.arm === "desktop" && r.desktop?.medians.cpuFrameCpuMs !== undefined)
-    .at(-1);
-  const m = run?.desktop?.medians;
-  if (!run || !m || m.cpuFrameCpuMs === undefined) return undefined;
-  const gameJs = m.gameJsCpuMs ?? 0;
-  const render = m.renderCpuMs ?? 0;
+  const last = ends(runs, "desktop", (r) => r.desktop?.medians.cpuFrameCpuMs).last;
+  if (!last) return undefined;
+  const key = (k: "gameJsCpuMs" | "renderCpuMs" | "presentCpuMs") =>
+    medOf(last.runs, (r) => r.desktop?.medians[k]) ?? 0;
+  const gameJs = key("gameJsCpuMs");
+  const render = key("renderCpuMs");
   return {
-    dir: run.dir,
+    build: last.build,
+    runs: last.runs.length,
     gameJs,
     render,
-    other: Math.max(0, m.cpuFrameCpuMs - gameJs - render),
-    present: m.presentCpuMs ?? 0,
+    other: Math.max(0, last.value - gameJs - render),
+    present: key("presentCpuMs"),
   };
 }
 
@@ -360,10 +416,11 @@ export interface IGapSide {
   /** Percent of the three.js time: positive is slower, negative is faster. */
   pct: number;
   direction: "slower" | "faster" | "equal";
-  dir: string;
+  build: string;
+  runs: number;
 }
 
-/** Desktop native and web Wasm against three.js on main-thread ms per frame, latest run of each. */
+/** Desktop native and web Wasm against three.js on main-thread ms per frame, newest build of each (median over its runs). */
 export function gapOf(runs: readonly IMidwayRun[]) {
   const legacy = legacyMs(runs);
   const side = (arm: Arm): IGapSide | undefined => {
@@ -375,10 +432,24 @@ export function gapOf(runs: readonly IMidwayRun[]) {
       absMs,
       pct: (absMs / legacy) * 100,
       direction: absMs > 0 ? "slower" : absMs < 0 ? "faster" : "equal",
-      dir: last.run.dir,
+      build: last.build,
+      runs: last.runs.length,
     };
   };
   return { legacyMs: legacy, desktop: side("desktop"), wasm: side("native") };
+}
+
+/** Desktop builds, oldest first, each reduced to the median over its runs. */
+export function buildsOf(runs: readonly IMidwayRun[]) {
+  return measures(runs, "desktop", mainThreadMs).map((m) => ({
+    build: m.build,
+    firstSeen: m.firstSeen,
+    runs: m.runs.length,
+    ms: m.value,
+    hudP95: medOf(m.runs, (r) => r.ui?.p95),
+    matrixLast: medOf(m.runs, (r) => r.matrix?.last),
+    parityPass: m.runs.filter((r) => r.parity?.pass).length,
+  }));
 }
 
 export function midwayOf(runs: readonly IMidwayRun[], prdText?: string) {
@@ -389,6 +460,7 @@ export function midwayOf(runs: readonly IMidwayRun[], prdText?: string) {
     trends: trendsOf(runs),
     abPairs: abPairsOf(runs),
     breakdown: breakdownOf(runs),
+    builds: buildsOf(runs),
     gap: gapOf(runs),
     groups: groupsOf(runs),
     legacyMs: legacyMs(runs),

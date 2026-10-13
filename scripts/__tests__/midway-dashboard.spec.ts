@@ -18,6 +18,7 @@ import {
 import {
   abPairsOf,
   breakdownOf,
+  buildsOf,
   gapOf,
   groupsOf,
   kpisOf,
@@ -36,13 +37,17 @@ const proj = (visited: number) =>
   `TN_PROJECTION:{"matrixWorld":{"mode":"visible","visited":${visited}},"path":"js"}`;
 const parityText = (pass: boolean) =>
   `${JSON.stringify({ pass, frames: Object.fromEntries(["takeoff", "cockpit", "reargun"].map((p) => [p, { nativeMeanSsim: [0.95, 0.95], nativeWorstTile: 0.8, pass }])) })}\nPARITY ${pass ? "PASS" : "FAIL"}`;
+let clock = 0;
+/** The player path line a desktop run log carries. */
+const pkgLine = (name: string) =>
+  `"url": "/home/u/.cache/tmp-tn/${name}/tn-native-engine-player-v8"`;
 const run = (dir: string, log: string, parity?: string) => {
   const [, tag, arm] = /^(.+)-(legacy|native|desktop)$/.exec(dir) as [
     string,
     string,
     "legacy" | "native" | "desktop",
   ];
-  return runOf(dir, tag, arm, 1, log, parity);
+  return runOf(dir, tag, arm, ++clock, log, parity);
 };
 
 describe("scanJson", () => {
@@ -246,14 +251,23 @@ describe("progress, trends and PRD boxes", () => {
   it("scores a KPI from the first recorded run, with a regression below zero", () => {
     const list = [
       run("ref1-legacy", budget(10)),
-      run("w1-desktop", [frame(20), ui(80), proj(9000)].join("\n"), parityText(true)),
-      run("w2-desktop", [frame(12), ui(90), proj(5250)].join("\n"), parityText(true)),
+      run(
+        "w1-desktop",
+        [pkgLine("pkg-a"), frame(20), ui(80), proj(9000)].join("\n"),
+        parityText(true),
+      ),
+      run(
+        "w2-desktop",
+        [pkgLine("pkg-b"), frame(12), ui(90), proj(5250)].join("\n"),
+        parityText(true),
+      ),
     ];
     const kpi = Object.fromEntries(kpisOf(list).map((k) => [k.id, k]));
     expect(kpi["AC-3"]).toMatchObject({
       baseline: 9000,
       current: 5250,
-      baselineRun: "w1-desktop",
+      baselineBuild: "pkg-a",
+      build: "pkg-b",
       verdict: "fail",
     });
     expect(kpi["AC-3"]?.progress).toBeCloseTo(0.5);
@@ -277,12 +291,12 @@ describe("progress, trends and PRD boxes", () => {
   it("builds trends with the legacy target and the improvement against the first desktop run", () => {
     const list = [
       run("ref1-legacy", budget(11)),
-      run("a1-desktop", frame(20)),
-      run("a2-desktop", frame(15)),
+      run("a1-desktop", [pkgLine("pkg-a"), frame(20)].join("\n")),
+      run("a2-desktop", [pkgLine("pkg-b"), frame(15)].join("\n")),
     ];
     const ms = trendsOf(list).find((t) => t.id === "ms");
     expect(ms?.target).toBe(11);
-    expect(ms?.points.map((p) => p.dir)).toEqual(["ref1-legacy", "a1-desktop", "a2-desktop"]);
+    expect(ms?.points.map((p) => p.build)).toEqual(["three.js", "pkg-a", "pkg-b"]);
     expect(ms?.deltaPct).toBeCloseTo(25);
     expect(
       trendsOf([run("a1-desktop", frame(20))]).find((t) => t.id === "ms")?.deltaPct,
@@ -292,7 +306,8 @@ describe("progress, trends and PRD boxes", () => {
   it("splits the desktop frame into game, render, other and present", () => {
     const line = `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: 10, gameJsCpuMs: 6, renderCpuMs: 3, presentCpuMs: 30 })}`;
     expect(breakdownOf([run("a1-desktop", line)])).toEqual({
-      dir: "a1-desktop",
+      build: "unknown build",
+      runs: 1,
       gameJs: 6,
       render: 3,
       other: 1,
@@ -326,7 +341,7 @@ describe("progress, trends and PRD boxes", () => {
     ];
     const gap = gapOf(list);
     expect(gap.legacyMs).toBe(11);
-    expect(gap.desktop).toMatchObject({ direction: "slower", dir: "d1-desktop" });
+    expect(gap.desktop).toMatchObject({ direction: "slower", build: "unknown build" });
     expect(gap.desktop?.absMs).toBeCloseTo(3.3);
     expect(gap.desktop?.pct).toBeCloseTo(30);
     expect(gap.wasm?.direction).toBe("faster");
@@ -351,5 +366,48 @@ describe("progress, trends and PRD boxes", () => {
     ]);
     expect(by.matrix).toEqual([{ arm: "legacy", label: "three.js", value: 6000 }]);
     expect(by.hud).toEqual([]);
+  });
+
+  it("reads the package from the player path in the log", () => {
+    expect(run("x1-desktop", `${pkgLine("pkg-ac4b")}\n${frame(5)}`).pkg).toBe("pkg-ac4b");
+    expect(run("x1-desktop", frame(5)).pkg).toBeUndefined();
+    expect(run("x1-desktop", `"url": "/a/player-base/tn-native-engine-player-v8"`).pkg).toBe(
+      "player-base",
+    );
+  });
+
+  it("scores the newest build, not the newest run, and aggregates a build by its median", () => {
+    const d = (dir: string, pkg: string, cpu: number, hud: number, visited: number) =>
+      run(dir, [pkgLine(pkg), frame(cpu), ui(hud), proj(visited)].join("\n"), parityText(true));
+    const list = [
+      run("ref1-legacy", budget(10)),
+      d("a1-desktop", "pkg-old", 20, 80, 9000),
+      d("b1-desktop", "pkg-new", 14, 40, 3000),
+      d("b2-desktop", "pkg-new", 12, 50, 3400),
+      d("b3-desktop", "pkg-new", 16, 60, 3200),
+      // An old-build run that finished last must not become "current".
+      d("a2-desktop", "pkg-old", 22, 90, 9500),
+    ];
+    const kpi = Object.fromEntries(kpisOf(list).map((k) => [k.id, k]));
+    expect(kpi["AC-3"]).toMatchObject({
+      build: "pkg-new",
+      runs: 3,
+      current: 3200,
+      baselineBuild: "pkg-old",
+      baseline: 9250,
+    });
+    expect(kpi["AC-5"]).toMatchObject({ current: 50 });
+    expect(kpi["AC-6"]?.current).toBeCloseTo(10 / 14);
+    const ms = trendsOf(list).find((t) => t.id === "ms");
+    expect(ms?.points.filter((p) => p.arm === "desktop")).toEqual([
+      { build: "pkg-old", arm: "desktop", v: 21, runs: 2 },
+      { build: "pkg-new", arm: "desktop", v: 14, runs: 3 },
+    ]);
+    expect(gapOf(list).desktop).toMatchObject({ build: "pkg-new", runs: 3, ms: 14 });
+    expect(breakdownOf(list)).toMatchObject({ build: "pkg-new", runs: 3 });
+    expect(buildsOf(list).map((b) => [b.build, b.runs, b.ms])).toEqual([
+      ["pkg-old", 2, 21],
+      ["pkg-new", 3, 14],
+    ]);
   });
 });
