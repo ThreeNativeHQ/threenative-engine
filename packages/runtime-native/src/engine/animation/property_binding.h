@@ -41,24 +41,8 @@ Object3D* findNode(Object3D& root, const std::optional<std::string>& nodeName);
  * `diagnostic`; an unavailable binding's get and set do nothing, as three's do.
  */
 class PropertyBinding {
-  public:
-    PropertyBinding(const std::shared_ptr<Object3D>& root, std::string path);
-
-    void bind();
-    void unbind();
-    [[nodiscard]] bool bound() const { return target_ != Target::Unavailable; }
-    /** The object cached by bind(), for the animation audit's targetObject reflection. */
-    [[nodiscard]] std::shared_ptr<Object3D> targetNode() const { return bound() ? node_.lock() : nullptr; }
-    [[nodiscard]] std::shared_ptr<Material> targetMaterial() const { return bound() ? material_ : nullptr; }
-
-    void getValue(double* buffer, std::size_t offset);
-    void setValue(const double* buffer, std::size_t offset);
-
-    const std::string path;
-    /** Why the last bind left this unavailable, empty when it bound. */
-    std::string diagnostic;
-
-  private:
+    // Hot members first: every apply of a track reads them, so a binding costs one cache line, not the
+    // lines the parsed path and diagnostics sit on.
     enum class Target {
         Unavailable,
         Position,
@@ -75,18 +59,62 @@ class PropertyBinding {
         MorphElement  // `morphTargetInfluences[i]`: three's ArrayElement binding
     };
 
-    std::weak_ptr<Object3D> root_;
     std::weak_ptr<Object3D> node_;
     // node_'s object, read after a node_.expired() check instead of a lock() per apply.
     // ponytail: safe while one thread owns the scene; PRD-574 swaps in a frame-scoped strong
     // reference if a second thread can release nodes.
     Object3D* raw_ = nullptr;
+    Target target_ = Target::Unavailable;
+    bool bindAttempted_ = false; // three's `_getValue_unbound`: the first get or set binds
+    int component_ = 0;
+
+  public:
+    PropertyBinding(const std::shared_ptr<Object3D>& root, std::string path);
+
+    void bind();
+    void unbind();
+    [[nodiscard]] bool bound() const { return target_ != Target::Unavailable; }
+    /** The object cached by bind(), for the animation audit's targetObject reflection. */
+    [[nodiscard]] std::shared_ptr<Object3D> targetNode() const { return bound() ? node_.lock() : nullptr; }
+    [[nodiscard]] std::shared_ptr<Material> targetMaterial() const { return bound() ? material_ : nullptr; }
+
+    void getValue(double* buffer, std::size_t offset);
+    void setValue(const double* buffer, std::size_t offset);
+
+    /**
+     * A track writes once a frame, long after the frame before it evicted everything, so the first
+     * touch of the node and of its transform columns misses. The mixer calls these a few tracks ahead:
+     * `prefetchNode` starts the node's own lines, `prefetchColumns` (once those arrived) the columns the
+     * write lands on. They read nothing the write does not, and a binding that is not bound ignores them.
+     */
+    void prefetchNode() const {
+        if (raw_ == nullptr) return;
+        __builtin_prefetch(reinterpret_cast<const char*>(raw_) - 16, 1, 3); // the shared_ptr count the write checks
+        __builtin_prefetch(raw_, 1, 3);
+        __builtin_prefetch(&raw_->matrixWorldNeedsUpdate, 1, 3);
+    }
+    void prefetchColumns() const {
+        if (raw_ == nullptr) return;
+        switch (target_) {
+        case Target::Position: __builtin_prefetch(&raw_->position, 1, 3); break;
+        case Target::Scale: __builtin_prefetch(&raw_->scale, 1, 3); break;
+        case Target::Quaternion:
+            __builtin_prefetch(&raw_->quaternion, 1, 3);
+            __builtin_prefetch(&raw_->rotation, 1, 3);
+            break;
+        default: break;
+        }
+    }
+
+    const std::string path;
+    /** Why the last bind left this unavailable, empty when it bound. */
+    std::string diagnostic;
+
+  private:
+    std::weak_ptr<Object3D> root_;
     ParsedPath parsed_;
     bool parsedOk_ = false;
-    bool bindAttempted_ = false; // three's `_getValue_unbound`: the first get or set binds
-    Target target_ = Target::Unavailable;
     Vector3& (Object3D::*vector_)() = nullptr; // the vector a component binding writes
-    int component_ = 0;
     std::size_t morphIndex_ = 0;
     std::shared_ptr<Material> material_; // the material bound, held until unbind like three's targetObject
     double Material::* materialNumber_ = nullptr;

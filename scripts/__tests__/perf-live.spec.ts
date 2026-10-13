@@ -1,11 +1,17 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename, rm, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
+import { expectedLadderCounts } from "../../examples/engine-load-test/src/ladder.js";
 import {
   type IPoint,
   deltaOf,
+  desktopOf,
   epicOf,
   heroOf,
+  loadRuns,
   phaseGapOf,
   pointsOf,
   rowsOf,
@@ -18,6 +24,260 @@ import {
 const pilot = "artifacts/engine-load-test/prd-449/pilots/scoreboard-tn-r3-2026-09-28.json";
 
 describe("perf-live", () => {
+  describe("Desktop KPI (v1)", () => {
+    const run = (arm: string, mode: "R2" | "R3" | "R5", thread: number) => ({
+      arm,
+      build: { notes: "", type: "release" },
+      device: { battery: null, label: "test fixture" },
+      display: { height: 1080, refreshHz: 60, vsync: false, width: 1920 },
+      driver: { adapter: "Intel test adapter", renderer: "r" },
+      engine: { name: arm === "godot-desktop" ? "godot" : "threenative", version: "test" },
+      identity: { sourceSha: "abc123" },
+      rungs: [
+        {
+          mode,
+          objectCount: 4096,
+          repeat: 0,
+          positionHash: "h",
+          visibleObjects: 4096,
+          drawCalls: 116,
+          triangles: 155919,
+          frameMs: [thread + 100, thread + 101, thread + 102],
+          threadCpuMs: [thread, thread, thread],
+          ladder: expectedLadderCounts(mode, 4096),
+          ...(mode === "R2" ? {} : { foxMeasurement: { heightM: 0.5, screenFraction: 0.04 } }),
+          renderCheck: {
+            distinctColors: 100,
+            luminanceStdDev: 0.2,
+            maxLuminance: 0.8,
+            sampledPixels: 1000,
+          },
+        },
+      ],
+    });
+    it("renders FPS for both desktop and web arms in the comparison and KPI table", async () => {
+      const legacy = run("tn-desktop", "R5", 20);
+      const native = run("tn-engine-desktop", "R5", 10);
+      const [legacyRung] = legacy.rungs;
+      const [nativeRung] = native.rungs;
+      if (!legacyRung || !nativeRung) throw new Error("missing fixture rung");
+      legacyRung.frameMs = [10, 10, 10, 20];
+      nativeRung.frameMs = [5, 5, 5, 10];
+      const reportRows = [
+        ...rowsOf(legacy, "fps-tn-desktop-r1.json", 1),
+        ...rowsOf(native, "fps-tn-engine-desktop-r1.json", 2),
+      ];
+      expect(reportRows[0]).toMatchObject({ fps: 80, fpsLow1: 50 });
+      const loaded = [legacy, native].map((report, i) => ({
+        report: report as Parameters<typeof desktopOf>[0][number]["report"],
+        file: `v1-confirm-fps-${report.arm}-r1.json`,
+        mtime: i + 1,
+        rows: rowsOf(report, `v1-confirm-fps-${report.arm}-r1.json`, i + 1),
+      }));
+      const desktop = desktopOf(loaded);
+      expect(desktop.kpi.find((r) => r.rung === "R5")?.pair?.left).toMatchObject({
+        fps: 80,
+        fpsLow1: 50,
+      });
+      const elements = new Map<string, { innerHTML: string; addEventListener(): void }>();
+      const html = await readFile(new URL("../perf-live.html", import.meta.url), "utf8");
+      const script = (html.split("<script>")[1] as string)
+        .split("</script>")[0]
+        ?.replace("tick(); setInterval(tick, 2000);", "");
+      runInNewContext(
+        `${script}\ndesktop = data; web = webData; renderCompare(); renderDesktop(); renderWeb();`,
+        {
+          data: desktop,
+          webData: webOf([
+            ...rowsOf({ ...legacy, arm: "tn-web" }, "fps-tn-web-r1.json", 1),
+            ...rowsOf({ ...native, arm: "tn-engine-web" }, "fps-tn-engine-web-r1.json", 2),
+          ]),
+          document: {
+            getElementById: (id: string) => {
+              if (!elements.has(id)) elements.set(id, { innerHTML: "", addEventListener() {} });
+              return elements.get(id);
+            },
+          },
+        },
+      );
+      for (const id of ["compare", "desktop", "web"]) {
+        const output = elements.get(id)?.innerHTML;
+        expect(output).toContain("80.0 fps");
+        expect(output).toContain("160.0 fps");
+        expect(output).toContain("50.0 fps");
+        expect(output).toContain("100.0 fps");
+      }
+      expect(elements.get("compare")?.innerHTML).toContain("uncapped (vsync off)");
+      expect(elements.get("compare")?.innerHTML).toContain(
+        "page frames per second (performance.now)",
+      );
+      expect(elements.get("desktop")?.innerHTML).toContain("uncapped (vsync off)");
+      legacyRung.frameMs = [];
+      expect(() => rowsOf(legacy, "empty.json", 1)).toThrow();
+    });
+
+    async function fixture(
+      check: (
+        dir: string,
+        put: (
+          tag: string,
+          arm: string,
+          mode: "R2" | "R3" | "R5",
+          thread: number,
+          round?: number,
+          time?: number,
+        ) => Promise<void>,
+      ) => Promise<void>,
+    ) {
+      const dir = await mkdtemp(path.join(tmpdir(), "perf-live-"));
+      const put = async (
+        tag: string,
+        arm: string,
+        mode: "R2" | "R3" | "R5",
+        thread: number,
+        round = 1,
+        time = 1,
+      ) => {
+        const file = path.join(dir, `${tag}-${arm}-r${round}.json`);
+        await writeFile(file, JSON.stringify(run(arm, mode, thread)));
+        await utimes(file, time, time);
+      };
+      try {
+        await check(dir, put);
+      } finally {
+        await rm(dir, { recursive: true });
+      }
+    }
+
+    it("loads confirmation sets and uses pooled and per-round no-present thread CPU ratios", async () => {
+      await fixture(async (dir, put) => {
+        for (const [mode, tag] of [
+          ["R2", "v1-confirm-R2"],
+          ["R3", "v1-confirm-R3"],
+          ["R5", "v1-confirm"],
+        ] as const) {
+          for (const [round, legacy, engine] of [
+            [1, 12, 3],
+            [2, 20, 10],
+            [3, 24, 6],
+          ]) {
+            await put(tag, "tn-desktop", mode, legacy as number, round);
+            await put(tag, "tn-engine-desktop", mode, engine as number, round);
+          }
+        }
+        const desktop = desktopOf(await loadRuns([dir]));
+        expect(desktop.kpi.map((r) => r.rung)).toEqual(["R2", "R3", "R5"]);
+        for (const row of desktop.kpi) {
+          expect(row).toMatchObject({
+            status: "measured",
+            commits: ["abc123"],
+            pair: {
+              left: { threadCpuP50: 20, triangles: 155919 },
+              right: { threadCpuP50: 6, triangles: 155919 },
+              ratio: { threadCpu: 20 / 6 },
+            },
+            rounds: [
+              { round: 1, ratio: 4 },
+              { round: 2, ratio: 2 },
+              { round: 3, ratio: 4 },
+            ],
+          });
+        }
+        expect(desktop.gpu.status).toBe("PENDING");
+        expect(desktop.godot.status).toBe("PENDING");
+        const html = await readFile(new URL("../perf-live.html", import.meta.url), "utf8");
+        expect(html.indexOf('id="desktop"')).toBeLessThan(html.indexOf('id="web"'));
+        const element = { innerHTML: "", addEventListener() {} };
+        const script = (html.split("<script>")[1] as string)
+          .split("</script>")[0]
+          ?.replace("tick(); setInterval(tick, 2000);", "");
+        runInNewContext(`${script}\ndesktop = data; renderDesktop();`, {
+          data: desktop,
+          document: { getElementById: () => element },
+        });
+        expect(element.innerHTML).toContain("Desktop KPI (v1)");
+        expect(element.innerHTML).toMatch(/real-GPU inclusive \(R5\).*PENDING/su);
+        expect(element.innerHTML).toMatch(/Godot \(R5\).*PENDING/su);
+      });
+    });
+
+    it("selects the newest confirmation set without filling a missing arm from an older set", async () => {
+      await fixture(async (dir, put) => {
+        await put("v1-confirm", "tn-desktop", "R5", 12);
+        await put("v1-confirm", "tn-engine-desktop", "R5", 6);
+        await put("v1-confirm-new", "tn-desktop", "R5", 30, 1, 2);
+        expect(desktopOf(await loadRuns([dir])).kpi.at(-1)?.status).toBe("PENDING");
+        await put("v1-confirm-new", "tn-engine-desktop", "R5", 10, 1, 3);
+        expect(desktopOf(await loadRuns([dir])).kpi.at(-1)?.pair?.ratio.threadCpu).toBe(3);
+      });
+    });
+
+    it("lets a real-display set outrank the Xvfb confirm set for its rung, and says which lane it is", async () => {
+      await fixture(async (dir, put) => {
+        await put("v1-confirm-R3", "tn-desktop", "R3", 12);
+        await put("v1-confirm-R3", "tn-engine-desktop", "R3", 6);
+        expect(desktopOf(await loadRuns([dir])).kpi[1]).toMatchObject({
+          lane: "Xvfb",
+          pair: { ratio: { threadCpu: 2 } },
+        });
+        await put("gpu-R3-desktop", "tn-desktop", "R3", 12);
+        await put("gpu-R3-desktop", "tn-engine-desktop", "R3", 4);
+        expect(desktopOf(await loadRuns([dir])).kpi[1]).toMatchObject({
+          lane: "real GPU",
+          pair: { ratio: { threadCpu: 3 } },
+        });
+      });
+    });
+
+    it("shows GPU inclusive timing and Godot frame percentiles only when reports exist", async () => {
+      await fixture(async (dir, put) => {
+        await put("v1-confirm", "tn-engine-desktop", "R5", 6);
+        await put("gpu-R5-test", "tn-desktop", "R5", 12);
+        await put("gpu-R5-test", "tn-engine-desktop", "R5", 6);
+        await put("godot-R5", "godot-desktop", "R5", 20);
+        await rename(
+          path.join(dir, "godot-R5-godot-desktop-r1.json"),
+          path.join(dir, "godot.json"),
+        );
+        const desktop = desktopOf(await loadRuns([dir]));
+        expect(desktop.gpu).toMatchObject({
+          status: "measured",
+          adapters: ["Intel test adapter"],
+          pair: { ratio: { p50: 113 / 107 } },
+        });
+        expect(desktop.godot).toMatchObject({
+          status: "measured",
+          pair: {
+            left: { p50: 121, p95: 122, p99: 122 },
+            right: { p50: 107, p95: 108, p99: 108 },
+          },
+        });
+      });
+    });
+
+    it("names the desktop batching waiver while still refusing mismatched triangles", async () => {
+      await fixture(async (dir, put) => {
+        await put("v1-confirm", "tn-desktop", "R5", 12);
+        await put("v1-confirm", "tn-engine-desktop", "R5", 6);
+        const file = path.join(dir, "v1-confirm-tn-engine-desktop-r1.json");
+        const report = run("tn-engine-desktop", "R5", 6);
+        report.rungs = report.rungs.map((rung) => ({ ...rung, drawCalls: 18 }));
+        await writeFile(file, JSON.stringify(report));
+        const waiver = process.env.TN_BENCH_WAIVE;
+        expect(desktopOf(await loadRuns([dir])).kpi.at(-1)?.pair?.ratio.threadCpu).toBe(2);
+        expect(process.env.TN_BENCH_WAIVE).toBe(waiver);
+        report.rungs = report.rungs.map((rung) => ({ ...rung, triangles: 1 }));
+        await writeFile(file, JSON.stringify(report));
+        await utimes(file, 10, 10);
+        expect(desktopOf(await loadRuns([dir])).kpi.at(-1)).toMatchObject({
+          status: "PENDING",
+          problem: expect.stringContaining("triangles"),
+        });
+        const html = await readFile(new URL("../perf-live.html", import.meta.url), "utf8");
+        expect(html).toContain("Draw-call parity waived");
+      });
+    });
+  });
   it.skipIf(!existsSync(new URL(`../../${pilot}`, import.meta.url)))(
     "turns a bench report into one row per workload with p50 and p95",
     async () => {
@@ -325,6 +585,26 @@ describe("perf-live", () => {
         },
       ],
     });
+    it("carries mean FPS and 1% low into both web arms and rejects empty frames", () => {
+      const legacy = webRun("tn-web", 10);
+      const native = webRun("tn-engine-web", 5);
+      const [legacyRung] = legacy.rungs;
+      const [nativeRung] = native.rungs;
+      if (!legacyRung || !nativeRung) throw new Error("missing fixture rung");
+      legacyRung.frameMs = [10, 10, 10, 20];
+      nativeRung.frameMs = [5, 5, 5, 10];
+      const rows = [
+        ...rowsOf(legacy, "fps-tn-web-r1.json", 1),
+        ...rowsOf(native, "fps-tn-engine-web-r1.json", 2),
+      ];
+      expect(rows[0]).toMatchObject({ fps: 80, fpsLow1: 50 });
+      const [pair] = webOf(rows).pairs;
+      expect(pair?.legacy).toMatchObject({ fps: 80, fpsLow1: 50 });
+      expect(pair?.native).toMatchObject({ fps: 160, fpsLow1: 100 });
+      legacyRung.frameMs = [];
+      expect(() => rowsOf(legacy, "empty.json", 1)).toThrow();
+    });
+
     const web = {
       startup: { entryMs: 100, firstFrameMs: 500, wasmInstantiateMs: [10, 6] },
       memory: { jsHeapUsedBytes: 4e7, wasmMemoryBytes: 1e8 },

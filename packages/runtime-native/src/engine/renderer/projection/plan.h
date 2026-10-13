@@ -54,8 +54,6 @@ using tn::engine::isSimilarityTransform;
 
 namespace detail {
 
-inline bool isLight(const Object3D& o) { return dynamic_cast<const Light*>(&o) != nullptr; }
-
 // geometryLaneReason: the reasons a native geometry can carry.
 inline const char* geometryLaneReason(const BufferGeometry& g) {
     if (!g.attributes.count("position")) return "unsupportedGeometry";
@@ -244,17 +242,27 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
     };
     // walkProjection: depth first, children in order; a light's children are not visited.
     std::vector<Object3D*> stack(scene.children.rbegin(), scene.children.rend());
+    const std::type_info* classType = nullptr;
+    bool classMesh = false, classRig = false;
     while (!stack.empty()) {
         Object3D* object = stack.back();
         stack.pop_back();
         // A plain Mesh is neither a light, a rig nor an instanced mesh: one type check replaces the casts.
-        const bool plain = typeid(*object) == typeid(Mesh);
-        auto* mesh = plain ? static_cast<Mesh*>(object) : dynamic_cast<Mesh*>(object);
+        // Any other node (a bone, a group, a rig) is one of a few classes that arrive in runs, so the
+        // casts run once per change of class and the run reuses their answer.
+        const std::type_info& type = typeid(*object);
+        const bool plain = type == typeid(Mesh);
+        if (!plain && &type != classType) {
+            classType = &type;
+            classMesh = dynamic_cast<Mesh*>(object) != nullptr;
+            classRig = dynamic_cast<SkinnedMesh*>(object) != nullptr;
+        }
+        auto* mesh = plain || classMesh ? static_cast<Mesh*>(object) : nullptr;
         if (blocked.empty() && mesh && mesh->onBeforeRender) blocked = "renderHook";
-        if (!plain && isLight(*object)) continue;
+        if (!plain && object->isLight()) continue;
         if (mesh) {
             ++d.sourceRenderables;
-            if (auto* rig = plain ? nullptr : dynamic_cast<SkinnedMesh*>(mesh)) {
+            if (auto* rig = classRig && !plain ? static_cast<SkinnedMesh*>(mesh) : nullptr) {
                 if (const char* reason = skinnedLaneReason(*rig)) exactLane.emplace_back(rig, reason);
                 else skinned.push_back(rig);
             } else if (const char* reason = plain ? plainReason(*mesh) : meshLaneReason(*mesh)) {

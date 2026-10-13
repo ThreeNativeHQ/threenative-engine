@@ -6,6 +6,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { softwareAdapterName } from "../packages/playtest/src/runner/browser.js";
+import { type IPairRow, frameRates, pairRows } from "./engine-load-test/pair.js";
 import { type IRunReport, parseRunReport, summarize } from "./engine-load-test/report.js";
 
 export interface IRow {
@@ -17,6 +18,8 @@ export interface IRow {
   p50: number;
   p95: number;
   p99: number;
+  fps: number;
+  fpsLow1: number;
   hitches: number;
   /** Whole-process CPU ms per frame, when the arm reports it (includes the present call). */
   cpu?: number;
@@ -53,7 +56,13 @@ const roots = flag("--root").length
   : [path.join(process.cwd(), "artifacts", "engine-load-test", "prd-573")];
 const prdFile = flag("--prd")[0];
 
-const cache = new Map<string, { mtime: number; rows: IRow[] }>();
+interface ILoadedRun {
+  file: string;
+  mtime: number;
+  report: IRunReport;
+  rows: IRow[];
+}
+const cache = new Map<string, ILoadedRun | { mtime: number }>();
 
 async function* walk(dir: string): AsyncGenerator<string> {
   for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
@@ -151,6 +160,11 @@ export function rowsOf(report: unknown, file: string, mtime: number): IRow[] {
       p50: s.p50,
       p95: s.p95,
       p99: s.p99,
+      ...frameRates(
+        r.rungs
+          .filter((rung) => rung.mode === s.mode && rung.objectCount === s.objectCount)
+          .flatMap((rung) => rung.frameMs),
+      ),
       hitches: s.hitches,
       ...(s.cpuMsPerFrame === undefined ? {} : { cpu: s.cpuMsPerFrame }),
       ...(s.threadCpuP50 === undefined ? {} : { threadCpu: s.threadCpuP50 }),
@@ -291,6 +305,8 @@ export interface IWebArm {
   p50?: number;
   p95?: number;
   p99?: number;
+  fps?: number;
+  fpsLow1?: number;
   /** Main-thread ms per frame without present (page wall time: a page has no thread CPU clock). */
   thread?: number;
   crossings?: number;
@@ -373,6 +389,14 @@ function webArmOf(group: readonly IRow[], arm: string): IWebArm {
   put(
     "crossings",
     pick((r) => r.crossings),
+  );
+  put(
+    "fps",
+    pick((r) => r.fps),
+  );
+  put(
+    "fpsLow1",
+    pick((r) => r.fpsLow1),
   );
   put("phases", armPhases(group, arm));
   const webs = runs.flatMap((r) => (r.web ? [r.web as Record<string, number>] : []));
@@ -590,24 +614,149 @@ export function heroOf(points: readonly IPoint[], now: number) {
   };
 }
 
-async function allRows(): Promise<IRow[]> {
-  const rows: IRow[] = [];
-  for (const root of roots) {
+export async function loadRuns(rootPaths: readonly string[] = roots): Promise<ILoadedRun[]> {
+  const runs: ILoadedRun[] = [];
+  for (const root of rootPaths) {
     for await (const file of walk(root)) {
       const mtime = (await stat(file)).mtimeMs;
       let hit = cache.get(file);
       if (hit?.mtime !== mtime) {
         // Not every json under the roots is a run report; those parse-fail once and stay empty.
-        const rows = await readFile(file, "utf8")
-          .then((text) => rowsOf(JSON.parse(text), path.relative(root, file), mtime))
-          .catch(() => []);
-        hit = { mtime, rows };
+        hit = await readFile(file, "utf8")
+          .then((text) => {
+            const report = parseRunReport(JSON.parse(text));
+            return { file, mtime, report, rows: rowsOf(report, path.relative(root, file), mtime) };
+          })
+          .catch(() => ({ mtime }));
         cache.set(file, hit);
       }
-      rows.push(...hit.rows);
+      if ("report" in hit) runs.push(hit);
     }
   }
-  return rows.sort((a, b) => a.t - b.t || a.m - b.m || a.file.localeCompare(b.file));
+  return runs;
+}
+
+async function allRows(): Promise<IRow[]> {
+  return (await loadRuns())
+    .flatMap((run) => run.rows)
+    .sort((a, b) => a.t - b.t || a.m - b.m || a.file.localeCompare(b.file));
+}
+
+interface IDesktopResult {
+  status: "PENDING" | "measured";
+  label?: string;
+  pair?: IPairRow;
+  rounds?: { round: number; ratio?: number }[];
+  commits?: string[];
+  adapters?: string[];
+  problem?: string;
+}
+
+/** Confirmed desktop sets stay separate from exploratory and web runs. Ratios use the bench's parity gate. */
+export function desktopOf(runs: readonly ILoadedRun[]) {
+  const tagOf = (run: ILoadedRun) =>
+    /^(.*)-(?:tn-(?:engine-)?desktop|godot-desktop)-r\d+\.json$/u.exec(
+      path.basename(run.file),
+    )?.[1];
+  const latest = (prefix: string, mode: string, arm?: string): ILoadedRun[] => {
+    const sets = new Map<string, ILoadedRun[]>();
+    for (const run of runs) {
+      const tag =
+        tagOf(run) ?? (run.report.arm === "godot-desktop" ? path.basename(run.file) : undefined);
+      if (
+        tag === undefined ||
+        !tag.startsWith(prefix) ||
+        !run.report.rungs.some((r) => r.mode === mode) ||
+        (arm !== undefined && run.report.arm !== arm)
+      )
+        continue;
+      const key = path.join(path.dirname(run.file), tag);
+      sets.set(key, [...(sets.get(key) ?? []), run]);
+    }
+    return (
+      [...sets.values()]
+        .sort((a, b) => Math.max(...a.map((r) => r.mtime)) - Math.max(...b.map((r) => r.mtime)))
+        .at(-1) ?? []
+    );
+  };
+  const compare = (
+    group: readonly ILoadedRun[],
+    mode: string,
+    leftArm: string,
+    rightArm: string,
+  ): IDesktopResult => {
+    const arm = (name: string) => group.filter((r) => r.report.arm === name);
+    const [left, right] = [arm(leftArm), arm(rightArm)];
+    const pending: IDesktopResult = { status: "PENDING" };
+    if (!left.length || !right.length) return pending;
+    const reports = (list: readonly ILoadedRun[]) =>
+      list.map((r) => ({
+        ...r.report,
+        rungs: r.report.rungs.filter((rung) => rung.mode === mode),
+      }));
+    // Desktop host projection batches draws; use the bench's named waiver, keeping triangle parity.
+    const waiver = process.env.TN_BENCH_WAIVE;
+    process.env.TN_BENCH_WAIVE = [waiver, "drawCalls"].filter(Boolean).join(",");
+    try {
+      const pair = pairRows(reports(left), reports(right), [leftArm, rightArm])[0];
+      if (pair === undefined) return pending;
+      const rounds = left
+        .filter((run) => /-r\d+\.json$/u.test(run.file))
+        .map((run) => {
+          const round = Number(/-r(\d+)\.json$/u.exec(run.file)?.[1]);
+          const other = right.find((r) => Number(/-r(\d+)\.json$/u.exec(r.file)?.[1]) === round);
+          const ratio =
+            other === undefined
+              ? undefined
+              : pairRows(reports([run]), reports([other]), [leftArm, rightArm])[0]?.ratio.threadCpu;
+          return { round, ...(ratio === undefined ? {} : { ratio }) };
+        })
+        .sort((a, b) => a.round - b.round);
+      return {
+        status: "measured",
+        label: tagOf(left[0] as ILoadedRun),
+        pair,
+        rounds,
+        commits: uniq(group.map((r) => r.report.identity?.sourceSha)),
+        adapters: uniq(group.map((r) => r.report.driver.adapter)),
+      };
+    } catch (error) {
+      return { ...pending, problem: error instanceof Error ? error.message : String(error) };
+    } finally {
+      if (waiver === undefined) Reflect.deleteProperty(process.env, "TN_BENCH_WAIVE");
+      else process.env.TN_BENCH_WAIVE = waiver;
+    }
+  };
+  // A real-display set (`gpu-<rung>*`, hardware adapter) outranks the Xvfb confirm set for the same rung.
+  const kpi = (["R2", "R3", "R5"] as const).map((rung) => {
+    const real = latest(`gpu-${rung}`, rung);
+    const hardware = real.length > 0 && !real.some((r) => r.rows.some((row) => row.software));
+    const result = hardware ? compare(real, rung, LEGACY_ARM, NATIVE_ARM) : undefined;
+    return result?.status === "measured"
+      ? { rung, lane: "real GPU", ...result }
+      : {
+          rung,
+          lane: "Xvfb",
+          ...compare(
+            latest(rung === "R5" ? "v1-confirm" : `v1-confirm-${rung}`, rung),
+            rung,
+            LEGACY_ARM,
+            NATIVE_ARM,
+          ),
+        };
+  });
+  const gpuRuns = latest("gpu-R5", "R5");
+  const gpu = gpuRuns.some((r) => r.rows.some((row) => row.software))
+    ? { status: "PENDING" as const, problem: "Software adapter is not real-GPU evidence." }
+    : compare(gpuRuns, "R5", LEGACY_ARM, NATIVE_ARM);
+  const godotRuns = latest("", "R5", "godot-desktop");
+  const godot = compare(
+    [...godotRuns, ...latest("v1-confirm", "R5", NATIVE_ARM)],
+    "R5",
+    "godot-desktop",
+    NATIVE_ARM,
+  );
+  return { kpi, gpu, godot };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -621,6 +770,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     } else if (req.url?.startsWith("/api/hero")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(heroOf(pointsOf(await allRows()), Date.now())));
+    } else if (req.url?.startsWith("/api/desktop")) {
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify(desktopOf(await loadRuns())));
     } else if (req.url?.startsWith("/api/web")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(webOf(await allRows())));

@@ -84,7 +84,7 @@ import {
   withHostLoad,
 } from "../engine-load-test/report.js";
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
-import { KILL_GRACE_MS, runCapturing } from "../engine-load-test/run-desktop.js";
+import { KILL_GRACE_MS, benchDisplay, runCapturing } from "../engine-load-test/run-desktop.js";
 import { engineDefines, engineEnvironment, playerSurface } from "../engine-load-test/run-engine.js";
 import {
   WEB_ENGINE_WASM,
@@ -3673,6 +3673,12 @@ describe("the tn-engine-desktop arm", () => {
     });
   });
 
+  it("puts both desktop arms on one display, so a pair never splits between :0 and Xvfb", () => {
+    expect(benchDisplay({ DISPLAY: ":0" })).toBe(":0");
+    expect(benchDisplay({ DISPLAY: ":0", TN_BENCH_DISPLAY: ":7" })).toBe(":7");
+    expect(benchDisplay({})).toBe("");
+  });
+
   it("opens the player at the requested surface, uncapped, and reads per-frame CPU only on request", () => {
     const options = {
       axes: DEFAULT_AXES,
@@ -4029,6 +4035,21 @@ describe("the same-run pair guard", () => {
       readHostLoad({ cores: () => 12, loadavg: () => [options.load ?? 1, 0, 0] }),
     );
   const labels = ["tn-desktop", "tn-engine-desktop"] as const;
+
+  it("derives FPS from mean frame time and 1% low from p99", () => {
+    const left = arm("tn-desktop", { rung: { frameMs: [10, 10, 10, 20] } });
+    const right = arm("tn-engine-desktop", { rung: { frameMs: [5, 5, 5, 10] } });
+    const [row] = pairRows([left], [right], labels);
+    expect(row?.left).toMatchObject({ fps: 80, fpsLow1: 50 });
+    expect(row?.right).toMatchObject({ fps: 160, fpsLow1: 100 });
+    expect(row?.ratio.fps).toBe(2);
+    const markdown = renderPairMarkdown([left], [right], labels);
+    expect(markdown).toContain("| fps | 1% low fps |");
+    expect(markdown).toContain("| 80.00 | 50.00 |");
+    expect(() =>
+      pairRows([arm("tn-desktop", { rung: { frameMs: [] } })], [right], labels),
+    ).toThrow();
+  });
 
   it("prints a ratio when both arms drew the same scene, and carries the load beside it", () => {
     const rows = pairRows(

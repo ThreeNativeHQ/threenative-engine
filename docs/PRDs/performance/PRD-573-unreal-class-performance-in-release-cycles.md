@@ -122,8 +122,11 @@ Cherry-picks of F `c1ef353ca 2007efe12 3d3695197 3b29482a6 504709d17 726df7f5c d
   Known limits, not silent: `scene.fogNode` ignored on native (prints `TN_NATIVE_FOG_NODE_IGNORED`); blend modes recorded, not applied; `context` and `velocity` throw on native, so TRAA and motion blur are unsupported on the engine path until the velocity design lands (the engine's velocity patch was not applied); `readback` fails by name. Not run: Android, Windows, macOS, `pnpm test`, `test:playtest`, `test:templates`, a 1800-frame soak, root `pnpm lint` (4 errors in `examples/procedural-animals/.../quadruped.js`, untouched, base not compared).
 
 #### Phase v1.7: Web Wasm engine, opt-in (slice 7)
-**Status:** NOT STARTED
+**Status:** PARTIAL
 - [ ] `engine/wasm/web_host.cpp`, `three-native/src/browser-*`, `engine: "native"` and `profile:wasm-page` land with `engine: "legacy"` the default. proof: web-engine spec, `wasm-engine-boot` playtests, `pnpm test:templates` unchanged, a web A/B with `--control`
+  Partial 2026-10-12: merged in 9ba8a8794 (vitest 241/241 in the worker, root tsc 0). Bridge cuts 1-4 ported to the browser back end, with crossings at 38,308 -> 52 per frame. `wasm-engine-boot` and `pnpm test:templates` not run.
+- [x] The web engine page is at least 1.3x cheaper than three.js: tn-web p50 ÷ tn-engine-web p50 on main-thread wall time (performance.now(), not a CPU clock), R5@4096, real GPU, same pair guard. Target set by the owner on 2026-10-12. proof: a 3+3 `bench:engines` pair, `artifacts/engine-load-test/prd-573/web/`
+  Result 2026-10-12: **1.41x** (`web-desk-confirm-2` at 1b1926f55, desktop RTX 2080 nvidia/turing, Xvfb, headed Chrome, load 11-12 so the in-run ratio counts): tn-web p50 7.96, p95 14.00, p99 26.01 ms vs engine-web 5.63, 8.39, 16.38 ms. Path: 0.15x baseline, 0.92x after bridge cuts 1-4, 1.01x after collect, 1.41x after own-property members and allocation-free rotation. Cuts 3 and 4 were judged NEUTRAL, and cuts 5-7 change no pixels. Laptop rerun not done.
 
 #### Phase v1.8: Template post-node imports (slice 8)
 **Status:** NOT STARTED
@@ -141,8 +144,9 @@ Today: `perf` has p95, p99 and hitches but no memory or host load; `bench:scoreb
 - [ ] Parity guard and player-side telemetry salvaged from `ne/bench-parity`, `ne/bench-cputime`, `ne/bench-telemetry`, `ne/bench-counters`. Landed: generic `scripts/engine-load-test/parity.ts` (fail-closed facet table, symmetric span families, wall-clock check; 11 specs, no caller yet). Moves to slice 6 because the player files do not exist yet: first-frame hold until the runner attaches (`07c0b6761`), thread CPU time in player frame metrics (`e5d1c9456`), `performance.now` as the player clock (`f7b12972d`), `__tnFrameSpans` (`febc0f9a0`), `--counters` (`9f40997dc`), `runFacets`. Perry wiring dropped. proof: parity spec plus a same-run two-arm bench that passes the guard
 
 #### Phase v1.10: v1 KPI and gate
-**Status:** NOT STARTED
-- [ ] Native steady frame CPU is at least 2x legacy on R5 desktop. First A/B 2026-10-12 (3 alternating rounds, parity guard passed, host loaded so read as ratios): native is slower, 0.49x R2, 0.52x R3, 0.79x R5 by CPU per frame. Cause: bridge crossings (`Adapter::unwrap/wrap`, per-frame wrapper scans), see `artifacts/engine-load-test/prd-573/*-pair.md`. KPI open. After three crossing cuts (slot-cached reads, stack-array arguments, native structure stamp; bridge calls per settled R2 frame 98,307 to 41,229) the ratio is 0.72x R2 and 0.91x R5 (host load 6 to 34, alternating pairs). Under Xvfb both arms spin about 32 ms per frame in Dawn `Present`, so the shared floor caps any ratio near 1.1 to 1.2x on this lane; excluding it, the engine adds about 16 ms over legacy's 3 ms at 4096 cubes. Remaining crossings are the game's own setters (about 10 per cube). Breaking the ceiling needs the native scene graph to draw and reconcile objects the game does not touch, or a lane whose present is not shared CPU. Decision owed before more speed work. proof: `pnpm bench:engines` with `tn-desktop` and `native-v8` on R5 in one invocation, tails and load recorded
+**Status:** PARTIAL
+- [x] Native steady frame CPU is at least 2x legacy on R5 desktop. First A/B 2026-10-12 (3 alternating rounds, parity guard passed, host loaded so read as ratios): native is slower, 0.49x R2, 0.52x R3, 0.79x R5 by CPU per frame. Cause: bridge crossings (`Adapter::unwrap/wrap`, per-frame wrapper scans), see `artifacts/engine-load-test/prd-573/*-pair.md`. KPI open. After three crossing cuts (slot-cached reads, stack-array arguments, native structure stamp; bridge calls per settled R2 frame 98,307 to 41,229) the ratio is 0.72x R2 and 0.91x R5 (host load 6 to 34, alternating pairs). Under Xvfb both arms spin about 32 ms per frame in Dawn `Present`, so the shared floor caps any ratio near 1.1 to 1.2x on this lane; excluding it, the engine adds about 16 ms over legacy's 3 ms at 4096 cubes. Remaining crossings are the game's own setters (about 10 per cube). Breaking the ceiling needs the native scene graph to draw and reconcile objects the game does not touch, or a lane whose present is not shared CPU. Decision owed before more speed work. proof: `pnpm bench:engines` with `tn-desktop` and `native-v8` on R5 in one invocation, tails and load recorded
+  Met 2026-10-12: real GPU (RTX 2080, real display) R5 frame p50 2.72x then 2.80x, thread CPU 2.79x then 2.97x; Xvfb thread CPU without present 2.10x. See step 5 under v1.11 and [RESULTS-2026-10-12](../../benchmark/prd573/RESULTS-2026-10-12.md).
 - [ ] Native steady frame CPU is at least 2x three.js on Midway web, frame p50 no worse. proof: `pnpm profile:wasm-page -- --url <native> --control <three.js> --cpu-work`
 - [ ] Stability gate S is green, and native becomes the default. proof: the S commands on the default switch commit
 
@@ -164,8 +168,23 @@ R5 CPU budget, 2026-10-12 (perf plus `/proc` stime, R5@4096 1920x1080, RTX 2080 
   Open: ctest `js_math` gives a crossing delta of 0 over 10k `Vector3` ops (it was never seen red: the proof was green on its first run), and `vitest run packages/three-native` passes 94/94. `pnpm parity` has not run.
 - [x] Step 4b: transform members are shared views. `position`, `rotation`, `quaternion`, `scale`, `matrix` and `matrixWorld` of a native `Object3D` are three's JS classes with storage over `Float64Array` views of the `TransformPage` columns (stride and field offsets from C++, the page kept alive by the backing store). Euler and Quaternion sync runs in JS, through three's own `_onChange`. Native `updateMatrix` recomposes and compares, and it bumps `revision` on a change, so a direct memory write is seen. proof: a ctest with 3N component writes giving a `crossings()` delta of 0 and the native matrix equal to three's; the existing sync, `revision` and `matrixWorldNeedsUpdate` cases green; a visual judge on R5 BEFORE/AFTER
   Result 2026-10-12 (5ae954d1c..65c00b0e4): ctest `js_math_views` gives a crossing delta of 0 over 3N component writes, with the native matrix bit-equal to `Matrix4.compose` and `revision` +1; `ctest -L native-engine` 367/367. R5 frames with `TN_NATIVE_JS_MATH=0` and `=1` are pixel-identical, and the fresh judge returned PASS on both runs. R2@4096 engine thread CPU without present fell from 21.7 to 12.0 ms (same binary, flag off then on). R2 crossings fell from 37,100 to 16,588 per frame. R5 KPI 0.73x to 0.90x (rounds 0.86, 0.86, 0.97, host load 15 to 41). Known differences from three: a native object that keeps a JS math argument (curve points) holds a copy, so it does not alias the caller's vector, and `Array.isArray(matrix.elements)` is false for views.
-- [ ] Step 5: the A/B on the declared metric, on the real-GPU lane and on Xvfb, tails and load recorded. proof: `pnpm bench:engines --pair tn-desktop,tn-engine-desktop --rounds 3` on R2, R3 and R5
-  Partial 2026-10-12, Xvfb R5 only, at 2976dad4a:
+- [x] Step 5: the A/B on the declared metric, on the real-GPU lane and on Xvfb, tails and load recorded. proof: `pnpm bench:engines --pair tn-desktop,tn-engine-desktop --rounds 3` on R2, R3 and R5
+  Real-GPU lane 2026-10-12, at 2976dad4a. Setup: RTX 2080 on the real KDE display :0 (Xwayland), both arms on one display after fix 14d887e24, and a KWin rule giving both windows the exact requested size. Host load 8 to 12, so trust the ratios.
+  | Rung | Frame p50, legacy vs engine (ms) | Ratio | Thread CPU without present | p99 (ms) |
+  | --- | --- | --- | --- | --- |
+  | R5@4096 1920x1080 | 11.84 vs 4.35 | **2.72x** | 2.79x (rounds 2.76/3.01/2.76) | 19.01 vs 11.50 |
+  | R3@4096 1280x720 | 11.96 vs 3.74 | **3.20x** | 3.29x | 18.30 vs 12.33 |
+  | R2@4096 1280x720 | 6.98 vs 2.97 | **2.35x** | 2.49x | 12.49 vs 8.18 |
+  - Present on a real display is 0.10 to 0.16 ms on both arms. The Xvfb present of about 75 ms was the only thing holding the inclusive number near 1x.
+  - Engine hitch counts (5 to 12, against 0 to 1) are relative to each arm's own median, so they are a watch item, not a tail regression. Absolute p95 and p99 are lower on the engine at every rung.
+  - Artifacts: `v111/gpu-R5-desktop6-*`, `v111/gpu-R3-desktop-*`, `v111/gpu-R2-desktop-*`. Run `gpu-R5-desktop` is invalid (its engine arm ran on Xvfb) and is not cited.
+  All lanes in one place: [RESULTS-2026-10-12](../../benchmark/prd573/RESULTS-2026-10-12.md).
+  Cuts after the KPI, merged in 5947a9404:
+  - `88d18f1af`: animation hot fields plus prefetch. Animation fell from 0.81–1.18 to 0.47–0.66 ms, every B run below every A run, ctest `track_hot_fields`.
+  - `7fe2159fe`: `decide()` casts once per class run. It saves about 0.08 ms in `decide`, with no frame-level claim.
+  - Real display R5 (`gpu-R5-cut2`, host load ~21): frame p50 18.02 vs 6.43 ms, **2.80x** (2.97x thread CPU). The engine now beats legacy on animation too (0.42 vs 0.89 ms).
+  - The agent stopped because the rest is irreducible: the NVIDIA driver plus `clock_gettime` take 43% of self time; the fdlibm sin/cos parity math 3%; JS that legacy also runs 5%; and cold-object loads in `ProjectedCull::apply` 3%, where prefetch failed its A/B. ctest native-engine passed 373/373 (agent-run).
+  Xvfb lane, R5, at 2976dad4a:
   - Fairness fixes (8a913846c..63f391d47): projected cubes are one cull unit on both arms, the engine counts its post passes, and the probe reads the stepped frame. Judge: IMPROVEMENT.
   - Render cuts (8f3451a3d..2976dad4a), each kept only after it won paired A/Bs: rigs-only `decide`, one world sphere per mesh, scene-order record slots, and a skipped sweep.
   - `ctest -L native-engine -LE tn-known-red` 371/371.
@@ -177,7 +196,7 @@ R5 CPU budget, 2026-10-12 (perf plus `/proc` stime, R5@4096 1920x1080, RTX 2080 
   - R3@4096 1280x720, 3 rounds, at 425114540: 13.23 vs 6.38 ms, pooled **2.07x** (rounds 2.15, 2.08, 2.01). Triangles are 155,907 on both arms. Inclusive p50 is 49.86 vs 42.05 ms (1.19x), and p99 is 64.4 vs 52.9 ms.
   - R2@4096 1280x720, 3 rounds: 7.97 vs 4.71 ms, pooled 1.69x (rounds 1.71, 1.68, 1.98). Triangles are 98,307 on both arms. Inclusive p50 1.03x, but p99 is worse on the engine (76.7 vs 58.5 ms, 3 hitches).
   - Engine `other` (the frame minus the five phases) is higher than legacy on every rung: R2 2.17/1.48 ms, R3 2.17/1.81 ms. It is the next target. Host load was 25 to 27 for R2/R3. Artifacts: `v111/v1-confirm-R2-*`, `v111/v1-confirm-R3-*`.
-  - Left: the real-GPU inclusive lane. The 2x claim waits for it.
+  - The real-GPU lane above agrees, so the 2x claim stands on both lanes.
 
 
 ## Cycle v2 — stop wasted work
