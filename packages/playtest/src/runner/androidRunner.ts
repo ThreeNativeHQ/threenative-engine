@@ -1,3 +1,4 @@
+import { cpuWindowLabels, measureCpuWindow, type ICpuWindow } from "./linuxCpuWindow.js";
 import type { IPlaytestToneObservation } from "../tone.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -68,6 +69,7 @@ export interface IAndroidPlaytestDependencies {
 }
 
 export interface IDevicePlaytestDriver {
+  readonly processId?: number;
   /** Send the app behind HOME and wait until the device reports it unfocused. */
   background?(): Promise<void>;
   captureConsole(): Promise<Array<{ text: string; type: string }>>;
@@ -161,6 +163,8 @@ async function runDevicePlaytestInternal(
     await loadPlaytestScenario(config.projectPath, config.scenarioPath),
     config.performanceBudget,
   );
+  const cpuLabels = cpuWindowLabels(scenario, target.name, config.liveClock === true);
+  const cpuWindows: ICpuWindow[] = [];
   await throwIfAborted(target);
   await mkdir(config.artifactDirectory, { recursive: true });
   await throwIfAborted(target);
@@ -444,7 +448,15 @@ async function runDevicePlaytestInternal(
           playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step),
           (step.holdFrames ?? 0) + (step.waitFrames ?? 0),
         );
-        if (coverageRecordingStarted) {
+        if (step.label !== undefined && cpuLabels.includes(step.label)) {
+          const measuredBridge = bridge;
+          if (frames > 1000) await measuredBridge.advance(frames - 1000);
+          cpuWindows.push(await measureCpuWindow(step.label, async () => {
+            const pid = target.driver.processId;
+            if (pid === undefined) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: native child PID unavailable");
+            return { rootPid: pid, pid, tid: pid };
+          }, measuredBridge, () => measuredBridge.advance(1000)));
+        } else if (coverageRecordingStarted) {
           for (let frame = 0; frame < frames; frame += 1) {
             await bridge.advance(1);
             await delay(100);
@@ -576,8 +588,10 @@ async function runDevicePlaytestInternal(
       network: [],
       runtimeTrace: undefined,
     });
+    if (cpuWindows.length !== cpuLabels.length) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: missing requested CPU window");
     return {
       ...report,
+      ...(cpuLabels.length === 0 ? {} : { acquisition: { requestUrls: [], cpuWindows } }),
       runtime: "native",
       target: target.name,
       url: target.name === "desktop" ? config.desktop?.executable ?? target.processName : endpoint,

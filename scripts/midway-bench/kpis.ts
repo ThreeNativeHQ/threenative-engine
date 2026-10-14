@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import {
   ARMS,
   type Arm,
+  CPU_POSES,
   type IMidwayRun,
   PLAYER_FRAME_WINDOW,
   finite,
@@ -17,7 +18,7 @@ import {
 
 export const POSES = ["takeoff", "cockpit", "reargun"] as const;
 /** PRD-610 targets. */
-export const TARGETS = { cullPct: 2, hudP95Ms: 16.7, matrixVisited: 1500, ratio: 1 } as const;
+export const TARGETS = { cullPct: 2, hudP95Ms: 16.7, matrixVisited: 1500, ratio: 2 } as const;
 const PRD = new URL(
   "../../docs/PRDs/performance/PRD-610-native-engine-wins-on-real-games.md",
   import.meta.url,
@@ -25,7 +26,7 @@ const PRD = new URL(
 
 export type Verdict = "pass" | "fail" | "pending";
 
-/** Matched-work CPU: desktop `cpuFrameCpuMs`, web `frame.p50` only with live-clock acquisition. */
+/** Historical diagnostics only: native CPU and browser wall/budget readings have different scopes. */
 export const mainThreadMs = (run: IMidwayRun) =>
   run.arm === "desktop"
     ? run.desktop?.medians.cpuFrameCpuMs
@@ -41,6 +42,88 @@ export const legacyMs = (runs: readonly IMidwayRun[]) =>
       .map(mainThreadMs)
       .filter(finite),
   );
+
+/** Per-pose paired OS measurements, grouped by engine commit and candidate build. */
+export function matchedOf(runs: readonly IMidwayRun[], arm: Arm = "desktop") {
+  const eligible = runs.filter(
+    (r) =>
+      r.engineCommit &&
+      r.clock === "fixed-step" &&
+      r.cpuWindows &&
+      !r.profiled &&
+      !r.timingExclusion &&
+      !r.rejection &&
+      !r.skipped,
+  );
+  const candidates = eligible.filter((r) => r.arm === arm);
+  const latest = [...candidates].sort((a, b) => a.mtimeMs - b.mtimeMs).at(-1);
+  const native = latest
+    ? candidates.filter(
+        (r) => r.engineCommit === latest.engineCommit && buildOf(r) === buildOf(latest),
+      )
+    : [];
+  const legacy = latest
+    ? eligible.filter((r) => r.arm === "legacy" && r.engineCommit === latest.engineCommit)
+    : [];
+  const sequence = [...legacy, ...native].sort((a, b) => a.mtimeMs - b.mtimeMs);
+  const pairs: [IMidwayRun, IMidwayRun][] = [];
+  for (let i = 0; i + 1 < sequence.length; i++) {
+    const a = sequence[i] as IMidwayRun;
+    const b = sequence[i + 1] as IMidwayRun;
+    if (a.arm === "legacy" && b.arm === arm && a.mtimeMs < b.mtimeMs) {
+      pairs.push([a, b]);
+      i++;
+    }
+  }
+  const pairedSequence = pairs.length
+    ? sequence.slice(sequence.indexOf(pairs[0]?.[0] as IMidwayRun))
+    : [];
+  const alternating =
+    pairedSequence.length === pairs.length * 2 &&
+    new Set(pairedSequence.map((r) => r.dir)).size === pairedSequence.length;
+  return POSES.map((pose) => {
+    const readings = pairs
+      .map(([a, b]) => {
+        const window = (r: IMidwayRun) => r.cpuWindows?.find((w) => w.label === CPU_POSES[pose]);
+        const x = window(a);
+        const y = window(b);
+        return x && y
+          ? {
+              legacy: a.dir,
+              native: b.dir,
+              ratio: x.mainThread.cpuMs / y.mainThread.cpuMs,
+              legacyCpuMs: x.mainThread.cpuMs / 1000,
+              nativeCpuMs: y.mainThread.cpuMs / 1000,
+              legacyInstructions: x.mainThread.instructions / 1000,
+              nativeInstructions: y.mainThread.instructions / 1000,
+              legacyTreeCpuMs: x.processTree.cpuMs / 1000,
+              nativeTreeCpuMs: y.processTree.cpuMs / 1000,
+            }
+          : undefined;
+      })
+      .filter((r) => r !== undefined);
+    const parity = pairs.length > 0 && pairs.every(([, r]) => !parityNote([r]));
+    const qualified = readings.length >= 3 && alternating && parity;
+    return {
+      pose,
+      arm,
+      engineCommit: latest?.engineCommit,
+      build: latest && buildOf(latest),
+      pairs: readings.length,
+      qualified,
+      ratio: median(readings.map((r) => r.ratio)),
+      legacyCpuMs: median(readings.map((r) => r.legacyCpuMs)),
+      nativeCpuMs: median(readings.map((r) => r.nativeCpuMs)),
+      legacyInstructions: median(readings.map((r) => r.legacyInstructions)),
+      nativeInstructions: median(readings.map((r) => r.nativeInstructions)),
+      legacyTreeCpuMs: median(readings.map((r) => r.legacyTreeCpuMs)),
+      nativeTreeCpuMs: median(readings.map((r) => r.nativeTreeCpuMs)),
+      detail: !readings.length
+        ? "pending/unavailable: need matched fixed-step OS windows and matching engine commits"
+        : `${readings.length} paired windows; ${parity ? "parity PASS" : "native parity missing/FAIL"}; ${qualified ? "three-pair collection gate met; root execution review still required" : "pending qualification: need three alternating pairs per pose"}. Native host completion ${pairs.every(([, r]) => r.nativeCompletion === "reconciled") ? "reconciled" : "unavailable"}; attribution/profiles pending.`,
+    };
+  });
+}
 
 /** `- [x] AC-n` against `- [ ] AC-n` in the PRD. No AC boxes at all means no progress, not 0 of 0. */
 export function prdProgress(markdown: string) {
@@ -151,11 +234,6 @@ export function kpisOf(
     first: ends(runs, arm, get).first,
     last: ends(currentRuns, arm, get).last,
   });
-  const legacy = legacyMs(runs);
-  const ratio = (r: IMidwayRun) => {
-    const ms = mainThreadMs(r);
-    return legacy === undefined || ms === undefined ? undefined : legacy / ms;
-  };
   const make = (
     id: string,
     title: string,
@@ -183,25 +261,27 @@ export function kpisOf(
       detail: detail(last),
     };
   };
-  const ratioKpi = (id: string, title: string, arm: Arm, floor: "above" | "atLeast") => {
-    const e = compared(arm, ratio);
-    const bad = parityNote(e.last?.runs ?? []);
-    return make(
+  const ratioKpi = (id: string, title: string, arm: Arm) => {
+    const poses = matchedOf(currentRuns, arm);
+    const complete = poses.every((p) => p.qualified && p.ratio !== undefined);
+    const current = poses.every((p) => p.ratio !== undefined)
+      ? Math.min(...poses.map((p) => p.ratio as number))
+      : undefined;
+    return {
       id,
       title,
-      "higher",
-      "x",
-      TARGETS.ratio,
-      e,
-      (l) => {
-        const timing = `${(medOf(l.runs, mainThreadMs) as number).toFixed(2)} ms vs legacy ${legacy?.toFixed(2)} ms`;
-        return `${timing}, ${bad ?? "parity PASS"}. Run level, poses are not separated in the logs.`;
-      },
-      (l) =>
-        bad === undefined &&
-        (floor === "above" ? l.value > TARGETS.ratio : l.value >= TARGETS.ratio),
-      `no comparable CPU samples: need live-clock browser acquisition and a ${arm} run`,
-    );
+      better: "higher" as const,
+      unit: "x",
+      target: TARGETS.ratio,
+      ticked: prd?.ticked.includes(id) ?? false,
+      verdict: !complete
+        ? ("pending" as const)
+        : poses.every((p) => (p.ratio as number) >= TARGETS.ratio)
+          ? ("pending" as const)
+          : ("fail" as const),
+      ...(current === undefined ? {} : { current }),
+      detail: `AC15 measures matched CPU; AC19 free-run/display/visual proof pending. ${poses.map((p) => `${p.pose}: ${p.ratio === undefined ? "unavailable" : `${p.ratio.toFixed(3)}x`} · ${p.detail}`).join("; ")}`,
+    };
   };
   return [
     make(
@@ -235,8 +315,8 @@ export function kpisOf(
       (l) => `p50 ${medOf(l.runs, (r) => r.ui?.p50)?.toFixed(1)} ms, p95 ${l.value.toFixed(1)} ms`,
       (l) => l.value < TARGETS.hudP95Ms,
     ),
-    ratioKpi("AC-6", "Desktop vs three.js", "desktop", "above"),
-    ratioKpi("AC-7", "Web Wasm vs three.js", "native", "atLeast"),
+    ratioKpi("AC-19", "Desktop speed vs three.js", "desktop"),
+    ratioKpi("AC-7", "Web Wasm vs three.js", "native"),
   ];
 }
 
@@ -327,7 +407,14 @@ export function trendsOf(runs: readonly IMidwayRun[], history = runs): ITrend[] 
     };
   };
   return [
-    trend("ms", "Main-thread ms per frame", "ms", legacy, "three.js", mainThreadMs),
+    trend(
+      "ms",
+      "Historical wall/budget and native CPU diagnostics (unmatched)",
+      "ms",
+      legacy,
+      "three.js",
+      mainThreadMs,
+    ),
     trend("hud", "HUD round trip p95", "ms", TARGETS.hudP95Ms, "target", (r) => r.ui?.p95),
     trend("instr", "Instructions per frame (M)", "M", undefined, "", instrM),
     trend(
@@ -522,21 +609,36 @@ export interface IGapSide {
 
 /** Desktop native and web Wasm against three.js on main-thread ms per frame, newest build of each (median over its runs). */
 export function gapOf(runs: readonly IMidwayRun[]) {
-  const legacy = legacyMs(runs);
   const side = (arm: Arm): IGapSide | undefined => {
-    const last = ends(runs, arm, mainThreadMs).last;
-    if (!last || legacy === undefined) return undefined;
-    const absMs = last.value - legacy;
+    const poses = matchedOf(runs, arm);
+    if (!poses.every((p) => p.qualified)) return undefined;
+    const ms = median(poses.map((p) => p.nativeCpuMs).filter(finite));
+    const legacy = median(poses.map((p) => p.legacyCpuMs).filter(finite));
+    if (ms === undefined || legacy === undefined) return undefined;
+    const absMs = ms - legacy;
     return {
-      ms: last.value,
+      ms,
       absMs,
       pct: (absMs / legacy) * 100,
       direction: absMs > 0 ? "slower" : absMs < 0 ? "faster" : "equal",
-      build: last.build,
-      runs: last.runs.length,
+      build: poses[0]?.build ?? "unknown",
+      runs: poses[0]?.pairs ?? 0,
     };
   };
-  return { legacyMs: legacy, desktop: side("desktop"), wasm: side("native") };
+  const desktop = side("desktop");
+  const wasm = side("native");
+  return {
+    legacyMs:
+      desktop || wasm
+        ? median(
+            matchedOf(runs, desktop ? "desktop" : "native")
+              .map((p) => p.legacyCpuMs)
+              .filter(finite),
+          )
+        : undefined,
+    desktop,
+    wasm,
+  };
 }
 
 /** Desktop builds, oldest first, each reduced to the median over its runs. */
@@ -712,6 +814,7 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
       ).find((k) => k.id === "AC-4")
     : undefined;
   return {
+    matchedCpu: [...matchedOf(runs), ...matchedOf(runs, "native")],
     winner,
     selection: {
       role: accepted.length ? "accepted winner" : "pinned reference / not qualified",
@@ -742,15 +845,19 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
             }
           : undefined,
     },
-    kpis: kpisOf(runs, prd, headline).map((k) =>
-      k.id === "AC-3" && experimentalAc3
-        ? { ...experimentalAc3, detail: `experimental · not accepted · ${experimentalAc3.detail}` }
-        : k.id === "AC-4" && k.current === undefined && experimentalAc4?.current !== undefined
+    kpis: kpisOf(runs, prd, [...new Set([...headline, ...runs.filter((r) => r.cpuWindows)])]).map(
+      (k) =>
+        k.id === "AC-3" && experimentalAc3
           ? {
-              ...experimentalAc4,
-              detail: `measured experimental · not accepted · ${experimentalAc4.detail}`,
+              ...experimentalAc3,
+              detail: `experimental · not accepted · ${experimentalAc3.detail}`,
             }
-          : k,
+          : k.id === "AC-4" && k.current === undefined && experimentalAc4?.current !== undefined
+            ? {
+                ...experimentalAc4,
+                detail: `measured experimental · not accepted · ${experimentalAc4.detail}`,
+              }
+            : k,
     ),
     prd,
     trends: trendsOf(
@@ -760,9 +867,9 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
     abPairs: abPairsOf(runs),
     breakdown: breakdownOf(headline),
     builds: buildsOf(runs),
-    gap: gapOf(headline),
+    gap: gapOf(runs),
     groups: groupsOf(runs),
-    legacyMs: legacyMs(runs),
+    legacyMs: gapOf(runs).legacyMs,
     runs: all,
     skipped: all.reduce((n, r) => n + r.skipped, 0),
     dir: runsDir(),

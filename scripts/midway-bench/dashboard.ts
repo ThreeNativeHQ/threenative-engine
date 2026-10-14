@@ -288,6 +288,133 @@ export function cullOf(text: string | undefined): number | undefined {
   }
 }
 
+export const CPU_POSES = {
+  takeoff: "released-stick-climb",
+  cockpit: "canopy-and-instruments",
+  reargun: "gun-view",
+} as const;
+export type ICpuWindow = import("../../packages/playtest/src/runner/linuxCpuWindow.js").ICpuWindow;
+
+/** Only a successful terminal report establishes acquisition, never an earlier log message. */
+export function terminalReport(log: string) {
+  const start = [...log.matchAll(/^\{/gm)].at(-1)?.index;
+  if (start === undefined || objectEnd(log, start) !== log.trimEnd().length) return undefined;
+  try {
+    const report = JSON.parse(log.slice(start));
+    return typeof report.scenario === "string" &&
+      typeof report.url === "string" &&
+      (report.runtime === "web" || (report.runtime === "native" && report.target === "desktop")) &&
+      report.pass === true &&
+      Array.isArray(report.assertionResults) &&
+      report.assertionResults.length > 0 &&
+      report.assertionResults.every((a: { pass?: unknown } | null) => a?.pass === true)
+      ? report
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Reconcile native completed renders against labelled ticks; never guess missing boundaries. */
+export function nativeWindowCompletion(log: string): "unavailable" | "reconciled" | "invalid" {
+  const report = terminalReport(log);
+  const console = report?.observations?.console;
+  const source = Array.isArray(console)
+    ? console.map((entry) => entry?.text ?? "").join("\n")
+    : log;
+  const frames = scanJson<{ tick: number; updates: number }>(
+    source.includes("TN_PLAYER_FRAME:") ? source : log,
+    "TN_PLAYER_FRAME:",
+  );
+  if (!frames.values.length && !frames.skipped) return "unavailable";
+  if (frames.skipped) return "invalid";
+  const windows = report?.acquisition?.cpuWindows;
+  if (
+    !Array.isArray(windows) ||
+    windows.length !== 3 ||
+    frames.values.some((frame) => !frame || !Number.isSafeInteger(frame.tick) || frame.tick < 0)
+  )
+    return "invalid";
+  for (const label of Object.values(CPU_POSES)) {
+    const matches = windows.filter((window) => window?.label === label);
+    if (matches.length !== 1) return "invalid";
+    const { startTick: start, endTick: end } = matches[0];
+    if (
+      ![start, end].every((n) => Number.isSafeInteger(n) && n >= 0) ||
+      end - start !== PLAYER_FRAME_WINDOW
+    )
+      return "invalid";
+    const completed = frames.values.filter((frame) => frame.tick > start && frame.tick <= end);
+    if (
+      completed.length !== PLAYER_FRAME_WINDOW ||
+      new Set(completed.map((frame) => frame.tick)).size !== PLAYER_FRAME_WINDOW ||
+      completed.some((frame) => !Number.isSafeInteger(frame.tick) || frame.updates !== 1)
+    )
+      return "invalid";
+  }
+  return "reconciled";
+}
+
+/** Invalid or incomplete OS counters never fall back to frame wall time. */
+export function matchedCpuWindows(log: string): ICpuWindow[] | undefined {
+  const report = terminalReport(log);
+  const windows = report?.acquisition?.cpuWindows;
+  if (report?.clock !== "fixed-step" || !Array.isArray(windows) || windows.length !== 3)
+    return undefined;
+  const positive = (n: unknown) => finite(n) && n > 0;
+  const identity = (n: unknown) => positive(n) && Number.isSafeInteger(n);
+  for (const label of Object.values(CPU_POSES)) {
+    const matches = windows.filter((w) => w?.label === label);
+    const w = matches[0];
+    if (
+      matches.length !== 1 ||
+      ![w.startTick, w.endTick].every((n) => Number.isSafeInteger(n) && n >= 0) ||
+      w.endTick - w.startTick !== PLAYER_FRAME_WINDOW ||
+      !Array.isArray(w.host?.load) ||
+      w.host.load.length !== 3 ||
+      !w.host.load.every((n: unknown) => finite(n) && n >= 0) ||
+      !w.host?.governors ||
+      typeof w.host.governors !== "object" ||
+      Array.isArray(w.host.governors) ||
+      !Object.entries(w.host.governors).every(
+        ([policy, governor]) =>
+          /^policy\d+$/u.test(policy) && typeof governor === "string" && governor.trim().length > 0,
+      ) ||
+      typeof w.mainThread?.starttime !== "string" ||
+      !/^\d+$/u.test(w.mainThread.starttime) ||
+      !Number.isSafeInteger(w.mainThread?.cpuNs) ||
+      w.mainThread.cpuNs <= 0 ||
+      w.mainThread.cpuMs !== w.mainThread.cpuNs / 1e6 ||
+      w.mainThread.cpuMsPerFrame !== w.mainThread.cpuMs / PLAYER_FRAME_WINDOW ||
+      w.mainThread.instructionsPerFrame !== w.mainThread.instructions / PLAYER_FRAME_WINDOW ||
+      w.mainThread.cyclesPerFrame !== w.mainThread.cycles / PLAYER_FRAME_WINDOW ||
+      ![w.frames, w.updates, w.renders].every((n) => n === PLAYER_FRAME_WINDOW) ||
+      ![
+        w.mainThread?.cpuMs,
+        w.mainThread?.instructions,
+        w.mainThread?.cycles,
+        w.processTree?.cpuMs,
+      ].every(positive) ||
+      ![
+        w.mainThread?.pid,
+        w.mainThread?.tid,
+        w.mainThread?.instructions,
+        w.mainThread?.cycles,
+      ].every(identity) ||
+      !Array.isArray(w.processTree?.pids) ||
+      !w.processTree.pids.length ||
+      !w.processTree.pids.every(identity) ||
+      new Set(w.processTree.pids).size !== w.processTree.pids.length ||
+      !w.processTree.pids.includes(w.mainThread.pid)
+    )
+      return undefined;
+  }
+  const completion = nativeWindowCompletion(log);
+  return completion === "invalid" || (report.runtime === "native" && completion !== "reconciled")
+    ? undefined
+    : windows;
+}
+
 export interface IMidwayRun {
   dir: string;
   /** Pins every input used to score this run, including parity and optional cull proof. */
@@ -313,6 +440,9 @@ export interface IMidwayRun {
   budget?: IBudget;
   /** Runner clock acquisition for this run: `wall-clock` or `fixed-step`, from the run report. */
   clock?: "fixed-step" | "wall-clock";
+  engineCommit?: string;
+  cpuWindows?: ICpuWindow[];
+  nativeCompletion?: "unavailable" | "reconciled" | "invalid";
   ui?: { n: number; p50: number; p95: number };
   matrix?: { n: number; last: number; max: number };
   parity?: IParity;
@@ -339,29 +469,18 @@ export function runOf(
   const matrix = matrixWalk(log);
   const parity = parityText === undefined ? undefined : parityOf(parityText);
   const cullPct = cullOf(cullText);
-  // Only the final standalone runner report establishes acquisition; log messages cannot.
-  let clock: IMidwayRun["clock"];
-  const start = [...log.matchAll(/^\{/gm)].at(-1)?.index;
-  if (start !== undefined && objectEnd(log, start) === log.trimEnd().length) {
-    try {
-      const report = JSON.parse(log.slice(start));
-      if (
-        Array.isArray(report.assertionResults) &&
-        report.assertionResults.length > 0 &&
-        report.assertionResults.every(
-          (assertion: { pass?: unknown } | null) => assertion?.pass === true,
-        ) &&
-        report.pass === true &&
-        report.runtime === "web" &&
-        typeof report.scenario === "string" &&
-        typeof report.url === "string" &&
-        (report.clock === "fixed-step" || report.clock === "wall-clock")
-      )
-        clock = report.clock;
-    } catch {
-      // Malformed terminal reports leave acquisition unknown.
-    }
-  }
+  const report = terminalReport(log);
+  const clock =
+    report && (report.clock === "fixed-step" || report.clock === "wall-clock")
+      ? (report.clock as IMidwayRun["clock"])
+      : undefined;
+  const provenance =
+    /^arm=(legacy|native|desktop) buildMode=(production|desktop-bundle) engineCommit=([a-f0-9]{40})$/m.exec(
+      log,
+    );
+  const engineCommit = provenance?.[1] === arm ? provenance[3] : undefined;
+  const cpuWindows =
+    report?.runtime === (arm === "desktop" ? "native" : "web") ? matchedCpuWindows(log) : undefined;
   const pkg = /\/((?:pkg|player)-[\w.-]+)\/tn-native-engine-player-v8/.exec(log)?.[1];
   const desktop = "frames" in player ? player.frames : undefined;
   const run: IMidwayRun = {
@@ -373,11 +492,13 @@ export function runOf(
     group: tag.replace(/\d+$/, "") || tag,
     arm,
     mtimeMs,
-    status: desktop || budget.budget ? "ok" : "no samples",
+    status: desktop || budget.budget || cpuWindows ? "ok" : "no samples",
     skipped: player.skipped + budget.skipped + ui.skipped,
     ...(desktop ? { desktop } : {}),
     ...(budget.budget ? { budget: budget.budget } : {}),
     ...(clock ? { clock } : {}),
+    ...(engineCommit ? { engineCommit } : {}),
+    ...(cpuWindows ? { cpuWindows, nativeCompletion: nativeWindowCompletion(log) } : {}),
     ...("ui" in ui ? { ui: ui.ui } : {}),
     ...(matrix ? { matrix } : {}),
     ...(parity ? { parity } : {}),

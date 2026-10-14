@@ -76,6 +76,11 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
 
   constructor(private readonly options: IDesktopPlaytestDriverOptions) {}
 
+  /** The child this driver owns; never inferred from a process-name search. */
+  get processId(): number | undefined {
+    return this.child?.exitCode === null && this.child?.signalCode === null ? this.child.pid : undefined;
+  }
+
   async captureConsole(): Promise<Array<{ text: string; type: string }>> {
     this.flushOutput("stdout");
     this.flushOutput("stderr");

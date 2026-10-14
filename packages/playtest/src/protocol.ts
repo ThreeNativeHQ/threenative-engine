@@ -571,7 +571,8 @@ export interface IPlaytestAdvanceResult {
 }
 
 export interface IPlaytestBridgeV1 {
-  advance?(ticks: number): Promise<IPlaytestAdvanceResult>;
+  /** Core bridges render each driven frame by default; a host that owns presentation passes render:false. */
+  advance?(ticks: number, options?: { render?: boolean }): Promise<IPlaytestAdvanceResult>;
   applySetup?(request: IPlaytestSetupRequest): Promise<IPlaytestSetupConfirmation | void>;
   describe(): IPlaytestBridgeDescription | Promise<IPlaytestBridgeDescription>;
   drainEvents?(limit?: number): Promise<JsonValue[]>;

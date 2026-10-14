@@ -55,7 +55,7 @@ export interface IThreePlaytestBridgeOptions {
    */
   diagnostics?: () => JsonValue[];
   entities?: readonly IThreePlaytestEntity[] | (() => readonly IThreePlaytestEntity[]);
-  fixedStep?: (ticks: number) => Promise<number | void> | number | void;
+  fixedStep?: (ticks: number, options?: { render?: boolean }) => Promise<number | void> | number | void;
   gameplay?: () => IPlaytestGameplayObservation;
   gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags" | "runtime.transitions" | "runtime.world")[];
   runtimeDiagnosticsSeries?: () => readonly IPlaytestRuntimeDiagnosticsSample[];
@@ -124,10 +124,10 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.fixedStep === undefined
       ? {}
       : {
-          advance: async (ticks) => {
+          advance: async (ticks, advanceOptions) => {
             if (!Number.isInteger(ticks) || ticks <= 0) throw new Error("advance ticks must be a positive integer.");
             const startTick = options.tick!();
-            await options.fixedStep!(ticks);
+            await options.fixedStep!(ticks, advanceOptions);
             const tick = options.tick!();
             const advanced = tick - startTick;
             // A fixed-step producer is asked for a count and must deliver exactly that count. A

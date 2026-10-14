@@ -7,12 +7,15 @@ import path from "node:path";
 import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  CPU_POSES,
   type IMidwayRun,
   cullOf,
   frameBudget,
   loadMidwayRuns,
   loadedHost,
+  matchedCpuWindows,
   matrixWalk,
+  nativeWindowCompletion,
   parityOf,
   playerFrames,
   runOf,
@@ -30,6 +33,7 @@ import {
   kpisOf,
   legacyMs,
   mainThreadMs,
+  matchedOf,
   midwayOf,
   prdProgress,
   progressOf,
@@ -68,6 +72,47 @@ const proj = (visited: number) =>
   `TN_PROJECTION:{"matrixWorld":{"mode":"visible","visited":${visited}},"path":"js"}`;
 const parityText = (pass: boolean) =>
   `${JSON.stringify({ pass, frames: Object.fromEntries(["takeoff", "cockpit", "reargun"].map((p) => [p, { nativeMeanSsim: [0.95, 0.95], nativeWorstTile: 0.8, pass }])) })}\nPARITY ${pass ? "PASS" : "FAIL"}`;
+const cpuReport = (cpuMs: number, runtime = "web") => ({
+  ...JSON.parse(report("fixed-step")),
+  runtime,
+  ...(runtime === "native" ? { target: "desktop" } : {}),
+  acquisition: {
+    requestUrls: ["http://localhost/assets/game.js"],
+    cpuWindows: Object.values(CPU_POSES).map((label, i) => ({
+      label,
+      frames: 1000,
+      startTick: i * 1001 + 1,
+      endTick: i * 1001 + 1001,
+      updates: 1000,
+      renders: 1000,
+      mainThread: {
+        pid: 10,
+        tid: 10,
+        starttime: "10",
+        cpuNs: cpuMs * (i + 1) * 1000000,
+        cpuMsPerFrame: (cpuMs * (i + 1)) / 1000,
+        instructionsPerFrame: 100 * (i + 1),
+        cyclesPerFrame: 200,
+        cpuMs: cpuMs * (i + 1),
+        instructions: 100000 * (i + 1),
+        cycles: 200000,
+      },
+      processTree: { cpuMs: cpuMs * (i + 1) * 2, pids: [10, 11] },
+      host: { load: [0, 0, 0], governors: { policy0: "performance" } },
+    })),
+  },
+});
+const cpuRecords = (windows: ReturnType<typeof cpuReport>["acquisition"]["cpuWindows"]) =>
+  windows.flatMap((w) =>
+    Array.from(
+      { length: 1000 },
+      (_, i) => `TN_PLAYER_FRAME:${JSON.stringify({ tick: w.startTick + i + 1, updates: 1 })}`,
+    ),
+  );
+const cpuLog = (cpuMs: number, arm: string, commit = "a".repeat(40)) => {
+  const r = cpuReport(cpuMs, arm === "desktop" ? "native" : "web");
+  return `arm=${arm} buildMode=${arm === "desktop" ? "desktop-bundle" : "production"} engineCommit=${commit}\n${arm === "desktop" ? cpuRecords(r.acquisition.cpuWindows).join("\n") : ""}\n${JSON.stringify(r, null, 2)}`;
+};
 let clock = 0;
 /** The player path line a desktop run log carries. */
 const pkgLine = (name: string) =>
@@ -319,8 +364,8 @@ describe("PRD-610 KPIs", () => {
       "AC-3": "pass",
       "AC-4": "pending",
       "AC-5": "pass",
-      "AC-6": "pass",
-      "AC-7": "pass",
+      "AC-19": "pending",
+      "AC-7": "pending",
     });
   });
 
@@ -329,15 +374,15 @@ describe("PRD-610 KPIs", () => {
       "AC-3": "fail",
       "AC-4": "pending",
       "AC-5": "fail",
-      "AC-6": "fail",
-      "AC-7": "pass",
+      "AC-19": "pending",
+      "AC-7": "pending",
     });
   });
 
-  it("fails a faster desktop run when parity fails", () => {
-    const ac6 = kpisOf(runs(5, 10, 1000, false)).find((k) => k.id === "AC-6");
-    expect(ac6?.verdict).toBe("fail");
-    expect(ac6?.detail).toContain("parity FAIL");
+  it("keeps historical CPU pending even when parity fails", () => {
+    const ac6 = kpisOf(runs(5, 10, 1000, false)).find((k) => k.id === "AC-19");
+    expect(ac6?.verdict).toBe("pending");
+    expect(ac6?.current).toBeUndefined();
   });
 
   it("is pending, never pass, with no data", () => {
@@ -348,7 +393,7 @@ describe("PRD-610 KPIs", () => {
       "pending",
       "pending",
     ]);
-    expect(verdicts([run("ref1-legacy", budget(10) + report("wall-clock"))])["AC-6"]).toBe(
+    expect(verdicts([run("ref1-legacy", budget(10) + report("wall-clock"))])["AC-19"]).toBe(
       "pending",
     );
   });
@@ -550,24 +595,10 @@ describe("groups and loading", () => {
       });
     renderState(state);
     expect(html).toContain("Best measured experimental · not accepted");
-    expect(html).toContain("Now: AC-5 compositor feasibility + AC-6 CPU scope qualification");
-    expect(elements.get("focus")?.textContent).toContain(
-      "AC-5 compositor feasibility + AC-6 CPU scope qualification",
-    );
-    expect(elements.get("focus")?.textContent).toContain(
-      "AC-12 worker rejected (CPU +136%); rolled back",
-    );
-    expect(elements.get("focus")?.textContent).toContain("AC-11 bulk read pending · default off");
-    expect(elements.get("focus")?.textContent).toContain(
-      "AC-4 visibility trial rejected: instructions +0.27%, world work unchanged, wall +9.24%; no qualified win",
-    );
-    expect(elements.get("focus")?.textContent).toContain("AC-7 open · qualified proof not met");
-    expect(elements.get("focus")?.textContent).toContain("AC-10 audit: no justified cut");
-    expect(elements.get("focus")?.textContent).toContain("AC-9/13 queued");
-    expect(elements.get("focus")?.textContent).toContain(
-      "AC-3 background stretch · non-blocking · measured ~3k",
-    );
-    expect(elements.get("focus")?.textContent).toContain("1,500 is a deferred stretch target");
+    expect(html).toContain("Now: Phase 2 · AC14 done · AC15 matched counter baseline pending");
+    expect(elements.get("focus")?.textContent).toContain("AC15 matched counter baseline pending");
+    expect(elements.get("focus")?.textContent).toContain("AC16/17/18/5/19");
+    expect(elements.get("focus")?.textContent).toContain("CPU measurement alone cannot pass AC19");
     expect(elements.get("kpis")?.innerHTML).toContain(">DEFERRED</span>");
     for (const text of [
       "3,468",
@@ -590,13 +621,13 @@ describe("groups and loading", () => {
     expect(elements.get("kpis")?.innerHTML).toContain("AC-3 ✓");
     expect(elements.get("kpis")?.innerHTML).toContain(">PASS</span>");
     expect(elements.get("kpis")?.innerHTML).not.toContain(">DEFERRED</span>");
-    expect(elements.get("focus")?.textContent).toContain("target reached numerically");
+    expect(elements.get("focus")?.textContent).toContain("AC15 matched counter baseline pending");
     renderState({
       ...state,
       kpis: state.kpis.filter((k) => k.id !== "AC-3"),
       candidate: { ...state.candidate, structural: undefined },
     });
-    expect(elements.get("focus")?.textContent).toContain("target unavailable");
+    expect(elements.get("focus")?.textContent).toContain("AC15 matched counter baseline pending");
   });
 
   it("loads <tag>-<arm> dirs oldest first and ignores everything else", async () => {
@@ -689,7 +720,8 @@ describe("progress, trends and PRD boxes", () => {
     });
     expect(kpi["AC-3"]?.progress).toBeCloseTo(0.5);
     expect(kpi["AC-5"]?.progress).toBeLessThan(0);
-    expect(kpi["AC-6"]).toMatchObject({ baseline: 0.5, current: 10 / 12 });
+    expect(kpi["AC-19"]).toMatchObject({ verdict: "pending" });
+    expect(kpi["AC-19"]?.current).toBeUndefined();
     expect(kpi["AC-4"]).toMatchObject({ verdict: "pending" });
     expect(kpi["AC-4"]?.current).toBeUndefined();
   });
@@ -949,7 +981,7 @@ describe("progress, trends and PRD boxes", () => {
     expect(worse?.verdict).toBe("reject");
   });
 
-  it("reports the native and web Wasm gap to three.js in ms and percent", () => {
+  it("rejects historical mixed wall/native CPU gaps", () => {
     const list = [
       run("r1-legacy", budget(10) + report("wall-clock")),
       run("r2-legacy", budget(12) + report("wall-clock")),
@@ -957,12 +989,7 @@ describe("progress, trends and PRD boxes", () => {
       run("c1-native", budget(8.8) + report("wall-clock")),
     ];
     const gap = gapOf(list);
-    expect(gap.legacyMs).toBe(11);
-    expect(gap.desktop).toMatchObject({ direction: "slower", build: "unknown build" });
-    expect(gap.desktop?.absMs).toBeCloseTo(3.3);
-    expect(gap.desktop?.pct).toBeCloseTo(30);
-    expect(gap.wasm?.direction).toBe("faster");
-    expect(gap.wasm?.pct).toBeCloseTo(-20);
+    expect(gap).toEqual({ legacyMs: undefined, desktop: undefined, wasm: undefined });
     expect(gapOf([run("d1-desktop", frame(5))])).toEqual({
       legacyMs: undefined,
       desktop: undefined,
@@ -1014,13 +1041,13 @@ describe("progress, trends and PRD boxes", () => {
       baseline: 9250,
     });
     expect(kpi["AC-5"]).toMatchObject({ current: 50 });
-    expect(kpi["AC-6"]?.current).toBeCloseTo(10 / 14);
+    expect(kpi["AC-19"]?.current).toBeUndefined();
     const ms = trendsOf(list).find((t) => t.id === "ms");
     expect(ms?.points.filter((p) => p.arm === "desktop")).toMatchObject([
       { build: "pkg-old", arm: "desktop", v: 21, runs: 2 },
       { build: "pkg-new", arm: "desktop", v: 14, runs: 3 },
     ]);
-    expect(gapOf(list).desktop).toMatchObject({ build: "pkg-new", runs: 3, ms: 14 });
+    expect(gapOf(list).desktop).toBeUndefined();
     expect(breakdownOf(list)).toMatchObject({ build: "pkg-new", runs: 3 });
     expect(buildsOf(list).map((b) => [b.build, b.runs, b.ms])).toEqual([
       ["pkg-old", 2, 21],
@@ -1046,7 +1073,7 @@ describe("progress, trends and PRD boxes", () => {
       current: 3000,
     });
     expect(m.gap.desktop).toBeUndefined();
-    expect(m.candidate.gap.desktop).toMatchObject({ build: "pkg-new", ms: 14 });
+    expect(m.candidate.gap.desktop).toBeUndefined();
     expect(m.trends.find((t) => t.id === "ms")?.points.map((p) => p.build)).not.toContain(
       "pkg-prof",
     );
@@ -1079,7 +1106,7 @@ describe("deliberate winner lock", () => {
       runs: pair.map((r) => r.dir),
     });
     expect(state.winner.status).toBe("unqualified");
-    expect(state.gap.desktop).toMatchObject({ runs: 2, ms: 7.04531175 });
+    expect(state.gap.desktop).toBeUndefined();
     expect(state.kpis.find((k) => k.id === "AC-3")?.current).toBe(3083);
     expect(state.kpis.find((k) => k.id === "AC-5")?.current).toBe(26);
     expect(state.trends.find((t) => t.id === "ms")?.points).toHaveLength(2);
@@ -1203,8 +1230,8 @@ describe("deliberate winner lock", () => {
       role: "pinned reference / not qualified",
       runs: [reference.dir],
     });
-    expect(state.gap.desktop).toMatchObject({ build: reference.pkg, runs: 1, ms: 9.253 });
-    expect(state.candidate.gap.desktop).toMatchObject({ build: rejected.pkg, ms: 13.028 });
+    expect(state.gap.desktop).toBeUndefined();
+    expect(state.candidate.gap.desktop).toBeUndefined();
     expect(state.runs).toHaveLength(5);
     expect(state.kpis.find((k) => k.id === "AC-3")).toMatchObject({
       baseline: 9818,
@@ -1216,7 +1243,7 @@ describe("deliberate winner lock", () => {
       current: 99,
       baselineBuild: "pkg-ac1",
     });
-    expect(state.kpis.find((k) => k.id === "AC-6")?.baseline).toBeCloseTo(11.3 / 14.319);
+    expect(state.kpis.find((k) => k.id === "AC-19")?.baseline).toBeUndefined();
   });
 
   it("pins only the approved runs even when a later candidate is faster or slower", () => {
@@ -1235,14 +1262,14 @@ describe("deliberate winner lock", () => {
         JSON.stringify(lock),
       );
       expect(state.winner).toMatchObject({ status: "accepted", build: "pkg-b" });
-      expect(state.gap.desktop).toMatchObject({ build: "pkg-b", runs: 3, ms: 10 });
+      expect(state.gap.desktop).toBeUndefined();
       expect(state.candidate.structural?.projection).toBe(1000);
       expect(state.kpis.find((k) => k.id === "AC-3")).toMatchObject({
         build: "pkg-b",
         current: 5000,
       });
       expect(state.kpis.find((k) => k.id === "AC-4")?.current).toBeUndefined();
-      expect(state.candidate.gap.desktop).toMatchObject({ build: "pkg-new", ms: cpu });
+      expect(state.candidate.gap.desktop).toBeUndefined();
       expect(state.runs).toHaveLength(10);
     }
   });
@@ -1369,17 +1396,17 @@ describe("PRD-610 browser acquisition", () => {
 
   it("does not qualify fixed-step browser CPU against native", () => {
     const list = [run("ref1-legacy", budget(11.3) + report("fixed-step")), desktop(8)];
-    expect(kpisOf(list).find((k) => k.id === "AC-6")?.verdict).toBe("pending");
+    expect(kpisOf(list).find((k) => k.id === "AC-19")?.verdict).toBe("pending");
   });
 
   it("does not qualify an unknown browser acquisition against native", () => {
     const list = [run("ref1-legacy", budget(11.3)), desktop(8)];
-    expect(kpisOf(list).find((k) => k.id === "AC-6")?.verdict).toBe("pending");
+    expect(kpisOf(list).find((k) => k.id === "AC-19")?.verdict).toBe("pending");
   });
 
-  it("qualifies wall-clock browser CPU against native", () => {
+  it("rejects wall-clock browser wall time against native CPU", () => {
     const list = [run("ref1-legacy", budget(11.3) + report("wall-clock")), desktop(8)];
-    expect(kpisOf(list).find((k) => k.id === "AC-6")?.verdict).toBe("pass");
+    expect(kpisOf(list).find((k) => k.id === "AC-19")?.verdict).toBe("pending");
   });
 
   it("rejects mixed browser acquisitions in a ratio", () => {
@@ -1397,7 +1424,7 @@ describe("PRD-610 browser acquisition", () => {
     expect(kpisOf(mixed).find((k) => k.id === "AC-7")?.verdict).toBe("pending");
   });
 
-  it("accepts a browser ratio when both acquisitions use wall-clock", () => {
+  it("rejects browser wall-clock ratios as matched CPU", () => {
     const same = [
       run("ref1-legacy", budget(11.3) + report("wall-clock")),
       runOf(
@@ -1409,7 +1436,7 @@ describe("PRD-610 browser acquisition", () => {
         parityText(true),
       ),
     ];
-    expect(kpisOf(same).find((k) => k.id === "AC-7")?.verdict).toBe("pass");
+    expect(kpisOf(same).find((k) => k.id === "AC-7")?.verdict).toBe("pending");
   });
 });
 
@@ -1428,6 +1455,13 @@ describe("measurement defect regressions", () => {
     "stale-desktop",
     "no-requests",
     "unbuilt",
+    "matched",
+    "matched-wall",
+    "matched-invalid",
+    "matched-missing",
+    "matched-duplicate-wait",
+    "matched-missing-wait",
+    "native-matched",
     "native-production",
     "native-dev-client",
   ])(
@@ -1484,9 +1518,11 @@ describe("measurement defect regressions", () => {
                     : "http://localhost:5173/assets/game.js",
                 ],
               };
-        const terminalReport = JSON.parse(
-          report(browserClock === "fixed-step" ? "fixed-step" : "wall-clock"),
-        );
+        const terminalReport = ["matched", "native-matched"].includes(browserClock)
+          ? cpuReport(120)
+          : JSON.parse(report(browserClock === "fixed-step" ? "fixed-step" : "wall-clock"));
+        if (["matched", "native-matched"].includes(browserClock) && acquisition)
+          Object.assign(acquisition, terminalReport.acquisition);
         await writeFile(
           path.join(root, "fixture.report"),
           `\n${JSON.stringify({ ...terminalReport, acquisition }, null, 2)}`,
@@ -1497,7 +1533,7 @@ describe("measurement defect regressions", () => {
         const pnpm = path.join(bin, "pnpm");
         await writeFile(
           runner,
-          '#!/bin/sh\nprintf "invocation\\n" >> "$ARGV_LOG"\nprintf "%s\\n" "$@" >> "$ARGV_LOG"\nwhile [ "$#" -gt 0 ]; do if [ "$1" = --artifacts ]; then shift; OUT=$1; elif [ "$1" = --server-command ]; then shift; SERVER=$1; fi; shift; done\nPORT=54321 sh -c "$SERVER" || exit $?\ncat fixture.report\n',
+          '#!/bin/sh\nprintf "invocation\\n" >> "$ARGV_LOG"\nprintf "%s\\n" "${TN_PLAYTEST_CPU_WINDOW_LABELS:-}" > "$CPU_ENV_LOG"\nprintf "%s\\n" "$@" >> "$ARGV_LOG"\nwhile [ "$#" -gt 0 ]; do if [ "$1" = --artifacts ]; then shift; OUT=$1; elif [ "$1" = --server-command ]; then shift; SERVER=$1; fi; shift; done\nPORT=54321 sh -c "$SERVER" || exit $?\ncat fixture.report\n',
         );
         await writeFile(
           pnpm,
@@ -1506,6 +1542,14 @@ describe("measurement defect regressions", () => {
         await chmod(runner, 0o755);
         await chmod(pnpm, 0o755);
         const argvLog = path.join(root, "argv.log");
+        let scenarioPath = path.resolve("scripts/midway-bench/flight-bench.playtest.json");
+        if (["matched-duplicate-wait", "matched-missing-wait"].includes(browserClock)) {
+          const scenario = JSON.parse(await readFile(scenarioPath, "utf8"));
+          if (browserClock === "matched-duplicate-wait") scenario.steps.push(scenario.steps[3]);
+          else scenario.steps.splice(3, 1);
+          scenarioPath = path.join(root, "bad-waits.playtest.json");
+          await writeFile(scenarioPath, JSON.stringify(scenario));
+        }
         const result = spawnSync(
           "sh",
           [
@@ -1519,11 +1563,26 @@ describe("measurement defect regressions", () => {
             env: {
               ...process.env,
               PATH: `${bin}:${process.env.PATH}`,
+              MIDWAY_MATCHED_CPU:
+                browserClock === "matched-invalid"
+                  ? "bad"
+                  : browserClock.includes("matched")
+                    ? "1"
+                    : "0",
+              CPU_ENV_LOG: path.join(root, "cpu-env.log"),
               MIDWAY_BROWSER_CLOCK: ["", "wall-clock", "fixed-step", "unknown"].includes(
                 browserClock,
               )
                 ? browserClock
-                : "wall-clock",
+                : [
+                      "matched",
+                      "matched-missing",
+                      "matched-duplicate-wait",
+                      "matched-missing-wait",
+                      "native-matched",
+                    ].includes(browserClock)
+                  ? ""
+                  : "wall-clock",
               MIDWAY_PLAYER_DIR: player,
               MIDWAY_PARITY_REFS: "reference-a reference-b",
               CASE: browserClock,
@@ -1531,7 +1590,7 @@ describe("measurement defect regressions", () => {
               MIDWAY_LEGACY_DIR: root,
               MIDWAY_NATIVE_DIR: root,
               MIDWAY_RUNS: path.join(root, "runs"),
-              MIDWAY_SCENARIO: path.resolve("scripts/midway-bench/flight-bench.playtest.json"),
+              MIDWAY_SCENARIO: scenarioPath,
               ARGV_LOG: argvLog,
               TN_HEAVY_LOCK: "",
               TN_VK_ICD: "",
@@ -1539,9 +1598,19 @@ describe("measurement defect regressions", () => {
             },
           },
         );
-        if (browserClock === "unknown") {
+        if (
+          [
+            "unknown",
+            "matched-wall",
+            "matched-invalid",
+            "matched-duplicate-wait",
+            "matched-missing-wait",
+          ].includes(browserClock)
+        ) {
           expect(result.status).toBe(2);
-          expect(result.stderr).toContain("MIDWAY_BROWSER_CLOCK");
+          expect(result.stderr).toMatch(
+            /MIDWAY_BROWSER_CLOCK|MIDWAY_MATCHED_CPU|requires fixed-step|missing\/nonunique/,
+          );
           await expect(readFile(argvLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
           return;
         }
@@ -1557,6 +1626,7 @@ describe("measurement defect regressions", () => {
             "no-requests",
             "unbuilt",
             "native-dev-client",
+            "matched-missing",
           ].includes(browserClock)
         ) {
           expect(result.status, result.stdout + result.stderr).not.toBe(0);
@@ -1580,13 +1650,41 @@ describe("measurement defect regressions", () => {
         );
         expect(flightLog).toContain(`engineCommit=${commit}`);
         expect(run("smoke-legacy", flightLog).clock).toBe(
-          browserClock === "fixed-step" ? "fixed-step" : "wall-clock",
+          ["fixed-step", "matched", "native-matched"].includes(browserClock)
+            ? "fixed-step"
+            : "wall-clock",
         );
+        if (["matched", "native-matched"].includes(browserClock)) {
+          expect(JSON.parse(await readFile(path.join(root, "cpu-env.log"), "utf8"))).toEqual(
+            Object.values(CPU_POSES),
+          );
+          const derived = JSON.parse(
+            await readFile(
+              path.join(
+                root,
+                `runs/smoke-${browserClock.startsWith("native-") ? "native" : "legacy"}/matched-cpu.playtest.json`,
+              ),
+              "utf8",
+            ),
+          );
+          expect(
+            derived.steps
+              .filter((step: { label: string }) =>
+                Object.values(CPU_POSES).includes(step.label as never),
+              )
+              .map((step: { waitTicks: number }) => step.waitTicks),
+          ).toEqual([1000, 1000, 1000]);
+        }
         const argv = (await readFile(argvLog, "utf8")).trimEnd().split("\n");
         expect(argv).toEqual([
           "invocation",
           "--scenario",
-          path.resolve("scripts/midway-bench/flight-bench.playtest.json"),
+          ["matched", "native-matched"].includes(browserClock)
+            ? path.join(
+                root,
+                `runs/smoke-${browserClock.startsWith("native-") ? "native" : "legacy"}/matched-cpu.playtest.json`,
+              )
+            : path.resolve("scripts/midway-bench/flight-bench.playtest.json"),
           "--browser-recipe",
           "webgpu",
           "--timeout",
@@ -1594,7 +1692,9 @@ describe("measurement defect regressions", () => {
           "--headed",
           "--artifacts",
           path.join(root, `runs/smoke-${browserClock.startsWith("native-") ? "native" : "legacy"}`),
-          ...(browserClock === "fixed-step" ? [] : ["--live-clock"]),
+          ...(["fixed-step", "matched", "native-matched"].includes(browserClock)
+            ? []
+            : ["--live-clock"]),
           "--server-command",
           "pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort",
         ]);
@@ -2041,12 +2141,151 @@ if (args.includes('tn-native-engine-player-v8')) fs.writeFileSync(path.join(args
       expect(ms?.target).toBeUndefined();
       expect(ms?.benchmarks).toEqual([]);
       expect(ms?.points.map((p) => p.arm)).toEqual(["desktop"]);
-      for (const k of kpisOf(list).filter((k) => ["AC-6", "AC-7"].includes(k.id))) {
+      for (const k of kpisOf(list).filter((k) => ["AC-19", "AC-7"].includes(k.id))) {
         expect(k.verdict).toBe("pending");
         expect(k.current).toBeUndefined();
         expect(k.baseline).toBeUndefined();
-        expect(k.detail).toContain("live-clock");
+        expect(k.detail).toContain("matched fixed-step OS windows");
       }
     }
+  });
+});
+
+describe("AC15 matched OS CPU", () => {
+  const pairs = () =>
+    Array.from({ length: 3 }, (_, i) => [
+      run(`matched-a${i}-legacy`, cpuLog(120, "legacy")),
+      run(`matched-b${i}-desktop`, cpuLog(80, "desktop"), parityText(true)),
+    ]).flat();
+  it("computes exact per-pose CPU, instructions and process-tree readings", () => {
+    const list = pairs();
+    for (const r of list.filter((r) => r.arm === "desktop")) {
+      const rear = r.cpuWindows?.find((w) => w.label === CPU_POSES.reargun);
+      if (rear) rear.mainThread.cpuMs = 120;
+    }
+    const visualRef = run("visual-ref-legacy", cpuLog(120, "legacy"));
+    visualRef.mtimeMs = 0;
+    const rows = matchedOf([visualRef, ...list]);
+    expect(rows.map((p) => [p.pose, p.ratio, p.qualified, p.pairs])).toEqual([
+      ["takeoff", 1.5, true, 3],
+      ["cockpit", 1.5, true, 3],
+      ["reargun", 3, true, 3],
+    ]);
+    expect(rows[1]).toMatchObject({
+      legacyCpuMs: 0.24,
+      nativeCpuMs: 0.16,
+      legacyInstructions: 200,
+      nativeInstructions: 200,
+      legacyTreeCpuMs: 0.48,
+      nativeTreeCpuMs: 0.32,
+    });
+    expect(midwayOf(list).kpis.find((k) => k.id === "AC-19")).toMatchObject({
+      verdict: "fail",
+      target: 2,
+      current: 1.5,
+    });
+  });
+  it("keeps a single pair and nonalternating runs pending", () => {
+    expect(matchedOf(pairs().slice(0, 2)).every((p) => p.ratio === 1.5 && !p.qualified)).toBe(true);
+    const list = pairs();
+    list.forEach((r, i) => {
+      r.mtimeMs = r.arm === "legacy" ? i : i + 20;
+    });
+    expect(matchedOf(list).every((p) => !p.qualified)).toBe(true);
+  });
+  it("requires matching engine commits and passing native parity", () => {
+    const list = pairs();
+    for (const r of list.filter((r) => r.arm === "desktop")) r.engineCommit = "b".repeat(40);
+    expect(matchedOf(list).every((p) => p.ratio === undefined && !p.qualified)).toBe(true);
+    const failed = pairs();
+    const failedRun = failed[1] as IMidwayRun;
+    failedRun.parity = parityOf(parityText(false));
+    expect(matchedOf(failed).every((p) => !p.qualified)).toBe(true);
+  });
+  it.each([
+    "frames",
+    "updates",
+    "renders",
+    "cpuMs",
+    "instructions",
+    "cycles",
+    "tree",
+    "pids",
+    "duplicate",
+  ])("rejects incomplete or invalid window %s", (field) => {
+    const r = cpuReport(120);
+    const w = r.acquisition.cpuWindows[0] as (typeof r.acquisition.cpuWindows)[number];
+    if (["frames", "updates", "renders"].includes(field))
+      delete (w as unknown as Record<string, unknown>)[field];
+    else if (field === "tree") w.processTree.cpuMs = 0;
+    else if (field === "pids") w.processTree.pids = [];
+    else if (field === "duplicate") r.acquisition.cpuWindows[1] = w;
+    else (w.mainThread as unknown as Record<string, unknown>)[field] = 0;
+    expect(matchedCpuWindows(`\n${JSON.stringify(r)}`)).toBeUndefined();
+  });
+  it("never restores the historical ratio in the dashboard headline", () => {
+    const state = midwayOf([
+      run("ref-legacy", budget(15.1) + report("wall-clock")),
+      run("d-desktop", frame(10), parityText(true)),
+    ]);
+    expect(state.matchedCpu.every((p) => p.ratio === undefined)).toBe(true);
+    expect(state.kpis.find((k) => k.id === "AC-19")?.current).toBeUndefined();
+    expect(state.gap.desktop).toBeUndefined();
+  });
+});
+
+it("reconciles exact CPU boundaries rather than release/sample ticks", () => {
+  const r = cpuReport(120, "native");
+  const frames = cpuRecords(r.acquisition.cpuWindows);
+  const log = (records: string[], report = r) => `${records.join("\n")}\n${JSON.stringify(report)}`;
+  expect(nativeWindowCompletion(log(frames))).toBe("reconciled");
+  expect(matchedCpuWindows(log(frames))).toHaveLength(3);
+  expect(matchedCpuWindows(log(frames, { ...r, observations: { signalSeries: [] } }))).toHaveLength(
+    3,
+  );
+  for (const records of [
+    frames.slice(1),
+    [...frames, ...frames.slice(0, 1)],
+    [...frames, "TN_PLAYER_FRAME:{bad}"],
+    frames.map((f, i) => (i === 0 ? 'TN_PLAYER_FRAME:{"tick":2,"updates":0}' : f)),
+    frames.map((f, i) => (i === 0 ? 'TN_PLAYER_FRAME:{"tick":2.5,"updates":1}' : f)),
+  ]) {
+    expect(nativeWindowCompletion(log(records))).toBe("invalid");
+    expect(matchedCpuWindows(log(records))).toBeUndefined();
+  }
+  expect(nativeWindowCompletion(log([]))).toBe("unavailable");
+  expect(matchedCpuWindows(log([]))).toBeUndefined();
+  expect(matchedCpuWindows(log(frames, { ...r, target: "android" }))).toBeUndefined();
+  expect(matchedCpuWindows(JSON.stringify(cpuReport(120)))).toHaveLength(3);
+});
+
+it("rejects invalid tick boundaries and host metadata", () => {
+  for (const change of [
+    { mainThread: undefined },
+    { startTick: -1 },
+    { startTick: 0.5 },
+    { startTick: undefined },
+    { endTick: 1000 },
+    { endTick: Number.MAX_SAFE_INTEGER + 1 },
+    { host: { load: [0], governors: {} } },
+    { host: { load: [0, -1, 0], governors: {} } },
+    { host: { load: [0, 0, 0], governors: ["performance"] } },
+    { host: { load: [0, 0, 0], governors: { policy0: "" } } },
+  ]) {
+    const r = cpuReport(120);
+    Object.assign(r.acquisition.cpuWindows[0] as object, change);
+    expect(matchedCpuWindows(JSON.stringify(r))).toBeUndefined();
+  }
+});
+
+it("keeps AC19 pending even when matched CPU reaches 2x", () => {
+  const list = Array.from({ length: 3 }, (_, i) => [
+    run(`speed-a${i}-legacy`, cpuLog(240, "legacy")),
+    run(`speed-b${i}-desktop`, cpuLog(80, "desktop"), parityText(true)),
+  ]).flat();
+  expect(kpisOf(list).find((k) => k.id === "AC-19")).toMatchObject({
+    target: 2,
+    current: 3,
+    verdict: "pending",
   });
 });

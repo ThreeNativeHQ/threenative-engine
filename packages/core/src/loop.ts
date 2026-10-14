@@ -162,6 +162,7 @@ export class FixedStepLoop {
   #running = false;
   #held = false;
   #clockFrozen = false;
+  #driven = false;
   #primePending = false;
   #settleSteps = FROZEN_SETTLE_STEPS;
   #tick = 0;
@@ -305,6 +306,7 @@ export class FixedStepLoop {
   start(now = globalThis.performance?.now() ?? 0): void {
     if (this.#running) return;
     this.#running = true;
+    this.#driven = false;
     // A freeze asked for before the loop ran outranks the start timestamp, or a playtest bridge
     // that installs first would be undone by the boot it is supposed to cover.
     this.#lastTime = this.#clockFrozen ? Number.POSITIVE_INFINITY : now;
@@ -381,7 +383,7 @@ export class FixedStepLoop {
     return frameMs;
   }
 
-  stepFrame(now: number): number {
+  stepFrame(now: number, driven = false): number {
     const callbackStartedAt = this.#now();
     const budget = this.#budget;
     budget?.beginFrame(now, this.#now());
@@ -392,7 +394,12 @@ export class FixedStepLoop {
     let phases: IFramePhaseSample | undefined;
     try {
       this.#onBeginFrame?.();
-      updates = this.#advanceSimulation(now);
+      if (driven) {
+        this.#onUpdate(this.step);
+        this.#onAfterPhysics(this.step);
+        this.#tick += 1;
+        updates = 1;
+      } else updates = this.#advanceSimulation(now);
       budget?.markSimulationEnd(this.#now(), updates);
       frameMs = this.#recordFrameTiming(now);
       // onRender does the rendering itself; only its metrics return value is optional.
@@ -442,7 +449,7 @@ export class FixedStepLoop {
     return updates;
   }
 
-  advance(ticks: number): number {
+  advance(ticks: number, options?: { render?: boolean }): number {
     if (!this.#running) throw new Error("Cannot advance a stopped loop.");
     if (!Number.isInteger(ticks) || ticks <= 0)
       throw new Error("advance ticks must be a positive integer.");
@@ -455,6 +462,14 @@ export class FixedStepLoop {
     this.#primePending = false;
     this.#clockFrozen = true;
     this.#lastTime = Number.POSITIVE_INFINITY;
+    if (options?.render === true && !this.#held) {
+      // Held startup still needs automatic loading/warmup frames.
+      this.#driven = true;
+      if (this.#frameHandle !== undefined) this.#cancelFrame(this.#frameHandle);
+      this.#frameHandle = undefined;
+      for (let index = 0; index < ticks; index += 1) this.stepFrame(this.#now(), true);
+      return ticks;
+    }
     // A counted batch is metered, because a tick-counted run — which is what a playtest run is — is
     // simulated entirely by `advance()` and reported `update 0 ms`, `substeps 0` and one boot window
     // followed by nothing but hitches, a blocking batch having pushed the next live timestamp past
@@ -476,11 +491,11 @@ export class FixedStepLoop {
   }
 
   #frame(time: number): void {
-    if (!this.#running) return;
+    if (!this.#running || this.#driven) return;
     try {
       this.stepFrame(time);
     } finally {
-      if (this.#running) {
+      if (this.#running && !this.#driven) {
         this.#frameHandle = this.#requestFrame(this.#frameCallback);
       }
     }

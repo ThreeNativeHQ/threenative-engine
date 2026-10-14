@@ -101,6 +101,45 @@ unchanged (`wall-clock` by default, `fixed-step` for visual references).
 Vulkan driver), `MIDWAY_RUNS`, `MIDWAY_SCENARIO`. Run only while host load is low: a loaded host
 stalls the page past the playtest's operation timeout, and `flight.sh` already raises it to 180 s.
 
+## Matched CPU collection (AC-15)
+
+Set `MIDWAY_MATCHED_CPU=1` on each legacy, native or desktop flight. This selects fixed-step
+acquisition; an explicit `MIDWAY_BROWSER_CLOCK=wall-clock` conflicts and exits 2. Flags other
+than `0` and `1` are rejected. Ordinary flights keep their existing trajectory and clock.
+
+The harness writes `matched-cpu.playtest.json` inside each run directory, preserving the source
+scenario and its screenshots/assertions. The three existing WAIT labels `released-stick-climb`,
+`canopy-and-instruments` and `gun-view` each become 1,000 ticks. Missing or duplicate screenshot
+waits fail before launch. Only the runner receives `TN_PLAYTEST_CPU_WINDOW_LABELS` with those labels;
+game builds receive no collection flag. Matching visual references must use this derived trajectory.
+
+```sh
+MIDWAY_MATCHED_CPU=1 sh scripts/midway-bench/flight.sh legacy matched-a1
+MIDWAY_MATCHED_CPU=1 MIDWAY_PARITY_REFS="<matched legacy ref 1> <matched legacy ref 2>" \
+  sh scripts/midway-bench/flight.sh desktop matched-b1
+```
+
+Every arm must report all three fixed-step `acquisition.cpuWindows`, each with exactly 1,000
+frames, updates and renders, positive main-thread CPU/instructions/cycles and process-tree CPU,
+and valid PID/TID identities. Missing counters reject the flight, without a wall-time fallback.
+Collection depends on the runner's Linux OS sampler and permitted perf counters; old installations
+without this acquisition contract fail closed and must be refreshed by the owning integration lane.
+
+The headline shows the paired legacy/native main-thread CPU ratio, instructions per frame and
+process-tree CPU per frame separately for takeoff, cockpit and rear gun. Engine commits must match;
+native parity PASS and at least three alternating legacy/candidate pairs per pose are required for
+the collection gate. A single pair remains provisional. The root execution gate must still review
+isolation, workload and environment before a speed verdict. Historical wall/budget and player CPU
+rows are diagnostics and cannot qualify the headline. Attribution and profiles remain pending.
+
+Sampler frame/update/render counts establish the observed game work; they do not independently
+attest native host completion. Unlabelled historical player frame tails cannot be assigned to poses.
+When `TN_PLAYER_FRAME` completion records are present, the reducer requires exactly 1,000 distinct
+completed ticks with one update each between the preceding step and each labelled window end in
+`observations.signalSeries`. Missing/ambiguous boundaries, incomplete renders and mismatched counts
+reject acquisition; it never estimates the boundary from the last frame tail. Without host records,
+independent native host reconciliation remains unavailable.
+
 ## What the check grades
 
 SSIM on luma over an 8x6 tile grid, for `takeoff`, `cockpit` and `after`. The verdict is the worst
@@ -147,8 +186,8 @@ parts (`worldUpdateVisits`, `joinDependencyVisits`, `gpuBoundaryVisits`, `gpuPro
 `worldWorkVisitsTotal`. Mixed, unknown or malformed counters hide this summary and reject winner
 qualification while retaining CPU/instruction measurements. Historical logs without these fields stay
 usable with no world-work summary. Whole-frame work and legacy projection-only `Matrix last` have
-different scopes; their history is not directly comparable. Headline targets and pinned references
-continue using the original metric.
+different scopes; their history is not directly comparable. Structural targets and pinned references
+continue using the original metric; CPU headlines require the matched OS windows above.
 
 ## Dashboard
 

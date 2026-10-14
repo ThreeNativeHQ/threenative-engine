@@ -93,7 +93,7 @@ globalThis.tn.onUpdate((dt) => {
     const bridge = globalThis.__THREENATIVE_PLAYTEST_BRIDGE__;
     if (typeof bridge?.advance === "function") {
       globalThis.__tnGameSpan?.(GAME_SPANS.playtest, 0);
-      try { void bridge.advance(1); } finally { globalThis.__tnGameSpan?.(GAME_SPANS.playtest, 1); }
+      try { void bridge.advance(1, { render: false }); } finally { globalThis.__tnGameSpan?.(GAME_SPANS.playtest, 1); }
     }
   }
   audio.updateAudio();

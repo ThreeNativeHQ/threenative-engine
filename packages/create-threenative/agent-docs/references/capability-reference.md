@@ -4032,7 +4032,7 @@ const adb = discoverAdb(process.env);
 `function` — Execute scenario steps, assertions, and evidence capture.
 
 ```ts
-export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, "advance">, ticks: number, ): Promise<void> { … }
+export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, "advance">, ticks: number, settle = true, ): Promise<void> { … }
 ```
 
 - **Use when:** run a complete browser or device playtest · capture diagnostics and screenshots from a managed server

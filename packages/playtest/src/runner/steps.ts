@@ -216,6 +216,7 @@ export async function runStep(
   finalStep: boolean,
   subject?: string,
   liveClock = false,
+  cpuWindow?: (advance: () => Promise<void>) => Promise<void>,
 ): Promise<IRunStepSamples> {
   if (step.waitForResource !== undefined) {
     if (bridge === undefined || movementSampleRequest === undefined) {
@@ -237,7 +238,7 @@ export async function runStep(
     }
     const after = await waitForResource({
       advance: !liveClock && bridge.description.capabilities.includes("runtime.fixedStep")
-        ? () => advanceFixedStep(page, bridge, 1)
+        ? () => advanceFixedStep(page, bridge, 1, false)
         : undefined,
       id: wait.id,
       path: wait.path,
@@ -320,10 +321,17 @@ export async function runStep(
       "Advertise runtime.fixedStep from the bridge so ticks are deterministic, or author the step in waitFrames/holdFrames, which are display frames and say so.",
     ));
   }
-  if (ticks > 0 && fixedStep) {
-    // Keep the virtual clock ahead of requestAnimationFrame while preserving a bounded
-    // path sample cadence. One browser round-trip per tick lets live frames race the
-    // deterministic clock on loaded runners and makes long recordings nondeterministic.
+  if (cpuWindow !== undefined) {
+    if (step.kind !== "wait" || step.waitTicks !== 1000 || ticks < 1000 || !fixedStep || bridge === undefined || liveClock) {
+      throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: measurement requires a fixed-step 1000-tick WAIT");
+    }
+    // Input-release ticks precede the WAIT window; its samples and release settling follow it.
+    if (ticks > 1000) await advanceFixedStep(page, bridge, ticks - 1000);
+    await cpuWindow(() => advanceFixedStep(page, bridge, 1000, false));
+    await waitFrames(page, 1);
+    await samplePathPosition(bridge, pathEntity, pathPositions);
+  } else if (ticks > 0 && fixedStep) {
+    // Path samples stay batched; advanceFixedStep yields after each world frame for the HUD.
     const sampleTicks = 10;
     for (let index = 0; index < ticks; index += sampleTicks) {
       await advanceFixedStep(page, bridge, Math.min(sampleTicks, ticks - index));
@@ -530,20 +538,27 @@ export async function advanceFixedStep(
   page: Page,
   bridge: Pick<IPlaytestBridgeClient, "advance">,
   ticks: number,
+  settle = true,
 ): Promise<void> {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await bridge.advance(ticks);
-      return;
-    } catch (error) {
-      if (
-        !(error instanceof Error)
-        || !error.message.includes(STOPPED_LOOP_ERROR)
-        || attempt >= MAX_FIXED_STEP_STARTUP_RETRIES
-      )
-        throw error;
-      await waitFrames(page, 1);
+  if (!Number.isInteger(ticks) || ticks <= 0)
+    throw new Error("advance ticks must be a positive integer.");
+  for (let frame = 0; frame < ticks; frame += 1) {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await bridge.advance(1);
+        break;
+      } catch (error) {
+        if (
+          !(error instanceof Error)
+          || !error.message.includes(STOPPED_LOOP_ERROR)
+          || attempt >= MAX_FIXED_STEP_STARTUP_RETRIES
+        )
+          throw error;
+        await waitFrames(page, 1);
+      }
     }
+    // Resource polling already yields within its deadline; other steps settle the last HUD frame.
+    if (settle || frame + 1 < ticks) await waitFrames(page, 1);
   }
 }
 

@@ -329,7 +329,7 @@ test("browser visual element regions reject nodes hidden by a noninteractive ove
 test("fixed-step startup races retry without hiding a stopped loop", async () => {
   let attempts = 0;
   const bridge = {
-    advance: vi.fn(async () => {
+    advance: vi.fn(async (_ticks: number) => {
       attempts += 1;
       if (attempts === 1) throw new Error("page.evaluate: Error: Cannot advance a stopped loop.");
     }),
@@ -338,8 +338,15 @@ test("fixed-step startup races retry without hiding a stopped loop", async () =>
 
   await advanceFixedStep(page, bridge, 10);
 
-  expect(attempts).toBe(2);
-  expect(page.evaluate).toHaveBeenCalledTimes(1);
+  expect(attempts).toBe(11);
+  expect(bridge.advance.mock.calls.every((args) => args[0] === 1)).toBe(true);
+  expect(page.evaluate).toHaveBeenCalledTimes(11);
+});
+
+test.each([0, -1, 1.5, Number.NaN])("fixed-step driving rejects invalid tick count %s", async (ticks) => {
+  const bridge = { advance: vi.fn() };
+  await expect(advanceFixedStep({} as Page, bridge, ticks)).rejects.toThrow("positive integer");
+  expect(bridge.advance).not.toHaveBeenCalled();
 });
 
 test("browser bridge handshake honors the configured operation timeout", async () => {

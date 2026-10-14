@@ -86,6 +86,7 @@ import {
   type IRemoteBrowserSession,
 } from "./browserSession.js";
 import { startBrowserCpuProfile, type IBrowserCpuProfile } from "./cpuProfile.js";
+import { browserCpuProcess, cpuWindowLabels, measureCpuWindow, type ICpuWindow } from "./linuxCpuWindow.js";
 import { formatScenarioSummary } from "./scenario-summary.js";
 
 const TOUCH_BROWSER_USER_AGENT =
@@ -209,6 +210,11 @@ async function runStandalonePlaytestInternal(
     await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath),
     activeConfig.performanceBudget,
   );
+  const cpuLabels = cpuWindowLabels(scenario, "browser", activeConfig.liveClock === true);
+  if (cpuLabels.length > 0 && options.remoteBrowser !== undefined) {
+    throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: remote browser has no local owned process tree");
+  }
+  const cpuWindows: ICpuWindow[] = [];
   const browserConfig = scenario.assert?.performance === undefined
     ? activeConfig
     : {
@@ -727,6 +733,12 @@ async function runStandalonePlaytestInternal(
         index === scenario.steps.length - 1,
         scenario.subject,
         activeConfig.liveClock === true,
+        step.label !== undefined && cpuLabels.includes(step.label)
+          ? async (advance) => {
+              if (browser === undefined || bridge === undefined) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: missing browser/bridge");
+              cpuWindows.push(await measureCpuWindow(step.label!, () => browserCpuProcess(browser!), bridge, advance));
+            }
+          : undefined,
       );
       if (movementBaselineSnapshot === undefined && movementNeedsBaseline && movementEntity !== undefined) {
         const candidate = stepSamples.afterStep ?? stepSamples.afterInput;
@@ -826,7 +838,8 @@ async function runStandalonePlaytestInternal(
       undefined,
       tone,
     );
-    report.acquisition = { requestUrls: [...requestUrls] };
+    if (cpuWindows.length !== cpuLabels.length) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: missing requested CPU window");
+    report.acquisition = { requestUrls: [...requestUrls], ...(cpuLabels.length === 0 ? {} : { cpuWindows }) };
     await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
       network: networkEntries,

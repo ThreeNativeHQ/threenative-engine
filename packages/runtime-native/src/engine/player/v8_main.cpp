@@ -1321,6 +1321,7 @@ int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
     std::string gamePath;
     std::string checkRequest;
+    std::string cpuProfilePath;
     bool checkGame = false;
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
@@ -1330,6 +1331,17 @@ int main(int argc, char** argv) {
             checkGame = true;
         else if (argument == "--check-request" && i + 1 < argc)
             checkRequest = argv[++i];
+        else if (argument == "--cpu-prof" || argument.rfind("--cpu-prof=", 0) == 0) {
+            if (argument == "--cpu-prof") {
+                if (i + 1 >= argc)
+                    return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --cpu-prof requires a nonempty file path\n"), 2;
+                cpuProfilePath = argv[++i];
+            } else {
+                cpuProfilePath = argument.substr(std::string("--cpu-prof=").size());
+            }
+            if (cpuProfilePath.empty() || cpuProfilePath.rfind("--", 0) == 0)
+                return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --cpu-prof requires a nonempty file path\n"), 2;
+        }
         else if (argument.rfind("--", 0) != 0)
             gamePath = argument;
         else
@@ -1339,6 +1351,21 @@ int main(int argc, char** argv) {
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: a game bundle path is required\n"), 2;
     if (!checkRequest.empty() && !checkGame)
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --check-request requires --check-game\n"), 2;
+
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    mystral::js::g_cpuProfilePath = cpuProfilePath;
+#else
+    if (!cpuProfilePath.empty())
+        return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --cpu-prof requires a build compiled with TN_JS_PROFILE=ON. Rebuild with -DTN_JS_PROFILE=ON.\n"), 2;
+#endif
+    const auto finish = [&cpuProfilePath](int status) {
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+        if (!cpuProfilePath.empty() && mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
+        return mystral::js::g_cpuProfileFailed ? 1 : status;
+#else
+        return status;
+#endif
+    };
 
     V8Game game(!checkGame);
     // The adapter's identity, read the way core reads it (a request of its own beside the renderer's):
@@ -1383,6 +1410,8 @@ int main(int argc, char** argv) {
             json::Value parsed; json::Error error;
             if (!json::parse(response, parsed, error) || parsed.find("error")) return 1;
         }
+        const int status = finish(0);
+        if (status != 0) return status;
         return std::printf("TN_PLAYER_V8_GAME_CHECK: engine=native gameRuntime=v8 startup=passed shadowMap=%s:%d\n",
                            game.shadowMapEnabled() ? "on" : "off", game.shadowMapType()), 0;
     }
@@ -1466,5 +1495,5 @@ int main(int argc, char** argv) {
             {"names", json::Value::makeObject(std::move(names))}})).c_str());
         std::fflush(stdout);
     }
-    return status;
+    return finish(status);
 }

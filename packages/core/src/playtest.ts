@@ -94,7 +94,9 @@ export function playtest<
         ...(runtime === undefined
           ? {}
           : {
-              fixedStep: wallClock ? wallClockAdvance(runtime) : runtime.fixedStep,
+              fixedStep: wallClock
+                ? wallClockAdvance(runtime)
+                : (ticks, options) => runtime.fixedStep(ticks, { render: options?.render ?? true }),
               tick: runtime.tick,
             }),
         ...(runtime?.runtimeDiagnosticsSeries === undefined
@@ -119,7 +121,7 @@ export function playtest<
                 velocity: { ...observation.velocity },
               };
         },
-        resources: stateResources(ctx),
+        resources: stateResources(ctx, runtime),
         scene: ctx.scene,
         // A runner advances ticks far faster than a launch completes, and compute dispatch and
         // the first world present are both held behind an opaque loading layer. Published so the
@@ -739,6 +741,7 @@ function componentObservations(
 
 function stateResources<TState extends Record<string, unknown>, TPhysics>(
   ctx: ICtx<TState, TPhysics>,
+  runtime: IGamePluginRuntime | undefined,
 ) {
   return {
     read: () => {
@@ -758,6 +761,9 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         // console log: a game whose manifest never loaded runs on the uncompiled source directory
         // and looks healthy, and without this nothing observable says so.
         ["assets", assetResolutions(ctx.assets)],
+        ...(runtime?.frameCounts === undefined
+          ? []
+          : [["__threenativeFrameCounts", runtime.frameCounts()]]),
       ]);
     },
   };

@@ -176,6 +176,69 @@ describe("FixedStepLoop", () => {
     expect(loop.tick()).toBe(3);
   });
 
+  it("meters each driven update inside its render frame", () => {
+    let clock = 0;
+    const events: string[] = [];
+    const budget = new FrameBudget({ report: () => undefined });
+    const loop = new FixedStepLoop({
+      budget,
+      now: () => clock,
+      onBeginFrame: () => {
+        events.push("begin");
+      },
+      onUpdate: () => {
+        events.push("update");
+        clock += 2;
+      },
+      onRender: () => {
+        events.push("render");
+        clock += 3;
+        return undefined;
+      },
+      onFrame: () => {
+        events.push("end");
+      },
+    });
+    loop.start(0);
+    expect(loop.advance(4, { render: true })).toBe(4);
+    expect(events).toEqual(
+      Array.from({ length: 4 }, () => ["begin", "update", "render", "end"]).flat(),
+    );
+    expect(loop.tick()).toBe(4);
+    expect(budget.window().frames).toBe(4);
+    expect(budget.window().phases.update.p50).toBe(2);
+    expect(budget.window().frame.p50).toBe(5);
+    loop.stop();
+  });
+
+  it("keeps startup and host-owned automatic renders until full-frame driving begins", () => {
+    const callbacks: Array<(time: number) => void> = [];
+    let renders = 0;
+    let updates = 0;
+    const loop = new FixedStepLoop({
+      requestFrame: (callback) => callbacks.push(callback),
+      onUpdate: () => {
+        updates += 1;
+      },
+      onRender: () => {
+        renders += 1;
+        return undefined;
+      },
+    });
+    loop.freezeClock(0);
+    loop.setHeld(true);
+    loop.start(0);
+    callbacks.shift()?.(16);
+    expect({ updates, renders }).toEqual({ updates: 0, renders: 1 });
+    loop.setHeld(false);
+    loop.advance(1, { render: false });
+    expect({ updates, renders }).toEqual({ updates: 1, renders: 1 });
+    callbacks.shift()?.(32);
+    expect({ updates, renders }).toEqual({ updates: 1, renders: 2 });
+    expect(callbacks).toHaveLength(1);
+    loop.stop();
+  });
+
   it("should ignore live frames after switching to the advanced clock", () => {
     let updates = 0;
     const loop = new FixedStepLoop({ onUpdate: () => updates++ });

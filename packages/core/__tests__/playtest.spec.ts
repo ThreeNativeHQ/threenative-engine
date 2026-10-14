@@ -352,6 +352,7 @@ describe("playtest plugin", () => {
       });
       // `assets` is the loader's own ledger and is empty for a scene that loads none.
       expect(snapshot.resources).toEqual({
+        __threenativeFrameCounts: { updates: 0, renders: 0 },
         GameState: { score: 0 },
         assets: {},
         state: { score: 0 },
@@ -492,12 +493,21 @@ describe("playtest plugin", () => {
     }
   });
 
-  it("advances the running game through the fixed-step bridge", async () => {
+  it("advances four ordered update/world-render pairs and suppresses queued automatic draws", async () => {
     const canvas = testCanvas();
-    let updates = 0;
+    const events: string[] = [];
+    let failUpdate = false;
+    let failRender = false;
+    const callbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
     class TestScene extends Scene<Record<string, unknown>> {
       override update(): void {
-        updates += 1;
+        if (failUpdate) throw new Error("scene update failed");
+        events.push("update");
       }
     }
     const game = defineGame({
@@ -510,7 +520,10 @@ describe("playtest plugin", () => {
           dispose: () => undefined,
           domElement: canvas,
           getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
-          render: () => undefined,
+          render: () => {
+            if (failRender) throw new Error("world render failed");
+            events.push("world");
+          },
           setSize: () => undefined,
         }),
       },
@@ -522,11 +535,44 @@ describe("playtest plugin", () => {
     try {
       const installed = bridge();
       await installed.advance?.(4);
-
-      expect(updates).toBe(4);
-      expect((await installed.sample({})).clock).toEqual({ mode: "fixed-step", tick: 4 });
+      expect(events).toEqual(Array.from({ length: 4 }, () => ["update", "world"]).flat());
+      const sample = await installed.sample({ resources: ["__threenativeFrameCounts"] });
+      expect(sample.clock).toEqual({ mode: "fixed-step", tick: 4 });
+      expect(sample.resources?.__threenativeFrameCounts).toEqual({ updates: 4, renders: 4 });
+      const scheduled = callbacks.length;
+      callbacks[0]?.(1_000);
+      expect(callbacks).toHaveLength(scheduled);
+      expect(events).toHaveLength(8);
+      await installed.advance?.(1, { render: false });
+      expect(events.at(-1)).toBe("update");
+      expect(
+        (await installed.sample({ resources: ["__threenativeFrameCounts"] })).resources
+          ?.__threenativeFrameCounts,
+      ).toEqual({ updates: 5, renders: 4 });
+      expect(sample.resources?.__threenativeFrameCounts).toEqual({ updates: 4, renders: 4 });
+      game.pause();
+      await installed.advance?.(1);
+      expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
+        updates: 5,
+        renders: 5,
+      });
+      game.resume();
+      failUpdate = true;
+      await expect(installed.advance?.(1)).rejects.toThrow("scene update failed");
+      expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
+        updates: 5,
+        renders: 5,
+      });
+      failUpdate = false;
+      failRender = true;
+      await expect(installed.advance?.(1)).rejects.toThrow("world render failed");
+      expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
+        updates: 6,
+        renders: 5,
+      });
     } finally {
       game.stop();
+      vi.unstubAllGlobals();
     }
   });
 
