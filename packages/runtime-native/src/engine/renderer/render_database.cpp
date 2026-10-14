@@ -902,7 +902,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     // A decline writes no verdict, so a settled one is an empty decision until its rescan; an empty
     // scene (still loading) or a projecting one is judged again next frame, as SceneRenderProjection.
     projection::Decision decision;
-    if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig; }) &&
+    if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig && !item.gpuJoints; }) &&
         ++framesSinceDeclineScan_ >= kDeclineRescanFrames) {
         decision = projection::decide(scene, 200, true);
         framesSinceDeclineScan_ = decision.projecting || decision.sourceRenderables == 0 ? kDeclineRescanFrames : 0;
@@ -913,14 +913,13 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     for (const auto& [depth, item] : ordered) {
         const std::size_t i = item - items.data();
         const DrawItem& d = items[i];
-        if (d.gpuJoints) continue;
         const auto verdict = decision.verdict.find(d.skinnedRig);
-        const bool skinned = d.boneMatrices && verdict != decision.verdict.end() && verdict->second == "skinned";
+        const bool skinned = bool(d.gpuJoints) || (d.boneMatrices && verdict != decision.verdict.end() && verdict->second == "skinned");
         if (!d.batchable && !skinned)
             continue;
         auto same = [&](const std::vector<std::size_t>& g) {
             const DrawItem& o = items[g.front()];
-            if (bool(o.skinnedRig) != bool(d.skinnedRig))
+            if (bool(o.skinnedRig) != bool(d.skinnedRig) || o.gpuJoints != d.gpuJoints)
                 return false;
             if (skinned &&
                 (o.skinnedRig->geometry != d.skinnedRig->geometry ||
@@ -963,7 +962,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         if (!skinned && g.size() < kMinBatchMembers)
             continue;
         SkinnedPalette* palette = nullptr;
-        if (skinned) {
+        if (skinned && !items[g.front()].gpuJoints) {
             skinnedPalettes_.push_back(
                 std::make_unique<SkinnedPalette>(items[g.front()].skinnedRig->skeleton->bones.size(), g.size(), false));
             palette = skinnedPalettes_.back().get();
@@ -993,9 +992,13 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             }
             // Relative palettes carry placement here; eager world palettes retain identity.
             const Matrix identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-            const Matrix transform = placement ? toArray(placement->matrixWorld)
+            Matrix transform = placement ? toArray(placement->matrixWorld)
                                      : palette ? identity
                                                : items[i].matrixWorld;
+            if (items[i].gpuJoints) {
+                const auto* saved = reinterpret_cast<const float*>(items[i].instanceMatrices->data());
+                for (int k = 0; k < 16; ++k) transform[k] = saved[k];
+            }
             for (double e : transform)
                 matrices[matrixOffset++] = static_cast<float>(e);
             if (colors) for (float c : items[i].material->color) colors[colorOffset++] = c;
@@ -1003,9 +1006,13 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         }
         store.needsUpdate();
         DrawItem d = items[g.front()];
+        if (d.gpuJoints) {
+            d.gpuJointRigs.clear();
+            for (std::size_t i : g) d.gpuJointRigs.push_back(items[i].gpuJointRig);
+        }
         if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
         d.cache = &batchCaches_[slot];
-        d.sortOrigin = {d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]};
+        d.sortOrigin = d.sortOrigin.value_or(std::array<double, 3>{d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]});
         d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         d.instanceMatrices = &store;
         d.instanceCount = static_cast<uint32_t>(g.size());

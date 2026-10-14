@@ -2059,13 +2059,23 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
     };
     std::unordered_map<const DrawItem*, Deform> deforms;
+    std::vector<uint32_t> jointOutputs(jointPrefix ? gpuJoints_->rigs.size() : 0, UINT32_MAX);
+    uint32_t jointWritten = 0;
     for (const auto& [depthKey, drawn] : opaque) {
         if (!drawn->boneMatrices && !drawn->morphGeometry) continue;
         Deform& d = deforms[drawn];
         if (drawn->boneMatrices) {
             if (drawn->gpuJoints) {
                 if (drawn->gpuJoints != gpuJoints_ || !jointPrefix) throw std::runtime_error("TN_GPU_JOINTS: invalidated before submission");
-                d.boneBase = drawn->gpuJoints->rigs[drawn->gpuJointRig].outputBase;
+                d.boneBase = jointWritten;
+                auto place = [&](uint32_t rig) {
+                    if (rig >= jointOutputs.size() || jointOutputs[rig] != UINT32_MAX)
+                        throw std::runtime_error("TN_GPU_JOINTS: duplicate or invalid batch rig");
+                    jointOutputs[rig] = jointWritten;
+                    jointWritten += gpuJoints_->topology[rig].count;
+                };
+                if (drawn->gpuJointRigs.empty()) place(drawn->gpuJointRig);
+                else for (uint32_t rig : drawn->gpuJointRigs) place(rig);
             } else {
                 d.boneBase = double(jointPrefix / 64 + bones.size() / 16);
                 bones.insert(bones.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
@@ -2623,8 +2633,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     if (jointPrefix && !compilation) {
         if (jointBufferMoved && !bindGpuJoints(gpuJoints_)) throw std::runtime_error("TN_GPU_JOINTS: output resize refused");
-        if (gpu_.writeBuffer(gpuJointLocals_, 0, gpuJoints_->locals->data(), gpuJoints_->locals->size() * 4) != GpuStatus::Ok ||
-            !gpuJointPass_ || !gpuJointPass_->dispatch(encoder)) {
+        // Culled rigs keep disjoint trailing slots; no Bone data is inspected or repacked.
+        for (uint32_t rig = 0; rig < jointOutputs.size(); ++rig) if (jointOutputs[rig] == UINT32_MAX) {
+            jointOutputs[rig] = jointWritten;
+            jointWritten += gpuJoints_->topology[rig].count;
+        }
+        if (!gpuJointPass_ || !gpuJointPass_->remapOutputs(jointOutputs) ||
+            gpu_.writeBuffer(gpuJointLocals_, 0, gpuJoints_->locals->data(), gpuJoints_->locals->size() * 4) != GpuStatus::Ok ||
+            !gpuJointPass_->dispatch(encoder)) {
             gpuJoints_->revoke();
             throw std::runtime_error("TN_GPU_JOINTS: dispatch refused before submission");
         }

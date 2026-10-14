@@ -247,6 +247,10 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
     while (!stack.empty()) {
         Object3D* object = stack.back();
         stack.pop_back();
+        if (skinnedVerdictsOnly && object->skipsGpuJointSubtree()) {
+            ++Object3D::gpuProjectionVisits_;
+            continue;
+        }
         // A plain Mesh is neither a light, a rig nor an instanced mesh: one type check replaces the casts.
         // Any other node (a bone, a group, a rig) is one of a few classes that arrive in runs, so the
         // casts run once per change of class and the run reuses their answer.
@@ -263,7 +267,9 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
         if (mesh) {
             ++d.sourceRenderables;
             if (auto* rig = classRig && !plain ? static_cast<SkinnedMesh*>(mesh) : nullptr) {
-                if (const char* reason = skinnedLaneReason(*rig)) exactLane.emplace_back(rig, reason);
+                const auto gpu = rig->gpuSkinValidity.lock();
+                if (skinnedVerdictsOnly && gpu && *gpu) skinned.push_back(rig);
+                else if (const char* reason = skinnedLaneReason(*rig)) exactLane.emplace_back(rig, reason);
                 else skinned.push_back(rig);
             } else if (const char* reason = plain ? plainReason(*mesh) : meshLaneReason(*mesh)) {
                 exactLane.emplace_back(mesh, reason);

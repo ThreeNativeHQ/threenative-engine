@@ -64,12 +64,16 @@ public:
     JointComputePass& operator=(const JointComputePass&) = delete;
     const std::string& error() const { return error_; }
     bool dispatch(WGPUCommandEncoder encoder);
+    // Renderer-owned output permutation; joint/parent order and bindings remain fixed.
+    bool remapOutputs(std::span<const uint32_t> bases);
 
 private:
     GpuResources& gpu_;
     std::unique_ptr<ComputePass> pass_;
     std::array<Handle, 4> storage_{};
     uint32_t count_ = 0;
+    uint64_t outputMatrices_ = 0;
+    std::vector<uint32_t> headers_;
     std::string error_;
 };
 

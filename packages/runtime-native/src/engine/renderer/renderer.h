@@ -162,6 +162,7 @@ struct DrawItem {
     SkinnedMesh* skinnedRig = nullptr; // authored rig, for projection eligibility and palette writes
     std::shared_ptr<GpuJointScene> gpuJoints;
     uint32_t gpuJointRig = 0;
+    std::vector<uint32_t> gpuJointRigs; // Batch instance order; singleton draws use gpuJointRig.
     uint32_t boneStride = 0;           // palette matrices per instance; zero on exact skinned draws
     /** three's flipSided: mirrored authored meshes reverse the front-face winding. */
     [[nodiscard]] WGPUFrontFace frontFace() const {

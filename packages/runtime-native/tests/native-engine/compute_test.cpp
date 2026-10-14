@@ -68,7 +68,7 @@ Matrix compose(const PackedTrs& t) {
 }
 
 void jointReadback(mystral::webgpu::Context& context, GpuResources& gpu, EventQueue& events) {
-    const std::array<JointComputeRig, 2> rigs{{{3, 0, 0, 0, 2}, {3, 3, 0, 3, 6}}};
+    std::array<JointComputeRig, 2> rigs{{{3, 0, 0, 0, 2}, {3, 3, 0, 3, 6}}};
     const std::array<uint32_t, 6> parents{UINT32_MAX, 0, 1, UINT32_MAX, 0, 1};
     std::array<PackedTrs, 3> locals{};
     for (int j = 0; j < 3; ++j) {
@@ -93,8 +93,17 @@ void jointReadback(mystral::webgpu::Context& context, GpuResources& gpu, EventQu
     JointComputePass pass(context.getDevice(), gpu, rigs, parents, fixed, input, output);
     if (!pass.error().empty()) std::fprintf(stderr, "%s\n", pass.error().c_str());
     CHECK(pass.error().empty());
+    const std::array<uint32_t, 2> overlapBases{2, 3}, outsideBases{2, UINT32_MAX};
+    CHECK(!pass.remapOutputs(overlapBases));
+    CHECK(!pass.remapOutputs(outsideBases));
+    CHECK(!pass.remapOutputs(std::span<const uint32_t>{overlapBases.data(), 1}));
+    CHECK(pass.error().empty());
     for (int frame = 0; frame < 2; ++frame) {
         if (frame) {
+            std::swap(rigs[0].outputBase, rigs[1].outputBase);
+            const std::array<uint32_t, 2> remapped{rigs[0].outputBase, rigs[1].outputBase};
+            CHECK(pass.remapOutputs(remapped));
+            CHECK(pass.remapOutputs(remapped));
             locals[1][0] += 2.3f; locals[2][6] = std::sin(0.9f); locals[2][7] = std::cos(0.9f);
             CHECK(gpu.writeBuffer(input, 0, locals.data(), sizeof(locals)) == GpuStatus::Ok);
         }
@@ -137,7 +146,7 @@ void jointReadback(mystral::webgpu::Context& context, GpuResources& gpu, EventQu
     auto badParents = parents; badParents[1] = 1;
     JointComputePass badParent(context.getDevice(), gpu, rigs, badParents, fixed, input, output);
     CHECK(!badParent.error().empty());
-    auto badRigs = rigs; badRigs[1].outputBase = 3;
+    auto badRigs = rigs; badRigs[1].outputBase = rigs[0].outputBase + 1;
     JointComputePass overlap(context.getDevice(), gpu, badRigs, parents, fixed, input, output);
     CHECK(!overlap.error().empty());
     badRigs = rigs; badRigs[0].inputBase = UINT32_MAX;

@@ -203,17 +203,40 @@ JointComputePass::JointComputePass(WGPUDevice device, GpuResources& gpu,
             rig.inputBase, rig.fixedBase, rig.outputBase});
     }
     topology.insert(topology.end(), parents.begin(), parents.end());
-    storage_[0] = gpu.createBuffer(topologyBytes, WGPUBufferUsage_Storage, topology.data(), topologyBytes);
+    storage_[0] = gpu.createBuffer(topologyBytes, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst, topology.data(), topologyBytes);
     storage_[1] = locals;
     storage_[2] = gpu.createBuffer(fixedBytes, WGPUBufferUsage_Storage, fixed.data(), fixedBytes);
     storage_[3] = output;
     count_ = uint32_t(rigs.size());
+    outputMatrices_ = outputBytes / 64;
+    headers_.assign(topology.begin(), topology.begin() + 1 + rigs.size() * 5);
     pass_ = std::make_unique<ComputePass>(device, gpu, jointProgram());
     error_ = pass_->error();
 }
 
 JointComputePass::~JointComputePass() {
     if (pass_) { gpu_.destroy(storage_[0]); gpu_.destroy(storage_[2]); }
+}
+
+bool JointComputePass::remapOutputs(std::span<const uint32_t> bases) {
+    if (!error_.empty() || !pass_ || bases.size() != count_) return false;
+    bool changed = false;
+    for (uint32_t i = 0; i < count_; ++i) changed |= bases[i] != headers_[5 + i * 5];
+    if (!changed) return true;
+    std::vector<std::pair<uint64_t, uint64_t>> ranges;
+    ranges.reserve(count_);
+    for (uint32_t i = 0; i < count_; ++i) {
+        const uint64_t end = uint64_t(bases[i]) + headers_[1 + i * 5];
+        if (end > outputMatrices_) return false;
+        ranges.emplace_back(bases[i], end);
+    }
+    std::sort(ranges.begin(), ranges.end());
+    for (uint32_t i = 1; i < count_; ++i) if (ranges[i].first < ranges[i - 1].second) return false;
+    auto headers = headers_;
+    for (uint32_t i = 0; i < count_; ++i) headers[5 + i * 5] = bases[i];
+    if (gpu_.writeBuffer(storage_[0], 0, headers.data(), headers.size() * sizeof(uint32_t)) != GpuStatus::Ok) return false;
+    headers_.swap(headers);
+    return true;
 }
 
 bool JointComputePass::dispatch(WGPUCommandEncoder encoder) {

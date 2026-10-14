@@ -3077,11 +3077,16 @@ void gpuJointProduction() {
             geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
             auto material = std::make_shared<Material>(MaterialType::Basic);
             material->color.setRGB(0.8, 0.2, 0.1);
-            for (int i = 0; i < 3; ++i) {
-                const int count = i == 2 ? 1100 : 3;
-                auto mover = std::make_shared<Group>(); mover->position.x = double(i - 1) * 1.6;
+            auto sun = std::make_shared<DirectionalLight>();
+            sun->position.set(2, 5, 4); sun->setCastShadow(true);
+            sun->shadow.mapSize.set(128, 128);
+            scene.add(*sun);
+            for (int i = 0; i < 5; ++i) {
+                const int count = i == 4 ? 1100 : 3;
+                auto mover = std::make_shared<Group>(); mover->position.x = double(i - 2) * 1.2;
                 auto placement = std::make_shared<Group>();
                 auto mesh = std::make_shared<SkinnedMesh>(geometry, material);
+                mesh->setCastShadow(true); mesh->setReceiveShadow(true);
                 std::vector<std::shared_ptr<Bone>> bones;
                 for (int j = 0; j < count; ++j) {
                     auto bone = std::make_shared<Bone>();
@@ -3089,18 +3094,19 @@ void gpuJointProduction() {
                     if (j) bones.back()->add(*bone);
                     bones.push_back(bone);
                 }
+                bones[2]->rotation.z = i * 0.12;
                 bones[1]->position.y = 0.15; bones[2]->position.y = -0.15;
                 placement->add(*bones.front()); placement->add(*mesh);
                 mover->add(*placement); scene.add(*mover);
                 if (tracked) { mover->enableTrackedTransform(); placement->enableTrackedTransform(); mesh->enableTrackedTransform(); }
                 auto skeleton = std::make_shared<Skeleton>(bones, std::vector<Matrix4>(bones.size()));
                 Matrix4 bind; mesh->bind(skeleton, &bind);
-                if (i) {
+                if (i == 1 || i == 4) {
                     // A non-skinned attachment makes these rigs eager; no synthetic static hints.
                     auto attachment = std::make_shared<Mesh>(makeBoxGeometry(0.1, 0.1, 0.1), material);
                     bones.back()->add(*attachment);
                 }
-                if (i == 2) mover->setVisible(false);
+                if (i == 4) mover->setVisible(false);
                 movers.push_back(mover); meshes.push_back(mesh); tips.push_back(bones[2]);
             }
             auto water = std::make_shared<Material>(MaterialType::Standard);
@@ -3120,9 +3126,10 @@ void gpuJointProduction() {
     Renderer gpu(context.getInstance(), context.getDevice(), context.getQueue(), events);
     Renderer cpu(context.getInstance(), context.getDevice(), context.getQueue(), events);
     gpu.setSize(160, 120); cpu.setSize(160, 120);
-    RenderDatabase database, reference; database.batching = reference.batching = false;
+    RenderDatabase database, reference; reference.batching = false;
+    database.shadowMapEnabled = reference.shadowMapEnabled = true;
     std::shared_ptr<GpuJointScene> admittedPlan;
-    for (int frame = 0; frame < 2; ++frame) {
+    for (int frame = 0; frame < 4; ++frame) {
         if (frame) {
             for (auto* fixture : {&accelerated, &eager}) {
                 animation::PropertyBinding position(fixture->tips[0], ".position");
@@ -3130,20 +3137,26 @@ void gpuJointProduction() {
                 animation::PropertyBinding orientation(fixture->tips[0], ".quaternion");
                 const double q[4] = {0, 0, std::sin(0.25), std::cos(0.25)}; orientation.setValue(q, 0);
                 fixture->movers[0]->position.y = 0.5;
+                fixture->movers[0]->position.z = -frame * 0.2;
+                fixture->movers[2]->position.z = frame * 0.2;
+                fixture->meshes[3]->setLayer(frame == 3 ? 0 : 1);
+                fixture->camera.enableLayer(1);
+                fixture->movers[0]->setVisible(frame != 2);
                 fixture->meshes[0]->parent->position.x = 0.2;
                 fixture->meshes[0]->parent->rotateY(0.15); // placement can move after admission
-                fixture->movers[2]->setVisible(true); // grows mixed GPU+CPU palette beyond 64 KiB
+                fixture->movers[4]->setVisible(true); // grows mixed GPU+CPU palette beyond 64 KiB
             }
             CHECK(accelerated.tips[0]->hasDeferredTransform());
             const auto before = Object3D::matrixEvaluations();
             const auto visits = accelerated.scene.updateMatrixWorldVisible(false, false);
-            CHECK(Object3D::matrixEvaluations() - before + 1 == visits); // one inspected GPU boundary
+            CHECK(Object3D::matrixEvaluations() - before + 3 == visits); // the unpruned walk inspects all three GPU boundaries
             CHECK(accelerated.tips[0]->hasDeferredTransform());
         }
+        if (frame == 2) database.shadowMapEnabled = reference.shadowMapEnabled = false;
         const auto projectionBefore = Object3D::gpuProjectionVisits_;
         const auto maintenanceBefore = Object3D::gpuMaintenanceVisits_;
         database.render(gpu, accelerated.scene, accelerated.camera, {0, 0, 0, 1});
-        CHECK(Object3D::gpuProjectionVisits_ - projectionBefore == 2); // main + reflection boundary
+        CHECK(Object3D::gpuProjectionVisits_ - projectionBefore >= (frame == 2 ? 4 : 6)); // visible main/reflection boundaries, plus verdict scans
         if (!frame) CHECK(Object3D::gpuMaintenanceVisits_ > maintenanceBefore);
         else CHECK(Object3D::gpuMaintenanceVisits_ == maintenanceBefore); // no per-frame Bone scan
         reference.render(cpu, eager.scene, eager.camera, {0, 0, 0, 1});
@@ -3156,17 +3169,25 @@ void gpuJointProduction() {
         }
         std::printf("production GPU joints frame %d: %zu covered, %zu pixels differ >2\n", frame, covered, different);
         CHECK(covered > 100 && different <= 4);
-        size_t admitted = 0;
-        for (const auto& draw : database.drawn()) if (draw.gpuJoints) { ++admitted; admittedPlan = draw.gpuJoints; }
-        CHECK(admitted == 1);
+        size_t admitted = 0, instances = 0;
+        for (const auto& draw : database.drawn()) if (draw.gpuJoints) { ++admitted; instances += draw.instanceCount; admittedPlan = draw.gpuJoints; }
+        CHECK(admitted == (frame == 1 || frame == 2 ? 2 : 1));
+        CHECK(instances == (frame == 2 ? 2 : 3));
+        CHECK(gpu.lastFrame().mainSkinned.batches == admitted);
+        if (frame < 2) CHECK(gpu.lastFrame().shadowSkinned.batches == admitted);
         const auto validationBefore = Object3D::gpuValidationVisits_;
         CHECK(admittedPlan->current());
-        CHECK(Object3D::gpuValidationVisits_ - validationBefore == 6); // rig + placement + four ancestors
+        CHECK(Object3D::gpuValidationVisits_ - validationBefore == 18); // three rigs, placement and four ancestors each
         const auto* reflection = database.reflectionDatabase(accelerated.reflector.get());
         CHECK(reflection != nullptr);
-        size_t mirrorGpu = 0;
-        if (reflection) for (const auto& draw : reflection->drawn()) mirrorGpu += bool(draw.gpuJoints);
-        CHECK(mirrorGpu == 1);
+        size_t mirrorGpu = 0, mirrorInstances = 0;
+        if (reflection) for (const auto& draw : reflection->drawn()) if (draw.gpuJoints) {
+            ++mirrorGpu; mirrorInstances += draw.instanceCount;
+        }
+        CHECK(mirrorGpu == (frame == 1 ? 2 : 1));
+        CHECK(mirrorInstances == (frame == 2 ? 1 : 3));
+        std::printf("GPU batching frame %d: main %zu draws/%zu instances, reflection %zu draws/%zu instances, shadow %u batches\n",
+                    frame, admitted, instances, mirrorGpu, mirrorInstances, gpu.lastFrame().shadowSkinned.batches);
         CHECK(accelerated.tips[0]->skipsGpuJointSubtree());
     }
     const auto joins = Object3D::joinDependencyVisits(), updates = Object3D::matrixEvaluations();
@@ -3181,7 +3202,7 @@ void gpuJointProduction() {
     CHECK(accelerated.tips[0]->hasDeferredTransform());
     const auto revokeBefore = Object3D::gpuMaintenanceVisits_;
     admittedPlan->revoke(); // revoke the last admitted rig while its local pose is still pending
-    CHECK(Object3D::gpuMaintenanceVisits_ - revokeBefore == 3);
+    CHECK(Object3D::gpuMaintenanceVisits_ - revokeBefore == 9);
     CHECK(!accelerated.tips[0]->skipsGpuJointSubtree());
     CHECK(!accelerated.tips[0]->hasDeferredTransform());
     accelerated.meshes[0]->skeleton->calculateInverses(); // first reader after full revocation
