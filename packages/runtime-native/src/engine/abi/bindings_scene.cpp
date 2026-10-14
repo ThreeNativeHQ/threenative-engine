@@ -89,8 +89,9 @@ template <typename T, typename Field>
 void nestedVector(ClassBinding& b, const char* prefix, Field field) {
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string(prefix) + "." + "xyz"[i];
-        b.getters[path] = [field, i](void* self) { return Value::of(component3(std::invoke(field, *as<T>(self)), i)); };
+        b.getters[path] = [field, i](void* self) { as<T>(self)->materializeLocalTransform(); return Value::of(component3(std::invoke(field, *as<T>(self)), i)); };
         b.setters[path] = [field, i](void* self, const Value& v) {
+            as<T>(self)->prepareLocalTransformWrite();
             setComponent3(std::invoke(field, *as<T>(self)), i, number(v));
             as<T>(self)->markLocalTransformDirty();
         };
@@ -103,8 +104,9 @@ void nestedQuaternion(ClassBinding& b, const char* prefix, Field field) {
     const char* const names[4] = {"x", "y", "z", "w"};
     for (int i = 0; i < 4; ++i) {
         const std::string path = std::string(prefix) + "." + names[i];
-        b.getters[path] = [field, i](void* self) { return Value::of(component4(std::invoke(field, *as<T>(self)), i)); };
+        b.getters[path] = [field, i](void* self) { as<T>(self)->materializeLocalTransform(); return Value::of(component4(std::invoke(field, *as<T>(self)), i)); };
         b.setters[path] = [field, i](void* self, const Value& v) {
+            as<T>(self)->prepareLocalTransformWrite();
             setComponent4(std::invoke(field, *as<T>(self)), i, number(v));  // Quaternion::set notifies
         };
     }
@@ -114,7 +116,9 @@ void nestedQuaternion(ClassBinding& b, const char* prefix, Field field) {
 template <typename T, typename Field>
 void nestedMatrix(ClassBinding& b, const char* prefix, Field field) {
     b.getters[std::string(prefix) + ".elements"] = [field](void* self) {
-        return numbers((std::invoke(field, *as<T>(self))).elements.data(), 16);
+        auto& matrix = std::invoke(field, *as<T>(self));
+        Object3D::prepareTransformView(&matrix);
+        return numbers(matrix.elements.data(), 16);
     };
 }
 
@@ -388,6 +392,7 @@ void registerObject3D(ClassBinding& b) {
         auto* o = as<Object3D>(self);
         Object3D::transformTrackingAddress(&o->position)[2] = 1;
         const auto at = [](const void* member) { return Value::of(double(reinterpret_cast<uintptr_t>(member))); };
+        Object3D::prepareTransformView(&o->matrixWorld);
         return Value::record({{"__address", at(o->flags())}, {"position", at(&o->positionValue())}, {"rotation", at(&o->rotationValue())},
             {"quaternion", at(&o->quaternionValue())}, {"scale", at(&o->scaleValue())},
             {"up", at(&o->up)}, {"matrix", at(&o->matrixValue())}, {"matrixWorld", at(&o->matrixWorldValue())},
@@ -409,11 +414,13 @@ void registerObject3D(ClassBinding& b) {
     };
     b.getters["matrixAutoUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixAutoUpdate); };
     b.setters["matrixAutoUpdate"] = [](void* self, const Value& v) {
+        as<Object3D>(self)->prepareLocalTransformWrite();
         as<Object3D>(self)->matrixAutoUpdate = flag(v);
         as<Object3D>(self)->markLocalTransformDirty();
     };
     b.getters["matrixWorldAutoUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldAutoUpdate); };
     b.setters["matrixWorldAutoUpdate"] = [](void* self, const Value& v) {
+        as<Object3D>(self)->prepareLocalTransformWrite();
         as<Object3D>(self)->matrixWorldAutoUpdate = flag(v);
         as<Object3D>(self)->markLocalTransformDirty();
     };
@@ -421,6 +428,7 @@ void registerObject3D(ClassBinding& b) {
     b.setters["static"] = [](void* self, const Value& v) { as<Object3D>(self)->isStatic = flag(v); };
     b.getters["matrixWorldNeedsUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldNeedsUpdate); };
     b.setters["matrixWorldNeedsUpdate"] = [](void* self, const Value& v) {
+        as<Object3D>(self)->prepareLocalTransformWrite();
         as<Object3D>(self)->matrixWorldNeedsUpdate = flag(v);
         as<Object3D>(self)->markLocalTransformDirty();
     };
@@ -445,9 +453,10 @@ void registerObject3D(ClassBinding& b) {
     nestedMatrix<Object3D>(b, "matrixWorld", &Object3D::matrixWorldValue);
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string("rotation.") + "xyz"[i];
-        b.getters[path] = [i](void* self) { return Value::of(as<Object3D>(self)->rotation.toArray()[i]); };
+        b.getters[path] = [i](void* self) { as<Object3D>(self)->materializeLocalTransform(); return Value::of(as<Object3D>(self)->rotation.toArray()[i]); };
         // As three's Euler setters: write the component, then sync the quaternion through notify().
         b.setters[path] = [i](void* self, const Value& v) {
+            as<Object3D>(self)->prepareLocalTransformWrite();
             Euler& rotation = as<Object3D>(self)->rotation;
             (i == 0 ? rotation.x : i == 1 ? rotation.y : rotation.z) = number(v);
             rotation.notify();
@@ -466,18 +475,21 @@ void registerObject3D(ClassBinding& b) {
         b.setters[path] = [i](void* self, const Value& v) {
             std::optional<Vector3>& pivot = as<Object3D>(self)->pivot;
             if (!pivot.has_value()) throw Unsupported{"this Object3D has no pivot"};
+            as<Object3D>(self)->prepareLocalTransformWrite();
             setComponent3(*pivot, i, number(v));
             as<Object3D>(self)->markLocalTransformDirty();
         };
     }
     b.getters["rotation.order"] = [](void* self) {
         static const char* const kNames[] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
+        as<Object3D>(self)->materializeLocalTransform();
         const Euler& rotation = as<Object3D>(self)->rotation;
         return Value{Value::Kind::String, 0,
                      std::string(kNames[static_cast<int>(rotation.order)])};
     };
     b.setters["rotation.order"] = [](void* self, const Value& v) {
         static const char* const kNames[] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
+        as<Object3D>(self)->prepareLocalTransformWrite();
         Euler& rotation = as<Object3D>(self)->rotation;
         for (int i = 0; i < 6; ++i) {
             if (v.kind == Value::Kind::String && v.text == kNames[i]) {

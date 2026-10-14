@@ -224,6 +224,7 @@ v8::MaybeLocal<v8::Value> MathBridge::view(tn_handle_t handle) {
     tn::binding::Object* object = tn::abi::objectOf(handle);
     if (object == nullptr) return {};
     const void* address = object->ptr.get();
+    engine::Object3D::prepareTransformView(address);
     if (v8::Local<v8::Value> known = cached(kind, address); !known.IsEmpty()) {
         tn::abi::dropHandle(handle);
         return known;

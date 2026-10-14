@@ -250,6 +250,12 @@ public:
     // Internal V8 admission only; public C++/Wasm objects remain eager. No cache consumes this yet.
     void enableTrackedTransform();
     void markLocalTransformDirty();
+    virtual void materializeLocalTransform() {}
+    virtual void prepareLocalTransformWrite() { materializeLocalTransform(); }
+    virtual void exposeLocalTransform() {}
+    [[nodiscard]] virtual bool hasDeferredTransformPublication() const { return false; }
+    void joinDeferredWorldTransform();
+    static void prepareTransformView(const void* address);
     // Stable bytes: tracked, TRS dirty, irreversibly escaped. Shares the transform slot's lifetime.
     [[nodiscard]] static uint8_t* transformTrackingAddress(const void* address);
 

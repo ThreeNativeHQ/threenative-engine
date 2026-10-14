@@ -5,6 +5,7 @@
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/scene/lights.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cmath>
 #include <functional>
@@ -13,6 +14,83 @@
 #include <stdexcept>
 
 namespace tn::engine {
+
+bool Bone::enableDeferredTransform() {
+    if (deferred_) return true;
+    const auto* flags = transformTrackingAddress(&position);
+    if (!flags || !flags[0] || flags[2] || !matrixAutoUpdate || !matrixWorldAutoUpdate || pivot) return false;
+    deferredTRS_ = {position.x, position.y, position.z, quaternion.x, quaternion.y, quaternion.z,
+                    quaternion.w, scale.x, scale.y, scale.z};
+    deferred_ = true;
+    if (!publication_) { publication_ = true; ++publicationCount_; }
+    return true;
+}
+
+bool Bone::enableDeferredTransform(std::shared_ptr<std::vector<float>> stream, std::size_t offset,
+                                   std::shared_ptr<bool> valid) {
+    if (!stream || !valid || !*valid || offset > stream->size() || stream->size() - offset < 12) return false;
+    if (stream_ && (stream_ != stream || streamOffset_ != offset || streamValid_ != valid)) return false;
+    if (!enableDeferredTransform()) return false;
+    stream_ = std::move(stream);
+    streamValid_ = std::move(valid);
+    streamOffset_ = offset;
+    streamData_ = stream_->data();
+    auto* packed = streamData_ + offset;
+    std::fill_n(packed, 12, 0.0f);
+    for (int i = 0; i < 3; ++i) packed[i] = float(deferredTRS_[i]);
+    for (int i = 0; i < 4; ++i) packed[4 + i] = float(deferredTRS_[3 + i]);
+    for (int i = 0; i < 3; ++i) packed[8 + i] = float(deferredTRS_[7 + i]);
+    return true;
+}
+
+bool Bone::deferTransformValue(int component, const double* values) {
+    if (!deferred_) return false;
+    const auto* flags = transformTrackingAddress(&position);
+    if (flags[2] || !matrixAutoUpdate || !matrixWorldAutoUpdate || pivot) return false;
+    if (component != 0 && component != 3 && component != 7) return false;
+    if (stream_ && (!*streamValid_ || stream_->data() != streamData_ ||
+                    streamOffset_ > stream_->size() || stream_->size() - streamOffset_ < 12)) {
+        prepareLocalTransformWrite();
+        return false;
+    }
+    const int count = component == 3 ? 4 : 3;
+    std::copy_n(values, count, deferredTRS_.begin() + component);
+    if (stream_) {
+        const int packedOffset = component == 0 ? 0 : component == 3 ? 4 : 8;
+        for (int i = 0; i < count; ++i) streamData_[streamOffset_ + packedOffset + i] = float(values[i]);
+    }
+    pending_ = true;
+    markLocalTransformDirty();
+    matrixWorldNeedsUpdate = true;
+    return true;
+}
+
+void Bone::materializeLocalTransform() {
+    if (!pending_) return;
+    pending_ = false;
+    position.fromArray(deferredTRS_.data());
+    quaternion.fromArray(deferredTRS_.data(), 3);
+    scale.fromArray(deferredTRS_.data(), 7);
+}
+
+void Bone::prepareLocalTransformWrite() {
+    materializeLocalTransform();
+    deferred_ = false;
+    if (streamValid_) *streamValid_ = false;
+    stream_.reset();
+    streamValid_.reset();
+    streamData_ = nullptr;
+}
+
+void Bone::exposeLocalTransform() {
+    prepareLocalTransformWrite();
+    transformTrackingAddress(&position)[2] = 1;
+}
+
+void Bone::materializeWorldTransformIfPending() {
+    if (publicationCount_ == 0) return;
+    joinDeferredWorldTransform();
+}
 
 Skeleton::Skeleton(std::vector<std::shared_ptr<Bone>> bones, std::vector<Matrix4> boneInverses)
     : bones(bones.begin(), bones.end()), boneInverses(std::move(boneInverses)) {
@@ -34,7 +112,7 @@ void Skeleton::calculateInverses() {
     boneInverses.clear();
     for (std::size_t i = 0; i < bones.size(); ++i) {
         Matrix4 inverse;
-        if (Bone* b = bone(i)) inverse.copy(b->matrixWorld).invert();
+        if (Bone* b = bone(i)) { b->materializeWorldTransformIfPending(); inverse.copy(b->matrixWorld).invert(); }
         boneInverses.push_back(inverse);
     }
 }
@@ -42,7 +120,7 @@ void Skeleton::calculateInverses() {
 void Skeleton::pose() {
     // Recover the bind-time world matrices.
     for (std::size_t i = 0; i < bones.size(); ++i) {
-        if (Bone* b = bone(i)) b->matrixWorld.copy(boneInverses[i]).invert();
+        if (Bone* b = bone(i)) { b->prepareLocalTransformWrite(); b->matrixWorld.copy(boneInverses[i]).invert(); }
     }
 
     // Compute the local matrices, positions, rotations and scales.
@@ -64,7 +142,8 @@ void Skeleton::update() {
     static const Matrix4 identity{};
     Matrix4 offset;
     for (std::size_t i = 0; i < bones.size(); ++i) {
-        const Bone* b = bone(i);
+        Bone* b = bone(i);
+        if (b) b->materializeWorldTransformIfPending();
         const Matrix4& matrix = b ? b->matrixWorld : identity;
         offset.multiplyMatrices(matrix, boneInverses[i]);
         for (std::size_t k = 0; k < 16; ++k)
@@ -122,6 +201,7 @@ Vector3& SkinnedMesh::applyBoneTransform(uint64_t index, Vector3& target) const 
             boneIndex >= skeleton->boneInverses.size() || !skeleton->bone(size_t(boneIndex)))
             throw std::out_of_range("SkinnedMesh.applyBoneTransform needs a valid bone index");
         const auto j = size_t(boneIndex);
+        skeleton->bone(j)->materializeWorldTransformIfPending();
         matrix.multiplyMatrices(skeleton->bone(j)->matrixWorld, skeleton->boneInverses[j]);
         vertex.copy(base).applyMatrix4(matrix);
         target.addScaledVector(xyz.set(vertex.x, vertex.y, vertex.z), weight);

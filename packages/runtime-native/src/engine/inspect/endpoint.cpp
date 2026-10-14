@@ -174,6 +174,7 @@ bool Endpoint::sample(const Value* argument, Value& result, std::string& error) 
                 const Object3D* o = named(host_.scene, id.string());
                 if (!o)
                     continue; // an entity this scene does not hold is absent, as on the web bridge
+                const_cast<Object3D*>(o)->materializeLocalTransform();
                 const auto triple = [](double a, double b, double c) {
                     return Value::makeArray({num(a), num(b), num(c)});
                 };
@@ -251,6 +252,7 @@ bool Endpoint::applySetup(const Value* argument, Value& result, std::string& err
             placed.push_back(str(id->string()));
         }
         for (const Placement& p : plan) {
+            p.object->prepareLocalTransformWrite();
             const auto at = [&](const char* field, std::size_t i) {
                 return p.transform->find(field)->items()[i].number();
             };

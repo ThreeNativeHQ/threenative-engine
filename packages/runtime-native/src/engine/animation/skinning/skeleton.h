@@ -32,6 +32,22 @@ namespace tn::engine {
 class Bone : public Object3D {
   public:
     Bone() = default;
+    ~Bone() override { prepareLocalTransformWrite(); if (publication_) --publicationCount_; }
+    // Internal admission only: no production caller until a GPU consumer owns the scene plan.
+    bool enableDeferredTransform();
+    // The scene plan allocates once and uploads this whole stream; relocation revokes admission.
+    bool enableDeferredTransform(std::shared_ptr<std::vector<float>> stream, std::size_t offset,
+                                 std::shared_ptr<bool> valid);
+
+    bool deferTransformValue(int component, const double* values);
+    void materializeLocalTransform() override;
+    void materializeWorldTransformIfPending();
+    [[nodiscard]] bool hasDeferredTransformPublication() const override { return publication_; }
+    void prepareLocalTransformWrite() override;
+    void exposeLocalTransform() override;
+    [[nodiscard]] const std::array<double, 10>& deferredTransformValues() const { return deferredTRS_; }
+    [[nodiscard]] bool hasDeferredTransform() const { return pending_; }
+
     Bone(const Bone&) = delete;
     Bone& operator=(const Bone&) = delete;
 
@@ -39,6 +55,16 @@ class Bone : public Object3D {
 
     /** three's `isBone`, the flag `Skeleton.pose` reads on a parent. */
     bool isBone = true;
+  private:
+    std::array<double, 10> deferredTRS_{}; // position, quaternion, scale; original mixer doubles
+    inline static std::size_t publicationCount_ = 0;
+    bool deferred_ = false, pending_ = false, publication_ = false;
+    std::shared_ptr<std::vector<float>> stream_;
+    std::shared_ptr<bool> streamValid_;
+    float* streamData_ = nullptr;
+    std::size_t streamOffset_ = 0;
+
+
 };
 
 /**

@@ -1573,9 +1573,35 @@ void jsMathViews() {
             if (info.Length() > 1) flags[1] = 0;
             info.GetReturnValue().Set(flags[0] * 100 + flags[1] * 10 + flags[2]);
         }, v8::External::New(rt.isolate, &adapter)).ToLocalChecked()).Check();
+    ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__deferBone"),
+        v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            auto* a = static_cast<Adapter*>(info.Data().As<v8::External>()->Value());
+            tn_handle_t h{}; CHECK(a->unwrap(info[0], h));
+            auto* bone = static_cast<tn::engine::Bone*>(tn::abi::objectOf(h)->ptr.get());
+            const double values[] = {7, 8, 9};
+            const bool enabled = bone->enableDeferredTransform();
+            tn::engine::animation::PropertyBinding binding(bone->shared_from_this(), ".position");
+            binding.setValue(values, 0);
+            CHECK(enabled ? bone->hasDeferredTransform() : bone->position.x == 7);
+            info.GetReturnValue().Set(enabled);
+        }, v8::External::New(rt.isolate, &adapter)).ToLocalChecked()).Check();
     const char* tracking = R"JS(
         (() => {
             const check = (ok) => { if (!ok) throw Error('tracking assertion'); };
+            const deferred = new Bone(); check(__deferBone(deferred));
+            const keptBonePosition = deferred.position;
+            check(keptBonePosition.x === 7 && __tracking(deferred) === 111);
+            keptBonePosition.x = 100;
+            check(!__deferBone(deferred) && keptBonePosition.x === 7);
+            const retained = new Bone(), preexisting = retained.quaternion;
+            check(!__deferBone(retained) && retained.position.y === 8 && preexisting.w === 1);
+            const worldBone = new Bone(); check(__deferBone(worldBone));
+            check(worldBone.matrixWorld.elements[12] === 7 && !__deferBone(worldBone));
+            const ancestorBone = new Bone(), band = new Object3D();
+            band.position.set(1,0,0); ancestorBone.add(band); check(__deferBone(ancestorBone));
+            check(band.matrixWorld.elements[12] === 8);
+            const localBone = new Bone(); check(__deferBone(localBone));
+            void localBone.matrix; check(!__deferBone(localBone) && localBone.position.z === 9);
             const tree = new Group(); tree.add(new Object3D());
             for (const clone of [tree.clone(true), new SkeletonUtils().clone(tree)]) {
                 check(__tracking(clone, true) === 100 && __tracking(clone.children[0], true) === 100);

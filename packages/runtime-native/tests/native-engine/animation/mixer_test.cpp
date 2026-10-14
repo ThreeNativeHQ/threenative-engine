@@ -3,6 +3,7 @@
 // transform, every action's state, the mixer stats and every loop and finished event with three's.
 #include "check.h"
 #include "scenario.h"
+#include "engine/animation/skinning/skeleton.h"
 
 using namespace tn::engine;
 using namespace tn::engine::animation;
@@ -38,7 +39,35 @@ const Replay& rigReplay() {
 }
 
 // Loop modes, clampWhenFinished, weights, additive blending, fades and warps: the pose dumps.
+void deferredMixer() {
+    auto bone = std::make_shared<Bone>();
+    bone->enableTrackedTransform();
+    AnimationMixer mixer(bone);
+    auto clip = std::make_shared<AnimationClip>("move", 1, std::vector<KeyframeTrack>{
+        KeyframeTrack(".position", TrackType::Vector, {0, 1}, {0, 0, 0, 10, 20, 30}),
+        KeyframeTrack(".quaternion", TrackType::Quaternion, {0, 1}, {0, 0, 0, 1, 0, 1, 0, 0})});
+    auto* action = mixer.clipAction(clip);
+    action->play();
+    auto stream = std::make_shared<std::vector<float>>(12); auto valid = std::make_shared<bool>(true);
+    CHECK(bone->enableDeferredTransform(stream, 0, valid));
+    mixer.update(0.25);
+    CHECK(bone->hasDeferredTransform() && bone->position.x == 0);
+    CHECK(bone->deferredTransformValues()[0] == 2.5);
+    CHECK((*stream)[0] == 2.5f && (*stream)[1] == 5 && (*stream)[3] == 0 && (*stream)[8] == 1);
+    mixer.update(0.25); // alternating accumulator cannot overwrite the stable previous property
+    CHECK(bone->position.x == 0 && bone->deferredTransformValues()[0] == 5);
+    Vector3 world; bone->getWorldPosition(world); CHECK(world.x == 5 && world.y == 10);
+    mixer.update(0.25); CHECK(bone->hasDeferredTransform());
+    action->stop(); // original state restored through the same binding
+    PropertyBinding position(bone, ".position"); double values[3]{}; position.getValue(values, 0);
+    CHECK(values[0] == 0 && values[1] == 0 && bone->quaternion.w == 1);
+    action->play(); mixer.update(0.125);
+    mixer.uncacheRoot(*bone);
+    CHECK(!bone->hasDeferredTransform() && bone->position.x == 0);
+}
+
 void mixer() {
+    deferredMixer();
     const std::size_t diffs = differences(rigReplay().samples, kSamples, "sample");
     std::printf("mixer: %zu samples, %zu differ\n", rigReplay().samples.size(), diffs);
     CHECK(diffs == 0);

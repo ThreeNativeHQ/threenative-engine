@@ -24,6 +24,7 @@ struct alignas(64) TransformPage {
     std::array<Matrix4, size> matrices, worlds;
     // Leases on a slot: a live language view of any of its columns. A slot whose object died while
     // leased is a zombie (still counted live) until the last lease is returned.
+    std::array<Object3D*, size> owners{};
     std::array<uint16_t, size> leases{};
     std::array<bool, size> zombie{};
     std::array<std::array<uint8_t, 3>, size> tracking{};
@@ -100,6 +101,32 @@ uint8_t* Object3D::transformTrackingAddress(const void* address) {
     return found.page ? found.page->tracking[found.index].data() : nullptr;
 }
 
+void Object3D::joinDeferredWorldTransform() {
+    bool publication = false, stale = false;
+    for (Object3D* node = this; node; node = node->parent) {
+        publication = publication || node->hasDeferredTransformPublication();
+        const uint64_t parentId = node->parent ? node->parent->id() + 1 : 0;
+        const uint64_t parentRevision = node->parent ? node->parent->revision() : 0;
+        stale = stale || node->matrixWorldNeedsUpdate || node->worldParentId_ != parentId ||
+                node->worldParentRevision_ != parentRevision;
+    }
+    if (publication && stale) updateWorldMatrix(true, false);
+}
+
+void Object3D::prepareTransformView(const void* address) {
+    Object3D* owner = nullptr;
+    int column = -1;
+    {
+        auto& pool = transforms();
+        const std::lock_guard lock(pool.mutex);
+        const Found found = findLocked(pool, address);
+        if (found.page) { owner = found.page->owners[found.index]; column = found.column; }
+    }
+    if (!owner) return;
+    if (column == 5) owner->joinDeferredWorldTransform();
+    owner->exposeLocalTransform();
+}
+
 int Object3D::leaseTransform(const void* address) {
     auto& pool = transforms();
     const std::lock_guard lock(pool.mutex);
@@ -154,6 +181,7 @@ Object3D::TransformSlot Object3D::acquireTransform() {
 void Object3D::releaseTransform() {
     auto& pool = transforms();
     const std::lock_guard lock(pool.mutex);
+    transform_.page->owners[transform_.index] = nullptr;
     // A language view still reads this slot: it stays out of reuse (and the pages stay) until unleased.
     if (transform_.page->leases[transform_.index] > 0) { transform_.page->zombie[transform_.index] = true; return; }
     recycleLocked(pool, transform_.page, transform_.index);
@@ -241,6 +269,7 @@ Object3D::Object3D() : transform_(acquireTransform()),
     quaternion(transform_.page->quaternions[transform_.index]), scale(transform_.page->scales[transform_.index]),
     matrix(transform_.page->matrices[transform_.index]), matrixWorld(transform_.page->worlds[transform_.index]),
     id_(nextObjectId++) {
+    transform_.page->owners[transform_.index] = this;
     uuid = generateUuid();
     up = defaultUp;
     matrixAutoUpdate = defaultMatrixAutoUpdate;
@@ -332,6 +361,7 @@ void Object3D::disableAllLayers() {
 // ------------------------------------------------------------------------------ transforms
 
 void Object3D::applyMatrix4(const Matrix4& m) {
+    prepareLocalTransformWrite();
     markLocalTransformDirty();
     if (matrixAutoUpdate) updateMatrix();
     matrix.premultiply(m);
@@ -340,32 +370,38 @@ void Object3D::applyMatrix4(const Matrix4& m) {
 }
 
 Object3D& Object3D::applyQuaternion(const Quaternion& q) {
+    prepareLocalTransformWrite();
     quaternion.premultiply(q);
     bump();
     return *this;
 }
 
 void Object3D::setRotationFromAxisAngle(const Vector3& axis, double angle) {
+    prepareLocalTransformWrite();
     quaternion.setFromAxisAngle(axis, angle);  // assumes the axis is normalized
     bump();
 }
 
 void Object3D::setRotationFromEuler(const Euler& euler) {
+    prepareLocalTransformWrite();
     quaternion.setFromEuler(euler, true);
     bump();
 }
 
 void Object3D::setRotationFromMatrix(const Matrix4& m) {
+    prepareLocalTransformWrite();
     quaternion.setFromRotationMatrix(m);  // assumes the upper 3x3 is a pure rotation
     bump();
 }
 
 void Object3D::setRotationFromQuaternion(const Quaternion& q) {
+    prepareLocalTransformWrite();
     quaternion.copy(q);  // assumes q is normalized
     bump();
 }
 
 Object3D& Object3D::rotateOnAxis(const Vector3& axis, double angle) {
+    prepareLocalTransformWrite();
     scratchQ1.setFromAxisAngle(axis, angle);
     quaternion.multiply(scratchQ1);
     bump();
@@ -373,6 +409,7 @@ Object3D& Object3D::rotateOnAxis(const Vector3& axis, double angle) {
 }
 
 Object3D& Object3D::rotateOnWorldAxis(const Vector3& axis, double angle) {
+    prepareLocalTransformWrite();
     scratchQ1.setFromAxisAngle(axis, angle);
     quaternion.premultiply(scratchQ1);
     bump();
@@ -386,6 +423,7 @@ Object3D& Object3D::rotateY(double angle) { return rotateOnAxis(axisY, angle); }
 Object3D& Object3D::rotateZ(double angle) { return rotateOnAxis(axisZ, angle); }
 
 Object3D& Object3D::translateOnAxis(const Vector3& axis, double distance) {
+    prepareLocalTransformWrite();
     markLocalTransformDirty();
     scratchV1.copy(axis).applyQuaternion(quaternion);
     position.add(scratchV1.multiplyScalar(distance));
@@ -410,6 +448,7 @@ Vector3& Object3D::worldToLocal(Vector3& vector) {
 }
 
 void Object3D::lookAt(const Vector3& target) {
+    prepareLocalTransformWrite();
     // This method does not support objects having non-uniformly-scaled parent(s).
     scratchTarget.copy(target);  // three copies too, so a target that aliases a member survives
     Object3D* const parent_ = parent;
@@ -607,6 +646,7 @@ void Object3D::traverseAncestors(Visitor visitor, void* context) {
 // ------------------------------------------------------------------------------ matrices
 
 void Object3D::updateMatrix() {
+    materializeLocalTransform();
     Matrix4 composed;
     composed.compose(position, quaternion, scale);
 
@@ -640,6 +680,7 @@ inline bool bitsDiffer(const std::array<double, 16>& a, const std::array<double,
 }  // namespace
 
 bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
+    materializeLocalTransform();
     if (plain && identityParent && matrixAutoUpdate && matrixWorldAutoUpdate && !pivot) {
         Matrix4 composed;
         composed.compose(position, quaternion, scale);
@@ -721,13 +762,16 @@ uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
 }
 
 void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool force) {
+    materializeLocalTransform();
     Object3D* const parent_ = parent;
 
     if (updateParents && parent_ != nullptr) parent_->updateWorldMatrix(true, false);
 
     if (matrixAutoUpdate) updateMatrix();
 
-    if (matrixWorldNeedsUpdate || force) {
+    const uint64_t parentId = parent_ ? parent_->id() + 1 : 0;
+    const uint64_t parentRevision = parent_ ? parent_->revision() : 0;
+    if (matrixWorldNeedsUpdate || force || worldParentId_ != parentId || worldParentRevision_ != parentRevision) {
         if (matrixWorldAutoUpdate) {
             const Matrix4 before = matrixWorld;
             if (parent_ == nullptr) {
@@ -749,6 +793,8 @@ void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool f
 }
 
 Object3D& Object3D::copy(const Object3D& source) {
+    const_cast<Object3D&>(source).materializeLocalTransform();
+    prepareLocalTransformWrite();
     markLocalTransformDirty();
     name = source.name;
     up.copy(source.up);

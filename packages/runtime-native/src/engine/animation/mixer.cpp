@@ -162,7 +162,10 @@ void PropertyMixer::saveOriginalState() {
     cumulativeWeightAdditive = 0;
 }
 
-void PropertyMixer::restoreOriginalState() { binding.setValue(buffer.data(), valueSize * 3); }
+void PropertyMixer::restoreOriginalState() {
+    binding.setValue(buffer.data(), valueSize * 3);
+    binding.materializeValue();
+}
 
 // ---- control interpolants
 
