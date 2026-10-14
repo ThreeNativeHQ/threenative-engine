@@ -250,8 +250,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
   // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
   // createProject on the merged tree.
-  // PRD-566/569 merge: measured all thirteen trees, including action-rpg onCull instructions.
-  "action-rpg": "91765dedcb6a1efda93e62f949c075b1770b93f894c5d46f30b169cf11a4b9bd",
+  // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
+  // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
+  // Merged develop 5f7143895 into PRD-564: both sides' template bytes ship, so all thirteen
+  // trees are measured through createProject on this combined worktree, not either side's value.
+  "action-rpg": "d3e0be1c948fe8f812fbc38fcb627544a13139030da446cea6cd988d672eedbe",
   minimal: "7a3ae9ed643f9a72cd46d50aa43620f54a766eb3df10a8489f131520c2695706",
   platformer: "04551c97362f641f94f03bd81549044a0df2b47b032c60842d2d69c14d120d14",
   puzzle: "58220a6d882f4b08db9dad2dd2e0a42fb035da41ac2ed7679dba66b96661dd52",
