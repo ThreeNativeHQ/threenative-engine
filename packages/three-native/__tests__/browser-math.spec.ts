@@ -275,7 +275,7 @@ describe("three's math values on the browser back end", () => {
     expect(calls.at(-1)).toBe("set x");
   });
 
-  it("asks the engine about an eighth of the held wrappers per safe point, and all of them in eight", () => {
+  it("asks every fresh wrapper immediately, then covers settled wrappers within 64 bounded safe points", () => {
     const { runtime } = memoryRuntime();
     const asked: string[][] = [];
     const engine = defineBrowserClasses(registry, {
@@ -290,14 +290,17 @@ describe("three's math values on the browser back end", () => {
     const scene = new Group();
     const children = Array.from({ length: 80 }, () => new Group());
     for (const child of children) scene.add(child);
-    const dropped = asked.length === 0 ? "Group:40" : ""; // the 41st child: the engine let it go
-    for (let i = 0; i < 8; i++) engine.collect();
-    expect(asked.map((keys) => keys.length)).toEqual([10, 10, 10, 10, 10, 10, 10, 10]);
-    expect(new Set(asked.flat()).size).toBe(80);
-    // The dropped wrapper left the held set; the next pass asks about 79.
-    for (let i = 0; i < 8; i++) engine.collect();
-    expect(asked.slice(8).flat()).toHaveLength(79);
-    expect(asked.slice(8).flat()).not.toContain(dropped);
+    const keys = children.map((child) => engineRef(child)?.key as string);
+    const dropped = keys[40]; // The engine no longer references this child.
+    engine.collect();
+    expect(asked).toEqual([keys]);
+    asked.length = 0;
+    for (let i = 0; i < 64; i++) engine.collect();
+    expect(asked).toHaveLength(64);
+    expect(Math.min(...asked.map((batch) => batch.length))).toBeGreaterThan(0);
+    expect(Math.max(...asked.map((batch) => batch.length))).toBeLessThanOrEqual(Math.ceil(79 / 64));
+    expect(new Set(asked.flat())).toEqual(new Set(keys.filter((key) => key !== dropped)));
+    expect(asked.flat()).not.toContain(dropped);
   });
 
   it("keeps a fixed member as the object's own property, as three's Object3D has it", () => {
@@ -434,7 +437,7 @@ describe("three's math values on the browser back end", () => {
     expect(invoked).toEqual(["__tnProjectionReport"]);
   });
 
-  it("lets a removed object go within sixteen safe points (web cut 5's bounded pass)", () => {
+  it("lets removed settled objects go within 128 safe points (two bounded passes)", () => {
     const { runtime } = memoryRuntime();
     const released = new Set<string>();
     const asked = new Set<string>();
@@ -451,15 +454,16 @@ describe("three's math values on the browser back end", () => {
     const children = Array.from({ length: 80 }, () => new Group());
     for (const child of children) scene.add(child);
     engine.collect();
-    // The engine lets every child go; each must be asked again, and dropped, within sixteen safe points.
     const keys = children.map((child) => engineRef(child)?.key as string);
+    expect(asked).toEqual(new Set(keys));
+    // The engine lets every child go; each must be asked again and dropped within two passes.
     for (const key of keys) released.add(key);
     asked.clear();
-    for (let i = 0; i < 16; i++) engine.collect();
-    expect(keys.filter((key) => !asked.has(key))).toEqual([]);
+    for (let i = 0; i < 128; i++) engine.collect();
+    expect(asked).toEqual(new Set(keys));
     asked.clear();
-    for (let i = 0; i < 16; i++) engine.collect();
-    expect(keys.filter((key) => asked.has(key))).toEqual([]); // gone from the held set
+    for (let i = 0; i < 64; i++) engine.collect();
+    expect(asked.size).toBe(0); // Gone from the held set, including across the next full pass.
   });
 
   it("keeps a mesh's geometry and an attribute's shape until they are set", () => {
