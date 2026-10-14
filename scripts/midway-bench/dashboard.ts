@@ -25,6 +25,7 @@ const PLAYER_KEYS = [
   "presentCpuMs",
   "bridgeCalls",
   "cpuFrameKInstructions",
+  "cpuFrameKCycles",
 ] as const;
 
 export interface IScan<T> {

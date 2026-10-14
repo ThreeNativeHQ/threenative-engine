@@ -452,6 +452,23 @@ double threadInstructions() {
     return -1;
 }
 
+double threadCycles() {
+#if defined(__linux__)
+    thread_local const int counter = [] {
+        perf_event_attr attr{};
+        attr.type = PERF_TYPE_HARDWARE;
+        attr.size = sizeof(attr);
+        attr.config = PERF_COUNT_HW_CPU_CYCLES;
+        attr.exclude_kernel = 1;
+        attr.exclude_hv = 1;
+        return int(syscall(SYS_perf_event_open, &attr, 0, -1, -1, 0));
+    }();
+    uint64_t count = 0;
+    if (counter >= 0 && read(counter, &count, sizeof(count)) == ssize_t(sizeof(count))) return double(count);
+#endif
+    return -1;
+}
+
 json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double frameMs, uint64_t bridgeCalls,
                         uint64_t tick, uint64_t updates, double gameCpuMs, double cpuFrameCpuMs, double presentCpuMs,
                         double renderCpuMs) {
@@ -496,17 +513,19 @@ struct Session {
     bool metrics = std::getenv("TN_PLAYER_METRICS") != nullptr || gameSpan(-1, 0) == 1;
     bool spans = gameSpan(-1, 0) == 1;
     uint64_t measuredFrames = 0, previousCrossings = 0, updateTicks = 0;
-    double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0;
+    double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
     void update(double dt) {
         const auto begin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double cpuBegin = metrics ? threadCpuMs() : -1;
         const double instructionsBegin = metrics ? threadInstructions() : -1;
+        const double cyclesBegin = metrics ? threadCycles() : -1;
         if (spans) gameSpan(kHostUpdateSpan, 0);
         if (game.update) game.update(dt);
         if (spans) gameSpan(kHostUpdateSpan, 1);
         if (metrics) updateMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
         if (cpuBegin >= 0) updateCpuMs += threadCpuMs() - cpuBegin;
         if (instructionsBegin >= 0) updateInstructions += threadInstructions() - instructionsBegin;
+        if (cyclesBegin >= 0) updateCycles += threadCycles() - cyclesBegin;
         if (metrics) ++updateTicks;
     }
 #if defined(__ANDROID__)
@@ -653,8 +672,9 @@ int Session::initialize() {
         const auto frameBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double cpuFrameBegin = metrics ? threadCpuMs() : -1;
         const double instructionsFrameBegin = metrics ? threadInstructions() : -1;
+        const double cyclesFrameBegin = metrics ? threadCycles() : -1;
         if (spans) gameSpan(kHostFrameSpan, 0);
-        double presentMs = 0, presentCpuMs = 0, gameCpuMs = -1, presentInstructions = 0;
+        double presentMs = 0, presentCpuMs = 0, gameCpuMs = -1, presentInstructions = 0, presentCycles = 0;
         double presentCpuStart = -1, presentCpuEnd = -1;
         bool presentTimed = false;
         std::optional<json::Value> frameSpans;
@@ -753,8 +773,10 @@ int Session::initialize() {
                 // The swap call alone, on the clock the legacy host uses around wgpuSurfacePresent.
                 const double presentCpuBegin = metrics ? threadCpuMs() : -1;
                 const double presentInstructionsBegin = metrics ? threadInstructions() : -1;
+                const double presentCyclesBegin = metrics ? threadCycles() : -1;
                 presenter->present();
                 if (presentInstructionsBegin >= 0) presentInstructions = threadInstructions() - presentInstructionsBegin;
+                if (presentCyclesBegin >= 0) presentCycles = threadCycles() - presentCyclesBegin;
                 if (presentCpuBegin >= 0) { presentCpuEnd = threadCpuMs(); presentCpuMs = presentCpuEnd - presentCpuBegin; presentCpuStart = presentCpuBegin; presentTimed = true; }
 #if defined(__ANDROID__)
                 mystral::webgpu::paceToPresentationCap();
@@ -828,6 +850,12 @@ int Session::initialize() {
                     (updateInstructions + threadInstructions() - instructionsFrameBegin - presentInstructions) / 1e3)));
                 sample = json::Value::makeObject(std::move(members));
             }
+            if (cyclesFrameBegin >= 0) {
+                auto members = sample.members();
+                members.emplace_back("cpuFrameKCycles", json::Value::makeNumber(std::round(
+                    (updateCycles + threadCycles() - cyclesFrameBegin - presentCycles) / 1e3)));
+                sample = json::Value::makeObject(std::move(members));
+            }
             if (gpuThread && gpuThreadCpuMs >= 0) {
                 // The previous frame's submit, acquire, blit and present, now off the game thread.
                 auto members = sample.members();
@@ -846,6 +874,7 @@ int Session::initialize() {
             updateMs = 0;
             updateCpuMs = 0;
             updateInstructions = 0;
+            updateCycles = 0;
             updateTicks = 0;
         }
     };
@@ -916,6 +945,7 @@ Session::~Session() {
     renderer.reset();
     presenter.reset();
     context.reset();
+    if (gpuThread) gpuThread->wait();  // an overlay upload reads the UI frame that detaching frees
     if (game.uiDetach) game.uiDetach();
     if (window.handle)
         SDL_DestroyWindow(window.handle);

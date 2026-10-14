@@ -85,6 +85,13 @@ describe("log reducers", () => {
     expect(frames?.frameP95).toBe(40);
   });
 
+  it("takes the median of main-thread CPU cycles from player frames", () => {
+    const log = [300, 100, 200]
+      .map((cpuFrameKCycles) => `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameKCycles })}`)
+      .join("\n");
+    expect(playerFrames(log).frames?.medians.cpuFrameKCycles).toBe(200);
+  });
+
   it("reports no samples, not zero, for an empty log", () => {
     expect(playerFrames("nothing here").frames).toBeUndefined();
     expect(frameBudget("").budget).toBeUndefined();
