@@ -11,13 +11,19 @@
 # Env: MIDWAY_PLAYER_DIR   desktop arm only: the packaged engine player directory
 #      MIDWAY_LEGACY_DIR, MIDWAY_NATIVE_DIR  game copies (same game commit; engine "legacy" and "native")
 #      MIDWAY_RUNS         where runs are written (default ${XDG_CACHE_HOME:-~/.cache}/midway-runs)
-#      MIDWAY_PARITY_REFS  two or more legacy run dirs, required for a native run
+#      MIDWAY_PARITY_REFS  visual-only legacy run dirs, required for a native run
+#      MIDWAY_BROWSER_CLOCK  wall-clock (default timing) or fixed-step (visual references)
 #      MIDWAY_SCENARIO     scenario file (default: flight-bench.playtest.json beside this script)
 #      TN_HEAVY_LOCK       flock file serializing GPU-heavy work, when other lanes share the machine
 #      TN_VK_ICD, TN_VK_LIB  Vulkan ICD json and library dir, for a per-process GPU driver override
 set -u
 ARM=${1:?usage: flight.sh <legacy|native|desktop> <tag>}
 TAG=${2:?usage: flight.sh <legacy|native> <tag>}
+case ${MIDWAY_BROWSER_CLOCK:-wall-clock} in
+  wall-clock) BROWSER_CLOCK_ARG=--live-clock ;;
+  fixed-step) BROWSER_CLOCK_ARG= ;;
+  *) echo "MIDWAY_BROWSER_CLOCK must be wall-clock or fixed-step" >&2; exit 2 ;;
+esac
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 case $ARM in
@@ -57,7 +63,7 @@ else
 $LOCK env $NO_DISPLAY $GPU_ENV ${TN_VK_LIB:+LD_LIBRARY_PATH=$TN_VK_LIB} \
   node_modules/.bin/threenative-playtest --scenario "$SCENARIO" \
   --browser-recipe webgpu --timeout 180000 --headed --artifacts "$OUT" \
-  --live-clock \
+  $BROWSER_CLOCK_ARG \
   --server-command 'pnpm dev --host 127.0.0.1 --port $PORT --strictPort' > "$OUT/run.log" 2>&1
 fi
 STATUS=$?

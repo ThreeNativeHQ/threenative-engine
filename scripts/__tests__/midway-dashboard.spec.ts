@@ -1411,61 +1411,71 @@ describe("PRD-610 browser acquisition", () => {
 });
 
 describe("measurement defect regressions", () => {
-  it("passes browser flags to one invocation of the actual flight script", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "midway-flight-"));
-    try {
-      const bin = path.join(root, "node_modules/.bin");
-      await mkdir(bin, { recursive: true });
-      const runner = path.join(bin, "threenative-playtest");
-      const pnpm = path.join(bin, "pnpm");
-      await writeFile(
-        runner,
-        '#!/bin/sh\nprintf "invocation\\n" >> "$ARGV_LOG"\nprintf "%s\\n" "$@" >> "$ARGV_LOG"\npnpm --version\n',
-      );
-      await writeFile(pnpm, "#!/bin/sh\nexit 0\n");
-      await chmod(runner, 0o755);
-      await chmod(pnpm, 0o755);
-      const argvLog = path.join(root, "argv.log");
-      const result = spawnSync(
-        "sh",
-        [path.resolve("scripts/midway-bench/flight.sh"), "legacy", "smoke"],
-        {
-          encoding: "utf8",
-          timeout: 10000,
-          env: {
-            ...process.env,
-            PATH: `${bin}:${process.env.PATH}`,
-            MIDWAY_LEGACY_DIR: root,
-            MIDWAY_RUNS: path.join(root, "runs"),
-            MIDWAY_SCENARIO: path.resolve("scripts/midway-bench/flight-bench.playtest.json"),
-            ARGV_LOG: argvLog,
-            TN_HEAVY_LOCK: "",
-            TN_VK_ICD: "",
-            TN_VK_LIB: "",
+  it.each(["", "wall-clock", "fixed-step", "unknown"])(
+    "passes browser clock %j to one invocation of the actual flight script",
+    async (browserClock) => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "midway-flight-"));
+      try {
+        const bin = path.join(root, "node_modules/.bin");
+        await mkdir(bin, { recursive: true });
+        const runner = path.join(bin, "threenative-playtest");
+        const pnpm = path.join(bin, "pnpm");
+        await writeFile(
+          runner,
+          '#!/bin/sh\nprintf "invocation\\n" >> "$ARGV_LOG"\nprintf "%s\\n" "$@" >> "$ARGV_LOG"\npnpm --version\n',
+        );
+        await writeFile(pnpm, "#!/bin/sh\nexit 0\n");
+        await chmod(runner, 0o755);
+        await chmod(pnpm, 0o755);
+        const argvLog = path.join(root, "argv.log");
+        const result = spawnSync(
+          "sh",
+          [path.resolve("scripts/midway-bench/flight.sh"), "legacy", "smoke"],
+          {
+            encoding: "utf8",
+            timeout: 10000,
+            env: {
+              ...process.env,
+              PATH: `${bin}:${process.env.PATH}`,
+              MIDWAY_BROWSER_CLOCK: browserClock,
+              MIDWAY_LEGACY_DIR: root,
+              MIDWAY_RUNS: path.join(root, "runs"),
+              MIDWAY_SCENARIO: path.resolve("scripts/midway-bench/flight-bench.playtest.json"),
+              ARGV_LOG: argvLog,
+              TN_HEAVY_LOCK: "",
+              TN_VK_ICD: "",
+              TN_VK_LIB: "",
+            },
           },
-        },
-      );
-      expect(result.status, result.stdout + result.stderr).toBe(0);
-      const argv = (await readFile(argvLog, "utf8")).trimEnd().split("\n");
-      expect(argv).toEqual([
-        "invocation",
-        "--scenario",
-        path.resolve("scripts/midway-bench/flight-bench.playtest.json"),
-        "--browser-recipe",
-        "webgpu",
-        "--timeout",
-        "180000",
-        "--headed",
-        "--artifacts",
-        path.join(root, "runs/smoke-legacy"),
-        "--live-clock",
-        "--server-command",
-        "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
-      ]);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+        );
+        if (browserClock === "unknown") {
+          expect(result.status).toBe(2);
+          expect(result.stderr).toContain("MIDWAY_BROWSER_CLOCK");
+          await expect(readFile(argvLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+          return;
+        }
+        expect(result.status, result.stdout + result.stderr).toBe(0);
+        const argv = (await readFile(argvLog, "utf8")).trimEnd().split("\n");
+        expect(argv).toEqual([
+          "invocation",
+          "--scenario",
+          path.resolve("scripts/midway-bench/flight-bench.playtest.json"),
+          "--browser-recipe",
+          "webgpu",
+          "--timeout",
+          "180000",
+          "--headed",
+          "--artifacts",
+          path.join(root, "runs/smoke-legacy"),
+          ...(browserClock === "fixed-step" ? [] : ["--live-clock"]),
+          "--server-command",
+          "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
+        ]);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("takes acquisition from the terminal report despite an earlier unrelated clock", () => {
     const log = `message: {"clock":"wall-clock"}\n${budget(11.3)}${report("fixed-step")}`;
