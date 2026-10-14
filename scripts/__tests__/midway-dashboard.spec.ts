@@ -548,9 +548,12 @@ describe("groups and loading", () => {
       });
     renderState(state);
     expect(html).toContain("Best measured experimental · not accepted");
-    expect(html).toContain("Now: AC-4 + AC-5 in parallel · cull share ≤2% + HUD");
+    expect(html).toContain("Now: AC-11 + AC-12 · math bridge + animation");
+    expect(elements.get("focus")?.textContent).toContain("AC-4/5 last trials rejected");
+    expect(elements.get("focus")?.textContent).toContain("AC-7 parity unqualified");
+    expect(elements.get("focus")?.textContent).toContain("AC-9/10/13 queued");
     expect(elements.get("focus")?.textContent).toContain(
-      "AC-3 background stretch · non-blocking · measured 3,468",
+      "AC-3 background stretch · non-blocking · measured ~3k",
     );
     expect(elements.get("focus")?.textContent).toContain("1,500 is a deferred stretch target");
     expect(elements.get("kpis")?.innerHTML).toContain(">DEFERRED</span>");
