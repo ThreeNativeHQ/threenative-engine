@@ -740,6 +740,9 @@ int Session::initialize() {
             } else if (presenter->begin(target)) {
                 // The window carries the very frame the render database just built.
                 renderer->blitTo(context->getQueue(), target.color, format);
+                // blitTo's submit is posted to the GPU thread: it must reach the queue before the surface
+                // texture is presented (and destroyed), or Dawn rejects a submit of a destroyed texture.
+                if (gpuThread) gpuThread->wait();
                 // The swap call alone, on the clock the legacy host uses around wgpuSurfacePresent.
                 const double presentCpuBegin = metrics ? threadCpuMs() : -1;
                 const double presentInstructionsBegin = metrics ? threadInstructions() : -1;
