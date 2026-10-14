@@ -83,6 +83,10 @@ export interface IAnimationRateState {
   source: RenderCameraCull | undefined;
   evaluated: boolean;
   evaluation: number;
+  poseRate: number;
+  poseTicks: number;
+  forcePose: boolean;
+  animatedTransforms: WeakSet<Object3D>;
 }
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
 
@@ -403,6 +407,7 @@ export class RenderCameraCull {
     object: Object3D,
     sphere: IBoundingSphereLike | typeof DYNAMIC_BOUNDS | undefined,
     notRendered = false,
+    interpolated = false,
   ): void {
     for (let root: Object3D | null = object; root !== null; root = root.parent) {
       const state = animationRateStates.get(root);
@@ -441,6 +446,12 @@ export class RenderCameraCull {
             : 8;
         }
       }
+      if (
+        !notRendered &&
+        ((!interpolated && Reflect.get(object, "isSkinnedMesh") === true) ||
+          object.userData["threenative.exactSkinPose"] === true)
+      )
+        rate = 1;
       if (state.source === this && state.frame === this.#animationFrame)
         state.rate = Math.min(state.rate, rate);
       else state.rate = rate;
@@ -462,6 +473,7 @@ export class RenderCameraCull {
         source,
         visible ? boundsOf(source, this.#positionVersions, this.#animationFrame) : undefined,
         !visible,
+        object.userData["threenative.interpolatedSkin"] === true,
       );
     }
   }

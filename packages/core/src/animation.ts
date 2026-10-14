@@ -7,6 +7,7 @@ import {
   LoopOnce,
   LoopRepeat,
   type Object3D,
+  PropertyBinding,
   Vector3,
   type VectorKeyframeTrack,
 } from "three";
@@ -333,6 +334,10 @@ export class AnimationPlayer {
     source: undefined,
     evaluated: true,
     evaluation: 0,
+    poseRate: 1,
+    poseTicks: 0,
+    forcePose: true,
+    animatedTransforms: new WeakSet<Object3D>(),
   };
   readonly #staggerOffset = nextAnimationOffset++;
   #updateRate: "auto" | number = "auto";
@@ -406,6 +411,17 @@ export class AnimationPlayer {
       this.#observeTimeScaleInterpolation(action);
       this.#actions.set(clip.name, action);
       this.#clips.set(clip.name, clip);
+      for (const track of clip.tracks) {
+        const parsed = PropertyBinding.parseTrackName(track.name);
+        if (
+          parsed.objectName !== undefined ||
+          !["position", "rotation", "quaternion", "scale"].includes(parsed.propertyName)
+        )
+          continue;
+        const target = PropertyBinding.findNode(this.root, parsed.nodeName) as Object3D | null;
+        if (target !== null && Reflect.get(target, "isBone") !== true)
+          this.#rateState.animatedTransforms.add(target);
+      }
     }
     for (const name of requiredClipNames(options.requiredClips)) {
       const clip = this.#clips.get(name);
@@ -942,6 +958,9 @@ export class AnimationPlayer {
       (this.#updateFrame + this.#staggerOffset) % rate === 0 ||
       this.#skippedFrames >= rate;
     if (this.#evaluated) this.#evaluate(dt);
+    this.#rateState.poseRate = rate;
+    this.#rateState.poseTicks = this.#skippedFrames;
+    this.#rateState.forcePose = force || rate === 1;
     // Measure the body's movement on every tick, including skipped pose evaluations.
     this.#syncStride(dt);
   }
@@ -1035,6 +1054,8 @@ export class AnimationPlayer {
     this.#advanceBlend(dt);
     this.#rateState.evaluation += 1;
     this.#rateState.evaluated = true;
+    this.#rateState.poseTicks = 0;
+    this.#rateState.forcePose = true;
   }
 
   stop(): void {
@@ -1044,6 +1065,7 @@ export class AnimationPlayer {
     this.#evaluated = false;
     this.mixer.stopAllAction();
     this.#rateState.evaluation += 1;
+    this.#rateState.forcePose = true;
     this.#current = undefined;
     this.#mode = "loop";
     this.#finished = false;

@@ -9,7 +9,9 @@ import {
 } from "three";
 import {
   Fn,
+  If,
   attribute,
+  float,
   instanceIndex,
   normalGeometry,
   normalLocal,
@@ -42,6 +44,10 @@ const ANIMATION_RATE_STATE_KEY = "threenative.animationRateState";
 interface IAnimationRateStateLike {
   readonly evaluated: boolean;
   readonly evaluation: number;
+  readonly poseRate: number;
+  readonly poseTicks: number;
+  readonly forcePose: boolean;
+  readonly animatedTransforms: WeakSet<Object3D>;
 }
 
 /**
@@ -220,6 +226,22 @@ export class SkinnedBatch {
   readonly #updated = new WeakMap<Skeleton, number>();
   readonly #writtenEvaluations = new WeakMap<Object3D, number>();
   readonly #writtenWorldMatrices = new WeakMap<Object3D, Matrix4>();
+  readonly #from: Float32Array;
+  readonly #delta: Float32Array;
+  readonly #alpha: Float32Array;
+  readonly #fromAttribute: StorageBufferAttribute;
+  readonly #deltaAttribute: StorageBufferAttribute;
+  readonly #alphaAttribute: StorageBufferAttribute;
+  readonly #previousFrom: Float32Array | undefined;
+  readonly #previousDelta: Float32Array | undefined;
+  readonly #previousAlpha: Float32Array | undefined;
+  readonly #previousFromAttribute: StorageBufferAttribute | undefined;
+  readonly #previousDeltaAttribute: StorageBufferAttribute | undefined;
+  readonly #previousAlphaAttribute: StorageBufferAttribute | undefined;
+  readonly #fromRoots = new WeakMap<Object3D, Matrix4>();
+  readonly #writtenRootMatrices = new WeakMap<Object3D, Matrix4>();
+  readonly #deltaScratch = new Float64Array(16);
+  readonly #rootScratch = new Matrix4();
   #frame = 0;
   #dirty = false;
   #sourceVersion: number;
@@ -235,9 +257,21 @@ export class SkinnedBatch {
     const floats = capacity * this.bones * 16;
     this.#current = new Float32Array(floats);
     this.#currentAttribute = new StorageBufferAttribute(this.#current, 16);
+    this.#from = new Float32Array(floats);
+    this.#delta = new Float32Array(capacity * 16);
+    this.#alpha = new Float32Array(capacity * 4);
+    this.#fromAttribute = new StorageBufferAttribute(this.#from, 16);
+    this.#deltaAttribute = new StorageBufferAttribute(this.#delta, 16);
+    this.#alphaAttribute = new StorageBufferAttribute(this.#alpha, 4);
     if (velocity) {
       this.#previous = new Float32Array(floats);
       this.#previousAttribute = new StorageBufferAttribute(this.#previous, 16);
+      this.#previousFrom = new Float32Array(floats);
+      this.#previousDelta = new Float32Array(capacity * 16);
+      this.#previousAlpha = new Float32Array(capacity * 4);
+      this.#previousFromAttribute = new StorageBufferAttribute(this.#previousFrom, 16);
+      this.#previousDeltaAttribute = new StorageBufferAttribute(this.#previousDelta, 16);
+      this.#previousAlphaAttribute = new StorageBufferAttribute(this.#previousAlpha, 4);
     }
 
     // The game's vertex buffers by reference, never copied: the draw uploads nothing the source
@@ -269,15 +303,59 @@ export class SkinnedBatch {
         .add(palette.element(base.add(boneIndex.y)).mul(weight.y))
         .add(palette.element(base.add(boneIndex.z)).mul(weight.z))
         .add(palette.element(base.add(boneIndex.w)).mul(weight.w));
+    const from = storage(this.#fromAttribute, "mat4", count).toReadOnly();
+    const delta = storage(this.#deltaAttribute, "mat4", capacity).toReadOnly();
+    const alpha = storage(this.#alphaAttribute, "vec4", capacity).toReadOnly();
+    const previousFrom =
+      this.#previousFromAttribute === undefined
+        ? undefined
+        : storage(this.#previousFromAttribute, "mat4", count).toReadOnly();
+    const previousDelta =
+      this.#previousDeltaAttribute === undefined
+        ? undefined
+        : storage(this.#previousDeltaAttribute, "mat4", capacity).toReadOnly();
+    const previousAlpha =
+      this.#previousAlphaAttribute === undefined
+        ? undefined
+        : storage(this.#previousAlphaAttribute, "vec4", capacity).toReadOnly();
+    const displayed = (
+      target: typeof current,
+      start: typeof current,
+      root: typeof delta,
+      factors: typeof alpha,
+    ) => {
+      const matrix = blend(target).toVar();
+      const amount = factors.element(instanceIndex).x;
+      // Preserve the exact ordinary skinning path at rate1; no floating-point mix at alpha1.
+      If(amount.lessThan(1), () => {
+        matrix.assign(
+          root
+            .element(instanceIndex)
+            .mul(blend(start))
+            .mul(float(1).sub(amount))
+            .add(matrix.mul(amount)),
+        );
+      });
+      return matrix;
+    };
     const hasTangent = source.getAttribute("tangent") !== undefined;
     const material = new NodeClass();
     this.#syncMaterial(material);
     material.positionNode = Fn(() => {
-      const matrix = blend(current);
+      const matrix = displayed(current, from, delta, alpha);
       normalLocal.assign(matrix.mul(vec4(normalGeometry, 0)).xyz);
       if (hasTangent) tangentLocal.assign(matrix.mul(vec4(tangentGeometry.xyz, 0)).xyz);
-      if (previous !== undefined)
-        positionPrevious.assign(blend(previous).mul(vec4(positionGeometry, 1)).xyz);
+      if (
+        previous !== undefined &&
+        previousFrom !== undefined &&
+        previousDelta !== undefined &&
+        previousAlpha !== undefined
+      )
+        positionPrevious.assign(
+          displayed(previous, previousFrom, previousDelta, previousAlpha).mul(
+            vec4(positionGeometry, 1),
+          ).xyz,
+        );
       return matrix.mul(vec4(positionGeometry, 1)).xyz;
     })();
     material.needsUpdate = true;
@@ -285,6 +363,7 @@ export class SkinnedBatch {
     this.mesh = new Mesh(geometry, material);
     this.mesh.matrixAutoUpdate = false;
     this.mesh.userData[ANIMATION_RATE_SOURCES_KEY] = this.instances;
+    this.mesh.userData["threenative.interpolatedSkin"] = true;
     // The palette spans every rig; only the per-rig sources have meaningful bounds.
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = first.castShadow;
@@ -293,8 +372,8 @@ export class SkinnedBatch {
   }
 
   /**
-   * Starts one reconcile: the frame's history becomes last frame's pose. Called once per frame
-   * before any rig writes, so every pass of the frame reads the same pair.
+   * Starts one reconcile by saving the previous target palette. Each write snapshots the other
+   * displayed-pose inputs before changing them, so every pass reads the same complete history.
    */
   begin(): void {
     this.#frame += 1;
@@ -341,6 +420,8 @@ export class SkinnedBatch {
     this.#slotRigs.delete(slot);
     this.#writtenEvaluations.delete(rig);
     this.#writtenWorldMatrices.delete(rig);
+    this.#fromRoots.delete(rig);
+    this.#writtenRootMatrices.delete(rig);
     this.hide(slot);
     this.free.push(slot);
   }
@@ -367,6 +448,10 @@ export class SkinnedBatch {
     const stride = this.bones * 16;
     this.#current.fill(0, slot * stride, (slot + 1) * stride);
     this.#previous?.fill(0, slot * stride, (slot + 1) * stride);
+    this.#from.fill(0, slot * stride, (slot + 1) * stride);
+    this.#previousFrom?.fill(0, slot * stride, (slot + 1) * stride);
+    this.#alpha[slot * 4] = 1;
+    if (this.#previousAlpha !== undefined) this.#previousAlpha[slot * 4] = 1;
     this.#dirty = true;
   }
 
@@ -375,6 +460,8 @@ export class SkinnedBatch {
     if (rig === undefined) return;
     this.#writtenEvaluations.delete(rig);
     this.#writtenWorldMatrices.delete(rig);
+    this.#fromRoots.delete(rig);
+    this.#writtenRootMatrices.delete(rig);
   }
 
   /**
@@ -386,10 +473,77 @@ export class SkinnedBatch {
     beginSpan(SPANS.skinnedWrite);
     try {
       const state = animationRateStateOf(rig);
+      // CPU attachments and independent armatures cannot share a GPU-only delayed pose.
+      let poseRoot: Object3D | undefined;
+      let exact = rig.bindMode !== "attached";
+      for (const bone of rig.skeleton.bones) {
+        if (Reflect.get(bone.parent ?? {}, "isBone") !== true) {
+          if (poseRoot !== undefined && poseRoot !== bone.parent) exact = true;
+          if (bone.parent === null) exact = true;
+          else poseRoot = bone.parent;
+        }
+        for (const child of bone.children) {
+          if (Reflect.get(child, "isBone") !== true) exact = true;
+        }
+      }
+      // A palette may omit an ancestor Bone; an unproven root basis stays exact.
+      if (poseRoot === undefined) exact = true;
+      let observed: IAnimationRateStateLike | undefined;
+      for (let owner: Object3D | null = rig; owner !== null && !exact; owner = owner.parent) {
+        const candidate = owner.userData[ANIMATION_RATE_STATE_KEY];
+        if (candidate === undefined || candidate === observed) continue;
+        const ownerState = animationRateStateOf(owner);
+        if (ownerState === undefined) continue;
+        observed = ownerState;
+        for (let node: Object3D | null = poseRoot ?? rig; node !== null; node = node.parent) {
+          if (ownerState.animatedTransforms.has(node)) {
+            exact = true;
+            break;
+          }
+        }
+      }
+      const rootWorld = (poseRoot ?? rig).matrixWorld;
+      rig.userData["threenative.exactSkinPose"] = exact;
+      const exactPose = state?.forcePose === true || exact;
+      const writtenRoot = this.#writtenRootMatrices.get(rig);
       const writtenWorld = this.#writtenWorldMatrices.get(rig);
+      const offset = slot * this.bones * 16;
+      const end = offset + this.bones * 16;
+      this.#previousFrom?.set(this.#from.subarray(offset, end), offset);
+      this.#previousDelta?.set(this.#delta.subarray(slot * 16, slot * 16 + 16), slot * 16);
+      if (this.#previousAlpha !== undefined)
+        this.#previousAlpha[slot * 4] = this.#alpha[slot * 4] as number;
+      const newPose = state !== undefined && this.#writtenEvaluations.get(rig) !== state.evaluation;
+      if (exactPose) this.#fromRoots.delete(rig);
+      if (newPose && writtenRoot !== undefined && !exactPose && state.poseRate > 1) {
+        const amount = this.#alpha[slot * 4] as number;
+        if (amount < 1) {
+          for (let bone = 0; bone < this.bones; bone += 1) {
+            const at = offset + bone * 16;
+            multiply(this.#delta, slot * 16, this.#from, at, this.#deltaScratch, 0);
+            for (let index = 0; index < 16; index += 1)
+              this.#from[at + index] =
+                (this.#deltaScratch[index] as number) * (1 - amount) +
+                (this.#current[at + index] as number) * amount;
+          }
+        } else this.#from.set(this.#current.subarray(offset, end), offset);
+        const fromRoot = this.#fromRoots.get(rig) ?? new Matrix4();
+        fromRoot.copy(writtenRoot).invert();
+        this.#fromRoots.set(rig, fromRoot);
+      }
+      const fromRoot = this.#fromRoots.get(rig);
+      this.#alpha[slot * 4] =
+        state === undefined || exactPose || fromRoot === undefined
+          ? 1
+          : Math.min(1, (state.poseTicks + 1) / state.poseRate);
+      if (fromRoot !== undefined)
+        this.#rootScratch.multiplyMatrices(rootWorld, fromRoot).toArray(this.#delta, slot * 16);
+      this.#dirty = true;
       if (
         state !== undefined &&
         !state.evaluated &&
+        !exact &&
+        writtenRoot?.equals(rootWorld) &&
         this.#writtenEvaluations.get(rig) === state.evaluation &&
         writtenWorld?.equals(rig.matrixWorld)
       )
@@ -407,7 +561,6 @@ export class SkinnedBatch {
       if (detached)
         multiply(rig.matrixWorld.elements, 0, rig.bindMatrixInverse.elements, 0, prefix, 0);
       const out = this.#current;
-      const offset = slot * this.bones * 16;
       // The common case is one contiguous copy: `skeleton.update` has already written this rig's
       // bone matrices in palette order, and an identity bind matrix leaves them unchanged.
       if (bindIsIdentity) out.set(bones, offset);
@@ -429,6 +582,9 @@ export class SkinnedBatch {
         const nextWorld = writtenWorld ?? new Matrix4();
         nextWorld.copy(rig.matrixWorld);
         this.#writtenWorldMatrices.set(rig, nextWorld);
+        const nextRoot = writtenRoot ?? new Matrix4();
+        nextRoot.copy(rootWorld);
+        this.#writtenRootMatrices.set(rig, nextRoot);
       }
     } finally {
       endSpan(SPANS.skinnedWrite);
@@ -445,11 +601,31 @@ export class SkinnedBatch {
           slot * stride,
         );
     }
+    if (
+      this.#previousFrom !== undefined &&
+      this.#previousDelta !== undefined &&
+      this.#previousAlpha !== undefined
+    ) {
+      for (const slot of this.#fresh) {
+        this.#previousFrom.set(
+          this.#from.subarray(slot * stride, (slot + 1) * stride),
+          slot * stride,
+        );
+        this.#previousDelta.set(this.#delta.subarray(slot * 16, slot * 16 + 16), slot * 16);
+        this.#previousAlpha[slot * 4] = this.#alpha[slot * 4] as number;
+      }
+    }
     this.#fresh.length = 0;
     this.mesh.geometry.instanceCount = this.used;
     if (!this.#dirty) return;
     this.#dirty = false;
     this.#currentAttribute.needsUpdate = true;
+    this.#fromAttribute.needsUpdate = true;
+    this.#deltaAttribute.needsUpdate = true;
+    this.#alphaAttribute.needsUpdate = true;
+    if (this.#previousFromAttribute !== undefined) this.#previousFromAttribute.needsUpdate = true;
+    if (this.#previousDeltaAttribute !== undefined) this.#previousDeltaAttribute.needsUpdate = true;
+    if (this.#previousAlphaAttribute !== undefined) this.#previousAlphaAttribute.needsUpdate = true;
     if (this.#previousAttribute !== undefined) this.#previousAttribute.needsUpdate = true;
   }
 
@@ -461,6 +637,12 @@ export class SkinnedBatch {
     this.mesh.removeFromParent();
     this.#currentAttribute.dispose();
     this.#previousAttribute?.dispose();
+    this.#fromAttribute.dispose();
+    this.#deltaAttribute.dispose();
+    this.#alphaAttribute.dispose();
+    this.#previousFromAttribute?.dispose();
+    this.#previousDeltaAttribute?.dispose();
+    this.#previousAlphaAttribute?.dispose();
     this.mesh.material.dispose();
     this.instances.clear();
     this.#slotRigs.clear();
@@ -474,7 +656,13 @@ function animationRateStateOf(object: Object3D): IAnimationRateStateLike | undef
       typeof value === "object" &&
       value !== null &&
       typeof (value as IAnimationRateStateLike).evaluated === "boolean" &&
-      typeof (value as IAnimationRateStateLike).evaluation === "number"
+      typeof (value as IAnimationRateStateLike).evaluation === "number" &&
+      Number.isSafeInteger((value as IAnimationRateStateLike).poseRate) &&
+      (value as IAnimationRateStateLike).poseRate >= 1 &&
+      Number.isSafeInteger((value as IAnimationRateStateLike).poseTicks) &&
+      (value as IAnimationRateStateLike).poseTicks >= 0 &&
+      typeof (value as IAnimationRateStateLike).forcePose === "boolean" &&
+      (value as IAnimationRateStateLike).animatedTransforms instanceof WeakSet
     )
       return value as IAnimationRateStateLike;
   }
