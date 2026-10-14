@@ -131,6 +131,105 @@ int main(int argc, char** argv) {
           }}).end();
           device.queue.submit([e.finish()]);
         }
+        // Resolve averages cannot prove that individual colour/depth samples survived a load.
+        const sampleColour = makeTarget({usage: 20});
+        const sampleDepth = makeTarget({format: 'depth32float', usage: 20});
+        const sampleOutput = device.createTexture({size: [2, 4], format: 'rgba8unorm', usage: 17});
+        const cv = sampleColour.createView(), sdv = sampleDepth.createView();
+        const vertex = `
+          @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+            var p = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3));
+            return vec4f(p[i], 0, 1);
+          }
+          struct Output { @location(0) colour: vec4f, @builtin(frag_depth) depth: f32 }
+        `;
+        const drawPipeline = (fragment, compare) => {
+          const module = device.createShaderModule({code: vertex + fragment});
+          return device.createRenderPipeline({
+            layout: device.createPipelineLayout({bindGroupLayouts: []}),
+            vertex: {module, entryPoint: 'vs'},
+            fragment: {module, entryPoint: 'fs', targets: [{format: 'rgba8unorm'}]},
+            primitive: {topology: 'triangle-list'}, multisample: {count: 4},
+            depthStencil: {format: 'depth32float', depthWriteEnabled: true, depthCompare: compare},
+          });
+        };
+        const initial = drawPipeline(`
+          @fragment fn fs(@builtin(sample_index) s: u32) -> Output {
+            let v = f32(s + 1u) * 0.2;
+            return Output(vec4f(v, 0, 1 - v, 1), v);
+          }`, 'always');
+        const later = drawPipeline(`
+          @fragment fn fs() -> Output { return Output(vec4f(1, 0, 0, 1), 0.5); }
+        `, 'less');
+        const nextFrame = drawPipeline(`
+          @fragment fn fs() -> Output { return Output(vec4f(0, 0, 1, 1), 0.3); }
+        `, 'less');
+        const sampleLayout = device.createBindGroupLayout({entries: [
+          {binding: 0, visibility: 2, texture: {sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: true}},
+          {binding: 1, visibility: 2, texture: {sampleType: 'depth', viewDimension: '2d', multisampled: true}},
+        ]});
+        const sampleGroup = device.createBindGroup({layout: sampleLayout, entries: [
+          {binding: 0, resource: cv}, {binding: 1, resource: sdv},
+        ]});
+        const readModule = device.createShaderModule({code: vertex + `
+          @group(0) @binding(0) var colour: texture_multisampled_2d<f32>;
+          @group(0) @binding(1) var depth: texture_depth_multisampled_2d;
+          @fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
+            let s = i32(p.y);
+            if (p.x < 1) { return textureLoad(colour, vec2i(0, 0), s); }
+            let d = textureLoad(depth, vec2i(0, 0), s);
+            return vec4f(d, d, d, 1);
+          }
+        `});
+        const readPipeline = device.createRenderPipeline({
+          layout: device.createPipelineLayout({bindGroupLayouts: [sampleLayout]}),
+          vertex: {module: readModule, entryPoint: 'vs'},
+          fragment: {module: readModule, entryPoint: 'fs', targets: [{format: 'rgba8unorm'}]},
+          primitive: {topology: 'triangle-list'},
+        });
+        const drawSamples = (pipeline, loadOp) => {
+          const encoder = device.createCommandEncoder();
+          const pass = encoder.beginRenderPass({
+            colorAttachments: [{view: cv, loadOp, storeOp: 'store', clearValue: [0, 0, 0, 1]}],
+            depthStencilAttachment: {view: sdv, depthLoadOp: loadOp, depthStoreOp: 'store', depthClearValue: 1},
+          });
+          pass.setPipeline(pipeline); pass.draw(3); pass.end();
+          device.queue.submit([encoder.finish()]);
+        };
+        const readSamples = async (stage, colours, depths) => {
+          const read = device.createBuffer({size: 1024, usage: 9});
+          const encoder = device.createCommandEncoder();
+          const pass = encoder.beginRenderPass({colorAttachments: [{
+            view: sampleOutput.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0],
+          }]});
+          pass.setPipeline(readPipeline); pass.setBindGroup(0, sampleGroup); pass.draw(3); pass.end();
+          encoder.copyTextureToBuffer({texture: sampleOutput, mipLevel: 0},
+            {buffer: read, offset: 0, bytesPerRow: 256, rowsPerImage: 4}, [2, 4, 1]);
+          device.queue.submit([encoder.finish()]);
+          await read.mapAsync(1);
+          const data = new Uint8Array(read.getMappedRange());
+          const samples = [];
+          for (let s = 0; s < 4; s++) {
+            const colour = Array.from(data.subarray(s * 256, s * 256 + 4));
+            const depth = Array.from(data.subarray(s * 256 + 4, s * 256 + 8));
+            samples.push({colour, depth: depth[0]});
+            check(colour.every((v, c) => Math.abs(v - colours[s][c] * 255) <= 1),
+              stage + ' sample ' + s + ' colour lost: ' + colour + ' expected ' + colours[s]);
+            check(depth.every((v, c) => Math.abs(v - (c === 3 ? 1 : depths[s]) * 255) <= 1),
+              stage + ' sample ' + s + ' depth lost: ' + depth + ' expected ' + depths[s]);
+          }
+          console.log('TN_PERSISTENT_SAMPLES:' + JSON.stringify({stage, samples}));
+          read.unmap(); read.destroy();
+        };
+        drawSamples(initial, 'clear');
+        await readSamples('initial', [[.2,0,.8,1], [.4,0,.6,1], [.6,0,.4,1], [.8,0,.2,1]], [.2,.4,.6,.8]);
+        drawSamples(later, 'load');
+        await readSamples('later-load', [[.2,0,.8,1], [.4,0,.6,1], [1,0,0,1], [1,0,0,1]], [.2,.4,.5,.5]);
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        await readSamples('frame-preserved', [[.2,0,.8,1], [.4,0,.6,1], [1,0,0,1], [1,0,0,1]], [.2,.4,.5,.5]);
+        drawSamples(nextFrame, 'load');
+        await readSamples('next-frame-load', [[.2,0,.8,1], [0,0,1,1], [0,0,1,1], [0,0,1,1]], [.2,.3,.3,.3]);
+        sampleColour.destroy(); sampleDepth.destroy(); sampleOutput.destroy();
         __tnFlush();
         await device.queue.onSubmittedWorkDone();
         check(await device.popErrorScope() === null, 'ordinary or transient clear/discard pass invalid');
