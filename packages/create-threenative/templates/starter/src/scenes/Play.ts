@@ -20,7 +20,7 @@ import {
 } from "three";
 import config from "../../threenative.config.js";
 import { Crate } from "../entities/Crate.js";
-import { Goal, ISLAND } from "../entities/Goal.js";
+import { Goal } from "../entities/Goal.js";
 import { type IPlayerModel, PLAYER_STAND_Y, Player } from "../entities/Player.js";
 import { createArena, platform } from "../render/arena.js";
 import { createSpringArm } from "../render/camera.js";
@@ -43,8 +43,7 @@ export type GameCtx = ICtx<GameState, IPhysicsContext>;
 const KILL_PLANE = -4;
 const STARTING_LIVES = 3;
 const FLOOR_SURFACE_Y = 0;
-const FLOOR_BOUNDS = { maxX: 5, minX: -5, maxZ: 2, minZ: -2 } as const;
-/** The near platform's own footprint, which the support surface below answers for. */
+/** The near platform's own footprint. */
 const FLOOR_SIZE = { depth: 4.2, width: 10 } as const;
 
 export class Play extends Scene<GameState, IPhysicsContext> {
@@ -268,25 +267,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         this.#environmentSample,
       );
     }
-    const supportSurfaceY = (position: { readonly x: number; readonly z: number }):
-      | number
-      | undefined => {
-      if (
-        position.x >= FLOOR_BOUNDS.minX &&
-        position.x <= FLOOR_BOUNDS.maxX &&
-        position.z >= FLOOR_BOUNDS.minZ &&
-        position.z <= FLOOR_BOUNDS.maxZ
-      )
-        return FLOOR_SURFACE_Y;
-      if (
-        position.x >= ISLAND.x - ISLAND.width / 2 &&
-        position.x <= ISLAND.x + ISLAND.width / 2 &&
-        position.z >= ISLAND.z - ISLAND.depth / 2 &&
-        position.z <= ISLAND.z + ISLAND.depth / 2
-      )
-        return ISLAND.top;
-      return undefined;
-    };
     // The area says the character is over the island; the run is only won once it is also
     // standing on it. Ending on the overlap alone freezes the character in mid-air at the
     // lip of the island, half a metre short of a landing, which is what it looks like.
@@ -350,7 +330,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         frameCtx.state.set((state) => ({ flagGusts: state.flagGusts + 1 }));
       }
       const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
-      player.update(frameCtx, dt, supportSurfaceY, touch);
+      player.update(frameCtx, dt, touch);
       let respawned = false;
       let lives = previous.lives;
       if (player.mesh.position.y < KILL_PLANE) {
