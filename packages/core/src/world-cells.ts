@@ -908,6 +908,8 @@ export interface IWorldCellsStats {
     readonly pending: number;
     readonly bytes: number;
     readonly refused: number;
+    /** Why the latest proxy was refused, or empty when none was; a count alone names no cause. */
+    readonly reason: string;
     readonly failures: number;
   };
   readonly pressure: { readonly cells: number; readonly instances: number; readonly bytes: number };
@@ -4211,6 +4213,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #cellProxies = new Set<ICellProxyState>();
   #hlodBytes = 0;
   #hlodRefused = 0;
+  #hlodReason = "";
   #hlodFailures = 0;
   /** Surfaces shared by material content across every asset part; see `materialKey`. */
   readonly #surfaces = new Map<string, ISharedSurface>();
@@ -5880,6 +5883,7 @@ export class WorldCells extends Group implements IComputeDriven {
         ).length,
         bytes: this.#hlodBytes,
         refused: this.#hlodRefused,
+        reason: this.#hlodReason,
         failures: this.#hlodFailures,
       },
       impostor: this.#impostorStats(),
@@ -6701,7 +6705,8 @@ export class WorldCells extends Group implements IComputeDriven {
         `compiled=${String(hlod.compiled)} observed=${String(hlod.observed)} ` +
         `active=${String(hlod.active)} pending=${String(hlod.pending)} ` +
         `draws=${String(proxyDraws)} replaced=${String(replacedSources)} ` +
-        `bytes=${String(hlod.bytes)} refused=${String(hlod.refused)} failures=${String(hlod.failures)}`,
+        `bytes=${String(hlod.bytes)} refused=${String(hlod.refused)} failures=${String(hlod.failures)}` +
+        (hlod.reason === "" ? "" : ` reason=${JSON.stringify(hlod.reason)}`),
     );
     // The bundles on their own line, because the pair reads against a different question: how many
     // objects are recorded, and how many times the recording was thrown away and redone. A walk
@@ -9605,9 +9610,10 @@ export class WorldCells extends Group implements IComputeDriven {
           try {
             if (measureCellProxy(model, proxy, true) > state.bytes)
               throw new Error("Cell proxy exceeds its reserved decoded budget.");
-          } catch {
+          } catch (error) {
             state.cancelled = true;
             this.#hlodRefused++;
+            this.#hlodReason = `${state.cell.key}: ${String(error instanceof Error ? error.message : error).slice(0, 160)}`;
             this.#releaseCellProxy(state);
             return;
           }
@@ -9637,9 +9643,10 @@ export class WorldCells extends Group implements IComputeDriven {
       prepared.root.name = `world-cell-proxy:${state.cell.key}`;
       for (const mesh of prepared.meshes) mesh.receiveShadow = this.#receiveShadow;
       this.add(prepared.root);
-    } catch {
+    } catch (error) {
       state.cancelled = true;
       this.#hlodRefused++;
+      this.#hlodReason = `${state.cell.key}: ${String(error instanceof Error ? error.message : error).slice(0, 160)}`;
       this.#releaseCellProxy(state);
     }
   }

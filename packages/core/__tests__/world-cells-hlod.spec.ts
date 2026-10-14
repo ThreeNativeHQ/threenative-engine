@@ -624,6 +624,8 @@ describe("WorldCells HLOD uses the existing cell admission lifecycle", () => {
         await pump(world, render);
         expect(copy).not.toHaveBeenCalled();
         expect(world.stats().hlod).toMatchObject({ refused: 1, loaded: 0, bytes: 0 });
+        // A count alone names no cause: the refusal must say which cell and why.
+        expect(world.stats().hlod.reason).toMatch(/exceeds its reserved decoded budget/u);
         expect(mains(world).every((source) => source.visible)).toBe(true);
       } finally {
         copy.mockRestore();
