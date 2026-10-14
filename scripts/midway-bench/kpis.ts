@@ -654,7 +654,25 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
   const reference = runs.find(
     (r) => r.dir === "isolated-cache-a1-desktop" && r.pkg === "pkg-ac10-cache-a1",
   );
-  const measured = accepted.length ? accepted : reference ? [reference] : [];
+  // Explicit retained repeats are a measured reference, never winner qualification.
+  const retained = [
+    "ac3-calibration-20261014T135316Z-t-desktop",
+    "ac3-calibration-20261014T135316Z-t2-desktop",
+  ].map((dir) =>
+    runs.find(
+      (r) =>
+        r.dir === dir &&
+        r.pkg === "pkg-ac3-calibration-20261014T135316Z-t" &&
+        !!r.retention &&
+        !r.skipped &&
+        r.desktop?.n === PLAYER_FRAME_WINDOW &&
+        !r.desktop.worldWorkInvalid &&
+        !parityNote([r]),
+    ),
+  );
+  const repeatedReference = retained.filter((r): r is IMidwayRun => !!r);
+  const pinned = repeatedReference.length === 2 ? repeatedReference : reference ? [reference] : [];
+  const measured = accepted.length ? accepted : pinned;
   const headline = [...runs.filter((r) => r.arm === "legacy"), ...measured];
   const structuralRuns = all.filter(
     (r) =>

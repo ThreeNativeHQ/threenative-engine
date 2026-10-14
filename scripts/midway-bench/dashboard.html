@@ -207,7 +207,7 @@ function ab(p, legacy) {
 }
 
 function render(d) {
-  $("winner").textContent = d.winner.status === "accepted" ? `LOCKED accepted winner: ${d.winner.build}` : `Pinned baseline: ${d.selection.build ?? "unavailable"} · ${d.selection.runs.length} isolated run(s); not accepted winner. ${d.winner.reason}`;
+  $("winner").textContent = d.winner.status === "accepted" ? `LOCKED accepted winner: ${d.winner.build}` : `Pinned measured experimental reference: ${d.selection.build ?? "unavailable"} · ${d.selection.runs.length} isolated run(s); not accepted winner. ${d.winner.reason}`;
   const candidate = d.candidate.gap.desktop;
   const structural = d.candidate.structural;
   const ac3 = d.kpis.find((k) => k.id === "AC-3");

@@ -1043,6 +1043,59 @@ describe("progress, trends and PRD boxes", () => {
 });
 
 describe("deliberate winner lock", () => {
+  const retainedPair = () =>
+    ["t", "t2"].map((suffix, i) => ({
+      ...run(
+        `ac3-calibration-20261014T135316Z-${suffix}-desktop`,
+        [
+          pkgLine("pkg-ac3-calibration-20261014T135316Z-t"),
+          ...Array(1000).fill(frame(i ? 7.209072 : 6.8815515)),
+          ui(26),
+          proj(i ? 2955 : 3211),
+        ].join("\n"),
+        parityText(true),
+      ),
+      retention: "Retained measured reference; not a qualified winner",
+    }));
+
+  it("pins both retained calibration repeats without promoting a winner", () => {
+    const pair = retainedPair();
+    const state = midwayOf([run("reference-legacy", budget(11) + report("wall-clock")), ...pair]);
+    expect(state.selection).toMatchObject({
+      role: "pinned reference / not qualified",
+      build: pair[0]?.pkg,
+      runs: pair.map((r) => r.dir),
+    });
+    expect(state.winner.status).toBe("unqualified");
+    expect(state.gap.desktop).toMatchObject({ runs: 2, ms: 7.04531175 });
+    expect(state.kpis.find((k) => k.id === "AC-3")?.current).toBe(3083);
+    expect(state.kpis.find((k) => k.id === "AC-5")?.current).toBe(26);
+    expect(state.trends.find((t) => t.id === "ms")?.points).toHaveLength(2);
+  });
+
+  it("falls back from a missing or invalid repeat rather than claiming a retained pair", () => {
+    const old = run("isolated-cache-a1-desktop", `${pkgLine("pkg-ac10-cache-a1")}\n${frame(9)}`);
+    const [first, second] = retainedPair() as [IMidwayRun, IMidwayRun];
+    if (!second.parity || !second.desktop) throw new Error("Missing retained fixture samples");
+    for (const invalid of [
+      undefined,
+      { ...second, retention: undefined },
+      { ...second, rejection: "Rejected" },
+      { ...second, profiled: true as const },
+      { ...second, timingExclusion: "Busy host" },
+      { ...second, skipped: 1 },
+      { ...second, pkg: "pkg-unapproved" },
+      { ...second, parity: undefined },
+      { ...second, parity: { ...second.parity, pass: false } },
+      { ...second, desktop: { ...second.desktop, n: 999 } },
+      { ...second, desktop: { ...second.desktop, worldWorkInvalid: true as const } },
+    ]) {
+      const partial = invalid ? [first, invalid] : [first];
+      expect(midwayOf([old, ...partial]).selection.runs).toEqual([old.dir]);
+      expect(midwayOf(partial).selection.runs).toEqual([]);
+    }
+  });
+
   const fixture = () => {
     const list: IMidwayRun[] = [];
     for (let i = 1; i <= 3; i++) {
@@ -1156,6 +1209,7 @@ describe("deliberate winner lock", () => {
 
   it("pins only the approved runs even when a later candidate is faster or slower", () => {
     const { list, lock } = fixture();
+    const pair = retainedPair();
     for (const cpu of [1, 99]) {
       const later = run(
         "new1-desktop",
@@ -1164,7 +1218,7 @@ describe("deliberate winner lock", () => {
       );
       later.cullPct = 3.977027234;
       const state = midwayOf(
-        [...list, later, run("ref1-legacy", budget(11) + report("wall-clock"))],
+        [...list, ...pair, later, run("ref1-legacy", budget(11) + report("wall-clock"))],
         undefined,
         JSON.stringify(lock),
       );
@@ -1177,7 +1231,7 @@ describe("deliberate winner lock", () => {
       });
       expect(state.kpis.find((k) => k.id === "AC-4")?.current).toBeUndefined();
       expect(state.candidate.gap.desktop).toMatchObject({ build: "pkg-new", ms: cpu });
-      expect(state.runs).toHaveLength(8);
+      expect(state.runs).toHaveLength(10);
     }
   });
 
