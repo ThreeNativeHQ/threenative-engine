@@ -50,6 +50,7 @@ import {
   launchAndroidConformanceActivity,
   runCommand,
   validateWindowedSurfaceOutput,
+  validateWorldGpuReadbackOutput,
   temporalCaptureLabel,
   unexpectedBlockedRows,
   expiredExclusions,
@@ -121,11 +122,11 @@ test("the GPU scene BVH row requires a hardware adapter", () => {
   assert.equal(row?.requiresHardwareAdapter, true);
 });
 
-test("World GPU readback captures through its frame-299 proof deadline", () => {
+test("World GPU readback gives awaited scene frames time to reach their proof deadline", () => {
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
   const row = registry.tests.find(({ id }) => id === "world-gpu-scene-readback");
-  assert.equal(row?.captureFrames, 300);
-  assert.equal(row?.nativeFrames, 300);
+  assert.equal(row?.captureFrames, 1200);
+  assert.equal(row?.nativeFrames, 1200);
 });
 
 test("World GPU readback fences 200 completed frame validations before disposal", () => {
@@ -136,6 +137,38 @@ test("World GPU readback fences 200 completed frame validations before disposal"
   assert.match(source, /awaitRender: true/u);
   assert.match(source, /validateGpuFrame\(frame\)/u);
   assert.match(source, /detail\.framewise >= 200/u);
+  assert.match(source, /detail\.steadyFrames >= 200/u);
+  assert.match(source, /detail\.terminalDrawFrames > 0/u);
+  assert.match(source, /stats\.impostor\.pending === 1 && stats\.impostor\.assets === 0/u);
+  assert.match(source, /stats\.levelRefilters === detail\.readyRefilters/u);
+  assert.match(source, /detail\.targetIdentities === 4/u);
+  assert.match(source, /detail\.disposeEvents === 4/u);
+});
+
+test("World GPU readback rejects absent, partial and invalid lifecycle completion", () => {
+  const handoff = "TN_WORLD_GPU_IMPOSTOR_HANDOFF frames=200 levelRefilters=0 terminalDrawFrames=185 atlasBytes=2796160";
+  const lifecycle = "TN_WORLD_GPU_SCENE_READBACK final original=disposed originalNonempty=201 framewise=201 lastDispatch=201 censuses=201 targetIdentities=4 releaseEvents=402 disposeEvents=4 reload=ready reloadNonempty=95 reloadFailures=0 validation=off reason=post-disposal-reload";
+  const complete = `${handoff}\n${lifecycle}`;
+  assert.deepEqual(validateWorldGpuReadbackOutput(complete).errors, []);
+  for (const incomplete of [
+    "TN_CONFORMANCE_READY:world-gpu-scene-readback",
+    handoff,
+    lifecycle,
+    complete.replace("frames=200", "frames=199"),
+    complete.replace("frames=200", "frames=200.1"),
+    complete.replace("frames=200", `frames=${"9".repeat(400)}`),
+    complete.replace("levelRefilters=0", "levelRefilters=2"),
+    complete.replace("terminalDrawFrames=185", "terminalDrawFrames=0"),
+    complete.replace("disposeEvents=4", "disposeEvents=2"),
+    complete.replace("censuses=201", "censuses=0"),
+    complete.replace("releaseEvents=402", "releaseEvents=4"),
+    complete.replace("reloadFailures=0", "reloadFailures=1"),
+    complete.replace("original=disposed", "original=active"),
+    complete.replace("reload=ready", "reload=pending"),
+  ]) assert.ok(validateWorldGpuReadbackOutput(incomplete).errors.length > 0);
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /result\.browser\.worldProof = validateWorldGpuReadbackOutput/u);
+  assert.match(source, /result\.native\.worldProof = validateWorldGpuReadbackOutput/u);
 });
 
 test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () => {

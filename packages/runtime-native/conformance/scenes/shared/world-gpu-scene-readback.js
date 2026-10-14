@@ -21,7 +21,10 @@ const MANIFEST = {
       glb: "box.glb",
     },
   },
-  cells: [{ x: 0, z: 0, runs: [{ asset: "box", count: 2, offset: 0 }] }],
+  cells: [{ x: 0, z: 0, runs: [
+    { asset: "box", count: 1, offset: 0 },
+    { asset: "box", count: 1, offset: 1 },
+  ] }],
 };
 
 const PLACEMENTS = new Float32Array([
@@ -31,10 +34,15 @@ const PLACEMENTS = new Float32Array([
 
 function decodedModel() {
   const root = new THREE.Group();
+  const map = new THREE.DataTexture(new Uint8Array([
+    79, 157, 105, 255, 79, 157, 105, 0,
+    79, 157, 105, 0, 79, 157, 105, 255,
+  ]), 2, 2);
+  map.needsUpdate = true;
   root.add(
     new THREE.Mesh(
       new THREE.BoxGeometry(1.5, 1.5, 1.5),
-      new THREE.MeshBasicMaterial({ color: 0x4f9d69 }),
+      new THREE.MeshBasicMaterial({ map, alphaTest: 0.5 }),
     ),
   );
   return root;
@@ -49,8 +57,8 @@ function visibleWorldMeshes(world) {
 }
 
 function assertReadbackLifecycle(detail, targets, releases) {
-  assertCondition(detail.targetIdentities === 2, "World GPU readback proof target count changed.");
-  assertCondition(detail.disposeEvents === 2, "World GPU readback targets did not both dispose.");
+  assertCondition(detail.targetIdentities === 4, "Atlas key growth must replace one pooled target pair.");
+  assertCondition(detail.disposeEvents === 4, "World GPU readback target pairs did not all dispose.");
   assertCondition(
     [...releases.values()].every((count) => count >= 2),
     "World GPU readback targets did not both release on repeated checks.",
@@ -87,7 +95,8 @@ function observeWorldFrame(world, detail, phase) {
 }
 
 function canDispose(detail, disposePending) {
-  return detail.framewise >= 200 && detail.releaseEvents >= 4 && disposePending === false;
+  return detail.framewise >= 200 && detail.steadyFrames >= 200 && detail.terminalDrawFrames > 0 &&
+    detail.releaseEvents >= 4 && disposePending === false;
 }
 
 function assertProofDeadline(frame, detail) {
@@ -97,7 +106,8 @@ function assertProofDeadline(frame, detail) {
       detail.originalNonemptyFrames === 0 ||
       detail.originalDisposed === false ||
       detail.reloadReady === false ||
-      detail.reloadNonemptyFrames === 0)
+      detail.reloadNonemptyFrames === 0 ||
+      detail.steadyFrames < 200 || detail.terminalDrawFrames === 0)
   )
     throw new Error(
       `World GPU readback proof did not complete its framewise lifecycle: framewise=${String(detail.framewise)} originalNonempty=${String(detail.originalNonemptyFrames)} originalDisposed=${String(detail.originalDisposed)} reloadReady=${String(detail.reloadReady)} reloadNonempty=${String(detail.reloadNonemptyFrames)}.`,
@@ -141,6 +151,9 @@ export async function startScene(canvas, dimensions) {
         targetIdentities: 0,
         framewise: 0,
         lastDispatch: 0,
+        readyRefilters: undefined,
+        steadyFrames: 0,
+        terminalDrawFrames: 0,
       };
       const targets = new Map();
       const releases = new Map();
@@ -178,8 +191,8 @@ export async function startScene(canvas, dimensions) {
           detail.disposeEvents += 1;
         });
         detail.targetIdentities = targets.size;
-        if (targets.size > 2)
-          throw new Error(`World GPU readback proof exceeded two pooled targets: ${String(targets.size)}.`);
+        if (targets.size > 4)
+          throw new Error(`World GPU readback proof exceeded two pooled target pairs: ${String(targets.size)}.`);
       };
       const worldRenderer = {
         compute: (nodes) => renderer.compute(nodes),
@@ -195,6 +208,20 @@ export async function startScene(canvas, dimensions) {
           if (result !== target || target.buffer instanceof ArrayBuffer === false)
             throw new Error("World GPU readback proof did not land in its provided target.");
           detail.readbacks += 1;
+          // Observe the actual indirect record in the same pooled readback as validation.
+          // A minted terminal mesh alone does not prove the GPU selected and drew it.
+          if (detail.readyRefilters !== undefined) {
+            world.traverse((node) => {
+              if (node.material?.userData?.tnWholeAssetImpostor !== true ||
+                node.geometry?.indirect !== attribute) return;
+              const words = new Uint32Array(target.buffer);
+              const offset = node.geometry.indirectOffset / Uint32Array.BYTES_PER_ELEMENT;
+              if (words[offset + 1] > 0) {
+                assertCondition(words[offset] === 6, "Impostor indirect draw lost its quad geometry.");
+                detail.terminalDrawFrames += 1;
+              }
+            });
+          }
           return target.buffer.slice(0);
         },
       };
@@ -209,11 +236,14 @@ export async function startScene(canvas, dimensions) {
           gpuScene: true,
           gpuSceneValidate,
           bundles: false,
-          impostors: false,
+          impostors: gpuSceneValidate,
+          autoLod: { fovY: 120, viewportHeight: 100 },
           terrain: false,
           loadModel: async () => decodedModel(),
         });
       const assertFrameValidation = (validation, frame) => {
+        assertCondition(validation.verdict === "ok",
+          `World GPU frame ${String(frame)} failed validation: ${String(validation.cause)}.`);
         assertCondition(validation.frame === frame, `World GPU frame identity drifted at ${String(frame)}.`);
         assertCondition(
           validation.dispatch > detail.lastDispatch,
@@ -224,7 +254,6 @@ export async function startScene(canvas, dimensions) {
           validation.instancesGpu > 0 && validation.instancesCpu > 0,
           `World GPU frame ${String(frame)} compared no nonempty world instances.`,
         );
-        assertCondition(validation.verdict === "ok", `World GPU frame ${String(frame)} failed validation.`);
         assertCondition(
           validation.mismatched === 0 &&
             validation.matricesMismatched === 0 &&
@@ -246,6 +275,27 @@ export async function startScene(canvas, dimensions) {
           if (renderedWorld !== undefined)
             renderedWorld.update(worldRenderer, camera);
           renderer.render(scene, camera);
+          if (detail.reloadReady === false) {
+            const stats = world.stats();
+            if (detail.readyRefilters === undefined && targets.size === 2 && stats.gpuScene.dispatches > 0 &&
+              stats.admission.backlog === 0 && stats.admission.deferred === 0 &&
+              stats.loadsInFlight === 0 && stats.loadsQueued === 0 && stats.pendingPrewarm === 0) {
+              assertCondition(stats.impostor.pending === 1 && stats.impostor.assets === 0,
+                "Impostor proof must reach admission readiness before atlas publication.");
+              detail.readyRefilters = stats.levelRefilters;
+            }
+            if (detail.readyRefilters !== undefined) {
+              assertCondition(stats.levelRefilters === detail.readyRefilters,
+                `Late impostor atlas publication ran ${String(stats.levelRefilters - detail.readyRefilters)} CPU level refilters at frame ${String(frame)}.`);
+              assertCondition(stats.failures === 0, "Impostor atlas bake failed.");
+              detail.steadyFrames += 1;
+              if (detail.steadyFrames === 200) {
+                assertCondition(stats.impostor.assets === 1 && stats.impostor.pending === 0,
+                  "Background impostor atlas did not publish.");
+                console.info(`TN_WORLD_GPU_IMPOSTOR_HANDOFF frames=${String(detail.steadyFrames)} levelRefilters=${String(stats.levelRefilters - detail.readyRefilters)} terminalDrawFrames=${String(detail.terminalDrawFrames)} atlasBytes=${String(stats.impostor.atlasBytes)}`);
+              }
+            }
+          }
           if (
             renderedWorld !== undefined &&
             detail.reloadReady === false &&

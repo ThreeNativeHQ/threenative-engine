@@ -927,14 +927,14 @@
     },
     {
       "id": "world-gpu-scene-readback",
-      "title": "per-frame GPU WorldCells validation reuses two caller-owned readback targets",
+      "title": "GPU WorldCells validation reuses two readback targets per layout across late cutout atlas publication",
       "category": "world",
       "status": "implemented",
       "scene": "conformance/scenes/shared/world-gpu-scene-readback.js",
       "browserRecipe": "webgpu",
       "requiresHardwareAdapter": true,
-      "captureFrames": 300,
-      "nativeFrames": 300,
+      "captureFrames": 1200,
+      "nativeFrames": 1200,
       "tolerance": {
         "pixelMismatchRatio": 0.08,
         "perceptualDeltaE": 10.0
