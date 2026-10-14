@@ -55,6 +55,15 @@ class RenderDatabase {
     [[nodiscard]] uint64_t recordLookups() const { return recordLookups_; }
     [[nodiscard]] uint64_t recordSweeps() const { return recordSweeps_; }
     [[nodiscard]] uint64_t sphereMeasures() const { return sphereMeasures_; }
+    /** Scene matrix walks prepare() ran since construction; a reflection pass that reuses the frame runs none. */
+    [[nodiscard]] uint64_t matrixWalks() const { return matrixWalks_; }
+    /** What the last prepare drew, before sorting. */
+    [[nodiscard]] const std::vector<DrawItem>& drawn() const { return items_; }
+    /** The database behind a reflector's pass, null before its first frame. */
+    [[nodiscard]] const RenderDatabase* reflectionDatabase(const void* reflector) const {
+        const auto found = reflections_.find(reflector);
+        return found == reflections_.end() ? nullptr : found->second.database.get();
+    }
     /** Why the last render left something out (TN_NATIVE_MATERIAL_UNSUPPORTED, TN_NATIVE_LIGHTS_UNSUPPORTED...). */
     [[nodiscard]] const std::vector<std::string>& diagnostics() const { return diagnostics_; }
 
@@ -66,6 +75,13 @@ class RenderDatabase {
      * On by default; off draws every mesh on its own, subject to the measured pixel-edge budget.
      */
     bool batching = true;
+    /**
+     * A reflection pass reuses the frame's work instead of redoing it (PRD-610 AC-10): it does not walk
+     * the scene's matrices again after this render's own walk, unless a render callback may have moved
+     * something, and it gathers shadow casters only for lights its camera sees. Off, every pass repeats
+     * the work, as a separate render would; the pixels are the same.
+     */
+    bool reuseMainFrame = true;
     bool profiling = false;
     // Matrix setup, projection/record refresh (including fused flat-scene matrices), batch packing, remaining.
     [[nodiscard]] const std::array<double, 4>& lastPrepareMs() const { return prepareMs_; }
@@ -103,6 +119,10 @@ class RenderDatabase {
     };
     std::unordered_map<const void*, ReflectionPass> reflections_;
     bool reflecting_ = false;
+    // Set by the frame's database on a reflection pass: the scene's world matrices are already current.
+    bool matricesFresh_ = false;
+    bool ranCallbacks_ = false;  // this prepare ran onBeforeRender hooks, which may have moved objects
+    uint64_t matrixWalks_ = 0;
     void renderReflections(Renderer& renderer, Object3D& scene, Camera& camera, std::vector<DrawItem>& items,
                            std::array<double, 4> clear);
     std::shared_ptr<BufferGeometry> backgroundGeometry_;

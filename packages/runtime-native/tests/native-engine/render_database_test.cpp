@@ -6,7 +6,9 @@
 #include "check.h"
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
+#include "engine/renderer/reflector.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/shader/graph/graph.h"
 #include "engine/renderer/projection/plan.h"
 #include "engine/shader/package.h"
 #include "engine/shader/graph/post_effects.h"
@@ -2648,11 +2650,191 @@ void worldSphereMeasuredOnce() {
     CHECK(database.sphereMeasures() - measured == meshes.size());
 }
 
+// PRD-610 AC-10: a water-like mirror over a grouped scene. Most boxes sit in the main view, a tower
+// stands above the main frustum that only the mirrored camera sees, and a sun casts shadows. The
+// reflector and its virtual camera are made by hand, as the `reflector` TSL call makes them.
+struct ReflectionScene {
+    Scene scene;
+    PerspectiveCamera camera;
+    std::shared_ptr<BufferGeometry> box = makeBoxGeometry(), plane = makePlaneGeometry(400, 400);
+    std::vector<std::shared_ptr<Material>> materials;
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    std::shared_ptr<Material> water = std::make_shared<Material>(MaterialType::Standard);
+    std::shared_ptr<Mesh> waterMesh, tower;
+    std::shared_ptr<Reflector> reflector = std::make_shared<Reflector>();
+    std::shared_ptr<DirectionalLight> sun = std::make_shared<DirectionalLight>(Color(1, 1, 1), 2.0);
+    std::shared_ptr<Object3D> target = std::make_shared<Object3D>();
+    explicit ReflectionScene(int groupCount = 12, int perGroup = 20, int uniqueDraws = 12) {
+        camera.fov = 50;
+        camera.aspect = 4.0 / 3;
+        camera.near = 0.5;
+        camera.far = 400;
+        camera.position.set(0, 6, 14);
+        camera.lookAt(0, 0, -10);
+        camera.updateProjectionMatrix();
+        for (int m = 0; m < 6; ++m) {
+            materials.push_back(std::make_shared<Material>(MaterialType::Standard));
+            materials.back()->color.setRGB(0.2 + 0.12 * m, 0.5, 0.9 - 0.12 * m);
+        }
+        for (int g = 0; g < groupCount; ++g) {
+            auto group = std::make_shared<Group>();
+            group->position.set((g % 12 - 6) * 12.0, 0, -(g / 12) * 14.0 + 4);
+            scene.add(*group);
+            for (int i = 0; i < perGroup; ++i) {
+                auto mesh = std::make_shared<Mesh>(box, materials[(g + i) % materials.size()]);
+                mesh->position.set((i % 8) * 1.4 - 5, 0.6 + 0.2 * (i / 8), (i / 8) * 1.4 - 3);
+                mesh->setCastShadow(true);
+                mesh->setReceiveShadow(true);
+                group->add(*mesh);
+                meshes.push_back(mesh);
+            }
+        }
+        // Single-member draws: each has its own geometry, so nothing batches (a game's props and hulls).
+        for (int i = 0; i < uniqueDraws; ++i) {
+            auto mesh = std::make_shared<Mesh>(makeBoxGeometry(1 + 0.01 * i, 1, 1), materials[i % materials.size()]);
+            mesh->position.set((i % 20) * 2.0 - 20, 1.5, -(i / 20) * 3.0 - 2);
+            mesh->setCastShadow(true);
+            mesh->setReceiveShadow(true);
+            scene.add(*mesh);
+            meshes.push_back(mesh);
+        }
+        tower = std::make_shared<Mesh>(makeBoxGeometry(1, 1, 1.5), materials[0]);  // its own draw, never batched
+        tower->position.set(0, 30, -50);
+        tower->scale.set(8, 8, 8);
+        scene.add(*tower);
+        water->color.setRGB(0.1, 0.3, 0.5);
+        waterMesh = std::make_shared<Mesh>(plane, water);
+        waterMesh->rotateX(-3.141592653589793 / 2);
+        scene.add(*waterMesh);
+        target->rotateX(-3.141592653589793 / 2);
+        scene.add(*target);
+        reflector->target = target;
+        reflector->camera = std::make_shared<PerspectiveCamera>();
+        namespace g = shader::graph;
+        const auto mirror = g::reflectorTexture(reflector, g::vec2({g::sub(g::float_(1), g::swizzle(g::screenUV(), "x")),
+                                                                    g::swizzle(g::screenUV(), "y")}));
+        water->nodes.colorNode = g::vec4({g::mul(g::swizzle(mirror, "xyz"), g::vec3({g::float_(0.75), g::float_(0.85), g::float_(1)})),
+                                          g::float_(1)});
+        water->needsUpdate();
+        sun->setCastShadow(true);
+        sun->position.set(30, 60, 20);
+        auto& sc = static_cast<OrthographicCamera&>(*sun->shadow.camera);
+        sc.left = -120; sc.right = 120; sc.top = 120; sc.bottom = -120; sc.near = 1; sc.far = 300;
+        sc.updateProjectionMatrix();
+        scene.add(*sun);
+        scene.updateMatrixWorld(true);
+    }
+};
+
+// What a pass drew, comparable across databases: one row per item, sorted.
+std::vector<std::array<double, 8>> drawRows(const std::vector<DrawItem>& items) {
+    std::vector<std::array<double, 8>> rows;
+    for (const DrawItem& item : items) {
+        const auto& at = item.sortOrigin ? *item.sortOrigin : std::array<double, 3>{item.matrixWorld[12], item.matrixWorld[13], item.matrixWorld[14]};
+        rows.push_back({double(item.mainPass), double(item.castShadow), double(item.instanceCount), double(item.kind), at[0], at[1], at[2], double(item.layers)});
+    }
+    std::sort(rows.begin(), rows.end());
+    return rows;
+}
+
+// PRD-610 AC-10: a reflection pass reuses the frame's work. It walks no matrices of its own (the
+// frame's walk is current), keeps the draws it always had, including ones outside the main view
+// that only the mirrored camera sees, and renders the same pixels.
+void reflectionReuse() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(160, 120);
+    ReflectionScene s;
+    s.tower->setCastShadow(false);
+    const auto tower = std::array<double, 3>{0, 30, -50};
+    const auto drawsTower = [&](const RenderDatabase& database) {
+        for (const DrawItem& item : database.drawn())
+            if (item.mainPass && item.matrixWorld[12] == tower[0] && item.matrixWorld[13] == tower[1] && item.matrixWorld[14] == tower[2]) return true;
+        return false;
+    };
+    constexpr int frames = 6;
+    for (const bool reuse : {false, true}) {
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        if (!reuse) database.reuseMainFrame = false;  // on is the default
+        for (int i = 0; i < frames; ++i) database.render(renderer, s.scene, s.camera);
+        const RenderDatabase* pass = database.reflectionDatabase(s.reflector.get());
+        CHECK(pass != nullptr);
+        if (!pass) continue;
+        std::printf("reuse=%d: matrix walks main %llu, reflection %llu over %d frames\n", reuse,
+                    (unsigned long long)database.matrixWalks(), (unsigned long long)pass->matrixWalks(), frames);
+        CHECK(database.matrixWalks() == frames);
+        CHECK(pass->matrixWalks() == (reuse ? 0u : frames));
+        CHECK(!drawsTower(database) && drawsTower(*pass));  // only the mirrored view sees the tower
+        // The pass draws what an independent database prepares for the posed mirror camera.
+        RenderDatabase alone;
+        alone.shadowMapEnabled = true;
+        s.water->visible = false;
+        LightState lights;
+        alone.prepare(s.scene, *s.reflector->camera, lights);
+        s.water->visible = true;
+        CHECK(drawRows(alone.drawn()) == drawRows(pass->drawn()));
+        CHECK(!pass->drawn().empty());
+    }
+    // The same frame, pixel for pixel, with and without reuse.
+    std::vector<uint8_t> frame[2];
+    for (const bool reuse : {false, true}) {
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        if (!reuse) database.reuseMainFrame = false;  // on is the default
+        for (int i = 0; i < 4; ++i) database.render(renderer, s.scene, s.camera, {0.1, 0.1, 0.15, 1});
+        frame[reuse] = read(renderer, events);
+    }
+    CHECK(frame[0].size() == 160 * 120 * 4 && frame[0] == frame[1]);
+    // A mirror on its own layer (WaterSurface3D's layered mirror) sees the hulls and not the sun, so no
+    // shadow it could draw has a caster; without the reuse its pass still gathers every one.
+    {
+        ReflectionScene layered;
+        layered.reflector->camera->setLayerMask(2);
+        layered.tower->enableLayer(1);
+        for (std::size_t i = 0; i < layered.meshes.size(); i += 7) layered.meshes[i]->enableLayer(1);
+        std::vector<uint8_t> shot[2];
+        for (const bool reuse : {false, true}) {
+            RenderDatabase database;
+            database.shadowMapEnabled = true;
+            if (!reuse) database.reuseMainFrame = false;  // on is the default
+            for (int i = 0; i < 4; ++i) database.render(renderer, layered.scene, layered.camera, {0.1, 0.1, 0.15, 1});
+            shot[reuse] = read(renderer, events);
+            const RenderDatabase* pass = database.reflectionDatabase(layered.reflector.get());
+            CHECK(pass != nullptr);
+            if (!pass) continue;
+            std::size_t casters = 0, drawnInMirror = 0;
+            for (const DrawItem& item : pass->drawn()) casters += item.castShadow, drawnInMirror += item.mainPass;
+            std::printf("reuse=%d: mirror pass %zu draws, %zu casters\n", reuse, drawnInMirror, casters);
+            CHECK(drawnInMirror > 0);
+            CHECK(reuse ? casters == 0 : casters > 0);
+        }
+        CHECK(shot[0].size() == 160 * 120 * 4 && shot[0] == shot[1]);
+    }
+    // A render hook may move things after the frame's walk: the pass walks again and sees them.
+    RenderDatabase hooked;
+    hooked.shadowMapEnabled = true;
+    s.meshes.back()->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [&](const RenderCallbackArgs&, std::string&) {
+            s.tower->position.x += 1;
+            return true;
+        });
+    for (int i = 0; i < 3; ++i) hooked.render(renderer, s.scene, s.camera);
+    const RenderDatabase* pass = hooked.reflectionDatabase(s.reflector.get());
+    CHECK(pass && pass->matrixWalks() == 3);
+    // Per frame the hook runs in the main prepare, then again in the pass's: the pass drew the first move.
+    bool moved = false;
+    for (const DrawItem& item : pass->drawn()) moved = moved || (item.mainPass && item.matrixWorld[12] == s.tower->position.x - 1 && item.matrixWorld[14] == -50);
+    CHECK(moved);
+}
+
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"world_sphere_measured_once", worldSphereMeasuredOnce})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 
