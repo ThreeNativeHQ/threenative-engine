@@ -10,24 +10,27 @@ import {
   type Mesh,
   type Node,
   NodeIO,
+  type Primitive,
   PropertyType,
   type Scene,
+  type mat4,
 } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, EXTMeshGPUInstancing } from "@gltf-transform/extensions";
 import {
+  compactPrimitive,
   copyToDocument,
   createDefaultPropertyResolver,
   dedup,
   getBounds,
   prune,
-  transformMesh,
+  transformPrimitive,
   unpartition,
 } from "@gltf-transform/functions";
 import { bakeTerrain, bakeWorldPackage, decodeRAW16, sampleHeight } from "@threenative/terrain";
 import type { IPlacement, ITerrainState } from "@threenative/terrain";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../lod/extension.js";
-import { LOD_ERROR_TARGETS, generateDiscreteLod } from "../lod/generate.js";
+import { LOD_ERROR_TARGETS, generateDiscreteLod, validateDiscreteLod } from "../lod/generate.js";
 import { createSimplifyPool } from "../lod/simplify-pool.js";
 import { modelPass } from "../passes/model.js";
 
@@ -188,7 +191,9 @@ function assertInstancable(speciesId: string, speciesDoc: Document): void {
 async function parseSpecies(bytes: Uint8Array): Promise<Document> {
   const input = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const reader = await createGltfReader(input);
-  return readGltfDocument(reader, input);
+  const doc = await readGltfDocument(reader, input);
+  validateDiscreteLod(doc.getRoot());
+  return doc;
 }
 
 /**
@@ -235,6 +240,59 @@ function dequantizeNormals(mesh: Mesh): void {
       decoded[index] = MathUtils.decodeNormalizedInt(source[index] as number, type);
     normal.setArray(decoded).setNormalized(false);
   }
+}
+
+const UNUSED_VERTEX = 0xffffffff;
+
+/** gltf-transform's compaction plan: vertices renumbered in the order the LOD0 indices reach them. */
+function firstReferencePlan(primitive: Primitive): { remap: Uint32Array; count: number } {
+  const vertexCount = primitive.getAttribute("POSITION")?.getCount() ?? 0;
+  const indices = primitive.getIndices()?.getArray();
+  const remap = new Uint32Array(vertexCount).fill(UNUSED_VERTEX);
+  let count = 0;
+  if (indices == null)
+    for (let vertex = 0; vertex < vertexCount; vertex += 1) remap[vertex] = count++;
+  else
+    for (const index of indices) {
+      if (!Number.isInteger(index) || index < 0 || index >= vertexCount)
+        throw new Error(`Species LOD0 index ${index} is out of range for ${vertexCount} vertices.`);
+      if (remap[index] === UNUSED_VERTEX) remap[index] = count++;
+    }
+  return { remap, count };
+}
+
+/**
+ * `transformMesh`, in place. It compacts each primitive first, renumbering the vertices in the
+ * order the LOD0 indices first reach them, and reverses LOD0's winding under a mirroring matrix.
+ * The index-only TN_discrete_lod levels were baked against the source numbering and are an
+ * extension it does not know, so it left them indexing other vertices: every far tree drew cones
+ * and slivers. The same plan and the same winding reach every level here.
+ */
+function transformWithLodChain(primitive: Primitive, matrix: mat4): void {
+  const { remap, count } = firstReferencePlan(primitive);
+  const chain = primitive.getExtension<DiscreteLod>(TN_DISCRETE_LOD);
+  if (chain !== null) {
+    // Each primitive has its own compaction order even when its authored chain/accessors are shared.
+    const owned = chain.clone();
+    for (const level of chain.getIndices()) owned.swap(level, level.clone());
+    primitive.setExtension(TN_DISCRETE_LOD, owned);
+  }
+  compactPrimitive(primitive, remap, count);
+  const [a, b, c, , d, e, f, , g, h, i] = matrix;
+  const mirrored = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g) < 0;
+  for (const level of primitive.getExtension<DiscreteLod>(TN_DISCRETE_LOD)?.getIndices() ?? []) {
+    const source = level.getArray() ?? [];
+    const carried = new Uint32Array(source.length);
+    for (let index = 0; index < source.length; index += 1) {
+      // A mirror swaps each triangle's first and last corner, as LOD0's own reversal does.
+      const corner = mirrored ? index + 2 - 2 * (index % 3) : index;
+      carried[index] = remap[source[corner] as number] ?? UNUSED_VERTEX;
+    }
+    if (carried.includes(UNUSED_VERTEX))
+      throw new Error("A TN_discrete_lod level indexes a vertex that its LOD0 does not draw.");
+    level.setArray(carried);
+  }
+  transformPrimitive(primitive, matrix);
 }
 
 /**
@@ -291,7 +349,7 @@ function addInstancedSpeciesNode(
     const targetMesh = copyToDocument(doc, speciesDoc, [mesh], resolve).get(mesh) as Mesh;
     const matrix = node.getWorldMatrix();
     dequantizeNormals(targetMesh);
-    transformMesh(targetMesh, matrix);
+    for (const primitive of targetMesh.listPrimitives()) transformWithLodChain(primitive, matrix);
     // Index-only levels share the transformed vertices; their local errors must follow them.
     const scale = Math.max(
       Math.hypot(matrix[0], matrix[1], matrix[2]),

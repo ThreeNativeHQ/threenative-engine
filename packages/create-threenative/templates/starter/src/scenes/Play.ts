@@ -153,11 +153,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     // isMobile() arrives as an argument because src/render/ imports no framework package:
     // the platform decision is made here, in portable game code, exactly like createRandom.
-    const { key } = setupLighting(
+    const { key, dispose: disposeLighting } = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
       isMobile(),
     );
+    this.#disposeLighting = disposeLighting;
     const materialEnvironment = {
       web: getPlatform().runtime === "web",
       rendererKind: ctx.renderer.kind,
@@ -378,6 +379,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   }
 
   #post: ReturnType<typeof setupPost> | undefined;
+  #disposeLighting: (() => void) | undefined;
   #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
 
   override exit(ctx: GameCtx): void {
@@ -386,6 +388,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // Also releases the medium `setupPost` built, with the graph it composed into.
     this.#post?.dispose();
     this.#post = undefined;
+    // After the post graph, whose godrays stage reads the sun's shadow map.
+    this.#disposeLighting?.();
+    this.#disposeLighting = undefined;
     super.exit(ctx);
   }
 }

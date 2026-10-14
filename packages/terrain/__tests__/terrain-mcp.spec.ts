@@ -495,14 +495,32 @@ async function runEmittedLoad(
 ) {
   const scene = new Object3D();
   const dispose = vi.fn();
+  const worldDispose = vi.fn();
+  const surfaceDispose = vi.fn();
   let body: IEmittedBody | undefined;
   let collider: IHeightfieldCollider | undefined;
+  let streamedFollow: { position: Object3D["position"] } | undefined;
+  let streamedInvalidate: ((region?: object) => void) | undefined;
   const modules = {
     "@threenative/core/world": {
       Heightfield,
       heightSamplerFromHeightmap,
       loadWorldHeightmap,
-      applyTerrainSurface: async () => {},
+      loadTerrainSplat: vi.fn(async () => ({ surface: "terrain", dispose: surfaceDispose })),
+      WorldCells: {
+        load: vi.fn(
+          async (options: {
+            follow: { position: Object3D["position"] };
+            surface: unknown;
+            shadows: { invalidate: (region?: object) => void };
+          }) => {
+            expect(options.surface).toMatchObject({ surface: "terrain" });
+            streamedFollow = options.follow;
+            streamedInvalidate = options.shadows.invalidate;
+            return Object.assign(new Object3D(), { dispose: worldDispose });
+          },
+        ),
+      },
     },
     "@threenative/physics": {
       CollisionShape3D: {
@@ -545,15 +563,46 @@ async function runEmittedLoad(
   const execute = new Function(
     "modules",
     "ctx",
-    `const exports = {}; const require = (name) => { if (!(name in modules)) throw new Error("Unexpected runtime import: " + name); return modules[name]; }; return (async () => { ${outputText} })();`,
+    `const exports = {}; const require = (name) => { if (!(name in modules)) throw new Error("Unexpected runtime import: " + name); return modules[name]; }; return (async () => { ${outputText}; return { loadCells }; })();`,
   );
-  await execute(modules, ctx);
+  const { loadCells } = await execute(modules, ctx);
+  const player = new Object3D();
+  player.position.set(-2, 19, 7);
+  const invalidate = vi.fn();
+  streamedInvalidate?.();
+  loadCells(player, invalidate);
+  const region = { minX: 0, minZ: 0, maxX: 2, maxZ: 3 };
+  streamedInvalidate?.(region);
+  streamedInvalidate?.();
+  expect(invalidate.mock.calls).toEqual([[region], [undefined]]);
+  expect(streamedFollow?.position).toBe(player.position);
+  player.position.z -= 10;
+  expect(streamedFollow?.position.z).toBe(-3);
+  expect(scene.children).toHaveLength(2);
   if (body === undefined || collider === undefined)
     throw new Error("The snippet created no terrain collider.");
   expect(dispose).not.toHaveBeenCalled();
   scene.clear();
   expect(dispose).toHaveBeenCalledOnce();
-  return { body, collider };
+  expect(worldDispose).toHaveBeenCalledOnce();
+  expect(surfaceDispose).toHaveBeenCalledOnce();
+  const failure = new Error("streamed world failed");
+  modules["@threenative/core/world"].WorldCells.load.mockRejectedValueOnce(failure);
+  await expect(execute(modules, ctx)).rejects.toBe(failure);
+  expect(dispose).toHaveBeenCalledTimes(2);
+  expect(worldDispose).toHaveBeenCalledOnce();
+  expect(surfaceDispose).toHaveBeenCalledTimes(2);
+  expect(scene.children).toHaveLength(0);
+  modules["@threenative/core/world"].loadTerrainSplat.mockRejectedValueOnce(failure);
+  await expect(execute(modules, ctx)).rejects.toBe(failure);
+  expect(dispose).toHaveBeenCalledTimes(3);
+  expect(surfaceDispose).toHaveBeenCalledTimes(2);
+  expect(scene.children).toHaveLength(0);
+  return {
+    body,
+    collider,
+    streaming: modules["@threenative/core/world"].WorldCells.load.mock.calls[0]?.[0],
+  };
 }
 
 describe("terrain_generate result", () => {
@@ -593,10 +642,12 @@ describe("terrain_generate result", () => {
         expect(result.instances).toBeGreaterThan(0);
         expect(result.draws).toBeGreaterThan(0);
         expect(result.triangles).toBeGreaterThan(result.instances);
-        // The visual handoff is unchanged: the GLB is loaded and its surface applied.
-        expect(result.load).toContain('ctx.assets.model<TerrainModel>("worlds/forest/world.glb")');
-        expect(result.load).toContain("ctx.scene.add(world.scene);");
-        expect(result.load).toContain("applyTerrainSurface(world.scene");
+        expect(result.load).toContain("WorldCells.load({");
+        expect(result.load).toContain('url: "worlds/forest/world.json"');
+        expect(result.load).toContain("loadTerrainSplat({ assets: ctx.assets");
+        expect(result.load).toContain("ctx.add(world);");
+        expect(result.load).not.toContain("ctx.assets.model");
+        expect(result.load).not.toContain("applyTerrainSurface");
         // No authoring import leaks into the game: only core/world, physics and three are allowed.
         expect(
           result.load.split("\n").filter((line: string) => line.includes("@threenative/terrain")),
@@ -608,10 +659,32 @@ describe("terrain_generate result", () => {
         );
         const served = `data:application/octet-stream;base64,${Buffer.from(heightmapBytes).toString("base64")}`;
         const resolved: string[] = [];
-        const { body, collider } = await runEmittedLoad(result.load, served, (path) =>
+        const { body, collider, streaming } = await runEmittedLoad(result.load, served, (path) =>
           resolved.push(path),
         );
-        expect(resolved).toEqual([`worlds/forest/${manifest.terrain.heightmap}`]);
+        expect(resolved).toEqual(Array(3).fill(`worlds/forest/${manifest.terrain.heightmap}`));
+        // Exact record budgets are non-restrictive only while this export has no charged proxies.
+        expect(
+          manifest.cells.every(
+            (cell: { proxy?: unknown; chunks?: unknown[] }) =>
+              cell.proxy === undefined && (cell.chunks?.length ?? 0) === 0,
+          ),
+        ).toBe(true);
+        const placementCount = manifest.cells.reduce(
+          (sum: number, cell: { runs: { count: number }[] }) =>
+            sum + cell.runs.reduce((count, run) => count + run.count, 0),
+          0,
+        );
+        expect(streaming).toMatchObject({
+          ring: 5,
+          terrain: { streamRadius: 6 },
+          budgets: {
+            residentCells: manifest.cells.length,
+            instances: placementCount,
+            bytes: placementCount * 32,
+          },
+          shadows: { cast: true, receive: true },
+        });
         expect(collider.rows).toBe(manifest.terrain.rows);
         expect(collider.columns).toBe(manifest.terrain.columns);
         expect(collider.scale).toEqual({

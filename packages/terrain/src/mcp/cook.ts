@@ -242,7 +242,7 @@ async function cookInto(
     )}\n`,
   );
 
-  const { splat } = bakeWorldPackage(state, {
+  const { splat, manifest, files } = bakeWorldPackage(state, {
     assets: cooked.manifest.assets as Parameters<typeof bakeWorldPackage>[1]["assets"],
   });
   await writeFile(
@@ -264,7 +264,21 @@ async function cookInto(
   const url = relative(request.assetSource as string, request.out)
     .split(sep)
     .join("/");
-  const worldUrl = `${url}/world.glb`;
+  const worldUrl = `${url}/world.json`;
+  const ring =
+    Math.ceil(Math.max(manifest.extent.sizeX, manifest.extent.sizeZ) / manifest.cellSize / 2) + 1;
+  const instances = manifest.cells.reduce(
+    (count, cell) => count + cell.runs.reduce((sum, run) => sum + run.count, 0),
+    0,
+  );
+  const placementBytes = files[manifest.placements];
+  if (placementBytes === undefined)
+    throw new Error("cook: world package has no placement records.");
+  const budgets = {
+    residentCells: Math.max(1, manifest.cells.length),
+    instances: Math.max(1, instances),
+    bytes: Math.max(1, placementBytes.byteLength),
+  };
   const heightmapUrl = `${url}/${cooked.manifest.terrain.heightmap}`;
   // The GLB carries no collider, so the snippet also builds the ground; aliases dodge stock names.
   const physical = JSON.stringify({
@@ -282,13 +296,9 @@ async function cookInto(
     worldGlbBytes: cooked.worldGlb.length,
     ms: Math.round(performance.now() - started),
     load: [
-      'import { applyTerrainSurface, Heightfield as TerrainHeightfield, heightSamplerFromHeightmap as sampleTerrainHeight, loadWorldHeightmap as loadTerrainHeightmap } from "@threenative/core/world";',
+      'import { WorldCells as TerrainWorldCells, Heightfield as TerrainHeightfield, heightSamplerFromHeightmap as sampleTerrainHeight, loadWorldHeightmap as loadTerrainHeightmap, loadTerrainSplat, type IWorldCellsLoadOptions as TerrainWorldOptions } from "@threenative/core/world";',
       'import { CollisionShape3D as TerrainCollisionShape, RigidBody3D as TerrainRigidBody } from "@threenative/physics";',
       'import { Object3D as TerrainAnchor } from "three";',
-      'import type { GLTF as TerrainModel } from "three/addons/loaders/GLTFLoader.js";',
-      `const world = await ctx.assets.model<TerrainModel>(${JSON.stringify(worldUrl)});`,
-      "ctx.scene.add(world.scene);",
-      `await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: ${JSON.stringify(worldUrl)} });`,
       `const terrainWorld = ${physical};`,
       `const [terrainHeightmapUrl] = await ctx.assets.resolve(${JSON.stringify(heightmapUrl)});`,
       'if (terrainHeightmapUrl === undefined) throw new Error("terrain: the world heightmap is not served.");',
@@ -310,9 +320,25 @@ async function cookInto(
       "  shape: TerrainCollisionShape.heightfield(terrainField.rows, terrainField.columns, terrainField.toColliderHeights(), { x: terrainWorld.extent.sizeX, y: 1, z: terrainWorld.extent.sizeZ }),",
       '  type: "fixed",',
       "});",
-      "// Drop the collider with its anchor: ctx.add alone does not release the body on scene exit.",
-      'terrainAnchor.addEventListener("removed", () => terrainBody.dispose());',
+      "let world: TerrainWorldCells | undefined;",
+      "let terrainSurface: Awaited<ReturnType<typeof loadTerrainSplat>> | undefined;",
+      "// The anchor owns the streamed world, caller-supplied surface and full-world collider.",
+      'terrainAnchor.addEventListener("removed", () => { world?.dispose(); terrainSurface?.dispose(); terrainBody.dispose(); });',
       "ctx.add(terrainAnchor);",
+      "let terrainFollow = terrainAnchor;",
+      'let terrainInvalidate: NonNullable<TerrainWorldOptions["shadows"]>["invalidate"];',
+      "try {",
+      `  terrainSurface = await loadTerrainSplat({ assets: ctx.assets, renderer: ctx.renderer, url: ${JSON.stringify(worldUrl)} });`,
+      "  world = await TerrainWorldCells.load({",
+      `  assets: ctx.assets, url: ${JSON.stringify(worldUrl)}, surface: terrainSurface,`,
+      "  follow: { get position() { return terrainFollow.position; } },",
+      `  ring: ${ring}, budgets: ${JSON.stringify(budgets)}, terrain: { streamRadius: ${ring + 1} },`,
+      "  shadows: { cast: true, receive: true, invalidate: (region) => terrainInvalidate?.(region) },",
+      "});",
+      "  ctx.add(world);",
+      "} catch (error) { terrainAnchor.removeFromParent(); throw error; }",
+      'const loadCells = (follow: TerrainAnchor, invalidate?: NonNullable<TerrainWorldOptions["shadows"]>["invalidate"]) => { terrainFollow = follow; terrainInvalidate = invalidate; };',
+      "// Call loadCells(player.mesh) after creating the player; optionally forward streamed shadow invalidation.",
     ].join("\n"),
   });
 }

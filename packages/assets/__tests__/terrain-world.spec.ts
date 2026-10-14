@@ -138,6 +138,68 @@ function triangle(doc: Document, buffer: GltfBuffer, material: Material) {
     .setMaterial(material);
 }
 
+/** Two triangles, an unused vertex, and two primitives that share one derived-level accessor. */
+async function smallLodSpecies(
+  mode: "shared" | "shared-chain" | "mirror" | "unused" | "bad-index" | "bad-level" = "shared",
+): Promise<Uint8Array> {
+  const doc = new Document();
+  const buffer = doc.createBuffer();
+  const extension = doc.createExtension(TNDiscreteLod);
+  const positions = doc
+    .createAccessor()
+    .setType("VEC3")
+    .setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 2, 3, 4]))
+    .setBuffer(buffer);
+  const level = doc
+    .createAccessor()
+    .setType("SCALAR")
+    .setArray(
+      Uint32Array.from(mode === "bad-level" ? [3, 2] : mode === "unused" ? [4, 2, 1] : [3, 2, 1]),
+    )
+    .setBuffer(buffer);
+  const chain = extension
+    .createDiscreteLod()
+    .setCounts([1])
+    .setErrors([0.1])
+    .setAbsoluteErrors([0.1])
+    .setBaselineTriangles(2)
+    .setLod0Triangles(2)
+    .setErrorScale(1)
+    .addIndices(level);
+  const mesh = doc.createMesh("fir");
+  for (let part = 0; part < 2; part++) {
+    const indices =
+      mode === "bad-index"
+        ? [99, 2, 1, 1, 2, 0]
+        : part === 0
+          ? [3, 2, 1, 1, 2, 0]
+          : [0, 1, 2, 2, 1, 3];
+    const primitive = doc
+      .createPrimitive()
+      .setAttribute("POSITION", positions)
+      .setIndices(
+        doc
+          .createAccessor()
+          .setType("SCALAR")
+          .setArray(Uint32Array.from(indices))
+          .setBuffer(buffer),
+      )
+      .setMaterial(doc.createMaterial(`part-${part}`));
+    primitive.setExtension(
+      TN_DISCRETE_LOD,
+      part === 0 || mode === "shared-chain" ? chain : chain.clone(),
+    );
+    mesh.addPrimitive(primitive);
+  }
+  doc.createScene().addChild(
+    doc
+      .createNode("fir")
+      .setMesh(mesh)
+      .setScale(mode === "mirror" ? [-1, 1, 1] : [1, 1, 1]),
+  );
+  return io().registerExtensions([TNDiscreteLod]).writeBinary(doc);
+}
+
 /** A static species with one mesh of one primitive. */
 async function simpleSpecies(): Promise<Uint8Array> {
   const doc = new Document();
@@ -715,6 +777,68 @@ describe("cookTerrainWorld", () => {
       const [x = 0, y = 0, z = 0] = normals.getElement(i, [0, 0, 0]);
       expect(Math.hypot(x, y, z)).toBeCloseTo(1, 2);
     }
+  });
+
+  it.each(["shared", "shared-chain", "mirror"] as const)(
+    "preserves each shared LOD accessor's triangle through %s compaction",
+    async (mode) => {
+      const glb = await smallLodSpecies(mode);
+      const result = await cookTerrainWorld({
+        state: evaluatedTerrain(),
+        species: { fir: { glb, lods: [{ distance: 40, glb }] } },
+        out: dir,
+      });
+      const doc = await io().registerExtensions([TNDiscreteLod]).readBinary(result.worldGlb);
+      const primitives =
+        doc
+          .getRoot()
+          .getDefaultScene()
+          ?.listChildren()
+          .find((node) => node.getName() === "fir_instances")
+          ?.getMesh()
+          ?.listPrimitives() ?? [];
+      expect(primitives).toHaveLength(2);
+      for (const primitive of primitives) {
+        const positions = primitive.getAttribute("POSITION");
+        const indices = primitive
+          .getExtension<DiscreteLod>(TN_DISCRETE_LOD)
+          ?.getIndices()[0]
+          ?.getArray();
+        assert.ok(positions && indices);
+        expect(positions.getCount()).toBe(4);
+        const corners = Array.from(indices as ArrayLike<number>, (index) =>
+          positions.getElement(index, [0, 0, 0]),
+        );
+        expect(corners).toEqual(
+          mode === "mirror"
+            ? [
+                [-1, 0, 0],
+                [0, 0, 1],
+                [-1, 0, 1],
+              ]
+            : [
+                [1, 0, 1],
+                [0, 0, 1],
+                [1, 0, 0],
+              ],
+        );
+      }
+    },
+  );
+
+  it.each([
+    ["unused", "indexes a vertex that its LOD0 does not draw"],
+    ["bad-index", "out of range"],
+    ["bad-level", "not a triangle list"],
+  ] as const)("rejects %s indices before flattening can conceal them", async (mode, message) => {
+    const glb = await smallLodSpecies(mode);
+    await expect(
+      cookTerrainWorld({
+        state: evaluatedTerrain(),
+        species: { fir: { glb, lods: [{ distance: 40, glb }] } },
+        out: dir,
+      }),
+    ).rejects.toThrow(message);
   });
 
   it("stores identical species textures once and keeps each material's sampler and UV offset", async () => {

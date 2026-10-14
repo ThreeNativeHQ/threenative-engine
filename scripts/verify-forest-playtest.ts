@@ -18,6 +18,13 @@ const LOAD_ANCHOR = "  override async load(ctx: GameCtx): Promise<void> {\n";
 const CLASS_ANCHOR = "export class Play extends Scene<GameState, IPhysicsContext> {\n";
 const SPAWN_X = "Number.isFinite(state.playerX) ? state.playerX : Play.initialState.playerX";
 const SPAWN_ANCHOR = `        x: ${SPAWN_X},\n        y: PLAYER_STAND_Y,\n`;
+const LIGHTING_ANCHOR = `    const { key, dispose: disposeLighting } = setupLighting(
+      ctx.scene,
+      ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      isMobile(),
+    );
+`;
+const MATERIAL_ANCHOR = "    const materialEnvironment = {\n";
 const READY_ANCHOR = "      this.#sky === undefined\n";
 const SCENARIO_ROOT = path.resolve(templateRoot(), "..", "template-playtests", "starter-forest");
 
@@ -51,23 +58,50 @@ export function insertWorldLoad(source: string, lines: readonly string[]): strin
   anchorOnce(source, CLASS_ANCHOR, "the Play class");
   anchorOnce(source, SPAWN_ANCHOR, "the Player spawn");
   anchorOnce(source, READY_ANCHOR, "the Play readiness check");
+  anchorOnce(source, LIGHTING_ANCHOR, "the shadow lighting call");
+  anchorOnce(source, MATERIAL_ANCHOR, "the streamed shadow binding");
   const imports = lines.filter((line) => line.startsWith("import "));
   const body = lines.filter((line) => !line.startsWith("import "));
   if (!body.some((line) => line.startsWith("const terrainField = ")))
     throw new Error("TN_FOREST_TERRAIN_FIELD: the load snippet does not declare terrainField.");
-  const retain = "    this.#terrainField = terrainField;\n";
+  if (!body.some((line) => line.startsWith("const loadCells = ")))
+    throw new Error("TN_FOREST_LOAD_CELLS: the load snippet does not declare loadCells.");
+  const retain = "    this.#terrainField = terrainField;\n    this.#loadCells = loadCells;\n";
   const loaded = source
     .replace(LOAD_ANCHOR, `${LOAD_ANCHOR}${body.map((line) => `    ${line}\n`).join("")}${retain}`)
-    .replace(CLASS_ANCHOR, `${CLASS_ANCHOR}  #terrainField: TerrainHeightfield | undefined;\n`)
+    .replace(
+      CLASS_ANCHOR,
+      `${CLASS_ANCHOR}  #terrainField: TerrainHeightfield | undefined;\n  #loadCells: ((follow: TerrainAnchor, invalidate?: NonNullable<TerrainWorldOptions["shadows"]>["invalidate"]) => void) | undefined;\n`,
+    )
+    .replace(
+      LIGHTING_ANCHOR,
+      `    const terrainShadowExtent = Math.hypot(this.#terrainField.width, this.#terrainField.depth);
+    const { key, shadows, dispose: disposeLighting } = setupLighting(
+      ctx.scene,
+      ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      isMobile(),
+      [terrainShadowExtent / 16, terrainShadowExtent / 4, terrainShadowExtent].filter((extent) => extent > 14),
+      VirtualShadowNode,
+    );
+`,
+    )
+    .replace(
+      MATERIAL_ANCHOR,
+      `    ctx.scene.add(key.target);
+    this.#loadCells(player.mesh, (region) =>
+      region === undefined ? shadows?.invalidateAll() : shadows?.invalidateRegion(region),
+    );
+${MATERIAL_ANCHOR}`,
+    )
     .replace(
       READY_ANCHOR,
-      "      this.#sky === undefined ||\n      this.#terrainField === undefined\n",
+      "      this.#sky === undefined ||\n      this.#terrainField === undefined ||\n      this.#loadCells === undefined\n",
     )
     .replace(
       SPAWN_ANCHOR,
       `        x: ${SPAWN_X},\n        y: this.#terrainField.heightAt(${SPAWN_X}, 0) + PLAYER_STAND_Y,\n`,
     );
-  return `${imports.map((line) => `${line}\n`).join("")}${loaded}`;
+  return `${imports.map((line) => `${line}\n`).join("")}import { VirtualShadowNode } from "@threenative/core";\n${loaded}`;
 }
 
 function run(command: string, args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv) {
