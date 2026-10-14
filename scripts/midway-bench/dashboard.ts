@@ -5,6 +5,7 @@
  * Fail closed: a log line whose JSON does not parse is skipped and counted, and a run with no usable
  * samples reports `undefined`, never a zero. A KPI with no data is `pending`, never `pass`.
  */
+import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -218,6 +219,8 @@ export function cullOf(text: string | undefined): number | undefined {
 
 export interface IMidwayRun {
   dir: string;
+  /** Pins every input used to score this run, including parity and optional cull proof. */
+  evidenceSha256?: string;
   tag: string;
   /** The tag without its trailing run number: `walk-a1` and `walk-a2` are group `walk-a`. */
   group: string;
@@ -263,6 +266,9 @@ export function runOf(
   const desktop = "frames" in player ? player.frames : undefined;
   const run: IMidwayRun = {
     dir,
+    evidenceSha256: createHash("sha256")
+      .update(JSON.stringify([log, parityText, cullText]))
+      .digest("hex"),
     tag,
     group: tag.replace(/\d+$/, "") || tag,
     arm,

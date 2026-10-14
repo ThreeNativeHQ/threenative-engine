@@ -28,6 +28,7 @@ import {
   prdProgress,
   progressOf,
   trendsOf,
+  winnerOf,
 } from "../midway-bench/kpis.js";
 
 const frame = (cpu: number, ms = 40) =>
@@ -238,7 +239,7 @@ describe("groups and loading", () => {
     });
     const scored = midwayOf(list);
     expect(scored.runs).toHaveLength(2);
-    expect(scored.kpis.find((k) => k.id === "AC-5")).toMatchObject({
+    expect(scored.candidate.kpis.find((k) => k.id === "AC-5")).toMatchObject({
       current: 68,
       build: "pkg-solo",
     });
@@ -531,11 +532,189 @@ describe("progress, trends and PRD boxes", () => {
     const m = midwayOf(list);
     expect(m.runs).toHaveLength(4);
     expect(m.builds.map((b) => b.build)).toEqual(["pkg-old", "pkg-new"]);
-    expect(m.kpis.find((k) => k.id === "AC-3")).toMatchObject({ build: "pkg-new", current: 3000 });
-    expect(m.gap.desktop).toMatchObject({ build: "pkg-new", ms: 14 });
+    expect(m.candidate.kpis.find((k) => k.id === "AC-3")).toMatchObject({
+      build: "pkg-new",
+      current: 3000,
+    });
+    expect(m.gap.desktop).toBeUndefined();
+    expect(m.candidate.gap.desktop).toMatchObject({ build: "pkg-new", ms: 14 });
     expect(m.trends.find((t) => t.id === "ms")?.points.map((p) => p.build)).not.toContain(
       "pkg-prof",
     );
     expect(m.abPairs).toEqual([]);
+  });
+});
+
+describe("deliberate winner lock", () => {
+  const fixture = () => {
+    const list: IMidwayRun[] = [];
+    for (let i = 1; i <= 3; i++) {
+      for (const [arm, cpu, instructions, hud] of [
+        ["a", 12, 24000, 60],
+        ["b", 10, 22000, 40],
+      ] as const) {
+        list.push(
+          run(
+            `locked-${arm}${i}-desktop`,
+            [
+              pkgLine(`pkg-${arm}`),
+              `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: cpu, cpuFrameKInstructions: instructions })}`,
+              ui(hud),
+              proj(5000),
+            ].join("\n"),
+            parityText(true),
+          ),
+        );
+      }
+    }
+    const pins = (pkg: string) =>
+      list
+        .filter((r) => r.pkg === pkg)
+        .map((r) => ({ dir: r.dir, evidenceSha256: r.evidenceSha256 }));
+    return {
+      list,
+      lock: {
+        package: "pkg-b",
+        qualification: {
+          reviewedBy: "owner",
+          isolated: true,
+          sameWorkload: true,
+          sameHud: true,
+          sameEnvironment: true,
+        },
+        baseline: pins("pkg-a"),
+        candidate: pins("pkg-b"),
+      },
+    };
+  };
+
+  it("never accepts newest or fastest runs without a valid explicit lock", () => {
+    const { list } = fixture();
+    for (const text of [undefined, "{", "null", "{}"])
+      expect(winnerOf(list, text).status).toBe("unqualified");
+    const state = midwayOf(list);
+    expect(state.winner.status).toBe("unqualified");
+    expect(state.gap.desktop).toBeUndefined();
+    expect(state.breakdown).toBeUndefined();
+    expect(state.kpis.every((k) => k.current === undefined)).toBe(true);
+    expect(state.candidate.kpis.some((k) => k.current !== undefined)).toBe(true);
+  });
+
+  it("keeps the exact measured reference visible independently of qualification and newer runs", () => {
+    const original = run(
+      "original1-desktop",
+      [pkgLine("pkg-ac1"), frame(14.319), ui(68), proj(9818)].join("\n"),
+      parityText(true),
+    );
+    const reference = run(
+      "isolated-cache-a1-desktop",
+      [pkgLine("pkg-ac10-cache-a1"), frame(9.253), ui(99), proj(5816)].join("\n"),
+      parityText(true),
+    );
+    const samePackage = run(
+      "later-a1-desktop",
+      [pkgLine("pkg-ac10-cache-a1"), frame(99)].join("\n"),
+    );
+    const rejected = run(
+      "isolated-cache-b1-desktop",
+      [pkgLine("pkg-ac10-cache-b1"), frame(13.028)].join("\n"),
+    );
+    const state = midwayOf([
+      run("ref1-legacy", budget(11.3)),
+      original,
+      reference,
+      samePackage,
+      rejected,
+    ]);
+    expect(state.winner.status).toBe("unqualified");
+    expect(state.selection).toMatchObject({
+      role: "pinned reference / not qualified",
+      runs: [reference.dir],
+    });
+    expect(state.gap.desktop).toMatchObject({ build: reference.pkg, runs: 1, ms: 9.253 });
+    expect(state.candidate.gap.desktop).toMatchObject({ build: rejected.pkg, ms: 13.028 });
+    expect(state.runs).toHaveLength(5);
+    expect(state.kpis.find((k) => k.id === "AC-3")).toMatchObject({
+      baseline: 9818,
+      current: 5816,
+      baselineBuild: "pkg-ac1",
+    });
+    expect(state.kpis.find((k) => k.id === "AC-5")).toMatchObject({
+      baseline: 68,
+      current: 99,
+      baselineBuild: "pkg-ac1",
+    });
+    expect(state.kpis.find((k) => k.id === "AC-6")?.baseline).toBeCloseTo(11.3 / 14.319);
+  });
+
+  it("pins only the approved runs even when a later candidate is faster or slower", () => {
+    const { list, lock } = fixture();
+    for (const cpu of [1, 99]) {
+      const later = run(
+        "new1-desktop",
+        [pkgLine("pkg-new"), frame(cpu), ui(1)].join("\n"),
+        parityText(true),
+      );
+      const state = midwayOf(
+        [...list, later, run("ref1-legacy", budget(11))],
+        undefined,
+        JSON.stringify(lock),
+      );
+      expect(state.winner).toMatchObject({ status: "accepted", build: "pkg-b" });
+      expect(state.gap.desktop).toMatchObject({ build: "pkg-b", runs: 3, ms: 10 });
+      expect(state.candidate.gap.desktop).toMatchObject({ build: "pkg-new", ms: cpu });
+      expect(state.runs).toHaveLength(8);
+    }
+  });
+
+  it("requires reviewer approval of controls and at least three complete distinct alternating pairs", () => {
+    const { list, lock } = fixture();
+    for (const changed of [
+      { ...lock, qualification: { ...lock.qualification, isolated: false } },
+      { ...lock, qualification: { ...lock.qualification, reviewedBy: "" } },
+      { ...lock, candidate: lock.candidate.slice(0, 2) },
+      { ...lock, candidate: [lock.candidate[0], lock.candidate[0], lock.candidate[2]] },
+      { ...lock, baseline: [...lock.baseline].reverse() },
+      { ...lock, package: "pkg-new" },
+    ])
+      expect(winnerOf(list, JSON.stringify(changed)).status).toBe("unqualified");
+  });
+
+  it("rejects mutated evidence, excluded runs, missing parity and absent counters", () => {
+    const { list, lock } = fixture();
+    for (const patch of [
+      { evidenceSha256: "0".repeat(64) },
+      { timingExclusion: "Concurrent player" },
+      { profiled: true as const },
+      { parity: undefined },
+      { desktop: { n: 1, medians: { cpuFrameCpuMs: 10 } } },
+      { ui: undefined },
+      { skipped: 1 },
+    ]) {
+      const changed = list.map((r, i) => (i === 1 ? { ...r, ...patch } : r));
+      expect(winnerOf(changed, JSON.stringify(lock)).status).toBe("unqualified");
+    }
+  });
+
+  it("rejects instruction overlap and CPU or HUD regressions despite passing parity", () => {
+    for (const [cpu, instructions, hud] of [
+      [10, 24000, 40],
+      [13, 22000, 40],
+      [10, 22000, 61],
+    ]) {
+      const { list, lock } = fixture();
+      list[1] = run(
+        "locked-b1-desktop",
+        [
+          pkgLine("pkg-b"),
+          `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: cpu, cpuFrameKInstructions: instructions })}`,
+          ui(hud),
+        ].join("\n"),
+        parityText(true),
+      );
+      list[1].mtimeMs = (list[0]?.mtimeMs ?? 0) + 0.5;
+      lock.candidate[0] = { dir: list[1].dir, evidenceSha256: list[1].evidenceSha256 };
+      expect(winnerOf(list, JSON.stringify(lock)).status).toBe("unqualified");
+    }
   });
 });

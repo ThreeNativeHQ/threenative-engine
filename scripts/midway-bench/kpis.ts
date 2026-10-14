@@ -71,7 +71,7 @@ export interface IKpi {
   baselineDeltaPct?: number;
   /** 0 at the baseline, 1 at the target; below 0 is a regression and above 1 is past the target. */
   progress?: number;
-  /** The newest build (the one `current` is the median of) and how many runs it has. */
+  /** The selected build (the one `current` is the median of) and how many runs it has. */
   build?: string;
   runs?: number;
   baselineBuild?: string;
@@ -137,7 +137,15 @@ function ends(runs: readonly IMidwayRun[], arm: Arm, get: (r: IMidwayRun) => num
 const medOf = (list: readonly IMidwayRun[], get: (r: IMidwayRun) => number | undefined) =>
   median(list.map(get).filter(finite));
 
-export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi[] {
+export function kpisOf(
+  runs: readonly IMidwayRun[],
+  prd = prdProgress(""),
+  currentRuns = runs,
+): IKpi[] {
+  const compared = (arm: Arm, get: (r: IMidwayRun) => number | undefined) => ({
+    first: ends(runs, arm, get).first,
+    last: ends(currentRuns, arm, get).last,
+  });
   const legacy = legacyMs(runs);
   const ratio = (r: IMidwayRun) => {
     const ms = mainThreadMs(r);
@@ -171,7 +179,7 @@ export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi
     };
   };
   const ratioKpi = (id: string, title: string, arm: Arm, floor: "above" | "atLeast") => {
-    const e = ends(runs, arm, ratio);
+    const e = compared(arm, ratio);
     const bad = parityNote(e.last?.runs ?? []);
     return make(
       id,
@@ -195,7 +203,7 @@ export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi
       "lower",
       "nodes",
       TARGETS.matrixVisited,
-      ends(runs, "desktop", (r) => r.matrix?.last),
+      compared("desktop", (r) => r.matrix?.last),
       (l) => `last ${l.value}, max ${Math.max(...l.runs.map((r) => r.matrix?.max ?? 0))}`,
       (l) => l.value <= TARGETS.matrixVisited,
     ),
@@ -205,7 +213,7 @@ export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi
       "lower",
       "%",
       TARGETS.cullPct,
-      ends(runs, "desktop", (r) => r.cullPct),
+      compared("desktop", (r) => r.cullPct),
       () => "ProjectedCull::apply share, from cull.json",
       (l) => l.value < TARGETS.cullPct,
       'no samples: write cull.json {"sharePct": n} into a desktop run dir',
@@ -216,7 +224,7 @@ export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi
       "lower",
       "ms",
       TARGETS.hudP95Ms,
-      ends(runs, "desktop", (r) => r.ui?.p95),
+      compared("desktop", (r) => r.ui?.p95),
       (l) => `p50 ${medOf(l.runs, (r) => r.ui?.p50)?.toFixed(1)} ms, p95 ${l.value.toFixed(1)} ms`,
       (l) => l.value < TARGETS.hudP95Ms,
     ),
@@ -523,18 +531,121 @@ export function buildsOf(runs: readonly IMidwayRun[]) {
   }));
 }
 
+/** Deliberate promotion only: the reviewer attests controls that historical logs cannot prove.
+ * winner-lock.json: { package, qualification: { reviewedBy, isolated, sameWorkload, sameHud,
+ * sameEnvironment }, baseline: [{ dir, evidenceSha256 }], candidate: [{ dir, evidenceSha256 }] }.
+ * Arrays list alternating baseline/candidate rounds; hashes come from the raw runs API.
+ */
+export function winnerOf(runs: readonly IMidwayRun[], text?: string) {
+  const fail = (reason: string) => ({
+    status: "unqualified" as const,
+    reason,
+    runs: [] as IMidwayRun[],
+  });
+  if (text === undefined) return fail("No winner-lock.json; latest builds are experimental.");
+  try {
+    const lock = JSON.parse(text);
+    const q = lock.qualification;
+    if (
+      typeof lock.package !== "string" ||
+      !lock.package.startsWith("pkg-") ||
+      typeof q?.reviewedBy !== "string" ||
+      !q.reviewedBy.trim() ||
+      ![q.isolated, q.sameWorkload, q.sameHud, q.sameEnvironment].every((v) => v === true)
+    )
+      return fail(
+        "Lock needs an explicit reviewer and controlled isolation, workload, HUD and environment approval.",
+      );
+    if (
+      !Array.isArray(lock.baseline) ||
+      !Array.isArray(lock.candidate) ||
+      lock.baseline.length < 3 ||
+      lock.baseline.length !== lock.candidate.length
+    )
+      return fail("Lock needs at least three complete A/B pairs.");
+    const pinned = (entries: { dir: string; evidenceSha256: string }[]) =>
+      entries.map((entry) => {
+        const run = runs.find((r) => r.dir === entry.dir);
+        if (
+          !run ||
+          run.arm !== "desktop" ||
+          run.status !== "ok" ||
+          run.skipped ||
+          run.profiled ||
+          run.timingExclusion ||
+          parityNote([run]) ||
+          !/^[a-f0-9]{64}$/.test(entry.evidenceSha256) ||
+          entry.evidenceSha256 !== run.evidenceSha256 ||
+          !finite(instrM(run)) ||
+          !finite(mainThreadMs(run)) ||
+          !finite(run.ui?.p95)
+        )
+          throw new Error(
+            "Pinned run is missing, changed, excluded, malformed or lacks instructions, HUD or passing parity.",
+          );
+        return run;
+      });
+    const baseline = pinned(lock.baseline);
+    const candidate = pinned(lock.candidate);
+    const sequence = baseline.flatMap((r, i) => [r, candidate[i] as IMidwayRun]);
+    if (
+      new Set(sequence.map((r) => r.dir)).size !== sequence.length ||
+      sequence.some((r, i) => i > 0 && r.mtimeMs <= (sequence[i - 1] as IMidwayRun).mtimeMs)
+    )
+      return fail("Pinned runs must be distinct and alternate baseline then candidate in time.");
+    if (
+      new Set(baseline.map((r) => r.pkg)).size !== 1 ||
+      !baseline[0]?.pkg ||
+      baseline[0].pkg === lock.package ||
+      candidate.some((r) => r.pkg !== lock.package)
+    )
+      return fail("Lock must pin one baseline package and one distinct candidate package.");
+    const range = (list: IMidwayRun[], get: (r: IMidwayRun) => number | undefined) =>
+      list.map(get) as number[];
+    if (Math.max(...range(candidate, instrM)) >= Math.min(...range(baseline, instrM)))
+      return fail("REJECT: every candidate must beat every baseline on instructions.");
+    if (
+      Math.max(...range(candidate, mainThreadMs)) > Math.min(...range(baseline, mainThreadMs)) ||
+      Math.max(...range(candidate, (r) => r.ui?.p95)) >
+        Math.min(...range(baseline, (r) => r.ui?.p95))
+    )
+      return fail("REJECT: candidate CPU time or HUD p95 regresses against the baseline.");
+    return {
+      status: "accepted" as const,
+      build: lock.package as string,
+      reviewedBy: q.reviewedBy as string,
+      runs: candidate,
+    };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Invalid winner lock.");
+  }
+}
+
 /** Every score reads the timed runs only: profiled runs are listed in `runs` and counted nowhere else. */
-export function midwayOf(all: readonly IMidwayRun[], prdText?: string) {
+export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?: string) {
   const runs = all.filter((r) => !r.profiled && !r.timingExclusion);
   const prd = prdText === undefined ? undefined : prdProgress(prdText);
+  const { runs: accepted, ...winner } = winnerOf(runs, lockText);
+  const reference = runs.find(
+    (r) => r.dir === "isolated-cache-a1-desktop" && r.pkg === "pkg-ac10-cache-a1",
+  );
+  const measured = accepted.length ? accepted : reference ? [reference] : [];
+  const headline = [...runs.filter((r) => r.arm === "legacy"), ...measured];
   return {
-    kpis: kpisOf(runs, prd),
+    winner,
+    selection: {
+      role: accepted.length ? "accepted winner" : "pinned reference / not qualified",
+      build: measured[0]?.pkg,
+      runs: measured.map((r) => r.dir),
+    },
+    candidate: { kpis: kpisOf(runs, prd), gap: gapOf(runs), breakdown: breakdownOf(runs) },
+    kpis: kpisOf(runs, prd, headline),
     prd,
     trends: trendsOf(runs),
     abPairs: abPairsOf(runs),
-    breakdown: breakdownOf(runs),
+    breakdown: breakdownOf(headline),
     builds: buildsOf(runs),
-    gap: gapOf(runs),
+    gap: gapOf(headline),
     groups: groupsOf(runs),
     legacyMs: legacyMs(runs),
     runs: all,
@@ -545,5 +656,11 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string) {
 
 /** Everything the tab shows, read fresh. */
 export async function midwayState() {
-  return midwayOf(await loadMidwayRuns(), await readFile(PRD, "utf8").catch(() => undefined));
+  return midwayOf(
+    await loadMidwayRuns(),
+    await readFile(PRD, "utf8").catch(() => undefined),
+    await readFile(`${runsDir()}/winner-lock.json`, "utf8").catch((error) =>
+      error.code === "ENOENT" ? undefined : "invalid unreadable winner lock",
+    ),
+  );
 }
