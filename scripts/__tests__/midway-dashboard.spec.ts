@@ -683,6 +683,63 @@ describe("progress, trends and PRD boxes", () => {
     });
   });
 
+  it("falls back only from a missing pinned cull share to complete eligible measured runs", async () => {
+    const d = (dir: string, pkg: string, cull?: number, count = 1000, pass = true) =>
+      runOf(
+        dir,
+        dir.replace(/-desktop$/, ""),
+        "desktop",
+        ++clock,
+        [pkgLine(pkg), ...Array(count).fill(worldFrame()), ui(30), proj(4000)].join("\n"),
+        parityText(pass),
+        cull === undefined ? undefined : JSON.stringify({ sharePct: cull }),
+      );
+    const reference = d("isolated-cache-a1-desktop", "pkg-ac10-cache-a1");
+    const measured = d("meter-desktop", "pkg-meter", 3.977027234);
+    const list = [
+      reference,
+      measured,
+      d("later-missing-desktop", "pkg-missing"),
+      d("short-desktop", "pkg-short", 0.1, 999),
+      d("bad-parity-desktop", "pkg-bad-parity", 0.1, 1000, false),
+      { ...d("profiled-desktop", "pkg-profiled", 0.1), profiled: true as const },
+      { ...d("timing-excluded-desktop", "pkg-timing-excluded", 0.1), timingExclusion: "Busy host" },
+      { ...d("rejected-desktop", "pkg-rejected", 0.1), rejection: "Keep rule failed" },
+      { ...d("unknown-desktop", "pkg-unknown", 0.1), pkg: undefined },
+      { ...d("malformed-desktop", "pkg-malformed", 0.1), skipped: 1 },
+    ];
+    const state = midwayOf(list);
+    expect(state.kpis.find((k) => k.id === "AC-4")).toMatchObject({
+      current: 3.977027234,
+      baseline: 3.977027234,
+      build: "pkg-meter",
+      target: 2,
+      verdict: "fail",
+      ticked: false,
+      detail: expect.stringContaining("measured experimental · not accepted"),
+    });
+    expect(state.selection.build).toBe(reference.pkg);
+    const html = await readFile(new URL("../midway-bench/dashboard.html", import.meta.url), "utf8");
+    const script = (html.split("<script>")[1] as string)
+      .split("</script>")[0]
+      ?.replace("tick(); setInterval(tick, 5000);", "");
+    const output = { value: "" };
+    runInNewContext(`${script}\noutput.value = kpi(data);`, {
+      output,
+      data: state.kpis.find((k) => k.id === "AC-4"),
+      document: { getElementById: () => ({ addEventListener() {} }) },
+    });
+    expect(output.value).toContain("3.98<small>%</small>");
+    expect(output.value).toContain(">FAIL</span>");
+    expect(output.value).toContain("measured experimental · not accepted");
+    expect(output.value).not.toContain("AC-4 ✓");
+    reference.cullPct = 1.9;
+    expect(midwayOf(list).kpis.find((k) => k.id === "AC-4")).toMatchObject({
+      current: 1.9,
+      build: reference.pkg,
+    });
+  });
+
   it("builds trends with the legacy target and the improvement against the first desktop run", () => {
     const list = [
       run("ref1-legacy", budget(11) + report("wall-clock")),
@@ -1001,6 +1058,7 @@ describe("deliberate winner lock", () => {
         [pkgLine("pkg-new"), ...Array(1000).fill(frame(cpu)), ui(1), proj(1000)].join("\n"),
         parityText(true),
       );
+      later.cullPct = 3.977027234;
       const state = midwayOf(
         [...list, later, run("ref1-legacy", budget(11) + report("wall-clock"))],
         undefined,
@@ -1013,6 +1071,7 @@ describe("deliberate winner lock", () => {
         build: "pkg-b",
         current: 5000,
       });
+      expect(state.kpis.find((k) => k.id === "AC-4")?.current).toBeUndefined();
       expect(state.candidate.gap.desktop).toMatchObject({ build: "pkg-new", ms: cpu });
       expect(state.runs).toHaveLength(8);
     }

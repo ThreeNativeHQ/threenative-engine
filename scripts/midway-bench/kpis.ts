@@ -663,6 +663,21 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
     !accepted.length && bestStructural
       ? kpisOf(runs, prd, bestStructural.runs).find((k) => k.id === "AC-3")
       : undefined;
+  const experimentalAc4 = !accepted.length
+    ? kpisOf(
+        runs,
+        prd,
+        runs.filter(
+          (r) =>
+            r.arm === "desktop" &&
+            !!r.pkg?.trim() &&
+            !r.skipped &&
+            r.desktop?.n === PLAYER_FRAME_WINDOW &&
+            !r.desktop.worldWorkInvalid &&
+            !parityNote([r]),
+        ),
+      ).find((k) => k.id === "AC-4")
+    : undefined;
   return {
     winner,
     selection: {
@@ -697,7 +712,12 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
     kpis: kpisOf(runs, prd, headline).map((k) =>
       k.id === "AC-3" && experimentalAc3
         ? { ...experimentalAc3, detail: `experimental · not accepted · ${experimentalAc3.detail}` }
-        : k,
+        : k.id === "AC-4" && k.current === undefined && experimentalAc4?.current !== undefined
+          ? {
+              ...experimentalAc4,
+              detail: `measured experimental · not accepted · ${experimentalAc4.detail}`,
+            }
+          : k,
     ),
     prd,
     trends: trendsOf(runs),
