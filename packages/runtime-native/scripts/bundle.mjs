@@ -148,14 +148,14 @@ function generateVFSHeader(files, outputPath) {
 }
 
 /**
- * Decoder-free targets retain loader configuration/lifecycle but refuse actual decoding.
- * A mobile bundle keeps the real loader only for a codec `--decoders` admits — the list
- * `threenative build` resolves per engine (Android V8: ktx2,meshopt). Desktop QuickJS and an
+ * Decoder-free targets retain Three's raw KTX2 loader but refuse Basis and ZSTD decoding.
+ * A mobile bundle keeps full decoding only for a codec `--decoders` admits; raw KTX2 stays.
+ * `threenative build` resolves the list per engine (Android V8: ktx2,meshopt). Desktop QuickJS and an
  * unknown desktop artifact use the same refusing stubs.
  */
 const MOBILE_KTX2_MESSAGE =
   // Never spell the WASM host global: the bundle guard must not mistake diagnostics for code.
-  "TN_NATIVE_KTX2_UNSUPPORTED: this decoder-free native bundle carries no qualified Basis transcoder. Compiled .ktx2 textures cannot be decoded here; native compilation keeps decoder-free authored textures, or keep compressed textures on the web target.";
+  "TN_NATIVE_KTX2_UNSUPPORTED: this decoder-free native bundle carries no qualified Basis or ZSTD decoder. Use GPU-ready KTX2 textures without supercompression, or keep transcoded textures on the web target.";
 const MOBILE_MESH_MESSAGE =
   "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: this decoder-free native bundle carries no qualified Meshopt or Draco decoder. Compressed model geometry cannot be decoded here; native compilation keeps shared images and decoder-free model geometry, or keep compressed models on the web target.";
 
@@ -163,22 +163,20 @@ const MOBILE_DECODER_STUBS = [
   {
     codec: 'ktx2',
     endsWith: '/examples/jsm/loaders/KTX2Loader.js',
-    source: `const message = "${MOBILE_KTX2_MESSAGE}";
-export class KTX2Loader {
-  constructor() { this.transcoderPath = ""; this.workerConfig = undefined; }
-  setTranscoderPath(path) { this.transcoderPath = path; return this; }
-  setWorkerLimit() { return this; }
-  // Support detection is where core asks whether this platform can transcode at all. Throwing
-  // is the documented "renderer exposed no surface to probe" answer: the asset loader resolves
-  // its shared loader to undefined and the game boots without compressed textures.
-  detectSupport() { throw new Error(message); }
-  load(url, onLoad, onProgress, onError) {
-    const error = new Error(\`\${message} (requested '\${url}')\`);
-    if (typeof onError === "function") onError(error);
-    else throw error;
-  }
-  parse() { throw new Error(message); }
-  dispose() { return this; }
+    // The private query bypasses this exact-path replacement once; upstream owns raw parsing.
+    source: (id) => `import { KTX2Loader as RawKTX2Loader } from ${JSON.stringify(`${id}?threenative-raw-ktx2`)};
+export class KTX2Loader extends RawKTX2Loader {
+  init() { return Promise.reject(new Error(${JSON.stringify(MOBILE_KTX2_MESSAGE)})); }
+}
+`,
+  },
+  {
+    codec: 'ktx2',
+    endsWith: '/examples/jsm/libs/zstddec.module.js',
+    source: `export class ZSTDDecoder {
+  // Upstream awaits init inside an async Promise executor; reject at decode to avoid hanging.
+  init() { return Promise.resolve(); }
+  decode() { throw new Error(${JSON.stringify(MOBILE_KTX2_MESSAGE)}); }
 }
 `,
   },
@@ -228,9 +226,10 @@ export class DRACOLoader {
  */
 function mobileDecoderStub(id, admitted) {
   const normalized = id.split('\\').join('/');
-  return MOBILE_DECODER_STUBS.find(
+  const stub = MOBILE_DECODER_STUBS.find(
     (stub) => normalized.endsWith(stub.endsWith) && !admitted.includes(stub.codec),
-  )?.source;
+  );
+  return typeof stub?.source === 'function' ? stub.source(id) : stub?.source;
 }
 
 /**
