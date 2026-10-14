@@ -1,8 +1,9 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PNG } from "pngjs";
 import { expect, test } from "vitest";
 
 import {
@@ -1025,6 +1026,97 @@ async function runDesktopDevice(driver: FakeAndroidDriver, steps: unknown[]) {
     name: "desktop",
     processName: "desktop-input-test",
     transport: new DeviceBridgeTransport(endpoint),
+  });
+}
+
+/**
+ * A 128 by 128 frame with eight shades of dark background and one 16 by 16 bright cloud. The
+ * cloud is 256 of 16384 pixels: below the browser bright-pixel floor (0.05), above the desktop
+ * content floor (0.001). Background luminance stays under 0.05, so it is not bright either.
+ */
+function cloudPng(): Buffer {
+  const png = new PNG({ width: 128, height: 128 });
+  for (let y = 0; y < 128; y += 1) {
+    for (let x = 0; x < 128; x += 1) {
+      const cloud = x >= 56 && x < 72 && y >= 56 && y < 72;
+      const shade = cloud ? 255 : 4 + ((x + y) % 8);
+      png.data.set([shade, shade, shade, 255], (y * 128 + x) * 4);
+    }
+  }
+  return PNG.sync.write(png);
+}
+
+class PngDriver extends FakeAndroidDriver {
+  readonly written: string[] = [];
+
+  constructor(bridge: IPlaytestBridgeV1, private readonly png: Buffer) {
+    super(bridge);
+  }
+
+  override async screenshot(path?: string) {
+    if (path === undefined) return;
+    this.written.push(path);
+    await writeFile(path, this.png);
+  }
+}
+
+test("a device screenshot on desktop passes the content floor, and android still fails the bright-pixel floor", async () => {
+  const cloud = cloudPng();
+  const steps = [{ waitTicks: 1 }];
+  const desktop = new PngDriver(movingBridge().bridge, cloud);
+  const desktopOutcome = await runScreenshotDevice("desktop", desktop, steps).then(
+    (result) => JSON.stringify(result),
+    (error: unknown) => String(error),
+  );
+  expect(desktopOutcome).not.toContain("TN_CAPTURE_BLANK");
+  expect(desktop.written).toHaveLength(2);
+
+  const android = new PngDriver(movingBridge().bridge, cloud);
+  const androidOutcome = await runScreenshotDevice("android", android, steps).then(
+    (result) => JSON.stringify(result),
+    (error: unknown) => String(error),
+  );
+  expect(androidOutcome).toContain("bright pixel ratio");
+  expect(android.written.length).toBeGreaterThanOrEqual(1);
+});
+
+async function runScreenshotDevice(name: "android" | "desktop", driver: PngDriver, steps: unknown[]) {
+  const projectPath = await makeTempDir("playtest-device-capture-");
+  const artifactDirectory = join(projectPath, "artifacts");
+  await mkdir(artifactDirectory, { recursive: true });
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+    artifacts: { screenshots: "before-after" },
+    assert: { movement: { entity: "player", maxDistance: 10 } },
+    name: `${name}-device-capture`,
+    schemaVersion: 1,
+    steps,
+    subject: "player",
+    target: name === "desktop" ? "desktop" : "web",
+    viewport: { height: 128, width: 128 },
+    warmupFrames: 0,
+  }));
+  const port = await availablePort();
+  const endpoint = `http://127.0.0.1:${port}/playtest`;
+  const config: IStandalonePlaytestConfig = {
+    android: { activity: ".MystralActivity", packageName: "com.mystral.engine" },
+    artifactDirectory,
+    endpoint,
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    target: name,
+    timeoutMs: 1_000,
+    trace: false,
+    url: "http://127.0.0.1:5173",
+  };
+  const transport = new DeviceBridgeTransport(endpoint);
+  if (name === "android") return runAndroidPlaytest(config, { driver, transport });
+  return runDevicePlaytest(config, {
+    driver,
+    mailboxPaths: { request: "request", response: "response" },
+    name,
+    processName: "desktop-capture-test",
+    transport,
   });
 }
 

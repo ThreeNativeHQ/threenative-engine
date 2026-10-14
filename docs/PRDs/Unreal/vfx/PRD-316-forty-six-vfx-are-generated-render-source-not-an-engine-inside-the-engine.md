@@ -154,7 +154,7 @@ João asked for a review of Unreal 5.8.3's Niagara source. The review found mech
 does not own. It does not change this PRD's thesis: effect looks stay generated source.
 
 - **Culling and budget go to
-  [PRD-569](PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md).**
+  [PRD-569](../../done/PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md).**
   Niagara culls an effect after it stays out of view for a grace time (1 s default). It applies a
   per-effect reaction, such as pause or kill. It ranks effects by significance against a damped FX
   budget (`UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Classes/NiagaraEffectType.h:23-35, 115-230`).
