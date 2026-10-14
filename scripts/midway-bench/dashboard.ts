@@ -225,6 +225,8 @@ export interface IMidwayRun {
   mtimeMs: number;
   /** Ran with `perf record` and the UI snapshot trace attached (tag starts with `perf-`): its timings are biased. */
   profiled?: true;
+  /** Raw readings remain visible, but a known measurement conflict excludes this run from scores. */
+  timingExclusion?: string;
   /** The build that ran it: the `pkg-<name>` directory of the player path in the log (desktop runs). */
   pkg?: string;
   /** `no samples` when the log held none; `ok` otherwise. */
@@ -340,7 +342,20 @@ export async function loadMidwayRuns(root = runsDir()): Promise<IMidwayRun[]> {
       entry.isDirectory() && m && !profiled && !loaded
         ? await readRun(root, entry.name, m[1] as string, m[2] as Arm)
         : undefined;
-    if (run) runs.push(run);
+    if (run) {
+      const exclusion = await readFile(
+        path.join(root, entry.name, "timing-exclusion.txt"),
+        "utf8",
+      ).catch((error) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      runs.push(
+        exclusion === undefined
+          ? run
+          : { ...run, timingExclusion: exclusion.trim() || "Timing excluded" },
+      );
+    }
   }
   return runs.sort((a, b) => a.mtimeMs - b.mtimeMs || a.dir.localeCompare(b.dir));
 }

@@ -183,6 +183,16 @@ describe("PRD-610 KPIs", () => {
   });
 });
 
+it("reports baseline change separately from progress toward the target", () => {
+  const list = [
+    run("old-desktop", [pkgLine("pkg-old"), frame(10), ui(68)].join("\n")),
+    run("new-desktop", [pkgLine("pkg-new"), frame(10), ui(105)].join("\n")),
+  ];
+  const k = kpisOf(list).find((k) => k.id === "AC-5");
+  expect(k?.baselineDeltaPct).toBeCloseTo(((105 - 68) / 68) * 100);
+  expect(k?.progress).toBeCloseTo(-0.7212475634);
+});
+
 describe("groups and loading", () => {
   const dirs: string[] = [];
   afterEach(async () => {
@@ -199,6 +209,39 @@ describe("groups and loading", () => {
       ["walk-a", 3, 12],
       ["walk-b", 3, 7],
     ]);
+  });
+
+  it("retains timing-excluded runs without using them in HUD scores", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "midway-runs-"));
+    dirs.push(root);
+    for (const [name, pkg, ms] of [
+      ["solo-desktop", "pkg-solo", 68],
+      ["parallel-desktop", "pkg-parallel", 105],
+    ] as const) {
+      await mkdir(path.join(root, name));
+      await writeFile(
+        path.join(root, name, "run.log"),
+        [pkgLine(pkg), frame(10), ui(ms)].join("\n"),
+      );
+    }
+    // The exclusion can arrive after a run was cached; its raw readings remain inspectable.
+    await loadMidwayRuns(root);
+    await writeFile(
+      path.join(root, "parallel-desktop", "timing-exclusion.txt"),
+      "Concurrent Midway instances",
+    );
+    const list = await loadMidwayRuns(root);
+    expect(list).toHaveLength(2);
+    expect(list.find((r) => r.tag === "parallel")).toMatchObject({
+      timingExclusion: "Concurrent Midway instances",
+      ui: { p95: 105 },
+    });
+    const scored = midwayOf(list);
+    expect(scored.runs).toHaveLength(2);
+    expect(scored.kpis.find((k) => k.id === "AC-5")).toMatchObject({
+      current: 68,
+      build: "pkg-solo",
+    });
   });
 
   it("loads <tag>-<arm> dirs oldest first and ignores everything else", async () => {

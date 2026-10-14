@@ -68,6 +68,7 @@ export interface IKpi {
   target: number;
   current?: number;
   baseline?: number;
+  baselineDeltaPct?: number;
   /** 0 at the baseline, 1 at the target; below 0 is a regression and above 1 is past the target. */
   progress?: number;
   /** The newest build (the one `current` is the median of) and how many runs it has. */
@@ -160,6 +161,8 @@ export function kpisOf(runs: readonly IMidwayRun[], prd = prdProgress("")): IKpi
       verdict: pass(last) ? "pass" : "fail",
       current: last.value,
       baseline: first.value,
+      baselineDeltaPct:
+        first.value === 0 ? undefined : ((last.value - first.value) / Math.abs(first.value)) * 100,
       progress: progressOf(first.value, last.value, target),
       build: last.build,
       runs: last.runs.length,
@@ -522,7 +525,7 @@ export function buildsOf(runs: readonly IMidwayRun[]) {
 
 /** Every score reads the timed runs only: profiled runs are listed in `runs` and counted nowhere else. */
 export function midwayOf(all: readonly IMidwayRun[], prdText?: string) {
-  const runs = all.filter((r) => !r.profiled);
+  const runs = all.filter((r) => !r.profiled && !r.timingExclusion);
   const prd = prdText === undefined ? undefined : prdProgress(prdText);
   return {
     kpis: kpisOf(runs, prd),
