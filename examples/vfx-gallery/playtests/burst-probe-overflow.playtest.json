@@ -1,0 +1,21 @@
+{
+  "name": "vfx-gallery-burst-probe-overflow",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 8,
+  "subject": "burst-probe",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "wait", "label": "burst-window-complete", "waitTicks": 600, "release": true }
+  ],
+  "assert": {
+    "components": [
+      { "entity": "burst-probe", "component": "done", "equals": true },
+      { "entity": "burst-probe", "component": "clamped", "equals": 128 },
+      { "entity": "burst-probe", "component": "spawned", "equals": 64 },
+      { "entity": "burst-probe", "component": "nonFinite", "equals": 0 },
+      { "entity": "burst-probe", "component": "threw", "equals": 0 }
+    ]
+  }
+}

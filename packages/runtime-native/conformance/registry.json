@@ -896,6 +896,28 @@
       "required": true
     },
     {
+      "id": "vfx-spawn-requests",
+      "title": "VFX particle spawn requests",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/vfx-spawn-requests.js",
+      "baseline": "conformance/baselines/vfx-spawn-requests.json",
+      "captureFrames": 12,
+      "temporal": { "settledFrame": 8, "nextFrame": 9, "assertsDifferenceFromFrameZero": true, "capture": "settled" },
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "terrain-splat-array",
       "title": "sixteen-layer terrain splat and a height set through five array textures",
       "category": "world",

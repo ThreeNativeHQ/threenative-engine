@@ -64,6 +64,7 @@ import {
   createMagicWisp,
 } from "../render/magic.js";
 import { type IPortalVortex, createPortalVortex } from "../render/portalVortex.js";
+import { createBurstProbe } from "./burstProbe.js";
 
 const EFFECT_IDS = [
   "fire",
@@ -431,6 +432,7 @@ export class Gallery extends Scene<GalleryState> {
     ctx.add(camera);
     ctx.scene.background = new Color(0x050a16);
     createGalleryStage(ctx);
+    const updateBurstProbe = createBurstProbe(ctx);
 
     const effectEntities = new Map<string, GalleryEffectEntity>();
     for (const [index, id] of EFFECT_IDS.entries()) {
@@ -606,6 +608,7 @@ export class Gallery extends Scene<GalleryState> {
       simulationTicks += 1;
       simulatedSeconds += dt;
       sampleWindow();
+      updateBurstProbe();
       const camera = ctx.camera as PerspectiveCamera;
       if (budgetStage === "partial") {
         const emitters = pageEmitters();

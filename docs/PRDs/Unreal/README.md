@@ -114,7 +114,7 @@ decline the rest. The gaps checked and not filed are listed below the table.
 | Lumen | [PRD-605](rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md) | The probe field follows the camera in nested rings | PRD-603, PRD-604 (phases 2–3) |
 | World Partition | [PRD-606](open-world/PRD-606-a-fast-travel-destination-is-ready-before-the-cover-lifts.md) | A fast-travel destination is ready before the cover lifts | — |
 | World Partition | [PRD-607](open-world/PRD-607-streaming-reports-when-a-hole-is-near-and-spends-more-to-close-it.md) | Streaming reports when a hole is near and spends more to close it | — |
-| Niagara | [PRD-609](vfx/PRD-609-a-gpu-burst-starts-where-and-when-it-is-asked-and-live-particles-stay-put.md) | A GPU burst starts where and when it is asked, and live particles stay put | — |
+| Niagara | [PRD-609](../done/PRD-609-a-gpu-burst-starts-where-and-when-it-is-asked-and-live-particles-stay-put.md) | A GPU burst starts where and when it is asked, and live particles stay put | — |
 | Niagara | [PRD-610](vfx/PRD-610-sparks-bounce-off-the-surfaces-the-camera-can-see.md) | Sparks bounce off the surfaces the camera can see | PRD-609 (phase 3) |
 | Niagara | [PRD-611](vfx/PRD-611-a-gpu-effect-that-starts-hidden-draws-its-first-frame-with-its-pipeline-built.md) | A GPU effect that starts hidden draws its first frame with its pipeline built | — |
 
