@@ -968,14 +968,17 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         auto* colors = uniform ? reinterpret_cast<float*>(batchColors_[slot]->data()) : nullptr;
         std::size_t colorOffset = 0;
         for (std::size_t i : g) {
+            const Object3D* placement = nullptr;
             if (palette) {
                 const auto slot = palette->claim(items[i].skinnedRig);
-                palette->write(*slot, *items[i].skinnedRig, false); // project updated this skeleton once
+                placement = palette->writeRelative(*slot, *items[i].skinnedRig);
             }
-            // SkinnedPalette already folds world placement into the bones. Instance transforms
-            // must be identity; applying each rig's matrix here would transform it twice.
+            // Relative palettes carry placement here; eager world palettes retain identity.
             const Matrix identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-            for (double e : palette ? identity : items[i].matrixWorld)
+            const Matrix transform = placement ? toArray(placement->matrixWorld)
+                                     : palette ? identity
+                                               : items[i].matrixWorld;
+            for (double e : transform)
                 matrices[matrixOffset++] = static_cast<float>(e);
             if (colors) for (float c : items[i].material->color) colors[colorOffset++] = c;
             absorbed_[i] = true;

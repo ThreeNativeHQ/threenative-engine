@@ -37,7 +37,175 @@ using namespace tn::engine;
 
 namespace {
 
+// CPU-only proof of the exact palette/instance records used by all render passes.
+void rigRelativePreparation() {
+    Scene scene;
+    scene.enableTrackedTransform();
+    DirectionalLight sun;
+    sun.position.set(10, 20, 20);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    auto geometry = makeBoxGeometry();
+    const auto vertices = geometry->attributes.at("position")->count();
+    geometry->setAttribute("skinIndex",
+                           BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 0), 4));
+    std::vector<double> weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i)
+        weights[i * 4] = 1;
+    geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Object3D>> roots;
+    std::vector<std::shared_ptr<SkinnedMesh>> rigs;
+    std::vector<std::shared_ptr<Bone>> bones, tips;
+    for (int i = 0; i < 8; ++i) {
+        auto root = std::make_shared<Object3D>();
+        auto rig = std::make_shared<SkinnedMesh>(geometry, material);
+        auto bone = std::make_shared<Bone>();
+        auto tip = std::make_shared<Bone>();
+        tip->enableTrackedTransform();
+        bone->add(*tip);
+        tip->position.y = 0.4;
+        root->enableTrackedTransform();
+        rig->enableTrackedTransform();
+        bone->enableTrackedTransform();
+        rig->frustumCulled = false;
+        rig->setCastShadow(true);
+        rig->position.set(0.2, -0.1, 0.3);
+        root->add(*rig);
+        root->add(*bone);
+        scene.add(*root);
+        root->updateMatrixWorld(true);
+        rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone, tip}));
+        root->position.set(i * 3 + 2, i * 0.2, -i);
+        root->rotation.set(0.2, i * 0.1 + 0.3, -0.15);
+        root->scale.setScalar(1.4);
+        bone->position.set(0.3, 0.8, -0.2);
+        bone->rotation.set(0.1, 0.2, 0.4);
+        roots.push_back(root);
+        rigs.push_back(rig);
+        bones.push_back(bone);
+        tips.push_back(tip);
+    }
+    PerspectiveCamera mainCamera, reflectedCamera;
+    mainCamera.position.set(10, 8, 40);
+    mainCamera.lookAt(10, 0, 0);
+    reflectedCamera.position.set(10, -8, 40);
+    reflectedCamera.lookAt(10, 0, 0);
+    RenderDatabase mainDatabase, reflectedDatabase;
+    mainDatabase.shadowMapEnabled = reflectedDatabase.shadowMapEnabled = true;
+    LightState lights;
+    for (int frame = 0; frame < 3; ++frame) {
+        // A legacy slot can share the same draw with relative slots without applying placement twice.
+        if (frame == 2)
+            Object3D::transformTrackingAddress(&bones[0]->position)[2] = 1;
+        bones[0]->rotation.z = double(bones[0]->rotation.z) + 0.17;
+        roots[0]->position.x += 0.7;
+        for (int pass = 0; pass < 2; ++pass) {
+            auto& database = pass ? reflectedDatabase : mainDatabase;
+            auto& camera = pass ? reflectedCamera : mainCamera;
+            const auto& draws = database.prepare(scene, camera, lights);
+            CHECK(draws.size() == 1);
+            if (draws.size() != 1)
+                continue;
+            const DrawItem& draw = draws.front();
+            CHECK(draw.instanceCount == rigs.size() && draw.boneStride == 2);
+            CHECK(draw.castShadow && draw.mainPass);
+            for (int k = 0; k < 16; ++k) {
+                const double identity = k % 5 == 0 ? 1 : 0;
+                CHECK(draw.matrixWorld[k] == identity);
+                CHECK(draw.bindMatrix[k] == identity && draw.bindMatrixInverse[k] == identity);
+            }
+            if (!draw.instanceMatrices || !draw.boneMatrices)
+                continue;
+            const auto* instances = reinterpret_cast<const float*>(draw.instanceMatrices->data());
+            std::vector<bool> seen(rigs.size(), false);
+            for (std::size_t slot = 0; slot < rigs.size(); ++slot) {
+                Matrix4 placement;
+                for (int k = 0; k < 16; ++k)
+                    placement.elements[k] = instances[slot * 16 + k];
+                std::size_t rigIndex = rigs.size();
+                for (std::size_t i = 0; i < roots.size(); ++i)
+                    if (std::abs(placement.elements[12] - roots[i]->matrixWorld.elements[12]) < 1e-5)
+                        rigIndex = i;
+                if (frame == 2 && placement.elements[12] == 0)
+                    rigIndex = 0;
+                CHECK(rigIndex < rigs.size());
+                if (rigIndex == rigs.size())
+                    continue;
+                CHECK(!seen[rigIndex]);
+                seen[rigIndex] = true;
+                SkinnedPalette eager(2, 1, false);
+                eager.write(*eager.claim(rigs[rigIndex].get()), *rigs[rigIndex], false);
+                for (std::size_t bone = 0; bone < 2; ++bone) {
+                    float world[16];
+                    multiplyAffine(placement.elements.data(), 0, draw.boneMatrices->data(), slot * 32 + bone * 16,
+                                   world, 0);
+                    for (int k = 0; k < 16; ++k)
+                        CHECK(std::abs(world[k] - eager.palette()[bone * 16 + k]) < 1e-5);
+                    // Skinning applies its linear matrix to normals; instances use inverse transpose.
+                    Matrix3 normalMatrix;
+                    normalMatrix.getNormalMatrix(placement);
+                    Vector3 normal(0.3, 0.7, -0.2), expected;
+                    const auto* p = draw.boneMatrices->data() + slot * 32 + bone * 16;
+                    expected
+                        .set(world[0] * normal.x + world[4] * normal.y + world[8] * normal.z,
+                             world[1] * normal.x + world[5] * normal.y + world[9] * normal.z,
+                             world[2] * normal.x + world[6] * normal.y + world[10] * normal.z)
+                        .normalize();
+                    normal
+                        .set(p[0] * 0.3 + p[4] * 0.7 - p[8] * 0.2, p[1] * 0.3 + p[5] * 0.7 - p[9] * 0.2,
+                             p[2] * 0.3 + p[6] * 0.7 - p[10] * 0.2)
+                        .applyMatrix3(normalMatrix)
+                        .normalize();
+                    CHECK(normal.distanceTo(expected) < 1e-6);
+                }
+            }
+            for (bool found : seen)
+                CHECK(found);
+        }
+    }
+    const auto fallback = [&](int index) {
+        scene.updateMatrixWorld(true);
+        auto& rig = *rigs[index];
+        rig.skeleton->update();
+        SkinnedPalette expected(2, 1, false), actual(2, 1, false);
+        expected.write(*expected.claim(&rig), rig, false);
+        CHECK(actual.writeRelative(*actual.claim(&rig), rig) == nullptr);
+        CHECK(actual.matrices() == expected.matrices());
+    };
+    fallback(0); // escaped bone
+    rigs[1]->attached = false;
+    fallback(1);
+    rigs[1]->attached = true;
+    Object3D::transformTrackingAddress(&bones[2]->position)[0] = 0;
+    fallback(2); // raw C++ transform
+    roots[3]->scale.set(1, 2, 1);
+    rigs[3]->scale.set(1, 0.5, 1);
+    fallback(3);
+    roots[4]->scale.set(-1, 1, 1);
+    rigs[4]->scale.set(-1, 1, 1);
+    fallback(4);
+    roots[5]->scale.setScalar(0);
+    fallback(5);
+    scene.add(*tips[6]);
+    fallback(6); // unrelated bones share only the Scene, never a rig root
+    roots[7]->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [](const RenderCallbackArgs&, std::string&) { return true; });
+    fallback(7);
+    roots[7]->onBeforeRender.reset();
+    material->nodeMaterial = true;
+    fallback(7);
+    material->nodeMaterial = false;
+    scene.updateMatrixWorld(true);
+    rigs[7]->bindMatrixInverse.identity();
+    SkinnedPalette staleBind(2, 1, false), original(2, 1, false);
+    original.write(*original.claim(rigs[7].get()), *rigs[7], false);
+    CHECK(staleBind.writeRelative(*staleBind.claim(rigs[7].get()), *rigs[7]) == nullptr);
+    CHECK(staleBind.matrices() == original.matrices());
+}
+
 void uniformBatchPreparation() {
+    rigRelativePreparation();
     Material a(MaterialType::Standard), b(MaterialType::Standard);
     const std::array<double*, 27> left{
         &a.opacity, &a.alphaTest, &a.emissive.r, &a.emissive.g,

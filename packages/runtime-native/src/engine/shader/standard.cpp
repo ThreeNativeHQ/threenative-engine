@@ -330,7 +330,9 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         instanceBase = v.add(v.construct(Type::u32(), {v.uniform("instanceBase", Type::f32())}),
                             v.mul(v.builtin("instanceIndex"), v.construct(Type::u32(), {v.constant(5)})));
     }
-    if (variant.instanced) {
+    const auto applyInstance = [&] {
+        if (!variant.instanced)
+            return;
         const auto column = [&](int index) {
             return variant.instanceStorage
                 ? v.loadStorage(instances, v.add(instanceBase, v.construct(Type::u32(), {v.constant(index)})))
@@ -346,7 +348,9 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
                 v.construct(Type::mat(3, 3), {bc, v.call("cross", {c, a}), v.call("cross", {a, b})});
             normal = v.call("normalize", {v.div(v.mul(inverseTranspose, normal), v.call("dot", {a, bc}))});
         }
-    }
+    };
+    if (!variant.skinnedPalette)
+        applyInstance();
     if (variant.skinned) {
         // getSkinnedPosition and getSkinnedNormalAndTangent, operand for operand.
         const uint32_t bones = v.storageBuffer("boneMatrices", Type::mat(4, 4));
@@ -383,6 +387,10 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
             normal = v.call("normalize", {v.swizzle(v.mul(skinMatrix, v.construct(Type::vec(4), {normal, v.constant(0.0f)})), "xyz")});
         }
     }
+    // Palette matrices are world-space (identity placement) or rig-relative: placement must be
+    // outside the skin fold for both positions and inverse-transpose normals, including mixed slots.
+    if (variant.skinnedPalette)
+        applyInstance();
     // NodeMaterial.setupPosition: `positionLocal.assign(positionNode)` after morph, skinning and instancing.
     if (variant.positionNode) position = variant.positionNode->build(v, position);
     if (variant.nodes.positionNode) {

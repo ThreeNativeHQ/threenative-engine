@@ -45,7 +45,7 @@ void multiplyAffine(const double* a, std::size_t ao, const float* b, std::size_t
 void multiplyAffine(const double* a, std::size_t ao, const double* b, std::size_t bo, double* out,
                     std::size_t o);
 
-/** One skinned palette: `capacity × bones` world-space matrices, and last frame's for velocity. */
+/** `capacity × bones` matrices: world-space by default, renderer-relative when placement is supplied. */
 class SkinnedPalette {
   public:
     SkinnedPalette(std::uint32_t bones, std::uint32_t capacity, bool velocity);
@@ -63,12 +63,17 @@ class SkinnedPalette {
     /** Writes one rig's world-space palette; the render database may supply an already updated skeleton. */
     void write(std::uint32_t slot, SkinnedMesh& rig, bool updateSkeleton = true);
 
+    /** Renderer-only factoring: returns the placement ancestor, or keeps the eager world palette.
+     * Attached rigs must prove shared mesh/bone ancestry and tracked, unescaped transforms.
+     * No history: a moving placement would also need its own previous-frame transform. */
+    const Object3D* writeRelative(std::uint32_t slot, SkinnedMesh& rig);
+
     /** Starts one frame: the frame's history becomes last frame's pose. */
     void begin();
     /** Ends one frame: fresh slots get history equal to their pose. */
     void end();
 
-    /** This frame's world-space bone matrices, `capacity × bones` of them in slot order. */
+    /** This frame's bone matrices, `capacity × bones` of them in slot order. */
     [[nodiscard]] std::span<const float> palette() const { return current_; }
     /** Contiguous storage borrowed by a render draw; the palette owns its lifetime. */
     [[nodiscard]] const std::vector<float>& matrices() const { return current_; }
