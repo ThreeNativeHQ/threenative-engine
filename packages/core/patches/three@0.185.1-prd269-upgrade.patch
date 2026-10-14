@@ -17662,3 +17662,394 @@ index 57c1eb62f1e0de063f22e08ec879e31d2a3240b6..f6d510b59151e02c46928689b2be9948
  			this._depthBuffers.delete( texture );
  			depthBuffers.canvasTarget.removeEventListener( 'resize', depthBuffers.onDispose );
  			depthBuffers.canvasTarget.removeEventListener( 'dispose', depthBuffers.onDispose );
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index ee394e98d798be749776cce1fa3e043fb9951769..2a70eb319b4235c958c7b5b1ede148c808d0b4b2 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -85369,11 +85369,11 @@
+ 
+ 		}
+ 		const source = cache._tnPrivateDepth;
+ 		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
+ 		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
+-		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, originalGPU: this.get( canonical ).texture, colorGPU: this.get( this.renderer.getCanvasTarget().colorTexture ).texture, active: true, logical: 1 };
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, active: true, logical: 1 };
+ 		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
+ 
+ 	}
+ 
+ 	_finishTransientDepth( context ) {
+@@ -85421,24 +85421,10 @@
+ 			state.source.texture.destroy();
+ 			delete state.cache._tnPrivateDepth;
+ 
+ 		}
+ 		delete data._tnDepth;
+-
+-	}
+-
+-	// Separate encoders must observe the pending canonical contents in queue order.
+-	_flushTransientDepth( context ) {
+-
+-		const data = this.get( context );
+-		if ( ! data._tnDepth ) return false;
+-		this._restoreTransientDepth( context );
+-		data.currentPass.end();
+-		submit( this.device, data.encoder.finish() );
+-		this._releaseTransientDepth( context );
+-		data.currentPass = null;
+-		return true;
+ 
+ 	}
+ 
+ 	_validateTransientDepth( renderObject, params, vertexBuffers ) {
+ 
+@@ -86138,13 +86124,10 @@
+ 	 * @param {boolean} stencil - Whether the stencil buffer should be cleared or not.
+ 	 * @param {?RenderContext} [renderTargetContext=null] - The render context of the current set render target.
+ 	 */
+ 	clear( color, depth, stencil, renderTargetContext = null ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const interrupted = active && ( renderTargetContext === active || ( renderTargetContext === null && active.textures === null ) ) && this._flushTransientDepth( active );
+-
+ 		const device = this.device;
+ 		const renderer = this.renderer;
+ 
+ 		let colorAttachments = [];
+ 		let depthStencilAttachment;
+@@ -86269,16 +86252,10 @@
+ 		} );
+ 
+ 		currentPass.end();
+ 
+ 		submit( device, encoder.finish() );
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 	}
+ 
+ 	// compute
+ 
+@@ -86993,28 +86970,11 @@
+ 	 * @param {number} faceIndex - The face index.
+ 	 * @return {Promise<TypedArray>} A Promise that resolves with a typed array when the copy operation has finished.
+ 	 */
+ 	async copyTextureToBuffer( texture, x, y, width, height, faceIndex ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const sourceGPU = state && this.get( texture ).texture;
+-		const interrupted = state && ( sourceGPU === state.originalGPU || sourceGPU === state.colorGPU ) && this._flushTransientDepth( active );
+-		try {
+-
+-			return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+-
+-		} finally {
+-
+-			if ( interrupted ) {
+-
+-				this.get( active ).encoder = this.device.createCommandEncoder();
+-				this._resumeTransientDepth( active );
+-
+-			}
+-
+-		}
++		return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+ 
+ 	}
+ 
+ 	/**
+ 	 * Inits a time stamp query for the given render context.
+@@ -87409,14 +87369,10 @@
+ 	 * @param {number} [srcLevel=0] - The mipmap level to copy.
+ 	 * @param {number} [dstLevel=0] - The destination mip level to copy to.
+ 	 */
+ 	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0 ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const interrupted = state && [ srcTexture, dstTexture ].some( texture => { const gpu = this.get( texture ).texture; return gpu === state.originalGPU || gpu === state.colorGPU; } ) && this._flushTransientDepth( active );
+-
+ 		let dstX = 0;
+ 		let dstY = 0;
+ 		let dstZ = 0;
+ 
+ 		let srcX = 0;
+@@ -87494,16 +87450,10 @@
+ 		_texelCopyTextureInfoDst.reset();
+ 		_extent3D.reset();
+ 
+ 		submit( this.device, encoder.finish() );
+ 
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = this.device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index a0fab1c7c37cfaf270d9ce36dd3d91453ae6a44c..bfa242835dfef49019dd368e3593a62a221dda3d 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -85281,11 +85281,11 @@
+ 
+ 		}
+ 		const source = cache._tnPrivateDepth;
+ 		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
+ 		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
+-		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, originalGPU: this.get( canonical ).texture, colorGPU: this.get( this.renderer.getCanvasTarget().colorTexture ).texture, active: true, logical: 1 };
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, active: true, logical: 1 };
+ 		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
+ 
+ 	}
+ 
+ 	_finishTransientDepth( context ) {
+@@ -85333,24 +85333,10 @@
+ 			state.source.texture.destroy();
+ 			delete state.cache._tnPrivateDepth;
+ 
+ 		}
+ 		delete data._tnDepth;
+-
+-	}
+-
+-	// Separate encoders must observe the pending canonical contents in queue order.
+-	_flushTransientDepth( context ) {
+-
+-		const data = this.get( context );
+-		if ( ! data._tnDepth ) return false;
+-		this._restoreTransientDepth( context );
+-		data.currentPass.end();
+-		submit( this.device, data.encoder.finish() );
+-		this._releaseTransientDepth( context );
+-		data.currentPass = null;
+-		return true;
+ 
+ 	}
+ 
+ 	_validateTransientDepth( renderObject, params, vertexBuffers ) {
+ 
+@@ -86050,13 +86036,10 @@
+ 	 * @param {boolean} stencil - Whether the stencil buffer should be cleared or not.
+ 	 * @param {?RenderContext} [renderTargetContext=null] - The render context of the current set render target.
+ 	 */
+ 	clear( color, depth, stencil, renderTargetContext = null ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const interrupted = active && ( renderTargetContext === active || ( renderTargetContext === null && active.textures === null ) ) && this._flushTransientDepth( active );
+-
+ 		const device = this.device;
+ 		const renderer = this.renderer;
+ 
+ 		let colorAttachments = [];
+ 		let depthStencilAttachment;
+@@ -86181,16 +86164,10 @@
+ 		} );
+ 
+ 		currentPass.end();
+ 
+ 		submit( device, encoder.finish() );
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 	}
+ 
+ 	// compute
+ 
+@@ -86901,28 +86878,11 @@
+ 	 * @param {number} faceIndex - The face index.
+ 	 * @return {Promise<TypedArray>} A Promise that resolves with a typed array when the copy operation has finished.
+ 	 */
+ 	async copyTextureToBuffer( texture, x, y, width, height, faceIndex ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const sourceGPU = state && this.get( texture ).texture;
+-		const interrupted = state && ( sourceGPU === state.originalGPU || sourceGPU === state.colorGPU ) && this._flushTransientDepth( active );
+-		try {
+-
+-			return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+-
+-		} finally {
+-
+-			if ( interrupted ) {
+-
+-				this.get( active ).encoder = this.device.createCommandEncoder();
+-				this._resumeTransientDepth( active );
+-
+-			}
+-
+-		}
++		return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+ 
+ 	}
+ 
+ 	/**
+ 	 * Inits a time stamp query for the given render context.
+@@ -87317,14 +87277,10 @@
+ 	 * @param {number} [srcLevel=0] - The mipmap level to copy.
+ 	 * @param {number} [dstLevel=0] - The destination mip level to copy to.
+ 	 */
+ 	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0 ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const interrupted = state && [ srcTexture, dstTexture ].some( texture => { const gpu = this.get( texture ).texture; return gpu === state.originalGPU || gpu === state.colorGPU; } ) && this._flushTransientDepth( active );
+-
+ 		let dstX = 0;
+ 		let dstY = 0;
+ 		let dstZ = 0;
+ 
+ 		let srcX = 0;
+@@ -87402,16 +87358,10 @@
+ 		_texelCopyTextureInfoDst.reset();
+ 		_extent3D.reset();
+ 
+ 		submit( this.device, encoder.finish() );
+ 
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = this.device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );
+ 
+diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
+index 94b48d64ed8f2e57f00cb5fd5bd0112da085aeae..5dbb9bf2ed43fa055c0f7dd2859c146485825817 100644
+--- a/src/renderers/webgpu/WebGPUBackend.js
++++ b/src/renderers/webgpu/WebGPUBackend.js
+@@ -841,9 +841,9 @@
+ 		}
+ 		const source = cache._tnPrivateDepth;
+ 		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
+ 		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
+-		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, originalGPU: this.get( canonical ).texture, colorGPU: this.get( this.renderer.getCanvasTarget().colorTexture ).texture, active: true, logical: 1 };
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, active: true, logical: 1 };
+ 		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
+ 
+ 	}
+ 
+@@ -893,22 +893,8 @@
+ 			delete state.cache._tnPrivateDepth;
+ 
+ 		}
+ 		delete data._tnDepth;
+-
+-	}
+-
+-	// Separate encoders must observe the pending canonical contents in queue order.
+-	_flushTransientDepth( context ) {
+-
+-		const data = this.get( context );
+-		if ( ! data._tnDepth ) return false;
+-		this._restoreTransientDepth( context );
+-		data.currentPass.end();
+-		submit( this.device, data.encoder.finish() );
+-		this._releaseTransientDepth( context );
+-		data.currentPass = null;
+-		return true;
+ 
+ 	}
+ 
+ 	_validateTransientDepth( renderObject, params, vertexBuffers ) {
+@@ -1610,11 +1596,8 @@
+ 	 * @param {?RenderContext} [renderTargetContext=null] - The render context of the current set render target.
+ 	 */
+ 	clear( color, depth, stencil, renderTargetContext = null ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const interrupted = active && ( renderTargetContext === active || ( renderTargetContext === null && active.textures === null ) ) && this._flushTransientDepth( active );
+-
+ 		const device = this.device;
+ 		const renderer = this.renderer;
+ 
+ 		let colorAttachments = [];
+@@ -1741,14 +1724,8 @@
+ 
+ 		currentPass.end();
+ 
+ 		submit( device, encoder.finish() );
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 	}
+ 
+ 	// compute
+@@ -2465,26 +2442,9 @@
+ 	 * @return {Promise<TypedArray>} A Promise that resolves with a typed array when the copy operation has finished.
+ 	 */
+ 	async copyTextureToBuffer( texture, x, y, width, height, faceIndex ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const sourceGPU = state && this.get( texture ).texture;
+-		const interrupted = state && ( sourceGPU === state.originalGPU || sourceGPU === state.colorGPU ) && this._flushTransientDepth( active );
+-		try {
+-
+-			return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+-
+-		} finally {
+-
+-			if ( interrupted ) {
+-
+-				this.get( active ).encoder = this.device.createCommandEncoder();
+-				this._resumeTransientDepth( active );
+-
+-			}
+-
+-		}
++		return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+ 
+ 	}
+ 
+ 	/**
+@@ -2881,12 +2841,8 @@
+ 	 * @param {number} [dstLevel=0] - The destination mip level to copy to.
+ 	 */
+ 	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0 ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const interrupted = state && [ srcTexture, dstTexture ].some( texture => { const gpu = this.get( texture ).texture; return gpu === state.originalGPU || gpu === state.colorGPU; } ) && this._flushTransientDepth( active );
+-
+ 		let dstX = 0;
+ 		let dstY = 0;
+ 		let dstZ = 0;
+ 
+@@ -2966,14 +2922,8 @@
+ 		_extent3D.reset();
+ 
+ 		submit( this.device, encoder.finish() );
+ 
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = this.device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );

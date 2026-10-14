@@ -100,7 +100,6 @@ function fixture(mode: string) {
     "_releaseTransientDepth",
     "_isFullTransientViewport",
     "_resumeTransientDepth",
-    "_flushTransientDepth",
     "_validateTransientDepth",
     "updateViewport",
     "updateScissor",
@@ -677,35 +676,60 @@ function transientFixture(mode: string, withUv = false) {
   const starts: IRecordedPass[] = [];
   const events: string[] = [];
   const draws: IRecordedPass[] = [];
-  const encoder = {
-    beginRenderPass: (descriptor: object) => {
-      const captured = structuredClone(descriptor) as IRecordedPass;
-      starts.push(captured);
-      events.push("begin");
-      return {
-        end: () => events.push("end"),
-        setViewport: () => events.push("viewport"),
-        setScissorRect: () => events.push("scissor"),
-        setPipeline: () => undefined,
-        setVertexBuffer: () => undefined,
-        setBindGroup: () => undefined,
-        draw: () => {
-          draws.push(captured);
-          events.push("draw");
-        },
-      };
-    },
-    finish: () => ({}),
-    copyTextureToTexture: () => events.push("copy"),
+  const submissions: { id: number; commands: string[] }[] = [];
+  const copies: { encoder: number; source: unknown; destination: unknown }[] = [];
+  let encoderId = 0;
+  const createCommandEncoder = () => {
+    const id = encoderId++;
+    const commands: string[] = [];
+    return {
+      beginRenderPass: (descriptor: object) => {
+        const captured = structuredClone(descriptor) as IRecordedPass;
+        starts.push(captured);
+        events.push("begin");
+        commands.push(
+          `pass:${captured.depthStencilAttachment.view.allocation.label}:${captured.depthStencilAttachment.depthClearValue}`,
+        );
+        return {
+          end: () => events.push("end"),
+          setViewport: () => events.push("viewport"),
+          setScissorRect: () => events.push("scissor"),
+          setPipeline: () => undefined,
+          setVertexBuffer: () => undefined,
+          setBindGroup: () => undefined,
+          draw: () => {
+            draws.push(captured);
+            events.push("draw");
+            commands.push("draw");
+          },
+        };
+      },
+      finish: () => ({ id, commands: [...commands] }),
+      copyTextureToTexture: (source: { texture: unknown }, destination: { texture: unknown }) => {
+        copies.push({ encoder: id, source: source.texture, destination: destination.texture });
+        events.push("copy");
+        commands.push("copy");
+      },
+      copyTextureToBuffer: (source: { texture: unknown }, destination: { buffer: unknown }) => {
+        copies.push({ encoder: id, source: source.texture, destination: destination.buffer });
+        events.push("read");
+        commands.push("read");
+      },
+    };
   };
   vi.stubGlobal("GPUShaderStage", { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 });
   vi.stubGlobal("GPUBufferUsage", { VERTEX: 32, COPY_DST: 8, UNIFORM: 64 });
   Object.assign(state.backend.device, {
     features: new Set(["transient-attachments"]),
-    createCommandEncoder: () => encoder,
+    createCommandEncoder,
     createBuffer: (descriptor: { size: number }) => {
       const buffer = new ArrayBuffer(descriptor.size);
-      return { getMappedRange: () => buffer, unmap: () => undefined, destroy: () => undefined };
+      return {
+        getMappedRange: () => buffer,
+        mapAsync: async () => undefined,
+        unmap: () => undefined,
+        destroy: () => undefined,
+      };
     },
     createShaderModule: () => ({}),
     createBindGroupLayout: () => ({}),
@@ -714,7 +738,13 @@ function transientFixture(mode: string, withUv = false) {
     createRenderPipeline: () => ({}),
     pushErrorScope: () => undefined,
     popErrorScope: async () => null,
-    queue: { submit: () => events.push("submit"), writeBuffer: () => undefined },
+    queue: {
+      submit: (buffers: { id: number; commands: string[] }[]) => {
+        events.push("submit");
+        submissions.push(...buffers);
+      },
+      writeBuffer: () => undefined,
+    },
   });
   const utilities = {
     attributeUtils: Reflect.get(gpu.backend, "attributeUtils"),
@@ -825,6 +855,8 @@ function transientFixture(mode: string, withUv = false) {
     starts,
     events,
     draws,
+    submissions,
+    copies,
     begin,
     draw,
     finish,
@@ -1035,62 +1067,75 @@ describe.each(["source", "distribution"])("%s transient depth boundaries", (mode
     },
   );
 
-  it("flushes restoration before an explicit clear submitted on another encoder", () => {
-    const s = transientFixture(mode);
-    Reflect.set(s.renderer, "getClearDepth", () => 0.25);
-    s.begin();
-    s.draw();
-    Reflect.get(s.methods, "clear").call(s.backend, false, true, false);
-    s.draw();
-    s.finish();
-    expect(s.starts[1]?.depthStencilAttachment.depthClearValue).toBe(0);
-    const clear = s.starts.findIndex((p) => p.depthStencilAttachment.depthClearValue === 0.25);
-    expect(clear).toBe(3);
-    expect(s.starts[clear + 1]?.depthStencilAttachment.depthLoadOp).toBe("load");
-    expect(s.events.filter((e) => e === "submit")).toHaveLength(3);
-    expect(s.draws[1]?.depthStencilAttachment.view.allocation.label).toBe("depthBuffer");
-  });
-
-  it("orders a retained canonical depth alias copy after original restoration", () => {
-    const s = transientFixture(mode);
-    s.begin();
-    s.draw();
-    const source = { id: 2, image: { width: 1920, height: 1080 } };
-    const destination = { id: 3, generateMipmaps: false };
-    s.backend.get(source).texture = s.backend.get(s.target.depthTexture).texture;
-    s.backend.get(destination).texture = {};
-    Reflect.get(s.methods, "copyTextureToTexture").call(s.backend, source, destination);
-    s.draw();
-    s.finish();
-    expect(s.starts[1]?.depthStencilAttachment.depthClearValue).toBe(0);
-    expect(s.events.indexOf("copy")).toBeGreaterThan(s.events.indexOf("submit"));
-    expect(s.draws[1]?.depthStencilAttachment.depthLoadOp).toBe("load");
-  });
-
-  it("resumes synchronously while asynchronous canonical readback waits for mapping", async () => {
-    const s = transientFixture(mode);
-    let settle: (value: Uint8Array) => void = () => undefined;
-    s.textures.copyTextureToBuffer = () =>
-      new Promise<Uint8Array>((resolve) => {
-        settle = resolve;
-      });
-    s.begin();
-    s.draw();
-    const result = Reflect.get(s.methods, "copyTextureToBuffer").call(
-      s.backend,
-      s.target.depthTexture,
-      0,
-      0,
-      1,
-      1,
-      0,
-    );
-    s.draw();
-    s.finish();
-    expect(s.draws[1]?.depthStencilAttachment.depthLoadOp).toBe("load");
-    settle(new Uint8Array([1]));
-    expect(await result).toEqual(new Uint8Array([1]));
-  });
+  it.each(
+    ["before", "after"].flatMap((when) =>
+      ["clear", "depth-copy", "color-copy", "read", "depth-write"].map((operation) => [
+        when,
+        operation,
+      ]),
+    ),
+  )(
+    "keeps the separate encoder before pending main %s the quad for %s, matching feature-off",
+    async (when, operation) => {
+      const snapshots = [];
+      for (const enabled of [false, true]) {
+        const s = transientFixture(mode);
+        if (!enabled) s.backend.device.features.delete("transient-attachments");
+        Reflect.set(s.renderer, "getClearDepth", () => 0.25);
+        vi.stubGlobal("GPUMapMode", { READ: 1 });
+        s.textures.getColorBuffer();
+        s.begin();
+        if (when === "after") s.draw();
+        const alias = { id: 2, image: { width: 1920, height: 1080 } };
+        const destination = { id: 3, image: { width: 1920, height: 1080 }, generateMipmaps: false };
+        const canonical = s.backend.get(
+          operation === "color-copy" || operation === "read"
+            ? s.target.colorTexture
+            : s.target.depthTexture,
+        ).texture;
+        s.backend.get(alias).texture = canonical;
+        s.backend.get(alias).textureDescriptorGPU = { format: "rgba8unorm" };
+        s.backend.get(destination).texture = {};
+        if (operation === "clear")
+          Reflect.get(s.methods, "clear").call(s.backend, false, true, false);
+        else if (operation === "read") {
+          // Mapping waits only for the submitted read encoder: the outer pass is still open.
+          const result = await Reflect.get(s.methods, "copyTextureToBuffer").call(
+            s.backend,
+            alias,
+            0,
+            0,
+            1,
+            1,
+            0,
+          );
+          expect(result).toEqual(new Uint8Array(4));
+        } else
+          Reflect.get(s.methods, "copyTextureToTexture").call(
+            s.backend,
+            ...(operation === "depth-write" ? [destination, alias] : [alias, destination]),
+          );
+        if (operation !== "clear") {
+          expect(s.copies[0]?.encoder).toBe(1);
+          expect(operation === "depth-write" ? s.copies[0]?.destination : s.copies[0]?.source).toBe(
+            canonical,
+          );
+        }
+        expect(s.submissions).toHaveLength(1);
+        expect(s.submissions[0]?.id).toBe(1);
+        expect(s.submissions[0]?.commands).toEqual([
+          operation === "clear" ? "pass:depthBuffer:0.25" : operation === "read" ? "read" : "copy",
+        ]);
+        if (when === "before") s.draw();
+        s.finish();
+        expect(s.submissions.map(({ id }) => id)).toEqual([1, 0]);
+        expect(s.submissions[1]?.commands).toContain("draw");
+        if (enabled) expect(s.submissions[1]?.commands.at(-1)).toBe("pass:depthBuffer:0");
+        snapshots.push(s.submissions[0]);
+      }
+      expect(snapshots[1]).toEqual(snapshots[0]);
+    },
+  );
 
   it("retires used private depth on resize and creates it at the new physical size", () => {
     const s = transientFixture(mode);

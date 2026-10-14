@@ -178,6 +178,13 @@ const CURRENT_RECONSTRUCTION_BLOBS = {
   "src/renderers/webgpu/utils/WebGPUBindingUtils.js": "a5da7ca09f746c0b2859ef173df663ccdc851ebc",
 };
 
+// Exact PR486 candidate before the separate-encoder ordering correction.
+const QUEUE_ORDER_BLOBS = {
+  "build/three.webgpu.js": "ee394e98d798be749776cce1fa3e043fb9951769",
+  "build/three.webgpu.nodes.js": "a0fab1c7c37cfaf270d9ce36dd3d91453ae6a44c",
+  "src/renderers/webgpu/WebGPUBackend.js": "94b48d64ed8f2e57f00cb5fd5bd0112da085aeae",
+};
+
 function blobHash(contents: string): string {
   return createHash("sha1")
     .update(`blob ${Buffer.byteLength(contents)}\0`)
@@ -229,6 +236,7 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
 }
 
 describe.each([
+  ["PR486 queue-order predecessor", QUEUE_ORDER_BLOBS],
   ["develop dcbc5131", PRIOR_BLOBS],
   ["published PR393 455ed1dd", PUBLISHED_BLOBS],
   ["published PR393 daef254c", RECOMPILE_BLOBS],
