@@ -436,15 +436,15 @@ describe("playtest plugin", () => {
     });
 
     await game.start();
+    const values = vi.spyOn(Object, "values");
     try {
-      const values = vi.spyOn(Object, "values");
       const gameplay = (await bridge().sample({})).gameplay;
       const enumeratedStorage = values.mock.calls.some(([value]) => value === storage);
-      values.mockRestore();
       expect(enumeratedStorage).toBe(false);
       expect(gameplay?.contacts).toEqual([{ entity: "fox", kind: "trigger", with: "coin.3" }]);
       expect(gameplay?.tags).toEqual({ coin: { count: 1 } });
     } finally {
+      values.mockRestore();
       game.stop();
     }
   });
