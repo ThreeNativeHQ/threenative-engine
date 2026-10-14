@@ -633,6 +633,7 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                              bool updateChildren, bool force, Record* cached, bool plainMesh, bool lightsOnly, const Object3D* excluded) {
     if (&object == excluded) return;
+    if (object.skipsGpuJointSubtree()) { ++Object3D::gpuProjectionVisits_; return; }
     if (!object.visible()) {
         if (updateChildren)
             for (Object3D* child : object.children)
@@ -700,12 +701,28 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                             d.skinWeights = floatStore(*mesh.geometry, "skinWeight");
                             if (skinned.skeleton && d.skinIndices && d.skinWeights) {
                                 const void* skeleton = skinned.skeleton.get();
-                                if ((skeletonsFresh_ == nullptr || skeletonsFresh_->count(skeleton) == 0) &&
+                                const bool gpu = gpuJoints_ && *gpuJoints_->valid && gpuJoints_->byMesh.count(&skinned);
+                                if (!gpu && (skeletonsFresh_ == nullptr || skeletonsFresh_->count(skeleton) == 0) &&
                                     skeletonsUpdated_.insert(skeleton).second)
                                     skinned.skeleton->update();
                                 d.boneMatrices = &skinned.skeleton->boneMatrices;
                                 d.bindMatrix = toArray(skinned.bindMatrix);
                                 d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
+                                if (gpu) {
+                                    const auto index = gpuJoints_->byMesh.at(&skinned);
+                                    auto& saved = gpuJoints_->rigs[index];
+                                    const auto placement = saved.placement.lock();
+                                    auto* matrices = reinterpret_cast<float*>(saved.instances->data());
+                                    for (int k = 0; k < 16; ++k) matrices[k] = float(placement->matrixWorld.elements[k]);
+                                    saved.instances->needsUpdate();
+                                    d.sortOrigin = {d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]};
+                                    d.matrixWorld = Matrix4{}.elements;
+                                    d.bindMatrix = d.bindMatrixInverse = Matrix4{}.elements;
+                                    d.instanceMatrices = saved.instances.get(); d.instanceCount = 1;
+                                    d.boneStride = uint32_t(skinned.skeleton->bones.size());
+                                    d.gpuJoints = gpuJoints_; d.gpuJointRig = index;
+                                } else { d.gpuJoints.reset(); d.boneStride = 0; }
+
                             }
                         }
                         if (type == "InstancedMesh") {
@@ -896,6 +913,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     for (const auto& [depth, item] : ordered) {
         const std::size_t i = item - items.data();
         const DrawItem& d = items[i];
+        if (d.gpuJoints) continue;
         const auto verdict = decision.verdict.find(d.skinnedRig);
         const bool skinned = d.boneMatrices && verdict != decision.verdict.end() && verdict->second == "skinned";
         if (!d.batchable && !skinned)
@@ -1221,6 +1239,7 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
 }
 
 const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene) {
+    if (!gpuPreparing_ && gpuJoints_) { gpuJoints_->revoke(); gpuJoints_.reset(); }
     using Clock = std::chrono::steady_clock;
     const auto start = profiling ? Clock::now() : Clock::time_point{};
     if (targetScene && targetScene != &scene && targetScene->matrixWorldAutoUpdate) targetScene->updateMatrixWorld();
@@ -1266,6 +1285,10 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     } else if (scene.matrixWorldAutoUpdate && !fresh) {
         ++matrixWalks_;
         scene.updateMatrixWorld();
+    }
+    if (gpuJoints_ && !gpuJoints_->current()) {
+        gpuJoints_->revoke(); gpuJoints_.reset();
+        scene.updateMatrixWorld(true); // The external matrix pass may already have skipped Bones.
     }
     if (camera.parent == nullptr && camera.matrixWorldAutoUpdate)
         camera.updateMatrixWorld();
@@ -1328,6 +1351,11 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     // three's onBeforeRender, before the object is drawn: after projection, so a callback that edits
     // the scene cannot invalidate the traversal, and before submission, so a uniform it sets (a
     // material colour) reaches this frame. A callee that threw is a diagnostic, never a crash.
+    if (gpuJoints_ && !callbacks_.empty()) {
+        gpuJoints_->revoke(); gpuJoints_.reset();
+        scene.updateMatrixWorld(true);
+        return prepare(scene, camera, lights, targetScene);
+    }
     for (const PendingCallback& p : callbacks_) {
         const RenderCallback callback = p.mesh->onBeforeRender;
         if (!callback)
@@ -1468,7 +1496,12 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear, std::array<double, 2>* cpuMs) {
     using Clock = std::chrono::steady_clock;
     const auto start = cpuMs ? Clock::now() : Clock::time_point{};
-    prepare(scene, camera, lights_);
+    const auto previousJoints = gpuJoints_;
+    gpuJoints_ = renderer.prepareGpuJoints(scene, reflecting_ ? gpuJoints_ : nullptr);
+    if (previousJoints && previousJoints != gpuJoints_) scene.updateMatrixWorld(true);
+    gpuPreparing_ = true;
+    try { prepare(scene, camera, lights_); } catch (...) { gpuPreparing_ = false; throw; }
+    gpuPreparing_ = false;
     if (!reflecting_) renderReflections(renderer, scene, camera, items_, clear);
     cameraState_.matrixWorld = toArray(camera.matrixWorld);
     cameraState_.matrixWorldInverse = toArray(camera.matrixWorldInverse);
@@ -1532,6 +1565,7 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
             pass.database->matricesFresh_ = reuseMainFrame && !ranCallbacks_;
             // Bones the main pass posed this frame are current too: no callback ran to move them.
             pass.database->skeletonsFresh_ = pass.database->matricesFresh_ ? &skeletonsUpdated_ : nullptr;
+            pass.database->gpuJoints_ = gpuJoints_;
             pass.database->render(*pass.renderer, scene, virtualCamera, clear);
             pass.database->skeletonsFresh_ = nullptr;
         }

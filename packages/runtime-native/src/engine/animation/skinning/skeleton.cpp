@@ -17,7 +17,7 @@ namespace tn::engine {
 
 bool Bone::enableDeferredTransform() {
     if (deferred_) return true;
-    const auto* flags = transformTrackingAddress(&position);
+    const auto* flags = ownTransformTracking();
     if (!flags || !flags[0] || flags[2] || !matrixAutoUpdate || !matrixWorldAutoUpdate || pivot) return false;
     deferredTRS_ = {position.x, position.y, position.z, quaternion.x, quaternion.y, quaternion.z,
                     quaternion.w, scale.x, scale.y, scale.z};
@@ -45,7 +45,7 @@ bool Bone::enableDeferredTransform(std::shared_ptr<std::vector<float>> stream, s
 
 bool Bone::deferTransformValue(int component, const double* values) {
     if (!deferred_) return false;
-    const auto* flags = transformTrackingAddress(&position);
+    const auto* flags = ownTransformTracking();
     if (flags[2] || !matrixAutoUpdate || !matrixWorldAutoUpdate || pivot) return false;
     if (component != 0 && component != 3 && component != 7) return false;
     if (stream_ && (!*streamValid_ || stream_->data() != streamData_ ||
@@ -84,7 +84,7 @@ void Bone::prepareLocalTransformWrite() {
 
 void Bone::exposeLocalTransform() {
     prepareLocalTransformWrite();
-    transformTrackingAddress(&position)[2] = 1;
+    ownTransformTracking()[2] = 1;
 }
 
 void Bone::materializeWorldTransformIfPending() {
@@ -98,6 +98,7 @@ Skeleton::Skeleton(std::vector<std::shared_ptr<Bone>> bones, std::vector<Matrix4
 }
 
 void Skeleton::init() {
+    revokeGpuSkinning();
     boneMatrices.assign(bones.size() * 16, 0.0f);
 
     if (boneInverses.empty()) {
@@ -109,6 +110,7 @@ void Skeleton::init() {
 }
 
 void Skeleton::calculateInverses() {
+    revokeGpuSkinning();
     boneInverses.clear();
     for (std::size_t i = 0; i < bones.size(); ++i) {
         Matrix4 inverse;
@@ -118,6 +120,7 @@ void Skeleton::calculateInverses() {
 }
 
 void Skeleton::pose() {
+    revokeGpuSkinning();
     // Recover the bind-time world matrices.
     for (std::size_t i = 0; i < bones.size(); ++i) {
         if (Bone* b = bone(i)) { b->prepareLocalTransformWrite(); b->matrixWorld.copy(boneInverses[i]).invert(); }
@@ -139,6 +142,7 @@ void Skeleton::pose() {
 }
 
 void Skeleton::update() {
+    revokeGpuSkinning();
     static const Matrix4 identity{};
     Matrix4 offset;
     for (std::size_t i = 0; i < bones.size(); ++i) {
@@ -159,6 +163,7 @@ Bone* Skeleton::getBoneByName(std::string_view name) const {
 }
 
 void SkinnedMesh::bind(std::shared_ptr<Skeleton> next, const Matrix4* matrix) {
+    revokeGpuSkinning();
     skeleton = std::move(next);
     if (matrix == nullptr) {
         updateMatrixWorld(true);

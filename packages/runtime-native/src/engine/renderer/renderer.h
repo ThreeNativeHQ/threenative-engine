@@ -19,6 +19,7 @@
 #include "engine/scene/geometry.h"
 #include "engine/renderer/geometry_cache.h"
 #include "engine/renderer/gpu_resources.h"
+#include "engine/renderer/compute.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/probes/volume.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
@@ -31,6 +32,30 @@ namespace tn::engine {
 using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elements
 
 class SkinnedMesh;
+class Bone;
+struct GpuJointScene {
+    struct Rig {
+        std::weak_ptr<SkinnedMesh> mesh;
+        std::weak_ptr<Object3D> placement;
+        const void* skeleton = nullptr;
+        const void* geometry = nullptr;
+        const void* material = nullptr;
+        Matrix bind{};
+        uint32_t outputBase = 0;
+        std::shared_ptr<BufferStore> instances;
+    };
+    uint64_t hierarchy = 0;
+    std::shared_ptr<bool> valid = std::make_shared<bool>(true);
+    std::shared_ptr<std::vector<float>> locals = std::make_shared<std::vector<float>>();
+    std::vector<Rig> rigs;
+    std::vector<std::weak_ptr<Bone>> bones;
+    std::vector<JointComputeRig> topology;
+    std::vector<uint32_t> parents;
+    std::vector<std::array<float, 16>> fixed;
+    std::unordered_map<const SkinnedMesh*, uint32_t> byMesh;
+    void revoke();
+    bool current() const;
+};
 class TraaPass;
 class PostEffects;
 struct TraaOptions;
@@ -135,6 +160,8 @@ struct DrawItem {
     const std::vector<float>* boneMatrices = nullptr;
     Matrix bindMatrix{}, bindMatrixInverse{};
     SkinnedMesh* skinnedRig = nullptr; // authored rig, for projection eligibility and palette writes
+    std::shared_ptr<GpuJointScene> gpuJoints;
+    uint32_t gpuJointRig = 0;
     uint32_t boneStride = 0;           // palette matrices per instance; zero on exact skinned draws
     /** three's flipSided: mirrored authored meshes reverse the front-face winding. */
     [[nodiscard]] WGPUFrontFace frontFace() const {
@@ -255,6 +282,9 @@ public:
      * graph): e.g. the positions a compute pass wrote. It stays bound until set again.
      */
     void setStorage(const std::string& name, Handle buffer, uint64_t bytes) { externalStorage_[name] = {buffer, bytes}; }
+
+    // Internal production admission: resources are validated before Bone boundaries become live.
+    std::shared_ptr<GpuJointScene> prepareGpuJoints(Object3D& scene, std::shared_ptr<GpuJointScene> shared = {});
 
     // VirtualShadowNode's explicit depth, fixed refresh/gate path. Unsupported policies are
     // named at this boundary rather than silently selected by a light's ordinary shadow.
@@ -725,6 +755,12 @@ private:
     };
     std::map<std::string, ProbeTexture> probeTextures_;
     std::map<std::string, FrameStorage> storages_;
+    std::shared_ptr<GpuJointScene> gpuJoints_;
+    Object3D* gpuJointScene_ = nullptr;
+    uint64_t gpuJointScan_ = ~uint64_t(0);
+    Handle gpuJointLocals_;
+    std::unique_ptr<JointComputePass> gpuJointPass_;
+    bool bindGpuJoints(const std::shared_ptr<GpuJointScene>& plan);
     std::map<std::string, std::pair<Handle, uint64_t>> externalStorage_;  // setStorage, by name
     // A material's diffuse map: its GPU texture/sampler, and, per (program, texture), the bind group
     // that binds it alongside the frame's uniforms. Cleared when the uniform buffer is rebuilt.

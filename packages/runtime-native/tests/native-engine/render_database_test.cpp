@@ -4,6 +4,7 @@
 // path, against the browser's golden frame. `invalidation` checks that records follow revisions only.
 
 #include "check.h"
+#include "engine/animation/property_binding.h"
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
 #include "engine/renderer/reflector.h"
@@ -3047,7 +3048,169 @@ void reflectionReuse() {
     CHECK(moved);
 }
 
-TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+void gpuJointProduction() {
+    // Count executed updates, including a query's full parent chain, independently of walk returns.
+    auto countRoot = std::make_shared<Object3D>();
+    auto countMiddle = std::make_shared<Object3D>();
+    auto countLeaf = std::make_shared<Object3D>();
+    countRoot->add(*countMiddle); countMiddle->add(*countLeaf);
+    const auto countBefore = Object3D::matrixEvaluations();
+    CHECK(countRoot->updateMatrixWorldVisible(false, false) == 3);
+    Vector3 queried; countLeaf->getWorldPosition(queried);
+    CHECK(Object3D::matrixEvaluations() - countBefore == 6);
+
+    struct Fixture {
+        Scene scene;
+        PerspectiveCamera camera;
+        std::vector<std::shared_ptr<Group>> movers;
+        std::vector<std::shared_ptr<SkinnedMesh>> meshes;
+        std::vector<std::shared_ptr<Bone>> tips;
+        std::shared_ptr<Reflector> reflector = std::make_shared<Reflector>();
+        Fixture(bool tracked) {
+            camera.aspect = 4.0 / 3; camera.position.set(0, 0, 8); camera.updateProjectionMatrix();
+            if (tracked) scene.enableTrackedTransform();
+            auto geometry = makeBoxGeometry(0.7, 0.7, 0.7);
+            const auto vertices = geometry->attributes.at("position")->count();
+            std::vector<double> indices(vertices * 4, 0), weights(vertices * 4, 0);
+            for (size_t i = 0; i < vertices; ++i) { indices[i * 4] = 2; weights[i * 4] = 1; }
+            geometry->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, indices, 4));
+            geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+            auto material = std::make_shared<Material>(MaterialType::Basic);
+            material->color.setRGB(0.8, 0.2, 0.1);
+            for (int i = 0; i < 3; ++i) {
+                const int count = i == 2 ? 1100 : 3;
+                auto mover = std::make_shared<Group>(); mover->position.x = double(i - 1) * 1.6;
+                auto placement = std::make_shared<Group>();
+                auto mesh = std::make_shared<SkinnedMesh>(geometry, material);
+                std::vector<std::shared_ptr<Bone>> bones;
+                for (int j = 0; j < count; ++j) {
+                    auto bone = std::make_shared<Bone>();
+                    if (tracked) bone->enableTrackedTransform();
+                    if (j) bones.back()->add(*bone);
+                    bones.push_back(bone);
+                }
+                bones[1]->position.y = 0.15; bones[2]->position.y = -0.15;
+                placement->add(*bones.front()); placement->add(*mesh);
+                mover->add(*placement); scene.add(*mover);
+                if (tracked) { mover->enableTrackedTransform(); placement->enableTrackedTransform(); mesh->enableTrackedTransform(); }
+                auto skeleton = std::make_shared<Skeleton>(bones, std::vector<Matrix4>(bones.size()));
+                Matrix4 bind; mesh->bind(skeleton, &bind);
+                if (i) {
+                    // A non-skinned attachment makes these rigs eager; no synthetic static hints.
+                    auto attachment = std::make_shared<Mesh>(makeBoxGeometry(0.1, 0.1, 0.1), material);
+                    bones.back()->add(*attachment);
+                }
+                if (i == 2) mover->setVisible(false);
+                movers.push_back(mover); meshes.push_back(mesh); tips.push_back(bones[2]);
+            }
+            auto water = std::make_shared<Material>(MaterialType::Standard);
+            auto plane = std::make_shared<Mesh>(makePlaneGeometry(12, 12), water);
+            plane->position.y = -1; plane->rotateX(-3.141592653589793 / 2); scene.add(*plane);
+            reflector->target = std::make_shared<Object3D>();
+            reflector->target->position.y = -1;
+            reflector->target->rotateX(-3.141592653589793 / 2); scene.add(*reflector->target);
+            reflector->camera = std::make_shared<PerspectiveCamera>();
+            namespace g = shader::graph;
+            water->nodes.colorNode = g::reflectorTexture(reflector, g::screenUV());
+            water->needsUpdate();
+        }
+    } accelerated(true), eager(false);
+    mystral::webgpu::Context context; CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer gpu(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    Renderer cpu(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    gpu.setSize(160, 120); cpu.setSize(160, 120);
+    RenderDatabase database, reference; database.batching = reference.batching = false;
+    std::shared_ptr<GpuJointScene> admittedPlan;
+    for (int frame = 0; frame < 2; ++frame) {
+        if (frame) {
+            for (auto* fixture : {&accelerated, &eager}) {
+                animation::PropertyBinding position(fixture->tips[0], ".position");
+                const double p[3] = {0.3, -0.15, 0}; position.setValue(p, 0);
+                animation::PropertyBinding orientation(fixture->tips[0], ".quaternion");
+                const double q[4] = {0, 0, std::sin(0.25), std::cos(0.25)}; orientation.setValue(q, 0);
+                fixture->movers[0]->position.y = 0.5;
+                fixture->meshes[0]->parent->position.x = 0.2;
+                fixture->meshes[0]->parent->rotateY(0.15); // placement can move after admission
+                fixture->movers[2]->setVisible(true); // grows mixed GPU+CPU palette beyond 64 KiB
+            }
+            CHECK(accelerated.tips[0]->hasDeferredTransform());
+            const auto before = Object3D::matrixEvaluations();
+            const auto visits = accelerated.scene.updateMatrixWorldVisible(false, false);
+            CHECK(Object3D::matrixEvaluations() - before + 1 == visits); // one inspected GPU boundary
+            CHECK(accelerated.tips[0]->hasDeferredTransform());
+        }
+        const auto projectionBefore = Object3D::gpuProjectionVisits_;
+        const auto maintenanceBefore = Object3D::gpuMaintenanceVisits_;
+        database.render(gpu, accelerated.scene, accelerated.camera, {0, 0, 0, 1});
+        CHECK(Object3D::gpuProjectionVisits_ - projectionBefore == 2); // main + reflection boundary
+        if (!frame) CHECK(Object3D::gpuMaintenanceVisits_ > maintenanceBefore);
+        else CHECK(Object3D::gpuMaintenanceVisits_ == maintenanceBefore); // no per-frame Bone scan
+        reference.render(cpu, eager.scene, eager.camera, {0, 0, 0, 1});
+        const auto actual = read(gpu, events), expected = read(cpu, events);
+        CHECK(actual.size() == 160 * 120 * 4 && expected.size() == actual.size());
+        size_t different = 0, covered = 0;
+        for (size_t i = 0; i + 3 < actual.size() && actual.size() == expected.size(); i += 4) {
+            int delta = 0; for (int k = 0; k < 3; ++k) delta = std::max(delta, std::abs(int(actual[i + k]) - int(expected[i + k])));
+            different += delta > 2; covered += actual[i] > 20;
+        }
+        std::printf("production GPU joints frame %d: %zu covered, %zu pixels differ >2\n", frame, covered, different);
+        CHECK(covered > 100 && different <= 4);
+        size_t admitted = 0;
+        for (const auto& draw : database.drawn()) if (draw.gpuJoints) { ++admitted; admittedPlan = draw.gpuJoints; }
+        CHECK(admitted == 1);
+        const auto validationBefore = Object3D::gpuValidationVisits_;
+        CHECK(admittedPlan->current());
+        CHECK(Object3D::gpuValidationVisits_ - validationBefore == 6); // rig + placement + four ancestors
+        const auto* reflection = database.reflectionDatabase(accelerated.reflector.get());
+        CHECK(reflection != nullptr);
+        size_t mirrorGpu = 0;
+        if (reflection) for (const auto& draw : reflection->drawn()) mirrorGpu += bool(draw.gpuJoints);
+        CHECK(mirrorGpu == 1);
+        CHECK(accelerated.tips[0]->skipsGpuJointSubtree());
+    }
+    const auto joins = Object3D::joinDependencyVisits(), updates = Object3D::matrixEvaluations();
+    accelerated.tips[0]->materializeWorldTransformIfPending();
+    CHECK(Object3D::joinDependencyVisits() - joins == 6);
+    CHECK(Object3D::matrixEvaluations() - updates == 6);
+    animation::PropertyBinding finalPosition(accelerated.tips[0], ".position");
+    const double finalPose[3] = {0.7, -0.15, 0}; finalPosition.setValue(finalPose, 0);
+    animation::PropertyBinding eagerPosition(eager.tips[0], ".position");
+    eagerPosition.setValue(finalPose, 0);
+    eager.scene.updateMatrixWorld(true); // independent eager expected worlds, never the accelerated scene
+    CHECK(accelerated.tips[0]->hasDeferredTransform());
+    const auto revokeBefore = Object3D::gpuMaintenanceVisits_;
+    admittedPlan->revoke(); // revoke the last admitted rig while its local pose is still pending
+    CHECK(Object3D::gpuMaintenanceVisits_ - revokeBefore == 3);
+    CHECK(!accelerated.tips[0]->skipsGpuJointSubtree());
+    CHECK(!accelerated.tips[0]->hasDeferredTransform());
+    accelerated.meshes[0]->skeleton->calculateInverses(); // first reader after full revocation
+    eager.meshes[0]->skeleton->calculateInverses();
+    for (size_t bone = 0; bone < 3; ++bone) for (int k = 0; k < 16; ++k) {
+        CHECK(std::abs(accelerated.meshes[0]->skeleton->bone(bone)->matrixWorld.elements[k] -
+                       eager.meshes[0]->skeleton->bone(bone)->matrixWorld.elements[k]) < 1e-10);
+        CHECK(std::abs(accelerated.meshes[0]->skeleton->boneInverses[bone].elements[k] -
+                       eager.meshes[0]->skeleton->boneInverses[bone].elements[k]) < 1e-10);
+    }
+    const double postRevokePose[3] = {0.9, -0.15, 0};
+    finalPosition.setValue(postRevokePose, 0); eagerPosition.setValue(postRevokePose, 0);
+    eager.scene.updateMatrixWorld(true);
+    Vector3 actualVertex, expectedVertex;
+    accelerated.meshes[0]->getVertexPosition(0, actualVertex); // immediate CPU skinning must join stale worlds
+    eager.meshes[0]->getVertexPosition(0, expectedVertex);
+    CHECK(std::abs(actualVertex.x - expectedVertex.x) < 1e-10);
+    CHECK(std::abs(actualVertex.y - expectedVertex.y) < 1e-10);
+    CHECK(std::abs(actualVertex.z - expectedVertex.z) < 1e-10);
+    accelerated.meshes[0]->skeleton->update(); eager.meshes[0]->skeleton->update();
+    for (size_t i = 0; i < 48; ++i)
+        CHECK(std::abs(accelerated.meshes[0]->skeleton->boneMatrices[i] - eager.meshes[0]->skeleton->boneMatrices[i]) < 1e-6);
+    accelerated.meshes[0]->exposeGpuBind();
+    database.render(gpu, accelerated.scene, accelerated.camera);
+    for (const auto& draw : database.drawn()) CHECK(!draw.gpuJoints);
+    CHECK(!accelerated.tips[0]->hasDeferredTransform());
+}
+
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},

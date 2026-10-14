@@ -1127,6 +1127,7 @@ void registerSkeleton(ClassBinding& b) {
         return Value{};
     };
     b.getters["boneMatrices"] = [](void* self) {
+        as<Skeleton>(self)->update();
         const std::vector<float>& m = as<Skeleton>(self)->boneMatrices;
         return Value::list(std::vector<double>(m.begin(), m.end()));
     };
@@ -1183,24 +1184,36 @@ void registerSkinnedMesh(ClassBinding& b) {
     // three's `skeleton` and bind matrices are plain properties: core's projection stand-in is a fresh SkinnedMesh
     // handed the game's skeleton by assignment, and a dropped write draws the rig unskinned.
     b.setters["skeleton"] = [](void* self, const Value& value, Store& store) {
+        as<SkinnedMesh>(self)->revokeGpuSkinning();
         if (value.kind != Value::Kind::Ref && value.kind != Value::Kind::Null && value.kind != Value::Kind::Undefined)
             throw Unsupported{"SkinnedMesh.skeleton must be a Skeleton or null"};
         as<SkinnedMesh>(self)->skeleton = value.kind == Value::Kind::Ref ? store.shared<Skeleton>(value, "Skeleton") : nullptr;
     };
     b.setters["bindMatrix"] = [](void* self, const Value& value, Store& store) {
+        as<SkinnedMesh>(self)->revokeGpuSkinning();
         as<SkinnedMesh>(self)->bindMatrix.copy(store.ref<Matrix4>(value, "Matrix4"));
     };
     b.setters["bindMatrixInverse"] = [](void* self, const Value& value, Store& store) {
+        as<SkinnedMesh>(self)->revokeGpuSkinning();
         as<SkinnedMesh>(self)->bindMatrixInverse.copy(store.ref<Matrix4>(value, "Matrix4"));
     };
     b.getters["bindMode"] = [](void* self) { return Value{Value::Kind::String, 0, as<SkinnedMesh>(self)->attached ? "attached" : "detached"}; };
     b.setters["bindMode"] = [](void* self, const Value& value) {
+        as<SkinnedMesh>(self)->revokeGpuSkinning();
         if (value.kind != Value::Kind::String || (value.text != "attached" && value.text != "detached"))
             throw Unsupported{"SkinnedMesh.bindMode must be attached or detached"};
         as<SkinnedMesh>(self)->attached = value.text == "attached";
     };
-    fixedMember(b, "bindMatrix", memberAliasMethod(&SkinnedMesh::bindMatrix, "Matrix4"));
-    fixedMember(b, "bindMatrixInverse", memberAliasMethod(&SkinnedMesh::bindMatrixInverse, "Matrix4"));
+    fixedMember(b, "bindMatrix", [](void* self, const Args&, Store& store) {
+        auto& rig = *as<SkinnedMesh>(self);
+        rig.exposeGpuBind();
+        return memberAlias(store, self, rig.bindMatrix, "Matrix4");
+    });
+    fixedMember(b, "bindMatrixInverse", [](void* self, const Args&, Store& store) {
+        auto& rig = *as<SkinnedMesh>(self);
+        rig.exposeGpuBind();
+        return memberAlias(store, self, rig.bindMatrixInverse, "Matrix4");
+    });
     nestedMatrix<SkinnedMesh>(b, "bindMatrix", &SkinnedMesh::bindMatrix);
     nestedMatrix<SkinnedMesh>(b, "bindMatrixInverse", &SkinnedMesh::bindMatrixInverse);
 }

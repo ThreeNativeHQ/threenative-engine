@@ -74,6 +74,9 @@ class Bone : public Object3D {
 class Skeleton {
   public:
     Skeleton() = default;
+    std::weak_ptr<bool> gpuSkinValidity;
+    void revokeGpuSkinning() { if (const auto valid = gpuSkinValidity.lock()) *valid = false; }
+
     /**
      * `bones` is copied, as three's `bones.slice(0)`; `boneInverses` empty means "compute them",
      * exactly three's `boneInverses.length === 0` branch.
@@ -123,6 +126,10 @@ class SkinnedMesh : public Mesh {
     void computeBoundingBox();
     std::shared_ptr<Box3> boundingBox;
     std::shared_ptr<Skeleton> skeleton;
+    std::weak_ptr<bool> gpuSkinValidity;
+    bool gpuBindExposed = false;
+    void revokeGpuSkinning() { if (const auto valid = gpuSkinValidity.lock()) *valid = false; }
+    void exposeGpuBind() { gpuBindExposed = true; revokeGpuSkinning(); }
     bool attached = true; // bindMode: "attached" (true) or "detached"
     Matrix4 bindMatrix;
     Matrix4 bindMatrixInverse;

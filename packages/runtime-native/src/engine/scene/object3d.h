@@ -250,11 +250,26 @@ public:
     // Internal V8 admission only; public C++/Wasm objects remain eager. No cache consumes this yet.
     void enableTrackedTransform();
     void markLocalTransformDirty();
+    [[nodiscard]] uint8_t* ownTransformTracking() const;
     virtual void materializeLocalTransform() {}
     virtual void prepareLocalTransformWrite() { materializeLocalTransform(); }
     virtual void exposeLocalTransform() {}
     [[nodiscard]] virtual bool hasDeferredTransformPublication() const { return false; }
     void joinDeferredWorldTransform();
+    // Renderer-owned Bone boundaries only; explicit world queries always use the eager chain.
+    std::weak_ptr<bool> gpuJointBoundary;
+    uint64_t gpuJointHierarchy = 0;
+    bool skipsGpuJointSubtree() const {
+        const auto valid = gpuJointBoundary.lock();
+        return valid && *valid && gpuJointHierarchy == hierarchyVersion();
+    }
+    inline static uint64_t matrixEvaluations_ = 0, joinDependencyVisits_ = 0, gpuBoundaryVisits_ = 0;
+    // Executed GPU-lazy projection, validation, and admission/revocation node inspections.
+    inline static uint64_t gpuProjectionVisits_ = 0, gpuValidationVisits_ = 0, gpuMaintenanceVisits_ = 0;
+    [[nodiscard]] static uint64_t joinDependencyVisits() { return joinDependencyVisits_; }
+    [[nodiscard]] static uint64_t gpuBoundaryVisits() { return gpuBoundaryVisits_; }
+    [[nodiscard]] static uint64_t matrixEvaluations() { return matrixEvaluations_; }
+
     static void prepareTransformView(const void* address);
     // Stable bytes: tracked, TRS dirty, irreversibly escaped. Shares the transform slot's lifetime.
     [[nodiscard]] static uint8_t* transformTrackingAddress(const void* address);

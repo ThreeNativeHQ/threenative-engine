@@ -120,6 +120,8 @@ class RenderDatabase {
     std::unordered_map<const void*, ReflectionPass> reflections_;
     bool reflecting_ = false;
     // Set by the frame's database on a reflection pass: the scene's world matrices are already current.
+    std::shared_ptr<GpuJointScene> gpuJoints_;
+    bool gpuPreparing_ = false;
     bool matricesFresh_ = false;
     bool ranCallbacks_ = false;  // this prepare ran onBeforeRender hooks, which may have moved objects
     uint64_t matrixWalks_ = 0;

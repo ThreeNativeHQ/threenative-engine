@@ -92,6 +92,8 @@ void Object3D::enableTrackedTransform() {
     if (!flags[0]) flags = {1, 1, 0};
 }
 
+uint8_t* Object3D::ownTransformTracking() const { return transform_.page->tracking[transform_.index].data(); }
+
 void Object3D::markLocalTransformDirty() { transform_.page->tracking[transform_.index][1] = 1; }
 
 uint8_t* Object3D::transformTrackingAddress(const void* address) {
@@ -104,6 +106,7 @@ uint8_t* Object3D::transformTrackingAddress(const void* address) {
 void Object3D::joinDeferredWorldTransform() {
     bool publication = false, stale = false;
     for (Object3D* node = this; node; node = node->parent) {
+        ++joinDependencyVisits_;
         publication = publication || node->hasDeferredTransformPublication();
         const uint64_t parentId = node->parent ? node->parent->id() + 1 : 0;
         const uint64_t parentRevision = node->parent ? node->parent->revision() : 0;
@@ -680,6 +683,7 @@ inline bool bitsDiffer(const std::array<double, 16>& a, const std::array<double,
 }  // namespace
 
 bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
+    ++matrixEvaluations_;
     materializeLocalTransform();
     if (plain && identityParent && matrixAutoUpdate && matrixWorldAutoUpdate && !pivot) {
         Matrix4 composed;
@@ -734,11 +738,13 @@ bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain
 }
 
 void Object3D::updateMatrixWorld(bool force) {
+    if (skipsGpuJointSubtree()) { ++gpuBoundaryVisits_; return; }
     force = updateMatrixWorldSelf(force);
     for (Object3D* child : children) child->updateMatrixWorld(force);
 }
 
 uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
+    if (skipsGpuJointSubtree()) { ++gpuBoundaryVisits_; return 1; }
     bool childForce = updateMatrixWorldSelf(force);
     afterMatrixWorld();
     uint32_t visited = 1;
@@ -762,6 +768,7 @@ uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
 }
 
 void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool force) {
+    ++matrixEvaluations_;
     materializeLocalTransform();
     Object3D* const parent_ = parent;
 

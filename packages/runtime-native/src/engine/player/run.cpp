@@ -668,7 +668,12 @@ int Session::initialize() {
     freeRunStart = std::chrono::steady_clock::now();
     database.shadowMapEnabled = game.shadowMapEnabled;
     previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
-    renderFrame = [this] {
+    renderFrame = [this, lastWorldVisits = Object3D::matrixEvaluations(),
+                   lastJoinVisits = Object3D::joinDependencyVisits(),
+                   lastBoundaryVisits = Object3D::gpuBoundaryVisits(),
+                   lastProjectionVisits = Object3D::gpuProjectionVisits_,
+                   lastValidationVisits = Object3D::gpuValidationVisits_,
+                   lastMaintenanceVisits = Object3D::gpuMaintenanceVisits_]() mutable {
         const auto frameBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double cpuFrameBegin = metrics ? threadCpuMs() : -1;
         const double instructionsFrameBegin = metrics ? threadInstructions() : -1;
@@ -866,6 +871,28 @@ int Session::initialize() {
                 auto members = sample.members();
                 members.emplace_back("gameSpans", std::move(*frameSpans));
                 sample = json::Value::makeObject(std::move(members));
+            }
+            {
+                const auto world = Object3D::matrixEvaluations();
+                const auto joins = Object3D::joinDependencyVisits();
+                const auto boundaries = Object3D::gpuBoundaryVisits();
+                const auto projections = Object3D::gpuProjectionVisits_;
+                const auto validations = Object3D::gpuValidationVisits_;
+                const auto maintenance = Object3D::gpuMaintenanceVisits_;
+                auto members = sample.members();
+                members.emplace_back("worldVisitCounterVersion", json::Value::makeNumber(2));
+                members.emplace_back("worldUpdateVisits", json::Value::makeNumber(double(world - lastWorldVisits)));
+                members.emplace_back("joinDependencyVisits", json::Value::makeNumber(double(joins - lastJoinVisits)));
+                members.emplace_back("gpuBoundaryVisits", json::Value::makeNumber(double(boundaries - lastBoundaryVisits)));
+                members.emplace_back("gpuProjectionBoundaryVisits", json::Value::makeNumber(double(projections - lastProjectionVisits)));
+                members.emplace_back("gpuPlanValidationVisits", json::Value::makeNumber(double(validations - lastValidationVisits)));
+                members.emplace_back("gpuPlanMaintenanceVisits", json::Value::makeNumber(double(maintenance - lastMaintenanceVisits)));
+                members.emplace_back("worldWorkVisitsTotal", json::Value::makeNumber(double(
+                    world - lastWorldVisits + joins - lastJoinVisits + boundaries - lastBoundaryVisits +
+                    projections - lastProjectionVisits + validations - lastValidationVisits + maintenance - lastMaintenanceVisits)));
+                sample = json::Value::makeObject(std::move(members));
+                lastWorldVisits = world; lastJoinVisits = joins; lastBoundaryVisits = boundaries;
+                lastProjectionVisits = projections; lastValidationVisits = validations; lastMaintenanceVisits = maintenance;
             }
             ++measuredFrames;
             std::printf("TN_PLAYER_FRAME:%s\n", json::stringify(sample).c_str());

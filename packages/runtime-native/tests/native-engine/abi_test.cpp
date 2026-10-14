@@ -1508,7 +1508,28 @@ void projected_cull_list() {
 
 }  // namespace
 
-TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+void gpu_bind_escape() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr; Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t mesh{}, skeleton{};
+    CHECK(tn_construct(ctx, "SkinnedMesh", nullptr, 0, &mesh, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Skeleton", nullptr, 0, &skeleton, &d.value) == TN_OK);
+    auto* rig = static_cast<tn::engine::SkinnedMesh*>(tn::abi::objectOf(mesh)->ptr.get());
+    auto valid = std::make_shared<bool>(true); rig->gpuSkinValidity = valid;
+    tn_value_t result{};
+    CHECK(!rig->gpuBindExposed);
+    CHECK(tn_get(mesh, "bindMatrix", &result, &d.value) == TN_OK);
+    CHECK(rig->gpuBindExposed && !*valid && result.kind == TN_VALUE_HANDLE);
+    *valid = true;
+    CHECK(tn_get(mesh, "bindMatrixInverse", &result, &d.value) == TN_OK && !*valid);
+    auto* nativeSkeleton = static_cast<tn::engine::Skeleton*>(tn::abi::objectOf(skeleton)->ptr.get());
+    nativeSkeleton->gpuSkinValidity = valid; *valid = true;
+    CHECK(tn_get(skeleton, "boneMatrices", &result, &d.value) == TN_OK && !*valid);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+TN_TEST_MAIN({"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count},

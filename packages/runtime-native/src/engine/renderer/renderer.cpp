@@ -8,6 +8,8 @@
 #include <cctype>
 #include <cmath>
 #include <unordered_map>
+#include <unordered_set>
+#include "engine/animation/skinning/palette.h"
 #include <iterator>
 #include <cstring>
 #include <stdexcept>
@@ -18,6 +20,7 @@
 #include "engine/shader/sprite.h"
 #include "engine/scene/texture.h"
 #include "engine/scene/nodes.h"
+#include "engine/scene/material.h"
 #include "engine/scene/camera.h"
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/renderer/post/traa.h"
@@ -227,7 +230,7 @@ bool readsViewport(const shader::StageModule& stage) {
 
 bool perDrawFragment(const shader::StageModule& stage) {
     for (const shader::Binding& binding : stage.bindings)
-        if (binding.name == "t_map" || binding.name == "t_env" || graphTextureBinding(binding.name) ||
+        if (binding.name == "t_map" || binding.name == "t_env" || binding.name == "t_reflector" || graphTextureBinding(binding.name) ||
             viewportBinding(binding.name))
             return true;
     return false;
@@ -503,7 +506,163 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
     table.buffer = gpu_.createBuffer(table.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
 }
 
+void GpuJointScene::revoke() {
+    *valid = false;
+    for (const auto& weak : bones) {
+        ++Object3D::gpuMaintenanceVisits_;
+        if (auto bone = weak.lock()) bone->prepareLocalTransformWrite();
+    }
+}
+
+bool GpuJointScene::current() const {
+    if (!*valid || hierarchy != Object3D::hierarchyVersion()) return false;
+    for (const auto& saved : rigs) {
+        const auto rig = saved.mesh.lock();
+        const auto placement = saved.placement.lock();
+        if (rig) ++Object3D::gpuValidationVisits_;
+        if (placement) ++Object3D::gpuValidationVisits_;
+        if (!rig || !placement || rig->gpuBindExposed || !rig->attached ||
+            rig->skeleton.get() != saved.skeleton || rig->geometry.get() != saved.geometry ||
+            rig->material.get() != saved.material || rig->bindMatrix.elements != saved.bind ||
+            rig->onBeforeRender || !isSimilarityTransform(placement->matrixWorld.elements.data()) ||
+            !isSimilarityTransform(rig->matrixWorld.elements.data())) return false;
+        if (!rig->matrixAutoUpdate || !rig->matrixWorldAutoUpdate || !rig->material ||
+            rig->material->transparent || rig->material->nodeMaterial || rig->material->positionNode ||
+            !rig->geometry->morphPositions.empty()) return false;
+        for (const auto* node : rig->material->nodes.pointers()) if (node) return false;
+        for (auto* ancestor = static_cast<Object3D*>(rig.get()); ancestor; ancestor = ancestor->parent) {
+            ++Object3D::gpuValidationVisits_;
+            const auto* flags = ancestor->ownTransformTracking();
+            if (!flags || !flags[0] || flags[2] || ancestor->onBeforeRender) return false;
+        }
+    }
+    return true;
+}
+
+bool Renderer::bindGpuJoints(const std::shared_ptr<GpuJointScene>& plan) {
+    auto& output = storages_["boneMatrices"];
+    const uint64_t required = plan->parents.size() * 64;
+    if (output.capacity < required) {
+        gpu_.destroy(output.buffer);
+        output.capacity = required;
+        output.buffer = gpu_.createBuffer(required, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+        if (uniformCapacity_) rebuildGroups();
+    }
+    if (gpuJoints_ != plan) {
+        gpuJointPass_.reset();
+        if (gpu_.buffer(gpuJointLocals_)) gpu_.destroy(gpuJointLocals_);
+        gpuJointLocals_ = gpu_.createBuffer(plan->locals->size() * sizeof(float), WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    }
+    gpuJointPass_ = std::make_unique<JointComputePass>(device_, gpu_, plan->topology, plan->parents,
+        plan->fixed, gpuJointLocals_, output.buffer);
+    if (!gpuJointPass_->error().empty()) { plan->revoke(); gpuJointPass_.reset(); return false; }
+    gpuJoints_ = plan;
+    return true;
+}
+
+std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::shared_ptr<GpuJointScene> shared) {
+    if (shared && shared->current()) {
+        if (gpuJoints_ == shared && gpuJointPass_) return shared;
+        return bindGpuJoints(shared) ? shared : nullptr;
+    }
+    if (gpuJoints_ && gpuJointScene_ == &scene && gpuJoints_->current()) return gpuJoints_;
+    if (gpuJoints_) { gpuJoints_->revoke(); gpuJoints_.reset(); gpuJointPass_.reset(); }
+    const auto epoch = Object3D::hierarchyVersion();
+    if (gpuJointScene_ == &scene && gpuJointScan_ == epoch) return nullptr;
+    gpuJointScene_ = &scene; gpuJointScan_ = epoch;
+    auto plan = std::make_shared<GpuJointScene>();
+    plan->hierarchy = epoch;
+    std::vector<SkinnedMesh*> candidates;
+    scene.traverse([](Object3D& node, void* data) {
+        ++Object3D::gpuMaintenanceVisits_;
+        if (auto* rig = dynamic_cast<SkinnedMesh*>(&node)) static_cast<std::vector<SkinnedMesh*>*>(data)->push_back(rig);
+    }, &candidates);
+    std::unordered_map<const Skeleton*, size_t> skeletons;
+    for (const auto* rig : candidates) { ++Object3D::gpuMaintenanceVisits_; ++skeletons[rig->skeleton.get()]; }
+    for (auto* rig : candidates) {
+        ++Object3D::gpuMaintenanceVisits_;
+        auto* skeleton = rig->skeleton.get();
+        if (!skeleton || skeleton->bones.empty() || skeleton->bones.size() != skeleton->boneInverses.size() ||
+            rig->weak_from_this().expired() || rig->gpuBindExposed || !rig->attached || !rig->geometry ||
+            !rig->geometry->morphPositions.empty() || !rig->material || rig->material->transparent ||
+            rig->material->nodeMaterial || rig->material->positionNode || rig->onBeforeRender ||
+            skeletons[skeleton] != 1) continue;
+        bool eligible = true;
+        for (const auto* node : rig->material->nodes.pointers()) if (node) eligible = false;
+        auto* placement = rig->parent;
+        if (placement) ++Object3D::gpuMaintenanceVisits_;
+        if (!placement || placement->type() == "Bone" || placement->type() == "Scene" ||
+            placement->children.size() != 2 || placement->pivot ||
+            placement->position.x != 0 || placement->position.y != 0 || placement->position.z != 0 ||
+            placement->quaternion.x != 0 || placement->quaternion.y != 0 || placement->quaternion.z != 0 ||
+            placement->quaternion.w != 1 || placement->scale.x != 1 || placement->scale.y != 1 || placement->scale.z != 1)
+            continue;
+        std::unordered_map<const Bone*, uint32_t> indices;
+        for (uint32_t i = 0; i < skeleton->bones.size(); ++i) {
+            ++Object3D::gpuMaintenanceVisits_;
+            auto* bone = skeleton->bone(i);
+            if (!bone || !indices.emplace(bone, i).second) { eligible = false; break; }
+        }
+        std::vector<uint32_t> parents;
+        uint32_t roots = 0;
+        for (uint32_t i = 0; eligible && i < skeleton->bones.size(); ++i) {
+            ++Object3D::gpuMaintenanceVisits_;
+            auto* bone = skeleton->bone(i);
+            const auto* flags = bone->ownTransformTracking();
+            if (!flags || !flags[0] || flags[2] || !bone->matrixAutoUpdate || !bone->matrixWorldAutoUpdate || bone->pivot || bone->onBeforeRender)
+                { eligible = false; break; }
+            if (bone->parent == placement) { parents.push_back(UINT32_MAX); ++roots; }
+            else {
+                const auto parent = indices.find(dynamic_cast<Bone*>(bone->parent));
+                if (parent == indices.end() || parent->second >= i) { eligible = false; break; }
+                parents.push_back(parent->second);
+            }
+            for (auto* child : bone->children) {
+                ++Object3D::gpuMaintenanceVisits_;
+                if (!indices.count(dynamic_cast<Bone*>(child))) eligible = false;
+            }
+        }
+        if (!eligible || roots != 1) continue;
+        const uint32_t base = uint32_t(plan->parents.size());
+        GpuJointScene::Rig saved;
+        saved.mesh = std::static_pointer_cast<SkinnedMesh>(rig->shared_from_this());
+        saved.placement = placement->weak_from_this(); saved.skeleton = skeleton;
+        saved.geometry = rig->geometry.get(); saved.material = rig->material.get();
+        saved.bind = rig->bindMatrix.elements; saved.outputBase = base;
+        saved.instances = std::make_shared<BufferStore>(Scalar::F32, 16);
+        plan->byMesh.emplace(rig, uint32_t(plan->rigs.size()));
+        plan->rigs.push_back(std::move(saved));
+        plan->topology.push_back({uint32_t(skeleton->bones.size()), base, base, base, base});
+        plan->parents.insert(plan->parents.end(), parents.begin(), parents.end());
+        for (uint32_t i = 0; i < skeleton->bones.size(); ++i) {
+            ++Object3D::gpuMaintenanceVisits_;
+            plan->bones.push_back(skeleton->bones[i]);
+            Matrix4 folded; folded.multiplyMatrices(skeleton->boneInverses[i], rig->bindMatrix);
+            std::array<float, 16> identity{}, inverseBind{};
+            for (int k = 0; k < 16; ++k) { identity[k] = k % 5 == 0 ? 1 : 0; inverseBind[k] = float(folded.elements[k]); }
+            plan->fixed.push_back(identity); plan->fixed.push_back(inverseBind);
+        }
+    }
+    if (plan->rigs.empty()) return nullptr;
+    plan->locals->resize(plan->parents.size() * 12);
+    if (!plan->current() || !bindGpuJoints(plan)) return nullptr;
+    // The successfully compiled GPU consumer exists before any hierarchy boundary is skipped.
+    for (uint32_t i = 0; i < plan->bones.size(); ++i) {
+        ++Object3D::gpuMaintenanceVisits_;
+        auto bone = plan->bones[i].lock();
+        if (!bone || !bone->enableDeferredTransform(plan->locals, i * 12, plan->valid)) { plan->revoke(); return nullptr; }
+        bone->gpuJointBoundary = plan->valid; bone->gpuJointHierarchy = epoch;
+    }
+    for (const auto& saved : plan->rigs) if (auto rig = saved.mesh.lock()) {
+        ++Object3D::gpuMaintenanceVisits_;
+        rig->gpuSkinValidity = plan->valid; rig->skeleton->gpuSkinValidity = plan->valid;
+    }
+    return plan;
+}
+
 Renderer::~Renderer() {
+    if (gpuJoints_) gpuJoints_->revoke();
+    gpuJointPass_.reset();
     if (mipEncoder_) wgpuCommandEncoderRelease(mipEncoder_);
     for (WGPUBindGroup group : mipGroups_) wgpuBindGroupRelease(group);
     for (WGPUTextureView view : mipViews_) wgpuTextureViewRelease(view);
@@ -1868,6 +2027,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (auto& [name, storage] : storages_)
         if (name.rfind("probe_", 0) != 0 && name != "instances") storage.data.clear();
     for (const auto& [i, shadow] : virtualShadows_) storages_["vsmTable" + std::to_string(i)].data = shadow.atlas.table();
+    const uint64_t jointPrefix = gpuJoints_ && gpuJoints_->current() ? gpuJoints_->parents.size() * 64 : 0;
     std::vector<float>& bones = storages_["boneMatrices"].data;
     std::vector<float>& morphData = storages_["morphData"].data;
     std::vector<float>& morphInfluences = storages_["morphInfluences"].data;
@@ -1903,8 +2063,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (!drawn->boneMatrices && !drawn->morphGeometry) continue;
         Deform& d = deforms[drawn];
         if (drawn->boneMatrices) {
-            d.boneBase = double(bones.size() / 16);
-            bones.insert(bones.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
+            if (drawn->gpuJoints) {
+                if (drawn->gpuJoints != gpuJoints_ || !jointPrefix) throw std::runtime_error("TN_GPU_JOINTS: invalidated before submission");
+                d.boneBase = drawn->gpuJoints->rigs[drawn->gpuJointRig].outputBase;
+            } else {
+                d.boneBase = double(jointPrefix / 64 + bones.size() / 16);
+                bones.insert(bones.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
+            }
         }
         if (const BufferGeometry* g = drawn->morphGeometry) {
             const bool normals = !g->morphNormals.empty();
@@ -2443,14 +2608,26 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     shadowMapsChanged_ = false;
     if (!frameUniforms_.empty()) gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), frameUniforms_.size());
+    bool jointBufferMoved = false;
     for (auto& [name, storage] : storages_) {
-        if (storage.data.size() * 4 > storage.capacity) {
+        const uint64_t prefix = name == "boneMatrices" ? jointPrefix : 0;
+        if (prefix + storage.data.size() * 4 > storage.capacity) {
             gpu_.destroy(storage.buffer);
-            storage.capacity = std::max<uint64_t>(storage.data.size() * 4 * 2, 64 * 1024);
+            storage.capacity = std::max<uint64_t>((prefix + storage.data.size() * 4) * 2, 64 * 1024);
+            jointBufferMoved = jointBufferMoved || (name == "boneMatrices" && jointPrefix);
             storage.buffer = gpu_.createBuffer(storage.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
             rebuildGroups();
         }
-        if (!storage.data.empty()) gpu_.writeBuffer(storage.buffer, 0, storage.data.data(), storage.data.size() * 4);
+        if (!storage.data.empty()) gpu_.writeBuffer(storage.buffer, prefix, storage.data.data(), storage.data.size() * 4);
+    }
+
+    if (jointPrefix && !compilation) {
+        if (jointBufferMoved && !bindGpuJoints(gpuJoints_)) throw std::runtime_error("TN_GPU_JOINTS: output resize refused");
+        if (gpu_.writeBuffer(gpuJointLocals_, 0, gpuJoints_->locals->data(), gpuJoints_->locals->size() * 4) != GpuStatus::Ok ||
+            !gpuJointPass_ || !gpuJointPass_->dispatch(encoder)) {
+            gpuJoints_->revoke();
+            throw std::runtime_error("TN_GPU_JOINTS: dispatch refused before submission");
+        }
     }
 
     // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per

@@ -315,6 +315,7 @@ tn_native_engine_test(tn-native-engine-decoder-matrix-test tests/native-engine/d
 target_link_libraries(tn-native-engine-decoder-matrix-test PRIVATE tn_engine_assets)
 
 tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
+    native_engine_gpu_bind_escape=gpu_bind_escape
     native_engine_abi_version=version
     native_engine_abi_handles=handles
     native_engine_abi_generic=generic
