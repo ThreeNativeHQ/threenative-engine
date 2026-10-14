@@ -1019,6 +1019,8 @@ export async function scaffold(
   assertTemplateDependencies(template, templateManifest, sources);
   process.stdout.write(`golden-path ${template}: ./scaffold.sh ${project}\n`);
   await runCommand("scaffold", "./scaffold.sh", [project], directory);
+  // Later installs must retain the same local transitive mappings as the scaffold install.
+  await cp(path.join(directory, "scaffold-pnpmfile.cjs"), path.join(target, ".pnpmfile.cjs"));
 }
 
 async function freePort(): Promise<number> {

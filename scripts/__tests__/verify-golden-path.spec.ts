@@ -270,6 +270,54 @@ describe("golden path matrix", () => {
     }
   });
 
+  // The scaffold's own install carries the pnpmfile through `npm_config_pnpmfile`, but the golden
+  // path's separate `pnpm install` — and a human's corrective `pnpm install` — do not. That second
+  // install lost the mapping and asked the registry for the packed edge @threenative/assets ->
+  // @threenative/terrain, which is not published, so it 404'd after the first install had passed.
+  it("keeps the local tarball mapping on the independent install path", async () => {
+    const root = await makeTempDir("threenative-golden-path-project-pnpmfile-");
+    const originalPath = process.env.PATH;
+    try {
+      const templatesRoot = path.join(root, "templates");
+      const template = path.join(templatesRoot, "starter");
+      const project = path.join(root, "game");
+      const cli = path.join(root, "create-threenative-0.1.0.tgz");
+      const terrain = path.join(root, "threenative-terrain-0.1.0.tgz");
+      const bin = path.join(root, "bin");
+      await mkdir(template, { recursive: true });
+      await mkdir(bin, { recursive: true });
+      await writeFile(
+        path.join(template, "package.json"),
+        JSON.stringify({
+          name: "starter",
+          dependencies: { "create-threenative": "0.1.0", vite: "8.2.0" },
+        }),
+      );
+      // A scaffold creates the project directory; the fake stands in for that side effect.
+      const fakePnpm = path.join(bin, "pnpm");
+      await writeFile(fakePnpm, '#!/bin/sh\ntest "$1" = dlx && mkdir -p game\n');
+      await chmod(fakePnpm, 0o755);
+      process.env.PATH = [bin, originalPath]
+        .filter((value): value is string => value !== undefined)
+        .join(path.delimiter);
+
+      await scaffold(
+        "starter",
+        project,
+        { "@threenative/terrain": terrain, "create-threenative": cli },
+        templatesRoot,
+      );
+
+      const projectPnpmfile = path.join(project, ".pnpmfile.cjs");
+      expect(existsSync(projectPnpmfile)).toBe(true);
+      expect(await readFile(projectPnpmfile, "utf8")).toContain(terrain);
+    } finally {
+      if (originalPath === undefined) process.env.PATH = undefined;
+      else process.env.PATH = originalPath;
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   // CI's `build` job packs the workspace once and publishes the tarballs; the golden-path job
   // downloads them before this script runs. Adopting that set instead of packing a second time is
   // the whole saving, so what matters is that it cannot adopt an incomplete or drifted one.
