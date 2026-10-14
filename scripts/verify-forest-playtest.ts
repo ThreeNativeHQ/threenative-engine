@@ -8,7 +8,7 @@ import { packageLocalFramework } from "./visual-gate.js";
 
 /**
  * PRD-584 AC-4/AC-5: the stock starter, a forest produced by the real `terrain_generate` tool, the
- * ordinary load the tool prints, a 300-tick walk, and the playtest's own p95 frame-time bound.
+ * ordinary load the tool prints, a live-clock walk, and the playtest's own p95 frame-time bound.
  *
  * Usage: tsx scripts/verify-forest-playtest.ts [--target web|desktop]
  * Run on a real GPU under `sh scripts/xvfb.sh`; see packages/playtest/AGENTS.md for the recipe.
@@ -121,6 +121,7 @@ async function main(): Promise<void> {
         [
           "exec",
           "threenative-playtest",
+          "--live-clock",
           "--scenario",
           "playtests/forest.playtest.json",
           "--browser-recipe",
@@ -145,6 +146,7 @@ async function main(): Promise<void> {
         [
           "exec",
           "threenative-playtest",
+          "--live-clock",
           "--scenario",
           "native-playtests/forest.playtest.json",
           "--target",
