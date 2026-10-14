@@ -100,6 +100,11 @@ const COMPOSITOR_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// Consecutive missed captures after which the overlay goes back to `get_snapshot` for good.
 const COMPOSITOR_MISS_LIMIT: u32 = 3;
+/// A game slower than this is not paced: its next frame is too far off to aim a capture at.
+const PACE_CEILING: Duration = Duration::from_millis(100);
+/// How early a paced capture starts, so a service tick that lands late still delivers in time.
+const PACE_MARGIN: Duration = Duration::from_millis(8);
+
 /// Attach waits this long for the web thread to say whether it came up.
 const READY_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -125,10 +130,19 @@ struct MailboxState {
     published: u64,
 }
 
+/// The origin the game thread's frame times are measured from, so they fit in an atomic.
+static EPOCH: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
+
 #[derive(Default)]
 pub struct Mailbox {
     state: Mutex<MailboxState>,
     held: Mutex<Option<Frame>>,
+    /// When the game last took a frame, and how long its frames take (moving average), in
+    /// microseconds since `EPOCH`. Zero until the game has taken two. The web thread paces its
+    /// captures against these: a frame it makes sooner than the game takes one is overwritten
+    /// before anyone sees it.
+    last_acquire_us: AtomicU64,
+    frame_us: AtomicU64,
     counter: AtomicU64,
 }
 
@@ -164,10 +178,28 @@ impl Mailbox {
         self.counter.load(Ordering::Acquire)
     }
 
+    /// Time since the game last took a frame, and how long its frames take.
+    fn game_pacing(&self) -> (Duration, Duration) {
+        let last = self.last_acquire_us.load(Ordering::Relaxed);
+        let since = EPOCH.elapsed().as_micros() as u64;
+        (
+            Duration::from_micros(since.saturating_sub(last)),
+            Duration::from_micros(self.frame_us.load(Ordering::Relaxed)),
+        )
+    }
+
     /// Give the game the newest frame, keeping it when nothing newer has arrived.
     ///
     /// Returns `None` only before the page's first paint. Called once per frame by the game thread.
     pub fn acquire(&self) -> Option<FrameView> {
+        let now = EPOCH.elapsed().as_micros() as u64;
+        let last = self.last_acquire_us.swap(now, Ordering::Relaxed);
+        if last != 0 {
+            let gap = now - last;
+            let average = self.frame_us.load(Ordering::Relaxed);
+            let average = if average == 0 { gap } else { (average * 7 + gap) / 8 };
+            self.frame_us.store(average, Ordering::Relaxed);
+        }
         let mut held = self.held.lock().unwrap_or_else(|error| error.into_inner());
         if let Some(pending) = self
             .state
@@ -841,6 +873,10 @@ struct Driver {
     partial_frames: u64,
     /// The surface the view is drawn into, kept between frames and replaced when the size changes.
     surface: Option<gtk::cairo::ImageSurface>,
+    /// Moving average of a capture's round trip, which the pacing aims by.
+    capture_time: Duration,
+    /// `TN_UI_OVERLAY_PACE=off` captures as often as the cadence allows, whatever the game does.
+    paced: bool,
 }
 
 impl Driver {
@@ -874,6 +910,8 @@ impl Driver {
             misses: 0,
             partial_frames: 0,
             surface: None,
+            capture_time: Duration::ZERO,
+            paced: std::env::var("TN_UI_OVERLAY_PACE").map_or(true, |value| value != "off"),
         }
     }
 
@@ -886,7 +924,7 @@ impl Driver {
         let now = self.last_report;
         let waiting = in_flight_since.map(|at| at.elapsed().as_millis()).unwrap_or(0);
         println!(
-            "TN_UI_SNAPSHOT:{{\"requests\":{},\"inFlight\":{},\"waitingMs\":{},\"lastRoundTripMs\":{},\"intervalMs\":{},\"quietMs\":{},\"counter\":{},\"capture\":\"{}\",\"partialFrames\":{}}}",
+            "TN_UI_SNAPSHOT:{{\"requests\":{},\"inFlight\":{},\"waitingMs\":{},\"lastRoundTripMs\":{},\"intervalMs\":{},\"quietMs\":{},\"counter\":{},\"capture\":\"{}\",\"partialFrames\":{},\"gameFrameMs\":{}}}",
             self.requests,
             in_flight_since.is_some(),
             waiting,
@@ -895,7 +933,8 @@ impl Driver {
             self.cadence.quiet(now).as_millis(),
             self.shared.frames.published(),
             if self.compositor { "compositor" } else { "snapshot" },
-            self.partial_frames
+            self.partial_frames,
+            self.shared.frames.game_pacing().1.as_millis()
         );
     }
 
@@ -951,7 +990,7 @@ impl Driver {
         }
         let waiting = this.in_flight.then_some(this.in_flight_since);
         this.report(waiting);
-        if this.loaded && !this.in_flight && this.cadence.due(Instant::now()) {
+        if this.loaded && !this.in_flight && this.cadence.due(Instant::now()) && this.pace_open() {
             this.request(driver);
         }
     }
@@ -1121,6 +1160,7 @@ impl Driver {
         // Request -> callback: WebKit's raster and snapshot IPC. The copy and compare that follow
         // are this thread's own work and are timed separately, so a run can say which dominates.
         self.last_round_trip = self.in_flight_since.elapsed();
+        self.capture_time = (self.capture_time * 3 + self.last_round_trip) / 4;
         let read_started = Instant::now();
         let read = self.read(result);
         self.last_read = read_started.elapsed();
@@ -1142,6 +1182,7 @@ impl Driver {
         self.misses = 0;
         let now = Instant::now();
         self.last_round_trip = self.in_flight_since.elapsed();
+        self.capture_time = (self.capture_time * 3 + self.last_round_trip) / 4;
         self.last_read = read_started.elapsed();
         self.settle(Some(read), now);
     }
@@ -1245,6 +1286,15 @@ impl Driver {
 }
 
 impl Driver {
+    /// Whether the game is about to want a frame, so a capture started now is not wasted.
+    fn pace_open(&self) -> bool {
+        if !self.paced {
+            return true;
+        }
+        let (since_acquire, frame) = self.shared.frames.game_pacing();
+        pace_open(since_acquire, frame, self.capture_time)
+    }
+
     /// Draw the view into the kept surface and copy it out, or `None` when the frame is partial.
     fn read_view(&mut self) -> Option<(u32, u32, u32, Vec<u8>, bool)> {
         use gtk::cairo::{Context, Format, ImageSurface, Operator};
@@ -1356,6 +1406,18 @@ fn copy_composited(
         start = end;
     }
     Some(unchanged)
+}
+
+/// Whether a capture started now lands just before the game takes its next frame.
+///
+/// `since_acquire` is the time since the game last took a frame, `frame` how long its frames take,
+/// `capture` how long a capture takes. A game that outruns the capture, one that has not taken two
+/// frames yet and one too slow to aim at are not paced: the capture runs back to back, as before.
+fn pace_open(since_acquire: Duration, frame: Duration, capture: Duration) -> bool {
+    if frame.is_zero() || frame > PACE_CEILING || frame < capture * 2 {
+        return true;
+    }
+    since_acquire + capture + PACE_MARGIN >= frame
 }
 
 /// A JSON string literal holding `frame`, so a quote or a newline in the payload cannot end it.
@@ -1508,6 +1570,34 @@ send('loaded');
         let mut buffer = Vec::new();
         assert_eq!(copy_composited(&data, 12, 2, None, &mut buffer), Some(false));
         assert_eq!(&buffer[..8], &words(&[0, 0x80_40_20_10])[..]);
+    }
+
+    #[test]
+    fn a_capture_is_aimed_at_the_games_next_frame_only_when_it_would_otherwise_be_wasted() {
+        let ms = Duration::from_millis;
+        // 60 ms game frames, 24 ms captures: wait until a capture would just finish in time.
+        assert!(!pace_open(ms(10), ms(60), ms(24)), "a capture now would finish 26 ms early");
+        assert!(pace_open(ms(30), ms(60), ms(24)), "30 + 24 + margin reaches the next frame");
+        assert!(pace_open(ms(70), ms(60), ms(24)), "a late game never waits");
+        // A game that outruns the capture, an unknown game and a game too slow to aim at.
+        assert!(pace_open(ms(0), ms(16), ms(24)));
+        assert!(pace_open(ms(0), Duration::ZERO, ms(24)));
+        assert!(pace_open(ms(0), ms(500), ms(24)));
+    }
+
+    #[test]
+    fn the_mailbox_learns_how_long_the_games_frames_take() {
+        let mailbox = Mailbox::default();
+        assert_eq!(mailbox.game_pacing().1, Duration::ZERO, "nothing learned before two frames");
+        mailbox.acquire();
+        mailbox.acquire();
+        let first = mailbox.game_pacing().1;
+        std::thread::sleep(Duration::from_millis(30));
+        mailbox.acquire();
+        let (since, average) = mailbox.game_pacing();
+        assert!(first < Duration::from_millis(5), "back-to-back acquires are fast: {first:?}");
+        assert!(average > first && average < Duration::from_millis(30), "average moves toward the gap: {average:?}");
+        assert!(since < Duration::from_millis(5));
     }
 
     #[test]

@@ -26,9 +26,9 @@ Take the pixels from the page's own compositor frames instead of a second full r
 
 ### Phase 1: Measure and choose
 
-- [ ] Baseline: three Midway flights of the unchanged overlay record `lastRoundTripMs`, the `settled` trace and the WebKit share of CPU samples. proof: `~/.cache/tmp-tn/midway-runs/hud-base*-desktop/run.log`, `perf report --sort comm`
+- [x] Baseline: two Midway flights of the unchanged `get_snapshot` capture record `lastRoundTripMs`, the `settled` trace and the WebKit share of CPU samples. proof: `~/.cache/tmp-tn/midway-runs/hud-base-desktop/run.log`, `hud-snap1-desktop/run.log`, `perf report --sort comm` (2026-10-13, Xvfb, loaded host: round trip p50/p95 62/100 ms and 54/96 ms; 2709 and 2598 HUD frames per flight; `WebKitWebProcess` 61.6% and 63.1% of CPU samples, the game 15% and 27%)
 - [x] The damage route is characterized: the WebKit probes show which buffers are complete and which are partial. proof: `native/ui-overlay/src/bin/probe-damage.c` (2026-10-13, 1920x1080 Xvfb: with the coverage layer and nudge, 5 of 5 buffers per step are complete and match `get_snapshot` to maxDelta 1; without them, later buffers are partial)
-- [ ] One route is chosen and recorded under `## Decisions`, with the number that decided it. proof: the Decisions entry cites the flight numbers
+- [x] One route is chosen and recorded under `## Decisions`, with the number that decided it. proof: the Decisions entry cites the flight numbers
 
 ### Phase 2: Implement
 
@@ -44,7 +44,9 @@ Take the pixels from the page's own compositor frames instead of a second full r
 
 ## Decisions
 
-(none yet)
+- 2026-10-13, agent: the HUD is read from the page's own compositor frames, made whole by a coverage layer (Solution). Rejected: WPE (not installed, needs sudo, and its web process composites the same way, so the transparent-buffer defect is likely shared); accumulating partial buffers (probe `probe-acc`: maxDelta 54 to 98 against `get_snapshot`, 30k to 300k bytes over 8, from double-composited translucent pixels); the WebKit damage feature flags (no effect on the buffers). Deciding numbers: Midway round trip p50/p95 54/96 ms with `get_snapshot` against 24/31 ms with compositor frames (`hud-snap1`, `hud-fx2`), and 6182 against 2598 HUD frames per flight.
+- 2026-10-13, agent: the nudge is a `data-tn-fx` attribute on `html`. A custom property on the root produced no repaint (probe: 0 frames after the first) and a class is lost when a page rewrites `className`.
+- 2026-10-13, agent: absolute WebKit CPU did not fall with the faster capture alone. Sample shares were `WebKitWebProcess` 60.9% (`hud-fx3`) against 63.1% (`hud-snap1`), and the capture loop made 2.4 times as many HUD frames as the game took (the game took one frame per 50 to 60 ms in this lane). So the capture is paced: it starts so it ends just before the game takes its next frame (`pace_open`), with `TN_UI_OVERLAY_PACE=off` as the override.
 
 ## Results
 
