@@ -2,6 +2,7 @@ import { DepthTexture, RenderTarget, Texture } from "three";
 import { PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
 import { describe, expect, it, vi } from "vitest";
+import { readRenderChainObservation } from "../src/render/chain.js";
 import { ResolutionSubrect } from "../src/render/resolution-subrect.js";
 import { createRenderer } from "../src/renderer.js";
 
@@ -268,6 +269,96 @@ it("updates scene viewport/scissor without allocations and reallocates once on r
     expect(target.scissor.toArray()).toEqual([0, 0, 640, 360]);
     expect(target.scissorTest).toBe(true);
     expect(allocations).toHaveBeenCalledTimes(1);
+  } finally {
+    renderer.dispose();
+    scenePass.dispose();
+  }
+});
+
+it("keeps the ordinary resize and allocation path when an installed stage refuses the sub-rectangle", async () => {
+  const canvas = Object.assign(new EventTarget(), {
+    clientWidth: 1280,
+    clientHeight: 720,
+    parentElement: null,
+  }) as unknown as HTMLCanvasElement;
+  const resize = vi.fn();
+  const renderer = await createRenderer({
+    canvas,
+    source: {
+      createCanvas: () => canvas,
+      hasWebGPU: () => true,
+      readSize: () => [canvas.clientWidth, canvas.clientHeight],
+      observeResize: (element, callback) => {
+        element.addEventListener("resize", callback);
+        return () => element.removeEventListener("resize", callback);
+      },
+    },
+    webgpuFactory: () => ({
+      domElement: canvas,
+      init: async () => undefined,
+      render: () => undefined,
+      setSize: resize,
+    }),
+  });
+  const scenePass = pass(new Scene(), new PerspectiveCamera());
+  const target = scenePass.renderTarget;
+  const allocations = vi.fn();
+  target.addEventListener("dispose", allocations);
+  try {
+    const handle = renderer.createResolutionSubrect?.();
+    if (!handle) throw new Error("Missing controller factory");
+    handle.retain(scenePass, [target]);
+    const report: string[] = [];
+    const createChain = renderer.createRenderChain;
+    if (!createChain) throw new Error("Missing chain factory");
+    // The stage declares no sampling support, so the chain composes its graph and refuses the
+    // rectangle instead of dropping the stage or claiming it.
+    const chain = createChain({
+      input: {},
+      report: (line) => report.push(line),
+      request: { stages: ["bloom"], tier: "high" },
+      resolutionSubrect: handle,
+      stages: [{ build: (input) => input, name: "bloom", supportsResolutionSubrect: false }],
+      worldPass: scenePass,
+    });
+
+    const refusal = report.find((line) => line.includes("TN_RESOLUTION_SUBRECT"));
+    if (!refusal) throw new Error("Missing named refusal");
+    expect(JSON.parse(refusal.slice(refusal.indexOf("{")))).toEqual({
+      applied: [],
+      refused: [{ name: "bloom", reason: "sampling support not declared" }],
+    });
+    // A refusal that dropped the stage instead of installing it would land here as install:*.
+    expect(chain.applied.stages).toEqual(["bloom"]);
+    expect(chain.applied.dropped).toEqual([]);
+    expect(readRenderChainObservation(renderer)?.stages).toEqual(["bloom"]);
+    // The refused graph reached the real renderer without the controller: setOutputNode activates
+    // the handle it is given, so an inactive handle is the observable absence.
+    expect(handle.active).toBe(false);
+    expect(renderer.surface().resolutionSubrect).toBeUndefined();
+
+    // Ordinary scaling survives: the drawing buffer follows the requested scale instead of
+    // holding the full canvas for a rectangle nothing samples.
+    renderer.setResolutionScale(0.5, "auto");
+    Object.assign(canvas, { clientWidth: 1000, clientHeight: 500 });
+    canvas.dispatchEvent(new Event("resize"));
+    expect(resize).toHaveBeenLastCalledWith(500, 250, false);
+    expect(renderer.surface()).toMatchObject({
+      drawingBufferWidth: 500,
+      drawingBufferHeight: 250,
+      resolutionScale: 0.5,
+    });
+
+    // Ordinary target allocation survives: the stock pass resize reallocates at exactly the asked
+    // extent, with the full-target viewport the retained rectangle would have shrunk.
+    allocations.mockClear();
+    scenePass.setSize(500, 250);
+    expect([target.width, target.height]).toEqual([500, 250]);
+    expect(target.viewport.toArray()).toEqual([0, 0, 500, 250]);
+    expect(target.scissorTest).toBe(false);
+    expect(allocations).toHaveBeenCalledTimes(1);
+    expect(handle.textureView(target.texture)?.viewFraction.toArray()).toEqual([1, 1]);
+    chain.dispose();
   } finally {
     renderer.dispose();
     scenePass.dispose();
