@@ -13,6 +13,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <type_traits>
+#include <typeinfo>
 #include <vector>
 
 #include "engine/shader/dfg_lut.h"
@@ -31,6 +32,16 @@
 namespace tn::engine {
 
 namespace {
+
+bool gpuJointAncestorEligible(const Object3D& ancestor, const SkinnedMesh& rig) {
+    const auto* flags = ancestor.ownTransformTracking();
+    if (!flags || !flags[0] || ancestor.onBeforeRender) return false;
+    if (!flags[2]) return true;
+    // Only CPU-eager auto-world nodes strictly outside the rig's placement may escape.
+    return &ancestor != &rig && &ancestor != rig.parent && ancestor.matrixAutoUpdate &&
+        ancestor.matrixWorldAutoUpdate && (typeid(ancestor) == typeid(Object3D) ||
+        typeid(ancestor) == typeid(Group) || typeid(ancestor) == typeid(Mesh));
+}
 
 WGPUTextureFormat textureFormat(const Texture& texture) {
     return texture.isFloat() ? WGPUTextureFormat_RGBA32Float
@@ -539,8 +550,7 @@ bool GpuJointScene::current() const {
         }
         for (auto* ancestor = static_cast<Object3D*>(rig.get()); ancestor; ancestor = ancestor->parent) {
             ++Object3D::gpuValidationVisits_;
-            const auto* flags = ancestor->ownTransformTracking();
-            if (!flags || !flags[0] || flags[2] || ancestor->onBeforeRender) {
+            if (!gpuJointAncestorEligible(*ancestor, *rig)) {
                 return false;
             }
         }
@@ -602,8 +612,7 @@ std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::
         for (const auto* node : rig->material->nodes.pointers()) if (node) eligible = false;
         for (auto* ancestor = static_cast<Object3D*>(rig); eligible && ancestor; ancestor = ancestor->parent) {
             ++Object3D::gpuMaintenanceVisits_;
-            const auto* flags = ancestor->ownTransformTracking();
-            if (!flags || !flags[0] || flags[2] || ancestor->onBeforeRender) {
+            if (!gpuJointAncestorEligible(*ancestor, *rig)) {
                 eligible = false;
             }
         }

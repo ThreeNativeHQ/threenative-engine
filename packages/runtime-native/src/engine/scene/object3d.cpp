@@ -685,6 +685,9 @@ inline bool bitsDiffer(const std::array<double, 16>& a, const std::array<double,
 bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
     lastWorldEvaluation_ = ++matrixEvaluations_;
     materializeLocalTransform();
+    // Escaped aliases can change without a revision; auto-world ownership recomposes eagerly.
+    const auto* tracking = ownTransformTracking();
+    if (tracking[0] && tracking[2] && matrixAutoUpdate && matrixWorldAutoUpdate) force = true;
     if (plain && identityParent && matrixAutoUpdate && matrixWorldAutoUpdate && !pivot) {
         Matrix4 composed;
         composed.compose(position, quaternion, scale);

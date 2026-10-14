@@ -3076,6 +3076,7 @@ void gpuJointProduction() {
         std::vector<std::shared_ptr<SkinnedMesh>> meshes;
         std::vector<std::shared_ptr<Bone>> tips;
         double* escapedWorld = nullptr;
+        double* escapedAutoWorld = nullptr;
         std::shared_ptr<Reflector> reflector = std::make_shared<Reflector>();
         Fixture(bool tracked) {
             camera.aspect = 4.0 / 3; camera.position.set(0, 0, 8); camera.updateProjectionMatrix();
@@ -3114,6 +3115,11 @@ void gpuJointProduction() {
                 placement->add(*bones.front()); placement->add(*mesh);
                 mover->add(*placement); scene.add(*mover);
                 if (tracked) { mover->enableTrackedTransform(); placement->enableTrackedTransform(); mesh->enableTrackedTransform(); }
+                if (i == 0) {
+                    CHECK(Object3D::leaseTransform(&mover->matrixWorld) == 5);
+                    escapedAutoWorld = mover->matrixWorld.elements.data();
+                    escapedAutoWorld[12] = 100;
+                }
                 if (i == 5) {
                     CHECK(Object3D::leaseTransform(&mover->matrixWorld) == 5);
                     escapedWorld = mover->matrixWorld.elements.data();
@@ -3145,7 +3151,10 @@ void gpuJointProduction() {
             sky->data.resize(8 * 4 * 4, 1); sky->needsUpdate(); // keep the sky below the rig coverage threshold
             scene.backgroundTexture = sky;
         }
-        ~Fixture() { Object3D::unleaseTransform(&movers[5]->matrixWorld); }
+        ~Fixture() {
+            Object3D::unleaseTransform(&movers[0]->matrixWorld);
+            Object3D::unleaseTransform(&movers[5]->matrixWorld);
+        }
     } accelerated(true), eager(false);
     mystral::webgpu::Context context; CHECK(context.initializeHeadless());
     EventQueue events;
@@ -3164,6 +3173,7 @@ void gpuJointProduction() {
                 const double q[4] = {0, 0, std::sin(0.25), std::cos(0.25)}; orientation.setValue(q, 0);
                 fixture->movers[0]->position.y = 0.5;
                 fixture->movers[0]->position.z = -frame * 0.2;
+                fixture->escapedAutoWorld[12] = 100; // auto-world ownership repairs the raw alias
                 fixture->movers[2]->position.z = frame * 0.2;
                 fixture->meshes[3]->setLayer(frame == 3 ? 0 : 1);
                 fixture->camera.enableLayer(1);
@@ -3201,6 +3211,7 @@ void gpuJointProduction() {
         CHECK(Object3D::gpuProjectionVisits_ - projectionBefore >= (frame == 2 ? 4 : 6)); // visible main/reflection boundaries, plus verdict scans
         if (!frame || frame == 2) CHECK(Object3D::gpuMaintenanceVisits_ > maintenanceBefore);
         else CHECK(Object3D::gpuMaintenanceVisits_ == maintenanceBefore); // no per-frame Bone scan
+        eager.scene.updateMatrixWorld(true); // independent eager composition repairs every raw auto-world alias
         reference.render(cpu, eager.scene, eager.camera, {0, 0, 0, 1});
         CHECK(!accelerated.tips[5]->hasDeferredTransform() && !accelerated.tips[5]->skipsGpuJointSubtree());
         CHECK(accelerated.movers[5]->ownTransformTracking()[2] == 1);
@@ -3229,6 +3240,32 @@ void gpuJointProduction() {
         if (!admittedPlan) return;
         CHECK(admittedPlan->current());
         CHECK(Object3D::gpuValidationVisits_ - validationBefore == 18); // three rigs, placement and four ancestors each
+        accelerated.scene.matrixWorldAutoUpdate = false;
+        CHECK(admittedPlan->current()); // unescaped manual-world Scene remains eligible
+        accelerated.scene.matrixWorldAutoUpdate = true;
+        CHECK(accelerated.movers[0]->ownTransformTracking()[2] == 1);
+        CHECK(accelerated.movers[0]->matrixWorld.elements[12] == accelerated.movers[0]->position.x);
+        accelerated.movers[0]->matrixWorldAutoUpdate = false;
+        CHECK(!admittedPlan->current());
+        accelerated.movers[0]->matrixWorldAutoUpdate = true;
+        accelerated.movers[0]->matrixAutoUpdate = false;
+        CHECK(!admittedPlan->current());
+        accelerated.movers[0]->matrixAutoUpdate = true;
+        accelerated.movers[0]->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+            [](const RenderCallbackArgs&, std::string&) { return true; });
+        CHECK(!admittedPlan->current());
+        accelerated.movers[0]->onBeforeRender.reset();
+        CHECK(admittedPlan->current());
+        if (frame == 0) {
+            CHECK(Object3D::leaseTransform(&accelerated.movers[2]->matrixWorld) == 5);
+            CHECK(admittedPlan->current()); // escape of another auto ancestor after admission is safe
+            Object3D::unleaseTransform(&accelerated.movers[2]->matrixWorld);
+        }
+        auto* placement = accelerated.meshes[0]->parent;
+        const auto placed = placement->matrixWorld;
+        placement->matrixWorld.elements[0] = 2;
+        CHECK(!admittedPlan->current()); // non-similarity remains refused
+        placement->matrixWorld.copy(placed);
         const auto* reflection = database.reflectionDatabase(accelerated.reflector.get());
         CHECK(reflection != nullptr);
         size_t mirrorGpu = 0, mirrorInstances = 0;
@@ -3300,6 +3337,39 @@ void gpuJointProduction() {
     externalSkeleton.updateAfterWorldWalk(firstEvaluation);
     CHECK(Object3D::joinDependencyVisits() == externalJoins + 1);
     CHECK(std::abs(externalSkeleton.boneMatrices[12] - 2) < 1e-6);
+
+    struct CustomGroup : Group {};
+    for (int variant = 0; variant < 12; ++variant) {
+        Fixture fixture(true);
+        std::shared_ptr<Object3D> ancestor;
+        if (variant == 0) ancestor = std::make_shared<Object3D>();
+        else if (variant == 1) ancestor = std::make_shared<Mesh>();
+        else if (variant == 3) ancestor = std::make_shared<CustomGroup>();
+        else if (variant == 11) ancestor = std::make_shared<Bone>();
+        else ancestor = std::make_shared<Group>();
+        ancestor->enableTrackedTransform();
+        CHECK(Object3D::leaseTransform(&ancestor->matrixWorld) == 5);
+        ancestor->add(*fixture.movers[0]); fixture.scene.add(*ancestor);
+        if (variant == 4) ancestor->matrixWorldAutoUpdate = false;
+        if (variant == 5) ancestor->matrixAutoUpdate = false;
+        if (variant == 6) ancestor->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+            [](const RenderCallbackArgs&, std::string&) { return true; });
+        if (variant == 7) ancestor->scale.y = 2;
+        Object3D* strict = variant == 8 ? fixture.meshes[0]->parent : variant == 9 ? fixture.meshes[0].get() :
+            variant == 10 ? static_cast<Object3D*>(&fixture.scene) : nullptr;
+        if (strict) CHECK(Object3D::leaseTransform(&strict->matrixWorld) == 5);
+        fixture.scene.updateMatrixWorld(true);
+        const auto plan = gpu.prepareGpuJoints(fixture.scene);
+        CHECK(bool(plan && plan->byMesh.count(fixture.meshes[0].get())) == (variant < 3));
+        CHECK(!plan || !plan->byMesh.count(fixture.meshes[1].get())); // attachment outside Bone set remains eager
+        if (plan && variant < 3) {
+            CHECK(plan->current());
+            fixture.scene.add(*fixture.movers[0]);
+            CHECK(!plan->current()); // live reparent invalidates before a skipped Bone walk
+        }
+        if (strict) Object3D::unleaseTransform(&strict->matrixWorld);
+        Object3D::unleaseTransform(&ancestor->matrixWorld);
+    }
 }
 
 TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
