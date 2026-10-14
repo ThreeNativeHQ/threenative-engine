@@ -448,6 +448,61 @@ describe("perf-live", () => {
     expect(sentenceOf(0.5)).toContain("Native costs 2.00× legacy");
   });
 
+  it("headlines actual Midway diagnostics and pending arms while retaining R5 as the cheap tier", async () => {
+    const html = await readFile(new URL("../perf-live.html", import.meta.url), "utf8");
+    const script = (html.split("<script>")[1] as string)
+      .split("</script>")[0]
+      ?.replace("tick(); setInterval(tick, 2000);", "");
+    const elements = new Map<string, { innerHTML: string; addEventListener(): void }>();
+    const render = (data: unknown) =>
+      runInNewContext(`${script}\nmidway = data; hero = r5; renderHero(); renderCheapTier();`, {
+        data,
+        r5: {
+          status: "green",
+          ratio: 3.25,
+          sentence: "Existing R5 result",
+          now: 1,
+          t: 1,
+          label: "historical-r5",
+        },
+        document: {
+          getElementById: (id: string) => {
+            if (!elements.has(id)) elements.set(id, { innerHTML: "", addEventListener() {} });
+            return elements.get(id);
+          },
+        },
+      });
+    render({
+      candidate: {
+        gap: { legacyMs: 10.65, desktop: { ms: 7.04531175, build: "T <candidate>", runs: 2 } },
+      },
+    });
+    expect(html).toContain('get("/api/midway")');
+    expect(html.indexOf('id="hero"')).toBeLessThan(html.indexOf('id="cheapHero"'));
+    const output = elements.get("hero")?.innerHTML;
+    for (const text of [
+      "Midway · final tier",
+      "1.51×",
+      "PENDING",
+      "experimental · unqualified",
+      "thread CPU",
+      "active wall time",
+      "T &lt;candidate&gt;",
+    ])
+      expect(output).toContain(text);
+    for (const text of ["Cheap tier · R5", "3.25×", "Existing R5 result", "historical-r5"])
+      expect(elements.get("cheapHero")?.innerHTML).toContain(text);
+    render(undefined);
+    expect(elements.get("hero")?.innerHTML).toContain("PENDING");
+    expect(elements.get("hero")?.innerHTML).not.toContain("3.25×");
+    expect(elements.get("hero")?.innerHTML).not.toContain("0.00×");
+    render({ candidate: { gap: { legacyMs: 0, desktop: { ms: 0, build: "bad", runs: 1 } } } });
+    expect(elements.get("hero")?.innerHTML).not.toContain("Infinity");
+    render({ candidate: { gap: { legacyMs: 10, wasm: { ms: 5, build: "wasm", runs: 3 } } } });
+    expect(elements.get("hero")?.innerHTML).toContain("2.00×");
+    expect(elements.get("hero")?.innerHTML).toContain("experimental · unqualified");
+  });
+
   const HOUR = 3_600_000;
   const point = (
     label: string,

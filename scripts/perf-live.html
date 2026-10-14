@@ -94,9 +94,9 @@
   <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
 </header>
 
-<section class="card" id="compare"></section>
-
 <section class="card hero s-none" id="hero"></section>
+<section class="card hero s-none" id="cheapHero"></section>
+<section class="card" id="compare"></section>
 
 <section class="card" id="trend"></section>
 <section class="card" id="frame" hidden></section>
@@ -128,6 +128,8 @@ function ago(ms) {
   return `${Math.round(s / 86400)} days ago`;
 }
 let hero = { status: "none" }, points = [], epic = [], rows = [], web = { pairs: [], cuts: [], census: [] }, desktop = { kpi: [], gpu: { status: "PENDING" }, godot: { status: "PENDING" } };
+
+let midway;
 
 // ---- 0. Native desktop and web, side by side -----------------------------------------------------------
 // Same phase order and colours in both columns. Each column scales its own two bars to the larger one.
@@ -225,9 +227,18 @@ function renderCompare() {
 
 // ---- 1. Hero -------------------------------------------------------------------------------------------
 function renderHero() {
-  const h = hero, el = $("hero");
+  const gap = midway?.candidate?.gap, legacy = gap?.legacyMs;
+  $("hero").innerHTML = `<h2>Midway · final tier</h2><p class="q">Native engine vs three.js · experimental · unqualified</p><div class="meta">${["desktop", "wasm"].map((arm) => {
+    const side = gap?.[arm];
+    const ratio = Number.isFinite(legacy) && legacy > 0 && Number.isFinite(side?.ms) && side.ms > 0 ? legacy / side.ms : undefined;
+    return `<div><h2>${arm === "desktop" ? "Desktop native" : "Web Wasm"}</h2><div class="num">${ratio === undefined ? "PENDING" : ratio.toFixed(2) + "×"}</div><p class="sm">${ratio === undefined ? "No eligible arm/reference timing." : `${esc(side.build)} · median of ${side.runs} run(s)<br>three.js ${legacy.toFixed(2)} ms ÷ native ${side.ms.toFixed(2)} ms`}</p></div>`;
+  }).join("")}</div><p class="fine">Ratios are diagnostic, not matched-work speedups. Desktop uses native thread CPU against browser active wall time; these are different instruments. Web Wasm uses browser active wall time. Goal 2–3×; timing qualification remains pending. <a href="/midway">Midway measurements and qualification</a></p>`;
+}
+
+function renderCheapTier() {
+  const h = hero, el = $("cheapHero");
   el.className = `card hero s-${h.status}`;
-  const q = '<p class="q">Is the native C++ engine at least 2× cheaper in CPU per frame than the legacy three.js arm on rung R5, and is it getting closer?</p>';
+  const q = '<h2>Cheap tier · R5 synthetic workload</h2><p class="q">Is the native C++ engine at least 2× cheaper in CPU per frame than the legacy three.js arm on rung R5, and is it getting closer?</p>';
   if (h.ratio === undefined) { el.innerHTML = `${q}<div class="num">–</div><p class="sentence">${esc(h.sentence)}</p>`; return; }
   const pos = Math.min(100, (h.ratio / TARGET) * 100);
   const d = h.delta;
@@ -422,7 +433,7 @@ function renderDetails() {
 }
 
 function render() {
-  renderCompare(); renderHero(); renderTrend(); renderFrame(); renderDesktop(); renderWeb(); renderEpic();
+  renderCompare(); renderHero(); renderCheapTier(); renderTrend(); renderFrame(); renderDesktop(); renderWeb(); renderEpic();
   if ($("details").open) renderDetails();
 }
 $("details").addEventListener("toggle", () => $("details").open && renderDetails());
@@ -430,8 +441,8 @@ $("details").addEventListener("toggle", () => $("details").open && renderDetails
 async function tick() {
   try {
     const get = (u) => fetch(u, { cache: "no-store" }).then((x) => x.json());
-    const [h, p, e, r, w, d] = await Promise.all([get("/api/hero"), get("/api/points"), get("/api/epic"), get("/api/rows"), get("/api/web"), get("/api/desktop")]);
-    hero = h; points = p; epic = e; rows = r.rows; web = w; desktop = d;
+    const [h, p, e, r, w, d, m] = await Promise.all([get("/api/hero"), get("/api/points"), get("/api/epic"), get("/api/rows"), get("/api/web"), get("/api/desktop"), get("/api/midway")]);
+    hero = h; points = p; epic = e; rows = r.rows; web = w; desktop = d; midway = m;
     render();
     $("status").textContent = `live · ${points.length} points · updated ${new Date().toLocaleTimeString()}`;
     $("dot").style.background = "var(--green)";
