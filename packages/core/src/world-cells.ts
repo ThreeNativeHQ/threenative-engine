@@ -68,6 +68,7 @@ import {
   CellProxySelection,
   type IPreparedCellProxy,
   cellProxyGeometrySafe,
+  cellProxyHelps,
   cellProxyMaterialMatches,
   cellProxyMaterialSafe,
   cellProxySourceSafe,
@@ -4137,7 +4138,7 @@ class AdmissionBudget implements IAdmissionBudget {
  * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has
  * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
  * @constraint a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts
- * @constraint eligible static sources can use cooked HLOD (chunk-only alongside GPU scatter, whole-cell on CPU) after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation
+ * @constraint eligible static sources can use cooked HLOD (chunk-only alongside GPU scatter, whole-cell on CPU) after compilation and an observed main-context backend submission; projected-error hysteresis requires a proxy no heavier than its source and with no extra material draws, and strictly fewer triangles or draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation
  * @override `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
  * @constraint `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number
  * @constraint every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers
@@ -9597,12 +9598,7 @@ export class WorldCells extends Group implements IComputeDriven {
     const source = this.#cellProxySource(state);
     // A retained neighboring key or a cheaper source LOD cannot benefit. Reconsider after later
     // residency changes without allocating another copy or running a proxy load meanwhile.
-    if (
-      !source.compatible ||
-      proxy.triangles >= source.triangles ||
-      proxy.materialGroups > source.draws
-    )
-      return;
+    if (!source.compatible || !cellProxyHelps(proxy, source.triangles, source.draws)) return;
     cell.proxy = state;
     state.bytes = reserve;
     this.#hlodBytes += reserve;
