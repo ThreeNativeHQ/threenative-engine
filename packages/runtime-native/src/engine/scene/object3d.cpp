@@ -687,7 +687,7 @@ bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain
     materializeLocalTransform();
     // Escaped aliases can change without a revision; auto-world ownership recomposes eagerly.
     const auto* tracking = ownTransformTracking();
-    if (tracking[0] && tracking[2] && matrixAutoUpdate && matrixWorldAutoUpdate) force = true;
+    const bool escapedAutoWorld = tracking[0] && tracking[2] && matrixWorldAutoUpdate;
     if (plain && identityParent && matrixAutoUpdate && matrixWorldAutoUpdate && !pivot) {
         Matrix4 composed;
         composed.compose(position, quaternion, scale);
@@ -696,13 +696,15 @@ bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain
         if (changed) bump();
         const uint64_t parentId = parent ? parent->id() + 1 : 0;
         const uint64_t parentRevision = parent ? parent->revision() : 0;
-        if (changed || matrixWorldNeedsUpdate || force || worldParentId_ != parentId || worldParentRevision_ != parentRevision) {
-            if (bitsDiffer(matrixWorld.elements, composed.elements)) bump();
+        const bool updateWorld = changed || matrixWorldNeedsUpdate || force || worldParentId_ != parentId || worldParentRevision_ != parentRevision;
+        if (updateWorld || escapedAutoWorld) {
+            const bool worldChanged = bitsDiffer(matrixWorld.elements, composed.elements);
+            if (worldChanged) bump();
             matrixWorld.copy(composed);
             matrixWorldNeedsUpdate = false;
             worldParentId_ = parentId;
             worldParentRevision_ = parentRevision;
-            return true;
+            return updateWorld || worldChanged;
         }
         return false;
     }
@@ -717,7 +719,9 @@ bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain
 
     const uint64_t parentId = parent ? parent->id() + 1 : 0;
     const uint64_t parentRevision = parent ? parent->revision() : 0;
-    if (matrixWorldNeedsUpdate || force || worldParentId_ != parentId || worldParentRevision_ != parentRevision) {
+    const bool updateWorld = matrixWorldNeedsUpdate || force || worldParentId_ != parentId || worldParentRevision_ != parentRevision;
+    if (updateWorld || escapedAutoWorld) {
+        bool worldChanged = false;
         if (matrixWorldAutoUpdate) {
             Matrix4 composed;
             if (parent == nullptr || identityParent) {
@@ -726,13 +730,14 @@ bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain
                 composed.multiplyMatrices(parent->matrixWorld, matrix);
             }
             // A parent's move reaches the renderer through the child's world matrix.
-            if (std::memcmp(matrixWorld.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0) bump();
+            worldChanged = std::memcmp(matrixWorld.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0;
+            if (worldChanged) bump();
             matrixWorld.copy(composed);
         }
         matrixWorldNeedsUpdate = false;
         worldParentId_ = parentId;
         worldParentRevision_ = parentRevision;
-        force = true;
+        force = updateWorld || worldChanged;
     }
 
     // A manually owned world matrix can change without a revision; retain its forced child update.

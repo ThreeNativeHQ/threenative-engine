@@ -3077,6 +3077,7 @@ void gpuJointProduction() {
         std::vector<std::shared_ptr<Bone>> tips;
         double* escapedWorld = nullptr;
         double* escapedAutoWorld = nullptr;
+        double* escapedLocal = nullptr;
         std::shared_ptr<Reflector> reflector = std::make_shared<Reflector>();
         Fixture(bool tracked) {
             camera.aspect = 4.0 / 3; camera.position.set(0, 0, 8); camera.updateProjectionMatrix();
@@ -3116,6 +3117,8 @@ void gpuJointProduction() {
                 mover->add(*placement); scene.add(*mover);
                 if (tracked) { mover->enableTrackedTransform(); placement->enableTrackedTransform(); mesh->enableTrackedTransform(); }
                 if (i == 0) {
+                    mover->updateMatrix(); mover->matrixAutoUpdate = false;
+                    escapedLocal = mover->matrix.elements.data();
                     CHECK(Object3D::leaseTransform(&mover->matrixWorld) == 5);
                     escapedAutoWorld = mover->matrixWorld.elements.data();
                     escapedAutoWorld[12] = 100;
@@ -3173,6 +3176,8 @@ void gpuJointProduction() {
                 const double q[4] = {0, 0, std::sin(0.25), std::cos(0.25)}; orientation.setValue(q, 0);
                 fixture->movers[0]->position.y = 0.5;
                 fixture->movers[0]->position.z = -frame * 0.2;
+                fixture->escapedLocal[13] = 0.5;
+                fixture->escapedLocal[14] = -frame * 0.2;
                 fixture->escapedAutoWorld[12] = 100; // auto-world ownership repairs the raw alias
                 fixture->movers[2]->position.z = frame * 0.2;
                 fixture->meshes[3]->setLayer(frame == 3 ? 0 : 1);
@@ -3249,8 +3254,10 @@ void gpuJointProduction() {
         CHECK(!admittedPlan->current());
         accelerated.movers[0]->matrixWorldAutoUpdate = true;
         accelerated.movers[0]->matrixAutoUpdate = false;
-        CHECK(!admittedPlan->current());
+        CHECK(admittedPlan->current());
         accelerated.movers[0]->matrixAutoUpdate = true;
+        CHECK(admittedPlan->current());
+        accelerated.movers[0]->matrixAutoUpdate = false;
         accelerated.movers[0]->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
             [](const RenderCallbackArgs&, std::string&) { return true; });
         CHECK(!admittedPlan->current());
@@ -3360,9 +3367,9 @@ void gpuJointProduction() {
         if (strict) CHECK(Object3D::leaseTransform(&strict->matrixWorld) == 5);
         fixture.scene.updateMatrixWorld(true);
         const auto plan = gpu.prepareGpuJoints(fixture.scene);
-        CHECK(bool(plan && plan->byMesh.count(fixture.meshes[0].get())) == (variant < 3));
+        CHECK(bool(plan && plan->byMesh.count(fixture.meshes[0].get())) == (variant < 3 || variant == 5));
         CHECK(!plan || !plan->byMesh.count(fixture.meshes[1].get())); // attachment outside Bone set remains eager
-        if (plan && variant < 3) {
+        if (plan && (variant < 3 || variant == 5)) {
             CHECK(plan->current());
             fixture.scene.add(*fixture.movers[0]);
             CHECK(!plan->current()); // live reparent invalidates before a skipped Bone walk

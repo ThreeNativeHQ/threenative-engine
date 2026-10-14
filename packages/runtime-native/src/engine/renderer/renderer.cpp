@@ -38,8 +38,8 @@ bool gpuJointAncestorEligible(const Object3D& ancestor, const SkinnedMesh& rig) 
     if (!flags || !flags[0] || ancestor.onBeforeRender) return false;
     if (!flags[2]) return true;
     // Only CPU-eager auto-world nodes strictly outside the rig's placement may escape.
-    return &ancestor != &rig && &ancestor != rig.parent && ancestor.matrixAutoUpdate &&
-        ancestor.matrixWorldAutoUpdate && (typeid(ancestor) == typeid(Object3D) ||
+    return &ancestor != &rig && &ancestor != rig.parent && ancestor.matrixWorldAutoUpdate &&
+        (typeid(ancestor) == typeid(Object3D) ||
         typeid(ancestor) == typeid(Group) || typeid(ancestor) == typeid(Mesh));
 }
 

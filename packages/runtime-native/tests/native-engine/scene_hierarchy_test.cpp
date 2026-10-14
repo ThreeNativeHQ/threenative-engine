@@ -394,8 +394,11 @@ void revision() {
             descendant->updateMatrixWorld(childForce);
             CHECK(descendant->matrixWorld.elements == eagerChild->matrixWorld.elements);
             const auto settledRevision = escaped.revision();
-            CHECK(escaped.updateMatrixWorldSelf(false, true, plain));
+            CHECK(!escaped.updateMatrixWorldSelf(false, true, plain));
             CHECK(escaped.revision() == settledRevision);
+            CHECK(escaped.updateMatrixWorldSelf(true, true, plain));
+            escaped.matrixWorldNeedsUpdate = true;
+            CHECK(escaped.updateMatrixWorldSelf(false, true, plain));
         }
         escaped.matrixWorldAutoUpdate = false;
         world[12] = 33;
@@ -403,6 +406,34 @@ void revision() {
         CHECK(world[12] == 33 && descendant->matrixWorld.elements[12] == 33);
         Object3D::unleaseTransform(&escaped.matrixWorld);
     }
+
+    Object3D manual, manualEager;
+    auto manualChild = node("manual local child"), manualEagerChild = node("manual eager child");
+    manual.add(*manualChild); manualEager.add(*manualEagerChild);
+    manual.matrixAutoUpdate = manualEager.matrixAutoUpdate = false;
+    manual.position.x = manualEager.position.x = 99; // manual local matrix owns the transform
+    manual.enableTrackedTransform();
+    CHECK(Object3D::leaseTransform(&manual.matrixWorld) == 5);
+    for (int frame = 0; frame < 3; ++frame) {
+        manual.matrix.elements[12] = manualEager.matrix.elements[12] = frame == 2 ? 4 : 2;
+        manual.updateMatrixWorld();
+        manualEager.updateMatrixWorld(true);
+        CHECK(manual.matrixWorld.elements == manualEager.matrixWorld.elements);
+        CHECK(manualChild->matrixWorld.elements == manualEagerChild->matrixWorld.elements);
+        CHECK(!manual.updateMatrixWorldSelf());
+        manual.matrixWorld.elements[12] = 100;
+        CHECK(manual.updateMatrixWorldSelf());
+        CHECK(manual.matrixWorld.elements == manualEager.matrixWorld.elements);
+        CHECK(!manual.updateMatrixWorldSelf());
+        CHECK(manual.updateMatrixWorldSelf(true));
+        manual.matrixWorldNeedsUpdate = true;
+        CHECK(manual.updateMatrixWorldSelf());
+    }
+    manual.matrixWorldAutoUpdate = false;
+    manual.matrixWorld.elements[12] = 33;
+    manual.updateMatrixWorld();
+    CHECK(manual.matrixWorld.elements[12] == 33 && manualChild->matrixWorld.elements[12] == 33);
+    Object3D::unleaseTransform(&manual.matrixWorld);
 }
 
 // Ported from three r185 test/unit/src/core/Object3D.tests.js. The source holds 37 QUnit.test
