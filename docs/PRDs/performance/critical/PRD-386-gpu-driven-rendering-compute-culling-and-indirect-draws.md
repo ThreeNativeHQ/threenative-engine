@@ -23,7 +23,7 @@ existing CPU cut stays: it is the oracle and the fallback, not the thing being r
 `world-gpu-scene.spec.ts` (3,431 lines): one compute dispatch culls and LOD-selects every resident
 placement and each main key draws its own region through a `BufferGeometry.setIndirect` record, with a
 CPU fallback that names its `reasonCode`. See
-[PRD-473 Phase 1](../../open-world/PRD-473-open-worlds-hold-120-fps-gpu-driven.md) for those boxes.
+[PRD-473 Phase 1](../../done/PRD-473-open-worlds-hold-120-fps-gpu-driven.md) for those boxes.
 What this PRD still owns, unchanged: the gates below — Android and iOS evidence, the desktop native
 conformance case through `--target`, and the per-material one-`drawIndirect` CPU submission this
 document asks for (the shipped path draws per key, not per material).
