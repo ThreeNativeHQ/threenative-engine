@@ -7,6 +7,7 @@
 #include "engine/abi/pooled_shared.h"
 #include "engine/abi/bindings.h"
 #include "engine/animation/mixer.h"
+#include "engine/animation/skinning/skeleton.h"
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
 #include "engine/scene/nodes.h"
@@ -227,6 +228,22 @@ void scene() {
     CHECK(tn_get(child, "matrixWorld.elements", &result, &d.value) == TN_OK);
     CHECK(result.kind == TN_VALUE_NUMBERS && result.count == 16);
     CHECK(result.numbers[12] == 1 && result.numbers[13] == 4 && result.numbers[14] == 3);
+
+    tn_handle_t deferredRoot{}, deferredChild{};
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &deferredRoot, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Object3D", nullptr, 0, &deferredChild, &d.value) == TN_OK);
+    auto deferredBone = std::static_pointer_cast<tn::engine::Bone>(tn::abi::objectOf(deferredRoot)->ptr);
+    auto* band = static_cast<tn::engine::Object3D*>(tn::abi::objectOf(deferredChild)->ptr.get());
+    band->position.set(1, 0, 0); deferredBone->add(*band); deferredBone->updateMatrixWorld(true);
+    deferredBone->enableTrackedTransform(); CHECK(deferredBone->enableDeferredTransform());
+    tn::engine::animation::PropertyBinding deferredBinding(deferredBone, ".position");
+    const double pose[] = {7, 8, 9}; deferredBinding.setValue(pose, 0);
+    tn::engine::Vector3 joined; deferredBone->getWorldPosition(joined);
+    CHECK(tn_get(deferredChild, "matrixWorld.elements", &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_NUMBERS && result.numbers[12] == 8);
+    const double nextPose[] = {11, 12, 13}; deferredBinding.setValue(nextPose, 0);
+    CHECK(tn_get(deferredRoot, "matrixWorld.elements", &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_NUMBERS && result.numbers[12] == 11);
 
     // `mesh.position` is the member, not a copy: the same handle every time, and a write through it
     // is the object's own write.
