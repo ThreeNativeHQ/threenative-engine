@@ -73,7 +73,7 @@
   <span class="grow"></span>
   <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
 </header>
-<section class="card"><h2>Best measured experimental · not accepted</h2><div id="candidate"></div><h2>Pinned measurement and qualification</h2><div id="winner"></div></section>
+<section class="card"><h2>Now: AC-4 + AC-5 in parallel · cull share ≤2% + HUD</h2><p id="focus"></p><h2>Best measured experimental · not accepted</h2><div id="candidate"></div><h2>Pinned measurement and qualification</h2><div id="winner"></div></section>
 <section class="hero">
   <div class="card"><h2>Progress to the PRD-610 targets <span class="mute" style="text-transform:none;letter-spacing:0">· AC-3 uses best measured experimental when no winner is accepted; other measurements use the pinned reference; historical baselines retained; qualification separate</span></h2><div id="kpis"></div></div>
   <div class="stack">
@@ -103,6 +103,7 @@ const short = (dir) => dir.replace(/-(desktop|native|legacy)$/, "");
 function kpi(k) {
   const unit = { x: "×", "%": "%", ms: "ms", nodes: "nodes" }[k.unit];
   const fmt = (v) => (k.unit === "x" ? v.toFixed(2) : k.unit === "%" ? v.toFixed(1) : num(v));
+  const deferred = k.id === "AC-3" && k.verdict === "fail";
   const tgt = `${k.better === "lower" ? "≤" : "≥"} ${fmt(k.target)} ${unit}`;
   if (k.verdict === "pending")
     return `<div class="kpi pending"><div class="top"><span class="name"><small>${k.id}</small>${esc(k.title)}</span><span class="grow"></span><span class="big">—</span><span class="chip">pending</span></div><div class="bar"></div><div class="foot"><span>target ${tgt}</span><span class="grow"></span><span>${esc(k.detail)}</span></div></div>`;
@@ -110,7 +111,7 @@ function kpi(k) {
   const notch = p < 0 ? '<b style="left:0"></b>' : "";
   const pct = p < 0 ? (k.baselineDeltaPct === undefined ? undefined : Math.abs(k.baselineDeltaPct)) : Math.abs(p * 100);
   const word = p < 0 ? `${pct === undefined ? "" : pct.toFixed(0) + "% "}worse than baseline` : p > 1 ? "past the target" : "of the way";
-  return `<div class="kpi ${k.verdict}"><div class="top"><span class="name"><small>${k.id}${k.ticked ? " ✓" : ""}</small>${esc(k.title)}</span><span class="grow"></span><span class="big">${fmt(k.current)}<small>${unit}</small></span><span class="chip ${k.verdict}">${k.verdict.toUpperCase()}</span></div>
+  return `<div class="kpi ${k.verdict}"><div class="top"><span class="name"><small>${k.id}${k.ticked ? " ✓" : ""}</small>${esc(k.title)}</span><span class="grow"></span><span class="big">${fmt(k.current)}<small>${unit}</small></span><span class="chip ${k.verdict}"${deferred ? ' title="Original stretch goal not met; background work does not block AC-4–13"' : ""}>${deferred ? "DEFERRED" : k.verdict.toUpperCase()}</span></div>
     <div class="bar" role="img" aria-label="${k.id} progress ${Math.round(p * 100)} percent"><i style="width:${fill}%"></i>${notch}</div>
     <div class="foot"><span>start ${fmt(k.baseline)} ${unit} <span title="oldest build">(${esc(k.baselineBuild)})</span></span><span class="grow"></span><span class="pct">${p < 0 ? "−" : ""}${pct === undefined ? "—" : pct.toFixed(0) + "%"}</span><span>${word}</span><span class="grow"></span><span>target <b>${tgt}</b></span></div>
     <div class="foot"><span><b>${esc(k.build)}</b> · median of ${k.runs} run${k.runs === 1 ? "" : "s"}: ${esc(k.detail)}</span></div></div>`;
@@ -208,6 +209,11 @@ function render(d) {
   $("winner").textContent = d.winner.status === "accepted" ? `LOCKED accepted winner: ${d.winner.build}` : `Pinned baseline: ${d.selection.build ?? "unavailable"} · ${d.selection.runs.length} isolated run(s); not accepted winner. ${d.winner.reason}`;
   const candidate = d.candidate.gap.desktop;
   const structural = d.candidate.structural;
+  const ac3 = d.kpis.find((k) => k.id === "AC-3");
+  const measuredAc3 = ac3?.current ?? structural?.projection;
+  const targetAc3 = ac3?.target ?? structural?.target;
+  const stretchStatus = targetAc3 === undefined ? "target unavailable" : `≤ ${num(targetAc3, 0)} ${measuredAc3 !== undefined && measuredAc3 <= targetAc3 ? "target reached numerically" : "is a deferred stretch target"}`;
+  $("focus").textContent = `AC-3 background stretch · non-blocking · measured ${measuredAc3 === undefined ? "unavailable" : num(measuredAc3, 0)} visits; ${stretchStatus}. AC-6–13 qualification continues; acceptance remains separate.`;
   $("candidate").innerHTML = structural ? `<div class="kpi pending"><div class="top"><span class="name"><small>AC-3 · EXPERIMENTAL</small>Matrix world-walk visits · best package median</span><span class="grow"></span><span class="big">${num(structural.projection, 0)}<small> visits</small></span><span class="chip">Not accepted</span></div><div class="foot"><span>${esc(structural.build)} · median of ${structural.runs} complete run(s): ${structural.projections.map((v) => num(v, 0)).join(" / ")}</span><span class="grow"></span><span>target <b>≤ ${num(structural.target, 0)} visits</b></span></div><div class="foot"><span>${structural.projectionReductionPct === undefined ? "" : `${Math.abs(structural.projectionReductionPct).toFixed(1)}% ${structural.projectionReductionPct >= 0 ? "fewer" : "more"} visits vs pinned ${num(structural.pinnedProjection, 0)} · `}1,000 complete active frames per run · parity PASS${structural.timingExclusion ? " · includes timing-excluded measurements; structural metric only" : ""}. Acceptance and timing qualification remain separate.</span></div></div>` : candidate ? `<p>Latest experimental candidate: ${esc(candidate.build)} · ${candidate.ms.toFixed(2)} ms · ${Math.abs(candidate.pct).toFixed(1)}% ${candidate.direction} than historical three.js · ${candidate.runs} run(s). Not accepted.</p>` : "No experimental candidate measurements.";
   $("kpis").innerHTML = d.kpis.map(kpi).join("");
   renderGap(d);

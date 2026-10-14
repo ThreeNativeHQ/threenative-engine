@@ -528,17 +528,25 @@ describe("groups and loading", () => {
     const script = (html.split("<script>")[1] as string)
       .split("</script>")[0]
       ?.replace("tick(); setInterval(tick, 5000);", "");
-    const elements = new Map<string, { innerHTML?: string }>();
-    runInNewContext(`${script}\nrender(state);`, {
-      state,
-      document: {
-        getElementById: (id: string) => {
-          if (!elements.has(id)) elements.set(id, {});
-          return elements.get(id);
+    const elements = new Map<string, { innerHTML?: string; textContent?: string }>();
+    const renderState = (state: ReturnType<typeof midwayOf>) =>
+      runInNewContext(`${script}\nrender(state);`, {
+        state,
+        document: {
+          getElementById: (id: string) => {
+            if (!elements.has(id)) elements.set(id, {});
+            return elements.get(id);
+          },
         },
-      },
-    });
+      });
+    renderState(state);
     expect(html).toContain("Best measured experimental · not accepted");
+    expect(html).toContain("Now: AC-4 + AC-5 in parallel · cull share ≤2% + HUD");
+    expect(elements.get("focus")?.textContent).toContain(
+      "AC-3 background stretch · non-blocking · measured 3,468",
+    );
+    expect(elements.get("focus")?.textContent).toContain("1,500 is a deferred stretch target");
+    expect(elements.get("kpis")?.innerHTML).toContain(">DEFERRED</span>");
     for (const text of [
       "3,468",
       "3,469 / 3,467",
@@ -551,6 +559,22 @@ describe("groups and loading", () => {
     expect(elements.get("runs")?.innerHTML).toContain("Instructions regressed &lt;keep&gt;");
     expect(elements.get("runs")?.innerHTML).toContain(">rejected</span>");
     expect(state.builds.some((b) => b.build === "pkg-u")).toBe(false);
+    renderState({
+      ...state,
+      kpis: state.kpis.map((k) =>
+        k.id === "AC-3" ? { ...k, current: 1400, verdict: "pass", ticked: true } : k,
+      ),
+    });
+    expect(elements.get("kpis")?.innerHTML).toContain("AC-3 ✓");
+    expect(elements.get("kpis")?.innerHTML).toContain(">PASS</span>");
+    expect(elements.get("kpis")?.innerHTML).not.toContain(">DEFERRED</span>");
+    expect(elements.get("focus")?.textContent).toContain("target reached numerically");
+    renderState({
+      ...state,
+      kpis: state.kpis.filter((k) => k.id !== "AC-3"),
+      candidate: { ...state.candidate, structural: undefined },
+    });
+    expect(elements.get("focus")?.textContent).toContain("target unavailable");
   });
 
   it("loads <tag>-<arm> dirs oldest first and ignores everything else", async () => {
