@@ -10,6 +10,7 @@ import {
 import {
   type Node,
   NodeFrame,
+  type NodeMaterial,
   type NodeUniform,
   RenderPipeline,
   WGSLNodeBuilder,
@@ -101,6 +102,8 @@ const namesOf = (built: IBuilt, vectors: readonly Vector2[]): string[] => {
   return names;
 };
 
+const at = <T>(items: readonly T[], index: number): T => items[index] as T;
+
 const balanced = (source: string, open: number): string => {
   let depth = 0;
   for (let index = open; index < source.length; index += 1) {
@@ -127,27 +130,100 @@ const allBindingNames = (built: IBuilt): string[] => [
 const reads = (wgsl: string, textureNames: string[]): string[] =>
   [
     ...wgsl.matchAll(
-      new RegExp(`texture(?:Sample|Load|\\w*Level)\\(\\s*(?:${textureNames.join("|")})\\b`, "g"),
+      // Every WGSL way of reading a texture: sample, biased, levelled, compared, gathered, loaded.
+      new RegExp(`texture(?:Sample|Load|Gather)\\w*\\(\\s*(?:${textureNames.join("|")})\\b`, "g"),
     ),
   ].map((match) => balanced(wgsl, wgsl.indexOf("(", match.index ?? 0)));
 
 /**
- * The `viewFraction` a read is clamped by, or `undefined` when it is not clamped to a retained view.
+ * The uniform names a read is clamped by, or `undefined` when it is not clamped to a retained view.
  */
-const retainedViewOf = (read: string, fraction: string[], half: string[]): string | undefined => {
+const retainedViewOf = (
+  read: string,
+  fraction: string[],
+  half: string[],
+): { fraction: string; half: string } | undefined => {
   const view = new RegExp(
     String.raw`^\(\s*\(.*\*\s*(?:object\.)?(${fraction.join("|")})\s*\)\s*,\s*(?:object\.)?(${half.join(
       "|",
     )})\s*,\s*\(\s*(?:object\.)?\1\s*-\s*(?:object\.)?\2\s*\)\s*\)$`,
+    "s",
   );
   for (let open = read.indexOf("clamp("); open >= 0; open = read.indexOf("clamp(", open + 1)) {
     const match = view.exec(balanced(read, open + "clamp".length));
-    if (match) return match[1];
+    if (match) return { fraction: match[1] as string, half: match[2] as string };
   }
   return undefined;
 };
 
-const stage = () => {
+/** Uniform names whose live value is this exact vector, tolerating an absent one. */
+const maybeNamesOf = (built: IBuilt, vectors: readonly Vector2[]): string[] =>
+  built.uniforms.fragment
+    .filter(
+      (uniform) => uniform.node.value instanceof Vector2 && vectors.includes(uniform.node.value),
+    )
+    .map((uniform) => uniform.name);
+
+const vectorOf = (built: IBuilt, name: string): unknown =>
+  built.uniforms.fragment.find((entry) => entry.name === name)?.node.value;
+
+/** Every texture a compiled stage material binds, by the name the compiler gave it. */
+const boundTextures = (built: IBuilt): [string, Texture][] => [
+  ...new Map(
+    Object.values(built.bindings.fragment ?? {})
+      .flat()
+      .filter((binding) => binding.texture !== undefined)
+      .map((binding) => [binding.name, binding.texture]),
+  ).entries(),
+];
+
+/** Every read of a retained texture carries the clamp pair of that texture's own view. */
+const expectOwnViewClamp = (built: IBuilt, view: IResolutionTextureView, sites: string[]): void => {
+  const fraction = maybeNamesOf(built, [view.viewFraction]);
+  const half = maybeNamesOf(built, [view.halfTexel]);
+  for (const read of sites) {
+    const pair = retainedViewOf(read, fraction, half);
+    expect(pair).toBeDefined();
+    if (pair === undefined) continue;
+    // The pair is this texture's own view, not another target's.
+    expect(vectorOf(built, pair.fraction)).toBe(view.viewFraction);
+    expect(vectorOf(built, pair.half)).toBe(view.halfTexel);
+  }
+};
+
+/**
+ * Every read of a texture the controller owns carries the clamp pair of that texture's own view,
+ * and no read of a texture it does not own carries any retained pair at all.
+ */
+const expectOwnViewClamps = (built: IBuilt, controller: ResolutionSubrect) => {
+  const bound = boundTextures(built);
+  const guarded = { fraction: [] as string[], half: [] as string[] };
+  for (const [, texture] of bound) {
+    const view = controller.textureView(texture);
+    if (!view) continue;
+    guarded.fraction.push(...maybeNamesOf(built, [view.viewFraction]));
+    guarded.half.push(...maybeNamesOf(built, [view.halfTexel]));
+  }
+  let retained = 0;
+  let whole = 0;
+  for (const [name, texture] of bound) {
+    const view = controller.textureView(texture);
+    const sites = reads(built.fragmentShader, [name]);
+    if (view === undefined) {
+      whole += sites.length;
+      if (guarded.fraction.length === 0) continue;
+      for (const read of sites)
+        expect(retainedViewOf(read, guarded.fraction, guarded.half)).toBeUndefined();
+      continue;
+    }
+    retained += sites.length;
+    expectOwnViewClamp(built, view, sites);
+  }
+  return { retained, whole };
+};
+
+/** The real, canonical graph of one stage, its compiled output pass, and its controller. */
+const canonical = (stageName: string, worldOptions: Record<string, unknown> = {}) => {
   vi.stubGlobal(
     "Image",
     class {
@@ -160,85 +236,106 @@ const stage = () => {
   const camera = new PerspectiveCamera();
   const scene = new Scene();
   let graph: Node | undefined;
-  let ao: (Node & { _aoRenderTarget: RenderTarget }) | undefined;
-  let denoiser: (Node & { updateBefore(): void; _resolution: { value: Vector2 } }) | undefined;
   let worldPass:
     | { getTextureNode(name: string): { value: Texture }; renderTarget: object }
     | undefined;
+  const nodes: Node[] = [];
   const capture: OutputRenderer = {
     kind: "webgpu",
     raw: renderer,
     createResolutionSubrect: () => controller,
     createRenderChain(options) {
       worldPass = options.worldPass as typeof worldPass;
-      const stage = options.stages?.find((entry) => entry.name === "ambientOcclusion");
-      if (!stage) throw new Error("Missing the canonical ambient-occlusion stage");
+      const stage = options.stages?.find((entry) => entry.name === stageName);
+      if (!stage) throw new Error(`Missing the canonical ${stageName} stage`);
       graph = stage.build(options.input, { tier: "high" }) as Node;
       graph.traverse((node) => {
-        const pass = Reflect.get(node, "passNode") as Node | undefined;
-        if (pass && Reflect.get(pass, "_aoRenderTarget") !== undefined) {
-          ao = pass as typeof ao;
-        }
-        if (Reflect.get(node, "_resolution") !== undefined && Reflect.get(node, "textureNode")) {
-          denoiser = node as typeof denoiser;
-        }
+        if (!nodes.includes(node)) nodes.push(node);
       });
-      return { applied: { stages: ["ambientOcclusion"], dropped: [] }, dispose() {} };
+      return { applied: { stages: [stageName], dropped: [] }, dispose() {} };
     },
   };
-  const world = new WorldEnvironment({ gtaoEnabled: true, denoiseEnabled: true });
+  const world = new WorldEnvironment({ gtaoEnabled: true, denoiseEnabled: true, ...worldOptions });
   const applied = world.apply(capture, scene, camera);
   controller.activate(0.72);
   controller.setSize(1280, 720);
-  if (!graph) throw new Error("Missing the composed ambient-occlusion graph");
-  if (!ao) throw new Error("Missing the real GTAO node");
+  if (!graph) throw new Error(`Missing the composed ${stageName} graph`);
   if (!worldPass) throw new Error("Missing the scene pass");
   const view = (texture: Texture): IResolutionTextureView => {
     const found = controller.textureView(texture);
     if (!found) throw new Error("A texture this stage samples carries no retained view");
     return found;
   };
-  // The renderer's own output-pipeline build is what gives the GTAO node its fragment node.
+  // The renderer's own output-pipeline build is what gives the stage nodes their materials.
   const pipeline = new RenderPipeline(renderer as never, graph as never);
   Reflect.get(pipeline as object, "_update").call(pipeline);
   const outputQuad = Reflect.get(pipeline as object, "_quadMesh") as Mesh;
-  const gtaoQuad = new Mesh(new PlaneGeometry(), Reflect.get(ao, "_material") as never);
   const output = compile(renderer, outputQuad, camera, scene);
-  const gtao = compile(renderer, gtaoQuad, camera, scene);
-  const depth = worldPass.getTextureNode("depth").value;
-  const normal = worldPass.getTextureNode("normal").value;
-  const occlusion = ao._aoRenderTarget.texture;
-  const colour = worldPass.getTextureNode("output").value;
-  // Every texture the controller retains, and therefore every binding that may carry a view clamp.
-  const retained = [colour, depth, normal, occlusion];
-  for (const texture of retained) view(texture);
-  const unretained = (built: IBuilt): string[] => {
-    const kept = new Set(retained.flatMap((texture) => bindingNames(built, texture)));
-    return allBindingNames(built).filter((name) => !kept.has(name));
-  };
   const draw = (built: IBuilt): void => render(built, objectOf(built), renderer, camera, scene);
   // The first frame's per-render pass, as the renderer runs it before the material draws.
   draw(output);
-  draw(gtao);
+  /** The one real node of the stage, by the internal target it owns. */
+  const own = <T>(property: string, what: string): T => {
+    const found = ownAll(property, what);
+    if (found.length !== 1) throw new Error(`Expected one ${what}, found ${found.length}`);
+    return found[0] as T;
+  };
+  const ownAll = <T>(property: string, what: string): T[] =>
+    nodes.filter((node) => Reflect.get(node, property) !== undefined) as T[];
+  /** The stage's own quad materials, compiled through the real WGSL builder. */
+  const compileMaterial = (material: unknown): IBuilt => {
+    const built = compile(
+      renderer,
+      new Mesh(new PlaneGeometry(), material as never),
+      camera,
+      scene,
+    );
+    draw(built);
+    return built;
+  };
   const close = (): void => {
     applied.dispose?.();
     controller.dispose();
     vi.unstubAllGlobals();
   };
   return {
-    ao,
     close,
+    colour: worldPass.getTextureNode("output").value,
+    compileMaterial,
     controller,
-    denoiser,
-    depth,
+    depth: worldPass.getTextureNode("depth").value,
     draw,
-    gtao,
-    normal,
-    occlusion,
+    normal: worldPass.getTextureNode("normal").value,
     output,
-    unretained,
+    own,
+    ownAll,
     view,
   };
+};
+
+const stage = () => {
+  const proof = canonical("ambientOcclusion");
+  const ao = proof.own<Node & { _aoRenderTarget: RenderTarget }>(
+    "_aoRenderTarget",
+    "real GTAO node",
+  );
+  const denoiser = proof.own<Node & { updateBefore(): void; _resolution: { value: Vector2 } }>(
+    "_resolution",
+    "real denoiser",
+  );
+  const gtao = proof.compileMaterial(Reflect.get(ao, "_material"));
+  const depth = proof.depth;
+  const normal = proof.normal;
+  const occlusion = ao._aoRenderTarget.texture;
+  const colour = proof.colour;
+  // Every texture the controller retains, and therefore every binding that may carry a view clamp.
+  const retained = [colour, depth, normal, occlusion];
+  for (const texture of retained) proof.view(texture);
+  const unretained = (built: IBuilt): string[] => {
+    const kept = new Set(retained.flatMap((texture) => bindingNames(built, texture)));
+    return allBindingNames(built).filter((name) => !kept.has(name));
+  };
+  return { ...proof, ao, depth, denoiser, gtao, normal, occlusion, unretained };
 };
 
 describe("canonical ambient occlusion under a retained sub-rectangle", () => {
@@ -254,7 +351,9 @@ describe("canonical ambient occlusion under a retained sub-rectangle", () => {
       expect(depthReads.length).toBeGreaterThan(0);
       expect(normalReads.length).toBeGreaterThan(0);
       const pairs = new Set(
-        [...depthReads, ...normalReads].map((read) => retainedViewOf(read, fraction, half)),
+        [...depthReads, ...normalReads].map(
+          (read) => retainedViewOf(read, fraction, half)?.fraction,
+        ),
       );
       // Every read is clamped by a live view uniform, and each sampler carries its own pair.
       expect(pairs.has(undefined)).toBe(false);
@@ -342,6 +441,215 @@ describe("canonical ambient occlusion under a retained sub-rectangle", () => {
       proof.draw(proof.output);
       expect(live(fraction).toArray()).toEqual([1, 1]);
       expect(live(half).toArray()).toEqual([0, 0]);
+    } finally {
+      proof.close();
+    }
+  });
+});
+
+interface IBlurMaterial extends NodeMaterial {
+  colorTexture: { value: Texture | null };
+  invSize: { value: Vector2 };
+}
+interface IBloom extends Node {
+  _renderTargetBright: RenderTarget;
+  _renderTargetsHorizontal: RenderTarget[];
+  _renderTargetsVertical: RenderTarget[];
+  _separableBlurMaterials: IBlurMaterial[];
+  _highPassFilterMaterial: NodeMaterial;
+  _compositeMaterial: NodeMaterial;
+}
+interface ISmaa extends Node {
+  _renderTargetEdges: RenderTarget;
+  _renderTargetWeights: RenderTarget;
+  _renderTargetBlend: RenderTarget;
+  _areaTexture: Texture;
+  _searchTexture: Texture;
+  _materialEdges: NodeMaterial;
+  _materialWeights: NodeMaterial;
+  _materialBlend: NodeMaterial;
+}
+
+describe("canonical bloom under a retained sub-rectangle", () => {
+  it("clamps every bloom pass read to the view of the target that pass binds", () => {
+    const proof = canonical("bloom");
+    try {
+      const bloom = proof.own<IBloom>("_renderTargetBright", "real bloom node");
+      // The pass hands each blur material its colour texture while it runs. Binding the very
+      // target it draws from is what lets the compiled shader name the texture it will sample.
+      for (const [index, material] of bloom._separableBlurMaterials.entries()) {
+        material.colorTexture.value = at(bloom._renderTargetsHorizontal, index).texture;
+      }
+      const passes: [string, IBuilt][] = [
+        ["high pass", proof.compileMaterial(bloom._highPassFilterMaterial)],
+        ...bloom._separableBlurMaterials.map((material, index): [string, IBuilt] => [
+          `blur ${index}`,
+          proof.compileMaterial(material),
+        ]),
+        ["composite", proof.compileMaterial(bloom._compositeMaterial)],
+        ["output", proof.output],
+      ];
+      let retained = 0;
+      for (const [name, built] of passes) {
+        const count = expectOwnViewClamps(built, proof.controller);
+        expect(count.retained, `${name} retained reads`).toBeGreaterThan(0);
+        retained += count.retained;
+      }
+      // Five blur materials, the bright target they all trace back to, five vertical mips and
+      // the composite output: the whole chain is sampled inside its own views.
+      expect(retained).toBeGreaterThanOrEqual(10);
+    } finally {
+      proof.close();
+    }
+  });
+
+  it("gives every mip its own view and a texel size that follows the view, not the capacity", () => {
+    const proof = canonical("bloom");
+    try {
+      const bloom = proof.own<IBloom>("_renderTargetBright", "real bloom node");
+      const fractions: number[] = [];
+      for (const [index, material] of bloom._separableBlurMaterials.entries()) {
+        const horizontal = at(bloom._renderTargetsHorizontal, index);
+        const view = proof.view(horizontal.texture);
+        const { width, height } = horizontal;
+        expect(view.viewFraction.x).toBeLessThan(1);
+        expect(view.viewFraction.y).toBeLessThan(1);
+        // The capacity is whole; the viewport is the retained rectangle inside it.
+        expect(horizontal.viewport.z).toBe(Math.round(view.viewFraction.x * width));
+        expect(horizontal.viewport.w).toBe(Math.round(view.viewFraction.y * height));
+        expect(horizontal.scissorTest).toBe(true);
+        // One blur texel is one viewport texel, so the kernel width is the rectangle's.
+        expect(material.invSize.value.x).toBeCloseTo(1 / horizontal.viewport.z, 6);
+        expect(material.invSize.value.y).toBeCloseTo(1 / horizontal.viewport.w, 6);
+        expect(view.halfTexel.toArray()).toEqual([0.5 / width, 0.5 / height]);
+        fractions.push(view.viewFraction.x);
+      }
+      // Every mip halves the one above it, capacity and rectangle together.
+      expect(new Set(fractions).size).toBe(1);
+      const capacities = bloom._separableBlurMaterials.map(
+        (_, index) => at(bloom._renderTargetsHorizontal, index).width,
+      );
+      expect(capacities).toEqual([640, 320, 160, 80, 40]);
+      // The whole chain stays inside the half of the frame bloom resolves at.
+      expect(bloom._renderTargetBright.width).toBe(640);
+      expect(bloom._renderTargetBright.viewport.z).toBe(464);
+    } finally {
+      proof.close();
+    }
+  });
+
+  it("moves a blur material's clamp to the new view when the pass rebinds its texture", () => {
+    const proof = canonical("bloom");
+    try {
+      const bloom = proof.own<IBloom>("_renderTargetBright", "real bloom node");
+      const material = at(bloom._separableBlurMaterials, 0);
+      // The uniform a read is clamped by, and the view that uniform is carrying right now.
+      const carried = (built: IBuilt, names: string[], view: IResolutionTextureView) => {
+        const sites = reads(built.fragmentShader, names);
+        expect(sites.length).toBeGreaterThan(0);
+        const pair = retainedViewOf(
+          sites[0] as string,
+          maybeNamesOf(built, [view.viewFraction]),
+          maybeNamesOf(built, [view.halfTexel]),
+        );
+        expect(pair).toBeDefined();
+        return pair === undefined ? undefined : vectorOf(built, pair.fraction);
+      };
+      // The horizontal pass of mip 0 draws from the bright target...
+      const bright = bloom._renderTargetBright.texture;
+      material.colorTexture.value = bright;
+      const horizontal = proof.compileMaterial(material);
+      const textureNames = bindingNames(horizontal, bright);
+      const brightView = proof.view(bright);
+      expect(carried(horizontal, textureNames, brightView)).toBe(brightView.viewFraction);
+      // ...and the vertical pass of the same material draws from its own horizontal mip. One
+      // shader serves both, so the clamp can only follow the binding if the uniform is live.
+      const mip = at(bloom._renderTargetsHorizontal, 0).texture;
+      material.colorTexture.value = mip;
+      proof.draw(horizontal);
+      const mipView = proof.view(mip);
+      expect(mipView).not.toBe(brightView);
+      expect(carried(horizontal, textureNames, mipView)).toBe(mipView.viewFraction);
+      expectOwnViewClamp(horizontal, mipView, reads(horizontal.fragmentShader, textureNames));
+    } finally {
+      proof.close();
+    }
+  });
+});
+
+describe("canonical spatial antialiasing under a retained sub-rectangle", () => {
+  it("clamps every SMAA pass read to its own view and reads both LUTs whole", () => {
+    const proof = canonical("antialias");
+    try {
+      const smaa = proof.own<ISmaa>("_renderTargetEdges", "real SMAA node");
+      const passes: [string, IBuilt][] = [
+        ["edges", proof.compileMaterial(smaa._materialEdges)],
+        ["weights", proof.compileMaterial(smaa._materialWeights)],
+        ["blend", proof.compileMaterial(smaa._materialBlend)],
+        ["output", proof.output],
+      ];
+      let retained = 0;
+      let whole = 0;
+      for (const [name, built] of passes) {
+        const count = expectOwnViewClamps(built, proof.controller);
+        expect(count.retained, `${name} retained reads`).toBeGreaterThan(0);
+        retained += count.retained;
+        whole += count.whole;
+      }
+      expect(retained).toBeGreaterThanOrEqual(4);
+      // The area and search tables are indexed by edge geometry, not by screen position.
+      for (const lut of [smaa._areaTexture, smaa._searchTexture]) {
+        expect(proof.controller.textureView(lut)).toBeUndefined();
+      }
+      // expectOwnViewClamps has already refused a retained clamp on every one of these reads.
+      for (const lut of [smaa._areaTexture, smaa._searchTexture]) {
+        const sites = passes.flatMap(([, built]) =>
+          boundTextures(built)
+            .filter(([, texture]) => texture === lut)
+            .flatMap(([name]) => reads(built.fragmentShader, [name])),
+        );
+        expect(sites.length, lut.name).toBeGreaterThan(0);
+      }
+      expect(whole).toBeGreaterThan(0);
+      // The three targets the pass owns each keep their own rectangle and capacity.
+      const views = [
+        smaa._renderTargetEdges,
+        smaa._renderTargetWeights,
+        smaa._renderTargetBlend,
+      ].map((target) => proof.view(target.texture));
+      for (const view of views) {
+        expect(view.viewFraction.toArray()).toEqual([928 / 1280, 520 / 720]);
+        expect(view.halfTexel.toArray()).toEqual([0.5 / 1280, 0.5 / 720]);
+      }
+    } finally {
+      proof.close();
+    }
+  });
+
+  it("scales FXAA's inverse size to the retained view, because FXAA owns no target", () => {
+    const proof = canonical("antialias", { screenSpaceAA: "fxaa" });
+    try {
+      const fxaa = proof.own<Node & { _invSize: { value: Vector2 }; updateBefore(): void }>(
+        "_invSize",
+        "real FXAA node",
+      );
+      // FXAA samples the frame through the chain input, which the controller does retain.
+      expect(proof.ownAll("_renderTargetEdges", "SMAA node FXAA must not build")).toHaveLength(0);
+      const names = maybeNamesOf(proof.output, [fxaa._invSize.value]);
+      expect(names.length).toBeGreaterThan(0);
+      fxaa.updateBefore();
+      expect(maybeNamesOf(proof.output, [fxaa._invSize.value])).toEqual(names);
+      const input = Reflect.get(fxaa, "textureNode") as { value: { renderTarget: RenderTarget } };
+      const view = proof.view(input.value.renderTarget.texture);
+      expect(fxaa._invSize.value.x).toBeCloseTo(
+        1 / input.value.renderTarget.width / view.viewFraction.x,
+        6,
+      );
+      expect(fxaa._invSize.value.y).toBeCloseTo(
+        1 / input.value.renderTarget.height / view.viewFraction.y,
+        6,
+      );
+      expect(expectOwnViewClamps(proof.output, proof.controller).retained).toBeGreaterThan(0);
     } finally {
       proof.close();
     }
