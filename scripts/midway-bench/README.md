@@ -80,6 +80,16 @@ counts; winner qualification requires all 1,000 used frames in every pinned base
 HUD p95 still uses all snapshots, and matrix visits still use the last projection observation;
 these windows are not aligned to the CPU/instruction tail. Raw run logs stay unchanged.
 
+The runs table also shows whole-frame world-work visits (version 2): median, maximum and sample count
+over that same active tail. Every used frame must carry version 2 and six nonnegative safe-integer
+parts (`worldUpdateVisits`, `joinDependencyVisits`, `gpuBoundaryVisits`, `gpuProjectionBoundaryVisits`,
+`gpuPlanValidationVisits`, `gpuPlanMaintenanceVisits`) whose sum equals the safe-integer
+`worldWorkVisitsTotal`. Mixed, unknown or malformed counters hide this summary and reject winner
+qualification while retaining CPU/instruction measurements. Historical logs without these fields stay
+usable with no world-work summary. Whole-frame work and legacy projection-only `Matrix last` have
+different scopes; their history is not directly comparable. Headline targets and pinned references
+continue using the original metric.
+
 ## Dashboard
 
 `pnpm perf:live` also serves the Midway tab at `http://127.0.0.1:8765/midway`: PRD-610 KPI cards, desktop against

@@ -27,6 +27,14 @@ const PLAYER_KEYS = [
   "cpuFrameKInstructions",
   "cpuFrameKCycles",
 ] as const;
+const WORLD_WORK_PARTS = [
+  "worldUpdateVisits",
+  "joinDependencyVisits",
+  "gpuBoundaryVisits",
+  "gpuProjectionBoundaryVisits",
+  "gpuPlanValidationVisits",
+  "gpuPlanMaintenanceVisits",
+] as const;
 
 export interface IScan<T> {
   /** JSON objects that parsed. */
@@ -93,6 +101,10 @@ export interface IDesktopFrames {
   excluded: number;
   medians: Partial<Record<(typeof PLAYER_KEYS)[number], number>>;
   frameP95?: number;
+  /** Version 2 whole-frame work; distinct from legacy projection matrix visits. */
+  worldWork?: { version: 2; n: number; median: number; max: number };
+  /** A tail claims world counters but is mixed, incomplete or invalid. CPU samples remain usable. */
+  worldWorkInvalid?: true;
 }
 
 /** CPU and instructions share the last `last` complete, active player frames. */
@@ -113,6 +125,22 @@ export function playerFrames(text: string, last = PLAYER_FRAME_WINDOW) {
     if (m !== undefined) medians[key] = m;
   }
   const frameP95 = percentile(tail.map((s) => s.frameMs).filter(finite), 0.95);
+  const claimsWorldWork = tail.some((s) =>
+    ["worldVisitCounterVersion", "worldWorkVisitsTotal", ...WORLD_WORK_PARTS].some(
+      (key) => key in s,
+    ),
+  );
+  const validWorldWork = tail.every((s) => {
+    const parts = WORLD_WORK_PARTS.map((key) => s[key]);
+    return (
+      s.worldVisitCounterVersion === 2 &&
+      [...parts, s.worldWorkVisitsTotal].every(
+        (v) => finite(v) && Number.isSafeInteger(v) && v >= 0,
+      ) &&
+      (parts as number[]).reduce((sum, v) => sum + v, 0) === s.worldWorkVisitsTotal
+    );
+  });
+  const totals = validWorldWork ? tail.map((s) => s.worldWorkVisitsTotal as number) : [];
   return {
     skipped,
     frames: {
@@ -121,6 +149,18 @@ export function playerFrames(text: string, last = PLAYER_FRAME_WINDOW) {
       excluded: values.length - eligible.length,
       medians,
       ...(frameP95 === undefined ? {} : { frameP95 }),
+      ...(validWorldWork
+        ? {
+            worldWork: {
+              version: 2 as const,
+              n: tail.length,
+              median: median(totals) as number,
+              max: Math.max(...totals),
+            },
+          }
+        : claimsWorldWork
+          ? { worldWorkInvalid: true as const }
+          : {}),
     },
   };
 }

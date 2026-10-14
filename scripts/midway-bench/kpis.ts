@@ -581,6 +581,7 @@ export function winnerOf(runs: readonly IMidwayRun[], text?: string) {
           run.profiled ||
           run.timingExclusion ||
           run.desktop?.n !== PLAYER_FRAME_WINDOW ||
+          run.desktop.worldWorkInvalid ||
           parityNote([run]) ||
           !/^[a-f0-9]{64}$/.test(entry.evidenceSha256) ||
           entry.evidenceSha256 !== run.evidenceSha256 ||
@@ -589,7 +590,7 @@ export function winnerOf(runs: readonly IMidwayRun[], text?: string) {
           !finite(run.ui?.p95)
         )
           throw new Error(
-            "Pinned run is missing, changed, excluded, malformed or lacks 1000 complete active frames, instructions, HUD or passing parity.",
+            "Pinned run is missing, changed, excluded, malformed (including world counters) or lacks 1000 complete active frames, instructions, HUD or passing parity.",
           );
         return run;
       });

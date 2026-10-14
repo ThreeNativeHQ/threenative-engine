@@ -36,6 +36,18 @@ import {
 
 const frame = (cpu: number, ms = 40) =>
   `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, cpuFrameKInstructions: cpu * 1000, cpuFrameCpuMs: cpu, frameMs: ms, bridgeCalls: 10, hostCpuMs: { update: 1 } })}`;
+const worldCounters = {
+  worldVisitCounterVersion: 2,
+  worldUpdateVisits: 1,
+  joinDependencyVisits: 2,
+  gpuBoundaryVisits: 3,
+  gpuProjectionBoundaryVisits: 4,
+  gpuPlanValidationVisits: 5,
+  gpuPlanMaintenanceVisits: 6,
+  worldWorkVisitsTotal: 21,
+};
+const worldFrame = (counters: Record<string, unknown> = worldCounters) =>
+  `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, cpuFrameKInstructions: 10000, cpuFrameCpuMs: 10, frameMs: 20, ...counters })}`;
 const budget = (p50: number) =>
   `TN_FRAME_BUDGET:${JSON.stringify({ fps: 60, frame: { p50, p95: p50 * 2 }, hitches: 1 })}`;
 const report = (clock: "wall-clock" | "fixed-step") =>
@@ -82,6 +94,46 @@ describe("scanJson", () => {
 });
 
 describe("log reducers", () => {
+  it("summarizes whole-frame world work over the same complete active tail", () => {
+    const { frames } = playerFrames(
+      [
+        frame(100),
+        worldFrame(),
+        worldFrame({ ...worldCounters, worldUpdateVisits: 5, worldWorkVisitsTotal: 25 }),
+        worldFrame({ ...worldCounters, updates: 0, worldWorkVisitsTotal: -1 }),
+      ].join("\n"),
+      2,
+    );
+    expect(frames?.worldWork).toEqual({ version: 2, n: 2, median: 23, max: 25 });
+    expect(frames?.worldWorkInvalid).toBeUndefined();
+    expect(frames?.medians.cpuFrameCpuMs).toBe(10);
+  });
+
+  it.each([
+    { ...worldCounters, worldUpdateVisits: -1 },
+    { ...worldCounters, joinDependencyVisits: 1.5 },
+    { ...worldCounters, gpuBoundaryVisits: Number.MAX_SAFE_INTEGER + 1 },
+    { ...worldCounters, worldWorkVisitsTotal: 22 },
+    { ...worldCounters, gpuPlanMaintenanceVisits: undefined },
+    { ...worldCounters, worldVisitCounterVersion: undefined },
+    { ...worldCounters, worldVisitCounterVersion: 3 },
+    { ...worldCounters, worldVisitCounterVersion: "2" },
+    { ...worldCounters, worldWorkVisitsTotal: undefined },
+    {},
+  ])("keeps CPU measurements but rejects invalid or mixed world counters: %j", (counters) => {
+    const { frames } = playerFrames([worldFrame(), worldFrame(counters)].join("\n"));
+    expect(frames?.worldWork).toBeUndefined();
+    expect(frames?.worldWorkInvalid).toBe(true);
+    expect(frames?.n).toBe(2);
+    expect(frames?.medians.cpuFrameKInstructions).toBe(10000);
+  });
+
+  it("leaves historical frames without world counters unchanged", () => {
+    const { frames } = playerFrames([frame(1), frame(3)].join("\n"));
+    expect(frames?.worldWork).toBeUndefined();
+    expect(frames?.worldWorkInvalid).toBeUndefined();
+    expect(frames?.medians.cpuFrameCpuMs).toBe(2);
+  });
   it("selects complete active frames before taking the tail, excluding the real capture spike", () => {
     // resume-seek-a1-desktop: active tick 2001 and the zero-update screenshot at tick 2423.
     const active = {
@@ -796,6 +848,28 @@ describe("deliberate winner lock", () => {
       const changed = list.map((r, i) => (i === 1 ? { ...r, ...patch } : r));
       expect(winnerOf(changed, JSON.stringify(lock)).status).toBe("unqualified");
     }
+  });
+
+  it("rejects a pinned run with malformed world counters while retaining CPU samples", () => {
+    const { list, lock } = fixture();
+    const original = list[1];
+    list[1] = run(
+      original.dir,
+      [
+        pkgLine("pkg-b"),
+        ...Array(999).fill(worldFrame()),
+        worldFrame({ ...worldCounters, worldWorkVisitsTotal: 22 }),
+        ui(40),
+      ].join("\n"),
+      parityText(true),
+    );
+    list[1].mtimeMs = original.mtimeMs;
+    lock.candidate[0] = { dir: list[1].dir, evidenceSha256: list[1].evidenceSha256 };
+    expect(list[1].desktop).toMatchObject({ n: 1000, worldWorkInvalid: true });
+    expect(winnerOf(list, JSON.stringify(lock))).toMatchObject({
+      status: "unqualified",
+      reason: expect.stringContaining("world counters"),
+    });
   });
 
   it("rejects instruction overlap and CPU or HUD regressions despite passing parity", () => {
