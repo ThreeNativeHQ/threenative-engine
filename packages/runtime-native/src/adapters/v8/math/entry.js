@@ -21,6 +21,17 @@ const KINDS = Object.keys(CLASSES);
 
 globalThis.__tnMathInstall = function install(target, layoutText) {
   const layout = JSON.parse(layoutText);
+  const NativeBox3 = target.Box3;
+  // Scene queries stay native: borrowing a live matrix view would permanently escape tracked transforms.
+  for (const name of ["setFromObject", "expandByObject"]) {
+    const fallback = Box3.prototype[name];
+    Box3.prototype[name] = function (object, precise = false) {
+      if (typeof object?.__tnCopyMatrixWorld !== "function") return fallback.call(this, object, precise);
+      const bounds = new NativeBox3(this.min, this.max);
+      return this.copy(bounds[name](object, precise));
+    };
+  }
+
   // The native side finds a JS math value by this tag (the index into KINDS), on the prototype.
   KINDS.forEach((name, tag) => Object.defineProperty(CLASSES[name].prototype, "$tn", { value: tag }));
 

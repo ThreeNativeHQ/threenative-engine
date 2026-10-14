@@ -122,6 +122,7 @@ class RenderDatabase {
     // Set by the frame's database on a reflection pass: the scene's world matrices are already current.
     std::shared_ptr<GpuJointScene> gpuJoints_;
     bool gpuPreparing_ = false;
+    bool compiling_ = false;
     bool matricesFresh_ = false;
     uint64_t worldsFreshSince_ = 0;
     bool ranCallbacks_ = false;  // this prepare ran onBeforeRender hooks, which may have moved objects

@@ -3069,6 +3069,8 @@ void gpuJointProduction() {
 
     struct Fixture {
         Scene scene;
+        Scene unrelatedCompileScene;
+        unsigned compileCallbacks = 0;
         PerspectiveCamera camera;
         std::vector<std::shared_ptr<Group>> movers;
         std::vector<std::shared_ptr<SkinnedMesh>> meshes;
@@ -3086,6 +3088,10 @@ void gpuJointProduction() {
             geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
             auto material = std::make_shared<Material>(MaterialType::Basic);
             material->color.setRGB(0.8, 0.2, 0.1);
+            auto unrelated = std::make_shared<Mesh>(makeBoxGeometry(), material);
+            unrelated->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+                [this](const RenderCallbackArgs&, std::string&) { ++compileCallbacks; return true; });
+            unrelatedCompileScene.add(*unrelated);
             auto sun = std::make_shared<DirectionalLight>();
             sun->position.set(2, 5, 4); sun->setCastShadow(true);
             sun->shadow.mapSize.set(128, 128);
@@ -3177,6 +3183,15 @@ void gpuJointProduction() {
         if (frame == 2) {
             database.shadowMapEnabled = reference.shadowMapEnabled = false;
             for (auto* fixture : {&accelerated, &eager}) fixture->scene.add(*std::make_shared<Group>());
+        }
+        if (frame == 1) {
+            RenderDatabase compilation; compilation.shadowMapEnabled = database.shadowMapEnabled;
+            const auto pending = compilation.compileAsync(gpu, accelerated.scene, accelerated.camera);
+            CHECK(!pending.empty());
+            CHECK(admittedPlan && *admittedPlan->valid); // async warm-up must retain the live GPU palette owner
+            compilation.compileAsync(gpu, accelerated.unrelatedCompileScene, accelerated.camera);
+            CHECK(accelerated.compileCallbacks == 1);
+            CHECK(admittedPlan && *admittedPlan->valid); // unrelated compile callbacks do not own the live GPU plan
         }
         const auto projectionBefore = Object3D::gpuProjectionVisits_;
         const auto maintenanceBefore = Object3D::gpuMaintenanceVisits_;

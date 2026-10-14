@@ -1363,9 +1363,13 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     // the scene cannot invalidate the traversal, and before submission, so a uniform it sets (a
     // material colour) reaches this frame. A callee that threw is a diagnostic, never a crash.
     if (gpuJoints_ && !callbacks_.empty()) {
-        gpuJoints_->revoke(); gpuJoints_.reset();
-        scene.updateMatrixWorld(true);
-        return prepare(scene, camera, lights, targetScene);
+        if (compiling_ && std::none_of(items.begin(), items.end(), [](const DrawItem& item) { return bool(item.gpuJoints); })) {
+            gpuJoints_.reset(); // An unrelated compile root does not own the borrowed plan.
+        } else {
+            gpuJoints_->revoke(); gpuJoints_.reset();
+            scene.updateMatrixWorld(true);
+            return prepare(scene, camera, lights, targetScene);
+        }
     }
     for (const PendingCallback& p : callbacks_) {
         const RenderCallback callback = p.mesh->onBeforeRender;
@@ -1495,7 +1499,12 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
 std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(Renderer& renderer,
     Object3D& root, Camera& camera, Object3D* targetScene, WGPUTextureFormat outputFormat) {
     LightState lights;
-    const auto& items = prepare(root, camera, lights, targetScene);
+    gpuJoints_ = renderer.currentGpuJoints();
+    gpuPreparing_ = true;
+    compiling_ = true;
+    try { prepare(root, camera, lights, targetScene); } catch (...) { gpuPreparing_ = compiling_ = false; throw; }
+    gpuPreparing_ = compiling_ = false;
+    const auto& items = items_;
     if (!diagnostics_.empty()) throw std::runtime_error(diagnostics_.front());
     CameraState state;
     state.matrixWorld = toArray(camera.matrixWorld);

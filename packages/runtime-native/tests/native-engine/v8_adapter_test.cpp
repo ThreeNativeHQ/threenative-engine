@@ -1609,6 +1609,48 @@ void jsMathViews() {
     const char* tracking = R"JS(
         (() => {
             const check = (ok) => { if (!ok) throw Error('tracking assertion'); };
+            const boundsRoot = new Group(), boundsMesh = new Mesh(new BoxGeometry(2, 4, 6), new MeshBasicMaterial());
+            boundsRoot.position.set(10, 0, 0); boundsMesh.position.set(2, 3, 4); boundsRoot.add(boundsMesh);
+            boundsRoot.updateMatrixWorld(true);
+            check(__tracking(boundsRoot, true) === 100 && __tracking(boundsMesh, true) === 100);
+            const observedBounds = new Box3().setFromObject(boundsRoot);
+            check(observedBounds.min.equals(new Vector3(11, 1, 1)) && observedBounds.max.equals(new Vector3(13, 5, 7)));
+            if (__tracking(boundsRoot, true) !== 100 || __tracking(boundsMesh, true) !== 100)
+                throw Error(`bounds escaped ${__tracking(boundsRoot)} ${__tracking(boundsMesh)} native=${boundsRoot instanceof Object3D}`);
+
+            boundsMesh.visible = false;
+            check(new Box3().setFromObject(boundsRoot, true).equals(observedBounds));
+            const expanded = new Box3(new Vector3(-20, -20, -20), new Vector3(-19, -19, -19));
+            const minIdentity = expanded.min, maxIdentity = expanded.max;
+            check(expanded.expandByObject(boundsRoot) === expanded && expanded.min === minIdentity && expanded.max === maxIdentity);
+            check(expanded.min.x === -20 && expanded.max.equals(observedBounds.max));
+            const instancedBounds = new InstancedMesh(new BoxGeometry(2, 4, 6), new MeshBasicMaterial(), 2);
+            instancedBounds.setMatrixAt(0, new Matrix4()); instancedBounds.setMatrixAt(1, new Matrix4().makeTranslation(3, 0, 0));
+            const instancesBox = new Box3().setFromObject(instancedBounds, true);
+            check(instancesBox.min.equals(new Vector3(-1, -2, -3)) && instancesBox.max.equals(new Vector3(4, 2, 3)));
+            check(__tracking(instancedBounds, true) === 100);
+            const skinGeometry = new BufferGeometry();
+            skinGeometry.setAttribute('position', new Float32BufferAttribute([1, 2, 3], 3));
+            skinGeometry.setAttribute('skinIndex', new Float32BufferAttribute([0, 0, 0, 0], 4));
+            skinGeometry.setAttribute('skinWeight', new Float32BufferAttribute([1, 0, 0, 0], 4));
+            const boundsBone = new Bone(); boundsBone.position.x = 4; boundsBone.updateMatrixWorld(true);
+            const boundsSkin = new SkinnedMesh(skinGeometry, new MeshBasicMaterial());
+            boundsSkin.bind(new Skeleton([boundsBone], [new Matrix4()]), new Matrix4());
+            const skinFlags = __tracking(boundsSkin, true), boneFlags = __tracking(boundsBone, true);
+            for (const precise of [false, true]) {
+                const box = new Box3().setFromObject(boundsSkin, precise);
+                check(box.min.equals(new Vector3(5, 2, 3)) && box.max.equals(box.min));
+            }
+            check(__tracking(boundsSkin, true) === skinFlags && __tracking(boundsBone, true) === boneFlags);
+            const morphGeometry = new BufferGeometry();
+            morphGeometry.setAttribute('position', new Float32BufferAttribute([1, 2, 3], 3));
+            morphGeometry.morphAttributes.position = [new Float32BufferAttribute([7, 8, 9], 3)];
+            const morphMesh = new Mesh(morphGeometry, new MeshBasicMaterial());
+            check(new Box3().setFromObject(morphMesh).max.equals(new Vector3(7, 8, 9)));
+            check(new Box3().setFromObject(morphMesh, true).max.equals(new Vector3(1, 2, 3)));
+            const portableObject = { geometry: boundsMesh.geometry, children: [], matrixWorld: new Matrix4().makeTranslation(2, 0, 0), updateWorldMatrix() {} };
+            const portableBox = new Box3().setFromObject(portableObject);
+            check(portableBox.min.equals(new Vector3(1, -2, -3)) && portableBox.max.equals(new Vector3(3, 2, 3)));
             const snapshotParent = new Group(), snapshotOwner = new Group(), snapshot = new Matrix4();
             snapshotParent.add(snapshotOwner);
             check(__tracking(snapshotOwner, true) === 100);

@@ -286,6 +286,9 @@ public:
 
     // Internal production admission: resources are validated before Bone boundaries become live.
     std::shared_ptr<GpuJointScene> prepareGpuJoints(Object3D& scene, std::shared_ptr<GpuJointScene> shared = {});
+    std::shared_ptr<GpuJointScene> currentGpuJoints() const {
+        return gpuJoints_ && gpuJoints_->current() ? gpuJoints_ : nullptr;
+    }
 
     // VirtualShadowNode's explicit depth, fixed refresh/gate path. Unsupported policies are
     // named at this boundary rather than silently selected by a light's ordinary shadow.
