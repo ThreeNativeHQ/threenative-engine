@@ -1,6 +1,9 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { chromium } from "playwright";
+import { runStandalonePlaytest } from "../src/runner/runner.js";
+import { PlaytestBridgeError } from "../src/runner/bridgeClient.js";
 
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
@@ -9,6 +12,12 @@ import { buildReport } from "../src/runner/runner-support.js";
 import { failureReport } from "../src/runner/shared.js";
 import type { IPlaytestScenario } from "../src/index.js";
 
+// These clock-selection tests refuse browser launch and never use the GPU.
+vi.mock("../src/runner/captureLock.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/runner/captureLock.js")>(),
+  decideLockPolicy: () => ({ mode: "none" }),
+}));
+
 /**
  * `--live-clock`: the browser half of what the native production profile's own `--live-clock` does
  * there. A standing scene cannot be measured on counted ticks — the runner batches `waitTicks` into
@@ -16,7 +25,7 @@ import type { IPlaytestScenario } from "../src/index.js";
  * nothing after it. The switch puts the clock request ahead of every page script, and the run says
  * which clock it measured on, because a rate off the wrong clock is not a rate.
  */
-function project(): string {
+function project(performance: NonNullable<IPlaytestScenario["assert"]>["performance"] = { maxFrameMsP95: 16.7 }): string {
   const root = makeTempDirSync("tn-live-clock-");
   const scenarioPath = join(root, "standing.playtest.json");
   writeFileSync(scenarioPath, JSON.stringify({
@@ -26,7 +35,7 @@ function project(): string {
     viewport: { height: 720, width: 1280 },
     warmupFrames: 1,
     steps: [{ waitTicks: 300 }],
-    assert: { performance: { maxFrameP95: 16.7 } },
+    assert: { performance },
   }));
   return root;
 }
@@ -95,4 +104,32 @@ test("every report names the clock it measured on", () => {
     message: "no bridge",
     severity: "error",
   }).clock).toBe("wall-clock");
+});
+// Frame-time assertions need the game's frame pump, not ten forced simulation ticks per frame.
+test.each([
+  { liveClock: undefined, target: "browser" as const, performance: { maxFrameMsP95: 16.7 }, expected: "wall-clock" },
+  { liveClock: undefined, target: "browser" as const, performance: { minFps: 30 }, expected: "wall-clock" },
+  { liveClock: undefined, target: "browser" as const, performance: { maxDrawCalls: 100 }, expected: "fixed-step" },
+  { liveClock: false, target: "browser" as const, performance: { maxFrameMsP95: 16.7 }, expected: "fixed-step" },
+  { liveClock: undefined, target: "android" as const, performance: { maxFrameMsP95: 16.7 }, expected: "fixed-step" },
+])("$target performance requests $expected before browser launch", async ({ liveClock, target, performance, expected }) => {
+  const root = project(performance);
+  const launch = vi.spyOn(chromium, "launch").mockRejectedValue(new PlaytestBridgeError({
+    code: "TN_PLAYTEST_BRIDGE_MISSING",
+    message: "Controlled launch refusal checks the requested clock without a browser.",
+    fix: { instruction: "This fixture deliberately stops before a browser starts." },
+    severity: "error",
+  }));
+  try {
+    const report = await runStandalonePlaytest({
+      artifactDirectory: join(root, "artifacts"), headless: true,
+      projectPath: root, scenarioPath: "standing.playtest.json", timeoutMs: 1000,
+      trace: false, url: "http://127.0.0.1:5173", liveClock, target,
+    });
+    expect(launch).toHaveBeenCalledOnce();
+    expect(report.pass).toBe(false);
+    expect(report.clock).toBe(expected);
+  } finally {
+    launch.mockRestore();
+  }
 });

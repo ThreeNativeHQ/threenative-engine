@@ -204,11 +204,17 @@ async function runStandalonePlaytestInternal(
   options: IStandalonePlaytestInternalOptions = {},
 ): Promise<IStandalonePlaytestReport> {
   const usesFreePort = config.server !== undefined && config.port === 0;
-  const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
+  let activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
   const scenario = withPerformanceBudget(
     await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath),
     activeConfig.performanceBudget,
   );
+  const performance = scenario.assert?.performance;
+  // Forced tick batches measure the runner's simulation workload, not ordinary frame pacing.
+  if ((activeConfig.target ?? "browser") === "browser" && activeConfig.liveClock === undefined
+    && (performance?.maxFrameMsP95 !== undefined || performance?.minFps !== undefined)) {
+    activeConfig = { ...activeConfig, liveClock: true };
+  }
   const browserConfig = scenario.assert?.performance === undefined
     ? activeConfig
     : {

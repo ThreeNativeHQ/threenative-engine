@@ -55,7 +55,8 @@ export interface IStandalonePlaytestConfig {
    * Injects `__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock"` ahead of every page script, so the
    * host's frame pump moves the simulation and `advance` names the span its ticks cover — the
    * browser half of what the native production profile's `--live-clock` already does there. It is
-   * a measurement opt-in and never a scenario semantics change: a deterministic scenario is still
+   * also selected automatically for browser frame-time/FPS assertions unless explicitly false.
+   * It never changes the authored tick unit: a deterministic scenario is still
    * a count of ticks, and a run that takes this flag reports the clock it measured on.
    */
   liveClock?: boolean;
