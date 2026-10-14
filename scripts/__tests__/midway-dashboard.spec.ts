@@ -2232,6 +2232,24 @@ describe("AC15 matched OS CPU", () => {
     expect(state.kpis.find((k) => k.id === "AC-19")?.current).toBeUndefined();
     expect(state.gap.desktop).toBeUndefined();
   });
+  it("keeps the wide matched CPU table in its own scroll container and shrinkable grid tracks", async () => {
+    const html = await readFile(new URL("../midway-bench/dashboard.html", import.meta.url), "utf8");
+    const script = (html.split("<script>")[1] as string)
+      .split("</script>")[0]
+      ?.replace("tick(); setInterval(tick, 5000);", "");
+    const gap = { innerHTML: "" };
+    const row = { pose: "takeoff", arm: "desktop", pairs: 0, qualified: false };
+    runInNewContext(`${script}\nrenderGap(data);`, {
+      data: { matchedCpu: [{ ...row, detail: `pending/unavailable: ${"x".repeat(200)}` }] },
+      document: { getElementById: () => gap },
+    });
+    // A nowrap table in an auto grid track stretched the page from 1600 px to 2471 px.
+    expect(gap.innerHTML).toMatch(/^<div class="scroll"><table>.*<\/table><\/div><p /);
+    expect(html).toMatch(/\.stack\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    expect(html).toMatch(
+      /max-width:1100px\)\s*\{\s*\.hero\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+    );
+  });
 });
 
 it("reconciles exact CPU boundaries rather than release/sample ticks", () => {

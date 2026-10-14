@@ -31,7 +31,7 @@
   .mute { color:var(--mute); } .sm { font-size:12px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
   .hero { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:14px; align-items:start; }
-  .stack { display:grid; gap:14px; }
+  .stack { display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
   .kpi { display:grid; gap:5px; padding:9px 0 11px; border-top:1px solid var(--line); } .kpi:first-of-type { border-top:0; padding-top:0; }
   .kpi .top { display:flex; align-items:baseline; gap:10px; }
   .kpi .name { font-weight:600; font-size:14px; } .kpi .name small { color:var(--mute); font-weight:500; margin-right:6px; }
@@ -62,7 +62,7 @@
   th, td { text-align:right; padding:3px 8px; border-top:1px solid var(--line); white-space:nowrap; } th:first-child, td:first-child { text-align:left; } th { color:var(--mute); font-weight:500; }
   details summary { cursor:pointer; font-weight:650; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); }
   #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px; }
-  @media (max-width:1100px) { .hero { grid-template-columns:1fr; } }
+  @media (max-width:1100px) { .hero { grid-template-columns:minmax(0,1fr); } }
 </style>
 </head>
 <body>
@@ -125,7 +125,7 @@ function gapSide(g, name, color) {
 }
 
 function renderGap(d) {
-  $("gap").innerHTML = `<table><tr><th>Pose / arm</th><th>Legacy/native CPU ratio</th><th>CPU ms/frame (legacy / native)</th><th>Instructions/frame (legacy / native)</th><th>Process-tree CPU ms/frame (legacy / native)</th><th>Qualification</th></tr>${(d.matchedCpu ?? []).map((p) => `<tr><td>${esc(p.pose)} / ${esc(p.arm)}</td><td>${p.ratio === undefined ? "pending/unavailable" : `${p.ratio.toFixed(3)}x`}</td><td>${n(p.legacyCpuMs)} / ${n(p.nativeCpuMs)}</td><td>${n(p.legacyInstructions, 0)} / ${n(p.nativeInstructions, 0)}</td><td>${n(p.legacyTreeCpuMs)} / ${n(p.nativeTreeCpuMs)}</td><td>${esc(p.detail)}</td></tr>`).join("")}</table><p class="mute sm">Fixed-step OS counters only; engine commits must match. Three alternating pairs per pose and native parity PASS are required; root execution review remains mandatory. Native host completion records must reconcile against labelled window ticks; missing records leave independent reconciliation unavailable. Attribution/profiles pending.</p>`;
+  $("gap").innerHTML = `<div class="scroll"><table><tr><th>Pose / arm</th><th>Legacy/native CPU ratio</th><th>CPU ms/frame (legacy / native)</th><th>Instructions/frame (legacy / native)</th><th>Process-tree CPU ms/frame (legacy / native)</th><th>Qualification</th></tr>${(d.matchedCpu ?? []).map((p) => `<tr><td>${esc(p.pose)} / ${esc(p.arm)}</td><td>${p.ratio === undefined ? "pending/unavailable" : `${p.ratio.toFixed(3)}x`}</td><td>${n(p.legacyCpuMs)} / ${n(p.nativeCpuMs)}</td><td>${n(p.legacyInstructions, 0)} / ${n(p.nativeInstructions, 0)}</td><td>${n(p.legacyTreeCpuMs)} / ${n(p.nativeTreeCpuMs)}</td><td>${esc(p.detail)}</td></tr>`).join("")}</table></div><p class="mute sm">Fixed-step OS counters only; engine commits must match. Three alternating pairs per pose and native parity PASS are required; root execution review remains mandatory. Native host completion records must reconcile against labelled window ticks; missing records leave independent reconciliation unavailable. Attribution/profiles pending.</p>`;
 }
 
 function ring(prd) {
