@@ -705,10 +705,12 @@ export interface IWorldCellsLoadOptions {
   readonly mainGpuShare?: number;
   /**
    * Bake a whole-asset octahedral impostor for every alpha-cutout foliage asset and append it as the
-   * asset's terminal, two-triangle LOD, default true for ordinary worlds; omission keeps source
-   * levels when `preserveAuthoredParts` or `lodHysteresis` is set.
+   * asset's terminal, two-triangle LOD. Default false: omission keeps the authored/generated source
+   * levels, and `?tnImpostors=1` or `TN_IMPOSTORS=1` opts a launch in. It is opt-in until the judged
+   * Machinefall capture passes (PRD-473 AC-3); `preserveAuthoredParts` and `lodHysteresis` still
+   * require it to be off.
    *
-   * Set false to keep the authored/generated source levels for debugging or a visual comparison.
+   * Set true to bake them, or leave it off to keep the source levels for a visual comparison.
    *
    * The bake runs inside the render cadence — one of its sixteen views per `process` — so it costs a
    * slice of a frame rather than a hitch, and it starts only after the asset's own model has been
@@ -3739,6 +3741,18 @@ function launchValue(parameter: string, flag: string, globalName: string): strin
   return typeof global === "string" ? global : undefined;
 }
 
+/**
+ * Whether a launch opts into the whole-asset impostors: off unless `?tnImpostors=1`, `TN_IMPOSTORS=1`
+ * or `__tnImpostors = 1` says so. Opt-in because the judged Machinefall capture of the default
+ * (PRD-473 AC-3, 2026-10-14) read REGRESSION — ground shadows and canopy density differ — and its
+ * pinned frame windows showed no frame-time gain, so a game gets the source levels it had until the
+ * proof passes. `impostors: true` still asks explicitly.
+ */
+function impostorsRequested(): boolean {
+  const raw = launchValue("tnImpostors", "TN_IMPOSTORS", "__tnImpostors");
+  return raw === "1" || raw === "true";
+}
+
 /** Whether the adaptive LOD bias runs: on unless a launch pins it off. */
 function adaptiveLodRequested(): boolean {
   const raw = launchValue("tnAdaptiveLod", "TN_ADAPTIVE_LOD", "__tnAdaptiveLod");
@@ -4661,7 +4675,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#bundleReason =
       init.bundles === undefined ? (asked === "default" ? "default" : "launch") : "option";
     this.#impostors =
-      init.impostors ?? !(init.preserveAuthoredParts === true || init.lodHysteresis !== undefined);
+      init.impostors ??
+      (impostorsRequested() &&
+        !(init.preserveAuthoredParts === true || init.lodHysteresis !== undefined));
     this.#impostorBudgetBytes = DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES;
     this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
     this.#preserveAuthoredParts = init.preserveAuthoredParts ?? false;

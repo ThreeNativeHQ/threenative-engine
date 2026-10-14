@@ -29,7 +29,7 @@ import {
   type NodeMaterial,
   NodeUpdateType,
 } from "three/webgpu";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The loader a world builds for itself, overridable per test. A world only releases the cache of a
@@ -503,6 +503,12 @@ function runBake(world: WorldCells, renderer: IRendererLike): void {
   for (let view = 0; view < 16; view += 1) world.update(renderer);
 }
 
+// Impostors are opt-in (PRD-473 AC-3): this suite launches with the opt-in so the default path under
+// test is the automatic one; the first spec below pins the unset launch to the source levels.
+beforeEach(() => {
+  vi.stubGlobal("__tnImpostors", "1");
+});
+
 afterEach(() => {
   internalLoader.load = undefined;
   vi.unstubAllGlobals();
@@ -644,6 +650,20 @@ describe("WorldCells automatic impostors", () => {
       expect(scene.validation.meshMismatched).toBeGreaterThan(0);
       scene.slot("pine", published);
     }
+    world.dispose();
+  });
+
+  it("keeps the source levels and bakes nothing when the launch does not opt in", async () => {
+    vi.stubGlobal("__tnImpostors", undefined);
+    stubManifestFetch(pineOnly());
+    const world = await loadPine(treeLoader());
+    await flushed(world);
+    runBake(world, rendererStub());
+    await flushed(world);
+
+    expect(world.stats().impostor.atlasBytes).toBe(0);
+    expect(partsOf(world, "pine", 2, 0).length).toBe(0);
+    expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
     world.dispose();
   });
 
