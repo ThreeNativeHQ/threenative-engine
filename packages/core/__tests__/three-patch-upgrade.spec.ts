@@ -197,16 +197,24 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
     join(packageRoot, "patches/three@0.185.1-prd269-upgrade.patch"),
     "utf8",
   );
-  const selected = migration
-    .split(/(?=^diff --git )/mu)
-    .filter((block) => {
-      const file = /^diff --git a\/(\S+) /mu.exec(block)?.[1];
-      const hash = /^index ([a-f0-9]{40})\.\./mu.exec(block)?.[1];
-      return file !== undefined && hash !== undefined && priorBlobs[file] === hash;
-    })
-    .join("");
+  const blocks = migration.split(/(?=^diff --git )/mu);
+  const selected: string[] = [];
+  for (const [file, initialHash] of Object.entries(priorBlobs)) {
+    let hash = initialHash;
+    const chain: string[] = [];
+    for (;;) {
+      const block = blocks.find(
+        (candidate) =>
+          candidate.startsWith(`diff --git a/${file} `) && candidate.includes(`index ${hash}..`),
+      );
+      if (!block) break;
+      chain.unshift(block);
+      hash = /^index [a-f0-9]{40}\.\.([a-f0-9]{40}) /mu.exec(block)?.[1] ?? "";
+    }
+    selected.push(...chain);
+  }
   const inverse = join(root, "prior.patch");
-  await writeFile(inverse, selected);
+  await writeFile(inverse, selected.join(""));
   await promisify(execFile)(
     "patch",
     ["--reverse", "--batch", "--fuzz=0", "--silent", "-p1", "-i", inverse],
@@ -257,4 +265,39 @@ describe.each([
     );
     expect(after).toEqual(before);
   });
+});
+
+it("follows exact predecessor hashes and rejects a cyclic migration without writing", async () => {
+  const { packageRoot, threeRoot, target } = await fixture(STOCK);
+  const transition = (before: readonly string[], after: readonly string[]) =>
+    `diff --git a/src/thing.js b/src/thing.js
+index ${blobHash(before.join("\n"))}..${blobHash(after.join("\n"))} 100644
+--- a/src/thing.js
++++ b/src/thing.js
+@@ -1,5 +1,5 @@
+${before
+  .slice(0, 5)
+  .map((line) => `-${line}`)
+  .join("\n")}
+${after
+  .slice(0, 5)
+  .map((line) => `+${line}`)
+  .join("\n")}
+`;
+  const migration = join(packageRoot, "patches/three@0.185.1-prd269-upgrade.patch");
+  await writeFile(
+    migration,
+    transition(STOCK, PATCHED_BY_THE_PREVIOUS_RELEASE) +
+      transition(PATCHED_BY_THE_PREVIOUS_RELEASE, FULLY_PATCHED),
+  );
+  await expect(applyThreePatch({ packageRoot, threeRoot })).resolves.toBe("patched");
+  expect(await readFile(target, "utf8")).toBe(FULLY_PATCHED.join("\n"));
+  await writeFile(target, STOCK.join("\n"));
+  await writeFile(
+    migration,
+    transition(STOCK, PATCHED_BY_THE_PREVIOUS_RELEASE) +
+      transition(PATCHED_BY_THE_PREVIOUS_RELEASE, STOCK),
+  );
+  await expect(applyThreePatch({ packageRoot, threeRoot })).rejects.toThrow("cyclic known upgrade");
+  expect(await readFile(target, "utf8")).toBe(STOCK.join("\n"));
 });

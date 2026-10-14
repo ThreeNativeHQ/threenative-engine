@@ -5,16 +5,21 @@ import {
   SRGBColorSpace,
   Vector2,
   Vector4,
+  WebGPUCoordinateSystem,
 } from "three";
+import { uv as sourceUv, vec4 as sourceVec4 } from "three/src/nodes/TSL.js";
+import SourceNodeFrame from "three/src/nodes/core/NodeFrame.js";
 import CanvasTarget from "three/src/renderers/common/CanvasTarget.js";
 import SourceRenderPipeline from "three/src/renderers/common/RenderPipeline.js";
 import WebGPUBackend from "three/src/renderers/webgpu/WebGPUBackend.js";
 import SourceWebGPURenderer from "three/src/renderers/webgpu/WebGPURenderer.js";
+import SourceWGSLNodeBuilder from "three/src/renderers/webgpu/nodes/WGSLNodeBuilder.js";
 // @ts-expect-error Three's private texture allocator has no public declaration.
 import WebGPUTextureUtils from "three/src/renderers/webgpu/utils/WebGPUTextureUtils.js";
 // @ts-expect-error Three's private WebGPU utilities have no public declaration.
 import WebGPUUtils from "three/src/renderers/webgpu/utils/WebGPUUtils.js";
-import { RenderPipeline, WebGPURenderer } from "three/webgpu";
+import { uv, vec4 } from "three/tsl";
+import { NodeFrame, RenderPipeline, WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 interface IAllocation {
@@ -88,9 +93,31 @@ function fixture(mode: string) {
     compiledBackend ?? WebGPUBackend.prototype,
     "_getDefaultRenderPassDescriptor",
   );
+  for (const name of [
+    "_beginTransientDepth",
+    "_restoreTransientDepth",
+    "_finishTransientDepth",
+    "_releaseTransientDepth",
+    "_isFullTransientViewport",
+    "_resumeTransientDepth",
+    "_flushTransientDepth",
+    "_validateTransientDepth",
+    "updateViewport",
+    "updateScissor",
+  ])
+    Reflect.set(backend, name, Reflect.get(compiledBackend ?? WebGPUBackend.prototype, name));
   textures.backend = backend;
   backend.textureUtils = textures;
-  return { canvas, target, renderer, backend, textures, passDescriptor, allocations };
+  return {
+    canvas,
+    target,
+    renderer,
+    backend,
+    textures,
+    passDescriptor,
+    allocations,
+    compiledBackend,
+  };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -151,7 +178,7 @@ it("executes a graph framebuffer copy and depth LOAD restart before the existing
       needsRefresh: () => events.push("refresh"),
       updateBefore: () => {
         events.push("updateBefore");
-        WebGPUBackend.prototype.copyFramebufferToTexture.call(
+        Reflect.get(WebGPUBackend.prototype, "copyFramebufferToTexture").call(
           state.backend,
           destination,
           context,
@@ -168,11 +195,12 @@ it("executes a graph framebuffer copy and depth LOAD restart before the existing
       isReady: () => true,
     },
     backend: {
-      draw: () => WebGPUBackend.prototype.draw.call(state.backend, renderObject, {}),
+      draw: () =>
+        Reflect.get(WebGPUBackend.prototype, "draw").call(state.backend, renderObject, {}),
     },
     info: {},
   };
-  WebGPUBackend.prototype.beginRender.call(state.backend, context);
+  Reflect.get(WebGPUBackend.prototype, "beginRender").call(state.backend, context);
   Reflect.get(SourceWebGPURenderer.prototype, "_renderObjectDirect").call(renderer, object);
   expect(events).toEqual([
     "begin",
@@ -520,3 +548,659 @@ describe.each(["source", "distribution"])(
     });
   },
 );
+
+describe.each(["source", "distribution"])("%s owned transient depth protocol", (mode) => {
+  it("discards private depth, restores original 1 without a draw, and retires speculation after submit", () => {
+    const state = fixture(mode);
+    const methods = state.compiledBackend ?? WebGPUBackend.prototype;
+    for (const name of [
+      "_beginTransientDepth",
+      "_restoreTransientDepth",
+      "_finishTransientDepth",
+      "_releaseTransientDepth",
+      "_isFullTransientViewport",
+    ])
+      Reflect.set(state.backend, name, Reflect.get(methods, name));
+    const starts: unknown[] = [];
+    const events: string[] = [];
+    const encoder = {
+      beginRenderPass: (descriptor: object) => {
+        starts.push(structuredClone(descriptor));
+        return { end: () => events.push("end") };
+      },
+      finish: () => ({}),
+    };
+    Object.assign(state.backend.device, {
+      features: new Set(["transient-attachments"]),
+      createCommandEncoder: () => encoder,
+      queue: { submit: () => events.push("submit") },
+    });
+    Object.assign(state.backend, {
+      initTimestampQuery: () => undefined,
+      getTimestampUID: () => "output",
+      _isRenderCameraDepthArray: () => false,
+      _getDefaultRenderPassDescriptor: state.passDescriptor,
+    });
+    const context = {
+      id: 1,
+      textures: null,
+      depthTexture: null,
+      renderTarget: null,
+      depth: true,
+      stencil: false,
+      clearDepth: true,
+      clearDepthValue: 1,
+      clearColor: false,
+      occlusionQueryCount: 0,
+      viewport: false,
+      scissor: false,
+      width: 1920,
+      height: 1080,
+      _tnOutputOwner: {},
+    };
+    Reflect.get(methods, "beginRender").call(state.backend, context);
+    expect(starts[0]).toMatchObject({
+      depthStencilAttachment: {
+        depthLoadOp: "clear",
+        depthStoreOp: "discard",
+        depthClearValue: 1,
+        view: { allocation: { label: "tn-private-output-depth", sampleCount: 4 } },
+      },
+    });
+    Reflect.get(methods, "finishRender").call(state.backend, context);
+    expect(starts[1]).toMatchObject({
+      colorAttachments: [],
+      depthStencilAttachment: {
+        depthLoadOp: "clear",
+        depthStoreOp: "store",
+        depthClearValue: 1,
+        view: { allocation: { label: "depthBuffer", sampleCount: 4 } },
+      },
+    });
+    expect(events).toEqual(["end", "end", "submit"]);
+    expect(
+      state.allocations.find(({ label }) => label === "tn-private-output-depth")?.destroyed,
+    ).toBe(1);
+    expect(state.allocations.find(({ label }) => label === "depthBuffer")?.destroyed).toBe(0);
+  });
+});
+
+interface IRecordedPass {
+  colorAttachments: object[];
+  depthStencilAttachment: {
+    depthLoadOp: string;
+    depthStoreOp: string;
+    depthClearValue: number;
+    view: { allocation: IAllocation };
+  };
+}
+
+function transientFixture(mode: string, withUv = false) {
+  const state = fixture(mode);
+  const Renderer = mode === "source" ? SourceWebGPURenderer : WebGPURenderer;
+  const gpu = new Renderer({ canvas: state.canvas as HTMLCanvasElement });
+  gpu.hasFeature = () => false;
+  Reflect.get(gpu.backend, "capabilities").getUniformBufferLimit = () => 65536;
+  const Pipeline = mode === "source" ? SourceRenderPipeline : RenderPipeline;
+  const output = withUv
+    ? mode === "source"
+      ? sourceVec4(sourceUv(), 0, 1)
+      : vec4(uv(), 0, 1)
+    : undefined;
+  const pipeline = new Pipeline(gpu, output);
+  Reflect.get(pipeline, "_update").call(pipeline);
+  const quad = Reflect.get(pipeline, "_quadMesh");
+  // The shipped QuadMesh shares geometry across instances; isolate mutations in these tests.
+  quad.geometry = quad.geometry.clone();
+  quad.camera = quad.camera.clone();
+  quad.camera.coordinateSystem = WebGPUCoordinateSystem;
+  quad.camera.updateProjectionMatrix();
+  quad.updateMatrixWorld();
+  quad.camera.updateMatrixWorld();
+  const Builder = mode === "source" ? SourceWGSLNodeBuilder : WGSLNodeBuilder;
+  const builder = Reflect.construct(Builder, [quad, gpu]);
+  builder.camera = quad.camera;
+  builder.scene = quad;
+  builder.build();
+  const frame = new (mode === "source" ? SourceNodeFrame : NodeFrame)();
+  Object.assign(frame, {
+    renderer: gpu,
+    object: quad,
+    camera: quad.camera,
+    scene: quad,
+    renderId: 1,
+    frameId: 1,
+  });
+  for (const node of builder.updateNodes) frame.updateNode(node);
+  const groups = builder.getBindings();
+  const methods = state.compiledBackend ?? WebGPUBackend.prototype;
+  const starts: IRecordedPass[] = [];
+  const events: string[] = [];
+  const draws: IRecordedPass[] = [];
+  const encoder = {
+    beginRenderPass: (descriptor: object) => {
+      const captured = structuredClone(descriptor) as IRecordedPass;
+      starts.push(captured);
+      events.push("begin");
+      return {
+        end: () => events.push("end"),
+        setViewport: () => events.push("viewport"),
+        setScissorRect: () => events.push("scissor"),
+        setPipeline: () => undefined,
+        setVertexBuffer: () => undefined,
+        setBindGroup: () => undefined,
+        draw: () => {
+          draws.push(captured);
+          events.push("draw");
+        },
+      };
+    },
+    finish: () => ({}),
+    copyTextureToTexture: () => events.push("copy"),
+  };
+  vi.stubGlobal("GPUShaderStage", { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 });
+  vi.stubGlobal("GPUBufferUsage", { VERTEX: 32, COPY_DST: 8, UNIFORM: 64 });
+  Object.assign(state.backend.device, {
+    features: new Set(["transient-attachments"]),
+    createCommandEncoder: () => encoder,
+    createBuffer: (descriptor: { size: number }) => {
+      const buffer = new ArrayBuffer(descriptor.size);
+      return { getMappedRange: () => buffer, unmap: () => undefined, destroy: () => undefined };
+    },
+    createShaderModule: () => ({}),
+    createBindGroupLayout: () => ({}),
+    createBindGroup: () => ({}),
+    createPipelineLayout: () => ({}),
+    createRenderPipeline: () => ({}),
+    pushErrorScope: () => undefined,
+    popErrorScope: async () => null,
+    queue: { submit: () => events.push("submit"), writeBuffer: () => undefined },
+  });
+  const utilities = {
+    attributeUtils: Reflect.get(gpu.backend, "attributeUtils"),
+    bindingUtils: Reflect.get(gpu.backend, "bindingUtils"),
+    pipelineUtils: Reflect.get(gpu.backend, "pipelineUtils"),
+  };
+  for (const name of ["attributeUtils", "bindingUtils", "pipelineUtils"] as const) {
+    utilities[name].backend = state.backend;
+    Reflect.set(state.backend, name, utilities[name]);
+  }
+  Object.assign(state.backend, {
+    parameters: { reversedDepthBuffer: false },
+    initTimestampQuery: () => undefined,
+    getTimestampUID: () => "output",
+    _isRenderCameraDepthArray: () => false,
+    _getDefaultRenderPassDescriptor: state.passDescriptor,
+    _draw: Reflect.get(methods, "_draw"),
+  });
+  const context = {
+    id: 1,
+    textures: null,
+    depthTexture: null,
+    renderTarget: null,
+    depth: true,
+    stencil: false,
+    clearDepth: true,
+    clearDepthValue: 1,
+    clearColor: false,
+    occlusionQueryCount: 0,
+    viewport: false,
+    scissor: false,
+    width: 1920,
+    height: 1080,
+    camera: quad.camera,
+    _tnOutputOwner: quad,
+    viewportValue: { x: 0, y: 0, width: 1920, height: 1080, minDepth: 0, maxDepth: 1 },
+    scissorValue: { x: 0, y: 0, width: 1920, height: 1080 },
+  };
+  Object.assign(state.renderer, { _currentRenderContext: context, info: { calls: 1 } });
+  const params = { vertexCount: 3, firstVertex: 0, instanceCount: 1, firstInstance: 0 };
+  const attributes = builder.attributes.map(
+    (attribute: { name: string }) => quad.geometry.attributes[attribute.name],
+  );
+  const renderObject = {
+    object: quad,
+    material: quad.material,
+    geometry: quad.geometry,
+    context,
+    camera: quad.camera,
+    pipeline: {
+      vertexProgram: { stage: "vertex", name: "output", code: builder.vertexShader },
+      fragmentProgram: { stage: "fragment", name: "output", code: builder.fragmentShader },
+    },
+    getAttributes: () => attributes,
+    getVertexBuffers: () => attributes,
+    getBindings: () => groups,
+    getIndex: () => null,
+    getIndirect: () => null,
+    getDrawParameters: () => params,
+  };
+  for (const attribute of attributes) utilities.attributeUtils.createAttribute(attribute, 32);
+  for (const group of groups) {
+    for (const binding of group.bindings) {
+      binding.update();
+      Reflect.get(methods, "createUniformBuffer").call(state.backend, binding);
+      utilities.bindingUtils.updateBinding(binding);
+    }
+    utilities.bindingUtils.createBindings(group, groups, 0);
+  }
+  const compile = () => {
+    for (const program of [
+      renderObject.pipeline.vertexProgram,
+      renderObject.pipeline.fragmentProgram,
+    ])
+      Reflect.get(methods, "createProgram").call(state.backend, program);
+    utilities.pipelineUtils.createRenderPipeline(renderObject, null);
+  };
+  compile();
+  const begin = () => Reflect.get(methods, "beginRender").call(state.backend, context);
+  const draw = () =>
+    Reflect.get(methods, "draw").call(state.backend, renderObject, { update: () => undefined });
+  const finish = () => Reflect.get(methods, "finishRender").call(state.backend, context);
+  const copy = () => {
+    const target = { generateMipmaps: false };
+    state.backend.context.getCurrentTexture = () => ({
+      format: "bgra8unorm",
+      createView: () => ({}),
+    });
+    state.backend.get(target).texture = { format: "bgra8unorm" };
+    Reflect.get(methods, "copyFramebufferToTexture").call(
+      state.backend,
+      target,
+      context,
+      new Vector4(0, 0, 4, 4),
+    );
+  };
+  return {
+    ...state,
+    methods,
+    utilities,
+    pipeline,
+    quad,
+    builder,
+    groups,
+    context,
+    renderObject,
+    params,
+    starts,
+    events,
+    draws,
+    begin,
+    draw,
+    finish,
+    copy,
+    compile,
+  };
+}
+
+describe.each(["source", "distribution"])("%s compiled draw transient protocol", (mode) => {
+  it.each([false, true])(
+    "draws the shipped full triangle (uv=%s) through private depth and stores original 0",
+    (withUv) => {
+      const s = transientFixture(mode, withUv);
+      if (withUv)
+        expect(s.builder.attributes.some((a: { name: string }) => a.name === "uv")).toBe(true);
+      expect(s.backend.get(s.renderObject.pipeline)._tnDepthProof).toBeTruthy();
+      expect(s.backend.get(s.quad.geometry.attributes.position)._tnFullTriangle).toBe(true);
+      s.begin();
+      s.draw();
+      s.finish();
+      expect(s.draws).toHaveLength(1);
+      expect(s.draws[0]?.depthStencilAttachment).toMatchObject({
+        depthLoadOp: "clear",
+        depthStoreOp: "discard",
+        view: { allocation: { label: "tn-private-output-depth" } },
+      });
+      expect(s.starts).toHaveLength(2);
+      expect(s.starts[1]).toMatchObject({
+        colorAttachments: [],
+        depthStencilAttachment: {
+          depthClearValue: 0,
+          depthLoadOp: "clear",
+          depthStoreOp: "store",
+          view: { allocation: { label: "depthBuffer" } },
+        },
+      });
+      expect(
+        s.allocations.find(({ label }) => label === "tn-private-output-depth")?.destroyed,
+      ).toBe(0);
+      s.target.dispose();
+      s.textures.destroyTexture(s.target.colorTexture);
+      expect(s.allocations.every(({ destroyed }) => destroyed === 1)).toBe(true);
+    },
+  );
+
+  it.each(["before", "after"])(
+    "restores canonical depth before a %s-draw framebuffer copy and never loads private depth",
+    (when) => {
+      const s = transientFixture(mode);
+      s.begin();
+      if (when === "after") s.draw();
+      s.copy();
+      if (when === "before") s.draw();
+      s.finish();
+      expect(s.starts[1]?.depthStencilAttachment.depthClearValue).toBe(when === "before" ? 1 : 0);
+      expect(s.events.indexOf("copy")).toBeGreaterThan(s.events.indexOf("end"));
+      expect(
+        s.starts
+          .filter(
+            (p) => p.depthStencilAttachment.view.allocation.label === "tn-private-output-depth",
+          )
+          .map((p) => p.depthStencilAttachment.depthLoadOp),
+      ).toEqual(["clear"]);
+      expect(
+        s.starts
+          .slice(2)
+          .every(
+            (p) =>
+              p.depthStencilAttachment.depthLoadOp === "load" &&
+              p.depthStencilAttachment.view.allocation.label === "depthBuffer",
+          ),
+      ).toBe(true);
+      if (when === "before")
+        expect(
+          s.allocations.find(({ label }) => label === "tn-private-output-depth")?.destroyed,
+        ).toBe(1);
+    },
+  );
+
+  it.each([
+    "partial",
+    "discard",
+    "depth",
+    "alpha",
+    "mask",
+    "geometry",
+    "cpu-geometry",
+    "gpu-geometry",
+    "projection",
+    "stale-shader",
+    "stale-material",
+    "indirect",
+  ])("falls back before an uncertified %s draw", (guard) => {
+    const s = transientFixture(mode);
+    s.begin();
+    if (guard === "partial") s.params.vertexCount = 2;
+    if (guard === "discard") {
+      s.renderObject.pipeline.fragmentProgram.code += "\nfn hidden() { discard; }";
+      s.compile();
+    }
+    if (guard === "depth") {
+      s.renderObject.pipeline.fragmentProgram.code =
+        s.renderObject.pipeline.fragmentProgram.code.replace(
+          "@location( 0 ) color:",
+          "@builtin( frag_depth ) customDepth: f32,\n@location( 0 ) color:",
+        );
+      s.compile();
+    }
+    if (guard === "alpha") s.quad.material.alphaToCoverage = true;
+    if (guard === "mask") {
+      s.renderObject.pipeline.fragmentProgram.code =
+        s.renderObject.pipeline.fragmentProgram.code.replace(
+          "@location( 0 ) color:",
+          "@builtin( sample_mask ) sampleMask: u32,\n@location( 0 ) color:",
+        );
+      s.compile();
+    }
+    if (guard === "geometry") {
+      s.quad.geometry.attributes.position.needsUpdate = true;
+      s.utilities.attributeUtils.updateAttribute(s.quad.geometry.attributes.position);
+    }
+    if (guard === "cpu-geometry") s.quad.geometry.attributes.position.array[0] = 0;
+    if (guard === "gpu-geometry") s.backend.get(s.quad.geometry.attributes.position).buffer = {};
+    if (guard === "projection") {
+      const binding = s.groups.find((g: { name: string }) => g.name === "render").bindings[0];
+      binding.buffer[0] = 2;
+      binding.clearUpdateRanges();
+      s.utilities.bindingUtils.updateBinding(binding);
+    }
+    if (guard === "stale-shader")
+      s.backend.get(s.renderObject.pipeline.vertexProgram)._tnShaderCode += " ";
+    if (guard === "stale-material") s.quad.material.needsUpdate = true;
+    if (guard === "indirect") s.renderObject.getIndirect = () => ({}) as never;
+    // Indirect draw itself is outside this protocol fixture; preserve its original method.
+    if (guard === "indirect") Reflect.set(s.backend, "_draw", () => undefined);
+    s.draw();
+    s.finish();
+    expect(s.starts[1]).toMatchObject({
+      colorAttachments: [],
+      depthStencilAttachment: { depthClearValue: 1, depthStoreOp: "store" },
+    });
+    expect(s.starts[2]?.depthStencilAttachment.view.allocation.label).toBe("depthBuffer");
+    expect(s.allocations.find(({ label }) => label === "tn-private-output-depth")?.destroyed).toBe(
+      1,
+    );
+  });
+});
+
+describe.each(["source", "distribution"])("%s transient depth boundaries", (mode) => {
+  it.each([
+    "off",
+    "absent",
+    "single",
+    "load",
+    "custom-clear",
+    "nonfinite",
+    "scissor",
+    "viewport",
+    "reversed",
+    "layers",
+    "xr",
+    "stencil",
+  ])("retains the ordinary allocation and pass for %s", (guard) => {
+    const s = transientFixture(mode);
+    if (guard === "off" || guard === "absent")
+      s.backend.device.features.delete("transient-attachments");
+    if (guard === "single") s.renderer.currentSamples = 1;
+    if (guard === "load") s.context.clearDepth = false;
+    if (guard === "custom-clear") s.context.clearDepthValue = 0.5;
+    if (guard === "nonfinite") s.context.clearDepthValue = Number.NaN;
+    if (guard === "scissor") s.context.scissor = true;
+    if (guard === "viewport") {
+      s.context.viewport = true;
+      s.context.viewportValue.width = 10;
+    }
+    if (guard === "reversed") s.renderer.reversedDepthBuffer = true;
+    if (guard === "layers") s.context.camera.isArrayCamera = true;
+    if (guard === "xr") Reflect.set(s.renderer, "xr", { isPresenting: true });
+    if (guard === "stencil") {
+      s.context.stencil = true;
+      s.renderer.stencil = true;
+    }
+    s.begin();
+    s.finish();
+    expect(s.allocations.some(({ label }) => label === "tn-private-output-depth")).toBe(false);
+    expect(s.starts).toHaveLength(1);
+    expect(s.starts[0]?.depthStencilAttachment.depthStoreOp).toBe("store");
+  });
+
+  it.each(["viewport", "scissor"])(
+    "restores original depth before changing %s coverage",
+    (operation) => {
+      const s = transientFixture(mode);
+      s.context.viewport = true;
+      s.begin();
+      expect(s.starts).toHaveLength(1); // Applying the initial full viewport must not fall back.
+      if (operation === "viewport") s.context.viewportValue.width = 20;
+      else s.context.scissor = true;
+      Reflect.get(s.methods, operation === "viewport" ? "updateViewport" : "updateScissor").call(
+        s.backend,
+        s.context,
+      );
+      expect(s.starts[1]?.depthStencilAttachment.depthClearValue).toBe(1);
+      expect(s.starts[2]?.depthStencilAttachment.depthLoadOp).toBe("load");
+      s.draw();
+      s.finish();
+      expect(s.draws[0]?.depthStencilAttachment.view.allocation.label).toBe("depthBuffer");
+    },
+  );
+
+  it("flushes restoration before an explicit clear submitted on another encoder", () => {
+    const s = transientFixture(mode);
+    Reflect.set(s.renderer, "getClearDepth", () => 0.25);
+    s.begin();
+    s.draw();
+    Reflect.get(s.methods, "clear").call(s.backend, false, true, false);
+    s.draw();
+    s.finish();
+    expect(s.starts[1]?.depthStencilAttachment.depthClearValue).toBe(0);
+    const clear = s.starts.findIndex((p) => p.depthStencilAttachment.depthClearValue === 0.25);
+    expect(clear).toBe(3);
+    expect(s.starts[clear + 1]?.depthStencilAttachment.depthLoadOp).toBe("load");
+    expect(s.events.filter((e) => e === "submit")).toHaveLength(3);
+    expect(s.draws[1]?.depthStencilAttachment.view.allocation.label).toBe("depthBuffer");
+  });
+
+  it("orders a retained canonical depth alias copy after original restoration", () => {
+    const s = transientFixture(mode);
+    s.begin();
+    s.draw();
+    const source = { id: 2, image: { width: 1920, height: 1080 } };
+    const destination = { id: 3, generateMipmaps: false };
+    s.backend.get(source).texture = s.backend.get(s.target.depthTexture).texture;
+    s.backend.get(destination).texture = {};
+    Reflect.get(s.methods, "copyTextureToTexture").call(s.backend, source, destination);
+    s.draw();
+    s.finish();
+    expect(s.starts[1]?.depthStencilAttachment.depthClearValue).toBe(0);
+    expect(s.events.indexOf("copy")).toBeGreaterThan(s.events.indexOf("submit"));
+    expect(s.draws[1]?.depthStencilAttachment.depthLoadOp).toBe("load");
+  });
+
+  it("resumes synchronously while asynchronous canonical readback waits for mapping", async () => {
+    const s = transientFixture(mode);
+    let settle: (value: Uint8Array) => void = () => undefined;
+    s.textures.copyTextureToBuffer = () =>
+      new Promise<Uint8Array>((resolve) => {
+        settle = resolve;
+      });
+    s.begin();
+    s.draw();
+    const result = Reflect.get(s.methods, "copyTextureToBuffer").call(
+      s.backend,
+      s.target.depthTexture,
+      0,
+      0,
+      1,
+      1,
+      0,
+    );
+    s.draw();
+    s.finish();
+    expect(s.draws[1]?.depthStencilAttachment.depthLoadOp).toBe("load");
+    settle(new Uint8Array([1]));
+    expect(await result).toEqual(new Uint8Array([1]));
+  });
+
+  it("retires used private depth on resize and creates it at the new physical size", () => {
+    const s = transientFixture(mode);
+    s.begin();
+    s.draw();
+    s.finish();
+    const first = s.allocations.find(({ label }) => label === "tn-private-output-depth");
+    s.target.setSize(640, 360, false);
+    expect(first?.destroyed).toBe(1);
+    s.context.width = 640;
+    s.context.height = 360;
+    s.begin();
+    s.draw();
+    s.finish();
+    const sources = s.allocations.filter(({ label }) => label === "tn-private-output-depth");
+    expect(sources).toHaveLength(2);
+    expect(sources[1]?.size).toEqual({ width: 640, height: 360 });
+    s.textures.dispose();
+    expect(sources[1]?.destroyed).toBe(1);
+  });
+
+  it("executes the 939 graph updateBefore copy before pipeline construction and the original draw", () => {
+    const s = transientFixture(mode);
+    const renderer = {
+      _objects: { get: () => s.renderObject },
+      _currentRenderContext: s.context,
+      _currentRenderBundle: null,
+      _nodes: {
+        needsRefresh: () => undefined,
+        updateBefore: () => {
+          s.events.push("updateBefore");
+          s.copy();
+        },
+        updateForRender: () => undefined,
+        updateAfter: () => undefined,
+      },
+      _geometries: { updateForRender: () => undefined },
+      _bindings: { updateForRender: () => undefined },
+      _pipelines: {
+        updateForRender: () => {
+          s.events.push("pipeline");
+          s.compile();
+        },
+        isReady: () => true,
+      },
+      backend: { draw: s.draw },
+      info: {},
+    };
+    s.begin();
+    Reflect.get(
+      (mode === "source" ? SourceWebGPURenderer : WebGPURenderer).prototype,
+      "_renderObjectDirect",
+    ).call(renderer, s.quad);
+    s.finish();
+    expect(s.starts[1]?.depthStencilAttachment.depthClearValue).toBe(1);
+    expect(s.events.indexOf("copy")).toBeLessThan(s.events.indexOf("pipeline"));
+    expect(s.events.indexOf("pipeline")).toBeLessThan(s.events.indexOf("draw"));
+    expect(s.draws[0]?.depthStencilAttachment.depthLoadOp).toBe("load");
+  });
+
+  it("restores scoped ownership, XR and output state when the owned render throws", () => {
+    const s = transientFixture(mode);
+    const previous = {};
+    Reflect.set(s.pipeline.renderer, "_tnOutputOwner", previous);
+    const quad = Reflect.get(s.pipeline, "_quadMesh");
+    quad.render = () => {
+      expect(Reflect.get(s.pipeline.renderer, "_tnOutputOwner")).toBe(quad);
+      throw new Error("graph callback failed");
+    };
+    const tone = s.pipeline.renderer.toneMapping;
+    const output = s.pipeline.renderer.outputColorSpace;
+    expect(() => s.pipeline.render()).toThrow("graph callback failed");
+    expect(Reflect.get(s.pipeline.renderer, "_tnOutputOwner")).toBe(previous);
+    expect(s.pipeline.renderer.toneMapping).toBe(tone);
+    expect(s.pipeline.renderer.outputColorSpace).toBe(output);
+    expect(s.pipeline.renderer.xr.enabled).toBe(false);
+  });
+});
+
+describe.each(["source", "distribution"])("%s private attachment isolation", (mode) => {
+  it("clears/discards both private aspects and loads/stores the original stencil unchanged", () => {
+    const s = transientFixture(mode);
+    s.renderer.stencil = true;
+    s.begin();
+    s.finish();
+    expect(s.starts[0]?.depthStencilAttachment).toMatchObject({
+      depthLoadOp: "clear",
+      depthStoreOp: "discard",
+      stencilLoadOp: "clear",
+      stencilStoreOp: "discard",
+    });
+    expect(s.starts[1]?.depthStencilAttachment).toMatchObject({
+      depthLoadOp: "clear",
+      depthStoreOp: "store",
+      stencilLoadOp: "load",
+      stencilStoreOp: "store",
+    });
+  });
+
+  it("keeps an outer private pass active while a different nested context renders", () => {
+    const s = transientFixture(mode);
+    s.begin();
+    const nested = { ...s.context, id: 2, _tnOutputOwner: null };
+    Reflect.get(s.methods, "beginRender").call(s.backend, nested);
+    Reflect.get(s.methods, "finishRender").call(s.backend, nested);
+    expect(s.backend.get(s.context)).toMatchObject({ _tnDepth: { active: true, logical: 1 } });
+    s.draw();
+    s.finish();
+    expect(s.draws[0]?.depthStencilAttachment.view.allocation.label).toBe(
+      "tn-private-output-depth",
+    );
+  });
+});
