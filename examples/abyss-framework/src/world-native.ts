@@ -23,6 +23,7 @@ const game = defineGame<WorldState>({
     shadowDeferrals: 0,
     shadowFrame: 0,
     shadowLevels: 0,
+    shadowPartialDone: 0,
     shadowRendered: 0,
   },
   plugins: [playtest<WorldState>()],
