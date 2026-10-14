@@ -1534,7 +1534,7 @@ void jsMath() {
 }
 
 // A transform member is a view over the object's own memory (PRD-573 v1.11 step 4b): component writes
-// cross nothing, the next updateMatrix sees them, and the matrix it writes is the one three composes.
+// notify native ancestors once per dirty interval; updateMatrix sees them and matches three's composition.
 void jsMathViews() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
@@ -1562,6 +1562,10 @@ void jsMathViews() {
     ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__crossings"),
         v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
             info.GetReturnValue().Set(static_cast<double>(tn::abi::crossings()));
+        }).ToLocalChecked()).Check();
+    ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__viewWrites"),
+        v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            info.GetReturnValue().Set(static_cast<double>(tn::engine::Object3D::transformViewWrites()));
         }).ToLocalChecked()).Check();
     ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__tracking"),
         v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -1606,9 +1610,42 @@ void jsMathViews() {
         std::printf("fresh tracked Group scratch-copy probe: before/beforeCopy/afterCopy/afterRead/y/beforeGetter/afterGetter = %s\n", *text);
         CHECK(std::string(*text) == "100 100 101 101 1 100 101");
     }
+    const uint64_t viewWritesBefore = tn::engine::Object3D::transformViewWrites();
+    const uint64_t propagationBefore = tn::engine::Object3D::dirtyPropagationVisits();
     const char* tracking = R"JS(
         (() => {
             const check = (ok) => { if (!ok) throw Error('tracking assertion'); };
+            const writeRoot = new Group(), oldBranch = new Group(), newBranch = new Group(), writeLeaf = new Group();
+            writeRoot.add(oldBranch, newBranch); oldBranch.add(writeLeaf);
+            const cachedPosition = writeLeaf.position, cachedRotation = writeLeaf.rotation, cachedQuaternion = writeLeaf.quaternion;
+            const writeSnapshot = new Matrix4();
+            const checkWorld = (x) => {
+                writeRoot.__tnUpdateMatrixWorld(false);
+                writeLeaf.__tnCopyMatrixWorld(writeSnapshot);
+                if (writeSnapshot.elements[12] !== x) throw Error(`cached descendant write: ${writeSnapshot.elements[12]} != ${x}`);
+            };
+            checkWorld(0); checkWorld(0);
+            const beforeWrite = __viewWrites();
+            cachedPosition.set(3, 4, 5); cachedPosition.addScalar(0);
+            checkWorld(3); check(__viewWrites() === beforeWrite + 1);
+            newBranch.position.x = 10; newBranch.add(writeLeaf); checkWorld(13);
+            cachedPosition.copy(new Vector3(7, 8, 9)); checkWorld(17);
+            const beforeOrientation = __viewWrites();
+            cachedRotation.set(.1, .2, .3); cachedQuaternion.identity();
+            check(__viewWrites() === beforeOrientation + 1); checkWorld(17);
+            cachedPosition.x = 11;
+            const beforeEscape = __viewWrites();
+            const escapedPosition = cachedPosition._a;
+            check(__viewWrites() === beforeEscape + 1 && cachedPosition._a === escapedPosition);
+            check(__viewWrites() === beforeEscape + 1);
+            checkWorld(21);
+            escapedPosition[0] = 12; checkWorld(22);
+            oldBranch.add(writeLeaf); checkWorld(12);
+            escapedPosition[0] = 13; checkWorld(13);
+            const orderOwner = new Group();
+            const beforeOrderEscape = __viewWrites();
+            void orderOwner.rotation._o;
+            check(__viewWrites() === beforeOrderEscape + 1);
             const boundsRoot = new Group(), boundsMesh = new Mesh(new BoxGeometry(2, 4, 6), new MeshBasicMaterial());
             boundsRoot.position.set(10, 0, 0); boundsMesh.position.set(2, 3, 4); boundsRoot.add(boundsMesh);
             boundsRoot.updateMatrixWorld(true);
@@ -1784,11 +1821,14 @@ void jsMathViews() {
         }
         CHECK(ok);
     }
+    std::printf("V8 tracking fixture: %llu view-write callbacks, %llu ancestor propagation visits\n",
+        static_cast<unsigned long long>(tn::engine::Object3D::transformViewWrites() - viewWritesBefore),
+        static_cast<unsigned long long>(tn::engine::Object3D::dirtyPropagationVisits() - propagationBefore));
     tn_handle_t collected{};
     {
         v8::HandleScope ownerScope(rt.isolate);
         auto source = v8::String::NewFromUtf8Literal(rt.isolate,
-            "globalThis.__owner = new Object3D(); globalThis.__kept = __owner.position; __kept.set(21,22,23); "
+            "globalThis.__owner = new Object3D(); globalThis.__kept = __owner.position; __kept.set(21,22,23); __tracking(__owner, true); "
             "globalThis.__rawOwner = new Object3D(); __rawOwner.position.set(41,42,43); "
             "globalThis.__rawBuffer = __rawOwner.position._a.buffer; delete globalThis.__rawOwner; __owner");
         auto owner = v8::Script::Compile(ctx, source).ToLocalChecked()->Run(ctx).ToLocalChecked();

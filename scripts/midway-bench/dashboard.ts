@@ -35,6 +35,7 @@ const WORLD_WORK_PARTS = [
   "gpuPlanValidationVisits",
   "gpuPlanMaintenanceVisits",
 ] as const;
+const WORLD_WORK_V3_PARTS = ["worldDirtyPropagationVisits", "worldSubtreeSkipVisits"] as const;
 
 export interface IScan<T> {
   /** JSON objects that parsed. */
@@ -101,8 +102,8 @@ export interface IDesktopFrames {
   excluded: number;
   medians: Partial<Record<(typeof PLAYER_KEYS)[number], number>>;
   frameP95?: number;
-  /** Version 2 whole-frame work; distinct from legacy projection matrix visits. */
-  worldWork?: { version: 2; n: number; median: number; max: number };
+  /** Versioned whole-frame work; scopes differ across versions and from legacy projection visits. */
+  worldWork?: { version: 2 | 3; n: number; median: number; max: number };
   /** A tail claims world counters but is mixed, incomplete or invalid. CPU samples remain usable. */
   worldWorkInvalid?: true;
 }
@@ -126,14 +127,22 @@ export function playerFrames(text: string, last = PLAYER_FRAME_WINDOW) {
   }
   const frameP95 = percentile(tail.map((s) => s.frameMs).filter(finite), 0.95);
   const claimsWorldWork = tail.some((s) =>
-    ["worldVisitCounterVersion", "worldWorkVisitsTotal", ...WORLD_WORK_PARTS].some(
-      (key) => key in s,
-    ),
+    [
+      "worldVisitCounterVersion",
+      "worldWorkVisitsTotal",
+      ...WORLD_WORK_PARTS,
+      ...WORLD_WORK_V3_PARTS,
+    ].some((key) => key in s),
   );
+  const version = tail[0]?.worldVisitCounterVersion;
   const validWorldWork = tail.every((s) => {
-    const parts = WORLD_WORK_PARTS.map((key) => s[key]);
+    const parts = [...WORLD_WORK_PARTS, ...(version === 3 ? WORLD_WORK_V3_PARTS : [])].map(
+      (key) => s[key],
+    );
     return (
-      s.worldVisitCounterVersion === 2 &&
+      (version === 2 || version === 3) &&
+      s.worldVisitCounterVersion === version &&
+      (version === 3 || WORLD_WORK_V3_PARTS.every((key) => !(key in s))) &&
       [...parts, s.worldWorkVisitsTotal].every(
         (v) => finite(v) && Number.isSafeInteger(v) && v >= 0,
       ) &&
@@ -152,7 +161,7 @@ export function playerFrames(text: string, last = PLAYER_FRAME_WINDOW) {
       ...(validWorldWork
         ? {
             worldWork: {
-              version: 2 as const,
+              version: version as 2 | 3,
               n: tail.length,
               median: median(totals) as number,
               max: Math.max(...totals),

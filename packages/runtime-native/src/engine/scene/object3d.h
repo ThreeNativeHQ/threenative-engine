@@ -236,6 +236,11 @@ private:
     void releaseTransform();
     TransformSlot transform_;
     uint64_t lastWorldEvaluation_ = 0;
+    bool subtreeDirty_ = true, eagerSelf_ = true;
+    uint32_t eagerSubtree_ = 1;
+    void markSubtreeDirty();
+    void adjustEagerSubtree(int64_t delta);
+    void refreshTrackedEligibility();
 public:
     /**
      * Where the transform columns sit in a storage page, in bytes: what a language that views the
@@ -270,9 +275,15 @@ public:
     [[nodiscard]] static uint64_t joinDependencyVisits() { return joinDependencyVisits_; }
     [[nodiscard]] static uint64_t gpuBoundaryVisits() { return gpuBoundaryVisits_; }
     [[nodiscard]] static uint64_t matrixEvaluations() { return matrixEvaluations_; }
+    // Prototype work counters; full-frame telemetry must include these before qualification.
+    inline static uint64_t dirtyPropagationVisits_ = 0, subtreeSkipVisits_ = 0, transformViewWrites_ = 0;
+    [[nodiscard]] static uint64_t dirtyPropagationVisits() { return dirtyPropagationVisits_; }
+    [[nodiscard]] static uint64_t subtreeSkipVisits() { return subtreeSkipVisits_; }
+    [[nodiscard]] static uint64_t transformViewWrites() { return transformViewWrites_; }
     [[nodiscard]] uint64_t lastWorldEvaluation() const { return lastWorldEvaluation_; }
 
     static void prepareTransformView(const void* address);
+    static void markTransformViewDirty(const void* address, bool escaped);
     // Stable bytes: tracked, TRS dirty, irreversibly escaped. Shares the transform slot's lifetime.
     [[nodiscard]] static uint8_t* transformTrackingAddress(const void* address);
 

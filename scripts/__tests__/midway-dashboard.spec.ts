@@ -46,6 +46,14 @@ const worldCounters = {
   gpuPlanMaintenanceVisits: 6,
   worldWorkVisitsTotal: 21,
 };
+const worldCountersV3 = {
+  ...worldCounters,
+  worldVisitCounterVersion: 3,
+  worldDirtyPropagationVisits: 7,
+  worldSubtreeSkipVisits: 8,
+  transformTrackingNotifications: 999,
+  worldWorkVisitsTotal: 36,
+};
 const worldFrame = (counters: Record<string, unknown> = worldCounters) =>
   `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, cpuFrameKInstructions: 10000, cpuFrameCpuMs: 10, frameMs: 20, ...counters })}`;
 const budget = (p50: number) =>
@@ -94,6 +102,48 @@ describe("scanJson", () => {
 });
 
 describe("log reducers", () => {
+  it("rejects v2 samples carrying either v3 work counter even when zero", () => {
+    for (const key of ["worldDirtyPropagationVisits", "worldSubtreeSkipVisits"]) {
+      const { frames } = playerFrames(worldFrame({ ...worldCounters, [key]: 0 }));
+      expect(frames?.worldWork).toBeUndefined();
+      expect(frames?.worldWorkInvalid).toBe(true);
+      expect(frames?.medians.cpuFrameCpuMs).toBe(10);
+    }
+  });
+
+  it("includes dirty propagation and subtree checks in v3 without adding tracking notifications", () => {
+    const { frames } = playerFrames(
+      [
+        worldFrame(worldCountersV3),
+        worldFrame({
+          ...worldCountersV3,
+          worldDirtyPropagationVisits: 9,
+          worldWorkVisitsTotal: 38,
+        }),
+      ].join("\n"),
+    );
+    expect(frames?.worldWork).toEqual({ version: 3, n: 2, median: 37, max: 38 });
+    expect(frames?.worldWorkInvalid).toBeUndefined();
+    expect(frames?.medians.cpuFrameCpuMs).toBe(10);
+  });
+
+  it.each([
+    { ...worldCountersV3, worldDirtyPropagationVisits: undefined },
+    { ...worldCountersV3, worldSubtreeSkipVisits: undefined },
+    { ...worldCountersV3, worldDirtyPropagationVisits: -1 },
+    { ...worldCountersV3, worldSubtreeSkipVisits: 1.5 },
+    { ...worldCountersV3, worldDirtyPropagationVisits: Number.MAX_SAFE_INTEGER + 1 },
+    { ...worldCountersV3, worldWorkVisitsTotal: 21 },
+    { ...worldCountersV3, worldWorkVisitsTotal: 1035 },
+    { ...worldCountersV3, worldVisitCounterVersion: 4 },
+    worldCounters,
+  ])("rejects malformed v3 and mixed v2/v3 tails without hiding CPU: %j", (counters) => {
+    const { frames } = playerFrames([worldFrame(worldCountersV3), worldFrame(counters)].join("\n"));
+    expect(frames?.worldWork).toBeUndefined();
+    expect(frames?.worldWorkInvalid).toBe(true);
+    expect(frames?.n).toBe(2);
+    expect(frames?.medians.cpuFrameKInstructions).toBe(10000);
+  });
   it("summarizes whole-frame world work over the same complete active tail", () => {
     const { frames } = playerFrames(
       [
@@ -387,6 +437,28 @@ describe("groups and loading", () => {
     expect(state.winner.status).toBe("unqualified");
     expect(state.selection.build).toBe(reference.pkg);
     expect(state.candidate.gap.desktop?.build).not.toBe(candidate.pkg);
+  });
+
+  it("keeps malformed v3 candidates out of selection and the pinned headline", () => {
+    const reference = run(
+      "isolated-cache-a1-desktop",
+      [pkgLine("pkg-ac10-cache-a1"), frame(10), proj(5816)].join("\n"),
+    );
+    const candidate = run(
+      "invalid-v3-desktop",
+      [
+        pkgLine("pkg-invalid-v3"),
+        ...Array(999).fill(worldFrame(worldCountersV3)),
+        worldFrame({ ...worldCountersV3, worldDirtyPropagationVisits: undefined }),
+        proj(3),
+      ].join("\n"),
+      parityText(true),
+    );
+    candidate.timingExclusion = "Experimental telemetry";
+    const state = midwayOf([reference, candidate]);
+    expect(state.candidate.structural).toBeUndefined();
+    expect(state.selection.build).toBe(reference.pkg);
+    expect(state.winner.status).toBe("unqualified");
   });
 
   it("loads <tag>-<arm> dirs oldest first and ignores everything else", async () => {

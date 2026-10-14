@@ -1370,7 +1370,7 @@ void registerMathBindings(Registry& classes) {
         if (!binding.fields.empty())
             binding.getters["__address"] = [](void* self) {
                 Object3D::prepareTransformView(self);
-                if (auto* tracking = Object3D::transformTrackingAddress(self)) tracking[2] = 1;
+                Object3D::markTransformViewDirty(self, true);
                 return Value::of(double(reinterpret_cast<uintptr_t>(self)));
             };
 }

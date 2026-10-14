@@ -163,15 +163,21 @@ v8::Local<v8::Value> MathBridge::build(MathKind kind, const void* address, tn::a
                                                     queueClaim, claim);
     v8::Local<v8::ArrayBuffer> buffer = v8::ArrayBuffer::New(isolate_, std::move(backing));
     v8::Local<v8::Value> metadata = v8::Undefined(isolate_);
+    v8::Local<v8::Value> mark = v8::Undefined(isolate_);
+    v8::Local<v8::Context> context = jsContext_.Get(isolate_);
     if (auto* flags = engine::Object3D::transformTrackingAddress(address); flags && kind != MathKind::Matrix4) {
         auto* metadataClaim = tn::abi::claimColumn(address);
         auto storage = v8::ArrayBuffer::NewBackingStore(flags, 3, queueClaim, metadataClaim);
         metadata = v8::ArrayBuffer::New(isolate_, std::move(storage));
+        v8::Local<v8::Function> callback;
+        if (!v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            engine::Object3D::markTransformViewDirty(info.Data().As<v8::External>()->Value(), info[0]->IsTrue());
+        }, v8::External::New(isolate_, const_cast<void*>(address))).ToLocal(&callback)) return {};
+        mark = callback;
     }
-    v8::Local<v8::Value> arguments[3] = {buffer, v8::Integer::New(isolate_, 0), metadata};
-    v8::Local<v8::Context> context = jsContext_.Get(isolate_);
+    v8::Local<v8::Value> arguments[4] = {buffer, v8::Integer::New(isolate_, 0), metadata, mark};
     v8::Local<v8::Value> made;
-    if (!makers_[static_cast<std::size_t>(kind)].Get(isolate_)->Call(context, v8::Undefined(isolate_), 3, arguments).ToLocal(&made))
+    if (!makers_[static_cast<std::size_t>(kind)].Get(isolate_)->Call(context, v8::Undefined(isolate_), 4, arguments).ToLocal(&made))
         return {};
     return scope.Escape(made);
 }
