@@ -41,21 +41,6 @@ function count(value: number, name: string): void {
 }
 
 /**
- * Whether a proxy beats the source it would replace: no heavier and no more draws, and strictly
- * better in at least one. Equal triangles over fewer draws counts: a cell of many small chunk
- * primitives merges to a few material groups at the same triangle count, and the draw saving is the
- * point of the proxy.
- */
-export function cellProxyHelps(
-  proxy: { readonly triangles: number; readonly materialGroups: number },
-  sourceTriangles: number,
-  sourceDraws: number,
-): boolean {
-  if (proxy.triangles > sourceTriangles || proxy.materialGroups > sourceDraws) return false;
-  return proxy.triangles < sourceTriangles || proxy.materialGroups < sourceDraws;
-}
-
-/**
  * Internal selection only. WorldCells owns models, admission, cache paths, generation cancellation,
  * collision and shadow/bundle attachment. The owner commits this result and source visibility in
  * one admission unit, and resets the selector on eviction. No material, loader or scheduler lives here.
@@ -96,7 +81,10 @@ export class CellProxySelection {
     }
     // Returning detail remains in the existing load queue; a ready proxy stays drawn meanwhile.
     if (!input.sourceReady && this.#level === 1) return "proxy";
-    if (!cellProxyHelps(this.#proxy, input.sourceTriangles, input.replaceableSourceDraws)) {
+    if (
+      this.#proxy.triangles >= input.sourceTriangles ||
+      this.#proxy.materialGroups > input.replaceableSourceDraws
+    ) {
       this.#level = 0;
       return input.sourceReady ? "detail" : "pending";
     }

@@ -25,7 +25,6 @@ import {
   cellProxySourceSafe,
   cellProxyWorldScale,
   measureCellProxy,
-  cellProxyHelps,
   prepareCellProxy,
 } from "../src/world-cell-proxy.js";
 
@@ -83,18 +82,6 @@ describe("cell proxy selection within the existing admission owner", () => {
     expect(state.select({ ...input(), sourceCompatible: false, sourceReady: false })).toBe(
       "pending",
     );
-  });
-  it("accepts equal triangles over fewer draws, and still refuses equal triangles over equal draws", () => {
-    const state = new CellProxySelection(proxy);
-    expect(state.select({ ...input(), sourceTriangles: 20, replaceableSourceDraws: 15 })).toBe(
-      "proxy",
-    );
-    state.reset();
-    expect(state.select({ ...input(), sourceTriangles: 20, replaceableSourceDraws: 2 })).toBe(
-      "detail",
-    );
-    expect(cellProxyHelps(proxy, 21, 2)).toBe(true);
-    expect(cellProxyHelps(proxy, 19, 9)).toBe(false);
   });
   it("does not activate a fresh proxy while full-quality detail is pending", () => {
     const state = new CellProxySelection(proxy);
