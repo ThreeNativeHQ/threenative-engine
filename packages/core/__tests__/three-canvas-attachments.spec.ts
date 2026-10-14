@@ -1,4 +1,11 @@
-import { AgXToneMapping, DepthTexture, RenderTarget, SRGBColorSpace, Vector2 } from "three";
+import {
+  AgXToneMapping,
+  DepthTexture,
+  RenderTarget,
+  SRGBColorSpace,
+  Vector2,
+  Vector4,
+} from "three";
 import CanvasTarget from "three/src/renderers/common/CanvasTarget.js";
 import SourceRenderPipeline from "three/src/renderers/common/RenderPipeline.js";
 import WebGPUBackend from "three/src/renderers/webgpu/WebGPUBackend.js";
@@ -87,6 +94,103 @@ function fixture(mode: string) {
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("executes a graph framebuffer copy and depth LOAD restart before the existing quad draw", () => {
+  const state = fixture("source");
+  const events: string[] = [];
+  const starts: string[] = [];
+  const encoder = {
+    beginRenderPass(descriptor: { depthStencilAttachment: { depthLoadOp: string } }) {
+      starts.push(descriptor.depthStencilAttachment.depthLoadOp);
+      events.push("begin");
+      return { end: () => events.push("end") };
+    },
+    copyTextureToTexture: () => events.push("copy"),
+  };
+  Object.assign(state.backend.device, { createCommandEncoder: () => encoder });
+  Object.assign(state.backend, {
+    initTimestampQuery: () => undefined,
+    getTimestampUID: () => "output",
+    _isRenderCameraDepthArray: () => false,
+    _getDefaultRenderPassDescriptor: state.passDescriptor,
+    _draw: () => events.push("draw"),
+  });
+  const context = {
+    id: 1,
+    textures: null,
+    renderTarget: null,
+    depth: true,
+    stencil: false,
+    clearDepth: true,
+    clearDepthValue: 1,
+    clearColor: false,
+    occlusionQueryCount: 0,
+    viewport: false,
+    scissor: false,
+  };
+  const destination = { generateMipmaps: false };
+  const source = { format: "bgra8unorm", createView: () => ({}) };
+  state.backend.context.getCurrentTexture = () => source;
+  state.backend.get(destination).texture = { format: source.format };
+  const object = { geometry: { drawRange: { start: 0, count: 3 } } };
+  const renderObject = {
+    object,
+    context,
+    camera: {},
+    pipeline: {},
+    getDrawParameters: () => ({ vertexCount: 3 }),
+    getBindings: () => [],
+    getVertexBuffers: () => [],
+  };
+  state.backend.get(renderObject.pipeline).pipeline = {};
+  const renderer = {
+    _objects: { get: () => renderObject },
+    _currentRenderContext: context,
+    _currentRenderBundle: null,
+    _nodes: {
+      needsRefresh: () => events.push("refresh"),
+      updateBefore: () => {
+        events.push("updateBefore");
+        WebGPUBackend.prototype.copyFramebufferToTexture.call(
+          state.backend,
+          destination,
+          context,
+          new Vector4(0, 0, 4, 4),
+        );
+      },
+      updateForRender: () => undefined,
+      updateAfter: () => events.push("updateAfter"),
+    },
+    _geometries: { updateForRender: () => undefined },
+    _bindings: { updateForRender: () => undefined },
+    _pipelines: {
+      updateForRender: () => events.push("pipeline"),
+      isReady: () => true,
+    },
+    backend: {
+      draw: () => WebGPUBackend.prototype.draw.call(state.backend, renderObject, {}),
+    },
+    info: {},
+  };
+  WebGPUBackend.prototype.beginRender.call(state.backend, context);
+  Reflect.get(SourceWebGPURenderer.prototype, "_renderObjectDirect").call(renderer, object);
+  expect(events).toEqual([
+    "begin",
+    "refresh",
+    "updateBefore",
+    "end",
+    "copy",
+    "begin",
+    "pipeline",
+    "draw",
+    "updateAfter",
+  ]);
+  expect(starts).toEqual(["clear", "load"]);
+  expect(state.backend.get(context).descriptor).toMatchObject({
+    depthStencilAttachment: { depthLoadOp: "load", depthStoreOp: "store" },
+  });
+  expect(state.allocations.filter(({ label }) => label === "depthBuffer")).toHaveLength(1);
+});
 
 describe.each(["source", "distribution"])(
   "%s default canvas attachment allocation lifecycle",
