@@ -75,14 +75,14 @@ if (mode === "--verify" || mode === "--verify-web") {
     for (const [dir, target] of [["wasm", "tn-native-engine-web"], ["tn-engine-ui", "tn-native-engine-player-v8"]]) {
       const source = /^CMAKE_HOME_DIRECTORY:INTERNAL=(.+)$/m.exec(readFileSync(path.join(native, "build", dir, "CMakeCache.txt"), "utf8"))?.[1];
       if (!source || realpathSync(source) !== realpathSync(native)) throw new Error(`build provenance: ${dir} was configured from another source checkout`);
-      execFileSync("cmake", ["--build", path.join(native, "build", dir), "--clean-first", "--target", target], { cwd: repo, stdio: "inherit" });
+      execFileSync("cmake", ["--build", path.join(native, "build", dir), "--target", target], { cwd: repo, stdio: "inherit" });
     }
     if (sourceCommit() !== commit) throw new Error("engine source changed during build; no provenance published");
     const playerSha256 = hash(path.join(native, "build/tn-engine-ui/tn-native-engine-player-v8"));
     for (const file of readdirSync(packs).filter((f) => f.endsWith(".tgz"))) rmSync(path.join(packs, file));
     const require = createRequire(path.join(repo, "packages/core/package.json"));
     for (const key of Object.keys(names)) {
-      if (key === "three") run(["pack", "--pack-destination", packs], path.dirname(require.resolve("three/package.json")));
+      if (key === "three") run(["pack", "--pack-destination", packs], path.dirname(path.dirname(require.resolve("three"))));
       else run(["--filter", `./packages/${key}`, "pack", "--pack-destination", packs], repo);
     }
     const artifacts = Object.fromEntries(readdirSync(packs).filter((f) => f.endsWith(".tgz")).map((f) => [f, hash(path.join(packs, f))]));

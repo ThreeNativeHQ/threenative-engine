@@ -25,7 +25,9 @@ sh scripts/midway-bench/install.sh "$MIDWAY_NATIVE_DIR" --no-pack
 ```
 
 `install.sh` now rebuilds before packing: `pnpm build`, `node packages/runtime-native/scripts/build-native-ui-overlay.mjs`,
-then clean CMake builds of `tn-native-engine-web` and `tn-native-engine-player-v8`. It refuses dirty engine/package/tooling
+then normal incremental CMake dependency builds of `tn-native-engine-web` and `tn-native-engine-player-v8`,
+rebuilding changed inputs while retaining compiled artifacts. “Clean” in the build protocol refers to
+source checkout cleanliness, not forced recompilation. It refuses dirty engine/package/tooling
 sources, an unrelated Git root, or CMake caches configured from another checkout. It checks the
 source revision again after building and packing. Preserve unrelated edits (including compute
 tests); prepare from a clean, committed revision instead of resetting them.

@@ -1736,6 +1736,142 @@ describe("measurement defect regressions", () => {
     },
   );
 
+  it("packs patched Three with strict exports using incremental native builds", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "midway-pack-"));
+    try {
+      const native = path.join(root, "packages/runtime-native");
+      const three = path.join(root, "packages/core/node_modules/three");
+      const packs = path.join(root, "packs");
+      const game = path.join(root, "game");
+      const bin = path.join(root, "bin");
+      for (const dir of [
+        "scripts/midway-bench",
+        "packages/core",
+        "bin",
+        "game",
+        "packages/runtime-native/scripts",
+        "packages/runtime-native/build/wasm",
+        "packages/runtime-native/build/tn-engine-ui",
+        "packages/core/node_modules/three/build",
+      ]) {
+        await mkdir(path.join(root, dir), { recursive: true });
+      }
+      await copyFile(
+        path.resolve("scripts/midway-bench/install.sh"),
+        path.join(root, "scripts/midway-bench/install.sh"),
+      );
+      await writeFile(path.join(root, "package.json"), '{"name":"threenative"}');
+      await writeFile(path.join(root, ".gitignore"), "node_modules/\nbuild/\n");
+      await writeFile(
+        path.join(root, "packages/core/package.json"),
+        '{"name":"@threenative/core"}',
+      );
+      await writeFile(
+        path.join(three, "package.json"),
+        JSON.stringify({ name: "three", exports: { ".": "./build/three.cjs" } }),
+      );
+      await writeFile(
+        path.join(three, "build/three.cjs"),
+        "module.exports = 'patched upstream Three';",
+      );
+      await writeFile(
+        path.join(native, "scripts/build-native-ui-overlay.mjs"),
+        "// Fixture overlay build.\n",
+      );
+      for (const dir of ["wasm", "tn-engine-ui"]) {
+        await writeFile(
+          path.join(native, "build", dir, "CMakeCache.txt"),
+          `CMAKE_HOME_DIRECTORY:INTERNAL=${native}\n`,
+        );
+      }
+      await writeFile(path.join(game, "package.json"), '{"dependencies":{"react":"19.2.0"}}');
+      await writeFile(
+        path.join(bin, "pnpm"),
+        `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+if (args[0] === 'build') process.exit(0);
+if (args[0] === 'install') {
+  fs.writeFileSync('pnpm-lock.yaml', 'fixture lock');
+} else if (args.includes('pack')) {
+  const key = args[0] === 'pack' ? JSON.parse(fs.readFileSync('package.json')).name : path.basename(args[1]);
+  const name = key === 'three' || key === 'create-threenative' ? key : 'threenative-' + key;
+  const bytes = key === 'three' ? fs.readFileSync('build/three.cjs') : 'fixture package';
+  fs.writeFileSync(path.join(args[args.indexOf('--pack-destination') + 1], name + '-1.0.0.tgz'), bytes);
+} else process.exit(48);
+`,
+      );
+      await writeFile(
+        path.join(bin, "cmake"),
+        `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+fs.appendFileSync(path.join(process.cwd(), 'cmake-calls.jsonl'), JSON.stringify(args) + '\\n');
+if (args.includes('tn-native-engine-player-v8')) fs.writeFileSync(path.join(args[1], 'tn-native-engine-player-v8'), 'fixture built player');
+`,
+      );
+      await chmod(path.join(bin, "pnpm"), 0o755);
+      await chmod(path.join(bin, "cmake"), 0o755);
+      execFileSync("git", ["init", "--quiet", root]);
+      execFileSync("git", ["add", "."], { cwd: root });
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=Fixture",
+          "-c",
+          "user.email=fixture@example.com",
+          "commit",
+          "--quiet",
+          "-m",
+          "source",
+        ],
+        { cwd: root },
+      );
+      const commit = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: root,
+        encoding: "utf8",
+      }).trim();
+      const result = spawnSync("sh", [path.join(root, "scripts/midway-bench/install.sh"), game], {
+        encoding: "utf8",
+        timeout: 10000,
+        env: { ...process.env, MIDWAY_PACKS: packs, PATH: `${bin}:${process.env.PATH}` },
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(await readFile(path.join(packs, "three-1.0.0.tgz"), "utf8")).toBe(
+        "module.exports = 'patched upstream Three';",
+      );
+      const receipt = JSON.parse(
+        await readFile(path.join(packs, "midway-provenance.json"), "utf8"),
+      );
+      expect(receipt.engineCommit).toBe(commit);
+      expect(Object.keys(receipt.artifacts)).toHaveLength(8);
+      expect(receipt.playerSha256).toBe(
+        createHash("sha256").update("fixture built player").digest("hex"),
+      );
+      const pkg = JSON.parse(await readFile(path.join(game, "package.json"), "utf8"));
+      expect(pkg.dependencies.react).toBe("19.2.0");
+      expect(pkg.pnpm.overrides.three).toBe(`file:${path.join(packs, "three-1.0.0.tgz")}`);
+      const calls = (await readFile(path.join(root, "cmake-calls.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(calls).toEqual([
+        ["--build", path.join(native, "build/wasm"), "--target", "tn-native-engine-web"],
+        [
+          "--build",
+          path.join(native, "build/tn-engine-ui"),
+          "--target",
+          "tn-native-engine-player-v8",
+        ],
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it.each(["missing", "stale", "valid"])(
     "requires genuine cached package provenance for --no-pack: %s",
     async (state) => {
