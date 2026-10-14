@@ -22,7 +22,12 @@ async function pack(dir: string) {
 
 let packed: Buffer;
 beforeAll(async () => {
-  packed = (await pack(await makeTempDir("tn-terrain-pack-"))).bytes;
+  const directory = await makeTempDir("tn-terrain-pack-");
+  try {
+    packed = (await pack(directory)).bytes;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }, 60_000);
 
 async function installed(bytes = packed) {
