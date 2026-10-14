@@ -248,18 +248,6 @@ void PropertyBinding::bind() {
     return unsupported("property " + property);
 }
 
-std::shared_ptr<Bone> PropertyBinding::workerBone(std::size_t valueSize) {
-    if (!bindAttempted_) bind();
-    if (!bone_ || (target_ != Target::Position && target_ != Target::Quaternion && target_ != Target::Scale)) return {};
-    if (valueSize != (target_ == Target::Quaternion ? 4u : 3u)) return {};
-    auto node = node_.lock();
-    if (!node) return {};
-    bone_->joinPendingAnimation();
-    const auto* flags = bone_->ownTransformTracking();
-    if (!flags[0] || flags[2] || !bone_->matrixAutoUpdate || !bone_->matrixWorldAutoUpdate || bone_->pivot) return {};
-    return std::static_pointer_cast<Bone>(node);
-}
-
 void PropertyBinding::materializeValue() {
     if (!node_.expired() && raw_) raw_->materializeLocalTransform();
 }

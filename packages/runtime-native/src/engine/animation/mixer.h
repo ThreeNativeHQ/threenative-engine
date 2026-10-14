@@ -9,9 +9,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-#ifndef __EMSCRIPTEN__
-#include <thread>
-#endif
 
 #include "engine/animation/interpolant.h"
 #include "engine/animation/property_binding.h"
@@ -58,36 +55,44 @@ struct AnimationClip {
 };
 
 /** three's PropertyMixer: the per-property accumulation buffer the mixer blends actions into. */
-class PropertyAccumulator {
+class PropertyMixer {
   public:
-    PropertyAccumulator(TrackType type, std::size_t size);
+    PropertyMixer(PropertyBinding binding, TrackType type, std::size_t valueSize);
+
     void accumulate(int accuIndex, double weight);
     void accumulateAdditive(double weight);
-    bool finish(int accuIndex);
+    void apply(int accuIndex);
+    /** The two prefetch stages of the mixer's loops (see `PropertyBinding::prefetchNode`). */
+    void prefetchData() const {
+        __builtin_prefetch(buffer.data(), 1, 3);
+        binding.prefetchNode();
+    }
+    void prefetchColumns() const { binding.prefetchColumns(); }
+    void saveOriginalState();
+    void restoreOriginalState();
+
+    // What every update reads sits first, with the binding's own hot members right behind it, so a
+    // track costs two cache lines rather than the four a declaration-order layout spreads it over.
     const std::size_t valueSize;
     std::vector<double> buffer;
     double cumulativeWeight = 0, cumulativeWeightAdditive = 0;
-  protected:
+
+  private:
     TrackType type_;
+
+  public:
+    PropertyBinding binding;
+    int useCount = 0, referenceCount = 0;
+    std::optional<std::size_t> cacheIndex;
+    const Object3D* rootKey = nullptr; // three keys bindings by root uuid; the root is the key here
+
+  private:
     void select(std::size_t dst, std::size_t src, double t);
     void mix(std::size_t dst, std::size_t src, double t);
     void mixAdditive(std::size_t dst, std::size_t src, double t);
     void setIdentity();
-    static constexpr std::size_t kOrigIndex = 3, kAddIndex = 4, kWorkIndex = 5;
-};
 
-class PropertyMixer : public PropertyAccumulator {
-  public:
-    PropertyMixer(PropertyBinding binding, TrackType type, std::size_t valueSize);
-    void apply(int accuIndex);
-    void prefetchData() const { __builtin_prefetch(buffer.data(), 1, 3); binding.prefetchNode(); }
-    void prefetchColumns() const { binding.prefetchColumns(); }
-    void saveOriginalState();
-    void restoreOriginalState();
-    PropertyBinding binding;
-    int useCount = 0, referenceCount = 0;
-    std::optional<std::size_t> cacheIndex;
-    const Object3D* rootKey = nullptr;
+    static constexpr std::size_t kOrigIndex = 3, kAddIndex = 4, kWorkIndex = 5;
 };
 
 class AnimationMixer;
@@ -199,7 +204,6 @@ class AnimationMixer {
         bool available = true;
     };
     static thread_local CpuTiming cpuTiming;
-    static thread_local uint64_t workerEvaluationsTotal; // completed numerical jobs on this owner thread
 
     explicit AnimationMixer(std::shared_ptr<Object3D> root);
     ~AnimationMixer();
@@ -214,9 +218,6 @@ class AnimationMixer {
     AnimationMixer& stopAllAction();
     AnimationMixer& update(double deltaTime);
     AnimationMixer& setTime(double time);
-    void joinEvaluation();
-    static void joinPendingEvaluations();
-    [[nodiscard]] uint64_t workerEvaluations() const { return workerEvaluations_; }
     [[nodiscard]] Object3D& getRoot() const { return *root_; }
     /** Every `update` so far, explicit or scheduled (`setTime` is one): what the schedule reads. */
     [[nodiscard]] std::uint64_t updateCount() const { return updateCount_; }
@@ -243,14 +244,6 @@ class AnimationMixer {
 
   private:
     friend class AnimationAction;
-    struct WorkerState;
-    std::shared_ptr<WorkerState> pendingEvaluation_;
-    bool workerTrial_ = false;
-#ifndef __EMSCRIPTEN__
-    const std::thread::id ownerThread_ = std::this_thread::get_id();
-#endif
-    uint64_t workerEvaluations_ = 0;
-    void collectTrack(AnimationAction& action, std::size_t track, double time, double weight);
 
     struct ActionsForClip {
         const AnimationClip* clip;

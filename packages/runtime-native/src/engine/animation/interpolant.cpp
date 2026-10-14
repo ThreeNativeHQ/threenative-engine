@@ -66,28 +66,6 @@ Interpolant::Interpolant(Interpolation kind, std::span<const double> times, std:
                          std::size_t valueSize)
     : kind_(kind), times_(times), values_(values), valueSize_(valueSize), own_(valueSize, 0.0), result_(own_.data()) {}
 
-std::unique_ptr<Interpolant> Interpolant::snapshotOwned() {
-    const auto matches = [](const std::vector<double>& owned, std::span<const double> source) {
-        return owned.size() == source.size() &&
-               (source.empty() || std::memcmp(owned.data(), source.data(), source.size_bytes()) == 0);
-    };
-    // Native tracks expose mutable arrays without revisions. Inspect bound spans, never clip vectors:
-    // replacing a clip vector does not rebind an existing interpolant whose old storage is still alive.
-    if (!cachedInputs_ || !matches(cachedInputs_->times, times_) || !matches(cachedInputs_->values, values_))
-        cachedInputs_ = std::make_shared<OwnedInputs>(OwnedInputs{
-            std::vector<double>(times_.begin(), times_.end()), std::vector<double>(values_.begin(), values_.end())});
-    auto result = std::make_unique<Interpolant>(kind_, cachedInputs_->times, cachedInputs_->values, valueSize_);
-    result->ownedInputs_ = cachedInputs_;
-    result->settings = std::make_shared<InterpolantSettings>(*settings);
-    result->restoreEvaluationCache(*this);
-    return result;
-}
-void Interpolant::restoreEvaluationCache(const Interpolant& source) {
-    cachedIndex_ = source.cachedIndex_; constant_ = source.constant_;
-    weightPrev_ = source.weightPrev_; weightNext_ = source.weightNext_;
-    offsetPrev_ = source.offsetPrev_; offsetNext_ = source.offsetNext_;
-}
-
 // Between equal keyframes discrete and quaternion interpolation return that keyframe exactly (slerpFlat copies
 // equal inputs) and linear within one rounding of v * w0 + v * w1; cubic keeps the search.
 void Interpolant::detectConstant() {

@@ -77,7 +77,6 @@ class PropertyBinding {
     void bind();
     void unbind();
     void materializeValue();
-    std::shared_ptr<Bone> workerBone(std::size_t valueSize);
     [[nodiscard]] bool bound() const { return target_ != Target::Unavailable; }
     /** The object cached by bind(), for the animation audit's targetObject reflection. */
     [[nodiscard]] std::shared_ptr<Object3D> targetNode() const { return bound() ? node_.lock() : nullptr; }

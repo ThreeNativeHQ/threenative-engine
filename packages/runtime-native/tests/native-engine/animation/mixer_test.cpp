@@ -5,7 +5,6 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
-#include <thread>
 #include "scenario.h"
 #include "engine/animation/skinning/skeleton.h"
 
@@ -120,134 +119,7 @@ void cpuTiming() {
     CHECK(AnimationMixer::cpuTiming.calls == 0 && AnimationMixer::cpuTiming.ms == 0);
 }
 
-#ifndef __EMSCRIPTEN__
-struct WorkerEnvironment {
-    std::optional<std::string> previous;
-    WorkerEnvironment() { if (auto value = std::getenv("TN_ANIMATION_WORKER")) previous = value; set("1"); }
-    ~WorkerEnvironment() { set(previous ? previous->c_str() : nullptr); }
-    static void set(const char* value) {
-#ifdef _WIN32
-        _putenv_s("TN_ANIMATION_WORKER", value ? value : "");
-#else
-        if (value) setenv("TN_ANIMATION_WORKER", value, 1); else unsetenv("TN_ANIMATION_WORKER");
-#endif
-    }
-};
-void workerReplay() {
-    WorkerEnvironment environment;
-    const auto named = [](const char* name) {
-        auto bone = std::make_shared<Bone>(); bone->name = name; bone->enableTrackedTransform(); return bone;
-    };
-    auto rig = named("rig"), hips = named("hips"), spine = named("spine"), head = named("head"), prop = named("prop");
-    rig->add(*hips); rig->add(*prop); hips->add(*spine); spine->add(*head);
-    const std::shared_ptr<Bone> nodes[] = {rig, hips, spine, head, prop};
-    bool deferred = false;
-    const auto result = replay(kTracks, kClips, kOps, kDeltas, rig, [&] {
-        for (const auto& node : nodes) { deferred = deferred || bool(node->pendingAnimation); node->materializeLocalTransform(); }
-        std::string out;
-        for (const auto& node : nodes) out += (out.empty() ? "" : "|") + node->name + ":p=" + join(node->position.toArray()) +
-            ";q=" + join(node->quaternion.toArray()) + ";s=" + join(node->scale.toArray());
-        return out;
-    });
-    CHECK(deferred);
-    CHECK(differences(result.samples, kSamples, "worker sample") == 0);
-    CHECK(differences(result.events, kEvents, "worker event") == 0);
-}
-void workerReads() {
-    WorkerEnvironment environment;
-    const auto bone = [] { auto result = std::make_shared<Bone>(); result->enableTrackedTransform(); return result; };
-    auto clip = std::make_shared<AnimationClip>("worker", 1, std::vector<KeyframeTrack>{
-        KeyframeTrack(".position", TrackType::Vector, {0, 1}, {0, 0, 0, 10, 20, 30})});
-    const auto completed = AnimationMixer::workerEvaluationsTotal;
-    auto root = bone(); AnimationMixer mixer(root); auto* action = mixer.clipAction(clip); action->play();
-    mixer.update(0.25); CHECK(root->pendingAnimation && mixer.workerEvaluations() == 0);
-    CHECK(AnimationMixer::workerEvaluationsTotal == completed);
-    PropertyBinding position(root, ".position"); double value[3]{}; position.getValue(value, 0);
-    CHECK(value[0] == 2.5 && value[1] == 5 && mixer.workerEvaluations() == 1 && !root->pendingAnimation);
-    CHECK(AnimationMixer::workerEvaluationsTotal == completed + 1);
-    mixer.update(0.25); Vector3 world; root->getWorldPosition(world); CHECK(world.x == 5 && mixer.workerEvaluations() == 2);
-    auto* alias = &root->position; Object3D::prepareTransformView(alias);
-    mixer.update(0.25); CHECK(alias->x == 7.5 && mixer.workerEvaluations() == 2 && !root->pendingAnimation);
-    auto stopped = bone(); AnimationMixer stopping(stopped); auto* stop = stopping.clipAction(clip); stop->play();
-    stopping.update(0.25); stop->stop(); CHECK(stopped->position.x == 0 && stopping.workerEvaluations() == 1);
-    stop->play(); stopping.update(0.5); stopping.uncacheRoot(*stopped);
-    CHECK(stopped->position.x == 0 && !stopped->pendingAnimation && stopping.workerEvaluations() == 2);
-    auto retained = bone();
-    { AnimationMixer dying(retained); dying.clipAction(clip)->play(); dying.update(0.25); CHECK(retained->pendingAnimation); }
-    CHECK(retained->position.x == 2.5 && !retained->pendingAnimation);
-    auto shared = bone(); AnimationMixer first(shared), second(shared);
-    first.clipAction(clip)->play(); second.clipAction(clip)->play(); first.update(0.25); second.update(0.5);
-    CHECK(first.workerEvaluations() == 1 && shared->pendingAnimation);
-    shared->materializeLocalTransform(); CHECK(shared->position.x == 5 && second.workerEvaluations() == 1);
-    const auto onceResult = [&](const char* enabled, bool clamp) {
-        WorkerEnvironment::set(enabled);
-        auto finished = bone(); AnimationMixer events(finished); auto* once = events.clipAction(clip);
-        once->clampWhenFinished = clamp; once->setLoop(Loop::Once, 1).play();
-        auto owner = std::this_thread::get_id();
-        events.addEventListener("finished", [](const MixerEvent&, void* context) {
-            CHECK(std::this_thread::get_id() == *static_cast<std::thread::id*>(context));
-            throw std::runtime_error("worker listener");
-        }, &owner);
-        bool threw = false; try { events.update(1); } catch (const std::runtime_error&) { threw = true; }
-        CHECK(threw && !finished->pendingAnimation);
-        CHECK(events.workerEvaluations() == (enabled[0] == '1' ? 1u : 0u));
-        return finished->position.x;
-    };
-    // Eager execution supplies the oracle, including disabling a non-clamped completed action.
-    const auto eagerOnce = onceResult("0", false), eagerClamped = onceResult("0", true);
-    CHECK(onceResult("1", false) == eagerOnce);
-    CHECK(onceResult("1", true) == eagerClamped);
-    auto parent = std::make_shared<Object3D>(); auto child = bone(); child->name = "child"; parent->add(*child);
-    AnimationMixer lifetime(parent); lifetime.clipAction(std::make_shared<AnimationClip>("child", 1, std::vector<KeyframeTrack>{
-        KeyframeTrack("child.position", TrackType::Vector, {0, 1}, {0, 0, 0, 1, 0, 0})}))->play();
-    lifetime.update(0.25); std::weak_ptr<Bone> weak = child; parent->remove(*child); child.reset();
-    CHECK(!weak.expired()); lifetime.joinEvaluation(); CHECK(weak.expired());
-}
-void workerOwnership() {
-    WorkerEnvironment environment;
-    auto bone = std::make_shared<Bone>(); bone->enableTrackedTransform(); CHECK(bone->enableDeferredTransform());
-    auto clip = std::make_shared<AnimationClip>("owned", 2, std::vector<KeyframeTrack>{
-        KeyframeTrack(".position", TrackType::Vector, {0, 1}, {0, 0, 0, 10, 0, 0})});
-    {
-        AnimationMixer earlier(bone); earlier.clipAction(clip)->play(); earlier.update(0.25);
-        const double later[] = {99, 0, 0}; PropertyBinding external(bone, ".position"); external.setValue(later, 0);
-        bone->materializeLocalTransform(); CHECK(bone->position.x == 99 && earlier.workerEvaluations() == 1);
-    }
-    bone = std::make_shared<Bone>(); bone->enableTrackedTransform(); CHECK(bone->enableDeferredTransform());
-    AnimationMixer mixer(bone); mixer.clipAction(clip)->play(); mixer.update(0.25); CHECK(bone->pendingAnimation);
-    bool rejected = false;
-    std::thread wrongOwner([&] { try { mixer.joinEvaluation(); } catch (const std::logic_error&) { rejected = true; } });
-    wrongOwner.join(); CHECK(rejected && bone->pendingAnimation);
-    rejected = false;
-    std::thread wrongReader([&] { try { bone->materializeLocalTransform(); } catch (const std::logic_error&) { rejected = true; } });
-    wrongReader.join(); CHECK(rejected && bone->pendingAnimation);
-    mixer.joinEvaluation();
-    // Snapshot old bound spans, then mutate them while the worker owns a separate immutable copy.
-    mixer.update(0); clip->tracks[0].times[1] = 2; clip->tracks[0].values[3] = 40;
-    mixer.joinEvaluation(); bone->materializeLocalTransform(); CHECK(bone->position.x == 2.5);
-    mixer.update(0.25); mixer.joinEvaluation(); bone->materializeLocalTransform(); CHECK(bone->position.x == 10);
-    // Queued work survives replacement; a later update rejects changed storage before reading it.
-    mixer.update(0.25);
-    auto oldTimes = std::move(clip->tracks[0].times), oldValues = std::move(clip->tracks[0].values);
-    clip->tracks[0].times = {0, 1, 2}; clip->tracks[0].values = {900, 0, 0, 900, 0, 0, 900, 0, 0};
-    mixer.joinEvaluation(); bone->materializeLocalTransform(); CHECK(bone->position.x == 15);
-    rejected = false; try { mixer.update(0.25); } catch (const std::logic_error&) { rejected = true; }
-    CHECK(rejected && !bone->pendingAnimation);
-    oldTimes.clear(); oldTimes.shrink_to_fit(); oldValues.clear(); oldValues.shrink_to_fit();
-    rejected = false; try { mixer.update(0.25); } catch (const std::logic_error&) { rejected = true; }
-    CHECK(rejected && !bone->pendingAnimation); // no memcmp/eager evaluation of freed original storage
-    auto channel = std::make_shared<Bone>(); channel->enableTrackedTransform();
-    AnimationMixer scalar(channel); scalar.clipAction(std::make_shared<AnimationClip>("channel", 1, std::vector<KeyframeTrack>{
-        KeyframeTrack(".position[x]", TrackType::Number, {0, 1}, {0, 10})}))->play();
-    scalar.update(0.25); CHECK(channel->position.x == 2.5 && !channel->pendingAnimation && scalar.workerEvaluations() == 0);
-}
-
-#endif
-
 void mixer() {
-#ifndef __EMSCRIPTEN__
-    workerReplay(); workerReads(); workerOwnership();
-#endif
     cpuTiming();
     deferredMixer();
     const std::size_t diffs = differences(rigReplay().samples, kSamples, "sample");

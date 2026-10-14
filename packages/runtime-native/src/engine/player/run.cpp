@@ -901,7 +901,6 @@ int Session::initialize() {
                 // Same tick+frame CPU window as cpuFrameCpuMs; event-listener callbacks are excluded.
                 auto members = sample.members();
                 const auto& mixer = animation::AnimationMixer::cpuTiming;
-                members.emplace_back("animationWorkerEvaluationsTotal", json::Value::makeNumber(animation::AnimationMixer::workerEvaluationsTotal));
                 members.emplace_back("animationMixerCalls", json::Value::makeNumber(updateMixerCalls + mixer.calls - mixerBegin.calls));
                 members.emplace_back("animationMixerCpuMs", cpuFrameBegin >= 0 && mixer.clock && mixer.available
                     ? json::Value::makeNumber(updateMixerCpuMs + mixer.ms - mixerBegin.ms) : json::Value::makeNull());

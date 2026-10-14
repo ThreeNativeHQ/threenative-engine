@@ -5,7 +5,6 @@
 
 #include "check.h"
 #include "engine/animation/property_binding.h"
-#include "engine/animation/mixer.h"
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
 #include "engine/renderer/reflector.h"
@@ -3209,33 +3208,10 @@ void gpuJointProduction() {
             CHECK(accelerated.compileCallbacks == 1);
             CHECK(admittedPlan && *admittedPlan->valid); // unrelated compile callbacks do not own the live GPU plan
         }
-        std::unique_ptr<animation::AnimationMixer> worker;
-        if (frame == 1) {
-            const auto previous = std::getenv("TN_ANIMATION_WORKER");
-            const std::optional<std::string> saved = previous ? std::optional<std::string>(previous) : std::nullopt;
-#ifdef _WIN32
-            _putenv_s("TN_ANIMATION_WORKER", "1");
-#else
-            setenv("TN_ANIMATION_WORKER", "1", 1);
-#endif
-            worker = std::make_unique<animation::AnimationMixer>(accelerated.tips[0]);
-#ifdef _WIN32
-            _putenv_s("TN_ANIMATION_WORKER", saved ? saved->c_str() : "");
-#else
-            if (saved) setenv("TN_ANIMATION_WORKER", saved->c_str(), 1); else unsetenv("TN_ANIMATION_WORKER");
-#endif
-            worker->clipAction(std::make_shared<animation::AnimationClip>("worker-render", 1, std::vector<animation::KeyframeTrack>{
-                animation::KeyframeTrack(".position", animation::TrackType::Vector, {0, 1}, {0.45, -0.15, 0, 0.45, -0.15, 0})}))->play();
-            worker->update(0.25);
-            CHECK(accelerated.tips[0]->pendingAnimation && worker->workerEvaluations() == 0);
-            animation::PropertyBinding position(eager.tips[0], ".position");
-            const double p[3] = {double(float(0.45)), double(float(-0.15)), 0}; position.setValue(p, 0);
-        }
         const auto projectionBefore = Object3D::gpuProjectionVisits_;
         const auto maintenanceBefore = Object3D::gpuMaintenanceVisits_;
         const auto hierarchyBefore = Object3D::hierarchyVersion();
         database.render(gpu, accelerated.scene, accelerated.camera, {0, 0, 0, 1});
-        if (worker) CHECK(worker->workerEvaluations() == 1 && !accelerated.tips[0]->pendingAnimation);
         CHECK(Object3D::hierarchyVersion() == hierarchyBefore); // cold sky conversion owns no scene nodes
         CHECK(Object3D::gpuProjectionVisits_ - projectionBefore >= (frame == 2 ? 4 : 6)); // visible main/reflection boundaries, plus verdict scans
         if (!frame || frame == 2) CHECK(Object3D::gpuMaintenanceVisits_ > maintenanceBefore);
