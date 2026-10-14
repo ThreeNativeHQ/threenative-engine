@@ -199,7 +199,13 @@ describe("core constraints", () => {
           file !== "profiling/render-trap-audit.ts" &&
           file !== "index.ts",
       )
-      .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
+      .map((file) =>
+        // Type-only re-exports transport vocabulary without choosing runtime appearance.
+        withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")).replace(
+          /export\s+type\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?/gu,
+          " ",
+        ),
+      )
       .join("\n");
 
     expect(source).not.toMatch(/material|light|tonemapping|postprocessing|\.wgsl/iu);

@@ -57,6 +57,7 @@ real controls, reloads it and reproduces `scripts/fixtures/editor-authored.json`
 All scripts, playtest definitions, manual preparation helpers and fixtures under `scripts/` and `playtests/`:
 
 - Playtest scenarios:
+  - `playtests/editor-conflict.playtest.json`: checks concurrent editor saves preserve both clients’ edits.
   - `playtests/editor.playtest.json`: playtest scenario checking vertex count and appearance in the recovered editor view.
   - `playtests/export.playtest.json`: playtest scenario checking static GLB export loading and appearance.
   - `playtests/terrain.playtest.json`: primary playtest scenario for shared web/desktop showcase views.
@@ -84,6 +85,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/check-temperate.mts`: checks foliage cover distribution and LOD distance compaction.
 
 - Authoring, staging and data preparation:
+  - `scripts/fixtures/editor-conflict.ts`: mounts two editor clients against the same document for the conflict scenario.
   - `scripts/bake.mjs`: bakes source elevation data and generates canonical world JSON packages.
   - `scripts/consumer-world.mjs`: exports `openConsumerPage` to serve an installed consumer directory to headless Chromium and run vanilla full-world export against packed tarballs.
   - `scripts/stage-native-assets.mjs`: stages textures and models for native desktop/mobile bundles.

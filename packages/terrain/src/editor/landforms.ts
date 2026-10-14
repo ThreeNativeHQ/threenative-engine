@@ -33,6 +33,7 @@ export function landformPose(layer: Layer, worldSize: number, defaultSize: numbe
 }
 
 /**
+ * Convert a terrain-editor gizmo pose into a heightfield landform footprint.
  * @requires npm i -D @threenative/terrain
  * @situation apply a terrain-editor gizmo transform to a landform layer
  * @constraint finite coordinates and positive scales are required; X/Z rotations that overhang throw

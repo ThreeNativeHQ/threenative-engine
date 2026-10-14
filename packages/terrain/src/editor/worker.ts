@@ -17,7 +17,7 @@ interface IEditorWorkerScope {
   onmessage: ((event: MessageEvent<IWorkerRequest>) => Promise<void>) | null;
   postMessage(message: EditorWorkerReply, transfer?: Transferable[]): void;
 }
-const worker = globalThis as unknown as IEditorWorkerScope;
+const worker = globalThis as typeof globalThis & IEditorWorkerScope;
 const evaluator = new TerrainEvaluator({ cacheMB: 48 });
 worker.onmessage = async ({ data }) => {
   const { id, type, recipe, resolution, kind } = data;

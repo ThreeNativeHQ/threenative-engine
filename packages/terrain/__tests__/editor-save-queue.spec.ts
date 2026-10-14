@@ -44,7 +44,7 @@ function makeServer(initial: ISaveDocument) {
       return structuredClone(current);
     },
     snapshot(): ISaveSnapshot {
-      return { revision, document: structuredClone(current) };
+      return { revision, document: structuredClone(current), diagnostic: null };
     },
     hold(count: number) {
       holdCount = count;
@@ -95,7 +95,7 @@ function makeServer(initial: ISaveDocument) {
         current = { ...current, recipe: terrain.toJSON() as never };
       }
       revision = `r${++counter}`;
-      return { revision, document: structuredClone(current) };
+      return { revision, document: structuredClone(current), diagnostic: null };
     },
   };
 }
@@ -247,8 +247,8 @@ describe("terrain editor save queue", () => {
     const disk = server.document;
     expect(disk.recipe.config.seed).toBe(999);
     expect(ids(disk).sort()).toEqual(["a", "b", "hills"]);
-    expect(disk.recipe.assets).toEqual([{ id: "tex", kind: "image" }]);
-    expect(disk.note).toBe("external");
+    expect(disk.recipe).toHaveProperty("assets", [{ id: "tex", kind: "image" }]);
+    expect(disk).toMatchObject({ note: "external" });
   });
 
   it("keeps local edits when an external snapshot arrives during a held save", async () => {
@@ -282,9 +282,10 @@ describe("terrain editor save queue", () => {
     server.release();
     await queue.flush();
     expect(ids(server.document).sort()).toEqual(["a", "b", "c", "hills"]);
-    expect(server.document.recipe.layers.find((layer) => layer.id === "b")?.params?.amplitude).toBe(
-      11,
-    );
+    expect(server.document.recipe.layers.find((layer) => layer.id === "b")).toMatchObject({
+      type: "noise",
+      params: { amplitude: 11 },
+    });
     expect(queue.unsent.length).toBe(0);
   });
 
@@ -303,9 +304,10 @@ describe("terrain editor save queue", () => {
     server.release();
     await queue.flush();
     expect(ids(server.document).sort()).toEqual(["a", "b", "c", "hills"]);
-    expect(server.document.recipe.layers.find((layer) => layer.id === "b")?.params?.amplitude).toBe(
-      11,
-    );
+    expect(server.document.recipe.layers.find((layer) => layer.id === "b")).toMatchObject({
+      type: "noise",
+      params: { amplitude: 11 },
+    });
     expect(server.document.recipe.config.seed).toBe(999);
     expect(queue.unsent.length).toBe(0);
   });
@@ -322,7 +324,10 @@ describe("terrain editor save queue", () => {
       .toJSON();
     queue.record(doc(local));
     await queue.flush();
-    expect(server.document.recipe.layers.find((l) => l.id === "hills")?.params?.amplitude).toBe(42);
+    expect(server.document.recipe.layers.find((layer) => layer.id === "hills")).toMatchObject({
+      type: "noise",
+      params: { amplitude: 42 },
+    });
     local = Terrain.fromJSON(local as never)
       .toggle("hills", false)
       .toJSON();
@@ -361,11 +366,13 @@ describe("terrain editor save queue", () => {
   it("sends a recipe asset change as the whole document", async () => {
     const server = makeServer(doc(recipe()));
     const queue = makeQueue(server);
-    const next = structuredClone(server.document.recipe);
-    next.assets = [{ id: "tex", kind: "image" }];
+    const next = {
+      ...structuredClone(server.document.recipe),
+      assets: [{ id: "tex", kind: "image" }],
+    };
     queue.record(doc(next));
     await queue.flush();
-    expect(server.document.recipe.assets).toEqual([{ id: "tex", kind: "image" }]);
+    expect(server.document.recipe).toHaveProperty("assets", [{ id: "tex", kind: "image" }]);
     expect(ids(server.document)).toEqual(["hills"]);
   });
 

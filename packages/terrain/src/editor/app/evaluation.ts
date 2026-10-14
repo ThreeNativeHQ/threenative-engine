@@ -13,7 +13,6 @@ import type { IProjectAsset } from "../assets.js";
 import { fillIcons, icon } from "../icons.js";
 import { PRESETS, createPreset } from "../presets.js";
 import { SaveQueue, externalSnapshotAction } from "../saveQueue.js";
-import type { ISaveDocument, ISaveSnapshot } from "../saveQueue.js";
 import type { IAuthoringDocument, IEditorSnapshot } from "../server.js";
 import { inspectSpatial } from "../spatialInspector.js";
 import type { EditorWorkerReply } from "../worker.js";
@@ -273,28 +272,27 @@ export function installSaveQueue(c: EditorSession): void {
   document.body.append(panel);
   c.unsentSignature = "";
   c.saveQueue = new SaveQueue({
-    base: c.saved as unknown as ISaveSnapshot,
-    commit: async (transaction) =>
-      c.commit(transaction as Parameters<typeof c.commit>[0]) as unknown as ISaveSnapshot,
-    getSnapshot: async () => c.getSnapshot() as unknown as ISaveSnapshot,
+    base: c.saved,
+    commit: async (transaction) => c.commit(transaction),
+    getSnapshot: async () => c.getSnapshot(),
     onSaved: (snapshot, local) => {
       if (c.disposed) return;
-      c.saved = snapshot as unknown as IEditorSnapshot;
+      c.saved = snapshot;
       c.revision = snapshot.revision;
-      c.view.setDocument(local as unknown as IAuthoringDocument, c.revision);
+      c.view.setDocument(local, c.revision);
       if (JSON.stringify(c.terrain.toJSON()) !== JSON.stringify(local.recipe)) {
         c.loading = true;
         try {
-          c.terrain.loadJSON(local.recipe as never);
+          c.terrain.loadJSON(local.recipe);
         } finally {
           c.loading = false;
         }
         c.renderLayers();
       }
-      c.renderCameras(local as unknown as IAuthoringDocument);
+      c.renderCameras(local);
       c.renderEnvironment();
       c.renderAssets();
-      c.syncAssets(local as unknown as IAuthoringDocument);
+      c.syncAssets(local);
       c.build();
     },
     onNotify: (message) => {
@@ -306,14 +304,14 @@ export function installSaveQueue(c: EditorSession): void {
       if (JSON.stringify(c.terrain.toJSON()) !== JSON.stringify(local.recipe)) {
         c.loading = true;
         try {
-          c.terrain.loadJSON(local.recipe as never);
+          c.terrain.loadJSON(local.recipe);
         } finally {
           c.loading = false;
         }
         c.renderLayers();
         c.build();
       }
-      c.view.setDocument(local as unknown as IAuthoringDocument, c.revision);
+      c.view.setDocument(local, c.revision);
       renderUnsent(c);
       c.saving = c.saveQueue.hasPending();
       if (c.saving) document.body.dataset.saving = "true";
@@ -330,11 +328,11 @@ export function installSaveQueue(c: EditorSession): void {
 export async function changed(c: EditorSession): Promise<void> {
   c.renderLayers();
   if (c.loading || c.disposed) return;
-  const next = { ...c.saved.document, recipe: c.terrain.toJSON() } as unknown as ISaveDocument;
+  const next = { ...c.saved.document, recipe: c.terrain.toJSON() };
   if (!c.saveQueue.hasLocalIntent() && c.saveQueue.revision !== c.saved.revision)
-    c.saveQueue.adopt(c.saved as unknown as ISaveSnapshot);
+    c.saveQueue.adopt(c.saved);
   c.saveQueue.record(next);
-  c.view.setDocument(c.saveQueue.localDocument as unknown as IAuthoringDocument, c.revision);
+  c.view.setDocument(c.saveQueue.localDocument, c.revision);
   c.build();
   await c.saveQueue.flush();
 }
@@ -462,13 +460,13 @@ export function installEvaluation(c: EditorSession) {
   c.saved = c.initial;
   installSaveQueue(c);
   c.subscribe((snapshot) => {
-    const action = externalSnapshotAction(c.saveQueue, snapshot as unknown as ISaveSnapshot);
+    const action = externalSnapshotAction(c.saveQueue, snapshot);
     if (action === "defer") return;
     if (action === "ignore") {
       c.useSnapshot(snapshot);
       return;
     }
-    c.saveQueue.adopt(snapshot as unknown as ISaveSnapshot);
+    c.saveQueue.adopt(snapshot);
     c.saved = snapshot;
     c.useSnapshot(snapshot);
   });

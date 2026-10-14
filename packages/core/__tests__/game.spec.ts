@@ -101,7 +101,12 @@ describe("IGame", () => {
         "Asset 'worlds/forest/world.glb' is not listed in the asset manifest 'assets.manifest.json'.";
       vi.stubGlobal(
         "fetch",
-        vi.fn(async () => new Response(JSON.stringify({ version: 1, entries: {} }))),
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({ version: 1, entries: { "other.glb": { output: "other.glb" } } }),
+            ),
+        ),
       );
       const failure = vi.fn();
       const off = onLaunchFailure(failure);

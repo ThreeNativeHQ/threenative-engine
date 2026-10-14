@@ -69,7 +69,15 @@ function status(
   return new Promise((resolve, reject) => {
     const req = request(url, { method, headers }, (response) => {
       response.resume();
-      response.on("end", () => resolve(response.statusCode ?? 0));
+      response.on("error", reject);
+      response.on("end", () => {
+        const code = response.statusCode ?? 0;
+        if (req.closed) resolve(code);
+        else {
+          req.once("close", () => resolve(code));
+          req.destroy();
+        }
+      });
     });
     req.on("error", reject);
     req.end(data);

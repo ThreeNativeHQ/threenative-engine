@@ -7630,7 +7630,7 @@
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function transformedLandform( layer: Layer, position: Vector3, quaternion: Quaternion, scale: Vector3, anchor: number, ): Layer { … }",
       "situations": ["apply a terrain-editor gizmo transform to a landform layer"],
-      "summary": "transformedLandform",
+      "summary": "Convert a terrain-editor gizmo pose into a heightfield landform footprint.",
       "supersedes": [],
       "symbol": "transformedLandform"
     },

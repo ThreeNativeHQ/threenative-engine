@@ -1,27 +1,17 @@
 import { type PatchCommand, Terrain } from "../core/terrain.js";
 
-/** The document fields the save queue compares; validated deeply by the server, read shallowly here. */
-export interface ISaveRecipe {
-  config: Record<string, unknown>;
-  layers: SaveLayer[];
-  [key: string]: unknown;
-}
-export type SaveLayer = {
+import type { ITerrainDocument } from "../core/types.js";
+import type { IAuthoringDocument, IEditorSnapshot } from "./server.js";
+
+export type ISaveRecipe = ITerrainDocument;
+export type ISaveDocument = IAuthoringDocument;
+export type ISaveSnapshot = IEditorSnapshot;
+export interface ISaveLayer {
   id: string;
   enabled?: boolean;
-  params?: Record<string, unknown>;
-  [key: string]: unknown;
-};
-export interface ISaveDocument {
-  version: 1;
-  recipe: ISaveRecipe;
-  [key: string]: unknown;
+  params?: object;
 }
-export interface ISaveSnapshot {
-  revision: string;
-  document: ISaveDocument;
-  diagnostic?: string | null;
-}
+export type SaveLayer = ISaveLayer;
 /**
  * One local intent in the ordered journal: the change from the document shown just before it
  * (`baseline`) to the document shown just after (`target`), plus the layer commands when a
@@ -40,11 +30,9 @@ interface ISaveIntent extends IUnsentEdit {
   wholeDocument: boolean;
   state: "queued" | "inflight" | "rejected";
 }
-export interface ISaveTransaction {
-  baseRevision: string;
-  commands?: readonly PatchCommand[];
-  document?: ISaveDocument;
-}
+export type ISaveTransaction =
+  | { baseRevision: string; commands: readonly PatchCommand[]; document?: never }
+  | { baseRevision: string; document: ISaveDocument; commands?: never };
 /** What an external snapshot (reload, restore, SSE) does to the local view. */
 export type ExternalSnapshotAction = "ignore" | "defer" | "adopt" | "apply";
 
@@ -87,10 +75,10 @@ export function diffLayers(baseLayers: SaveLayer[], nextLayers: SaveLayer[]): Pa
   return commands;
 }
 
-function recipeOf(document: ISaveDocument | undefined): ISaveRecipe {
-  return (document?.recipe ?? { config: {}, layers: [] }) as ISaveRecipe;
+function recipeOf(document: ISaveDocument): ISaveRecipe {
+  return document.recipe;
 }
-function layersOf(document: ISaveDocument | undefined): SaveLayer[] {
+function layersOf(document: ISaveDocument): SaveLayer[] {
   return recipeOf(document).layers ?? [];
 }
 function withoutRecipe(document: ISaveDocument): Record<string, unknown> {
@@ -117,12 +105,7 @@ function applyToRecipe(recipe: ISaveRecipe, commands: readonly PatchCommand[]): 
   if (commands.length === 0) return structuredClone(recipe);
   const terrain = Terrain.fromJSON(recipe as never);
   terrain.applyPatch(commands as never);
-  const document = terrain.toJSON();
-  return {
-    ...document,
-    config: { ...document.config },
-    layers: document.layers.map((layer) => ({ ...layer, params: { ...layer.params } })),
-  };
+  return terrain.toJSON();
 }
 
 /**

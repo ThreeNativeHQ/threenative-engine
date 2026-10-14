@@ -155,12 +155,18 @@ describe("terrain release metadata", () => {
     return root;
   }
 
-  it("keeps the shipped terrain peers when no cohort package names them", async () => {
+  it("syncs shipped internal terrain peers and preserves external peers", async () => {
     const root = await fixture(peerFiles);
-    syncPeerRanges(root, cohort);
-    expect(fs.readFileSync(path.join(root, terrainManifest), "utf8")).toBe(
-      fs.readFileSync(repoFile(terrainManifest), "utf8"),
-    );
+    const before = JSON.parse(fs.readFileSync(path.join(root, terrainManifest), "utf8"));
+    syncPeerRanges(root, new Map([...cohort, ["@threenative/physics", "0.3.9"]]));
+    expect(JSON.parse(fs.readFileSync(path.join(root, terrainManifest), "utf8"))).toEqual({
+      ...before,
+      peerDependencies: {
+        ...before.peerDependencies,
+        "@threenative/core": ">=0.3.9 <0.4.0",
+        "@threenative/physics": ">=0.3.9 <0.4.0",
+      },
+    });
   });
 
   it("syncs a terrain peer that names an internal cohort package", async () => {

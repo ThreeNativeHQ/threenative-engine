@@ -6347,7 +6347,7 @@ const controller = new TerrainEditorController(editorUrl); const snapshot = awai
 
 ### `transformedLandform`
 
-`function` — transformedLandform
+`function` — Convert a terrain-editor gizmo pose into a heightfield landform footprint.
 
 ```ts
 export function transformedLandform( layer: Layer, position: Vector3, quaternion: Quaternion, scale: Vector3, anchor: number, ): Layer { … }

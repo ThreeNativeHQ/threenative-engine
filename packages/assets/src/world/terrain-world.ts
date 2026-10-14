@@ -331,7 +331,7 @@ export async function cookTerrainWorld(
   options: ICookTerrainWorldOptions | IPreparedTerrainWorldOptions,
 ): Promise<ICookTerrainWorldResult | { worldGlb: Uint8Array }> {
   if ("preparedWorld" in options) {
-    const json = options.preparedWorld as unknown as GLTF.IGLTF;
+    const json = options.preparedWorld as Partial<GLTF.IGLTF>;
     if (json.asset?.version !== "2.0" || !json.scenes?.length || !json.meshes?.length)
       throw new Error("Prepared world requires a nonempty glTF 2.0 scene");
     if (
@@ -345,7 +345,7 @@ export async function cookTerrainWorld(
         throw new Error("Prepared world resources must be embedded base64 data URIs");
     }
     const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
-    const doc = await io.readJSON({ json, resources: {} });
+    const doc = await io.readJSON({ json: { ...json, asset: json.asset }, resources: {} });
     if (
       !doc
         .getRoot()
