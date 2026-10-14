@@ -341,7 +341,9 @@ public:
      * PRD-554: a UI overlay's newest frame, premultiplied 8-bit rows from the top (`bgra` for a desktop
      * web view's B,G,R,A; `stride` bytes per row, 0 for tight), which blitTo draws "over" the frame,
      * stretched to the target. `version` names the pixels: the same version uploads nothing, so a
-     * steady UI costs one draw and no copy. A null `pixels` removes the overlay.
+     * steady UI costs one draw and no copy. A null `pixels` removes the overlay. With a GPU thread the upload
+     * runs there from `pixels` itself, which must stay valid until that thread's next wait() (a UI overlay
+     * frame is valid until the next uiOverlayFrame call, which the player makes only after that wait).
      */
     void setOverlay(const uint8_t* pixels, uint32_t width, uint32_t height, uint64_t version, uint32_t stride = 0,
                     bool bgra = false);

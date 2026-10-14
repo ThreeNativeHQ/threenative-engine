@@ -71,12 +71,12 @@ double measure(int count) {
         const auto items = database.prepare(scene, camera, lights);
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         // Frustum culling (the renderer's default) keeps only the cubes the orbiting camera can see in
-        // the batch, so its member count is bounded by `count` and no longer equal to it. Every cube is
-        // still re-read each frame: `rebuilds()` below counts them all.
+        // the batch, so its member count is bounded by `count` and no longer equal to it. A cube builds its
+        // record the first time a frustum holds it and never again (PRD-610: an unseen cube builds nothing).
         CHECK(items.size() == 2 && database.lastBatches().second > 0 &&
               database.lastBatches().second <= static_cast<uint32_t>(count));
         CHECK(database.diagnostics().empty());
-        CHECK(database.rebuilds() == static_cast<uint64_t>(count + 1));
+        CHECK(database.rebuilds() <= static_cast<uint64_t>(count + 1));
         if (frame >= 60) {
             times.push_back(ms);
             writes.push_back(std::chrono::duration<double, std::milli>(start - writeStart).count());

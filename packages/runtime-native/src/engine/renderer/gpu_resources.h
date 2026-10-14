@@ -103,7 +103,8 @@ public:
     GpuStatus writeBuffer(Handle buffer, uint64_t offset, const void* data, uint64_t size);
     /** Bytes sent through queue writes so far; the geometry cache test bounds it. */
     uint64_t queueWriteBytes() const { return queueWriteBytes_; }
-    GpuStatus writeTexture(Handle texture, const void* pixels, uint64_t size);
+    // `borrowed`: the caller keeps `pixels` alive until the GPU thread's next wait(), so a posted write needs no copy.
+    GpuStatus writeTexture(Handle texture, const void* pixels, uint64_t size, bool borrowed = false);
 
     /** Completes on a later drain of the event queue, never inside this call. */
     GpuStatus readBuffer(Handle buffer, uint64_t offset, uint64_t size, ReadbackCallback done);

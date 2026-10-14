@@ -224,7 +224,7 @@ GpuStatus GpuResources::writeBuffer(Handle buffer, uint64_t offset, const void* 
     return GpuStatus::Ok;
 }
 
-GpuStatus GpuResources::writeTexture(Handle texture, const void* pixels, uint64_t size) {
+GpuStatus GpuResources::writeTexture(Handle texture, const void* pixels, uint64_t size, bool borrowed) {
     GpuStatus status;
     Record* target = record(texture, kTexture, status);
     if (!target) return status;
@@ -236,7 +236,13 @@ GpuStatus GpuResources::writeTexture(Handle texture, const void* pixels, uint64_
     layout.bytesPerRow = target->width * target->bytesPerPixel;
     layout.rowsPerImage = target->height;
     const WGPUExtent3D extent = {target->width, target->height, 1};
-    if (shared_->thread) {
+    if (shared_->thread && borrowed) {
+        wgpuTextureAddRef(destination.texture);
+        shared_->thread->post([queue = queue_, destination, layout, extent, pixels, size] {
+            wgpuQueueWriteTexture(queue, &destination, pixels, size, &layout, &extent);
+            wgpuTextureRelease(destination.texture);
+        });
+    } else if (shared_->thread) {
         // Posted with its own copy, like writeBuffer.
         wgpuTextureAddRef(destination.texture);
         std::vector<uint8_t> bytes(static_cast<const uint8_t*>(pixels), static_cast<const uint8_t*>(pixels) + size);

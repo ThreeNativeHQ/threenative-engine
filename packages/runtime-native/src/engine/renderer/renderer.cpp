@@ -3148,7 +3148,7 @@ void Renderer::setOverlay(const uint8_t* pixels, uint32_t width, uint32_t height
         for (uint32_t y = 0; y < height; ++y) std::memcpy(overlayRows_.data() + size_t(y) * row, pixels + size_t(y) * stride, row);
         pixels = overlayRows_.data();
     }
-    gpu_.writeTexture(overlay_, pixels, uint64_t(row) * height);
+    gpu_.writeTexture(overlay_, pixels, uint64_t(row) * height, true);  // a full-screen copy per HUD change was 4% of Midway
     overlayVersion_ = version;
     ++overlayUploads_;
 }
