@@ -29,15 +29,17 @@ int main(int argc, char** argv) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
     auto* engine = state->engine;
     state->profiling.disableFrameOpStreamForTesting = direct;
+    bool supported = false;
     bool granted = false;
 #if defined(MYSTRAL_WEBGPU_DAWN)
-    const bool supported = wgpuAdapterHasFeature(state->adapter, WGPUFeatureName_TransientAttachments);
+    supported = wgpuAdapterHasFeature(state->adapter, WGPUFeatureName_TransientAttachments);
     granted = wgpuDeviceHasFeature(state->device, WGPUFeatureName_TransientAttachments);
     if (granted != (supported && !off)) {
         std::cerr << "FAIL: advertised transient feature must be requested unless explicitly disabled\n";
         return 1;
     }
 #endif
+    engine->setGlobalProperty("__tnTransientSupported", engine->newBoolean(supported));
     engine->setGlobalProperty("__tnTransientGranted", engine->newBoolean(granted));
     engine->setGlobalProperty(
         "__tnFlush",
@@ -46,7 +48,17 @@ int main(int argc, char** argv) {
             return engine->newUndefined();
         }));
     if (!engine->evalScript(R"JS(
-      globalThis.device = navigator.gpu.requestAdapter().requestDevice();
+      globalThis.adapter = navigator.gpu.requestAdapter();
+      globalThis.device = adapter.requestDevice();
+      const adapterVisible = adapter.features.has('transient-attachments');
+      const deviceVisible = device.features.has('transient-attachments');
+      if (adapterVisible !== __tnTransientSupported)
+        throw Error('adapter transient feature visibility differs from actual support');
+      if (deviceVisible !== __tnTransientGranted)
+        throw Error('device transient feature visibility differs from actual grant');
+      if (adapter.features.has('unknown-feature') || device.features.has('unknown-feature'))
+        throw Error('unknown feature must remain absent');
+      console.log('TN_TRANSIENT_FEATURES:' + JSON.stringify({adapter: adapterVisible, device: deviceVisible}));
       globalThis.makeTarget = (extra = {}) => device.createTexture({
         size: [4, 4], format: 'rgba8unorm', usage: 16, sampleCount: 4, ...extra,
       });
