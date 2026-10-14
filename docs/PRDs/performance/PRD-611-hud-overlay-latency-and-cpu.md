@@ -52,6 +52,10 @@ Take the pixels from the page's own compositor frames instead of a second full r
 
 ## Results
 
+Integration audit (2026-10-13): the requested HUD commits `8a2270834`, `8b3c35c96`, `19d17d4f7` and first-present ordering fix `db23a199f` are already ancestors of `535749525`; no duplicate cherry-pick is needed. The frozen `~/.cache/tmp-tn/pkg-ac10-winner-hud-v1/tn-native-engine-player-v8` is a regular file with SHA-256 `ca0d2db010a598e4664a0e9bf1094df37b93e380d5d73e06e9fb33f969269b24`, contains the capture/pacing controls, and reports `capture=compositor` in `winner-hud-v1-desktop/console.json`. That fresh flight passed parity and recorded whole-run HUD p50/p95 **39/65 ms** (249 one-second observations), or **42/67 ms** after player tick 300 (197 observations). Host load was **37.04 to 20.97 on 24 cores**: these latency readings do not qualify an isolated improvement or close AC-5. The old `cache1-a1`/`cache1-b1` players reported no compositor marker; their 105/107 ms p95 cannot be attributed to this integrated HUD build.
+
+An attempted same-player snapshot/compositor comparison is retained under `hud-integrated-snapshot-a1-desktop` and `hud-integrated-compositor-b1-desktop` (parity passed both). These omitted `TN_PLAYER_METRICS=1`, so their 14/15 one-second HUD observations lack the intended player-tick mapping and do not qualify steady-flight latency. The corrected snapshot arm `hud-integrated-metrics-snapshot-a1-desktop` was stopped when unrelated CPU workers drove load to **116.14 on 24 cores**; its run-local `timing-exclusion.txt` records the conflict, and the runner exited 2 during cleanup. Its player was confirmed gone before releasing the lane. No corrected compositor arm was launched. Source and binary integration are verified; controlled current-build HUD latency and the 16.7 ms p95 target remain unverified.
+
 Midway flight on this machine (Xvfb, loaded host, 2026-10-13). `lastRoundTripMs` is the one-second `TN_UI_SNAPSHOT` line, HUD frames are `settled` events, about 2500 game frames per flight.
 
 | Flight | Capture | Round trip p50/p95 | HUD frames | Game frame p50/p95 |
