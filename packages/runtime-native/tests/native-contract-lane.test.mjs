@@ -96,9 +96,9 @@ test("should fail when a declared test target is not executed", () => {
   // cache contract; +1 for PRD-399's presentation-pacing contract; +1 for PRD-465 Phase 2's
   // MetaHuman facial rig bindings contract; +1 for VQ07's surface acquisition status contract.; +1 for the desktop CSS UI overlay contract.
   // Bump alongside any new add_executable contract target.
-  // 49 targets include both exposure graph and fog presentation contracts.
+  // 50 targets include the transient attachment host contract.
   // itself, so the literal is a tripwire for an unreviewed target, not the source of truth.
-  assert.equal(discovered.length, 49);
+  assert.equal(discovered.length, 50);
   const missingExposure = { ...executionContracts };
   Reflect.deleteProperty(missingExposure, "threenative-exposure-graph-test");
   assert.throws(() => validateExecutionContracts(discovered, missingExposure),
