@@ -259,7 +259,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   runner: "c32b137ce45a000a8c71a7c502dabb099720a0954142edd0f93f2edef82c9f09",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
   sailing: "4558d95ad1035b460a870d3adff9e5faadf71e3b552179b7f42733f13dc66f82",
-  shooter: "1883c82288c2932f07945d1ce00cc4dfb0c3f19341b93d88b8ebd91e57aac323",
+  shooter: "dbedf82814f7c003fbe373ddd4dea401ab4d77d4e2c00be9d1d5dde7ab043837",
   snow: "cf8cb76bc6c1653c2c1cbb766494fa1e24ab9f044d61f4664498f17329453adf",
   starter: "472e2ec3a7e124e84edab5da5c65490e403d8b6151688b4c68997a96cd69a8aa",
   "tower-defense": "90b330ef0fb22c2e533e83f1d2fa0b8ead6978359957025a942c7f098aec823d",
