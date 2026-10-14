@@ -134,12 +134,6 @@ function clipRootMotionSpeed(clip: AnimationClip): number {
 function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   const objects: Object3D[] = [];
   root.traverse((object) => objects.push(object));
-  const restore = objects.map((object) => ({
-    object,
-    position: object.position.clone(),
-    quaternion: object.quaternion.clone(),
-    scale: object.scale.clone(),
-  }));
 
   const mixer = new AnimationMixer(root);
   const action = mixer.clipAction(clip);
@@ -154,7 +148,13 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
       root.updateMatrixWorld(true);
       for (let index = 0; index < objects.length; index += 1) {
         // The frame's updateMatrixWorld already holds every bone; getWorldPosition re-walks ancestors.
-        scratchWorld.setFromMatrixPosition((objects[index] as Object3D).matrixWorld);
+        const object = objects[index] as Object3D & {
+          __tnCopyMatrixWorld?: (target: Matrix4) => void;
+        };
+        if (object.__tnCopyMatrixWorld !== undefined) {
+          object.__tnCopyMatrixWorld(scratchMatrixWorld);
+          scratchWorld.setFromMatrixPosition(scratchMatrixWorld);
+        } else scratchWorld.setFromMatrixPosition(object.matrixWorld);
         (paths[index] as { x: number; y: number; z: number }[]).push({
           x: scratchWorld.x,
           y: scratchWorld.y,
@@ -163,13 +163,9 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
       }
     }
   } finally {
+    // Stopping restores every animated binding saved by this isolated mixer when it played.
     action.stop();
     mixer.uncacheClip(clip);
-    for (const entry of restore) {
-      entry.object.position.copy(entry.position);
-      entry.object.quaternion.copy(entry.quaternion);
-      entry.object.scale.copy(entry.scale);
-    }
     root.updateMatrixWorld(true);
   }
 

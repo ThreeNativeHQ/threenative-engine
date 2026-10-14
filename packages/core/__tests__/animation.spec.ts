@@ -10,6 +10,7 @@ import {
   NumberKeyframeTrack,
   Object3D,
   PropertyBinding,
+  QuaternionKeyframeTrack,
   Skeleton,
   SkinnedMesh,
   VectorKeyframeTrack,
@@ -870,6 +871,54 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
         [0, 0, 0.25, 0, 0, -0.35, 0, 0.25, 0, 0, 0, 0.25],
       ),
     ]);
+
+  it("calibrates through owned world snapshots and restores animated transforms without cloning aliases", () => {
+    const root = new Group();
+    const foot = new Bone();
+    foot.name = "Foot";
+    root.add(foot);
+    root.position.set(7, 3, 5);
+    foot.position.set(0.2, 0.4, 0.1);
+    foot.rotation.set(0.2, 0.3, 0.4);
+    foot.scale.set(2, 3, 4);
+    const clip = plantedWalk();
+    clip.tracks.push(
+      new QuaternionKeyframeTrack("Foot.quaternion", [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]),
+      new VectorKeyframeTrack("Foot.scale", [0, 1], [1, 1, 1, 2, 2, 2]),
+    );
+    const originals = [root, foot].map((object) => ({
+      object,
+      position: object.position,
+      quaternion: object.quaternion,
+      scale: object.scale,
+      values: [object.position.toArray(), object.quaternion.toArray(), object.scale.toArray()],
+    }));
+    const copies = [root, foot].map((object) => {
+      const copy = vi.fn((target: Matrix4) => target.copy(object.matrixWorld));
+      Object.assign(object, { __tnCopyMatrixWorld: copy });
+      return copy;
+    });
+    const clones = originals.flatMap(({ position, quaternion, scale }) => [
+      vi.spyOn(position, "clone"),
+      vi.spyOn(quaternion, "clone"),
+      vi.spyOn(scale, "clone"),
+    ]);
+    try {
+      const player = new AnimationPlayer({ root, clips: [clip] });
+      player.play("walk");
+      expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 1);
+      for (const copy of copies) expect(copy).toHaveBeenCalledTimes(65);
+      for (const clone of clones) expect(clone).not.toHaveBeenCalled();
+      for (const { object, position, quaternion, scale, values } of originals) {
+        expect(object.position).toBe(position);
+        expect(object.quaternion).toBe(quaternion);
+        expect(object.scale).toBe(scale);
+        expect([position.toArray(), quaternion.toArray(), scale.toArray()]).toEqual(values);
+      }
+    } finally {
+      for (const clone of clones) clone.mockRestore();
+    }
+  });
 
   it("reads the sampled rig's world positions without re-walking each bone's ancestors", () => {
     // One world update per sampled frame covers the rig; a per-bone walk costs a native back end
