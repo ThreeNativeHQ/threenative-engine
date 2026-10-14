@@ -543,11 +543,27 @@ describe("WorldCells automatic impostors", () => {
     // The bake is independent of the GPU-driven main pass: this renderer is WebGPU but carries no
     // GPU-scene features, so the scene stays off while the atlas still lands on the CPU path.
     expect(world.stats().gpuScene.on).toBe(false);
+    expect(world.stats().levelRefilters).toBeGreaterThan(0);
     world.dispose();
   });
 
   it("holds mesh validation to the dispatch gates during an impostor handoff", async () => {
-    stubManifestFetch(pineOnly());
+    const pkg = pineOnly();
+    const cell = pkg.cells[0];
+    const run = cell?.runs[0];
+    if (cell === undefined || run === undefined) throw new Error("pine fixture run missing");
+    stubManifestFetch({
+      ...pkg,
+      cells: [
+        {
+          ...cell,
+          runs: [
+            { ...run, count: 40 },
+            { ...run, offset: run.offset + 40, count: run.count - 40 },
+          ],
+        },
+      ],
+    });
     const keyed = vi.spyOn(WorldGpuScene.prototype, "key");
     const world = await loadPine(treeLoader(), {
       autoLod: { fovY: 120, viewportHeight: 100 },
@@ -570,6 +586,11 @@ describe("WorldCells automatic impostors", () => {
     await flush();
     const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
     const renderer = gpuValidationRenderer(scene, camera);
+    expect(world.stats().admission.backlog).toBe(0);
+    expect(world.stats().admission.deferred).toBe(0);
+    expect(world.stats().impostor.pending).toBe(1);
+    const refilters = world.stats().levelRefilters;
+    const sources = scene.placements.map((placement) => ({ ...placement }));
     // Offset the cadence so the first check lands on the exact update that finishes the 16-view bake.
     for (let dispatch = 0; dispatch < 14; dispatch += 1) scene.dispatch(renderer, camera);
     for (let view = 0; view < 15; view += 1) {
@@ -578,7 +599,24 @@ describe("WorldCells automatic impostors", () => {
     }
     await flush();
 
+    // Drain any post-publication admission: the regression used to enqueue two real CPU jobs.
+    world.update(renderer, camera);
+    await flush();
+    expect(world.stats().levelRefilters - refilters).toBe(0);
+    expect(scene.placements).toEqual(sources);
     expect(world.stats().impostor.assets).toBe(1);
+    const terminal = partsOf(world, "pine", 2, 0)[0];
+    const region = scene.regionOf("pine:2:0");
+    if (terminal === undefined || region === undefined || scene.args === undefined)
+      throw new Error("terminal impostor GPU draw missing");
+    expect(terminal.geometry.index?.count).toBe(6);
+    expect((terminal.material as Material).userData.tnWholeAssetImpostor).toBe(true);
+    expect(terminal.geometry.indirect).toBe(scene.args);
+    expect(terminal.instanceMatrix).toBe(scene.drawn);
+    expect(terminal.material).not.toBe(partsOf(world, "pine", 0, 0)[0]?.material);
+    const args = new Uint32Array(await renderer.readback(scene.args));
+    expect(args[region.argsIndex * 5]).toBe(6);
+    expect(args[region.argsIndex * 5 + 1]).toBeGreaterThan(0);
     expect(scene.validation.compared).toBeGreaterThan(0);
     expect(scene.validation.mismatched).toBe(0);
     expect(scene.validation.matricesMismatched).toBe(0);

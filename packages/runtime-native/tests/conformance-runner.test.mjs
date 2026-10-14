@@ -9,6 +9,7 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync 
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
+import ts from "typescript";
 import { afterEach, expect, test, vi } from "vitest";
 import { workflowBlockScalars } from "./runtime-test-utils.js";
 import { absoluteErrorRatio } from "../conformance/metrics.mjs";
@@ -143,6 +144,94 @@ test("World GPU readback fences 200 completed frame validations before disposal"
   assert.match(source, /stats\.levelRefilters === detail\.readyRefilters/u);
   assert.match(source, /detail\.targetIdentities === 4/u);
   assert.match(source, /detail\.disposeEvents === 4/u);
+});
+
+test.each([{ idleFrames: 2, readbackFrames: 3 }, { idleFrames: 3, readbackFrames: 5 }])("World GPU readback awaits teardown before scheduling another validation %j", async ({ idleFrames, readbackFrames }) => {
+  const fixture = readFileSync(join(root, "conformance/scenes/shared/world-gpu-scene-readback.js"), "utf8");
+  const support = readFileSync(join(root, "conformance/scenes/shared/scene-support.js"), "utf8");
+  const declaration = (source, name, method = false) => {
+    const file = ts.createSourceFile("fixture.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    let found;
+    const visit = node => {
+      if ((method ? ts.isMethodDeclaration(node) : ts.isFunctionDeclaration(node)) && node.name?.getText(file) === name) found = node.getText(file);
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+    assert.ok(found, `actual fixture declaration missing: ${name}`);
+    return found.replace(/^export /u, "");
+  };
+  let callbacks = [];
+  const raf = callback => { callbacks.push(callback); };
+  const afterFrames = count => new Promise(resolve => {
+    const advance = () => { if (--count === 0) resolve(); else raf(advance); };
+    raf(advance);
+  });
+  const detail = {
+    framewise: 200, steadyFrames: 199, terminalDrawFrames: 184, releaseEvents: 400,
+    disposeEvents: 2, targetIdentities: 4, readyRefilters: 0, reloadReady: false,
+    originalNonemptyFrames: 200, failure: "", reloadFailures: 0,
+  };
+  const targets = new Map([1, 2, 3, 4].map(id => [id, true]));
+  const releases = new Map([[1, 15], [2, 15], [3, 185], [4, 185]]);
+  let validating = false;
+  let disposed = false;
+  let validations = 0;
+  const disposedIdentities = new Map([[1, 1], [2, 1]]);
+  const disposePair = () => {
+    for (const id of [3, 4]) disposedIdentities.set(id, (disposedIdentities.get(id) ?? 0) + 1);
+    detail.disposeEvents += 2;
+  };
+  const world = {
+    update() {},
+    stats: () => ({ admission: { backlog: 0, deferred: 0 }, gpuScene: { dispatches: 201 }, loadsInFlight: 0, loadsQueued: 0, pendingPrewarm: 0, levelRefilters: 0, failures: 0, impostor: { assets: 1, pending: 0, atlasBytes: 2796160 } }),
+    async validateGpuFrame() {
+      validations += 1;
+      validating = true;
+      // Queue submission completion and JS map/release completion have independent ordering.
+      await afterFrames(readbackFrames);
+      for (const id of [3, 4]) releases.set(id, releases.get(id) + 1);
+      detail.releaseEvents += 2;
+      validating = false;
+      if (disposed) disposePair();
+      return {};
+    },
+    dispose() { disposed = true; if (!validating) disposePair(); },
+  };
+  const assertCondition = (condition, message) => { if (!condition) throw new Error(message); };
+  const helpers = new Function("assertCondition", `${["assertReadbackLifecycle", "scheduleDisposal", "canDispose"].map(name => declaration(fixture, name)).join("\n")}\nreturn {scheduleDisposal,canDispose};`)(assertCondition);
+  class Renderer {
+    backend = { device: { queue: { onSubmittedWorkDone: () => afterFrames(idleFrames) } } };
+    async init() {}
+    setPixelRatio() {}
+    setSize() {}
+    render() {}
+  }
+  class Scene { add() {} }
+  const startVisualScene = new Function("THREE", "requestAnimationFrame", "globalThis", `${declaration(support, "startVisualScene")}\nreturn startVisualScene;`)({ WebGPURenderer: Renderer, Scene, Color: class {} }, raf, {});
+  const renderer = new Renderer();
+  const args = { frame: 200, renderedWorld: world, worldRenderer: {}, camera: {}, renderer, detail, world, targets, releases, disposePending: false, ...helpers, assertCondition,
+    assertFrameValidation: () => { detail.framewise += 1; },
+    observeWorldFrame: () => { detail.originalNonemptyFrames += 1; },
+    reportFinalMarker() {}, assertProofDeadline() {}, loadWorld: async () => world, scene: new Scene(),
+  };
+  const render = new Function(...Object.keys(args), `return ({${declaration(fixture, "render", true)}}).render;`)(...Object.values(args));
+  // Run the shipped awaitRender loop and the actual fixture render method, not a model of its await.
+  const started = startVisualScene({}, { width: 1280, height: 720 }, "scheduler", async () => ({ detail, render }), { awaitRender: true, camera: () => ({}) });
+  for (let tick = 0; tick < 20 && !detail.reloadReady && detail.failure === ""; tick += 1) {
+    for (let flush = 0; flush < 12; flush += 1) await Promise.resolve();
+    const ready = callbacks; callbacks = [];
+    for (const callback of ready) callback();
+  }
+  for (let flush = 0; flush < 12; flush += 1) await Promise.resolve();
+  assert.equal(detail.failure, "");
+  assert.equal(detail.reloadReady, true);
+  assert.equal(detail.targetIdentities, 4);
+  assert.equal(detail.disposeEvents, 4);
+  assert.deepEqual([...disposedIdentities.entries()], [[1, 1], [2, 1], [3, 1], [4, 1]]);
+  assert.equal(detail.releaseEvents, 402);
+  assert.deepEqual([...releases.values()], [15, 15, 186, 186]);
+  assert.equal(validations, 1);
+  await started;
 });
 
 test("World GPU readback rejects absent, partial and invalid lifecycle completion", () => {

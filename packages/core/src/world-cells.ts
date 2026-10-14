@@ -27,8 +27,10 @@ import {
   type ILodChain,
   biasedLodDistance,
   conservativeViewDepth,
+  isLodJoinProxy,
   lodChainOf,
   setLodBias,
+  setModelLodLayers,
   worldSphere,
 } from "./model-lod.js";
 import { displacesVertices } from "./projection-plan.js";
@@ -2121,11 +2123,21 @@ interface ICellProxyState {
   prepared?: IPreparedCellProxy;
   readonly observed: Set<Mesh>;
   readonly hidden: Map<Mesh, boolean>;
+  readonly mainMasks: Map<Mesh, number>;
 }
 
 interface IResidentCell {
   proxy?: ICellProxyState;
   readonly mainChunkMeshes: Mesh[];
+  /** Authored static instances at attachment, before a caller can mutate the resident chunk. */
+  readonly chunkInstances: Map<
+    InstancedMesh,
+    {
+      readonly matrix: InstancedMesh["instanceMatrix"];
+      readonly version: number;
+      readonly count: number;
+    }
+  >;
   readonly completedRuns: Set<IWorldRun>;
   chunksLoaded: boolean;
   chunkFailed: boolean;
@@ -3389,6 +3401,8 @@ function samplesFramebuffer(
  * existed — so a refusal costs the draw it was already paying and nothing else.
  */
 function bundleSafe(mesh: Mesh): boolean {
+  // AutoLOD changes geometry and joined membership after recording; replay cannot freeze either.
+  if (lodChainOf(mesh.geometry) !== undefined) return false;
   if (ownHook(mesh, "onBeforeRender")) return false;
   if (ownHook(mesh, "onAfterRender")) return false;
   if ((mesh as Mesh & { readonly isSkinnedMesh?: boolean }).isSkinnedMesh === true) return false;
@@ -4107,7 +4121,7 @@ class AdmissionBudget implements IAdmissionBudget {
  * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has
  * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
  * @constraint a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts
- * @constraint eligible static CPU cells can use their cooked HLOD after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation
+ * @constraint eligible static sources can use cooked HLOD (chunk-only alongside GPU scatter, whole-cell on CPU) after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation
  * @override `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
  * @constraint `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number
  * @constraint every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers
@@ -6083,6 +6097,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #admit(cell: IWorldCell, instances: number, bytes: number): void {
     const state: IResidentCell = {
       mainChunkMeshes: [],
+      chunkInstances: new Map(),
       completedRuns: new Set(),
       chunksLoaded: (cell.chunks?.length ?? 0) === 0,
       chunkFailed: false,
@@ -6679,7 +6694,7 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const state of this.#cellProxies) {
       if (!state.active) continue;
       proxyDraws += state.prepared?.meshes.length ?? 0;
-      replacedSources += state.hidden.size;
+      replacedSources += state.hidden.size + state.mainMasks.size;
     }
     console.info(
       `TN_WORLD_HLOD on=${String(hlod.on)} loaded=${String(hlod.loaded)} ` +
@@ -8606,8 +8621,24 @@ export class WorldCells extends Group implements IComputeDriven {
     // whole-asset shape, and the per-part keys the terminal level has no counterpart for are dropped,
     // so the far shadow draws one quad per placement rather than a duplicate per bark/needle part.
     this.#retargetWideCasters(asset);
-    // The terminal level's keys and every resident run of this asset, through the same prewarm and
-    // swap the first build took: no active job array is mutated halfway.
+    if (this.#gpuScene.on) {
+      // Sources already carry each placement's root transform. Publish the new terminal key and
+      // gates together; the dispatch selects it without rebuilding resident runs on the CPU.
+      const level = asset.levels.length - 1;
+      this.#mintPrewarm({
+        asset: asset.id,
+        geometry: part.geometry,
+        key: `${asset.id}:${String(level)}:0`,
+        level,
+        material: part.material,
+        part: 0,
+        role: "main",
+      });
+      this.#publishGpuGates(asset);
+      this.#queuePrewarm(asset);
+      return;
+    }
+    // CPU fallback still regroups the resident placements into the new terminal level.
     this.#queuePrewarm(asset);
     for (const cell of [...this.#resident.values()]) {
       for (const run of cell.cell.runs) {
@@ -9519,9 +9550,15 @@ export class WorldCells extends Group implements IComputeDriven {
   #beginCellProxy(cell: IResidentCell): void {
     const proxy = cell.cell.proxy;
     if (proxy === undefined) return;
-    // The cook already limits a decoded mesh unit; reserve source + private fixed copies before IO.
-    // A world too tight to retain both source and proxy retains source instead of trading a hole.
-    const reserve = CHUNK_MERGE_MAX_BYTES * 2;
+    // IO has the existing bounded transient decode allowance. Reserve only resident headroom;
+    // decoded source + conservative fixed-copy costs must fit it before private geometry is allocated.
+    const reserve = Math.min(
+      CHUNK_MERGE_MAX_BYTES * 2,
+      this.#budgets.bytes - this.#bytes - this.#farBytes - this.#hlodBytes,
+    );
+    // Another proxy may still own worst-case headroom. Retry via the existing admission loop
+    // after it shrinks or releases; temporary pressure must not permanently cancel this cell.
+    if (reserve <= 0) return;
     const state: ICellProxyState = {
       cell,
       selector: new CellProxySelection(proxy),
@@ -9534,6 +9571,7 @@ export class WorldCells extends Group implements IComputeDriven {
       bytes: 0,
       observed: new Set(),
       hidden: new Map(),
+      mainMasks: new Map(),
     };
     const source = this.#cellProxySource(state);
     // A retained neighboring key or a cheaper source LOD cannot benefit. Reconsider after later
@@ -9545,11 +9583,6 @@ export class WorldCells extends Group implements IComputeDriven {
     )
       return;
     cell.proxy = state;
-    if (this.#bytes + this.#farBytes + this.#hlodBytes + reserve > this.#budgets.bytes) {
-      state.cancelled = true;
-      this.#hlodRefused++;
-      return;
-    }
     state.bytes = reserve;
     this.#hlodBytes += reserve;
     this.#cellProxies.add(state);
@@ -9570,7 +9603,8 @@ export class WorldCells extends Group implements IComputeDriven {
             return;
           }
           try {
-            measureCellProxy(model, proxy);
+            if (measureCellProxy(model, proxy, true) > state.bytes)
+              throw new Error("Cell proxy exceeds its reserved decoded budget.");
           } catch {
             state.cancelled = true;
             this.#hlodRefused++;
@@ -9593,6 +9627,7 @@ export class WorldCells extends Group implements IComputeDriven {
       const prepared = prepareCellProxy(
         state.model as Object3D,
         state.cell.cell.proxy as NonNullable<IWorldCell["proxy"]>,
+        state.bytes,
       );
       state.prepared = prepared;
       if (prepared.bytes > state.bytes)
@@ -9682,6 +9717,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #cellSourceDrawn(mesh: Mesh): boolean {
     if (
       this.#camera === undefined ||
+      (mesh instanceof InstancedMesh && mesh.count === 0) ||
       !this.#camera.layers.test(mesh.layers) ||
       Array.isArray(mesh.material) ||
       !mesh.material.visible
@@ -9701,23 +9737,35 @@ export class WorldCells extends Group implements IComputeDriven {
   } {
     const cell = state.cell;
     const meshes = [...cell.mainChunkMeshes];
+    for (const chunk of cell.chunks)
+      chunk.traverse((node) => {
+        if (node instanceof Mesh && isLodJoinProxy(node)) meshes.push(node);
+      });
     const materials = new Set<Material>();
+    const staticInstances = new Set<Mesh>();
+    for (const [mesh, baseline] of cell.chunkInstances)
+      if (
+        mesh.instanceMatrix === baseline.matrix &&
+        mesh.instanceMatrix.version === baseline.version &&
+        mesh.count === baseline.count
+      )
+        staticInstances.add(mesh);
     let triangles = 0;
     let draws = 0;
-    let compatible = this.#cellLoaded(cell) && !this.#gpuScene.on;
+    let compatible =
+      this.#cellLoaded(cell) && (state.cell.cell.proxy?.scope !== "cell" || !this.#gpuScene.on);
     for (const mesh of meshes) {
       if (
-        mesh.castShadow ||
-        !cellProxySourceSafe(mesh) ||
+        !cellProxySourceSafe(mesh, staticInstances) ||
         Array.isArray(mesh.material) ||
         !cellProxyGeometrySafe(mesh.geometry) ||
-        !cellProxyMaterialSafe(mesh.material as Material) ||
-        lodChainOf(mesh.geometry) !== undefined
+        !cellProxyMaterialSafe(mesh.material as Material)
       )
         compatible = false;
       else materials.add(mesh.material as Material);
       if (this.#cellSourceDrawn(mesh)) {
-        triangles += levelTriangles(mesh.geometry);
+        triangles +=
+          levelTriangles(mesh.geometry) * (mesh instanceof InstancedMesh ? mesh.count : 1);
         draws++;
       }
     }
@@ -9788,19 +9836,30 @@ export class WorldCells extends Group implements IComputeDriven {
   #restoreCellProxySource(state: ICellProxyState): void {
     for (const [mesh, visible] of state.hidden) mesh.visible = visible;
     state.hidden.clear();
+    for (const [mesh, mask] of state.mainMasks) setModelLodLayers(mesh, mask);
+    state.mainMasks.clear();
   }
 
   #showCellProxy(state: ICellProxyState, active: boolean, meshes?: readonly Mesh[]): void {
     const prepared = state.prepared;
     if (prepared === undefined) return;
     const changed = state.active !== active;
-    // Sources are never released or overwritten. Caster meshes/colliders are untouched.
+    // AutoLOD owns chunk visibility. Retire only its main pass, retaining the selected source
+    // geometry as a caster; joined rungs inherit this same pass ownership on activation.
     this.#restoreCellProxySource(state);
     if (active)
       for (const mesh of meshes ?? this.#cellProxySource(state).meshes) {
         if (mesh.layers.isEnabled(0)) {
-          state.hidden.set(mesh, mesh.visible);
-          mesh.visible = false;
+          if (state.cell.mainChunkMeshes.includes(mesh) || isLodJoinProxy(mesh)) {
+            state.mainMasks.set(mesh, mesh.layers.mask);
+            let mask = mesh.layers.mask & ~1;
+            if (mesh.castShadow)
+              mask |= (1 << VIRTUAL_SHADOW_CASTER_LAYER) | (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+            setModelLodLayers(mesh, mask);
+          } else {
+            state.hidden.set(mesh, mesh.visible);
+            mesh.visible = false;
+          }
         }
       }
     prepared.root.visible = active || !this.#proxyObserved(state);
@@ -9831,6 +9890,8 @@ export class WorldCells extends Group implements IComputeDriven {
       if (state.cancelled || state.prepared === undefined) continue;
       if (!state.compiled && !state.compiling && renderer !== undefined && camera !== undefined)
         budget.admit(() => this.#compileCellProxy(state, renderer, camera));
+      // Cost the current AutoLOD source representation, not last frame's HLOD suppression.
+      this.#restoreCellProxySource(state);
       const source = this.#cellProxySource(state);
       const scale = cellProxyWorldScale(this.matrixWorld);
       const sphere = worldSphere(state.prepared.bounds, this);
@@ -10059,6 +10120,12 @@ export class WorldCells extends Group implements IComputeDriven {
         cell.chunks.push(object);
         object.traverse((node) => {
           if (node instanceof Mesh && node.layers.isEnabled(0)) cell.mainChunkMeshes.push(node);
+          if (node instanceof InstancedMesh && node.layers.isEnabled(0))
+            cell.chunkInstances.set(node, {
+              matrix: node.instanceMatrix,
+              version: node.instanceMatrix.version,
+              count: node.count,
+            });
         });
         // The chunk's own box, from the merged geometry's boxes rather than its vertices: a chunk
         // is loaded once and both consumers of it are only asked to be no wider than the chunk. Read

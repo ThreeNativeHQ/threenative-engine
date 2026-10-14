@@ -1,4 +1,5 @@
 import { WorldCells } from "../../../../core/src/world-cells.ts";
+import { DiscreteLodPlugin, TN_DISCRETE_LOD, isLodJoinProxy, updateModelLods } from "../../../../core/src/model-lod.ts";
 import { assertCondition, startVisualScene, THREE } from "./scene-support.js";
 
 /**
@@ -19,12 +20,12 @@ const MANIFEST = {
     heightMin: 0,
     heightMax: 1,
   },
-  assets: {},
+  assets: { scatter: { glb: "scatter.glb", lods: [], bounds: { min: [-1, -1, -1], max: [1, 1, 1] } } },
   cells: [
     {
       x: 0,
       z: 0,
-      runs: [],
+      runs: [{ asset: "scatter", count: 1, offset: 0 }],
       chunks: ["chunk.glb"],
       proxy: {
         glb: "proxy.glb",
@@ -37,7 +38,7 @@ const MANIFEST = {
   ],
 };
 
-function decodedModel(proxy) {
+async function decodedModel(proxy) {
   const root = new THREE.Group();
   const material = new THREE.MeshBasicMaterial({ color: 0x4f824c });
   const mesh = new THREE.Mesh(
@@ -48,6 +49,37 @@ function decodedModel(proxy) {
   if (proxy) mesh.rotation.x = -Math.PI / 2;
   root.add(mesh);
   if (!proxy) {
+    const sibling = mesh.clone();
+    sibling.geometry = mesh.geometry.clone();
+    root.add(sibling);
+    const members = [mesh, sibling];
+    const associations = new Map([[root, { meshes: 0, nodes: 0 }]]);
+    members.forEach((member, index) => associations.set(member, { meshes: 0, nodes: 0, primitives: index }));
+    const definition = {
+      absoluteErrors: [0.01], counts: [6], errors: [0.01], indices: [0], lod0Triangles: 12,
+      schemaVersion: 1, sharedVertexBuffers: true, strategy: "discrete",
+    };
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser({
+      associations,
+      getDependency: async (type) => {
+        if (type !== "mesh") return { array: mesh.geometry.index.array.slice(0, 18) };
+        const joined = new THREE.Group();
+        const joinedMesh = new THREE.Mesh(mesh.geometry.clone(), material);
+        joinedMesh.name = "hlod-source-joined";
+        joined.add(joinedMesh);
+        return joined;
+      },
+      json: {
+        extensions: { [TN_DISCRETE_LOD]: { joined: [{ draws: 1, error: 0.01, mesh: "chunk__lod_join", primitives: 2, sources: ["chunk#0", "chunk#1"], triangles: 12 }] } },
+        meshes: [
+          { name: "chunk", primitives: members.map(() => ({ extensions: { [TN_DISCRETE_LOD]: definition } })) },
+          { name: "chunk__lod_join", primitives: [{}] },
+        ],
+      },
+    });
+    await plugin.afterRoot({ scene: root });
+    plugin.attach(root, { hysteresis: 0.15, maxPixelError: 1 });
     const collision = new THREE.Object3D();
     collision.name = "hlod-collision-sentinel";
     collision.userData.tnCollision = true;
@@ -64,14 +96,18 @@ function census(world, stage) {
   let sourceVisible = 0;
   let shadowCasters = 0;
   let collision = false;
+  let joined = 0;
+  let scatter = 0;
   world.traverse((node) => {
     if (node.name === "hlod-collision-sentinel") collision = node.parent !== null;
     if (node.isMesh !== true) return;
+    if (isLodJoinProxy(node)) joined += 1;
+    if (node.isInstancedMesh === true && node.layers.isEnabled(0) && node.count > 0) scatter += 1;
     const proxy = node.name === "hlod-proxy-detail" || node.name.startsWith("world-cell-proxy:");
     if (proxy) {
       proxyMeshes += 1;
       if (node.visible && (node.geometry.drawRange.count ?? 0) > 0) proxyVisible += 1;
-    } else if (node.layers.isEnabled(0)) {
+    } else if (node.layers.isEnabled(0) && node.isInstancedMesh !== true) {
       sourceMeshes += 1;
       if (node.visible) sourceVisible += 1;
     }
@@ -85,12 +121,13 @@ function census(world, stage) {
     `sourceMeshes=${String(sourceMeshes)} sourceVisible=${String(sourceVisible)} ` +
     `proxyMeshes=${String(proxyMeshes)} proxyVisible=${String(proxyVisible)} ` +
     `shadowCasters=${String(shadowCasters)} collision=${String(collision)} ` +
+    `gpu=${String(stats.gpuScene.on)} joined=${String(joined)} scatter=${String(scatter)} ` +
     `refused=${String(stats.hlod.refused)} failures=${String(stats.hlod.failures)}`;
-  return { collision, line, proxyVisible, shadowCasters, sourceMeshes, sourceVisible, stats };
+  return { collision, joined, line, proxyVisible, scatter, shadowCasters, sourceMeshes, sourceVisible, stats };
 }
 
 export async function startScene(canvas, dimensions) {
-  return startVisualScene(
+  const state = await startVisualScene(
     canvas,
     dimensions,
     "world-hlod-lifecycle",
@@ -101,14 +138,32 @@ export async function startScene(canvas, dimensions) {
         surface: new THREE.MeshBasicMaterial({ color: 0x415a43 }),
         follow,
         ring: 0,
-        budgets: { bytes: 32 * 1024 * 1024, instances: 1, residentCells: 1 },
+        budgets: { bytes: 32 * 1024 * 1024, instances: 16, residentCells: 1 },
         terrain: false,
-        gpuScene: false,
+        gpuScene: true,
         bundles: false,
         shadows: { cast: true, receive: true },
-        data: { manifest: MANIFEST, placements: new ArrayBuffer(0) },
-        loadModel: async (url) => decodedModel(url.endsWith("proxy.glb")),
+        data: { manifest: MANIFEST, placements: new Float32Array([6, 0, 0, 0, 0, 0, 1, 1]).buffer },
+        loadModel: async (url) => {
+          if (!url.endsWith("scatter.glb")) return decodedModel(url.endsWith("proxy.glb"));
+          const root = new THREE.Group();
+          root.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x4f824c })));
+          return root;
+        },
       });
+      const worldRenderer = {
+        compileAsync: (object, view) => renderer.compileAsync(object, view),
+        compute: (nodes) => renderer.compute(nodes),
+        domElement: renderer.domElement,
+        info: renderer.info,
+        kind: "webgpu",
+        raw: renderer,
+        readback: async (attribute, target) => {
+          const result = await renderer.getArrayBufferAsync(attribute, target);
+          assertCondition(result === target && target.buffer instanceof ArrayBuffer, "HLOD GPU readback lost its owned target");
+          return target.buffer.slice(0);
+        },
+      };
       scene.add(world);
       const proofAnchor = new THREE.Mesh(
         new THREE.SphereGeometry(8, 16, 8),
@@ -142,6 +197,8 @@ export async function startScene(canvas, dimensions) {
           assertCondition(result.proxyVisible === 1, "HLOD proxy is active without a visible proxy draw");
           assertCondition(result.shadowCasters > 0, "HLOD proxy removed source shadow coverage");
           assertCondition(result.collision, "HLOD proxy removed source collision sentinel");
+          assertCondition(result.stats.gpuScene.on && result.scatter > 0, "chunk HLOD removed GPU scatter");
+          assertCondition(result.joined > 0, "chunk HLOD did not coexist with an active AutoLOD join");
           detail.active = true;
           detail.collisionRetained = result.collision;
           detail.shadowCovered = result.shadowCasters > 0;
@@ -170,7 +227,8 @@ export async function startScene(canvas, dimensions) {
       return {
         detail,
         render() {
-          world.update(renderer, camera);
+          updateModelLods(world, camera, dimensions.height);
+          world.update(worldRenderer, camera);
           camera.getWorldDirection(proofDirection);
           proofAnchor.position.copy(camera.position).addScaledVector(proofDirection, 20);
           renderer.render(scene, camera);
@@ -188,4 +246,20 @@ export async function startScene(canvas, dimensions) {
       },
     },
   );
+  // The harness may open native startup readiness as soon as startScene resolves. Keep both
+  // targets behind the lifecycle proof, rather than letting a merely initialized scene pass.
+  await new Promise((resolve, reject) => {
+    let frames = 0;
+    const check = () => {
+      const proof = state.subject.detail;
+      if (proof.active && proof.nearRestored && proof.shadowCovered && proof.collisionRetained && proof.evicted) {
+        console.info("TN_WORLD_HLOD_CONFORMANCE_COMPLETE gpu=true joined=true sourceShadow=true near=true evicted=true collisionAttachment=true");
+        resolve();
+      } else if (++frames >= 180) {
+        reject(new Error(`World HLOD lifecycle did not complete before capture: ${JSON.stringify(proof)}`));
+      } else requestAnimationFrame(check);
+    };
+    check();
+  });
+  return state;
 }

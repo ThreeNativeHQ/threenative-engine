@@ -68,7 +68,7 @@ function assertReadbackLifecycle(detail, targets, releases) {
 
 function scheduleDisposal(renderer, world, detail, targets, releases, onDone) {
   const idle = renderer.backend?.device?.queue?.onSubmittedWorkDone?.() ?? Promise.resolve();
-  void Promise.resolve(idle).then(() => {
+  return Promise.resolve(idle).then(() => {
     world.dispose();
     assertReadbackLifecycle(detail, targets, releases);
     return onDone();
@@ -308,7 +308,8 @@ export async function startScene(canvas, dimensions) {
             observeWorldFrame(renderedWorld, detail, detail.reloadReady ? "reload" : "original");
           if (canDispose(detail, disposePending)) {
             disposePending = true;
-            scheduleDisposal(renderer, world, detail, targets, releases, async () => {
+            // Keep the awaited render loop quiescent until readback teardown and reload finish.
+            await scheduleDisposal(renderer, world, detail, targets, releases, async () => {
               renderedWorld = undefined;
               console.info(
                 "TN_WORLD_GPU_SCENE_READBACK reload validation=off reason=post-disposal-reload",

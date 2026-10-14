@@ -16,7 +16,7 @@ import {
   type Texture,
   Vector3,
 } from "three";
-import { diffuseColor, mrt, normalWorld, positionView, vec4 } from "three/tsl";
+import { diffuseColor, float, mrt, normalWorld, positionView, vec4 } from "three/tsl";
 import {
   LinearFilter,
   LinearMipmapLinearFilter,
@@ -311,7 +311,8 @@ function captureMaterial(source: Material, alphaTest: number, depthScale: number
   const material = cloneNodeMaterial(source);
   const coverage = diffuseColor.a;
   const encodedNormal = normalWorld.mul(0.5).add(0.5).mul(coverage);
-  const depth = positionView.z.mul(-depthScale).mul(coverage);
+  // Secondary MRT attachments clear to alpha one; clear contributes zero depth numerator.
+  const depth = float(1).sub(positionView.z.mul(-depthScale).mul(coverage));
   material.mrtNode = mrt({
     output: vec4(diffuseColor.rgb.mul(coverage), coverage),
     normal: vec4(encodedNormal, depth),
