@@ -683,7 +683,7 @@ inline bool bitsDiffer(const std::array<double, 16>& a, const std::array<double,
 }  // namespace
 
 bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
-    ++matrixEvaluations_;
+    lastWorldEvaluation_ = ++matrixEvaluations_;
     materializeLocalTransform();
     if (plain && identityParent && matrixAutoUpdate && matrixWorldAutoUpdate && !pivot) {
         Matrix4 composed;
@@ -768,7 +768,7 @@ uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
 }
 
 void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool force) {
-    ++matrixEvaluations_;
+    lastWorldEvaluation_ = ++matrixEvaluations_;
     materializeLocalTransform();
     Object3D* const parent_ = parent;
 

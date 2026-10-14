@@ -8,7 +8,6 @@
 #include <cctype>
 #include <cmath>
 #include <unordered_map>
-#include <unordered_set>
 #include "engine/animation/skinning/palette.h"
 #include <iterator>
 #include <cstring>
@@ -515,7 +514,8 @@ void GpuJointScene::revoke() {
 }
 
 bool GpuJointScene::current() const {
-    if (!*valid || hierarchy != Object3D::hierarchyVersion()) return false;
+    if (!*valid) { return false; }
+    if (hierarchy != Object3D::hierarchyVersion()) { return false; }
     for (const auto& saved : rigs) {
         const auto rig = saved.mesh.lock();
         const auto placement = saved.placement.lock();
@@ -524,16 +524,25 @@ bool GpuJointScene::current() const {
         if (!rig || !placement || rig->gpuBindExposed || !rig->attached ||
             rig->skeleton.get() != saved.skeleton || rig->geometry.get() != saved.geometry ||
             rig->material.get() != saved.material || rig->bindMatrix.elements != saved.bind ||
-            rig->onBeforeRender || !isSimilarityTransform(placement->matrixWorld.elements.data()) ||
-            !isSimilarityTransform(rig->matrixWorld.elements.data())) return false;
+            rig->onBeforeRender) { return false; }
+        if (!isSimilarityTransform(placement->matrixWorld.elements.data())) {
+            return false;
+        }
+        if (!isSimilarityTransform(rig->matrixWorld.elements.data())) {
+            return false;
+        }
         if (!rig->matrixAutoUpdate || !rig->matrixWorldAutoUpdate || !rig->material ||
             rig->material->transparent || rig->material->nodeMaterial || rig->material->positionNode ||
-            !rig->geometry->morphPositions.empty()) return false;
-        for (const auto* node : rig->material->nodes.pointers()) if (node) return false;
+            !rig->geometry->morphPositions.empty()) { return false; }
+        for (const auto* node : rig->material->nodes.pointers()) if (node) {
+            return false;
+        }
         for (auto* ancestor = static_cast<Object3D*>(rig.get()); ancestor; ancestor = ancestor->parent) {
             ++Object3D::gpuValidationVisits_;
             const auto* flags = ancestor->ownTransformTracking();
-            if (!flags || !flags[0] || flags[2] || ancestor->onBeforeRender) return false;
+            if (!flags || !flags[0] || flags[2] || ancestor->onBeforeRender) {
+                return false;
+            }
         }
     }
     return true;
@@ -555,7 +564,9 @@ bool Renderer::bindGpuJoints(const std::shared_ptr<GpuJointScene>& plan) {
     }
     gpuJointPass_ = std::make_unique<JointComputePass>(device_, gpu_, plan->topology, plan->parents,
         plan->fixed, gpuJointLocals_, output.buffer);
-    if (!gpuJointPass_->error().empty()) { plan->revoke(); gpuJointPass_.reset(); return false; }
+    if (!gpuJointPass_->error().empty()) {
+        plan->revoke(); gpuJointPass_.reset(); return false;
+    }
     gpuJoints_ = plan;
     return true;
 }
@@ -589,13 +600,18 @@ std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::
             skeletons[skeleton] != 1) continue;
         bool eligible = true;
         for (const auto* node : rig->material->nodes.pointers()) if (node) eligible = false;
+        for (auto* ancestor = static_cast<Object3D*>(rig); eligible && ancestor; ancestor = ancestor->parent) {
+            ++Object3D::gpuMaintenanceVisits_;
+            const auto* flags = ancestor->ownTransformTracking();
+            if (!flags || !flags[0] || flags[2] || ancestor->onBeforeRender) {
+                eligible = false;
+            }
+        }
+        if (!eligible) continue;
         auto* placement = rig->parent;
         if (placement) ++Object3D::gpuMaintenanceVisits_;
         if (!placement || placement->type() == "Bone" || placement->type() == "Scene" ||
-            placement->children.size() != 2 || placement->pivot ||
-            placement->position.x != 0 || placement->position.y != 0 || placement->position.z != 0 ||
-            placement->quaternion.x != 0 || placement->quaternion.y != 0 || placement->quaternion.z != 0 ||
-            placement->quaternion.w != 1 || placement->scale.x != 1 || placement->scale.y != 1 || placement->scale.z != 1)
+            placement->children.size() != 2 || placement->pivot)
             continue;
         std::unordered_map<const Bone*, uint32_t> indices;
         for (uint32_t i = 0; i < skeleton->bones.size(); ++i) {
@@ -1228,8 +1244,9 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
     Handle uniforms[6];
     auto encoder = wgpuDeviceCreateCommandEncoder(device_, nullptr);
     for (uint32_t face = 0; face < 6; ++face) {
-        PerspectiveCamera camera(-90, 1, 1, 10); camera.up = ups[face]; camera.lookAt(directions[face]); camera.updateMatrixWorld();
-        std::vector<uint8_t> block(fs.uniformBlockSize, 0); put(block, fs, "cubeRotation", camera.matrixWorld.elements);
+        Matrix4 rotation;
+        rotation.lookAt(Vector3{}, directions[face], ups[face]); // detached camera destruction would invalidate live joint plans
+        std::vector<uint8_t> block(fs.uniformBlockSize, 0); put(block, fs, "cubeRotation", rotation.elements);
         uniforms[face] = gpu_.createBuffer(block.size(), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
         gpu_.writeBuffer(uniforms[face], 0, block.data(), block.size());
         const auto group = bindGroup(layout, fs, uniforms[face], nullptr, nullptr, source->view, source->sampler);

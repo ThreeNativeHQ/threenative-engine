@@ -93,6 +93,8 @@ class Skeleton {
     void pose();
     /** Folds each bone's `matrixWorld` with its inverse into `boneMatrices`, as float32. */
     void update();
+    // Internal renderer path, immediately after its world walk and before authored callbacks.
+    void updateAfterWorldWalk(uint64_t firstEvaluation);
     /** The first bone whose name matches, or null. A null slot is skipped, never dereferenced. */
     [[nodiscard]] Bone* getBoneByName(std::string_view name) const;
 

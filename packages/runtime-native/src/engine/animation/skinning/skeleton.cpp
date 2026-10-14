@@ -142,12 +142,16 @@ void Skeleton::pose() {
 }
 
 void Skeleton::update() {
+    updateAfterWorldWalk(0);
+}
+
+void Skeleton::updateAfterWorldWalk(uint64_t firstEvaluation) {
     revokeGpuSkinning();
     static const Matrix4 identity{};
     Matrix4 offset;
     for (std::size_t i = 0; i < bones.size(); ++i) {
         Bone* b = bone(i);
-        if (b) b->materializeWorldTransformIfPending();
+        if (b && (!firstEvaluation || b->lastWorldEvaluation() < firstEvaluation)) b->materializeWorldTransformIfPending();
         const Matrix4& matrix = b ? b->matrixWorld : identity;
         offset.multiplyMatrices(matrix, boneInverses[i]);
         for (std::size_t k = 0; k < 16; ++k)

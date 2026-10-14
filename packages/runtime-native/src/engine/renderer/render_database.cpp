@@ -704,7 +704,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                                 const bool gpu = gpuJoints_ && *gpuJoints_->valid && gpuJoints_->byMesh.count(&skinned);
                                 if (!gpu && (skeletonsFresh_ == nullptr || skeletonsFresh_->count(skeleton) == 0) &&
                                     skeletonsUpdated_.insert(skeleton).second)
-                                    skinned.skeleton->update();
+                                    skinned.skeleton->updateAfterWorldWalk(worldsFreshSince_);
                                 d.boneMatrices = &skinned.skeleton->boneMatrices;
                                 d.bindMatrix = toArray(skinned.bindMatrix);
                                 d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
@@ -1286,15 +1286,19 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         }
     }
     bool force = false;
+    worldsFreshSince_ = 0;
     if (flat) {
+        worldsFreshSince_ = Object3D::matrixEvaluations() + 1;
         ++matrixWalks_;
         force = scene.updateMatrixWorldSelf();
     } else if (scene.matrixWorldAutoUpdate && !fresh) {
+        worldsFreshSince_ = Object3D::matrixEvaluations() + 1;
         ++matrixWalks_;
         scene.updateMatrixWorld();
     }
     if (gpuJoints_ && !gpuJoints_->current()) {
         gpuJoints_->revoke(); gpuJoints_.reset();
+        worldsFreshSince_ = Object3D::matrixEvaluations() + 1;
         scene.updateMatrixWorld(true); // The external matrix pass may already have skipped Bones.
     }
     if (camera.parent == nullptr && camera.matrixWorldAutoUpdate)

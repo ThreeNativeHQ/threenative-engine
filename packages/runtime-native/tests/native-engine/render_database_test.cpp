@@ -3049,6 +3049,14 @@ void reflectionReuse() {
 }
 
 void gpuJointProduction() {
+    const Vector3 directions[6] = {{-1,0,0}, {1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
+    const Vector3 ups[6] = {{0,-1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}, {0,-1,0}, {0,-1,0}};
+    for (int face = 0; face < 6; ++face) {
+        PerspectiveCamera camera(-90, 1, 1, 10);
+        camera.up = ups[face]; camera.lookAt(directions[face]); camera.updateMatrixWorld();
+        Matrix4 rotation; rotation.lookAt(Vector3{}, directions[face], ups[face]);
+        for (int k = 0; k < 16; ++k) CHECK(std::abs(rotation.elements[k] - camera.matrixWorld.elements[k]) < 1e-12);
+    }
     // Count executed updates, including a query's full parent chain, independently of walk returns.
     auto countRoot = std::make_shared<Object3D>();
     auto countMiddle = std::make_shared<Object3D>();
@@ -3065,6 +3073,7 @@ void gpuJointProduction() {
         std::vector<std::shared_ptr<Group>> movers;
         std::vector<std::shared_ptr<SkinnedMesh>> meshes;
         std::vector<std::shared_ptr<Bone>> tips;
+        double* escapedWorld = nullptr;
         std::shared_ptr<Reflector> reflector = std::make_shared<Reflector>();
         Fixture(bool tracked) {
             camera.aspect = 4.0 / 3; camera.position.set(0, 0, 8); camera.updateProjectionMatrix();
@@ -3081,7 +3090,7 @@ void gpuJointProduction() {
             sun->position.set(2, 5, 4); sun->setCastShadow(true);
             sun->shadow.mapSize.set(128, 128);
             scene.add(*sun);
-            for (int i = 0; i < 5; ++i) {
+            for (int i = 0; i < 6; ++i) {
                 const int count = i == 4 ? 1100 : 3;
                 auto mover = std::make_shared<Group>(); mover->position.x = double(i - 2) * 1.2;
                 auto placement = std::make_shared<Group>();
@@ -3099,6 +3108,12 @@ void gpuJointProduction() {
                 placement->add(*bones.front()); placement->add(*mesh);
                 mover->add(*placement); scene.add(*mover);
                 if (tracked) { mover->enableTrackedTransform(); placement->enableTrackedTransform(); mesh->enableTrackedTransform(); }
+                if (i == 5) {
+                    CHECK(Object3D::leaseTransform(&mover->matrixWorld) == 5);
+                    escapedWorld = mover->matrixWorld.elements.data();
+                    escapedWorld[12] = mover->position.x;
+                    mover->matrixWorldAutoUpdate = false;
+                }
                 auto skeleton = std::make_shared<Skeleton>(bones, std::vector<Matrix4>(bones.size()));
                 Matrix4 bind; mesh->bind(skeleton, &bind);
                 if (i == 1 || i == 4) {
@@ -3119,7 +3134,12 @@ void gpuJointProduction() {
             namespace g = shader::graph;
             water->nodes.colorNode = g::reflectorTexture(reflector, g::screenUV());
             water->needsUpdate();
+            auto sky = std::make_shared<DataTexture>();
+            sky->mapping = 303; sky->width = 8; sky->height = 4;
+            sky->data.resize(8 * 4 * 4, 1); sky->needsUpdate(); // keep the sky below the rig coverage threshold
+            scene.backgroundTexture = sky;
         }
+        ~Fixture() { Object3D::unleaseTransform(&movers[5]->matrixWorld); }
     } accelerated(true), eager(false);
     mystral::webgpu::Context context; CHECK(context.initializeHeadless());
     EventQueue events;
@@ -3145,6 +3165,8 @@ void gpuJointProduction() {
                 fixture->meshes[0]->parent->position.x = 0.2;
                 fixture->meshes[0]->parent->rotateY(0.15); // placement can move after admission
                 fixture->movers[4]->setVisible(true); // grows mixed GPU+CPU palette beyond 64 KiB
+                fixture->escapedWorld[13] = frame * 0.1;
+                fixture->movers[5]->matrixWorldNeedsUpdate = true;
             }
             CHECK(accelerated.tips[0]->hasDeferredTransform());
             const auto before = Object3D::matrixEvaluations();
@@ -3152,14 +3174,26 @@ void gpuJointProduction() {
             CHECK(Object3D::matrixEvaluations() - before + 3 == visits); // the unpruned walk inspects all three GPU boundaries
             CHECK(accelerated.tips[0]->hasDeferredTransform());
         }
-        if (frame == 2) database.shadowMapEnabled = reference.shadowMapEnabled = false;
+        if (frame == 2) {
+            database.shadowMapEnabled = reference.shadowMapEnabled = false;
+            for (auto* fixture : {&accelerated, &eager}) fixture->scene.add(*std::make_shared<Group>());
+        }
         const auto projectionBefore = Object3D::gpuProjectionVisits_;
         const auto maintenanceBefore = Object3D::gpuMaintenanceVisits_;
+        const auto hierarchyBefore = Object3D::hierarchyVersion();
         database.render(gpu, accelerated.scene, accelerated.camera, {0, 0, 0, 1});
+        CHECK(Object3D::hierarchyVersion() == hierarchyBefore); // cold sky conversion owns no scene nodes
         CHECK(Object3D::gpuProjectionVisits_ - projectionBefore >= (frame == 2 ? 4 : 6)); // visible main/reflection boundaries, plus verdict scans
-        if (!frame) CHECK(Object3D::gpuMaintenanceVisits_ > maintenanceBefore);
+        if (!frame || frame == 2) CHECK(Object3D::gpuMaintenanceVisits_ > maintenanceBefore);
         else CHECK(Object3D::gpuMaintenanceVisits_ == maintenanceBefore); // no per-frame Bone scan
         reference.render(cpu, eager.scene, eager.camera, {0, 0, 0, 1});
+        CHECK(!accelerated.tips[5]->hasDeferredTransform() && !accelerated.tips[5]->skipsGpuJointSubtree());
+        CHECK(accelerated.movers[5]->ownTransformTracking()[2] == 1);
+        Vector3 escapedActual, escapedExpected;
+        accelerated.tips[5]->getWorldPosition(escapedActual);
+        eager.tips[5]->getWorldPosition(escapedExpected);
+        CHECK(escapedActual.distanceTo(escapedExpected) < 1e-10);
+        CHECK(std::abs(escapedActual.y - frame * 0.1) < 1e-10);
         const auto actual = read(gpu, events), expected = read(cpu, events);
         CHECK(actual.size() == 160 * 120 * 4 && expected.size() == actual.size());
         size_t different = 0, covered = 0;
@@ -3176,6 +3210,8 @@ void gpuJointProduction() {
         CHECK(gpu.lastFrame().mainSkinned.batches == admitted);
         if (frame < 2) CHECK(gpu.lastFrame().shadowSkinned.batches == admitted);
         const auto validationBefore = Object3D::gpuValidationVisits_;
+        CHECK(admittedPlan != nullptr);
+        if (!admittedPlan) return;
         CHECK(admittedPlan->current());
         CHECK(Object3D::gpuValidationVisits_ - validationBefore == 18); // three rigs, placement and four ancestors each
         const auto* reflection = database.reflectionDatabase(accelerated.reflector.get());
@@ -3226,9 +3262,29 @@ void gpuJointProduction() {
     for (size_t i = 0; i < 48; ++i)
         CHECK(std::abs(accelerated.meshes[0]->skeleton->boneMatrices[i] - eager.meshes[0]->skeleton->boneMatrices[i]) < 1e-6);
     accelerated.meshes[0]->exposeGpuBind();
+    const auto eagerRenderJoins = Object3D::joinDependencyVisits();
     database.render(gpu, accelerated.scene, accelerated.camera);
+    CHECK(Object3D::joinDependencyVisits() == eagerRenderJoins); // a completed eager walk already joined these palettes
     for (const auto& draw : database.drawn()) CHECK(!draw.gpuJoints);
     CHECK(!accelerated.tips[0]->hasDeferredTransform());
+    for (size_t rig = 0; rig < accelerated.meshes.size(); ++rig) {
+        eager.meshes[rig]->skeleton->update();
+        const auto& actual = accelerated.meshes[rig]->skeleton->boneMatrices;
+        const auto& expected = eager.meshes[rig]->skeleton->boneMatrices;
+        CHECK(actual.size() == expected.size());
+        for (size_t i = 0; i < actual.size(); ++i) CHECK(std::abs(actual[i] - expected[i]) < 1e-6);
+    }
+    auto external = std::make_shared<Bone>(); external->enableTrackedTransform();
+    Skeleton externalSkeleton({external}, {Matrix4{}});
+    CHECK(external->enableDeferredTransform());
+    const double externalPose[3] = {2, 0, 0};
+    CHECK(external->deferTransformValue(0, externalPose));
+    const auto firstEvaluation = Object3D::matrixEvaluations() + 1;
+    accelerated.scene.updateMatrixWorld(true); // the external bone is deliberately outside this walk
+    const auto externalJoins = Object3D::joinDependencyVisits();
+    externalSkeleton.updateAfterWorldWalk(firstEvaluation);
+    CHECK(Object3D::joinDependencyVisits() == externalJoins + 1);
+    CHECK(std::abs(externalSkeleton.boneMatrices[12] - 2) < 1e-6);
 }
 
 TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},

@@ -123,6 +123,7 @@ class RenderDatabase {
     std::shared_ptr<GpuJointScene> gpuJoints_;
     bool gpuPreparing_ = false;
     bool matricesFresh_ = false;
+    uint64_t worldsFreshSince_ = 0;
     bool ranCallbacks_ = false;  // this prepare ran onBeforeRender hooks, which may have moved objects
     uint64_t matrixWalks_ = 0;
     void renderReflections(Renderer& renderer, Object3D& scene, Camera& camera, std::vector<DrawItem>& items,

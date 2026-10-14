@@ -235,6 +235,7 @@ private:
     static TransformSlot acquireTransform();
     void releaseTransform();
     TransformSlot transform_;
+    uint64_t lastWorldEvaluation_ = 0;
 public:
     /**
      * Where the transform columns sit in a storage page, in bytes: what a language that views the
@@ -269,6 +270,7 @@ public:
     [[nodiscard]] static uint64_t joinDependencyVisits() { return joinDependencyVisits_; }
     [[nodiscard]] static uint64_t gpuBoundaryVisits() { return gpuBoundaryVisits_; }
     [[nodiscard]] static uint64_t matrixEvaluations() { return matrixEvaluations_; }
+    [[nodiscard]] uint64_t lastWorldEvaluation() const { return lastWorldEvaluation_; }
 
     static void prepareTransformView(const void* address);
     // Stable bytes: tracked, TRS dirty, irreversibly escaped. Shares the transform slot's lifetime.
