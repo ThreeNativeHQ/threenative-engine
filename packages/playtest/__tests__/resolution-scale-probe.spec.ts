@@ -1,10 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { tsImport } from "tsx/esm/api";
 import type { Page } from "playwright";
 import { expect, it, vi } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   textureDescriptorBytes,
   installResolutionScaleProbe,
@@ -385,7 +385,7 @@ it.each([
 
 it("startup checkpoint persists before a deferred operation and is replaced by its final record", async () => {
   const corrected = await tsImport("../src/runner/resolution-scale-probe.ts", import.meta.url);
-  const directory = await mkdtemp(join(tmpdir(), "resolution-checkpoint-"));
+  const directory = await makeTempDir("tn-resolution-checkpoint-");
   const path = join(directory, "run-1.json");
   const evidence = { startup: { collected: false }, partial: { collected: false } };
   const record = (value: object) => writeFile(path, JSON.stringify(value));
@@ -393,31 +393,27 @@ it("startup checkpoint persists before a deferred operation and is replaced by i
   const deferred = new Promise<void>((resolve) => { finish = resolve; });
   let observedPending: (() => void) | undefined;
   const pendingObserved = new Promise<void>((resolve) => { observedPending = resolve; });
-  try {
-    const operation = corrected.resolutionScalePending(
-      "starter.listen",
-      (pendingOperation: string) => record({ status: "pending", pendingOperation, ...evidence }),
-      async () => {
-        expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
-          status: "pending", pendingOperation: "starter.listen", ...evidence,
-        });
-        observedPending!();
-        await deferred;
-        await record({ status: "complete", ...evidence });
-      },
-    );
-    await Promise.race([pendingObserved, operation]);
-    expect(JSON.parse(await readFile(path, "utf8")).status).toBe("pending");
-    finish!();
-    await operation;
-    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ status: "complete", ...evidence });
-    const failure = new Error("startup rejected");
-    await expect(corrected.resolutionScalePending("starter.listen", async () => {}, async () => {
-      throw failure;
-    })).rejects.toBe(failure);
-    await expect(preserveResolutionScaleFailure(failure, () => record({ status: "failed", error: failure.message, ...evidence }))).rejects.toBe(failure);
-    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ status: "failed", error: failure.message, ...evidence });
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  const operation = corrected.resolutionScalePending(
+    "starter.listen",
+    (pendingOperation: string) => record({ status: "pending", pendingOperation, ...evidence }),
+    async () => {
+      expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+        status: "pending", pendingOperation: "starter.listen", ...evidence,
+      });
+      observedPending!();
+      await deferred;
+      await record({ status: "complete", ...evidence });
+    },
+  );
+  await Promise.race([pendingObserved, operation]);
+  expect(JSON.parse(await readFile(path, "utf8")).status).toBe("pending");
+  finish!();
+  await operation;
+  expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ status: "complete", ...evidence });
+  const failure = new Error("startup rejected");
+  await expect(corrected.resolutionScalePending("starter.listen", async () => {}, async () => {
+    throw failure;
+  })).rejects.toBe(failure);
+  await expect(preserveResolutionScaleFailure(failure, () => record({ status: "failed", error: failure.message, ...evidence }))).rejects.toBe(failure);
+  expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ status: "failed", error: failure.message, ...evidence });
 });

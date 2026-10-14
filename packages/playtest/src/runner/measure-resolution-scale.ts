@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -330,7 +330,9 @@ async function serveStarter(
   await checkpoint("starter.import-scaffolder");
   const { createProject } = await load(resolve(repo, "packages/create-threenative/src/index.ts"));
   await checkpoint("starter.create-target");
-  const target = await mkdtemp(resolve(output, "starter-"));
+  // Retain this artifact; fail before overwriting an earlier run's starter project.
+  const target = resolve(output, "starter-project");
+  await mkdir(target);
   await checkpoint("starter.scaffold");
   await createProject({ target, template: "starter", install: false });
   if (controlCode !== undefined)

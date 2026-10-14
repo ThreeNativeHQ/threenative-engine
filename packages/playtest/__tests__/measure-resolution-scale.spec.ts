@@ -22,7 +22,6 @@ const fixture = vi.hoisted(() => {
     display,
     fs: {
       mkdir: vi.fn(),
-      mkdtemp: vi.fn(),
       symlink: vi.fn(),
       writeFile: vi.fn(),
     },
@@ -65,7 +64,6 @@ beforeEach(() => {
   fixture.createServer.mockReset().mockResolvedValue(fixture.server);
   fixture.display.release.mockReset().mockResolvedValue(undefined);
   fixture.fs.mkdir.mockReset().mockResolvedValue(undefined);
-  fixture.fs.mkdtemp.mockReset().mockResolvedValue("/tmp/prd564-starter-");
   fixture.fs.symlink.mockReset().mockResolvedValue(undefined);
   fixture.fs.writeFile.mockReset().mockResolvedValue(undefined);
   fixture.provideDisplay.mockReset().mockResolvedValue(fixture.display);
