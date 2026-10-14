@@ -96,6 +96,47 @@ export interface ICookTerrainWorldResult {
   readonly instancedMeshCount: number;
 }
 
+interface ILayerMap {
+  readonly layer: ICookTerrainWorldMaterialLayer;
+  readonly index: number;
+  readonly channel: "diff" | "nrm" | "orm" | "h";
+  bytes: Uint8Array;
+  /** Set once `normalizeKind` re-encodes the map. */
+  mimeType?: string;
+}
+
+/**
+ * One kind of map (diff, nrm, orm or h) at one size and one input encoding across every layer, so
+ * `loadTerrainSplat` can stack it into one array: one texture binding and one sampler instead of
+ * one per layer. This normalizes inputs only. The asset compiler still picks each texture's codec
+ * from its content, so a compiled kind can still mix codecs, and a mixed kind does not stack.
+ * A kind whose maps already share size, format and alpha keeps its authored bytes. Otherwise every
+ * map, the largest included, becomes lossless PNG at the largest width and height: decoded pixels
+ * kept, smaller maps resampled up, never down.
+ */
+async function normalizeKind(maps: readonly ILayerMap[]): Promise<void> {
+  if (maps.length < 2) return;
+  const sharp = (await import("sharp")).default;
+  const sizes = await Promise.all(maps.map((map) => sharp(map.bytes).metadata()));
+  const signature = (size: (typeof sizes)[number]) =>
+    `${String(size.width)}x${String(size.height)} ${size.format} ${String(size.hasAlpha)}`;
+  if (sizes.every((size) => signature(size) === signature(sizes[0] as (typeof sizes)[number])))
+    return;
+  const width = Math.max(...sizes.map((size) => size.width));
+  const height = Math.max(...sizes.map((size) => size.height));
+  const alpha = sizes.some((size) => size.hasAlpha);
+  await Promise.all(
+    maps.map(async (map, i) => {
+      let image = sharp(map.bytes);
+      if (sizes[i]?.width !== width || sizes[i]?.height !== height)
+        image = image.resize(width, height, { fit: "fill" });
+      if (alpha) image = image.ensureAlpha();
+      map.bytes = new Uint8Array(await image.png().toBuffer());
+      map.mimeType = "image/png";
+    }),
+  );
+}
+
 /** A placement as a world-package record: `item.transform` when authored, else the scatter pose. */
 function poseOf(item: IPlacement): {
   position: [number, number, number];
@@ -585,10 +626,12 @@ export async function cookTerrainWorld(
   // Preserve authored maps separately; the GLB retains its vanilla first-layer fallback.
   const textureFiles = new Map<string, Uint8Array>();
   const terrainMaterial = doc.createMaterial("TerrainMaterial");
+  const channels = ["diff", "nrm", "orm", "h"] as const;
+  const maps: ILayerMap[] = [];
   for (const [index, layer] of (options.materials?.layers ?? []).entries()) {
     if (!/^[a-zA-Z0-9_-]+$/u.test(layer.id))
       throw new Error(`cookTerrainWorld: invalid texture layer id '${layer.id}'.`);
-    for (const channel of ["diff", "nrm", "orm", "h"] as const) {
+    for (const channel of channels) {
       let bytes = layer[`${channel}Bytes`];
       const source = layer[channel];
       if (bytes === undefined && source !== undefined) {
@@ -605,16 +648,20 @@ export async function cookTerrainWorld(
           bytes = await resolveBytes(filename);
         } else bytes = await resolveBytes(source);
       }
-      if (bytes === undefined) continue;
-      textureFiles.set(`${layer.id}_${channel}.jpg`, bytes);
-      if (index === 0 && (channel === "diff" || channel === "nrm")) {
-        const texture = doc
-          .createTexture(channel === "diff" ? "TerrainBaseDiff" : "TerrainBaseNrm")
-          .setImage(bytes)
-          .setMimeType(layer[`${channel}MimeType`] ?? "image/jpeg");
-        if (channel === "diff") terrainMaterial.setBaseColorTexture(texture);
-        else terrainMaterial.setNormalTexture(texture);
-      }
+      if (bytes !== undefined) maps.push({ layer, index, channel, bytes });
+    }
+  }
+  for (const channel of channels)
+    await normalizeKind(maps.filter((map) => map.channel === channel));
+  for (const { layer, index, channel, bytes, mimeType } of maps) {
+    textureFiles.set(`${layer.id}_${channel}.jpg`, bytes);
+    if (index === 0 && (channel === "diff" || channel === "nrm")) {
+      const texture = doc
+        .createTexture(channel === "diff" ? "TerrainBaseDiff" : "TerrainBaseNrm")
+        .setImage(bytes)
+        .setMimeType(mimeType ?? layer[`${channel}MimeType`] ?? "image/jpeg");
+      if (channel === "diff") terrainMaterial.setBaseColorTexture(texture);
+      else terrainMaterial.setNormalTexture(texture);
     }
   }
 

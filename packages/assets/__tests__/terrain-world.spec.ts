@@ -44,6 +44,7 @@ import {
   PerspectiveCamera,
   Quaternion,
   Sphere,
+  Texture,
   Vector3,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -57,9 +58,11 @@ import {
   selectLodLevel,
 } from "../../core/src/model-lod.js";
 import { type IWorldPackage, validateWorldPackage } from "../../core/src/world-package.js";
+import { stackLayers } from "../../core/src/world-terrain-splat.js";
 import { createGltfReader, readGltfDocument } from "../src/gltf-io.js";
 import { primitiveTriangleCount } from "../src/lod/eligibility.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
+import { decodeImageBytes } from "../src/passes/decode-image.js";
 import { unpackGlb } from "../src/passes/shared-images.js";
 import { cookTerrainWorld } from "../src/world/terrain-world.js";
 
@@ -388,6 +391,63 @@ describe("cookTerrainWorld", () => {
     for (const node of doc.getRoot().getDefaultScene()?.listChildren() ?? []) {
       expect(node.getExtras()).toEqual({ tnTerrainSurface: "world.json" });
       expect(node.getMesh()?.getExtras()).toEqual({ tnTerrainSurface: "world.json" });
+    }
+  });
+
+  it("gives each map kind one lossless size and encoding across layers so the splat arrays stack", async () => {
+    const sharp = (await import("sharp")).default;
+    const noise = { type: "gaussian", mean: 128, sigma: 40 } as const;
+    const jpeg = (size: number) =>
+      sharp({ create: { width: size, height: size, channels: 3, background: "#808040", noise } })
+        .jpeg()
+        .toBuffer();
+    // The forest's shape scaled down: rock authored at half the size of grass, dirt and moss.
+    const [large, small] = await Promise.all([jpeg(64), jpeg(32)]);
+    const largeRgba = new Uint8Array(await sharp(large).ensureAlpha().raw().toBuffer());
+    const ids = ["grass", "dirt", "rock", "moss"];
+    const kinds = { diff: "diffBytes", nrm: "nrmBytes", orm: "ormBytes", h: "hBytes" } as const;
+    await cookTerrainWorld({
+      state: new Terrain({ resolution: 33, size: 256 }).evaluate(),
+      species: {},
+      out: path.join(dir, "world"),
+      materials: {
+        layers: ids.map((id) => {
+          const bytes = id === "rock" ? small : large;
+          return { id, diffBytes: bytes, nrmBytes: bytes, ormBytes: bytes, hBytes: bytes };
+        }),
+      },
+    });
+    for (const kind of Object.keys(kinds)) {
+      const maps = await Promise.all(
+        ids.map(async (id) => {
+          const name = `${id}_${kind}.jpg`;
+          const bytes = await readFile(path.join(dir, "world", "textures", name));
+          const decoded = await decodeImageBytes(bytes, name);
+          const texture = new Texture();
+          texture.image = { width: decoded.width, height: decoded.height } as never;
+          return { id, bytes, decoded, texture };
+        }),
+      );
+      for (const { id, bytes, decoded } of maps) {
+        expect([decoded.width, decoded.height, decoded.data.length]).toEqual([64, 64, 64 * 64 * 4]);
+        // One lossless PNG encoding for the whole kind; larger maps keep every decoded pixel.
+        expect([...bytes.subarray(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
+        if (id !== "rock") expect(decoded.data).toEqual(largeRgba);
+      }
+      const copies: number[] = [];
+      const renderer = {
+        raw: {
+          initTexture: () => undefined,
+          copyTextureToTexture: (_s: unknown, _d: unknown, _r: unknown, at: { z: number }) =>
+            copies.push(at.z),
+        },
+      };
+      const stacked = stackLayers(
+        maps.map((map) => map.texture),
+        renderer as never,
+      );
+      expect((stacked?.image as { depth?: number } | undefined)?.depth).toBe(4);
+      expect(copies).toEqual([0, 1, 2, 3]);
     }
   });
 
