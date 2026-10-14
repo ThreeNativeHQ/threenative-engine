@@ -3,6 +3,7 @@
 // up to five times per drawn frame on Midway, and each pass made the next frame later (PRD-610 AC-1).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { readFileSync, rmSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -11,7 +12,8 @@ import { bundleNativeEngine } from "../../scripts/bundle-native-engine.mjs";
 
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const executable = process.argv[2];
-assert(executable, "Usage: player-frame-per-present.mjs <tn-native-engine-player-v8>");
+assert(executable, "Usage: player-frame-per-present.mjs <tn-native-engine-player-v8> [--cpu-profile]");
+const cpuProfile = process.argv.includes("--cpu-profile");
 const work = await mkdtemp(resolve(native, "build/player-frame-per-present-"));
 process.once("exit", () => rmSync(work, { recursive: true, force: true }));
 const entry = resolve(work, "game.ts");
@@ -32,9 +34,11 @@ const frame = () => {
 requestAnimationFrame(frame);
 `);
 await bundleNativeEngine({ entry, outfile, boot: false, host: true });
-const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy", TN_PLAYER_METRICS: "1" };
+const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy", TN_PLAYER_METRICS: "1",
+  ...(cpuProfile ? { TN_JS_CPU_PROFILE: "1", TN_JS_CPU_PROFILE_START_FRAME: "10" } : {}) };
 delete env.TN_PLAYTEST_MAILBOX_ROOT;
 const child = spawn(resolve(executable), [outfile], { env });
+const stopped = once(child, "close");
 let output = "";
 const reached = await new Promise((done) => {
   const timer = setTimeout(() => done(false), 60_000);
@@ -47,7 +51,30 @@ const reached = await new Promise((done) => {
   child.once("exit", () => { clearTimeout(timer); done(output.includes("FRAME_CALLBACK 40")); });
 });
 child.kill();
+const stopTimeout = setTimeout(() => child.kill("SIGKILL"), 5_000);
+const [exitCode, signal] = await stopped;
+clearTimeout(stopTimeout);
+assert.notEqual(signal, "SIGKILL", "player must stop within five seconds of SIGTERM");
 assert(reached, `the game never ran 40 frame callbacks:\n${output.slice(-2000)}`);
+if (cpuProfile) {
+  assert.equal(exitCode, 0, "profile flush must exit successfully");
+  const profileStart = output.indexOf("TN_PLAYER_CPU_PROFILE_START_FRAME:10");
+  assert(
+    profileStart > output.indexOf("FRAME_CALLBACK 10\n") &&
+      profileStart < output.indexOf("FRAME_CALLBACK 11\n"),
+    "CPU profile must start after requested drawn frame 10",
+  );
+  assert(
+    Number(output.match(/TN_JS_CPU_PROFILE_TOTAL:(\d+)/)?.[1]) > 0,
+    "CPU profile must flush nonempty samples on SIGTERM",
+  );
+  assert.match(
+    output,
+    /TN_JS_CPU_PROFILE:\d+\t[^\t]+\tframe @ game\.js\tgame\.js:\d+/,
+    "CPU profile must name the sampled game function and bundle",
+  );
+  console.log("PASS CPU profile starts after frame 10 and flushes samples on SIGTERM");
+}
 // Frame callbacks between two drawn frames (TN_PLAYER_FRAME is printed once per drawn frame), past warm-up
 // and before the game stops logging them.
 const perFrame = [];

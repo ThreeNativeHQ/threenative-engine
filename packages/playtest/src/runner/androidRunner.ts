@@ -639,6 +639,14 @@ async function runDevicePlaytestInternal(
       });
     }
     await attemptCleanup(() => target.driver.stop());
+    if (target.name === "desktop") {
+      await attemptCleanup(async () => {
+        await mkdir(config.artifactDirectory, { recursive: true });
+        await writeObservationArtifacts(config.artifactDirectory, { console: true }, {
+          console: await target.driver.captureConsole(), network: [], runtimeTrace: undefined,
+        });
+      });
+    }
     await attemptCleanup(async () => {
       await bridge?.close();
     });

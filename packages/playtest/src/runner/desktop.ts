@@ -69,6 +69,7 @@ export class LocalDeviceMailbox {
  */
 export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
   private child?: ChildProcess;
+  private childClosed?: Promise<void>;
   private mailboxRoot?: string;
   private readonly consoleEntries: Array<{ text: string; type: string }> = [];
   private readonly pendingOutput = { stderr: "", stdout: "" };
@@ -120,6 +121,7 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       windowsHide: true,
     });
     this.child = child;
+    this.childClosed = new Promise((resolve) => child.once("close", () => resolve()));
     child.stdout?.on("data", (chunk: Buffer | string) => this.recordOutput("stdout", chunk));
     child.stderr?.on("data", (chunk: Buffer | string) => this.recordOutput("stderr", chunk));
     try {
@@ -190,6 +192,7 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
   async stop(): Promise<void> {
     const child = this.child;
     if (child === undefined) return;
+    let closeTimeout: ReturnType<typeof setTimeout> | undefined;
     try {
       if (!isProcessExited(child) && child.pid !== undefined) {
         terminateProcess(child, "SIGTERM");
@@ -204,7 +207,14 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
           throw new Error("Desktop playtest executable did not exit after SIGTERM.");
         }
       }
+      await Promise.race([
+        this.childClosed,
+        new Promise<never>((_, reject) => {
+          closeTimeout = setTimeout(() => reject(new Error("Desktop playtest stdout/stderr did not close after exit.")), 1_000);
+        }),
+      ]);
     } finally {
+      clearTimeout(closeTimeout);
       this.flushOutput("stdout");
       this.flushOutput("stderr");
     }

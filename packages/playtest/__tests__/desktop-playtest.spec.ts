@@ -170,6 +170,34 @@ test.each([
   }
 });
 
+test.skipIf(process.platform === "win32").each(["already-exited", "signal-stopped"])("desktop stop drains delayed child stdout after %s", async (mode) => {
+  const root = await makeTempDir("playtest-desktop-close-");
+  const driver = new DesktopPlaytestDriver({
+    executable: process.execPath,
+    mailboxRoot: root,
+    args: ["-e", `
+      const { spawn } = require("node:child_process");
+      const finish = () => {
+        spawn(process.execPath, ["-e", 'setTimeout(() => process.stdout.write("TN_JS_CPU_PROFILE_TOTAL:10"), 250)'],
+          { stdio: ["ignore", 1, 2] }).unref();
+        process.exit(0);
+      };
+      if (${JSON.stringify(mode)} === "already-exited") finish();
+      else { process.on("SIGTERM", finish); setInterval(() => {}, 1000); console.log("ready"); }
+    `],
+  });
+  try {
+    await driver.prepare("unused");
+    if (mode === "already-exited") await expect.poll(() => driver.isAlive()).toBe(false);
+    else await expect.poll(async () => (await driver.captureConsole()).some((entry) => entry.text === "ready")).toBe(true);
+    await driver.stop();
+    expect(await driver.captureConsole()).toContainEqual({ text: "TN_JS_CPU_PROFILE_TOTAL:10", type: "log" });
+  } finally {
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("a classified native warning is recorded but is not a runtime error", async () => {
   const warning = "libEGL warning: DRI3 error: Could not get DRI3 device";
   const fatal = "unclassified native failure";
@@ -526,6 +554,26 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout fails clos
     expect(errored).not.toContain("platform noise the reader does not need");
   } finally {
     await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("desktop console artifacts retain profiler output emitted during shutdown", async () => {
+  const projectPath = await makeTempDir("playtest-desktop-shutdown-console-");
+  const console = [{ text: "game ready", type: "log" }];
+  const profile = { text: "TN_JS_CPU_PROFILE_TOTAL:10", type: "log" };
+  try {
+    await runDesktopScenario(2, {
+      projectPath,
+      console,
+      onDriver(driver) {
+        const stop = driver.stop.bind(driver);
+        driver.stop = async () => { await stop(); console.push(profile); };
+      },
+    });
+    expect(JSON.parse(await readFile(join(projectPath, "artifacts", "console.json"), "utf8"))).toEqual([...console]);
+    expect(console).toContainEqual(profile);
+  } finally {
+    await rm(projectPath, { force: true, recursive: true });
   }
 });
 

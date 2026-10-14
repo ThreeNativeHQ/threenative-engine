@@ -250,12 +250,13 @@ class V8Game {
         triangles_ = renderer.lastFrame().triangles + renderer.lastFrame().shadowTriangles;
         pipelineCompiles_ = renderer.pipelines().compiles();
         frameClockMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStartedAt_).count();
+        profileFrame();
     }
     /** The page's queued frames, on the thread that owns JavaScript (legacy runtime.cpp drainUiMessages):
      *  hit regions stay with the host, everything else goes to core's `__tnUiGameReceive`. */
     void uiFrame();
     /** A frame with nothing to draw yet: the game's frame callbacks still run (run.h frameWithoutView). */
-    void frameWithoutView() { presentFrame(); }
+    void frameWithoutView() { presentFrame(); profileFrame(false); }
     void beforeRender(Renderer& renderer, RenderDatabase& database) {
         presentFrame();  // the game's frame callbacks may change the renderer state applied below
         if (outputChanged_) renderer.setOutput(output_);
@@ -266,6 +267,10 @@ class V8Game {
     }
   private:
     void presentFrame();
+    void profileFrame(bool drawn = true);
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    uint64_t profileFrames_ = 0;
+#endif
     // The frame clock tn.onFrame reads: it moves only by each presented frame's own duration, from
     // the game's frame callbacks through present (the TN_FRAME_BUDGET quantity, owner 2026-10-08),
     // so a runner's tick batches and idle waits between frames are never counted as frame time.
@@ -878,6 +883,11 @@ bool V8Game::start(const std::string& path, std::string& error) {
         (std::filesystem::path(path).parent_path() / "native/assets.tnpk").string();
     services_ = mystral::js::createV8Engine();
     if (!services_) return error = "TN_PLAYER_V8_SERVICES: no V8 engine", false;
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    // The desktop runner terminates the player with SIGTERM; V8 must flush on its owning thread.
+    if (mystral::js::g_startCpuProfile)
+        std::signal(SIGTERM, [](int) { mystral::js::g_cpuProfileStopRequested = 1; });
+#endif
     isolate_ = static_cast<v8::Isolate*>(services_->getRawContext());
 
     const tn_version_info_t own = tn_engine_version();
@@ -1000,7 +1010,12 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "surfaceSize"), v8::Function::New(ctx, &surfaceSize, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "presentMode"), v8str(isolate_, player::presentModeName())).Check();
     v8::Local<v8::Script> script;
-    if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
+    v8::ScriptOrigin origin(
+#if V8_MAJOR_VERSION < 12
+        isolate_,
+#endif
+        v8str(isolate_, path));
+    if (!v8::Script::Compile(ctx, v8str(isolate_, source.str()), &origin).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());
         return error = std::string("the game bundle failed: ") + (*message ? *message : "?"), false;
     }
@@ -1072,6 +1087,9 @@ V8Game::~V8Game() {
     mystral::platform::setWheelCallback({});
     if (isolate_ == nullptr)
         return;
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
+#endif
     {
         v8::Isolate::Scope isolateScope(isolate_);
         v8::HandleScope scope(isolate_);
@@ -1251,6 +1269,25 @@ void V8Game::uiFrame() {
             std::printf("[Playtest] TN_UI_RECEIVE_FAILED: %s\n", *message ? *message : "the receiver threw");
         }
     }
+}
+
+void V8Game::profileFrame(bool drawn) {
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    if (!mystral::js::g_startCpuProfile) return;
+    static const uint32_t startFrame = [] {
+        const char* value = std::getenv("TN_JS_CPU_PROFILE_START_FRAME");
+        return value != nullptr ? static_cast<uint32_t>(std::strtoul(value, nullptr, 10)) : 226u;
+    }();
+    if (drawn && ++profileFrames_ == startFrame) {
+        mystral::js::g_startCpuProfile();
+        std::printf("TN_PLAYER_CPU_PROFILE_START_FRAME:%llu\n", static_cast<unsigned long long>(profileFrames_));
+    }
+    if (mystral::js::g_cpuProfileStopRequested && mystral::js::g_dumpCpuProfile) {
+        mystral::js::g_dumpCpuProfile();
+        std::fflush(stdout);
+        std::_Exit(mystral::js::g_cpuProfileFailed ? 1 : 0);
+    }
+#endif
 }
 
 void V8Game::safePoint() {
