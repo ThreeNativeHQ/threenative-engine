@@ -809,6 +809,18 @@
       "required": true
     },
     {
+      "id": "transient-output-depth",
+      "title": "owned output preserves physical MSAA depth and submission order",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/transient-output-depth.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": { "pixelMismatchRatio": 0.01, "perceptualDeltaE": 3.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "71-tsl-color-node",
       "title": "tsl color node",
       "category": "webgpu-tsl",
