@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -106,7 +106,10 @@ describe("pinned starter assets", () => {
   it("bakes a scaffolded forest kit using the file archive with no bundled assets", async () => {
     const fixture = await installed();
     const game = join(fixture.dir, "game");
-    await copyTerrainKit("forest", game);
+    const kit = join(fixture.dir, "template-assets/terrain/forest");
+    await cp(join(root, "starter/forest"), kit, { recursive: true });
+    await copyFile(join(root, "starter-assets/credits.json"), join(kit, "credits.json"));
+    await copyTerrainKit("forest", game, join(fixture.dir, "templates"));
     await fixture.bake(pathToFileURL(join(game, "bake.mjs")).href, {
       sky: "hdri/kloofendal_48d_partly_cloudy_1k.hdr",
     });

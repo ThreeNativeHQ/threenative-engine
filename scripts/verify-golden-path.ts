@@ -967,6 +967,7 @@ module.exports = {
   );
   const invocation = [
     ...(options.ignoreInstallScripts ? ["npm_config_ignore_scripts=true"] : []),
+    `npm_config_pnpmfile=${pnpmfile}`,
     "pnpm",
     "dlx",
     "--silent",

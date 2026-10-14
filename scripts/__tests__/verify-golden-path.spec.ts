@@ -239,7 +239,7 @@ describe("golden path matrix", () => {
         }),
       );
       const fakePnpm = path.join(bin, "pnpm");
-      await writeFile(fakePnpm, '#!/bin/sh\ntest "$1" = dlx\n');
+      await writeFile(fakePnpm, '#!/bin/sh\ntest "$1" = dlx && test -f "$npm_config_pnpmfile"\n');
       await chmod(fakePnpm, 0o755);
 
       const actions = {
