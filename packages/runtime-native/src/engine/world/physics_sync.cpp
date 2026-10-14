@@ -111,6 +111,7 @@ void PhysicsSync::writeTransforms() {
         // `quaternion` notifies, so the object's Euler follows it, as three's own does.
         binding->second->position.set(record[1], record[2], record[3]);
         binding->second->quaternion.set(record[4], record[5], record[6], record[7]);
+        binding->second->markLocalTransformDirty();
     }
 }
 

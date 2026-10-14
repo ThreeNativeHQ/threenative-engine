@@ -92,6 +92,7 @@ void nestedVector(ClassBinding& b, const char* prefix, Field field) {
         b.getters[path] = [field, i](void* self) { return Value::of(component3(std::invoke(field, *as<T>(self)), i)); };
         b.setters[path] = [field, i](void* self, const Value& v) {
             setComponent3(std::invoke(field, *as<T>(self)), i, number(v));
+            as<T>(self)->markLocalTransformDirty();
         };
     }
 }
@@ -385,6 +386,7 @@ void registerObject3D(ClassBinding& b) {
     // Every kept member's `__address` in one call: the Wasm back end asks once per object, not per member.
     b.getters["__addresses"] = [](void* self) {
         auto* o = as<Object3D>(self);
+        Object3D::transformTrackingAddress(&o->position)[2] = 1;
         const auto at = [](const void* member) { return Value::of(double(reinterpret_cast<uintptr_t>(member))); };
         return Value::record({{"__address", at(o->flags())}, {"position", at(&o->positionValue())}, {"rotation", at(&o->rotationValue())},
             {"quaternion", at(&o->quaternionValue())}, {"scale", at(&o->scaleValue())},
@@ -406,13 +408,22 @@ void registerObject3D(ClassBinding& b) {
         as<Object3D>(self)->setLayerMask(number(v));
     };
     b.getters["matrixAutoUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixAutoUpdate); };
-    b.setters["matrixAutoUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixAutoUpdate = flag(v); };
+    b.setters["matrixAutoUpdate"] = [](void* self, const Value& v) {
+        as<Object3D>(self)->matrixAutoUpdate = flag(v);
+        as<Object3D>(self)->markLocalTransformDirty();
+    };
     b.getters["matrixWorldAutoUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldAutoUpdate); };
-    b.setters["matrixWorldAutoUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixWorldAutoUpdate = flag(v); };
+    b.setters["matrixWorldAutoUpdate"] = [](void* self, const Value& v) {
+        as<Object3D>(self)->matrixWorldAutoUpdate = flag(v);
+        as<Object3D>(self)->markLocalTransformDirty();
+    };
     b.getters["static"] = [](void* self) { return Value::of(as<Object3D>(self)->isStatic); };
     b.setters["static"] = [](void* self, const Value& v) { as<Object3D>(self)->isStatic = flag(v); };
     b.getters["matrixWorldNeedsUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldNeedsUpdate); };
-    b.setters["matrixWorldNeedsUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixWorldNeedsUpdate = flag(v); };
+    b.setters["matrixWorldNeedsUpdate"] = [](void* self, const Value& v) {
+        as<Object3D>(self)->matrixWorldNeedsUpdate = flag(v);
+        as<Object3D>(self)->markLocalTransformDirty();
+    };
     b.getters["id"] = [](void* self) { return Value::of(double(as<Object3D>(self)->id())); };
     b.getters["uuid"] = [](void* self) { return Value{Value::Kind::String, 0, as<Object3D>(self)->uuid}; };
     b.setters["uuid"] = [](void* self, const Value& v) {
@@ -456,6 +467,7 @@ void registerObject3D(ClassBinding& b) {
             std::optional<Vector3>& pivot = as<Object3D>(self)->pivot;
             if (!pivot.has_value()) throw Unsupported{"this Object3D has no pivot"};
             setComponent3(*pivot, i, number(v));
+            as<Object3D>(self)->markLocalTransformDirty();
         };
     }
     b.getters["rotation.order"] = [](void* self) {

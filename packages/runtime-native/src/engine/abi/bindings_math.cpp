@@ -7,6 +7,7 @@
 #include "engine/foundation/math/Primitives.h"
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/scene/object3d.h"
 
 #include <algorithm>
 #include <array>
@@ -1367,7 +1368,10 @@ void registerMathBindings(Registry& classes) {
     classes["Sphere"].fields = {{"radius", field(sphere, sphere.radius)}};
     for (auto& [name, binding] : classes)
         if (!binding.fields.empty())
-            binding.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(self))); };
+            binding.getters["__address"] = [](void* self) {
+                if (auto* tracking = Object3D::transformTrackingAddress(self)) tracking[2] = 1;
+                return Value::of(double(reinterpret_cast<uintptr_t>(self)));
+            };
 }
 
 std::string viewLayoutJson() {

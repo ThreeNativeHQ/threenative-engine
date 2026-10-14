@@ -260,6 +260,8 @@ bool Endpoint::applySetup(const Value* argument, Value& result, std::string& err
                 p.object->quaternion.set(at("rotation", 0), at("rotation", 1), at("rotation", 2), at("rotation", 3));
             if (p.transform->find("scale"))
                 p.object->scale.set(at("scale", 0), at("scale", 1), at("scale", 2));
+            if (p.transform->find("position") || p.transform->find("rotation") || p.transform->find("scale"))
+                p.object->markLocalTransformDirty();
         }
     }
     result = obj({{"entities", Value::makeArray(std::move(placed))}});

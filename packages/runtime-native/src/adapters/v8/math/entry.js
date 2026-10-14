@@ -45,51 +45,75 @@ globalThis.__tnMathInstall = function install(target, layoutText) {
   const doubles = (buffer, offset, bytes) => new Float64Array(buffer, offset, bytes / Float64Array.BYTES_PER_ELEMENT);
   const views = {};
 
+  const orders = layout.eulerOrders;
+  const orderIndex = Object.fromEntries(orders.map((order, index) => [order, index]));
+  // Literal private accessors keep the JIT write path local; only explicit raw aliases escape.
+  const trackedView = (name, prefix = "") => {
+    const info = layout[name];
+    const Base = CLASSES[name];
+    const fields = Object.entries(info.fields).map(([key, byte]) => [prefix + key, byte / 8]);
+    const dirty = "if (this.#dirty) this.#dirty[1] = 1;";
+    const escapeMark = "if (this.#dirty) this.#dirty[2] = 1;";
+    const View = new Function("orders", "orderIndex", `return class {
+      #a; #o; #dirty;
+      constructor(a, o, dirty) {
+        this.#a = a; this.#o = o; this.#dirty = dirty;
+        ${name === "Quaternion" || name === "Euler" ? `this.is${name} = true;` : ""}
+        for (const key of ${JSON.stringify(name === "Euler" ? ["_a", "_o"] : ["_a"])}) {
+          const descriptor = Object.getOwnPropertyDescriptor(new.target.prototype, key);
+          // Raw aliases allow assignment, but reflection cannot detach them from tracked private storage.
+          Object.defineProperty(this, key, { ...descriptor, enumerable: true, configurable: false });
+        }
+      }
+      get _a() { ${escapeMark} return this.#a; }
+      set _a(value) { ${escapeMark} this.#a = value; }
+      ${name === "Euler" ? `get _o() { ${escapeMark} return this.#o; }
+        set _o(value) { ${escapeMark} this.#o = value; }` : ""}
+      ${fields.map(([key, index]) => `get ${key}() { return this.#a[${index}]; }
+        set ${key}(v) { this.#a[${index}] = v; ${dirty} }`).join("\n")}
+      ${name === "Euler" ? `get _order() { return orders[this.#o[0]]; }
+        set _order(value) {
+          const index = orderIndex[value];
+          if (index === undefined) throw new TypeError('TN_NATIVE_EULER_ORDER: ' + value + ' is not one of ' + orders.join(', '));
+          this.#o[0] = index; ${dirty}
+        }` : ""}
+    }`)(orders, orderIndex);
+    Object.setPrototypeOf(View.prototype, Base.prototype);
+    Object.defineProperty(View.prototype, "constructor", { value: Base, writable: true, configurable: true });
+    return View;
+  };
+  const metadata = (buffer) => buffer === undefined ? undefined : new Uint8Array(buffer);
   for (const name of ["Vector2", "Vector3", "Vector4"]) {
     const info = layout[name];
-    const View = subclass(CLASSES[name]);
-    accessors(View.prototype, info.fields, "_a");
-    const Make = function (a) { this._a = a; };
-    Make.prototype = View.prototype;
-    views[name] = (buffer, offset) => new Make(doubles(buffer, offset, info.bytes));
+    const View = trackedView(name);
+    views[name] = (buffer, offset, dirty) => new View(doubles(buffer, offset, info.bytes), undefined, metadata(dirty));
   }
   const vector3 = (buffer, offset) => views.Vector3(buffer, offset);
 
-  // Euler and Quaternion: three keeps `_x` etc. and fires `_onChangeCallback` from the public setters, so
-  // the accessors are named `_x`. An Object3D's pair is linked (see link): a write to one writes the other.
+  // Three's public setters retain their quaternion/Euler onChange coupling.
   const quaternionInfo = layout.Quaternion;
-  const QuaternionView = subclass(Quaternion);
-  accessors(QuaternionView.prototype, quaternionInfo.fields, "_a", "_");
+  const QuaternionView = trackedView("Quaternion", "_");
   QuaternionView.prototype._onChangeCallback = function () {
     const e = this._e;
     if (e !== undefined) e.setFromQuaternion(this, e._order, false);
   };
-  const MakeQuaternion = function (a) { this.isQuaternion = true; this._a = a; this._e = undefined; };
-  MakeQuaternion.prototype = QuaternionView.prototype;
-  views.Quaternion = (buffer, offset) => new MakeQuaternion(doubles(buffer, offset, quaternionInfo.bytes));
-
+  views.Quaternion = (buffer, offset, dirty) => {
+    const view = new QuaternionView(doubles(buffer, offset, quaternionInfo.bytes), undefined, metadata(dirty));
+    view._e = undefined;
+    return view;
+  };
   const eulerInfo = layout.Euler;
-  const EulerView = subclass(Euler);
-  accessors(EulerView.prototype, eulerInfo.fields, "_a", "_");
-  const orders = layout.eulerOrders;
-  const orderIndex = Object.fromEntries(orders.map((order, index) => [order, index]));
-  Object.defineProperty(EulerView.prototype, "_order", {
-    configurable: true,
-    get() { return orders[this._o[0]]; },
-    set(value) {
-      const index = orderIndex[value];
-      if (index === undefined) throw new TypeError(`TN_NATIVE_EULER_ORDER: ${value} is not one of ${orders.join(", ")}`);
-      this._o[0] = index;
-    },
-  });
+  const EulerView = trackedView("Euler", "_");
   EulerView.prototype._onChangeCallback = function () {
     const q = this._q;
     if (q !== undefined) q.setFromEuler(this, false);
   };
-  const MakeEuler = function (a, o) { this.isEuler = true; this._a = a; this._o = o; this._q = undefined; };
-  MakeEuler.prototype = EulerView.prototype;
-  views.Euler = (buffer, offset) => new MakeEuler(
-    new Float64Array(buffer, offset, 3), new Int32Array(buffer, offset + eulerInfo.order, 1));
+  views.Euler = (buffer, offset, dirty) => {
+    const view = new EulerView(new Float64Array(buffer, offset, 3),
+      new Int32Array(buffer, offset + eulerInfo.order, 1), metadata(dirty));
+    view._q = undefined;
+    return view;
+  };
 
   const colorInfo = layout.Color;
   const ColorView = subclass(Color);

@@ -118,7 +118,10 @@ void protocol() {
     std::size_t bad = 0, n = 0;
     for (const Case& c : cases) {
         const std::string id = "r" + std::to_string(n++);
+        auto* tracking = Object3D::transformTrackingAddress(&game.player->position);
+        tracking[1] = 0;
         const json::Value r = reply(*game.endpoint, request(id, c.method, c.argument));
+        if (c.method == "applySetup" && c.ok) CHECK(tracking[1] == 1);
         const json::Value* echoed = r.find("id");
         const json::Value* error = r.find("error");
         const bool answered = r.find("result") != nullptr;

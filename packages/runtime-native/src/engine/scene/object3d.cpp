@@ -26,6 +26,7 @@ struct alignas(64) TransformPage {
     // leased is a zombie (still counted live) until the last lease is returned.
     std::array<uint16_t, size> leases{};
     std::array<bool, size> zombie{};
+    std::array<std::array<uint8_t, 3>, size> tracking{};
 };
 
 namespace {
@@ -85,12 +86,27 @@ Object3D::TransformLayout Object3D::transformLayout() {
     return layout;
 }
 
+void Object3D::enableTrackedTransform() {
+    auto& flags = transform_.page->tracking[transform_.index];
+    if (!flags[0]) flags = {1, 1, 0};
+}
+
+void Object3D::markLocalTransformDirty() { transform_.page->tracking[transform_.index][1] = 1; }
+
+uint8_t* Object3D::transformTrackingAddress(const void* address) {
+    auto& pool = transforms();
+    const std::lock_guard lock(pool.mutex);
+    const Found found = findLocked(pool, address);
+    return found.page ? found.page->tracking[found.index].data() : nullptr;
+}
+
 int Object3D::leaseTransform(const void* address) {
     auto& pool = transforms();
     const std::lock_guard lock(pool.mutex);
     const Found found = findLocked(pool, address);
     if (found.page == nullptr) return -1;
     ++found.page->leases[found.index];
+    if (found.column >= 4) found.page->tracking[found.index][2] = 1;
     return found.column;
 }
 
@@ -131,6 +147,7 @@ Object3D::TransformSlot Object3D::acquireTransform() {
     reset(page->positions[i]); reset(page->rotations[i]); reset(page->quaternions[i]);
     reset(page->scales[i]); reset(page->matrices[i]); reset(page->worlds[i]);
     page->scales[i].set(1, 1, 1);
+    page->tracking[i] = {0, 1, 1};
     return {page, i};
 }
 
@@ -236,11 +253,13 @@ void Object3D::onRotationChange(void* context) {
     // three's `onRotationChange`: the Euler is authoritative, so it writes the quaternion without
     // notifying back, which is what `update = false` is for.
     auto& object = *static_cast<Object3D*>(context);
+    object.markLocalTransformDirty();
     object.quaternion.setFromEuler(object.rotation, false);
 }
 
 void Object3D::onQuaternionChange(void* context) {
     auto& object = *static_cast<Object3D*>(context);
+    object.markLocalTransformDirty();
     object.rotation.setFromQuaternion(object.quaternion, object.rotation.order, false);
 }
 
@@ -313,6 +332,7 @@ void Object3D::disableAllLayers() {
 // ------------------------------------------------------------------------------ transforms
 
 void Object3D::applyMatrix4(const Matrix4& m) {
+    markLocalTransformDirty();
     if (matrixAutoUpdate) updateMatrix();
     matrix.premultiply(m);
     matrix.decompose(position, quaternion, scale);
@@ -366,6 +386,7 @@ Object3D& Object3D::rotateY(double angle) { return rotateOnAxis(axisY, angle); }
 Object3D& Object3D::rotateZ(double angle) { return rotateOnAxis(axisZ, angle); }
 
 Object3D& Object3D::translateOnAxis(const Vector3& axis, double distance) {
+    markLocalTransformDirty();
     scratchV1.copy(axis).applyQuaternion(quaternion);
     position.add(scratchV1.multiplyScalar(distance));
     bump();
@@ -728,6 +749,7 @@ void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool f
 }
 
 Object3D& Object3D::copy(const Object3D& source) {
+    markLocalTransformDirty();
     name = source.name;
     up.copy(source.up);
     position.copy(source.position);

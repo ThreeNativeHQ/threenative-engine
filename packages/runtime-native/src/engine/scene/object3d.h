@@ -247,6 +247,12 @@ public:
         uint32_t vectorStride, eulerStride, quaternionStride, matrixStride;
     };
     [[nodiscard]] static TransformLayout transformLayout();
+    // Internal V8 admission only; public C++/Wasm objects remain eager. No cache consumes this yet.
+    void enableTrackedTransform();
+    void markLocalTransformDirty();
+    // Stable bytes: tracked, TRS dirty, irreversibly escaped. Shares the transform slot's lifetime.
+    [[nodiscard]] static uint8_t* transformTrackingAddress(const void* address);
+
     /**
      * A language view of a transform column holds a lease on its slot: an object that dies meanwhile
      * keeps the slot out of reuse (and its page alive) until every lease is returned, so a view never

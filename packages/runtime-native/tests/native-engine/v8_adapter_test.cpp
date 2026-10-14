@@ -4,6 +4,7 @@
 #include "engine/abi/bindings.h"
 #include "engine/abi/tsl_call.h"
 #include "engine/animation/mixer.h"
+#include "engine/animation/skinning/skeleton.h"
 #include "engine/foundation/ThreeConstants.h"
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/standard.h"
@@ -1537,6 +1538,21 @@ void jsMath() {
 void jsMathViews() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
+    {
+        Adapter nativeAdapter(rt.isolate, rt.context);
+        v8::HandleScope nativeScope(rt.isolate);
+        auto nativeContext = v8::Context::New(rt.isolate);
+        v8::Context::Scope nativeContextScope(nativeContext);
+        nativeAdapter.install(nativeContext, nativeContext->Global());
+        auto script = v8::Script::Compile(nativeContext, v8::String::NewFromUtf8Literal(rt.isolate,
+            "const o = new Object3D(); o.position.x = 7; o.updateMatrix(); o")).ToLocalChecked();
+        tn_handle_t h{};
+        CHECK(nativeAdapter.unwrap(script->Run(nativeContext).ToLocalChecked(), h));
+        auto* object = static_cast<tn::engine::Object3D*>(tn::abi::objectOf(h)->ptr.get());
+        auto* flags = tn::engine::Object3D::transformTrackingAddress(&object->position);
+        CHECK(flags[0] == 0 && flags[2] == 1 && object->matrix.elements[12] == 7);
+    }
+
     Adapter adapter(rt.isolate, rt.context);
     adapter.setJsMath(true);
     v8::HandleScope scope(rt.isolate);
@@ -1547,6 +1563,135 @@ void jsMathViews() {
         v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
             info.GetReturnValue().Set(static_cast<double>(tn::abi::crossings()));
         }).ToLocalChecked()).Check();
+    ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__tracking"),
+        v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            auto* a = static_cast<Adapter*>(info.Data().As<v8::External>()->Value());
+            tn_handle_t h{};
+            CHECK(a->unwrap(info[0], h));
+            auto* o = static_cast<tn::engine::Object3D*>(tn::abi::objectOf(h)->ptr.get());
+            auto* flags = tn::engine::Object3D::transformTrackingAddress(&o->position);
+            if (info.Length() > 1) flags[1] = 0;
+            info.GetReturnValue().Set(flags[0] * 100 + flags[1] * 10 + flags[2]);
+        }, v8::External::New(rt.isolate, &adapter)).ToLocalChecked()).Check();
+    const char* tracking = R"JS(
+        (() => {
+            const check = (ok) => { if (!ok) throw Error('tracking assertion'); };
+            const tree = new Group(); tree.add(new Object3D());
+            for (const clone of [tree.clone(true), new SkeletonUtils().clone(tree)]) {
+                check(__tracking(clone, true) === 100 && __tracking(clone.children[0], true) === 100);
+                const child = clone.children[0]; child.position.x = 8;
+                check(__tracking(child) === 110);
+                const alias = child.position._a.buffer; check(__tracking(child, true) === 101);
+                check(new Float64Array(alias)[0] === 8);
+                void clone.matrixWorld; check(__tracking(clone, true) === 101);
+            }
+            const o = new Object3D(), p = o.position;
+            check(__tracking(o, true) === 100);
+            for (const write of [() => p.x = 2, () => p.set(3,4,5), () => p.fromArray([6,7,8]),
+                () => o.scale.multiplyScalar(2), () => o.rotation.y = .5,
+                () => o.rotation.order = 'ZYX', () => o.quaternion.w = .8,
+                () => o.translateX(1), () => o.rotateY(.2), () => o.lookAt(1,2,3),
+                () => o.applyMatrix4(new Matrix4()), () => o.copy(new Object3D())]) {
+                __tracking(o, true); write(); check(__tracking(o) === 110);
+            }
+            p.fromArray([6,7,8]);
+            check(p instanceof Vector3 && Object.keys(p).join() === '_a');
+            check(!p.hasOwnProperty('x') && !Object.getOwnPropertyDescriptor(Object.getPrototypeOf(p), 'x').enumerable);
+            const backingDescriptor = Object.getOwnPropertyDescriptor(p, '_a');
+            check(backingDescriptor.enumerable && !backingDescriptor.configurable && !!backingDescriptor.set);
+            check(Object.keys(o.rotation).join() === 'isEuler,_a,_o,_q');
+            check(Object.keys(o.quaternion).join() === 'isQuaternion,_a,_e');
+            check(!('_o' in p) && !('_o' in o.quaternion) && '_o' in o.rotation);
+            check(!Reflect.ownKeys(Object.getPrototypeOf(p)).includes('_o'));
+            check(!Reflect.ownKeys(Object.getPrototypeOf(o.quaternion)).includes('_o'));
+            check(Reflect.ownKeys(Object.getPrototypeOf(o.rotation)).includes('_o'));
+            const protectedOwner = new Object3D(); protectedOwner.position.x = 19;
+            for (const [view, key] of [[protectedOwner.position, '_a'], [protectedOwner.quaternion, '_a'],
+                [protectedOwner.rotation, '_a'], [protectedOwner.rotation, '_o']]) {
+                let refused = false;
+                try { Object.defineProperty(view, key, { value: [] }); } catch (error) { refused = error instanceof TypeError; }
+                check(refused && !Reflect.deleteProperty(view, key));
+                refused = false;
+                try { (function () { 'use strict'; delete view[key]; })(); } catch (error) { refused = error instanceof TypeError; }
+                check(refused);
+            }
+            check(__tracking(protectedOwner, true) === 100 && protectedOwner.position.x === 19);
+            protectedOwner.position.x = 20; protectedOwner.updateMatrix();
+            check(protectedOwner.matrix.elements[12] === 20);
+
+            check(p.clone() instanceof Vector3 && p.clone().x === 6);
+            p.copy(new Vector3(9,8,7)); check(p.x === 9);
+            const a = p._a; check(__tracking(o, true) === 101);
+            check(a === p._a && a.buffer === p._a.buffer);
+            a[0] = 42; check(p.x === 42 && __tracking(o) === 101);
+            p.y = 43; check(__tracking(o) === 111);
+            const replacement = new Object3D(), replacementP = replacement.position;
+            replacementP._a = new Float64Array([31,32,33]);
+            check(__tracking(replacement, true) === 101 && replacementP.x === 31);
+            const e = new Object3D(); const order = e.rotation._o;
+            check(__tracking(e, true) === 101 && order === e.rotation._o);
+            e.rotation._o = new Int32Array([0]); check(e.rotation.order === 'XYZ');
+            for (const key of ['matrix', 'matrixWorld']) {
+                const m = new Object3D(); check(__tracking(m, true) === 100);
+                void m[key]; check(__tracking(m) === 101);
+            }
+            let gone = new Object3D(); const kept = gone.position; kept.set(12,13,14);
+            gone = null; gc();
+            for (let i = 0; i < 600; i++) new Object3D();
+            gc(); check(kept.x === 12 && kept.y === 13 && kept.z === 14);
+            kept.set(15,16,17); check(kept.z === 17);
+            return 'tracked';
+        })()
+    )JS";
+    {
+        v8::TryCatch caught(rt.isolate);
+        v8::Local<v8::Value> result;
+        auto script = v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, tracking).ToLocalChecked()).ToLocalChecked();
+        const bool ok = script->Run(ctx).ToLocal(&result);
+        if (!ok) { v8::String::Utf8Value error(rt.isolate, caught.Exception()); std::fprintf(stderr, "%s\n", *error); }
+        CHECK(ok);
+    }
+    tn_handle_t collected{};
+    {
+        v8::HandleScope ownerScope(rt.isolate);
+        auto source = v8::String::NewFromUtf8Literal(rt.isolate,
+            "globalThis.__owner = new Object3D(); globalThis.__kept = __owner.position; __kept.set(21,22,23); "
+            "globalThis.__rawOwner = new Object3D(); __rawOwner.position.set(41,42,43); "
+            "globalThis.__rawBuffer = __rawOwner.position._a.buffer; delete globalThis.__rawOwner; __owner");
+        auto owner = v8::Script::Compile(ctx, source).ToLocalChecked()->Run(ctx).ToLocalChecked();
+        CHECK(adapter.unwrap(owner, collected));
+        ctx->Global()->Delete(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__owner")).Check();
+    }
+    for (int i = 0; i < 4; ++i) rt.isolate->LowMemoryNotification();
+    tn_value_t stale{};
+    tn_diagnostic_t diagnostic{nullptr, 0};
+    CHECK(tn_get(collected, "name", &stale, &diagnostic) == TN_ERROR_INVALID_HANDLE);
+    tn_diagnostic_release(&diagnostic);
+    auto retainedCheck = v8::String::NewFromUtf8Literal(rt.isolate,
+        "for (let i = 0; i < 600; i++) new Object3D(); "
+        "__kept.z === 23 && (__kept.x = 24) === 24 && new Float64Array(__rawBuffer)[0] === 41");
+    CHECK(v8::Script::Compile(ctx, retainedCheck).ToLocalChecked()->Run(ctx).ToLocalChecked()->IsTrue());
+    tn::engine::Object3D eager;
+    auto* flags = tn::engine::Object3D::transformTrackingAddress(&eager.position);
+    CHECK(flags[0] == 0 && flags[2] == 1);
+    std::string cloneError;
+    auto nativeClone = tn::engine::cloneObject(eager, true, cloneError);
+    CHECK(nativeClone && cloneError.empty());
+    CHECK(tn::engine::Object3D::transformTrackingAddress(&nativeClone->position)[0] == 0);
+    eager.enableTrackedTransform();
+    flags[2] = 1;
+    eager.enableTrackedTransform();
+    CHECK(flags[2] == 1);  // Admission cannot undo an earlier escape.
+    flags[1] = 0;
+    eager.rotation.x = .2;
+    CHECK(flags[1] == 1);
+    flags[1] = 0;
+    eager.quaternion.w = .9;
+    CHECK(flags[1] == 1);
+    eager.position.x = 5; eager.updateMatrix();
+    CHECK(eager.matrix.elements[12] == 5);
+    eager.position.x = 6; eager.updateMatrix();
+    CHECK(eager.matrix.elements[12] == 6);
     const char* source = R"JS(
         const make = () => new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         const meshes = []; for (let i = 0; i < 100; i++) meshes.push(make());

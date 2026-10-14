@@ -56,6 +56,7 @@ void Skeleton::pose() {
             bone->matrix.copy(bone->matrixWorld);
         }
         bone->matrix.decompose(bone->position, bone->quaternion, bone->scale);
+        bone->markLocalTransformDirty();
     }
 }
 

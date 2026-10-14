@@ -165,6 +165,13 @@ void released() {
     root->add(*hand);
     PropertyBinding binding(root, "hand.position");
     const double in[3] = {1, 2, 3};
+    auto* tracking = Object3D::transformTrackingAddress(&hand->position);
+    for (const char* path : {"hand.position", "hand.scale", "hand.scale[x]"}) {
+        PropertyBinding transform(root, path);
+        tracking[1] = 0;
+        transform.setValue(in, 0);
+        CHECK(tracking[1] == 1);
+    }
     binding.setValue(in, 0);
     CHECK(binding.bound() && hand->position.y == 2);
     root->remove(*hand);

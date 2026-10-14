@@ -1331,6 +1331,31 @@ void matrix_walk_count() {
         return walked.number;
     };
     CHECK(walk(true) == 3 && walk(true) == 3);
+    auto* groupObject = engineObject<tn::engine::Object3D>(group);
+    groupObject->enableTrackedTransform();
+    auto* tracking = tn::engine::Object3D::transformTrackingAddress(&groupObject->position);
+    for (const char* path : {"position.x", "scale.y", "matrixAutoUpdate", "matrixWorldAutoUpdate", "matrixWorldNeedsUpdate"}) {
+        const tn_value_t value = std::strcmp(path, "position.x") == 0 ? num(0) :
+            std::strcmp(path, "scale.y") == 0 ? num(1) : boolean(true);
+        tracking[1] = 0;
+        CHECK(tn_set(group, path, &value, &d.value) == TN_OK);
+        CHECK(tracking[1] == 1);
+        CHECK(tracking[2] == 0);
+    }
+    tn_value_t addresses{};
+    CHECK(tn_get(group, "__addresses", &addresses, &d.value) == TN_OK);
+    CHECK(tracking[2] == 1);
+    groupObject->enableTrackedTransform();
+    CHECK(tracking[2] == 1);
+    auto* meshNative = engineObject<tn::engine::Object3D>(mesh);
+    meshNative->enableTrackedTransform();
+    auto* meshTracking = tn::engine::Object3D::transformTrackingAddress(&meshNative->position);
+    tn_value_t position{}, address{};
+    CHECK(tn_get(mesh, "position", &position, &d.value) == TN_OK && position.kind == TN_VALUE_HANDLE);
+    CHECK(meshTracking[2] == 0);
+    CHECK(tn_get(position.handle, "__address", &address, &d.value) == TN_OK);
+    CHECK(address.kind == TN_VALUE_NUMBER && address.number == double(reinterpret_cast<uintptr_t>(&meshNative->position)));
+    CHECK(meshTracking[2] == 1);
     // A hidden group composes itself and stops: its mesh is not visited, pruned or not asked to prune.
     const tn_value_t hidden = boolean(false), shown = boolean(true);
     CHECK(tn_set(group, "visible", &hidden, &d.value) == TN_OK);

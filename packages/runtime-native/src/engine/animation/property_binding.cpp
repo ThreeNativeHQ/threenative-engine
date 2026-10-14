@@ -316,15 +316,19 @@ void PropertyBinding::setValue(const double* buffer, std::size_t offset) {
         return;
     case Target::Position:
         node->position.fromArray(buffer, at);
+        node->markLocalTransformDirty();
         break;
     case Target::Scale:
         node->scale.fromArray(buffer, at);
+        node->markLocalTransformDirty();
         break;
     case Target::Quaternion:
         node->quaternion.fromArray(buffer, at);
+        node->markLocalTransformDirty();
         break;
     case Target::Component:
         (((*node).*vector_)()).setComponent(component_, buffer[offset]);
+        node->markLocalTransformDirty();
         break;
     // three stores the number itself; any read of `visible` treats it as JavaScript truthiness.
     case Target::Visible:
