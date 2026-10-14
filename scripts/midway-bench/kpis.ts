@@ -580,6 +580,7 @@ export function winnerOf(runs: readonly IMidwayRun[], text?: string) {
           run.skipped ||
           run.profiled ||
           run.timingExclusion ||
+          run.rejection ||
           run.desktop?.n !== PLAYER_FRAME_WINDOW ||
           run.desktop.worldWorkInvalid ||
           parityNote([run]) ||
@@ -632,7 +633,7 @@ export function winnerOf(runs: readonly IMidwayRun[], text?: string) {
 
 /** Timing scores exclude diagnostic runs; experimental structural progress can use timing-excluded runs. */
 export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?: string) {
-  const runs = all.filter((r) => !r.profiled && !r.timingExclusion);
+  const runs = all.filter((r) => !r.profiled && !r.timingExclusion && !r.rejection);
   const prd = prdText === undefined ? undefined : prdProgress(prdText);
   const { runs: accepted, ...winner } = winnerOf(runs, lockText);
   const reference = runs.find(
@@ -646,6 +647,7 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
       !!r.pkg?.trim() &&
       r.pkg !== measured[0]?.pkg &&
       !r.profiled &&
+      !r.rejection &&
       !r.skipped &&
       r.desktop?.n === PLAYER_FRAME_WINDOW &&
       !r.desktop.worldWorkInvalid &&

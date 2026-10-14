@@ -298,6 +298,8 @@ export interface IMidwayRun {
   profiled?: true;
   /** Raw readings remain visible, but a known measurement conflict excludes this run from scores. */
   timingExclusion?: string;
+  /** Explicit failed keep rule; raw readings remain visible but cannot score or win. */
+  rejection?: string;
   /** The build that ran it: the `pkg-<name>` directory of the player path in the log (desktop runs). */
   pkg?: string;
   /** `no samples` when the log held none; `ok` otherwise. */
@@ -452,11 +454,21 @@ export async function loadMidwayRuns(root = runsDir()): Promise<IMidwayRun[]> {
         if (error.code === "ENOENT") return undefined;
         throw error;
       });
-      runs.push(
-        exclusion === undefined
-          ? run
-          : { ...run, timingExclusion: exclusion.trim() || "Timing excluded" },
+      const rejection = await readFile(path.join(root, entry.name, "rejected.txt"), "utf8").catch(
+        (error) => {
+          if (error.code === "ENOENT") return undefined;
+          throw error;
+        },
       );
+      runs.push({
+        ...run,
+        ...(exclusion === undefined
+          ? {}
+          : { timingExclusion: exclusion.trim() || "Timing excluded" }),
+        ...(rejection === undefined
+          ? {}
+          : { rejection: rejection.trim() || "Rejected experiment" }),
+      });
     }
   }
   return runs.sort((a, b) => a.mtimeMs - b.mtimeMs || a.dir.localeCompare(b.dir));

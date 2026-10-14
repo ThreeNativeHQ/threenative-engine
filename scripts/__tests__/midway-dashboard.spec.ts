@@ -399,10 +399,12 @@ describe("groups and loading", () => {
       path.join(root, "parallel-desktop", "timing-exclusion.txt"),
       "Concurrent Midway instances",
     );
+    await writeFile(path.join(root, "parallel-desktop", "rejected.txt"), "Keep rule failed");
     const list = await loadMidwayRuns(root);
     expect(list).toHaveLength(2);
     expect(list.find((r) => r.tag === "parallel")).toMatchObject({
       timingExclusion: "Concurrent Midway instances",
+      rejection: "Keep rule failed",
       ui: { p95: 105 },
     });
     const scored = midwayOf(list);
@@ -478,6 +480,7 @@ describe("groups and loading", () => {
       r1,
       r2,
       d("s1-desktop", "pkg-s", 3592),
+      { ...d("rejected-u-desktop", "pkg-u", 2596), rejection: "Instructions regressed <keep>" },
       d("outlier1-desktop", "pkg-outlier", 1),
       d("outlier2-desktop", "pkg-outlier", 9000),
       d("incomplete-desktop", "pkg-incomplete", 2, true, 999),
@@ -514,6 +517,12 @@ describe("groups and loading", () => {
       detail: expect.stringContaining("experimental · not accepted"),
     });
     expect(state.candidate.structural?.pinnedProjection).toBe(5816);
+    const withT = midwayOf([
+      ...state.runs,
+      d("t1-desktop", "pkg-t", 3211),
+      d("t2-desktop", "pkg-t", 2955),
+    ]);
+    expect(withT.kpis.find((k) => k.id === "AC-3")?.current).toBe(3083);
     expect(state.winner.status).toBe("unqualified");
     const html = await readFile(new URL("../midway-bench/dashboard.html", import.meta.url), "utf8");
     const script = (html.split("<script>")[1] as string)
@@ -538,6 +547,10 @@ describe("groups and loading", () => {
       "structural metric only",
     ])
       expect(elements.get("candidate")?.innerHTML).toContain(text);
+    expect(elements.get("runs")?.innerHTML).toContain("rejected-u-desktop");
+    expect(elements.get("runs")?.innerHTML).toContain("Instructions regressed &lt;keep&gt;");
+    expect(elements.get("runs")?.innerHTML).toContain(">rejected</span>");
+    expect(state.builds.some((b) => b.build === "pkg-u")).toBe(false);
   });
 
   it("loads <tag>-<arm> dirs oldest first and ignores everything else", async () => {
@@ -1028,6 +1041,7 @@ describe("deliberate winner lock", () => {
     for (const patch of [
       { evidenceSha256: "0".repeat(64) },
       { timingExclusion: "Concurrent player" },
+      { rejection: "Keep rule failed" },
       { profiled: true as const },
       { parity: undefined },
       { desktop: { n: 1, eligible: 1, excluded: 0, medians: { cpuFrameCpuMs: 10 } } },

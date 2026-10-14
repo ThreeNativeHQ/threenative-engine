@@ -35,15 +35,6 @@ class SkinnedMesh;
 class Bone;
 struct GpuJointScene {
     struct Rig {
-        struct BoneEdges {
-            std::weak_ptr<Bone> bone;
-            Object3D* parent = nullptr;
-            std::vector<Object3D*> children;
-        };
-        struct Attachment {
-            std::weak_ptr<Object3D> node;
-            Object3D* parent = nullptr;
-        };
         std::weak_ptr<SkinnedMesh> mesh;
         std::weak_ptr<Object3D> placement;
         const void* skeleton = nullptr;
@@ -52,8 +43,6 @@ struct GpuJointScene {
         Matrix bind{};
         uint32_t outputBase = 0;
         std::shared_ptr<BufferStore> instances;
-        std::vector<BoneEdges> attachmentBones;
-        std::vector<Attachment> attachments;
     };
     uint64_t hierarchy = 0;
     std::shared_ptr<bool> valid = std::make_shared<bool>(true);
@@ -66,7 +55,6 @@ struct GpuJointScene {
     std::unordered_map<const SkinnedMesh*, uint32_t> byMesh;
     void revoke();
     bool current() const;
-    bool attachmentsCurrent(uint32_t rig) const;
 };
 class TraaPass;
 class PostEffects;
