@@ -277,7 +277,10 @@ export function prepareCellProxy(
     const declared = new Box3(new Vector3(...proxy.bounds.min), new Vector3(...proxy.bounds.max));
     const margin = 1e-4;
     declared.expandByScalar(margin);
-    if (!declared.containsBox(box)) throw new Error("Cell proxy lies outside its declared bounds.");
+    // The cook declares the exact vertex extent. `box` above is the cheaper geometry-box hull, which
+    // a rotated mesh inflates past that exact extent, so test the vertices themselves.
+    const exact = new Box3().setFromObject(root, true);
+    if (!declared.containsBox(exact)) throw new Error("Cell proxy lies outside its declared bounds.");
   }
   // copy() does not invoke the installed clone hook that registers another managed LOD chain.
   root.traverse((node) => {

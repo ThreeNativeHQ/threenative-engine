@@ -306,6 +306,33 @@ describe("cell proxy preserves authored texture storage and static colors", () =
       mesh.material.dispose();
     }
   });
+  it("accepts the cook's exact vertex bounds for a rotated mesh and rejects a box that misses it", () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3),
+    );
+    const mesh = new Mesh(geometry, new MeshStandardMaterial());
+    mesh.rotation.z = Math.PI / 4;
+    const half = Math.SQRT1_2;
+    const metadata = {
+      glb: "proxy.glb",
+      error: 0.1,
+      triangles: 1,
+      materialGroups: 1,
+      bounds: { min: [-half, 0, 0], max: [half, half, 0] },
+    };
+    try {
+      const prepared = prepareCellProxy(mesh, metadata);
+      for (const fixed of prepared.meshes) fixed.geometry.dispose();
+      expect(() =>
+        prepareCellProxy(mesh, { ...metadata, bounds: { min: [-half, 0, 0], max: [half, 0.5, 0] } }),
+      ).toThrow("declared bounds");
+    } finally {
+      geometry.dispose();
+      mesh.material.dispose();
+    }
+  });
   it.each([3, 4])(
     "copies static color%d attributes and the loaded material unchanged",
     (itemSize) => {
