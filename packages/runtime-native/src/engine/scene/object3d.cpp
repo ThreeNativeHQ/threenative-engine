@@ -746,13 +746,26 @@ bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain
 }
 
 void Object3D::updateMatrixWorld(bool force) {
-    if (skipsGpuJointSubtree()) { ++gpuBoundaryVisits_; return; }
+    if (skipsGpuJointSubtree()) {
+        ++gpuBoundaryVisits_;
+        for (const auto& weak : gpuJointAttachments) if (auto attachment = weak.lock()) attachment->updateWorldMatrix(true, false);
+        return;
+    }
     force = updateMatrixWorldSelf(force);
     for (Object3D* child : children) child->updateMatrixWorld(force);
 }
 
 uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
-    if (skipsGpuJointSubtree()) { ++gpuBoundaryVisits_; return 1; }
+    if (skipsGpuJointSubtree()) {
+        ++gpuBoundaryVisits_;
+        uint32_t visited = 1;
+        for (const auto& weak : gpuJointAttachments) if (auto attachment = weak.lock()) {
+            const auto before = matrixEvaluations();
+            attachment->updateWorldMatrix(true, false);
+            visited += uint32_t(matrixEvaluations() - before);
+        }
+        return visited;
+    }
     bool childForce = updateMatrixWorldSelf(force);
     afterMatrixWorld();
     uint32_t visited = 1;

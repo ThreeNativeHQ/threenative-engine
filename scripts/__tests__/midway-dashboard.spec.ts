@@ -508,7 +508,12 @@ describe("groups and loading", () => {
       target: 1500,
       pinnedProjection: 5816,
     });
-    expect(state.kpis.find((k) => k.id === "AC-3")?.current).toBe(5816);
+    expect(state.kpis.find((k) => k.id === "AC-3")).toMatchObject({
+      current: 3468,
+      baseline: 5816,
+      detail: expect.stringContaining("experimental · not accepted"),
+    });
+    expect(state.candidate.structural?.pinnedProjection).toBe(5816);
     expect(state.winner.status).toBe("unqualified");
     const html = await readFile(new URL("../midway-bench/dashboard.html", import.meta.url), "utf8");
     const script = (html.split("<script>")[1] as string)
@@ -894,7 +899,13 @@ describe("deliberate winner lock", () => {
     expect(state.winner.status).toBe("unqualified");
     expect(state.gap.desktop).toBeUndefined();
     expect(state.breakdown).toBeUndefined();
-    expect(state.kpis.every((k) => k.current === undefined)).toBe(true);
+    expect(state.kpis.filter((k) => k.id !== "AC-3").every((k) => k.current === undefined)).toBe(
+      true,
+    );
+    expect(state.kpis.find((k) => k.id === "AC-3")).toMatchObject({
+      current: 5000,
+      detail: expect.stringContaining("experimental · not accepted"),
+    });
     expect(state.candidate.kpis.some((k) => k.current !== undefined)).toBe(true);
   });
 
@@ -950,7 +961,7 @@ describe("deliberate winner lock", () => {
     for (const cpu of [1, 99]) {
       const later = run(
         "new1-desktop",
-        [pkgLine("pkg-new"), frame(cpu), ui(1)].join("\n"),
+        [pkgLine("pkg-new"), ...Array(1000).fill(frame(cpu)), ui(1), proj(1000)].join("\n"),
         parityText(true),
       );
       const state = midwayOf(
@@ -960,6 +971,11 @@ describe("deliberate winner lock", () => {
       );
       expect(state.winner).toMatchObject({ status: "accepted", build: "pkg-b" });
       expect(state.gap.desktop).toMatchObject({ build: "pkg-b", runs: 3, ms: 10 });
+      expect(state.candidate.structural?.projection).toBe(1000);
+      expect(state.kpis.find((k) => k.id === "AC-3")).toMatchObject({
+        build: "pkg-b",
+        current: 5000,
+      });
       expect(state.candidate.gap.desktop).toMatchObject({ build: "pkg-new", ms: cpu });
       expect(state.runs).toHaveLength(8);
     }

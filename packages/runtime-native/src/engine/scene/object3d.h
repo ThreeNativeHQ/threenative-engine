@@ -259,10 +259,12 @@ public:
     void joinDeferredWorldTransform();
     // Renderer-owned Bone boundaries only; explicit world queries always use the eager chain.
     std::weak_ptr<bool> gpuJointBoundary;
+    std::function<bool()> gpuJointGuard;
+    std::vector<std::weak_ptr<Object3D>> gpuJointAttachments;
     uint64_t gpuJointHierarchy = 0;
     bool skipsGpuJointSubtree() const {
         const auto valid = gpuJointBoundary.lock();
-        return valid && *valid && gpuJointHierarchy == hierarchyVersion();
+        return valid && *valid && gpuJointHierarchy == hierarchyVersion() && (!gpuJointGuard || gpuJointGuard());
     }
     inline static uint64_t matrixEvaluations_ = 0, joinDependencyVisits_ = 0, gpuBoundaryVisits_ = 0;
     // Executed GPU-lazy projection, validation, and admission/revocation node inspections.

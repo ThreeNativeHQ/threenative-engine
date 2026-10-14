@@ -527,7 +527,9 @@ void GpuJointScene::revoke() {
 bool GpuJointScene::current() const {
     if (!*valid) { return false; }
     if (hierarchy != Object3D::hierarchyVersion()) { return false; }
-    for (const auto& saved : rigs) {
+    for (uint32_t rigIndex = 0; rigIndex < rigs.size(); ++rigIndex) {
+        const auto& saved = rigs[rigIndex];
+        if (!saved.attachments.empty() && !attachmentsCurrent(rigIndex)) return false;
         const auto rig = saved.mesh.lock();
         const auto placement = saved.placement.lock();
         if (rig) ++Object3D::gpuValidationVisits_;
@@ -554,6 +556,41 @@ bool GpuJointScene::current() const {
                 return false;
             }
         }
+    }
+    return true;
+}
+
+bool GpuJointScene::attachmentsCurrent(uint32_t rigIndex) const {
+    if (!*valid || hierarchy != Object3D::hierarchyVersion()) return false;
+    const auto& saved = rigs[rigIndex];
+    auto mesh = saved.mesh.lock();
+    ++Object3D::gpuValidationVisits_;
+    if (!mesh || mesh->skeleton.get() != saved.skeleton ||
+        mesh->skeleton->bones.size() != saved.attachmentBones.size()) return false;
+    for (auto* ancestor = static_cast<Object3D*>(mesh.get()); ancestor; ancestor = ancestor->parent) {
+        ++Object3D::gpuValidationVisits_;
+        if (!gpuJointAncestorEligible(*ancestor, *mesh)) return false;
+    }
+    for (size_t i = 0; i < saved.attachmentBones.size(); ++i) {
+        const auto& edges = saved.attachmentBones[i];
+        auto bone = edges.bone.lock();
+        ++Object3D::gpuValidationVisits_;
+        if (!bone || mesh->skeleton->bone(i) != bone.get() || bone->parent != edges.parent ||
+            bone->children.size() != edges.children.size()) return false;
+        const auto* flags = bone->ownTransformTracking();
+        if (!flags || !flags[0] || flags[2] || !bone->matrixAutoUpdate || !bone->matrixWorldAutoUpdate ||
+            bone->pivot || bone->onBeforeRender) return false;
+        for (size_t child = 0; child < edges.children.size(); ++child) {
+            ++Object3D::gpuValidationVisits_;
+            if (bone->children[child] != edges.children[child]) return false;
+        }
+    }
+    for (const auto& expected : saved.attachments) {
+        auto attachment = expected.node.lock();
+        ++Object3D::gpuValidationVisits_;
+        if (!attachment || typeid(*attachment) != typeid(Mesh) || !attachment->children.empty() ||
+            !attachment->matrixAutoUpdate || !attachment->matrixWorldAutoUpdate || attachment->onBeforeRender ||
+            attachment->parent != expected.parent) return false;
     }
     return true;
 }
@@ -629,6 +666,7 @@ std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::
             if (!bone || !indices.emplace(bone, i).second) { eligible = false; break; }
         }
         std::vector<uint32_t> parents;
+        std::vector<GpuJointScene::Rig::Attachment> attachments;
         uint32_t roots = 0;
         for (uint32_t i = 0; eligible && i < skeleton->bones.size(); ++i) {
             ++Object3D::gpuMaintenanceVisits_;
@@ -644,7 +682,12 @@ std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::
             }
             for (auto* child : bone->children) {
                 ++Object3D::gpuMaintenanceVisits_;
-                if (!indices.count(dynamic_cast<Bone*>(child))) eligible = false;
+                if (!indices.count(dynamic_cast<Bone*>(child))) {
+                    if (typeid(*child) != typeid(Mesh) || !child->children.empty() ||
+                        !child->matrixAutoUpdate || !child->matrixWorldAutoUpdate || child->onBeforeRender ||
+                        child->parent != bone || child->weak_from_this().expired()) eligible = false;
+                    else attachments.push_back({child->weak_from_this(), bone});
+                }
             }
         }
         if (!eligible || roots != 1) continue;
@@ -655,6 +698,14 @@ std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::
         saved.geometry = rig->geometry.get(); saved.material = rig->material.get();
         saved.bind = rig->bindMatrix.elements; saved.outputBase = base;
         saved.instances = std::make_shared<BufferStore>(Scalar::F32, 16);
+        saved.attachments = std::move(attachments);
+        if (!saved.attachments.empty()) for (const auto& weak : skeleton->bones) {
+            ++Object3D::gpuMaintenanceVisits_;
+            const auto bone = weak.lock();
+            if (!bone) return nullptr;
+            saved.attachmentBones.push_back({weak, bone->parent, bone->children});
+            Object3D::gpuMaintenanceVisits_ += bone->children.size();
+        }
         plan->byMesh.emplace(rig, uint32_t(plan->rigs.size()));
         plan->rigs.push_back(std::move(saved));
         plan->topology.push_back({uint32_t(skeleton->bones.size()), base, base, base, base});
@@ -677,6 +728,32 @@ std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::
         auto bone = plan->bones[i].lock();
         if (!bone || !bone->enableDeferredTransform(plan->locals, i * 12, plan->valid)) { plan->revoke(); return nullptr; }
         bone->gpuJointBoundary = plan->valid; bone->gpuJointHierarchy = epoch;
+        bone->gpuJointGuard = {}; bone->gpuJointAttachments.clear();
+    }
+    for (uint32_t rigIndex = 0; rigIndex < plan->rigs.size(); ++rigIndex) {
+        const auto& saved = plan->rigs[rigIndex];
+        if (saved.attachments.empty()) continue;
+        for (const auto& edges : saved.attachmentBones) {
+            ++Object3D::gpuMaintenanceVisits_;
+            const auto bone = edges.bone.lock();
+            if (!bone) { plan->revoke(); return nullptr; }
+            bone->gpuJointGuard = [weak = std::weak_ptr<GpuJointScene>(plan), rigIndex] {
+                const auto live = weak.lock();
+                if (!live) return false;
+                if (live->attachmentsCurrent(rigIndex)) return true;
+                live->revoke(); return false;
+            };
+        }
+        for (const auto& expected : saved.attachments) {
+            ++Object3D::gpuMaintenanceVisits_;
+            const auto attachment = expected.node.lock();
+            if (!attachment) { plan->revoke(); return nullptr; }
+            for (auto* ancestor = attachment->parent; ancestor; ancestor = ancestor->parent) {
+                ++Object3D::gpuMaintenanceVisits_;
+                if (ancestor->type() != "Bone") break;
+                ancestor->gpuJointAttachments.push_back(expected.node);
+            }
+        }
     }
     for (const auto& saved : plan->rigs) if (auto rig = saved.mesh.lock()) {
         ++Object3D::gpuMaintenanceVisits_;

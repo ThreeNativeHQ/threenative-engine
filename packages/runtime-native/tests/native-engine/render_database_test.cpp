@@ -3075,11 +3075,12 @@ void gpuJointProduction() {
         std::vector<std::shared_ptr<Group>> movers;
         std::vector<std::shared_ptr<SkinnedMesh>> meshes;
         std::vector<std::shared_ptr<Bone>> tips;
+        std::vector<std::shared_ptr<Mesh>> caps;
         double* escapedWorld = nullptr;
         double* escapedAutoWorld = nullptr;
         double* escapedLocal = nullptr;
         std::shared_ptr<Reflector> reflector = std::make_shared<Reflector>();
-        Fixture(bool tracked) {
+        Fixture(bool tracked, bool leafCap = false, int capBones = 3) {
             camera.aspect = 4.0 / 3; camera.position.set(0, 0, 8); camera.updateProjectionMatrix();
             if (tracked) scene.enableTrackedTransform();
             auto geometry = makeBoxGeometry(0.7, 0.7, 0.7);
@@ -3099,7 +3100,7 @@ void gpuJointProduction() {
             sun->shadow.mapSize.set(128, 128);
             scene.add(*sun);
             for (int i = 0; i < 6; ++i) {
-                const int count = i == 4 ? 1100 : 3;
+                const int count = i == 4 ? 1100 : i == 1 ? capBones : 3;
                 auto mover = std::make_shared<Group>(); mover->position.x = double(i - 2) * 1.2;
                 auto placement = std::make_shared<Group>();
                 auto mesh = std::make_shared<SkinnedMesh>(geometry, material);
@@ -3108,7 +3109,7 @@ void gpuJointProduction() {
                 for (int j = 0; j < count; ++j) {
                     auto bone = std::make_shared<Bone>();
                     if (tracked) bone->enableTrackedTransform();
-                    if (j) bones.back()->add(*bone);
+                    if (j) (i == 1 && capBones > 3 && j > 2 ? bones.front() : bones.back())->add(*bone);
                     bones.push_back(bone);
                 }
                 bones[2]->rotation.z = i * 0.12;
@@ -3132,9 +3133,13 @@ void gpuJointProduction() {
                 auto skeleton = std::make_shared<Skeleton>(bones, std::vector<Matrix4>(bones.size()));
                 Matrix4 bind; mesh->bind(skeleton, &bind);
                 if (i == 1 || i == 4) {
-                    // A non-skinned attachment makes these rigs eager; no synthetic static hints.
+                    // Subtree attachments remain eager; the bounded cap arm admits one Mesh leaf.
                     auto attachment = std::make_shared<Mesh>(makeBoxGeometry(0.1, 0.1, 0.1), material);
-                    bones.back()->add(*attachment);
+                    attachment->position.y = 0.5;
+                    attachment->setCastShadow(true);
+                    if (!leafCap || i == 4) attachment->add(*std::make_shared<Object3D>());
+                    (i == 1 && capBones > 3 ? bones[2] : bones.back())->add(*attachment);
+                    caps.push_back(attachment);
                 }
                 if (i == 4) mover->setVisible(false);
                 movers.push_back(mover); meshes.push_back(mesh); tips.push_back(bones[2]);
@@ -3164,6 +3169,138 @@ void gpuJointProduction() {
     Renderer gpu(context.getInstance(), context.getDevice(), context.getQueue(), events);
     Renderer cpu(context.getInstance(), context.getDevice(), context.getQueue(), events);
     gpu.setSize(160, 120); cpu.setSize(160, 120);
+    {
+        Fixture capped(true, true), capReference(false, true), doubleCapped(true, true);
+        auto secondCap = std::make_shared<Mesh>(makeBoxGeometry(0.1, 0.1, 0.1), doubleCapped.caps[0]->material);
+        doubleCapped.tips[1]->add(*secondCap);
+        capped.scene.updateMatrixWorld(true);
+        const auto admissionBefore = Object3D::gpuMaintenanceVisits_;
+        const auto plan = gpu.prepareGpuJoints(capped.scene);
+        const auto admissionVisits = Object3D::gpuMaintenanceVisits_ - admissionBefore;
+        CHECK(plan && plan->byMesh.count(capped.meshes[1].get()));
+        if (!plan || !plan->byMesh.count(capped.meshes[1].get())) return;
+        Renderer secondGpu(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        doubleCapped.scene.updateMatrixWorld(true);
+        const auto secondAdmissionBefore = Object3D::gpuMaintenanceVisits_;
+        const auto secondPlan = secondGpu.prepareGpuJoints(doubleCapped.scene);
+        CHECK(secondPlan && secondPlan->byMesh.count(doubleCapped.meshes[1].get()));
+        // Extra cap: scene node, child edge, copied edge, attachment, three Bones and placement.
+        CHECK(Object3D::gpuMaintenanceVisits_ - secondAdmissionBefore == admissionVisits + 8);
+        RenderDatabase boundaryDatabase;
+        LightState boundaryLights;
+        const auto boundaryProjectionBefore = Object3D::gpuProjectionVisits_;
+        boundaryDatabase.prepare(*capped.meshes[1]->skeleton->bone(0), capped.camera, boundaryLights);
+        // Boundary, attachment and its six ancestors; the ordinary Mesh projection stays ordinary.
+        CHECK(Object3D::gpuProjectionVisits_ - boundaryProjectionBefore == 8);
+        RenderDatabase capDatabase, capEager;
+        capDatabase.batching = capEager.batching = false;
+        capDatabase.shadowMapEnabled = capEager.shadowMapEnabled = true;
+        for (int frame = 0; frame < 4; ++frame) {
+            for (auto* fixture : {&capped, &capReference}) {
+                animation::PropertyBinding pose(fixture->tips[1], ".position");
+                const double value[3] = {frame * 0.25, 0.2, 0}; pose.setValue(value, 0);
+                fixture->tips[1]->setVisible(frame != 2);
+                fixture->caps[0]->setLayer(frame == 3 ? 1 : 0);
+            }
+            const auto updates = Object3D::matrixEvaluations();
+            const auto boundaries = Object3D::gpuBoundaryVisits();
+            const auto visits = capped.scene.updateMatrixWorldVisible(false, false);
+            CHECK(visits == Object3D::matrixEvaluations() - updates + Object3D::gpuBoundaryVisits() - boundaries);
+            CHECK(Object3D::matrixEvaluations() > updates);
+            CHECK(visits < capReference.scene.updateMatrixWorldVisible(false, false));
+            for (int k = 0; k < 16; ++k)
+                CHECK(std::abs(capped.caps[0]->matrixWorld.elements[k] - capReference.caps[0]->matrixWorld.elements[k]) < 1e-6);
+            capDatabase.render(gpu, capped.scene, capped.camera, {0, 0, 0, 1});
+            capEager.render(cpu, capReference.scene, capReference.camera, {0, 0, 0, 1});
+            const auto* mirror = capDatabase.reflectionDatabase(capped.reflector.get());
+            const auto* eagerMirror = capEager.reflectionDatabase(capReference.reflector.get());
+            CHECK(mirror && eagerMirror);
+            const auto capDraw = [](const RenderDatabase& database, uint64_t key) -> const DrawItem* {
+                for (const auto& draw : database.drawn()) if (draw.key == key) return &draw;
+                return nullptr;
+            };
+            for (const auto* pass : std::array<const RenderDatabase*, 2>{&capDatabase, mirror}) {
+                if (!pass) continue;
+                const auto* draw = capDraw(*pass, capped.caps[0]->id());
+                const auto* expected = capDraw(pass == &capDatabase ? capEager : *eagerMirror, capReference.caps[0]->id());
+                CHECK(bool(draw) == bool(expected));
+                if (draw && expected) {
+                    CHECK(draw->mainPass == expected->mainPass && draw->castShadow == expected->castShadow);
+                    CHECK(draw->layers == expected->layers);
+                    for (int k = 0; k < 16; ++k) CHECK(std::abs(draw->matrixWorld[k] - expected->matrixWorld[k]) < 1e-6);
+                }
+                if (frame == 0 && pass == &capDatabase) CHECK(draw && draw->mainPass && draw->castShadow);
+                if (frame == 2) CHECK(!draw);
+            }
+            const auto pixels = read(gpu, events), expectedPixels = read(cpu, events);
+            size_t different = 0;
+            CHECK(pixels.size() == expectedPixels.size());
+            for (size_t i = 0; i < pixels.size() && i < expectedPixels.size(); ++i)
+                different += std::abs(int(pixels[i]) - int(expectedPixels[i])) > 2;
+            CHECK(different <= 16);
+        }
+    }
+    {
+        Fixture wide(true, true, 65), wideEager(false, true, 65);
+        wide.scene.updateMatrixWorld(true); wideEager.scene.updateMatrixWorld(true);
+        const auto plan = gpu.prepareGpuJoints(wide.scene);
+        CHECK(plan && plan->byMesh.count(wide.meshes[1].get()));
+        const auto updates = Object3D::matrixEvaluations(), boundaries = Object3D::gpuBoundaryVisits();
+        const auto visited = wide.meshes[1]->skeleton->bone(0)->updateMatrixWorldVisible(false, false);
+        CHECK(visited == Object3D::matrixEvaluations() - updates + Object3D::gpuBoundaryVisits() - boundaries);
+        const auto eagerVisited = wideEager.meshes[1]->skeleton->bone(0)->updateMatrixWorldVisible(false, false);
+        CHECK(visited == 8 && eagerVisited == 66);
+        std::printf("65-Bone Head cap: GPU world visits %u, eager %u (ancestor joins included)\n", visited, eagerVisited);
+    }
+    for (int mutation = 0; mutation < 11; ++mutation) {
+        Fixture capped(true, true);
+        capped.scene.updateMatrixWorld(true);
+        const auto plan = gpu.prepareGpuJoints(capped.scene);
+        CHECK(plan && plan->byMesh.count(capped.meshes[1].get()));
+        if (!plan || !plan->byMesh.count(capped.meshes[1].get())) return;
+        auto cap = capped.caps[0];
+        auto* head = capped.tips[1].get();
+        auto extra = std::make_shared<Mesh>(makeBoxGeometry(), cap->material);
+        const auto epoch = Object3D::hierarchyVersion();
+        if (mutation == 0) { head->children.push_back(extra.get()); extra->parent = head; }
+        if (mutation == 1 || mutation == 2 || mutation == 3) {
+            head->children.erase(std::find(head->children.begin(), head->children.end(), cap.get()));
+            cap->parent = nullptr;
+        }
+        if (mutation == 2) { capped.movers[1]->children.push_back(cap.get()); cap->parent = capped.movers[1].get(); }
+        if (mutation == 3) { head->children.push_back(extra.get()); extra->parent = head; }
+        if (mutation == 4) { cap->children.push_back(extra.get()); extra->parent = cap.get(); }
+        if (mutation == 5) cap->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+            [](const RenderCallbackArgs&, std::string&) { return true; });
+        if (mutation == 6) cap->matrixAutoUpdate = false;
+        if (mutation == 7) cap->matrixWorldAutoUpdate = false;
+        if (mutation == 8) head->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+            [](const RenderCallbackArgs&, std::string&) { return true; });
+        if (mutation == 9) head->matrixWorldAutoUpdate = false;
+        if (mutation == 10) {
+            const auto weak = std::weak_ptr<Mesh>(cap);
+            head->remove(*cap); capped.caps[0].reset(); cap.reset();
+            CHECK(weak.expired());
+        }
+        if (mutation != 10) CHECK(Object3D::hierarchyVersion() == epoch);
+        const auto inspections = Object3D::gpuValidationVisits_;
+        CHECK(!head->skipsGpuJointSubtree());
+        if (mutation != 10) {
+            CHECK(!*plan->valid);
+            CHECK(Object3D::gpuValidationVisits_ > inspections);
+        }
+        CHECK(!plan->current());
+        // Restore valid public topology before releasing the temporary raw-linked objects.
+        if (extra->parent) {
+            auto& children = extra->parent->children;
+            children.erase(std::find(children.begin(), children.end(), extra.get())); extra->parent = nullptr;
+        }
+        if (cap && cap->parent == capped.movers[1].get()) {
+            auto& children = cap->parent->children;
+            children.erase(std::find(children.begin(), children.end(), cap.get())); cap->parent = nullptr;
+        }
+        if (cap && !cap->parent) { head->children.push_back(cap.get()); cap->parent = head; }
+    }
     RenderDatabase database, reference; reference.batching = false;
     database.shadowMapEnabled = reference.shadowMapEnabled = true;
     std::shared_ptr<GpuJointScene> admittedPlan;

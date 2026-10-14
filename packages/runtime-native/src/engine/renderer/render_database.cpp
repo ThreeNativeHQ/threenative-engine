@@ -633,7 +633,21 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                              bool updateChildren, bool force, Record* cached, bool plainMesh, bool lightsOnly, const Object3D* excluded) {
     if (&object == excluded) return;
-    if (object.skipsGpuJointSubtree()) { ++Object3D::gpuProjectionVisits_; return; }
+    if (object.skipsGpuJointSubtree()) {
+        ++Object3D::gpuProjectionVisits_;
+        for (const auto& weak : object.gpuJointAttachments) {
+            ++Object3D::gpuProjectionVisits_;
+            const auto attachment = weak.lock();
+            if (!attachment) continue;
+            bool visible = true;
+            for (auto* ancestor = attachment->parent; ancestor; ancestor = ancestor->parent) {
+                ++Object3D::gpuProjectionVisits_;
+                if (!ancestor->visible()) { visible = false; break; }
+            }
+            if (visible) project(*attachment, camera, items, lights, false, false, nullptr, false, lightsOnly, excluded);
+        }
+        return;
+    }
     if (!object.visible()) {
         if (updateChildren)
             for (Object3D* child : object.children)

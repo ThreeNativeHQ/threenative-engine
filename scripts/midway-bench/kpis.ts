@@ -657,6 +657,10 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
   )[0];
   const structuralRun = bestStructural?.runs.at(-1);
   const pinnedProjection = medOf(measured, (r) => r.matrix?.last);
+  const experimentalAc3 =
+    !accepted.length && bestStructural
+      ? kpisOf(runs, prd, bestStructural.runs).find((k) => k.id === "AC-3")
+      : undefined;
   return {
     winner,
     selection: {
@@ -688,7 +692,11 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
             }
           : undefined,
     },
-    kpis: kpisOf(runs, prd, headline),
+    kpis: kpisOf(runs, prd, headline).map((k) =>
+      k.id === "AC-3" && experimentalAc3
+        ? { ...experimentalAc3, detail: `experimental · not accepted · ${experimentalAc3.detail}` }
+        : k,
+    ),
     prd,
     trends: trendsOf(runs),
     abPairs: abPairsOf(runs),
