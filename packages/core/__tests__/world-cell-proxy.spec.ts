@@ -27,6 +27,7 @@ import {
   measureCellProxy,
   prepareCellProxy,
 } from "../src/world-cell-proxy.js";
+import type { IWorldCellProxy } from "../src/world-package.js";
 
 const camera = new PerspectiveCamera(60, 1, 0.1, 2000);
 const proxy = { glb: "proxy.glb", error: 1, triangles: 20, materialGroups: 2 };
@@ -315,7 +316,7 @@ describe("cell proxy preserves authored texture storage and static colors", () =
     const mesh = new Mesh(geometry, new MeshStandardMaterial());
     mesh.rotation.z = Math.PI / 4;
     const half = Math.SQRT1_2;
-    const metadata = {
+    const metadata: IWorldCellProxy = {
       glb: "proxy.glb",
       error: 0.1,
       triangles: 1,
