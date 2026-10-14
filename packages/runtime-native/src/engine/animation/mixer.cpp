@@ -904,6 +904,18 @@ AnimationMixer& AnimationMixer::stopAllAction() {
 AnimationMixer& AnimationMixer::update(double deltaTime) {
     MixerCpuScope cpu;
     joinEvaluation();
+#ifndef __EMSCRIPTEN__
+    // Native borrowed spans have no ownership/revision metadata. Reject detectable storage changes
+    // before any source read, including eager alias fallback; recreating the action binds new storage.
+    if (workerTrial_) for (std::size_t i = 0; i < nActiveActions_; ++i) {
+        const auto& action = *actions_[i]; const auto& tracks = action.clip_->tracks;
+        if (tracks.size() != action.interpolants_.size())
+            throw std::logic_error("TN_ANIMATION_WORKER_INPUT: track count changed; recreate the action");
+        for (std::size_t j = 0; j < tracks.size(); ++j)
+            if (!action.interpolants_[j]->boundTo(tracks[j].times, tracks[j].values))
+                throw std::logic_error("TN_ANIMATION_WORKER_INPUT: source storage changed; recreate the action");
+    }
+#endif
     ++updateCount_;
     deltaTime *= timeScale;
     const std::size_t nActions = nActiveActions_;

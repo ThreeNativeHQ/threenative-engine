@@ -43,6 +43,10 @@ class Interpolant {
     void detectConstant();
     /** Own the actual bound spans; reuse immutable copies until their bytes change. */
     std::unique_ptr<Interpolant> snapshotOwned();
+    bool boundTo(std::span<const double> times, std::span<const double> values) const {
+        return times.data() == times_.data() && times.size() == times_.size() &&
+               values.data() == values_.data() && values.size() == values_.size();
+    }
     void restoreEvaluationCache(const Interpolant& source);
     /** The value at `t`, in the result buffer (three's `evaluate`). */
     std::span<const double> evaluate(double t);

@@ -215,19 +215,24 @@ void workerOwnership() {
     bool rejected = false;
     std::thread wrongOwner([&] { try { mixer.joinEvaluation(); } catch (const std::logic_error&) { rejected = true; } });
     wrongOwner.join(); CHECK(rejected && bone->pendingAnimation);
+    rejected = false;
+    std::thread wrongReader([&] { try { bone->materializeLocalTransform(); } catch (const std::logic_error&) { rejected = true; } });
+    wrongReader.join(); CHECK(rejected && bone->pendingAnimation);
     mixer.joinEvaluation();
     // Snapshot old bound spans, then mutate them while the worker owns a separate immutable copy.
     mixer.update(0); clip->tracks[0].times[1] = 2; clip->tracks[0].values[3] = 40;
     mixer.joinEvaluation(); bone->materializeLocalTransform(); CHECK(bone->position.x == 2.5);
     mixer.update(0.25); mixer.joinEvaluation(); bone->materializeLocalTransform(); CHECK(bone->position.x == 10);
-    // Replacing/resizing the track's vectors does not rebind the interpolant. Keep old aliases alive.
+    // Queued work survives replacement; a later update rejects changed storage before reading it.
+    mixer.update(0.25);
     auto oldTimes = std::move(clip->tracks[0].times), oldValues = std::move(clip->tracks[0].values);
     clip->tracks[0].times = {0, 1, 2}; clip->tracks[0].values = {900, 0, 0, 900, 0, 0, 900, 0, 0};
-    mixer.update(0.25); mixer.joinEvaluation(); bone->materializeLocalTransform(); CHECK(bone->position.x == 15);
-    // Source storage need only survive snapshot capture until the next source evaluation, like eager spans.
-    mixer.update(0.25); oldTimes.clear(); oldTimes.shrink_to_fit(); oldValues.clear(); oldValues.shrink_to_fit();
-    mixer.joinEvaluation(); bone->materializeLocalTransform(); CHECK(bone->position.x == 20);
-    // No further update may evaluate those now-dangling original spans.
+    mixer.joinEvaluation(); bone->materializeLocalTransform(); CHECK(bone->position.x == 15);
+    rejected = false; try { mixer.update(0.25); } catch (const std::logic_error&) { rejected = true; }
+    CHECK(rejected && !bone->pendingAnimation);
+    oldTimes.clear(); oldTimes.shrink_to_fit(); oldValues.clear(); oldValues.shrink_to_fit();
+    rejected = false; try { mixer.update(0.25); } catch (const std::logic_error&) { rejected = true; }
+    CHECK(rejected && !bone->pendingAnimation); // no memcmp/eager evaluation of freed original storage
     auto channel = std::make_shared<Bone>(); channel->enableTrackedTransform();
     AnimationMixer scalar(channel); scalar.clipAction(std::make_shared<AnimationClip>("channel", 1, std::vector<KeyframeTrack>{
         KeyframeTrack(".position[x]", TrackType::Number, {0, 1}, {0, 10})}))->play();
