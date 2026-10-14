@@ -362,6 +362,33 @@ describe("groups and loading", () => {
     });
   });
 
+  it("surfaces a completed timing-excluded structural candidate without qualifying it", () => {
+    const reference = run(
+      "isolated-cache-a1-desktop",
+      [pkgLine("pkg-ac10-cache-a1"), frame(10), proj(5816)].join("\n"),
+    );
+    const candidate = run(
+      "structural-m-desktop",
+      [pkgLine("pkg-m"), ...Array(1000).fill(worldFrame()), proj(4363)].join("\n"),
+      parityText(true),
+    );
+    candidate.timingExclusion = "Foreign GPU workload";
+    const incomplete = run("later-incomplete-desktop", frame(1));
+    const state = midwayOf([reference, candidate, incomplete]);
+    expect(state.candidate.structural).toMatchObject({
+      dir: candidate.dir,
+      build: "pkg-m",
+      projection: 4363,
+      pinnedProjection: 5816,
+      worldWork: { version: 2, n: 1000, median: 21, max: 21 },
+      timingExclusion: "Foreign GPU workload",
+    });
+    expect(state.candidate.structural?.projectionReductionPct).toBeCloseTo(24.9828);
+    expect(state.winner.status).toBe("unqualified");
+    expect(state.selection.build).toBe(reference.pkg);
+    expect(state.candidate.gap.desktop?.build).not.toBe(candidate.pkg);
+  });
+
   it("loads <tag>-<arm> dirs oldest first and ignores everything else", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "midway-runs-"));
     dirs.push(root);

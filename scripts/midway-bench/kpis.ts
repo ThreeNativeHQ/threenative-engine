@@ -640,6 +640,20 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
   );
   const measured = accepted.length ? accepted : reference ? [reference] : [];
   const headline = [...runs.filter((r) => r.arm === "legacy"), ...measured];
+  const latestStructural = all
+    .filter(
+      (r) =>
+        r.arm === "desktop" &&
+        r.pkg !== measured[0]?.pkg &&
+        !r.profiled &&
+        !r.skipped &&
+        r.desktop?.n === PLAYER_FRAME_WINDOW &&
+        !r.desktop.worldWorkInvalid &&
+        r.parity?.pass === true &&
+        finite(r.matrix?.last),
+    )
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
+  const pinnedProjection = medOf(measured, (r) => r.matrix?.last);
   return {
     winner,
     selection: {
@@ -647,7 +661,25 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
       build: measured[0]?.pkg,
       runs: measured.map((r) => r.dir),
     },
-    candidate: { kpis: kpisOf(runs, prd), gap: gapOf(runs), breakdown: breakdownOf(runs) },
+    candidate: {
+      kpis: kpisOf(runs, prd),
+      gap: gapOf(runs),
+      breakdown: breakdownOf(runs),
+      structural: latestStructural
+        ? {
+            dir: latestStructural.dir,
+            build: latestStructural.pkg,
+            projection: latestStructural.matrix?.last,
+            pinnedProjection,
+            projectionReductionPct:
+              pinnedProjection !== undefined && pinnedProjection > 0
+                ? (1 - (latestStructural.matrix?.last as number) / pinnedProjection) * 100
+                : undefined,
+            worldWork: latestStructural.desktop?.worldWork,
+            timingExclusion: latestStructural.timingExclusion,
+          }
+        : undefined,
+    },
     kpis: kpisOf(runs, prd, headline),
     prd,
     trends: trendsOf(runs),

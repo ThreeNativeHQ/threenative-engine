@@ -207,7 +207,8 @@ function ab(p, legacy) {
 function render(d) {
   $("winner").textContent = d.winner.status === "accepted" ? `LOCKED accepted winner: ${d.winner.build}` : `Pinned baseline: ${d.selection.build ?? "unavailable"} · ${d.selection.runs.length} isolated run(s); not accepted winner. ${d.winner.reason}`;
   const candidate = d.candidate.gap.desktop;
-  $("candidate").textContent = candidate ? `Latest experimental candidate: ${candidate.build} · ${candidate.ms.toFixed(2)} ms · ${Math.abs(candidate.pct).toFixed(1)}% ${candidate.direction} than historical three.js · ${candidate.runs} run(s). Not accepted.` : "No experimental candidate measurements.";
+  const structural = d.candidate.structural;
+  $("candidate").textContent = structural ? `Latest completed experimental candidate: ${structural.build ?? structural.dir} · projection ${n(structural.projection, 0)}${structural.projectionReductionPct === undefined ? "" : ` (${Math.abs(structural.projectionReductionPct).toFixed(1)}% ${structural.projectionReductionPct >= 0 ? "fewer" : "more"} visits vs pinned ${n(structural.pinnedProjection, 0)})`} · whole-frame world work v2 ${n(structural.worldWork?.median, 0)} (different scope)${structural.timingExclusion ? " · timing excluded" : ""} · Not accepted.` : candidate ? `Latest experimental candidate: ${candidate.build} · ${candidate.ms.toFixed(2)} ms · ${Math.abs(candidate.pct).toFixed(1)}% ${candidate.direction} than historical three.js · ${candidate.runs} run(s). Not accepted.` : "No experimental candidate measurements.";
   $("kpis").innerHTML = d.kpis.map(kpi).join("");
   renderGap(d);
   $("ring").innerHTML = ring(d.prd);
