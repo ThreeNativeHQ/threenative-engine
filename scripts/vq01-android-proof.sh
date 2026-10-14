@@ -1,6 +1,6 @@
 #!/bin/sh
 # PRD-VQ-01 Phase 3, Android box: cook the unchanged examples/abyss-framework/vq-assets fixture for
-# the Android V8 target, install that APK on one named emulator, and run the shared scenario.
+# the selected Android target (V8 by default), install its APK on one named emulator, and run the shared scenario.
 #
 #   sh scripts/vq01-android-proof.sh <artifact-dir> <serial>
 #
@@ -29,13 +29,12 @@ const { generateNativeAssetFixture } = await import("./examples/abyss-framework/
 await generateNativeAssetFixture("examples/abyss-framework/vq-assets/.generated/assets");
 '
 
-# The maintainer source build. `resolveRuntimeAssetCapabilities` reports `android:unresolved`
-# (engine unknown), so this cook is the decoder-free one: the log names meshopt and KTX2 as
-# unqualified for the target and ships normalized GLB/PNG instead.
+# The maintainer source build cooks for the selected Gradle engine. Default to V8/x86_64;
+# append caller flags after the default ABI so an explicit engine or ABI remains authoritative.
 (
   cd examples/abyss-framework/vq-assets
   THREENATIVE_RUNTIME_SOURCE="$root/packages/runtime-native" \
-  THREENATIVE_GRADLE_ARGS="-PthreenativeJsEngine=v8 -PthreenativeAbis=x86_64" \
+  THREENATIVE_GRADLE_ARGS="-PthreenativeAbis=x86_64 ${THREENATIVE_GRADLE_ARGS:--PthreenativeJsEngine=v8}" \
     node "$root/packages/create-threenative/dist/threenative.js" build --target android --allow-source-build
 )
 
