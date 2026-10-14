@@ -49,6 +49,74 @@ function rendered(result: AnimationPlayer, z = -100) {
 }
 
 describe("AnimationPlayer update rate", () => {
+  it.each([1, 8])("preserves public callback mixer state at requested rate %i", (rate) => {
+    for (const event of ["loop", "finished"] as const) {
+      const candidate = player(rate);
+      const expected = new AnimationMixer(new Group());
+      const expectedAction = expected.clipAction(candidate.clip("clip1")).play();
+      const actualAction = candidate.mixer.clipAction(candidate.clip("clip1"));
+      if (event === "finished") {
+        expectedAction.setLoop(LoopOnce, 1);
+        actualAction.setLoop(LoopOnce, 1);
+        expectedAction.clampWhenFinished = actualAction.clampWhenFinished = true;
+      }
+      const reads: number[] = [];
+      for (const mixer of [expected, candidate.mixer]) {
+        mixer.timeScale = 2;
+        mixer.addEventListener(event, () => {
+          reads.push(mixer.timeScale);
+          mixer.timeScale = 0;
+        });
+      }
+      expected.update(0.5);
+      candidate.update(0.5, true);
+      expect(reads).toEqual([2, 2]);
+      expect(candidate.mixer.timeScale).toBe(expected.timeScale);
+      candidate.dispose();
+    }
+  });
+
+  it.each([1, 8])("retains loop callback action speed at requested rate %i", (rate) => {
+    const candidate = player(rate);
+    const action = candidate.mixer.clipAction(candidate.clip("clip1"));
+    candidate.mixer.addEventListener("loop", () => action.setEffectiveTimeScale(2));
+    candidate.update(1, true);
+    expect(action.timeScale).toBe(2);
+    candidate.dispose();
+  });
+
+  it("protects public finished listeners without pinning unobserved loops", () => {
+    const candidate = player(8);
+    const listener = vi.fn();
+    expect(candidate.updateRateReport.rate).toBe(8);
+    candidate.mixer.addEventListener("finished", listener);
+    expect(candidate.updateRateReport.rate).toBe(1);
+    candidate.mixer.removeEventListener("finished", listener);
+    expect(candidate.updateRateReport.rate).toBe(8);
+    candidate.dispose();
+  });
+
+  it("flushes prior skipped time before a signed mixer speed change", () => {
+    const candidate = player(8);
+    const expected = new AnimationMixer(new Group());
+    const expectedAction = expected.clipAction(candidate.clip("clip1")).play();
+    do {
+      expected.update(0.1);
+      candidate.update(0.1);
+    } while (candidate.updateRateReport.evaluated);
+    expected.timeScale = candidate.mixer.timeScale = -1;
+    expectedAction.setEffectiveTimeScale(2);
+    candidate.mixer.clipAction(candidate.clip("clip1")).setEffectiveTimeScale(2);
+    expected.update(0.1);
+    candidate.update(0.1, true);
+    expect(candidate.mixer.time).toBeCloseTo(expected.time, 10);
+    expect(candidate.mixer.clipAction(candidate.clip("clip1")).time).toBeCloseTo(
+      expectedAction.time,
+      10,
+    );
+    candidate.dispose();
+  });
+
   it.each([2, 4, 8])("accumulates clip time for 300 frames at rate %i", (rate) => {
     const baseline = player(1);
     const candidate = player(rate);

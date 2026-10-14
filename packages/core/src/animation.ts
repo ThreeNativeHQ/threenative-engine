@@ -43,7 +43,7 @@ export interface IAnimationPlayerOptions {
   readonly strideRoot?: Object3D;
   /**
    * Evaluate by measured screen size by default; a positive integer names a frame interval.
-   * Public action time-scale interpolations are protected at effective rate 1 until they settle.
+   * Public mixer listeners/speed overrides stay full-rate; action speed interpolations do until settled.
    */
   readonly updateRate?: "auto" | number;
 }
@@ -252,16 +252,22 @@ type BeforeFirstLoopListener = (duringUpdate: boolean) => void;
 
 class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
   readonly #loopListeners = new Set<LoopListener>();
+  readonly #finishedListeners = new Set<FinishedListener>();
   readonly #beforeFirstLoopListener: BeforeFirstLoopListener;
   #updateDepth = 0;
 
-  constructor(root: Object3D, beforeFirstLoopListener: BeforeFirstLoopListener) {
+  constructor(
+    root: Object3D,
+    beforeFirstLoopListener: BeforeFirstLoopListener,
+    internalFinishedListener: FinishedListener,
+  ) {
     super(root);
     this.#beforeFirstLoopListener = beforeFirstLoopListener;
+    super.addEventListener("finished", internalFinishedListener);
   }
 
-  get hasLoopListeners(): boolean {
-    return this.#loopListeners.size > 0;
+  get hasPublicListeners(): boolean {
+    return this.#loopListeners.size > 0 || this.#finishedListeners.size > 0;
   }
 
   override addEventListener(type: "loop", listener: LoopListener): void;
@@ -273,7 +279,7 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
     if (type === "loop") {
       const loopListener = listener as LoopListener;
       if (!this.hasEventListener(type, loopListener)) {
-        if (!this.hasLoopListeners) {
+        if (!this.hasPublicListeners) {
           const duringUpdate = this.#updateDepth > 0;
           this.#beforeFirstLoopListener(duringUpdate);
         }
@@ -282,7 +288,12 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
       super.addEventListener(type, loopListener);
       return;
     }
-    super.addEventListener(type, listener as FinishedListener);
+    const finishedListener = listener as FinishedListener;
+    if (!this.hasEventListener(type, finishedListener)) {
+      if (!this.hasPublicListeners) this.#beforeFirstLoopListener(this.#updateDepth > 0);
+      this.#finishedListeners.add(finishedListener);
+    }
+    super.addEventListener(type, finishedListener);
   }
 
   override removeEventListener(type: "loop", listener: LoopListener): void;
@@ -298,7 +309,9 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
       if (wasRegistered) this.#loopListeners.delete(loopListener);
       return;
     }
-    super.removeEventListener(type, listener as FinishedListener);
+    const finishedListener = listener as FinishedListener;
+    super.removeEventListener(type, finishedListener);
+    this.#finishedListeners.delete(finishedListener);
   }
 
   override update(deltaTime: number): AnimationMixer {
@@ -368,9 +381,13 @@ export class AnimationPlayer {
     const owner = new.target.name || "AnimationPlayer";
     this.root = options.root;
     this.updateRate = options.updateRate ?? "auto";
-    this.mixer = new LoopAwareAnimationMixer(options.root, (duringUpdate) => {
-      if (!duringUpdate) this.#flushPending();
-    });
+    this.mixer = new LoopAwareAnimationMixer(
+      options.root,
+      (duringUpdate) => {
+        if (!duringUpdate) this.#flushPending();
+      },
+      this.#onFinished,
+    );
     this.#preparation = options.preparation;
     this.#strideSync = options.strideSync ?? true;
     this.#strideRoot = options.strideRoot ?? options.root;
@@ -406,7 +423,6 @@ export class AnimationPlayer {
           `${owner}: clip '${name}' binds 0 tracks to '${options.root.name || options.root.type}'.`,
         );
     }
-    this.mixer.addEventListener("finished", this.#onFinished);
     animationRateStates.set(this.root, this.#rateState);
     this.root.userData[ANIMATION_RATE_STATE_KEY] = this.#rateState;
   }
@@ -430,6 +446,8 @@ export class AnimationPlayer {
   }
 
   #effectiveUpdateRate(): number {
+    // Public mixer speed overrides and observed events retain ordinary Three.js tick semantics.
+    if (this.mixer.timeScale !== 1) return 1;
     // Event deadlines and changing blend weights remain exactly on the gameplay tick.
     if (
       this.#mode === "once" ||
@@ -437,7 +455,7 @@ export class AnimationPlayer {
       this.#blendElapsed < this.#blendDuration
     )
       return 1;
-    if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasLoopListeners) return 1;
+    if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners) return 1;
     if (this.#timeScaleInterpolations.size > 0) return 1;
     if (this.#updateRate !== "auto") return this.#updateRate;
     const state = this.#rateState;
@@ -907,6 +925,7 @@ export class AnimationPlayer {
   update(dt: number, force = false): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
+    if (this.mixer.timeScale !== 1) this.#flushPending();
     const elapsed = dt * this.mixer.timeScale;
     this.#pendingDt += elapsed;
     for (const action of this.#actions.values()) {
@@ -938,44 +957,51 @@ export class AnimationPlayer {
     const before = this.mixer.time;
     const elapsed = this.#pendingDt;
     const mixerScale = this.mixer.timeScale;
-    this.mixer.timeScale = 1;
-    for (const [action, pending] of this.#pendingActionTimes) {
-      const wasPaused = action.paused;
-      if (wasPaused && pending !== 0) {
-        this.#evaluationPaused.add(action);
-        action.paused = false;
-      }
-      let time = pending;
-      let seamAdjusted = false;
-      const duration = action.getClip().duration;
-      if (action.loop === LoopRepeat && duration > 0) {
-        const end = action.time + time;
-        const seam = Math.round(end / duration) * duration;
-        // Grouped addition must not hold the last pose when rate 1 already crossed a loop seam.
-        if (Math.abs(end - seam) <= Number.EPSILON * 16 * Math.max(duration, Math.abs(end))) {
-          time = seam - action.time;
-          seamAdjusted = true;
+    const direct =
+      this.#skippedFrames === 1 &&
+      elapsed === dt * mixerScale &&
+      (mixerScale !== 1 ||
+        (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners));
+    if (!direct) {
+      this.mixer.timeScale = 1;
+      for (const [action, pending] of this.#pendingActionTimes) {
+        const wasPaused = action.paused;
+        if (wasPaused && pending !== 0) {
+          this.#evaluationPaused.add(action);
+          action.paused = false;
         }
-      }
-      // Integrate changing stride rates; the last tick's rate must not own earlier skipped time.
-      if (elapsed !== 0) {
-        const scale = time / elapsed;
-        const equalToActionScale =
-          Math.abs(scale - action.timeScale) <=
-          Number.EPSILON * 16 * Math.max(1, Math.abs(scale), Math.abs(action.timeScale));
-        const warpActive = !wasPaused && action.getEffectiveTimeScale() !== action.timeScale;
-        if (!warpActive && (seamAdjusted || !equalToActionScale)) {
-          this.#evaluationScales.set(action, action.timeScale);
-          action.setEffectiveTimeScale(scale);
+        let time = pending;
+        let seamAdjusted = false;
+        const duration = action.getClip().duration;
+        if (action.loop === LoopRepeat && duration > 0) {
+          const end = action.time + time;
+          const seam = Math.round(end / duration) * duration;
+          // Grouped addition must not hold the last pose when rate 1 already crossed a loop seam.
+          if (Math.abs(end - seam) <= Number.EPSILON * 16 * Math.max(duration, Math.abs(end))) {
+            time = seam - action.time;
+            seamAdjusted = true;
+          }
+        }
+        // Integrate changing stride rates; the last tick's rate must not own earlier skipped time.
+        if (elapsed !== 0) {
+          const scale = time / elapsed;
+          const equalToActionScale =
+            Math.abs(scale - action.timeScale) <=
+            Number.EPSILON * 16 * Math.max(1, Math.abs(scale), Math.abs(action.timeScale));
+          const warpActive = !wasPaused && action.getEffectiveTimeScale() !== action.timeScale;
+          if (!warpActive && (seamAdjusted || !equalToActionScale)) {
+            this.#evaluationScales.set(action, action.timeScale);
+            action.setEffectiveTimeScale(scale);
+          }
         }
       }
     }
     this.#evaluating = true;
     try {
-      this.mixer.update(elapsed);
+      this.mixer.update(direct ? dt : elapsed);
     } finally {
       this.#evaluating = false;
-      this.mixer.timeScale = mixerScale;
+      if (!direct) this.mixer.timeScale = mixerScale;
       for (const action of this.#evaluationPaused) action.paused = true;
       this.#evaluationPaused.clear();
       for (const [action, scale] of this.#evaluationScales) action.setEffectiveTimeScale(scale);
