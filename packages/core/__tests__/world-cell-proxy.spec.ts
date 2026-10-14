@@ -20,12 +20,12 @@ import { describe, expect, it } from "vitest";
 import { markEngineRenderHook } from "../src/engine-render-hook.js";
 import {
   CellProxySelection,
-  cellProxyHelps,
   cellProxyMaterialMatches,
   cellProxyMaterialSafe,
   cellProxySourceSafe,
   cellProxyWorldScale,
   measureCellProxy,
+  cellProxyHelps,
   prepareCellProxy,
 } from "../src/world-cell-proxy.js";
 
