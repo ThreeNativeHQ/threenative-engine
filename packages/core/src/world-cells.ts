@@ -8961,8 +8961,10 @@ export class WorldCells extends Group implements IComputeDriven {
     if (this.#castShadowLevels > 0) {
       mesh.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
       mesh.castShadow = true;
-      mesh.receiveShadow = false;
     }
+    // Receives like the near ring: a far tree that never receives is lit full-bright beside near
+    // trees shaded by their neighbours, a lighter band of canopy where the impostors begin.
+    mesh.receiveShadow = this.#receiveShadow;
     this.add(mesh);
     return mesh;
   }

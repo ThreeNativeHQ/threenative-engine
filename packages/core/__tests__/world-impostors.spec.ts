@@ -1858,6 +1858,25 @@ describe("WorldCells far impostor residency", () => {
     world.dispose();
   });
 
+  it("lets the far half receive shadows when the world is configured to receive them", async () => {
+    const follow = { position: { x: -32, z: -32 } };
+    stubManifestFetch(pineEverywhere());
+    const world = await loadPine(treeLoader(), {
+      follow,
+      shadows: { cast: true, castLevels: 3, receive: true },
+    });
+    await flushed(world);
+    runBake(world, rendererStub());
+    await flushed(world);
+    for (let pass = 0; pass < 32; pass += 1) world.update();
+
+    // A far tree that never receives is lit full-bright while the near tree beside it is shaded by
+    // its neighbours, which reads as a lighter band of canopy where the impostors begin.
+    const far = farMeshes(world)[0] as InstancedMesh;
+    expect(far.receiveShadow).toBe(true);
+    world.dispose();
+  });
+
   it("casts the far half into the coarse wide shadow layer, not the main-only layer", async () => {
     const follow = { position: { x: -32, z: -32 } };
     stubManifestFetch(pineEverywhere());
