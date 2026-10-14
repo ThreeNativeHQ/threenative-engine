@@ -514,9 +514,12 @@ struct Session {
     bool spans = gameSpan(-1, 0) == 1;
     uint64_t measuredFrames = 0, previousCrossings = 0, updateTicks = 0;
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
+    double updateCullCpuMs = 0;
+    uint64_t updateCullCalls = 0;
     void update(double dt) {
         const auto begin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double cpuBegin = metrics ? threadCpuMs() : -1;
+        const auto cullBegin = metrics ? ProjectedCull::cpuTiming : ProjectedCull::CpuTiming{};
         const double instructionsBegin = metrics ? threadInstructions() : -1;
         const double cyclesBegin = metrics ? threadCycles() : -1;
         if (spans) gameSpan(kHostUpdateSpan, 0);
@@ -524,6 +527,10 @@ struct Session {
         if (spans) gameSpan(kHostUpdateSpan, 1);
         if (metrics) updateMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
         if (cpuBegin >= 0) updateCpuMs += threadCpuMs() - cpuBegin;
+        if (metrics) {
+            updateCullCpuMs += ProjectedCull::cpuTiming.ms - cullBegin.ms;
+            updateCullCalls += ProjectedCull::cpuTiming.calls - cullBegin.calls;
+        }
         if (instructionsBegin >= 0) updateInstructions += threadInstructions() - instructionsBegin;
         if (cyclesBegin >= 0) updateCycles += threadCycles() - cyclesBegin;
         if (metrics) ++updateTicks;
@@ -532,6 +539,7 @@ struct Session {
     bool watching = false;
 #endif
     explicit Session(const Game& source) : game(source), scene(game.scene), camera(game.camera) {
+        ProjectedCull::cpuTiming = {metrics ? &threadCpuMs : nullptr};
         // Benchmarks need one rendered sample per driven simulation tick, not a batch of 600 updates.
         if (metrics) game.renderEachTick = true;
         if (spans) gameSpans = {};
@@ -676,6 +684,7 @@ int Session::initialize() {
                    lastMaintenanceVisits = Object3D::gpuMaintenanceVisits_]() mutable {
         const auto frameBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double cpuFrameBegin = metrics ? threadCpuMs() : -1;
+        const auto cullBegin = metrics ? ProjectedCull::cpuTiming : ProjectedCull::CpuTiming{};
         const double instructionsFrameBegin = metrics ? threadInstructions() : -1;
         const double cyclesFrameBegin = metrics ? threadCycles() : -1;
         if (spans) gameSpan(kHostFrameSpan, 0);
@@ -873,6 +882,14 @@ int Session::initialize() {
                 sample = json::Value::makeObject(std::move(members));
             }
             {
+                auto members = sample.members();
+                const auto& cull = ProjectedCull::cpuTiming;
+                members.emplace_back("projectedCullCalls", json::Value::makeNumber(updateCullCalls + cull.calls - cullBegin.calls));
+                members.emplace_back("projectedCullCpuMs", cpuFrameBegin >= 0 && cull.clock && cull.available
+                    ? json::Value::makeNumber(updateCullCpuMs + cull.ms - cullBegin.ms) : json::Value::makeNull());
+                sample = json::Value::makeObject(std::move(members));
+            }
+            {
                 const auto world = Object3D::matrixEvaluations();
                 const auto joins = Object3D::joinDependencyVisits();
                 const auto boundaries = Object3D::gpuBoundaryVisits();
@@ -900,6 +917,8 @@ int Session::initialize() {
             previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
             updateMs = 0;
             updateCpuMs = 0;
+            updateCullCpuMs = 0;
+            updateCullCalls = 0;
             updateInstructions = 0;
             updateCycles = 0;
             updateTicks = 0;
@@ -959,6 +978,7 @@ int Session::step() {
 }
 
 Session::~Session() {
+    ProjectedCull::cpuTiming = {};
 #if defined(__APPLE__)
     if (window.metalView)
         SDL_Metal_DestroyView(window.metalView);

@@ -26,6 +26,7 @@ globalThis.tn.scene = new Scene();
 globalThis.tn.camera = new PerspectiveCamera();
 let calls = 0;
 const frame = () => {
+  for (let i = 0; i < 2; i++) globalThis.tn.scene.__cullProjected(globalThis.tn.camera, true, 1, 0, false);
   const end = performance.now() + 25;
   while (performance.now() < end);
   if (++calls <= 40) globalThis.tn.log("FRAME_CALLBACK " + calls);
@@ -87,6 +88,13 @@ const settled = perFrame.slice(3);
 assert(settled.length >= 10, `too few drawn frames to judge: ${perFrame.join(",")}`);
 assert(settled.every((count) => count === 1), `frame callbacks per drawn frame: ${settled.join(",")} (want 1 each)`);
 console.log(`PASS one frame callback per drawn frame over ${settled.length} frames`);
+const cullFrames = output.split("\n").filter((line) => line.startsWith("TN_PLAYER_FRAME:"))
+  .map((line) => JSON.parse(line.slice("TN_PLAYER_FRAME:".length))).slice(3, 20);
+assert(cullFrames.length >= 10 && cullFrames.every((frame) => frame.projectedCullCalls === 2), "cull calls must reset for each CPU frame");
+assert(cullFrames.every((frame) => Number.isFinite(frame.projectedCullCpuMs) && frame.projectedCullCpuMs >= 0 &&
+  frame.projectedCullCpuMs <= frame.cpuFrameCpuMs + 0.01), "cull CPU must be measured inside the main-thread CPU frame");
+assert(cullFrames.reduce((sum, frame) => sum + frame.projectedCullCpuMs, 0) > 0, "repeated cull work must record positive thread CPU");
+console.log("PASS projected cull CPU and two calls per frame");
 
 // Each frame line also counts the main thread's user-space instructions, the A/B figure that host load does
 // not move (PRD-610). The 25 ms busy callback alone retires millions, so a frame under 1,000 K is a broken

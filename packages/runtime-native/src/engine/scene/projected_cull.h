@@ -23,6 +23,14 @@ class Object3D;
  */
 class ProjectedCull {
 public:
+    // Main-thread-only diagnostic hook; the owning player installs and clears its existing CPU clock.
+    struct CpuTiming {
+        double (*clock)() = nullptr;
+        double ms = 0;
+        uint64_t calls = 0;
+        bool available = true;
+    };
+    static CpuTiming cpuTiming;
     /** The counters core's report carries. */
     struct Report {
         uint32_t considered = 0, culled = 0, cameraAttached = 0, marked = 0, shadowCasters = 0, withoutBounds = 0,

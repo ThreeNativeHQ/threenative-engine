@@ -1524,6 +1524,19 @@ void projected_cull_list() {
     geometry->setAttribute("position", wide);
     CHECK(cull.apply(*scene, camera, true, scale, 2, true).culled == 0);
     cull.restore();
+    CHECK(ProjectedCull::cpuTiming.calls == 0 && ProjectedCull::cpuTiming.clock == nullptr);
+    ProjectedCull::cpuTiming = {[]() { static double ms = 0; return ms += 0.25; }};
+    for (int call = 0; call < 6; ++call) cull.apply(*scene, camera, true, scale, 2, true);
+    CHECK(ProjectedCull::cpuTiming.calls == 6 && ProjectedCull::cpuTiming.ms == 1.5);
+    cull.restore();
+    CHECK(ProjectedCull::cpuTiming.calls == 6 && ProjectedCull::cpuTiming.ms == 1.5);
+    ProjectedCull::cpuTiming = {ProjectedCull::cpuTiming.clock};
+    cull.apply(*scene, camera, true, scale, 2, true);
+    CHECK(ProjectedCull::cpuTiming.calls == 1 && ProjectedCull::cpuTiming.ms == 0.25);
+    ProjectedCull::cpuTiming = {[]() { return -1.0; }};
+    cull.apply(*scene, camera, true, scale, 2, true);
+    CHECK(!ProjectedCull::cpuTiming.available && ProjectedCull::cpuTiming.calls == 1);
+    ProjectedCull::cpuTiming = {};
 }
 
 }  // namespace

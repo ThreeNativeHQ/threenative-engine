@@ -26,8 +26,11 @@ bool renderable(std::string_view type) {
 
 }  // namespace
 
+ProjectedCull::CpuTiming ProjectedCull::cpuTiming;
+
 ProjectedCull::Report ProjectedCull::apply(Object3D& root, const Camera& camera, bool cameraResolved, double scale,
                                            double minimumPixels, bool enabled) {
+    const double cpuBegin = cpuTiming.clock ? cpuTiming.clock() : -1;
     restore();
     Report report;
     Frustum frustum;
@@ -150,6 +153,12 @@ ProjectedCull::Report ProjectedCull::apply(Object3D& root, const Camera& camera,
         }
         if (node.mesh != nullptr) visit(node);
         ++i;
+    }
+    if (cpuTiming.clock) {
+        const double cpuEnd = cpuTiming.clock();
+        ++cpuTiming.calls;
+        if (cpuBegin < 0 || cpuEnd < cpuBegin || !std::isfinite(cpuBegin) || !std::isfinite(cpuEnd)) cpuTiming.available = false;
+        else cpuTiming.ms += cpuEnd - cpuBegin;
     }
     return report;
 }
