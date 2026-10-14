@@ -190,19 +190,81 @@ interface ICompiledLightmap {
 }
 
 const MANIFEST_VERSION = 1;
+const ASTC_FORMAT = "astc4x4";
 
 function entryUsesKtx2(entry: unknown): boolean {
   if (!isRecord(entry)) return false;
   if (typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)) return true;
-  return (
-    Array.isArray(entry.lightmaps) &&
-    entry.lightmaps.some(
-      (lightmap) =>
-        isRecord(lightmap) &&
-        typeof lightmap.output === "string" &&
-        /\.ktx2$/iu.test(lightmap.output),
+  if (
+    Array.isArray(entry.extensions) &&
+    entry.extensions.some(
+      (extension) => extension === "KHR_texture_basisu" || extension === "EXT_texture_astc",
     )
+  )
+    return true;
+  const embeddedTextures = entry.embeddedTextures;
+  if (
+    isRecord(embeddedTextures) &&
+    isRecord(embeddedTextures.formats) &&
+    Object.values(embeddedTextures.formats).some(
+      (format) => typeof format === "string" && format !== "none",
+    )
+  )
+    return true;
+  return [entry.lightmaps, entry.sharedImages].some(
+    (outputs) =>
+      Array.isArray(outputs) &&
+      outputs.some(
+        (item) =>
+          isRecord(item) && typeof item.output === "string" && /\.ktx2$/iu.test(item.output),
+      ),
   );
+}
+
+interface IManifestAstcAsset {
+  readonly logicalPath: string;
+  readonly output: string;
+}
+
+function manifestOutput(entry: Record<string, unknown>, fallback: string): string {
+  return typeof entry.output === "string" ? entry.output : fallback;
+}
+
+function firstRawAstcAsset(logicalPath: string, entry: unknown): IManifestAstcAsset | undefined {
+  if (!isRecord(entry)) return undefined;
+  const output = manifestOutput(entry, logicalPath);
+  if (entry.format === ASTC_FORMAT) return { logicalPath, output };
+  if (Array.isArray(entry.lightmaps)) {
+    const lightmap = entry.lightmaps.find((item) => isRecord(item) && item.format === ASTC_FORMAT);
+    if (isRecord(lightmap)) return { logicalPath, output: manifestOutput(lightmap, output) };
+  }
+  if (Array.isArray(entry.sharedImages)) {
+    const sharedImage = entry.sharedImages.find(
+      (item) => isRecord(item) && item.codec === ASTC_FORMAT,
+    );
+    if (isRecord(sharedImage)) return { logicalPath, output: manifestOutput(sharedImage, output) };
+  }
+  const embeddedTextures = entry.embeddedTextures;
+  if (
+    isRecord(embeddedTextures) &&
+    isRecord(embeddedTextures.formats) &&
+    Object.values(embeddedTextures.formats).some((format) => format === ASTC_FORMAT)
+  )
+    return { logicalPath, output };
+  if (Array.isArray(entry.extensions) && entry.extensions.includes("EXT_texture_astc")) {
+    return { logicalPath, output };
+  }
+  return undefined;
+}
+
+function firstRawAstcManifestAsset(
+  manifest: IAssetManifest | undefined,
+): IManifestAstcAsset | undefined {
+  for (const [logicalPath, entry] of Object.entries(manifest?.entries ?? {})) {
+    const asset = firstRawAstcAsset(logicalPath, entry);
+    if (asset !== undefined) return asset;
+  }
+  return undefined;
 }
 
 function compiledLightmaps(entry: unknown, logicalPath: string): readonly ICompiledLightmap[] {
@@ -518,6 +580,32 @@ function hasAstcSupport(loader: IKTX2LoaderLike | undefined): boolean {
   );
 }
 
+function astcUnsupported(asset: IManifestAstcAsset): Error {
+  return new Error(
+    `TN_ASSETS_ASTC_UNSUPPORTED: '${asset.logicalPath}' uses raw ASTC 4x4 output '${asset.output}', but the renderer lacks ASTC texture-compression support.`,
+  );
+}
+
+async function prepareCompressedTextures(
+  manifest: IAssetManifest | undefined,
+  loader: Promise<IKTX2LoaderLike | undefined>,
+): Promise<void> {
+  const astcAsset = firstRawAstcManifestAsset(manifest);
+  if (astcAsset !== undefined) {
+    try {
+      const shared = await loader;
+      if (!hasAstcSupport(shared)) throw astcUnsupported(astcAsset);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("TN_ASSETS_KTX2_UNSUPPORTED:")) {
+        throw astcUnsupported(astcAsset);
+      }
+      throw error;
+    }
+    return;
+  }
+  if (Object.values(manifest?.entries ?? {}).some(entryUsesKtx2)) await loader;
+}
+
 /**
  * Widen every quantized `POSITION` a loaded model carries back to float32.
  *
@@ -696,10 +784,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       ? undefined
       : (() => {
           const loader = createKtx2Loader({ basePath, renderer: options.renderer });
-          const ready = manifestOnce().then(async (manifest) => {
-            const requiresKtx2 = Object.values(manifest?.entries ?? {}).some(entryUsesKtx2);
-            if (requiresKtx2) await loader;
-          });
+          const ready = manifestOnce().then((manifest) =>
+            prepareCompressedTextures(manifest, loader),
+          );
           loader.catch(() => undefined);
           ready.catch(() => undefined);
           return { loader, ready };

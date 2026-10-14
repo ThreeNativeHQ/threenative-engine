@@ -834,6 +834,7 @@ describe("IAssetLoader compressed textures", () => {
   }
 
   const S3TC = { WEBGL_compressed_texture_s3tc: true };
+  const ETC2 = { WEBGL_compressed_texture_etc: true };
 
   // Actual encoder/emitter capture at e49bb087f, shared with native-ktx2.spec.ts:
   // separate UNORM/sRGB 8x8 RGBA [240,20,40,128] UASTC cooks, all four mip levels.
@@ -1194,6 +1195,96 @@ describe("IAssetLoader compressed textures", () => {
 
     await expect(assets.compressedTextures?.ready).rejects.toThrow(/TN_ASSETS_KTX2_UNSUPPORTED/u);
     await expect(assets.compressedTextures?.ready).rejects.toThrow(/webgl2/u);
+  });
+
+  it.each([
+    {
+      entry: { format: "astc4x4", output: "checker.ktx2" },
+      logicalPath: "checker.png",
+      output: "checker.ktx2",
+    },
+    {
+      entry: {
+        embeddedTextures: { formats: { albedo: "astc4x4" } },
+        extensions: ["EXT_texture_astc"],
+        output: "prop.12345678.glb",
+      },
+      logicalPath: "prop.glb",
+      output: "prop.12345678.glb",
+    },
+    {
+      entry: {
+        extensions: ["EXT_texture_astc"],
+        output: "prop.12345678.glb",
+        sharedImages: [{ codec: "astc4x4", output: "shared/images/albedo.astc4x4.ktx2" }],
+      },
+      logicalPath: "prop.glb",
+      output: "shared/images/albedo.astc4x4.ktx2",
+    },
+    {
+      entry: {
+        lightmaps: [
+          {
+            format: "astc4x4",
+            materialTargets: ["Floor"],
+            output: "room.lightmap.12345678.ktx2",
+            texCoord: 1,
+          },
+        ],
+        output: "room.12345678.glb",
+      },
+      logicalPath: "room.glb",
+      output: "room.lightmap.12345678.ktx2",
+    },
+  ] as const)(
+    "refuses $logicalPath raw ASTC at startup on BC/ETC2-only renderers",
+    async ({ entry, logicalPath, output }) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          manifestResponse({
+            version: 1,
+            entries: {
+              [logicalPath]: entry,
+              "later.png": { format: "astc4x4", output: "later.ktx2" },
+            },
+          }),
+        ),
+      );
+      for (const formats of [S3TC, ETC2]) {
+        const assets = createAssetLoader({
+          basePath: "/assets",
+          renderer: webglRenderer(formats),
+        });
+
+        await expect(assets.compressedTextures?.ready).rejects.toThrow(
+          /TN_ASSETS_ASTC_UNSUPPORTED/u,
+        );
+        await expect(assets.compressedTextures?.ready).rejects.toThrow(logicalPath);
+        await expect(assets.compressedTextures?.ready).rejects.toThrow(output);
+      }
+    },
+  );
+
+  it("allows raw ASTC startup when the renderer supports ASTC", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: { "checker.png": { format: "astc4x4", output: "checker.ktx2" } },
+        }),
+      ),
+    );
+    const assets = createAssetLoader({
+      basePath: "/assets",
+      renderer: {
+        hasFeature: (name: string) => name === "texture-compression-astc",
+        isWebGPURenderer: true,
+      },
+    });
+
+    await expect(assets.compressedTextures?.ready).resolves.toBeUndefined();
   });
 
   it("should configure the shared loader from the real detected support", async () => {
