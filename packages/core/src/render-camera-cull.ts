@@ -63,6 +63,7 @@ const DYNAMIC_BOUNDS = Symbol("render-camera-cull-dynamic-bounds");
 /** What the gate remembers about a geometry's position buffer between consults. */
 interface IPositionVersion {
   version: number;
+  frame: number;
   /** True when the previous consult also saw a change, so this one is the second in a row. */
   changedLastConsult: boolean;
   /** True when a rewrite was exempted without a rescan, so the cached sphere is stale. */
@@ -330,7 +331,7 @@ export class RenderCameraCull {
       this.#observeAnimation(object, undefined);
       return;
     }
-    this.#observeAnimation(object, boundsOf(object, this.#positionVersions));
+    this.#observeAnimation(object, boundsOf(object, this.#positionVersions, this.#animationFrame));
   }
 
   #visit(object: Object3D): void {
@@ -361,7 +362,7 @@ export class RenderCameraCull {
     // cheaply enumerable here, so where the gate cannot know, it keeps the caster. A caster the
     // main camera *can* see is ordinary geometry — its shadow is in view with it, and a
     // sub-resolution object casts a sub-resolution shadow.
-    const sphere = boundsOf(object, this.#positionVersions);
+    const sphere = boundsOf(object, this.#positionVersions, this.#animationFrame);
     this.#observeAnimation(object, sphere);
     // A buffer rewritten every frame has extents the gate cannot know without a full scan each
     // frame, which costs more than the draw it might remove. Keep it drawn, like an opt-out.
@@ -459,7 +460,7 @@ export class RenderCameraCull {
       }
       this.#observeAnimation(
         source,
-        visible ? boundsOf(source, this.#positionVersions) : undefined,
+        visible ? boundsOf(source, this.#positionVersions, this.#animationFrame) : undefined,
         !visible,
       );
     }
@@ -494,6 +495,7 @@ export function projectedDiameterPixels(
 function boundsOf(
   object: Object3D,
   versions: WeakMap<object, IPositionVersion>,
+  frame: number,
 ): IBoundingSphereLike | typeof DYNAMIC_BOUNDS | undefined {
   const cullable = object as ICullable;
   // An `InstancedMesh` carries its own instance-aware bound; the geometry one is not it.
@@ -504,16 +506,20 @@ function boundsOf(
   if (geometry.boundingSphere == null) {
     geometry.computeBoundingSphere?.();
     if (version !== undefined)
-      versions.set(geometry, { version, changedLastConsult: false, stale: false });
+      versions.set(geometry, { version, frame, changedLastConsult: false, stale: false });
     return geometry.boundingSphere ?? undefined;
   }
   if (version === undefined) return geometry.boundingSphere ?? undefined;
   const known = versions.get(geometry);
   if (known === undefined) {
-    versions.set(geometry, { version, changedLastConsult: false, stale: false });
+    versions.set(geometry, { version, frame, changedLastConsult: false, stale: false });
     return geometry.boundingSphere ?? undefined;
   }
+  const sameFrame = known.frame === frame;
+  known.frame = frame;
   if (known.version === version) {
+    // Animation preparation and draw culling share one frame's observation.
+    if (sameFrame) return known.stale ? DYNAMIC_BOUNDS : (geometry.boundingSphere ?? undefined);
     // A buffer that settled after a per-frame rewrite has knowable extents again: scan it once and
     // cull it like any other, rather than exempting it for the rest of the run. Settling also lets
     // the next change count as a fresh one rather than as the second frame of a rewrite.

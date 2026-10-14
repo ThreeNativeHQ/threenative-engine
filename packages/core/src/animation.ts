@@ -1017,6 +1017,7 @@ export class AnimationPlayer {
     this.#skippedFrames = 0;
     this.#evaluated = false;
     this.mixer.stopAllAction();
+    this.#rateState.evaluation += 1;
     this.#current = undefined;
     this.#mode = "loop";
     this.#finished = false;

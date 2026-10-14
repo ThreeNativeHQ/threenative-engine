@@ -350,6 +350,49 @@ describe("SkinnedBatch palette", () => {
     batch.dispose();
   });
 
+  it("writes the restored pose and velocity history when stopped after a skipped tick", () => {
+    const root = new Group();
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    (mesh.skeleton.bones[0] as Bone).name = "joint";
+    root.add(mesh);
+    const player = new AnimationPlayer({
+      root,
+      clips: [
+        new AnimationClip("move", 1, [
+          new NumberKeyframeTrack("joint.position[x]", [0, 1], [0, 1]),
+        ]),
+      ],
+      strideSync: false,
+      updateRate: 8,
+    });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    const slot = batch.claim(mesh) as number;
+    player.play("move");
+    player.update(0, true);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    const initial = batch.palette.slice();
+    player.update(0.5, true);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    const animated = batch.palette.slice();
+    do player.update(1 / 60);
+    while (player.updateRateReport.evaluated);
+    player.stop();
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    expect([...batch.palette]).toEqual([...initial]);
+    expect([...(batch.history as Float32Array)]).toEqual([...animated]);
+    player.dispose();
+    batch.dispose();
+  });
+
   it("skips a palette write on a skipped animation frame and carries the whole step on evaluation", () => {
     const root = new Group();
     const mesh = rig(rigGeometry(), new MeshStandardMaterial());
