@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -33,8 +34,11 @@ class BufferStore : public std::enable_shared_from_this<BufferStore> {
 public:
     BufferStore(Scalar scalar, uint64_t count);
     ~BufferStore() {
+        released_.fetch_add(1, std::memory_order_relaxed);
         if (deferred_ && forgetHook != nullptr) forgetHook(*this);
     }
+    /** Moves whenever a store dies or lets its GPU copy go: a cache with none since its last sweep has nothing to sweep. */
+    static uint64_t released() { return released_.load(std::memory_order_relaxed); }
 
     /**
      * A back end that keeps its own copy of the bytes and defers writing it (the Wasm JS mirror of
@@ -61,7 +65,10 @@ public:
     void needsUpdate() { ++version_; }
     uint32_t version() const { return version_; }
     /** three's `geometry.dispose()`: the GPU copy goes now, and comes back only if the store is drawn again. */
-    void releaseGpuCopy() { ++gpuReleases_; }
+    void releaseGpuCopy() {
+        ++gpuReleases_;
+        released_.fetch_add(1, std::memory_order_relaxed);
+    }
     uint32_t gpuReleases() const { return gpuReleases_; }
     void addUpdateRange(uint64_t start, uint64_t count) { ranges_.push_back({start, count}); }
     void clearUpdateRanges() { ranges_.clear(); }
@@ -85,6 +92,7 @@ public:
     }
 
 private:
+    static inline std::atomic<uint64_t> released_{0};
     // Storage left unwritten when made: a deferred store's pull writes it, and one that dies unread
     // never touches its pages. `unfilled_` zeroes what no pull wrote before the first use.
     template <typename T>

@@ -75,7 +75,11 @@ void GeometryCache::forget(const BufferStore& store) {
 }
 
 void GeometryCache::sweep() {
-    // Every frame walks every entry, so no lock() per entry: a live owner is the store at the key.
+    // Only a store that died or let its copy go has anything to sweep; every pass of a frame asks.
+    if (sweptAt_ == BufferStore::released()) return;
+    sweptAt_ = BufferStore::released();
+    ++stats_.sweeps;
+    // A walk checks every entry, so no lock() per entry: a live owner is the store at the key.
     // ponytail: single-thread safe only; PRD-574 needs a strong reference if a second thread
     // can release stores.
     for (auto it = entries_.begin(); it != entries_.end();) {

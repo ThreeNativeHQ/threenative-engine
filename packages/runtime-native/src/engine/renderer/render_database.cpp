@@ -568,6 +568,9 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
         const Object3D* node = light;
         while (node->visible() && node != &root) node = node->parent;
         if (!node->visible()) continue;
+        // project() collects a light only if the camera's layers see it: an unseen light's shadow is
+        // never drawn, so its casters are not gathered either (a mirror pass on its own layer sees none).
+        if (reuseMainFrame && !light->layers().test(mainCamera.layers())) continue;
         Object3D& obj = *light;
         const std::string_view type = obj.type();
         if (type == "DirectionalLight") {
@@ -1198,8 +1201,10 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     // Renderer.render: world matrices first, then the camera in the renderer's coordinate system.
     // Fusion is safe only when matrix updates and light queries cannot run authored hooks.
     // Recheck the public child vector before any update: callers can reorder or replace its slots.
+    // A reflection pass of this frame finds them current and leaves the fused walk, which updates, off.
+    const bool fresh = std::exchange(matricesFresh_, false);
     const auto& cameraType = typeid(camera);
-    bool flat = typeid(scene) == typeid(Scene) && scene.matrixWorldAutoUpdate && camera.parent == nullptr &&
+    bool flat = !fresh && typeid(scene) == typeid(Scene) && scene.matrixWorldAutoUpdate && camera.parent == nullptr &&
                 camera.children.empty() && !shadowMapEnabled && (cameraType == typeid(PerspectiveCamera) ||
                                       cameraType == typeid(OrthographicCamera) || cameraType == typeid(Camera));
     if (flat) {
@@ -1224,10 +1229,13 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         }
     }
     bool force = false;
-    if (flat)
+    if (flat) {
+        ++matrixWalks_;
         force = scene.updateMatrixWorldSelf();
-    else if (scene.matrixWorldAutoUpdate)
+    } else if (scene.matrixWorldAutoUpdate && !fresh) {
+        ++matrixWalks_;
         scene.updateMatrixWorld();
+    }
     if (camera.parent == nullptr && camera.matrixWorldAutoUpdate)
         camera.updateMatrixWorld();
     if (camera.coordinateSystem != CoordinateSystem::WebGPU) {
@@ -1298,6 +1306,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
             diagnostics_.push_back("TN_CALLBACK_FAILED onBeforeRender: " + error);
         p.record->draw->params = paramsOf(*p.record->material);
     }
+    ranCallbacks_ = !callbacks_.empty();
     callbacks_.clear();
     if (hemisphere_ > 1)
         diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) +
@@ -1481,13 +1490,16 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
             pass.database->reflecting_ = true;
         }
         pass.database->batching = batching;
+        pass.database->reuseMainFrame = reuseMainFrame;
         pass.database->shadowMapEnabled = shadowMapEnabled;
         pass.renderer->setOutput(renderer.output());
         pass.renderer->setSize(uint32_t(std::lround(renderer.width() * reflector->resolutionScale)),
                                uint32_t(std::lround(renderer.height() * reflector->resolutionScale)));
         PerspectiveCamera& virtualCamera = *reflector->camera;
-        if (poseReflection(*reflector, camera, virtualCamera))
+        if (poseReflection(*reflector, camera, virtualCamera)) {
+            pass.database->matricesFresh_ = reuseMainFrame && !ranCallbacks_;
             pass.database->render(*pass.renderer, scene, virtualCamera, clear);
+        }
         else
             pass.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
         for (const auto& message : pass.database->diagnostics()) diagnostics_.push_back(message);

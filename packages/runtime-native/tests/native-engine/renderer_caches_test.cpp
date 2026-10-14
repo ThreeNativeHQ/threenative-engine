@@ -117,9 +117,13 @@ void geometry() {
     cache.sync(*shared, usage);
     const size_t held = cache.entries();
     const uint64_t uploads = cache.stats().fullUploads;
+    cache.sweep();
+    const uint64_t walks = cache.stats().sweeps;
+    for (int frame = 0; frame < 10; ++frame) cache.sweep();
+    CHECK(cache.stats().sweeps == walks);  // nothing released since: no walk
     shared->releaseGpuCopy();
     cache.sweep();
-    CHECK(cache.entries() == held - 1);
+    CHECK(cache.entries() == held - 1 && cache.stats().sweeps == walks + 1);
     cache.sync(*shared, usage);
     CHECK(cache.entries() == held && cache.stats().fullUploads == uploads + 1);
     // A released store's copy goes at the next sweep, which reads no field of the freed store.

@@ -35,6 +35,8 @@ public:
         uint64_t fullUploads = 0;
         uint64_t rangeUploads = 0;
         uint64_t bytesUploaded = 0;
+        /** Sweeps that walked the entries; one with no store released since the last is skipped. */
+        uint64_t sweeps = 0;
     };
     const Stats& stats() const { return stats_; }
     /** GPU copies held; the renderer-updates test bounds it. */
@@ -54,6 +56,7 @@ private:
         uint32_t releases = 0;  // the store's gpuReleases() when this copy was made
     };
     GpuResources& gpu_;
+    uint64_t sweptAt_ = ~uint64_t{0};  // BufferStore::released() at the last sweep
     std::unordered_map<const BufferStore*, Entry> entries_;
     Stats stats_;
 };
