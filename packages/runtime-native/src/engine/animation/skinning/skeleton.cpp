@@ -66,6 +66,7 @@ bool Bone::deferTransformValue(int component, const double* values) {
 }
 
 void Bone::materializeLocalTransform() {
+    if (poseObserver) poseObserver(*this, 1);
     if (!pending_) return;
     pending_ = false;
     position.fromArray(deferredTRS_.data());

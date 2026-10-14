@@ -3,6 +3,7 @@
 // transform, every action's state, the mixer stats and every loop and finished event with three's.
 #include "check.h"
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 #include "scenario.h"
@@ -67,6 +68,101 @@ void deferredMixer() {
     action->play(); mixer.update(0.125);
     mixer.uncacheRoot(*bone);
     CHECK(!bone->hasDeferredTransform() && bone->position.x == 0);
+}
+
+void poseObservation() {
+    CHECK(Object3D::poseObserver == nullptr && Object3D::poseObservationReport == nullptr);
+    if (const auto* flag = std::getenv("TN_ANIMATION_POSE_OBSERVATION"); flag && std::strcmp(flag, "1") == 0) {
+        auto bone = std::make_shared<Bone>(); const auto& borrowed = bone->deferredTransformValues(); (void)borrowed;
+        CHECK(bone->poseObservationEscapedValues && Object3D::poseObserver == nullptr); // Process-start flag, before any mixer.
+    }
+    const auto clip = std::make_shared<AnimationClip>("move", 1, std::vector<KeyframeTrack>{
+        KeyframeTrack(".position", TrackType::Vector, {0, 1}, {0, 0, 0, 10, 20, 30}),
+        KeyframeTrack(".quaternion", TrackType::Quaternion, {0, 1}, {0, 0, 0, 1, 0, 1, 0, 0})});
+    const auto run = [&](int query) {
+        if (query == 7) CHECK(Object3D::poseObserver == nullptr && Object3D::poseObservationReport == nullptr);
+        AnimationMixer::poseObservation = {true};
+        Object3D::poseObservationEnabled = true;
+        auto bone = std::make_shared<Bone>(); bone->enableTrackedTransform();
+        const std::array<double, 10>* earlyBorrow = query == 7 ? &bone->deferredTransformValues() : nullptr;
+        AnimationMixer mixer(bone); mixer.clipAction(clip)->play();
+        auto valid = std::make_shared<bool>(true);
+        CHECK(bone->enableDeferredTransform(std::make_shared<std::vector<float>>(12), 0, valid));
+        bone->gpuJointBoundary = valid; bone->gpuJointHierarchy = Object3D::hierarchyVersion();
+        mixer.update(0.25);
+        if (earlyBorrow) { volatile double consumed = (*earlyBorrow)[0]; (void)consumed; }
+        const std::array<double, 10>* borrowed = query == 6 ? &bone->deferredTransformValues() : nullptr;
+        if (query == 1) { PropertyBinding local(bone, ".position"); double values[3]; local.getValue(values, 0); }
+        if (query == 2) { Vector3 world; bone->getWorldPosition(world); }
+        if (query == 3) Object3D::poseObserver(*bone, 2);
+        if (query == 4) *valid = false;
+        if (query == 5) { Group parent; parent.add(*bone); }
+        if (query == 8) Object3D::prepareTransformView(&bone->position);
+        mixer.update(0.25);
+        if (borrowed) { volatile double consumed = (*borrowed)[0]; (void)consumed; mixer.update(0.25); }
+        return AnimationMixer::poseObservation;
+    };
+    const auto earlyBorrow = run(7);
+    CHECK(earlyBorrow.intervals == 1 && earlyBorrow.unusedTracks == 0 && earlyBorrow.conservativeTracks == 2);
+    const auto hidden = run(0);
+    CHECK(hidden.intervals == 1 && hidden.tracks == 2 && hidden.bindings == 2);
+    CHECK(hidden.unusedIntervals == 1 && hidden.unusedTracks == 2 && hidden.wholeUnusedTracks == 2);
+    CHECK(hidden.unusedBindings == 2 && hidden.queriedTracks == 0 && hidden.drawnTracks == 0);
+    for (int query = 1; query <= 5; ++query) {
+        const auto observed = run(query);
+        CHECK(observed.intervals == 1 && observed.unusedIntervals == 0 && observed.unusedTracks == 0);
+        if (query <= 2) CHECK(observed.queriedTracks == 2);
+        if (query == 3) CHECK(observed.drawnTracks == 2);
+        if (query >= 4) CHECK(observed.conservativeTracks == 2);
+    }
+    CHECK(Object3D::poseObserver == nullptr && Object3D::poseObservationReport == nullptr);
+    const auto retained = run(6);
+    CHECK(retained.intervals == 2 && retained.unusedTracks == 0);
+    const auto mathBorrow = run(8);
+    CHECK(mathBorrow.unusedTracks == 0 && mathBorrow.conservativeTracks == 2 && mathBorrow.queriedTracks == 2);
+    AnimationMixer::poseObservation = {true};
+    {
+        auto bone = std::make_shared<Bone>(); bone->enableTrackedTransform();
+        AnimationMixer first(bone), second(bone);
+        first.clipAction(clip)->play(); second.clipAction(clip)->play();
+        auto valid = std::make_shared<bool>(true);
+        CHECK(bone->enableDeferredTransform(std::make_shared<std::vector<float>>(12), 0, valid));
+        bone->gpuJointBoundary = valid; bone->gpuJointHierarchy = Object3D::hierarchyVersion();
+        first.update(0.25); second.update(0.25); first.update(0.25); second.update(0.25);
+        CHECK(AnimationMixer::poseObservation.intervals == 2);
+        CHECK(AnimationMixer::poseObservation.unusedTracks == 0 && AnimationMixer::poseObservation.conservativeTracks == 4);
+    }
+    CHECK(Object3D::poseObserver == nullptr);
+    AnimationMixer::poseObservation = {true};
+    {
+        auto node = std::make_shared<Object3D>(); AnimationMixer mixer(node);
+        mixer.clipAction(clip)->play(); mixer.update(0.25); mixer.update(0.25);
+        CHECK(AnimationMixer::poseObservation.unusedTracks == 0 && AnimationMixer::poseObservation.conservativeTracks == 2);
+    }
+    CHECK(Object3D::poseObserver == nullptr);
+    AnimationMixer::poseObservation = {true};
+    {
+        auto root = std::make_shared<Group>();
+        auto bone = std::make_shared<Bone>(); bone->name = "joint"; bone->enableTrackedTransform(); root->add(*bone);
+        const auto id = bone->id();
+        AnimationMixer mixer(root);
+        auto childClip = std::make_shared<AnimationClip>("child", 1, std::vector<KeyframeTrack>{
+            KeyframeTrack("joint.position", TrackType::Vector, {0, 1}, {0, 0, 0, 10, 20, 30})});
+        mixer.clipAction(childClip)->play();
+        auto valid = std::make_shared<bool>(true);
+        CHECK(bone->enableDeferredTransform(std::make_shared<std::vector<float>>(12), 0, valid));
+        bone->gpuJointBoundary = valid; bone->gpuJointHierarchy = Object3D::hierarchyVersion();
+        mixer.update(0.25); root->remove(*bone); bone.reset(); mixer.update(0.25);
+        CHECK(AnimationMixer::poseObservation.unusedTracks == 0 && AnimationMixer::poseObservation.conservativeTracks == 1);
+        bone = std::make_shared<Bone>(); CHECK(bone->id() != id); // Reused addresses cannot reuse subscription IDs.
+    }
+    CHECK(Object3D::poseObserver == nullptr);
+    CHECK(run(0).unusedTracks == 2); // Destruction removed every old mixer subscription.
+    AnimationMixer::poseObservation = {};
+    Object3D::poseObservationEnabled = false;
+    const auto disabled = AnimationMixer::poseObservation;
+    deferredMixer();
+    CHECK(AnimationMixer::poseObservation.intervals == disabled.intervals && Object3D::poseObserver == nullptr);
 }
 
 double meterClock = 0;
@@ -155,4 +251,4 @@ void track_hot_fields() {
 
 } // namespace
 
-TN_TEST_MAIN({"mixer", mixer}, {"events", events}, {"track_hot_fields", track_hot_fields})
+TN_TEST_MAIN({"mixer", mixer}, {"events", events}, {"track_hot_fields", track_hot_fields}, {"pose_observation", poseObservation})

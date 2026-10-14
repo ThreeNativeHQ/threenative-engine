@@ -2795,13 +2795,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     planNormals();
 
-    if (!compilation && gpuJoints_ && !gpuJoints_->drawUse.empty()) {
+    if (!compilation && gpuJoints_ && (!gpuJoints_->drawUse.empty() || Object3D::poseObserver)) {
         const auto mark = [](const Planned& p) {
             const auto& item = *p.item;
             if (!item.gpuJoints || !item.instanceCount) return;
             auto& use = item.gpuJoints->drawUse;
-            if (item.gpuJointRigs.empty()) use.at(item.gpuJointRig) = 1;
-            else for (const auto rig : item.gpuJointRigs) use.at(rig) = 1;
+            const auto markRig = [&](uint32_t rig) {
+                if (!use.empty()) use.at(rig) = 1;
+                if (Object3D::poseObserver) {
+                    const auto& topology = item.gpuJoints->topology.at(rig);
+                    for (uint32_t i = 0; i < topology.count; ++i)
+                        if (const auto bone = item.gpuJoints->bones.at(topology.inputBase + i).lock()) Object3D::poseObserver(*bone, 2);
+                }
+            };
+            if (item.gpuJointRigs.empty()) markRig(item.gpuJointRig);
+            else for (const auto rig : item.gpuJointRigs) markRig(rig);
         };
         for (const auto& p : plan) mark(p);
         for (const auto& pass : shadowPasses) for (const auto& p : pass.draws) mark(p);

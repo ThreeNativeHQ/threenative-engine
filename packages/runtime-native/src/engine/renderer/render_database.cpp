@@ -1539,6 +1539,7 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
         clear = {world->background->r, world->background->g, world->background->b, 1};
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};
     const auto result = renderer.render(items_, cameraState_, lights_, clear);
+    if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();
     if (drawUse && !reflecting_) {
         const auto eligible = gpuJoints_ ? gpuJoints_->rigs.size() : 0;
         const auto drawn = gpuJoints_ ? std::count(gpuJoints_->drawUse.begin(), gpuJoints_->drawUse.end(), uint8_t{1}) : 0;

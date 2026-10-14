@@ -252,6 +252,11 @@ void PropertyBinding::materializeValue() {
     if (!node_.expired() && raw_) raw_->materializeLocalTransform();
 }
 
+bool PropertyBinding::unescapedBoneTransform() const {
+    return !node_.expired() && bone_ && !bone_->poseObservationEscapedValues &&
+        (target_ == Target::Position || target_ == Target::Quaternion || target_ == Target::Scale);
+}
+
 void PropertyBinding::unbind() {
     materializeValue();
     node_.reset();

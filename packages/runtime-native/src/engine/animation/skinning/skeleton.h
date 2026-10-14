@@ -45,7 +45,11 @@ class Bone : public Object3D {
     [[nodiscard]] bool hasDeferredTransformPublication() const override { return publication_; }
     void prepareLocalTransformWrite() override;
     void exposeLocalTransform() override;
-    [[nodiscard]] const std::array<double, 10>& deferredTransformValues() const { return deferredTRS_; }
+    [[nodiscard]] const std::array<double, 10>& deferredTransformValues() const {
+        if (poseObservationEnabled) { poseObservationEscapedValues = true; if (poseObserver) poseObserver(*this, 5); }
+        return deferredTRS_;
+    }
+    mutable bool poseObservationEscapedValues = false; // A retained native reference can read any later interval.
     [[nodiscard]] bool hasDeferredTransform() const { return pending_; }
 
     Bone(const Bone&) = delete;

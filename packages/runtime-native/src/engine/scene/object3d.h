@@ -255,6 +255,10 @@ public:
     virtual void materializeLocalTransform() {}
     virtual void prepareLocalTransformWrite() { materializeLocalTransform(); }
     virtual void exposeLocalTransform() {}
+    // Owning-thread, default-OFF diagnostic hooks; bits: CPU read=1, skin draw=2, unknown=4.
+    static thread_local bool poseObservationEnabled;
+    inline static thread_local void (*poseObserver)(const Object3D&, uint8_t) = nullptr;
+    inline static thread_local void (*poseObservationReport)() = nullptr;
     [[nodiscard]] virtual bool hasDeferredTransformPublication() const { return false; }
     void joinDeferredWorldTransform();
     // Renderer-owned Bone boundaries only; explicit world queries always use the eager chain.

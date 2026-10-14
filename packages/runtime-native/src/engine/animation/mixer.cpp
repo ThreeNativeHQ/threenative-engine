@@ -4,12 +4,68 @@
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <cstdio>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace tn::engine::animation {
 
 thread_local AnimationMixer::CpuTiming AnimationMixer::cpuTiming;
+thread_local AnimationMixer::PoseObservation AnimationMixer::poseObservation{Object3D::poseObservationEnabled};
 
 namespace {
+
+struct ObservedPose {
+    uint64_t tracks = 0, bindings = 0, hierarchy = 0;
+    uint8_t observed = 0;
+    std::weak_ptr<bool> gpu;
+};
+using PoseInterval = std::unordered_map<uint64_t, ObservedPose>;
+struct PoseRegistry {
+    std::unordered_map<const AnimationMixer*, PoseInterval> intervals;
+    std::unordered_map<uint64_t, std::unordered_set<const AnimationMixer*>> owners;
+    ~PoseRegistry() { Object3D::poseObserver = nullptr; Object3D::poseObservationReport = nullptr; }
+};
+thread_local PoseRegistry poseRegistry;
+
+void observePose(const Object3D& node, uint8_t reason) {
+    const auto owners = poseRegistry.owners.find(node.id());
+    if (owners == poseRegistry.owners.end()) return;
+    for (const auto* mixer : owners->second) poseRegistry.intervals.at(mixer).at(node.id()).observed |= reason;
+}
+
+void closePoseInterval(const AnimationMixer* mixer, bool destroying = false) {
+    const auto found = poseRegistry.intervals.find(mixer);
+    if (found == poseRegistry.intervals.end()) return;
+    auto& total = AnimationMixer::poseObservation;
+    uint64_t tracks = 0; bool unused = !destroying && !found->second.empty();
+    ++total.intervals;
+    for (auto& [id, pose] : found->second) {
+        const auto gpu = pose.gpu.lock();
+        if (destroying || !gpu || !*gpu || pose.hierarchy != Object3D::hierarchyVersion()) pose.observed |= 4;
+        tracks += pose.tracks; total.tracks += pose.tracks; total.bindings += pose.bindings;
+        if (pose.observed & 1) total.queriedTracks += pose.tracks;
+        if (pose.observed & 2) total.drawnTracks += pose.tracks;
+        if (pose.observed & 4) total.conservativeTracks += pose.tracks;
+        if (!pose.observed) { total.unusedTracks += pose.tracks; total.unusedBindings += pose.bindings; }
+        else unused = false;
+        auto owners = poseRegistry.owners.find(id);
+        owners->second.erase(mixer);
+        if (owners->second.empty()) poseRegistry.owners.erase(owners);
+    }
+    if (unused) { ++total.unusedIntervals; total.wholeUnusedTracks += tracks; }
+    poseRegistry.intervals.erase(found);
+    if (poseRegistry.intervals.empty()) { Object3D::poseObserver = nullptr; Object3D::poseObservationReport = nullptr; }
+}
+
+void reportPoseObservation() {
+    const auto& p = AnimationMixer::poseObservation;
+    std::printf("TN_ANIMATION_POSE_OBSERVATION:{\"intervals\":%llu,\"unusedIntervals\":%llu,\"tracks\":%llu,\"bindings\":%llu,\"unusedTracks\":%llu,\"unusedBindings\":%llu,\"wholeUnusedTracks\":%llu,\"queriedTracks\":%llu,\"drawnTracks\":%llu,\"conservativeTracks\":%llu}\n",
+        (unsigned long long)p.intervals, (unsigned long long)p.unusedIntervals, (unsigned long long)p.tracks,
+        (unsigned long long)p.bindings, (unsigned long long)p.unusedTracks, (unsigned long long)p.unusedBindings,
+        (unsigned long long)p.wholeUnusedTracks, (unsigned long long)p.queriedTracks, (unsigned long long)p.drawnTracks,
+        (unsigned long long)p.conservativeTracks);
+}
 
 // Reentrant native evaluations count as calls, but their CPU is already inside the outer scope.
 struct MixerCpuScope {
@@ -349,6 +405,7 @@ void AnimationAction::update(double t, double deltaTime, double timeDirection, i
     if (w > 0) {
         if (blendMode == BlendMode::Additive) {
             for (std::size_t j = 0; j != interpolants_.size(); ++j) {
+                if (AnimationMixer::poseObservation.enabled) mixer_.observeBinding(*propertyBindings_[j], true);
                 interpolants_[j]->evaluate(clipTime);
                 propertyBindings_[j]->accumulateAdditive(w);
             }
@@ -367,6 +424,7 @@ void AnimationAction::update(double t, double deltaTime, double timeDirection, i
             for (std::size_t k = 0; k != std::min(n, kMid); ++k) propertyBindings_[k]->prefetchData();
             for (std::size_t k = 0; k != std::min(n, kNear); ++k) propertyBindings_[k]->prefetchColumns();
             for (std::size_t j = 0; j != n; ++j) {
+                if (AnimationMixer::poseObservation.enabled) mixer_.observeBinding(*propertyBindings_[j], true);
                 if (j + kFar < n) objects(j + kFar);
                 if (j + kMid < n) propertyBindings_[j + kMid]->prefetchData();
                 if (j + kNear < n) propertyBindings_[j + kNear]->prefetchColumns();
@@ -513,7 +571,24 @@ AnimationAction& AnimationAction::scheduleFading(double duration, double weightN
 // ---- AnimationMixer
 
 AnimationMixer::AnimationMixer(std::shared_ptr<Object3D> root) : root_(std::move(root)) {}
-AnimationMixer::~AnimationMixer() = default;
+AnimationMixer::~AnimationMixer() { if (Object3D::poseObserver) closePoseInterval(this, true); }
+
+void AnimationMixer::observeBinding(const PropertyMixer& binding, bool evaluated) {
+    Object3D::poseObservationEnabled = true;
+    Object3D::poseObserver = observePose; Object3D::poseObservationReport = reportPoseObservation;
+    const auto node = binding.binding.targetNode();
+    const uint64_t id = node ? node->id() : 0;
+    auto [entry, inserted] = poseRegistry.intervals[this].try_emplace(id);
+    auto& pose = entry->second;
+    if (inserted) {
+        pose.hierarchy = Object3D::hierarchyVersion();
+        if (node) pose.gpu = node->gpuJointBoundary;
+        auto& owners = poseRegistry.owners[id]; owners.insert(this);
+        if (owners.size() > 1) for (const auto* owner : owners) poseRegistry.intervals.at(owner).at(id).observed |= 4;
+    }
+    if (!node || !binding.binding.unescapedBoneTransform() || !node->skipsGpuJointSubtree()) pose.observed |= 4;
+    if (evaluated) ++pose.tracks; else ++pose.bindings;
+}
 
 AnimationMixer::ActionsForClip* AnimationMixer::actionsFor(const AnimationClip* clip) {
     for (ActionsForClip& entry : actionsByClip_)
@@ -774,6 +849,16 @@ AnimationMixer& AnimationMixer::stopAllAction() {
 
 AnimationMixer& AnimationMixer::update(double deltaTime) {
     MixerCpuScope cpu;
+    if (poseObservation.enabled) closePoseInterval(this);
+    struct ObservationUnwind {
+        const AnimationMixer* mixer;
+        int exceptions = mixer ? std::uncaught_exceptions() : 0;
+        ~ObservationUnwind() {
+            if (!mixer || std::uncaught_exceptions() <= exceptions) return;
+            if (auto interval = poseRegistry.intervals.find(mixer); interval != poseRegistry.intervals.end())
+                for (auto& [id, pose] : interval->second) pose.observed |= 4;
+        }
+    } observationUnwind{poseObservation.enabled ? this : nullptr};
     ++updateCount_;
     deltaTime *= timeScale;
     const std::size_t nActions = nActiveActions_;
@@ -786,8 +871,10 @@ AnimationMixer& AnimationMixer::update(double deltaTime) {
     for (std::size_t i = 0; i != nActions; ++i)
         actions_[i]->update(t, deltaTime, timeDirection, accuIndex);
     const std::size_t nBindings = nActiveBindings_;
-    for (std::size_t i = 0; i != nBindings; ++i)
+    for (std::size_t i = 0; i != nBindings; ++i) {
+        if (poseObservation.enabled) observeBinding(*bindings_[i], false);
         bindings_[i]->apply(accuIndex);
+    }
     updating_ = false;
     std::vector<MixerEvent> pending;
     pending.swap(pendingEvents_);

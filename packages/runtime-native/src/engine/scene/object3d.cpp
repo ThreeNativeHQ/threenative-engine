@@ -10,10 +10,16 @@
 
 #include <algorithm>
 #include <cstring>
+#include <cstdlib>
 #include <random>
 #include <mutex>
 
 namespace tn::engine {
+
+thread_local bool Object3D::poseObservationEnabled = [] {
+    const auto* flag = std::getenv("TN_ANIMATION_POSE_OBSERVATION");
+    return flag && std::strcmp(flag, "1") == 0;
+}();
 
 // Each column is contiguous; pages keep every public transform address stable through growth.
 struct alignas(64) TransformPage {

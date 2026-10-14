@@ -78,6 +78,7 @@ class PropertyBinding {
     void unbind();
     void materializeValue();
     [[nodiscard]] bool bound() const { return target_ != Target::Unavailable; }
+    [[nodiscard]] bool unescapedBoneTransform() const;
     /** The object cached by bind(), for the animation audit's targetObject reflection. */
     [[nodiscard]] std::shared_ptr<Object3D> targetNode() const { return bound() ? node_.lock() : nullptr; }
     [[nodiscard]] std::shared_ptr<Material> targetMaterial() const { return bound() ? material_ : nullptr; }

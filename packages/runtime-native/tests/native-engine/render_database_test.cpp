@@ -5,6 +5,7 @@
 
 #include "check.h"
 #include "engine/animation/property_binding.h"
+#include "engine/animation/mixer.h"
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
 #include "engine/renderer/reflector.h"
@@ -3290,21 +3291,42 @@ void gpuJointProduction() {
         CHECK(accelerated.tips[0]->skipsGpuJointSubtree());
     }
     if (drawUse) {
+        std::vector<std::unique_ptr<animation::AnimationMixer>> observers;
+        if (animation::AnimationMixer::poseObservation.enabled) {
+            auto clip = std::make_shared<animation::AnimationClip>("observe", 1, std::vector<animation::KeyframeTrack>{
+                animation::KeyframeTrack(".scale", animation::TrackType::Vector, {0, 1}, {1, 1, 1, 1, 1, 1})});
+            for (const auto i : {0, 2, 3}) {
+                auto mixer = std::make_unique<animation::AnimationMixer>(accelerated.tips[i]);
+                mixer->clipAction(clip)->play(); observers.push_back(std::move(mixer));
+            }
+        }
+        const auto renderObserved = [&](uint64_t drawn) {
+            for (const auto& mixer : observers) mixer->update(0);
+            const auto before = animation::AnimationMixer::poseObservation;
+            database.render(gpu, accelerated.scene, accelerated.camera);
+            for (const auto& mixer : observers) mixer->update(0);
+            if (!observers.empty()) {
+                const auto& after = animation::AnimationMixer::poseObservation;
+                CHECK(after.intervals - before.intervals == 3 && after.tracks - before.tracks == 3);
+                CHECK(after.drawnTracks - before.drawnTracks == drawn);
+                CHECK(after.unusedTracks - before.unusedTracks == 3 - drawn);
+            }
+        };
         for (const auto& mover : accelerated.movers) mover->setVisible(false);
-        database.render(gpu, accelerated.scene, accelerated.camera);
+        renderObserved(0);
         CHECK(admittedPlan->drawUse == std::vector<uint8_t>(3, 0)); // Reset removes last frame's use.
         accelerated.movers[0]->setVisible(true);
         accelerated.meshes[0]->setLayer(1);
         accelerated.camera.disableLayer(1);
         accelerated.reflector->camera->enableLayer(1);
-        database.render(gpu, accelerated.scene, accelerated.camera);
+        renderObserved(1);
         CHECK(gpu.lastFrame().mainSkinned.batches == 0);
         CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == 1); // Reflection only.
         accelerated.reflector->camera->disableLayer(1);
         database.shadowMapEnabled = true;
         for (auto* child : accelerated.scene.children) if (auto* sun = dynamic_cast<DirectionalLight*>(child)) sun->shadow.camera->enableLayer(1);
         for (int repeat = 0; repeat < 2; ++repeat) {
-            database.render(gpu, accelerated.scene, accelerated.camera);
+            renderObserved(1);
             CHECK(gpu.lastFrame().mainSkinned.batches == 0);
             CHECK(gpu.lastFrame().shadowSkinned.batches > 0);
             CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == 1); // Shadow only, including steady replay.
@@ -3312,7 +3334,7 @@ void gpuJointProduction() {
         accelerated.meshes[0]->setLayer(0);
         database.shadowMapEnabled = false;
         for (int repeat = 0; repeat < 2; ++repeat) {
-            database.render(gpu, accelerated.scene, accelerated.camera);
+            renderObserved(1);
             CHECK(gpu.lastFrame().mainSkinned.batches == 1);
             CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == 1); // Main bundle reuse.
         }
