@@ -405,7 +405,7 @@ export async function measureCpuWindow(
       typeof startTick !== "number" || typeof endTick !== "number" ||
       ![startTick, endTick].every((tick) => Number.isSafeInteger(tick) && tick >= 0) ||
       endTick - startTick !== FRAMES
-    ) fail("expected exact 1000-tick window boundaries");
+    ) return fail("expected exact 1000-tick window boundaries");
     const currentOwner = await resolveOwner();
     if (
       owner.pid !== currentOwner.pid ||
