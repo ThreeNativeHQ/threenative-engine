@@ -2,7 +2,14 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { cpus } from "node:os";
 import { join } from "node:path";
+import {
+  Heightfield,
+  heightSamplerFromHeightmap,
+  loadWorldHeightmap,
+} from "@threenative/core/world";
+import { Object3D, Scene } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import * as ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { decodeRAW16 } from "../src/core/io.js";
@@ -468,6 +475,87 @@ describe("measureGlb", () => {
   });
 });
 
+interface IHeightfieldCollider {
+  readonly columns: number;
+  readonly heights: Float32Array;
+  readonly rows: number;
+  readonly scale: { readonly x: number; readonly y: number; readonly z: number };
+}
+
+interface IEmittedBody {
+  readonly entity?: string;
+  readonly object?: Object3D;
+  readonly type?: string;
+}
+
+async function runEmittedLoad(
+  load: string,
+  servedHeightmap: string,
+  onResolve: (path: string) => void,
+) {
+  const scene = new Object3D();
+  const dispose = vi.fn();
+  let body: IEmittedBody | undefined;
+  let collider: IHeightfieldCollider | undefined;
+  const modules = {
+    "@threenative/core/world": {
+      Heightfield,
+      heightSamplerFromHeightmap,
+      loadWorldHeightmap,
+      applyTerrainSurface: async () => {},
+    },
+    "@threenative/physics": {
+      CollisionShape3D: {
+        heightfield: (
+          rows: number,
+          columns: number,
+          heights: Float32Array,
+          scale: IHeightfieldCollider["scale"],
+        ) => {
+          collider = { rows, columns, heights, scale };
+          return collider;
+        },
+      },
+      RigidBody3D: class {
+        constructor(options: IEmittedBody) {
+          body = options;
+        }
+        dispose = dispose;
+      },
+    },
+    three: { Object3D },
+  };
+  const ctx = {
+    add: (object: Object3D) => scene.add(object),
+    assets: {
+      model: async () => ({ scene: new Object3D() }),
+      resolve: async (path: string) => {
+        onResolve(path);
+        return [servedHeightmap];
+      },
+    },
+    physics: {},
+    renderer: {},
+    scene,
+  };
+  // Compile the real imports so missing modules, exports and aliases cannot pass by being stripped.
+  const { outputText } = ts.transpileModule(load, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  });
+  const execute = new Function(
+    "modules",
+    "ctx",
+    `const exports = {}; const require = (name) => { if (!(name in modules)) throw new Error("Unexpected runtime import: " + name); return modules[name]; }; return (async () => { ${outputText} })();`,
+  );
+  await execute(modules, ctx);
+  if (body === undefined || collider === undefined)
+    throw new Error("The snippet created no terrain collider.");
+  expect(dispose).not.toHaveBeenCalled();
+  scene.clear();
+  expect(dispose).toHaveBeenCalledOnce();
+  return { body, collider };
+}
+
 describe("terrain_generate result", () => {
   it.each(["assets", "content"])(
     "returns a manifest-relative forest load snippet under %s",
@@ -505,14 +593,49 @@ describe("terrain_generate result", () => {
         expect(result.instances).toBeGreaterThan(0);
         expect(result.draws).toBeGreaterThan(0);
         expect(result.triangles).toBeGreaterThan(result.instances);
-        expect(result.load).toContain('ctx.assets.model("worlds/forest/world.glb")');
-        expect(result.load).toContain(
-          'import { applyTerrainSurface } from "@threenative/core/world";',
+        // The visual handoff is unchanged: the GLB is loaded and its surface applied.
+        expect(result.load).toContain('ctx.assets.model<TerrainModel>("worlds/forest/world.glb")');
+        expect(result.load).toContain("ctx.scene.add(world.scene);");
+        expect(result.load).toContain("applyTerrainSurface(world.scene");
+        // No authoring import leaks into the game: only core/world, physics and three are allowed.
+        expect(
+          result.load.split("\n").filter((line: string) => line.includes("@threenative/terrain")),
+        ).toEqual([]);
+        // The printed snippet must build the physical ground the visual GLB does not.
+        const manifest = JSON.parse(await readFile(join(project, result.worldPackage), "utf8"));
+        const heightmapBytes = new Uint8Array(
+          await readFile(join(project, source, "worlds", "forest", manifest.terrain.heightmap)),
         );
-        expect(result.load).toContain(
-          'await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "worlds/forest/world.glb" });',
+        const served = `data:application/octet-stream;base64,${Buffer.from(heightmapBytes).toString("base64")}`;
+        const resolved: string[] = [];
+        const { body, collider } = await runEmittedLoad(result.load, served, (path) =>
+          resolved.push(path),
         );
-        expect(result.load.split("\n")).toHaveLength(4);
+        expect(resolved).toEqual([`worlds/forest/${manifest.terrain.heightmap}`]);
+        expect(collider.rows).toBe(manifest.terrain.rows);
+        expect(collider.columns).toBe(manifest.terrain.columns);
+        expect(collider.scale).toEqual({
+          x: manifest.extent.sizeX,
+          y: 1,
+          z: manifest.extent.sizeZ,
+        });
+        expect(body.type).toBe("fixed");
+        expect(body.entity).toBe("terrain");
+        expect(body.object?.position.x).toBe(manifest.extent.minX + manifest.extent.sizeX / 2);
+        expect(body.object?.position.z).toBe(manifest.extent.minZ + manifest.extent.sizeZ / 2);
+        const decoded = decodeRAW16(heightmapBytes, {
+          height: manifest.terrain.rows,
+          max: manifest.terrain.heightMax,
+          min: manifest.terrain.heightMin,
+          width: manifest.terrain.columns,
+        });
+        expect(collider.heights).toHaveLength(manifest.terrain.rows * manifest.terrain.columns);
+        for (let column = 0; column < manifest.terrain.columns; column += 1)
+          for (let row = 0; row < manifest.terrain.rows; row += 1)
+            expect(collider.heights[column * manifest.terrain.rows + row]).toBeCloseTo(
+              decoded.values[row * manifest.terrain.columns + column] as number,
+              4,
+            );
         // recipe.json is a document `terrain_patch` accepts as is.
         const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
         expect(patchRecipe(recipe, []).layers).toHaveLength(recipe.layers.length);

@@ -48,7 +48,18 @@ interface ICooker {
   }>;
   cookTerrainWorld(options: Record<string, unknown>): Promise<{
     worldGlb: Uint8Array;
-    manifest: { assets: unknown };
+    manifest: {
+      assets: unknown;
+      extent: { minX: number; minZ: number; sizeX: number; sizeZ: number };
+      terrain: {
+        columns: number;
+        heightmap: string;
+        heightMax: number;
+        heightMin: number;
+        rows: number;
+        spacing: number;
+      };
+    };
     placementCounts: unknown;
   }>;
 }
@@ -253,6 +264,13 @@ async function cookInto(
   const url = relative(request.assetSource as string, request.out)
     .split(sep)
     .join("/");
+  const worldUrl = `${url}/world.glb`;
+  const heightmapUrl = `${url}/${cooked.manifest.terrain.heightmap}`;
+  // The GLB carries no collider, so the snippet also builds the ground; aliases dodge stock names.
+  const physical = JSON.stringify({
+    extent: cooked.manifest.extent,
+    terrain: cooked.manifest.terrain,
+  });
   return JSON.stringify({
     recipe: request.kit,
     out: shown,
@@ -264,10 +282,37 @@ async function cookInto(
     worldGlbBytes: cooked.worldGlb.length,
     ms: Math.round(performance.now() - started),
     load: [
-      'import { applyTerrainSurface } from "@threenative/core/world";',
-      `const world = await ctx.assets.model("${url}/world.glb");`,
+      'import { applyTerrainSurface, Heightfield as TerrainHeightfield, heightSamplerFromHeightmap as sampleTerrainHeight, loadWorldHeightmap as loadTerrainHeightmap } from "@threenative/core/world";',
+      'import { CollisionShape3D as TerrainCollisionShape, RigidBody3D as TerrainRigidBody } from "@threenative/physics";',
+      'import { Object3D as TerrainAnchor } from "three";',
+      'import type { GLTF as TerrainModel } from "three/addons/loaders/GLTFLoader.js";',
+      `const world = await ctx.assets.model<TerrainModel>(${JSON.stringify(worldUrl)});`,
       "ctx.scene.add(world.scene);",
-      `await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "${url}/world.glb" });`,
+      `await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: ${JSON.stringify(worldUrl)} });`,
+      `const terrainWorld = ${physical};`,
+      `const [terrainHeightmapUrl] = await ctx.assets.resolve(${JSON.stringify(heightmapUrl)});`,
+      'if (terrainHeightmapUrl === undefined) throw new Error("terrain: the world heightmap is not served.");',
+      "const terrainHeights = await loadTerrainHeightmap(terrainHeightmapUrl);",
+      "const terrainField = TerrainHeightfield.fromSampler({",
+      "  columns: terrainWorld.terrain.columns,",
+      "  depth: terrainWorld.extent.sizeZ,",
+      "  origin: { x: terrainWorld.extent.minX + terrainWorld.extent.sizeX / 2, z: terrainWorld.extent.minZ + terrainWorld.extent.sizeZ / 2 },",
+      "  rows: terrainWorld.terrain.rows,",
+      "  sampleHeight: sampleTerrainHeight(terrainWorld.terrain, terrainWorld.extent, terrainHeights),",
+      "  width: terrainWorld.extent.sizeX,",
+      "});",
+      "const terrainAnchor = new TerrainAnchor();",
+      "terrainAnchor.position.set(terrainWorld.extent.minX + terrainWorld.extent.sizeX / 2, 0, terrainWorld.extent.minZ + terrainWorld.extent.sizeZ / 2);",
+      "const terrainBody = new TerrainRigidBody({",
+      '  entity: "terrain",',
+      "  object: terrainAnchor,",
+      "  physics: ctx.physics,",
+      "  shape: TerrainCollisionShape.heightfield(terrainField.rows, terrainField.columns, terrainField.toColliderHeights(), { x: terrainWorld.extent.sizeX, y: 1, z: terrainWorld.extent.sizeZ }),",
+      '  type: "fixed",',
+      "});",
+      "// Drop the collider with its anchor: ctx.add alone does not release the body on scene exit.",
+      'terrainAnchor.addEventListener("removed", () => terrainBody.dispose());',
+      "ctx.add(terrainAnchor);",
     ].join("\n"),
   });
 }
