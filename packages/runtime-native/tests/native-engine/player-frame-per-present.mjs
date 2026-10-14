@@ -12,8 +12,9 @@ import { bundleNativeEngine } from "../../scripts/bundle-native-engine.mjs";
 
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const executable = process.argv[2];
-assert(executable, "Usage: player-frame-per-present.mjs <tn-native-engine-player-v8> [--cpu-profile]");
+assert(executable, "Usage: player-frame-per-present.mjs <tn-native-engine-player-v8> [--cpu-profile] [--main-thread-cpu]");
 const cpuProfile = process.argv.includes("--cpu-profile");
+const mainThreadCpu = process.argv.includes("--main-thread-cpu");
 const work = await mkdtemp(resolve(native, "build/player-frame-per-present-"));
 process.once("exit", () => rmSync(work, { recursive: true, force: true }));
 const entry = resolve(work, "game.ts");
@@ -43,6 +44,8 @@ requestAnimationFrame(frame);
 await bundleNativeEngine({ entry, outfile, boot: false, host: true });
 const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy", TN_PLAYER_METRICS: "1",
   ...(cpuProfile ? { TN_JS_CPU_PROFILE: "1", TN_JS_CPU_PROFILE_START_FRAME: "10" } : {}) };
+delete env.TN_PLAYER_MAIN_THREAD_CPU;
+if (mainThreadCpu) env.TN_PLAYER_MAIN_THREAD_CPU = "1";
 delete env.TN_PLAYTEST_MAILBOX_ROOT;
 const child = spawn(resolve(executable), [outfile], { env });
 const stopped = once(child, "close");
@@ -96,6 +99,18 @@ assert(settled.every((count) => count === 1), `frame callbacks per drawn frame: 
 console.log(`PASS one frame callback per drawn frame over ${settled.length} frames`);
 const cullFrames = output.split("\n").filter((line) => line.startsWith("TN_PLAYER_FRAME:"))
   .map((line) => JSON.parse(line.slice("TN_PLAYER_FRAME:".length))).slice(3, 20);
+assert(cullFrames.every((frame) => Object.hasOwn(frame, "mainThreadCpuMs") === mainThreadCpu &&
+  Object.hasOwn(frame, "measuredFrames") === mainThreadCpu), "whole main-thread CPU endpoints must be opt-in");
+if (mainThreadCpu) {
+  assert(cullFrames.every((frame) => Number.isFinite(frame.mainThreadCpuMs) && frame.mainThreadCpuMs > 0 &&
+    Number.isInteger(frame.measuredFrames) && frame.measuredFrames > 0), "CPU endpoints need the clock and completed frame count");
+  for (let i = 1; i < cullFrames.length; i++) {
+    assert.equal(cullFrames[i].measuredFrames, cullFrames[i - 1].measuredFrames + 1, "count every complete rendered frame");
+    assert(cullFrames[i].mainThreadCpuMs - cullFrames[i - 1].mainThreadCpuMs >= cullFrames[i].cpuFrameCpuMs - 0.01,
+      "cumulative main-thread CPU must include the existing frame CPU window");
+  }
+  console.log("PASS cumulative main-thread CPU and completed-frame endpoints");
+}
 assert(cullFrames.length >= 10 && cullFrames.every((frame) => frame.projectedCullCalls === 2), "cull calls must reset for each CPU frame");
 assert(cullFrames.every((frame) => Number.isFinite(frame.projectedCullCpuMs) && frame.projectedCullCpuMs >= 0 &&
   frame.projectedCullCpuMs <= frame.cpuFrameCpuMs + 0.01), "cull CPU must be measured inside the main-thread CPU frame");

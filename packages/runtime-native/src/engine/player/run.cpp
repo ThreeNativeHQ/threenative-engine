@@ -512,6 +512,11 @@ struct Session {
     bool runner = false, initialized = false, readbackInFlight = false, firstFrame = true;
     bool viewFailed = false;
     bool metrics = std::getenv("TN_PLAYER_METRICS") != nullptr || gameSpan(-1, 0) == 1;
+    bool mainThreadCpuEnabled = [] {
+        const char* flag = std::getenv("TN_PLAYER_MAIN_THREAD_CPU");
+        const char* metricsFlag = std::getenv("TN_PLAYER_METRICS");
+        return metricsFlag && std::strcmp(metricsFlag, "1") == 0 && flag && std::strcmp(flag, "1") == 0;
+    }();
     bool spans = gameSpan(-1, 0) == 1;
     uint64_t measuredFrames = 0, previousCrossings = 0, updateTicks = 0;
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
@@ -929,6 +934,14 @@ int Session::initialize() {
                 lastProjectionVisits = projections; lastValidationVisits = validations; lastMaintenanceVisits = maintenance;
             }
             ++measuredFrames;
+            if (mainThreadCpuEnabled) {
+                // Cumulative whole main-thread CPU at this completed render; UI/GPU helper threads are excluded.
+                const double cpuMs = threadCpuMs();
+                auto members = sample.members();
+                members.emplace_back("mainThreadCpuMs", std::isfinite(cpuMs) && cpuMs > 0 ? json::Value::makeNumber(cpuMs) : json::Value::makeNull());
+                members.emplace_back("measuredFrames", json::Value::makeNumber(double(measuredFrames)));
+                sample = json::Value::makeObject(std::move(members));
+            }
             std::printf("TN_PLAYER_FRAME:%s\n", json::stringify(sample).c_str());
             std::fflush(stdout);
             previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
