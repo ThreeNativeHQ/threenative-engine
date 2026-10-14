@@ -272,6 +272,7 @@ export interface ICellImpostorsHost {
 }
 export interface ICellImpostorsSettings {
   readonly enabled: boolean;
+  readonly receiveShadow: boolean;
   readonly candidates: readonly string[];
   readonly cells: readonly IWorldCell[];
   readonly manifest: IWorldPackage;
@@ -313,6 +314,7 @@ export class CellImpostors {
 
   /** Whether alpha-foliage assets append a baked whole-asset terminal level; see the option. */
   readonly #impostors: boolean;
+  readonly #receiveShadow: boolean;
 
   /** The baker one view per render-cadence update; see `#stepImpostor`. */
   readonly #baker = new WorldImpostorBaker();
@@ -395,6 +397,7 @@ export class CellImpostors {
   constructor(settings: ICellImpostorsSettings, host: ICellImpostorsHost) {
     this.#host = host;
     this.#impostors = settings.enabled;
+    this.#receiveShadow = settings.receiveShadow;
     this.#farCandidateIds = settings.candidates;
     this.#impostorBudgetBytes = DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES;
     this.#cells = settings.cells;
@@ -1027,8 +1030,8 @@ export class CellImpostors {
     if (this.#castShadowLevels > 0) {
       mesh.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
       mesh.castShadow = true;
-      mesh.receiveShadow = false;
     }
+    mesh.receiveShadow = this.#receiveShadow;
     this.#host.add(mesh);
     return mesh;
   }

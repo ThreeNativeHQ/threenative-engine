@@ -10,7 +10,12 @@ import {
 } from "three";
 import { markEngineRenderHook } from "./engine-render-hook.js";
 import { mergeByMaterial } from "./merge-parts.js";
-import { conservativeViewDepth, lodChainOf } from "./model-lod.js";
+import {
+  conservativeViewDepth,
+  isLodJoinProxy,
+  lodChainOf,
+  setModelLodLayers,
+} from "./model-lod.js";
 import { displacesVertices } from "./projection-plan.js";
 import type { IRendererLike } from "./renderer.js";
 import { markStatic } from "./static-transform.js";
@@ -29,7 +34,12 @@ import {
   prepareCellProxy,
 } from "./world-cell-proxy.js";
 import type { IAssetState } from "./world-cells.js";
-import { CHUNK_NAME, buildChunkShadowProxies } from "./world-chunk-shadow.js";
+import {
+  CHUNK_NAME,
+  VIRTUAL_SHADOW_CASTER_LAYER,
+  VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
+  buildChunkShadowProxies,
+} from "./world-chunk-shadow.js";
 import type { IWorldCell } from "./world-package.js";
 import type { IAdmissionBudget } from "./world-tiles.js";
 
@@ -364,6 +374,7 @@ export class CellChunks {
   readonly #cellProxies = new Set<ICellProxyState>();
   #hlodBytes = 0;
   #hlodRefused = 0;
+  #hlodReason = "";
   #hlodFailures = 0;
   /**
    * Per-side surfaces shared world-wide, separately for merged and retained proxies. See
@@ -394,9 +405,13 @@ export class CellChunks {
   #beginCellProxy(cell: IResidentCell): void {
     const proxy = cell.cell.proxy;
     if (proxy === undefined) return;
-    // The cook already limits a decoded mesh unit; reserve source + private fixed copies before IO.
-    // A world too tight to retain both source and proxy retains source instead of trading a hole.
-    const reserve = CHUNK_MERGE_MAX_BYTES * 2;
+    // Reserve resident headroom before IO; decoded source and fixed copies must fit it.
+    // Temporary pressure retries through the existing admission loop.
+    const reserve = Math.min(
+      CHUNK_MERGE_MAX_BYTES * 2,
+      this.#byteBudget - this.#host.sourceBytes() - this.#hlodBytes,
+    );
+    if (reserve <= 0) return;
     const state: ICellProxyState = {
       cell,
       selector: new CellProxySelection(proxy),
@@ -409,6 +424,7 @@ export class CellChunks {
       bytes: 0,
       observed: new Set(),
       hidden: new Map(),
+      mainMasks: new Map(),
     };
     const source = this.#cellProxySource(state);
     // A retained neighboring key or a cheaper source LOD cannot benefit. Reconsider after later
@@ -420,11 +436,6 @@ export class CellChunks {
     )
       return;
     cell.proxy = state;
-    if (this.#host.sourceBytes() + this.#hlodBytes + reserve > this.#byteBudget) {
-      state.cancelled = true;
-      this.#hlodRefused++;
-      return;
-    }
     state.bytes = reserve;
     this.#hlodBytes += reserve;
     this.#cellProxies.add(state);
@@ -446,8 +457,10 @@ export class CellChunks {
             return;
           }
           try {
-            measureCellProxy(model, proxy);
-          } catch {
+            if (measureCellProxy(model, proxy, true) > state.bytes)
+              throw new Error("Cell proxy exceeds its reserved decoded budget.");
+          } catch (error) {
+            this.#hlodReason = `${state.cell.key}: ${String(error instanceof Error ? error.message : error).slice(0, 160)}`;
             state.cancelled = true;
             this.#hlodRefused++;
             this.releaseCellProxy(state);
@@ -469,6 +482,7 @@ export class CellChunks {
       const prepared = prepareCellProxy(
         state.model as Object3D,
         state.cell.cell.proxy as NonNullable<IWorldCell["proxy"]>,
+        state.bytes,
       );
       state.prepared = prepared;
       if (prepared.bytes > state.bytes)
@@ -478,7 +492,8 @@ export class CellChunks {
       prepared.root.name = `world-cell-proxy:${state.cell.key}`;
       for (const mesh of prepared.meshes) mesh.receiveShadow = this.#receiveShadow;
       this.#host.add(prepared.root);
-    } catch {
+    } catch (error) {
+      this.#hlodReason = `${state.cell.key}: ${String(error instanceof Error ? error.message : error).slice(0, 160)}`;
       state.cancelled = true;
       this.#hlodRefused++;
       this.releaseCellProxy(state);
@@ -557,6 +572,7 @@ export class CellChunks {
   #cellSourceDrawn(mesh: Mesh): boolean {
     if (
       this.#camera === undefined ||
+      (mesh instanceof InstancedMesh && mesh.count === 0) ||
       !this.#camera.layers.test(mesh.layers) ||
       Array.isArray(mesh.material) ||
       !mesh.material.visible
@@ -576,23 +592,35 @@ export class CellChunks {
   } {
     const cell = state.cell;
     const meshes = [...cell.mainChunkMeshes];
+    for (const chunk of cell.chunks)
+      chunk.traverse((node) => {
+        if (node instanceof Mesh && isLodJoinProxy(node)) meshes.push(node);
+      });
     const materials = new Set<Material>();
+    const staticInstances = new Set<Mesh>();
+    for (const [mesh, baseline] of cell.chunkInstances)
+      if (
+        mesh.instanceMatrix === baseline.matrix &&
+        mesh.instanceMatrix.version === baseline.version &&
+        mesh.count === baseline.count
+      )
+        staticInstances.add(mesh);
     let triangles = 0;
     let draws = 0;
-    let compatible = cellLoaded(cell) && !this.#host.gpuSceneOn();
+    let compatible =
+      cellLoaded(cell) && (state.cell.cell.proxy?.scope !== "cell" || !this.#host.gpuSceneOn());
     for (const mesh of meshes) {
       if (
-        mesh.castShadow ||
-        !cellProxySourceSafe(mesh) ||
+        !cellProxySourceSafe(mesh, staticInstances) ||
         Array.isArray(mesh.material) ||
         !cellProxyGeometrySafe(mesh.geometry) ||
-        !cellProxyMaterialSafe(mesh.material as Material) ||
-        lodChainOf(mesh.geometry) !== undefined
+        !cellProxyMaterialSafe(mesh.material as Material)
       )
         compatible = false;
       else materials.add(mesh.material as Material);
       if (this.#cellSourceDrawn(mesh)) {
-        triangles += levelTriangles(mesh.geometry);
+        triangles +=
+          levelTriangles(mesh.geometry) * (mesh instanceof InstancedMesh ? mesh.count : 1);
         draws++;
       }
     }
@@ -663,19 +691,30 @@ export class CellChunks {
   restoreCellProxySource(state: ICellProxyState): void {
     for (const [mesh, visible] of state.hidden) mesh.visible = visible;
     state.hidden.clear();
+    for (const [mesh, mask] of state.mainMasks) setModelLodLayers(mesh, mask);
+    state.mainMasks.clear();
   }
 
   showCellProxy(state: ICellProxyState, active: boolean, meshes?: readonly Mesh[]): void {
     const prepared = state.prepared;
     if (prepared === undefined) return;
     const changed = state.active !== active;
-    // Sources are never released or overwritten. Caster meshes/colliders are untouched.
+    // AutoLOD owns chunk visibility. Retire only its main pass, retaining the selected source
+    // geometry as a caster; joined rungs inherit this same pass ownership on activation.
     this.restoreCellProxySource(state);
     if (active)
       for (const mesh of meshes ?? this.#cellProxySource(state).meshes) {
         if (mesh.layers.isEnabled(0)) {
-          state.hidden.set(mesh, mesh.visible);
-          mesh.visible = false;
+          if (state.cell.mainChunkMeshes.includes(mesh) || isLodJoinProxy(mesh)) {
+            state.mainMasks.set(mesh, mesh.layers.mask);
+            let mask = mesh.layers.mask & ~1;
+            if (mesh.castShadow)
+              mask |= (1 << VIRTUAL_SHADOW_CASTER_LAYER) | (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+            setModelLodLayers(mesh, mask);
+          } else {
+            state.hidden.set(mesh, mesh.visible);
+            mesh.visible = false;
+          }
         }
       }
     prepared.root.visible = active || !this.#proxyObserved(state);
@@ -710,6 +749,7 @@ export class CellChunks {
       if (state.cancelled || state.prepared === undefined) continue;
       if (!state.compiled && !state.compiling && renderer !== undefined && camera !== undefined)
         budget.admit(() => this.#compileCellProxy(state, renderer, camera));
+      this.restoreCellProxySource(state);
       const source = this.#cellProxySource(state);
       const scale = cellProxyWorldScale(matrixWorld);
       const sphere = this.#host.worldSphere(state.prepared.bounds);
@@ -933,6 +973,12 @@ export class CellChunks {
         cell.chunks.push(object);
         object.traverse((node) => {
           if (node instanceof Mesh && node.layers.isEnabled(0)) cell.mainChunkMeshes.push(node);
+          if (node instanceof InstancedMesh && node.layers.isEnabled(0))
+            cell.chunkInstances.set(node, {
+              matrix: node.instanceMatrix,
+              version: node.instanceMatrix.version,
+              count: node.count,
+            });
         });
         // The chunk's own box, from the merged geometry's boxes rather than its vertices: a chunk
         // is loaded once and both consumers of it are only asked to be no wider than the chunk. Read
@@ -1032,6 +1078,7 @@ export class CellChunks {
       ).length,
       bytes: this.#hlodBytes,
       refused: this.#hlodRefused,
+      reason: this.#hlodReason,
       failures: this.#hlodFailures,
     };
   }

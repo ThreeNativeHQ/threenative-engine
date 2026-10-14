@@ -16,7 +16,7 @@ import {
   type Texture,
   Vector3,
 } from "three";
-import { diffuseColor, mrt, normalWorld, positionView, vec4 } from "three/tsl";
+import { diffuseColor, float, mrt, normalWorld, positionView, vec4 } from "three/tsl";
 import {
   LinearFilter,
   LinearMipmapLinearFilter,
@@ -29,6 +29,7 @@ import {
   RenderTarget,
   UnsignedByteType,
 } from "three/webgpu";
+import { mipAlphaTestNode } from "./foliage-alpha.js";
 
 /**
  * The marker the integration and its playtests key on. Kept here rather than repeated as a literal
@@ -280,6 +281,14 @@ const NODE_CLASSES: ReadonlyMap<string, new () => NodeMaterial> = new Map<
 /** Properties that must not carry from the source onto its node twin, exactly as foliage-alpha.ts. */
 const UNSYNCED = new Set(["_listeners", "id", "uuid", "version"]);
 
+/**
+ * How much of the mip chain's alpha loss one mip level is compensated by when the bake captures a
+ * cutout. The scatter path draws the same cards with 0.75 (`SCATTER_MIP_ALPHA_SCALE`), and the bake
+ * has to keep at least what that path keeps, or a tree's impostor holds less than the tree it
+ * replaces. Measured on Machinefall: the pine atlas alpha coverage went from 3.7% to 13.5%.
+ */
+export const IMPOSTOR_BAKE_MIP_ALPHA_SCALE = 0.75;
+
 /** A node twin of a source material: its class, every value it authored, by reference. */
 function cloneNodeMaterial(source: Material): NodeMaterial {
   if (Reflect.get(source, "isNodeMaterial") === true) return (source as NodeMaterial).clone();
@@ -311,7 +320,8 @@ function captureMaterial(source: Material, alphaTest: number, depthScale: number
   const material = cloneNodeMaterial(source);
   const coverage = diffuseColor.a;
   const encodedNormal = normalWorld.mul(0.5).add(0.5).mul(coverage);
-  const depth = positionView.z.mul(-depthScale).mul(coverage);
+  // Secondary MRT attachments clear to alpha one; clear contributes zero depth numerator.
+  const depth = float(1).sub(positionView.z.mul(-depthScale).mul(coverage));
   material.mrtNode = mrt({
     output: vec4(diffuseColor.rgb.mul(coverage), coverage),
     normal: vec4(encodedNormal, depth),
@@ -319,6 +329,11 @@ function captureMaterial(source: Material, alphaTest: number, depthScale: number
   material.transparent = false;
   material.blending = NoBlending;
   material.alphaTest = alphaTest;
+  // The same mip-aware cutoff the scatter cutout draws with. The 128 px frame minifies a needle card
+  // by many mips, and a plain discard at `alphaTest` deletes every needle: the atlas kept the trunk
+  // and nothing else. `alphaTest` stays the authored number for readers that only take a number.
+  const node = mipAlphaTestNode(source, alphaTest, IMPOSTOR_BAKE_MIP_ALPHA_SCALE);
+  if (node !== undefined) material.alphaTestNode = node;
   material.depthWrite = true;
   material.depthTest = true;
   material.toneMapped = false;

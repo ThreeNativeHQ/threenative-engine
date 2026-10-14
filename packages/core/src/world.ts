@@ -769,3 +769,4 @@ export type {
   IWorldCellsTerrainOptions,
   IWorldRegionReadiness,
 } from "./world-cells.js";
+export type { IWorldGpuFrameValidation } from "./world-gpu-scene.js";

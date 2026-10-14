@@ -21,6 +21,7 @@ import type {
   GpuSceneMemory,
   GpuSceneVerdict,
   IGpuSceneComparison,
+  IGpuSceneValidation,
   IMeshDraw,
 } from "./world-gpu-validation.js";
 
@@ -68,6 +69,7 @@ import {
 } from "three/tsl";
 import {
   IndirectStorageBufferAttribute,
+  ReadbackBuffer,
   StorageBufferAttribute,
   StorageInstancedBufferAttribute,
 } from "three/webgpu";
@@ -377,6 +379,11 @@ export interface IValidationSnapshot extends IKernelInput {
   readonly placed: number;
 }
 
+interface IValidationReadbacks {
+  readonly args: ReadbackBuffer;
+  readonly drawn: ReadbackBuffer;
+}
+
 /**
  * The level one placement draws with, from an asset's gate table and the placement's own scale.
  *
@@ -623,8 +630,8 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
 }
 
 /**
- * One asset's gates as its owner holds them **right now**: the same numbers `asset.distances`,
- * `asset.levels` and `cullDistance(definition.maxDistance)` are, read at the moment the check runs.
+ * One asset's gates as its owner last published them: the source representation and its
+ * `asset.distances`/`cullDistance(definition.maxDistance)` snapshot at the completed swap boundary.
  *
  * Deliberately not an {@link IAssetSlot}. A slot is what this class wrote into its own table, and a
  * table written before the owner's model widened its chain is the exact thing the check exists to
@@ -633,7 +640,7 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
 export interface ILiveAsset {
   /** The asset id a main key is named `asset:level:part` with, which is the owner's own convention. */
   readonly id: string;
-  /** Level switch distances, ascending, `0` first — `asset.distances`, never a copy of the table. */
+  /** Level switch distances, ascending, `0` first — the CPU publication snapshot. */
   readonly distances: readonly number[];
   /** `maxDistance` less its eighth, or `undefined`. */
   readonly cull: number | undefined;
@@ -705,6 +712,15 @@ export function liveKeyInstances(
     }
   }
   return new Map([...words].map(([key, run]) => [key, Float32Array.from(run)]));
+}
+
+/** One completed manual frame check, identified by the caller's frame and this scene's dispatch. */
+export interface IWorldGpuFrameValidation extends IGpuSceneComparison {
+  /** The caller's rendered-frame identity, never inferred from readback timing. */
+  readonly frame: number;
+  /** The dispatch whose buffers and snapshot this readback completed against. */
+  readonly dispatch: number;
+  readonly verdict: GpuSceneVerdict;
 }
 
 /** The message an uncaptured WebGPU error event carries, flattened to one line. */
@@ -1691,6 +1707,7 @@ export class WorldGpuScene {
     this.#dispatched += 1;
     if (
       this.#validate === true &&
+      this.#manualOnly === false &&
       this.#validating === false &&
       this.#dispatched % VALIDATE_EVERY === 0
     )
@@ -1815,6 +1832,37 @@ export class WorldGpuScene {
   }
 
   /**
+   * Read back the dispatch that just ran, once, and resolve only after both targets have settled.
+   *
+   * This is an opt-in diagnostic seam for a harness that must fence one rendered frame before it
+   * advances the fixed-step clock. It does not change the periodic validation path or production
+   * dispatches; a caller that asks twice for one dispatch is refused rather than silently counting
+   * one frame twice.
+   */
+  validateCurrentDispatch(
+    renderer: IRendererLike,
+    frame: number,
+  ): Promise<IWorldGpuFrameValidation> {
+    if (!Number.isInteger(frame) || frame < 0)
+      return Promise.reject(
+        new Error("World GPU frame validation needs a non-negative integer frame."),
+      );
+    if (this.#on === false)
+      return Promise.reject(new Error("World GPU scene validation is unavailable."));
+    if (this.#dispatched <= 0)
+      return Promise.reject(new Error("World GPU frame validation needs a completed dispatch."));
+    if (this.#validating)
+      return Promise.reject(
+        new Error("World GPU frame validation already has a pending readback."),
+      );
+    if (this.#manualDispatch === this.#dispatched)
+      return Promise.reject(new Error("World GPU dispatch was already manually validated."));
+    this.#manualOnly = true;
+    this.#manualDispatch = this.#dispatched;
+    return this.#compare(renderer, frame);
+  }
+
+  /**
    * Where the independent per-mesh check gets the CPU path's own records, registered once by the
    * owner and asked only on a check's frame.
    *
@@ -1838,6 +1886,12 @@ export class WorldGpuScene {
   #lines: string[] = [];
   #validate = false;
   #validating = false;
+  /** Manual frame fences replace periodic samples after the first completed fence. */
+  #manualOnly = false;
+  /** The last dispatch a manual frame fence consumed; periodic checks do not move this. */
+  #manualDispatch = -1;
+  /** Reused MAP_READ buffers keep validation from allocating two fresh GPU buffers on every check. */
+  #validationReadbacks: IValidationReadbacks | undefined;
   /** Whether the owner asked for the GPU-selected main-pass tally; a validation turns it on too. */
   #tally = false;
   /** What a launch asked the pyramid occlusion test to do. `measure` never changes what is drawn. */
@@ -2021,35 +2075,39 @@ export class WorldGpuScene {
    * and the reference agree, which a wrong key-to-record mapping makes them agree on; only these two
    * were not written by the same hand. See {@link compareMeshDraws}.
    */
-  #compare(renderer: IRendererLike): void {
+  #compare(renderer: IRendererLike, frame = -1): Promise<IWorldGpuFrameValidation> {
     const snapshot = this.#snapshot();
+    if (snapshot.args === undefined || snapshot.drawn === undefined)
+      return Promise.reject(new Error("World GPU frame validation has no dispatched buffers."));
     const reference = cullAndSelect(snapshot);
     // Taken now, with the snapshot, and not when the readback lands: see `drawsFrom`.
     const draws = this.#draws?.() ?? [];
     const issued = this.#dispatched;
+    const readbacks = this.#readbacksFor(snapshot);
     this.#validating = true;
     const occlusionReason = this.#occlusionReason;
-    Promise.all([renderer.readback(snapshot.args), renderer.readback(snapshot.drawn)])
+    const reads = [
+      renderer.readback(snapshot.args, readbacks.args),
+      renderer.readback(snapshot.drawn, readbacks.drawn),
+    ] as const;
+    const complete = Promise.all(reads)
       .then(([argsBytes, drawnBytes]) => {
-        this.#validating = false;
         // The same landed args feed the tally, so a validation pays for it and this adds no copy.
         this.#landTally(argsBytes, issued, snapshot.regions, occlusionReason);
-        this.#publish(
-          renderer,
-          this.#against(
-            snapshot,
-            reference,
-            new Uint32Array(argsBytes),
-            new Float32Array(drawnBytes),
-            draws,
-          ),
+        const input = this.#against(
+          snapshot,
+          reference,
+          new Uint32Array(argsBytes),
+          new Float32Array(drawnBytes),
+          draws,
         );
+        const report = this.#publish(renderer, input);
+        return { ...input, dispatch: issued, frame, verdict: report.verdict };
       })
       .catch((reason: unknown) => {
         // A readback that never lands is a check that never ran, and saying so is the whole point:
         // this line used to end the chain and leave the last verdict standing as if it were fresh.
-        this.#validating = false;
-        this.#publish(renderer, {
+        const input: IGpuSceneComparison = {
           cause: `readback-failed: ${String(reason instanceof Error ? reason.message : reason)}`,
           compared: 0,
           deviceError: this.#deviceError,
@@ -2062,8 +2120,47 @@ export class WorldGpuScene {
           mismatches: [],
           matrixMismatches: [],
           placed: snapshot.placed,
-        });
+        };
+        const report = this.#publish(renderer, input);
+        return { ...input, dispatch: issued, frame, verdict: report.verdict };
       });
+    // Promise.all reports the first failure, but its rejection does not mean the other GPU copy has
+    // stopped. Release only after both copies settle, so a pending map cannot race a reused target.
+    return complete.finally(async () => {
+      await Promise.allSettled(reads);
+      readbacks.args.release();
+      readbacks.drawn.release();
+      if (this.#validationReadbacks !== readbacks) {
+        readbacks.args.dispose();
+        readbacks.drawn.dispose();
+      }
+      this.#validating = false;
+    });
+  }
+
+  #readbacksFor(snapshot: IValidationSnapshot): IValidationReadbacks {
+    const argsBytes = Math.max(
+      4,
+      (snapshot.args as { array: { byteLength: number } }).array.byteLength,
+    );
+    const drawnBytes = Math.max(
+      4,
+      (snapshot.drawn as { array: { byteLength: number } }).array.byteLength,
+    );
+    const current = this.#validationReadbacks;
+    if (
+      current !== undefined &&
+      current.args.maxByteLength >= argsBytes &&
+      current.drawn.maxByteLength >= drawnBytes
+    )
+      return current;
+    current?.args.dispose();
+    current?.drawn.dispose();
+    this.#validationReadbacks = {
+      args: new ReadbackBuffer(argsBytes),
+      drawn: new ReadbackBuffer(drawnBytes),
+    };
+    return this.#validationReadbacks;
   }
 
   /**
@@ -2193,7 +2290,7 @@ export class WorldGpuScene {
    * `readbackBuffers`/`readbackBuffersSize` across reports instead of only as a later OOM. A backend
    * that tracks no memory field contributes none, and no field is ever printed as a fake zero.
    */
-  #publish(renderer: IRendererLike, input: IGpuSceneComparison): void {
+  #publish(renderer: IRendererLike, input: IGpuSceneComparison): IGpuSceneValidation {
     const source = (renderer.raw as { info?: { memory?: Partial<Record<string, unknown>> } })?.info
       ?.memory;
     let memory: GpuSceneMemory | undefined;
@@ -2225,9 +2322,16 @@ export class WorldGpuScene {
     const say = typeof name === "function" ? name : console.info.bind(console);
     say(report.line);
     for (const line of report.lines) say(`TN_WORLD_GPU_SCENE_VALIDATE ${line}`);
+    return report;
   }
 
   dispose(): void {
+    const readbacks = this.#validationReadbacks;
+    this.#validationReadbacks = undefined;
+    if (!this.#validating) {
+      readbacks?.args.dispose();
+      readbacks?.drawn.dispose();
+    }
     this.#kernel = undefined;
     this.#shadowKernel = undefined;
     this.#shadow = undefined;

@@ -58,7 +58,7 @@ import { addInSlices } from "./streaming.js";
 import { DEFAULT_TARGET_FPS } from "./target-fps.js";
 import { yieldToHost } from "./warmup.js";
 
-import type { SharedBatch } from "./world-cell-batches.js";
+import { SharedBatch } from "./world-cell-batches.js";
 import {
   CHUNK_MERGE_MAX_TRIANGLES,
   CellChunks,
@@ -70,6 +70,7 @@ import { CellPrewarm } from "./world-cell-prewarm.js";
 
 import {
   type IShadowLevel,
+  type IWorldGpuFrameValidation,
   bundlesAsked,
   gpuSceneRequested,
   levelAtGates,
@@ -302,6 +303,18 @@ function launchValue(parameter: string, flag: string, globalName: string): strin
   return typeof global === "string" ? global : undefined;
 }
 
+/**
+ * Whether a launch opts into the whole-asset impostors: off unless `?tnImpostors=1`, `TN_IMPOSTORS=1`
+ * or `__tnImpostors = 1` says so. Opt-in because the judged Machinefall capture of the default
+ * (PRD-473 AC-3, 2026-10-14) read REGRESSION — ground shadows and canopy density differ — and its
+ * pinned frame windows showed no frame-time gain, so a game gets the source levels it had until the
+ * proof passes. `impostors: true` still asks explicitly.
+ */
+function impostorsRequested(): boolean {
+  const raw = launchValue("tnImpostors", "TN_IMPOSTORS", "__tnImpostors");
+  return raw === "1" || raw === "true";
+}
+
 /** Whether the adaptive LOD bias runs: on unless a launch pins it off. */
 function adaptiveLodRequested(): boolean {
   const raw = launchValue("tnAdaptiveLod", "TN_ADAPTIVE_LOD", "__tnAdaptiveLod");
@@ -323,9 +336,9 @@ function mainGpuShare(option: number | undefined): number {
  *
  * The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per
  * resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through
- * `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods`
- * levels, hard budgets and generation-tokened cancellation all live here; every geometry, material
- * and surface still comes from the package's GLBs and the game.
+ * `loadAll` + `addInSlices`. Ring residency, CPU per-asset `maxDistance` filtering, GPU dispatch
+ * culling, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live
+ * here; every geometry, material and surface still comes from the package's GLBs and the game.
  *
  * An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch`
  * each, and a scattered part whose own material is transparent draws as an alpha cutout unless the
@@ -346,7 +359,7 @@ function mainGpuShare(option: number | undefined): number {
  * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has
  * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
  * @constraint a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts
- * @constraint eligible static CPU cells can use their cooked HLOD after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation
+ * @constraint eligible static sources can use cooked HLOD (chunk-only alongside GPU scatter, whole-cell on CPU) after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation
  * @override `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
  * @constraint `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number
  * @constraint every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers
@@ -472,12 +485,18 @@ export class WorldCells extends Group implements IComputeDriven {
   #rebuilds = 0;
   /** Refilter passes run, whether or not they queued anything; see `IWorldCellsStats.refilters`. */
   #refilters = 0;
+  /** Replacement builds that entered #addPlacements; initial admission is not CPU refilter work. */
+  #levelRefilters = 0;
   /** Refilters whose rebuild came back identical and were settled without a write. */
   #unchanged = 0;
   /** Every distinct gate distance the world's assets have, ascending; see `#noteGate`. */
   readonly #gates: number[] = [];
   /** The reused hit list and the reused per-cell seen set; see `#staleIn`. */
-  readonly #stale: Array<{ cell: IResidentCell; distance: number; id: string }> = [];
+  readonly #stale: Array<{
+    cell: IResidentCell;
+    distance: number;
+    id: string;
+  }> = [];
   readonly #staleSeen = new Set<string>();
   /** Stale cell-assets the passes found, cumulative; see `IWorldCellsStats.refilterEntries`. */
   #staleEntries = 0;
@@ -746,6 +765,7 @@ export class WorldCells extends Group implements IComputeDriven {
         renderer: () => this.#chunks.renderer,
         camera: () => this.#chunks.camera,
         now: () => this.#now(),
+        stats: () => this.stats(),
         residentCells: () => this.#resident.values(),
         runMax: (asset) => this.#runMax.get(asset),
         widenFilterRange: (cell, x, z) => this.#widenFilterRange(cell, x, z),
@@ -820,7 +840,11 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     this.#impostorState = new CellImpostors(
       {
-        enabled: init.impostors ?? false,
+        enabled:
+          init.impostors ??
+          (impostorsRequested() &&
+            !(init.preserveAuthoredParts === true || init.lodHysteresis !== undefined)),
+        receiveShadow: this.#receiveShadow,
         candidates: [...candidates],
         cells: this.#cells,
         manifest: this.#manifest,
@@ -847,6 +871,35 @@ export class WorldCells extends Group implements IComputeDriven {
         noteGate: (gate) => this.#noteGate(gate),
         retargetWideCasters: (asset) => this.#render.retargetWideCasters(asset),
         terminalLevelReady: (asset) => {
+          if (this.#render.gpuOn) {
+            const level = asset.levels.length - 1;
+            const part = asset.levels[level]?.[0];
+            const key = `${asset.id}:${String(level)}:0`;
+            if (
+              part !== undefined &&
+              !this.#render.hasShared(key) &&
+              !this.#render.hasRetired(key)
+            ) {
+              const shared = new SharedBatch(
+                part.geometry,
+                part.material,
+                this.#runMax.get(asset.id) ?? 1,
+                this.#resident.size + 1,
+                key,
+                this.#extentBounds,
+                "main",
+              );
+              shared.smallCaster = this.#render.smallCaster(asset.id);
+              this.#render.dressMesh(shared, this.#receiveShadow);
+              this.#render.adoptGpu(shared, asset.id, key, level, 0);
+              this.#render.setShared(key, shared);
+              this.#render.attach(shared);
+              this.#prewarm.awaitDraw(shared);
+            }
+            this.#render.publishGpuGates(asset);
+            this.#prewarm.queuePrewarm(asset);
+            return;
+          }
           this.#prewarm.queuePrewarm(asset);
           for (const cell of [...this.#resident.values()]) {
             for (const run of cell.cell.runs) {
@@ -1090,6 +1143,18 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
+   * Fence one just-rendered GPU dispatch for a diagnostic walk, resolving after both readbacks land.
+   * Call after {@link update} and the render, then await it before advancing the measured frame.
+   */
+  validateGpuFrame(frame: number): Promise<IWorldGpuFrameValidation> {
+    if (this.#released)
+      return Promise.reject(new Error("World GPU frame validation cannot run after dispose."));
+    if (this.#chunks.renderer === undefined)
+      return Promise.reject(new Error("World GPU frame validation needs a renderer."));
+    return this.#render.validateGpuFrame(this.#chunks.renderer, frame);
+  }
+
+  /**
    * Per-frame residency step; call it wherever `TerrainTiles.process` is called.
    *
    * Reads the follow target, keeps the in-ring cells, evicts cells beyond the hysteresis ring, and
@@ -1187,10 +1252,9 @@ export class WorldCells extends Group implements IComputeDriven {
       );
       // The refilter is a scan of every resident cell, so it runs on its own cadence rather than
       // with the residency pass above; see `#refilterStale` and `LEVEL_REFILTER_STEP_METRES`.
-      // The GPU scene selects the level per instance on the dispatch, but a build still culls at
-      // `maxDistance` from where it ran, and a placement it culled has no source record to select:
-      // with the pass skipped, ground cover built from a cell's far side never appeared as the
-      // camera walked in. With the scene on, `#staleIn` reads the cull gate alone.
+      // GPU source admission keeps every resident maxDistance candidate, so the dispatch's slot
+      // cull and level gates handle a moving camera without a CPU replacement. `#staleIn` still
+      // watches placementReach, whose per-record admission boundary has no GPU slot equivalent.
       if (this.#refilterStale(x, z)) {
         this.#refilterPoint.set(x, this.#followY(), z);
         this.#refilterEpoch = this.#residencyEpoch;
@@ -1529,6 +1593,7 @@ export class WorldCells extends Group implements IComputeDriven {
       refilters: this.#refilters,
       refilterEntries: this.#staleEntries,
       rebuilds: this.#rebuilds,
+      levelRefilters: this.#levelRefilters,
       // The share of `rebuilds` the swap found unchanged, which is the honest report of how much of
       // the refilter pass is a bracket that was wider than any placement.
       unchanged: this.#unchanged,
@@ -1797,6 +1862,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #admit(cell: IWorldCell, instances: number, bytes: number): void {
     const state: IResidentCell = {
       mainChunkMeshes: [],
+      chunkInstances: new Map(),
       completedRuns: new Set(),
       chunksLoaded: (cell.chunks?.length ?? 0) === 0,
       chunkFailed: false,
@@ -1873,6 +1939,7 @@ export class WorldCells extends Group implements IComputeDriven {
       filterX: this.#follow.position.x,
       filterZ: this.#follow.position.z,
       fresh: [],
+      replacement: replace,
       next: 0,
       published: 0,
       records: undefined,
@@ -1981,11 +2048,14 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Filter one slice of a run's placements into the batches they draw from, culling on the position
-   * this build was queued for and switching level where an asset's `lods` say to.
+   * Filter one slice of a run's placements into the batches they draw from, applying the CPU
+   * maxDistance/reach filters at the build position and switching level where an asset's `lods` say
+   * to. GPU admission retains maxDistance candidates for the dispatch; placementReach stays here
+   * because it is an explicit per-record source boundary.
    */
   #addPlacements(job: IBuildJob, from: number, to: number): void {
     const { asset, filterX, filterZ } = job;
+    if (job.replacement && job.next === 0) this.#levelRefilters += 1;
     if (job.records === undefined) job.records = cellPlacements(this.#placements, job.run);
     const records = job.records;
     const inner = cullDistance(asset.definition.maxDistance);
@@ -2011,7 +2081,7 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#placementReach === undefined
           ? Math.hypot(x - filterX, z - filterZ)
           : Math.hypot(x - filterX, y - job.filterY, z - filterZ);
-      if (inner !== undefined && distance > inner) continue;
+      if (this.#render.gpuOn === false && inner !== undefined && distance > inner) continue;
       const reach = this.#placementReach?.[job.run.offset + index];
       if (reach !== undefined && distance > reach) continue;
       this.#position.set(x, y, z);
@@ -2298,10 +2368,8 @@ export class WorldCells extends Group implements IComputeDriven {
         continue;
       const asset = this.#models.asset(entry.asset);
       if (asset === undefined) continue;
-      // With the GPU scene on the dispatch switches levels itself, so only the cull gate changes
-      // which placements a build hands it; an asset with no cull has nothing to rebuild for.
-      const cull = cullDistance(asset.definition.maxDistance);
-      const gates = this.#render.gpuOn ? (cull === undefined ? [] : [cull]) : asset.gates;
+      // GPU dispatch handles maxDistance and LOD gates; placementReach remains a CPU boundary.
+      const gates = this.#render.gpuOn ? [] : asset.gates;
       const [builtNear, builtFar] = this.#span(cell, entry.lastFilterX, entry.lastFilterZ);
       let low = Math.min(near, builtNear);
       // Ends included, so a placement exactly on a gate is one of the reasons to rebuild.
@@ -2342,10 +2410,10 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Queue a refilter for every batch whose follow point has moved far enough to have crossed a
-   * boundary: a cull distance, or one of the asset's `lods` switches. This is the same step the
-   * `maxDistance` filter always took, with the level switch added to the distances it can be
-   * crossed at, so there is still no per-frame refiltering pass.
+   * Queue a refilter for every batch whose follow point has moved far enough to have crossed a CPU
+   * source-admission boundary: maxDistance/lod gates on the CPU path, or placementReach in either
+   * path. GPU maxDistance/lod gates stay in the dispatch, so they do not enter this replacement
+   * queue.
    *
    * Two things keep that pass from costing a frame. A cell's placements all sit inside one
    * rectangle, so the two points that matter — where the batch was built and where the follow point

@@ -32,7 +32,7 @@ import {
 } from "three";
 import { BundleGroup } from "three/webgpu";
 
-import { setLodBias } from "./model-lod.js";
+import { lodChainOf, setLodBias } from "./model-lod.js";
 import type { OcclusionMode } from "./render/depth-pyramid.js";
 
 import { parkMesh } from "./render/mesh-pool.js";
@@ -258,6 +258,7 @@ export interface ICellRenderHost {
   renderer(): IRendererLike | undefined;
   camera(): Camera | undefined;
   now(): number;
+  stats(): IWorldCellsStats;
   residentCells(): IterableIterator<IResidentCell>;
   runMax(asset: string): number | undefined;
   widenFilterRange(cell: IResidentCell, x: number, z: number): void;
@@ -294,6 +295,10 @@ interface ICellRenderSettings {
   readonly bundlesWanted: boolean;
   readonly bundleReason: string;
   readonly invalidateShadows: ((region?: IShadowRegion) => void) | undefined;
+}
+
+interface IPublishedGpuGates extends IAssetSlot {
+  readonly locals: readonly (readonly Float32Array[])[];
 }
 
 export class CellRender {
@@ -422,6 +427,8 @@ export class CellRender {
    * does. See the `gpuScene` load option and `#cullMainPass`.
    */
   readonly #gpuScene = new WorldGpuScene();
+  readonly #publishedGpuGates = new Map<string, IPublishedGpuGates>();
+  readonly #gpuLevelKeys = new Map<string, Array<{ firstKey: number; parts: number }>>();
 
   /** Every main key this world has minted a shadow twin for, which is what a level's dispatch asks for. */
   readonly #shadowKeyNames = new Set<string>();
@@ -808,6 +815,7 @@ export class CellRender {
     }
     // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
     // that drew the old ones are stale. One flag, told at most once a second.
+    this.publishGpuGates(job.asset);
     if (job.fresh.some((entry) => entry.batch.count > 0))
       this.shadowRecordsMoved(this.changedBounds(job.fresh), true);
     if (job.replaced.some((entry) => entry.batch.count > 0))
@@ -1099,9 +1107,11 @@ export class CellRender {
       drawn += shared.drawn;
       if (shared.mesh.visible === false) hidden += 1;
     }
+    const stats = this.#host.stats();
     console.info(
       `TN_WORLD_MAIN_CULL instances=${String(instances)} drawn=${String(drawn)} ` +
         `hidden=${String(hidden)} castersHidden=${String(castersHidden)} repacks=${String(repacks)} ` +
+        `refilters=${String(stats.refilters)} levelRefilters=${String(stats.levelRefilters)} ` +
         `clusterTris=${String(clusterTriangles)} wideTris=${String(wideTriangles)} ` +
         `dressed=${String(dressed)}/${String(mainMeshes)}`,
     );
@@ -1112,13 +1122,30 @@ export class CellRender {
         `wideMissing=${String(wideMissing)} seeded=${String(this.#gpuSeeded)} ` +
         `queued=${String(this.#host.queuedBuilds())}`,
     );
+    const hlod = stats.hlod;
+    let proxyDraws = 0;
+    let replacedSources = 0;
+    for (const cell of this.#host.residentCells()) {
+      const state = cell.proxy;
+      if (state === undefined || !state.active) continue;
+      proxyDraws += state.prepared?.meshes.length ?? 0;
+      replacedSources += state.hidden.size + state.mainMasks.size;
+    }
+    const why = hlod.reason === "" ? "" : ` reason=${JSON.stringify(hlod.reason)}`;
+    console.info(
+      `TN_WORLD_HLOD on=${String(hlod.on)} loaded=${String(hlod.loaded)} ` +
+        `compiled=${String(hlod.compiled)} observed=${String(hlod.observed)} ` +
+        `active=${String(hlod.active)} pending=${String(hlod.pending)} ` +
+        `draws=${String(proxyDraws)} replaced=${String(replacedSources)} ` +
+        `bytes=${String(hlod.bytes)} refused=${String(hlod.refused)} failures=${String(hlod.failures)}${why}`,
+    );
     // The bundles on their own line, because the pair reads against a different question: how many
     // objects are recorded, and how many times the recording was thrown away and redone. A walk
     // streaming and culling holds `records` at the keys and chunks that came and went; a walk that
     // repacks it every frame is drawing a moving set, which is the bug a bundle cannot have. `reason`
     // is on it because the default is now on: a reader has to be able to tell a run that turned it
     // off from a run where recording never happened.
-    const bundles = this.bundleStats();
+    const bundles = stats.bundle;
     console.info(
       `TN_WORLD_BUNDLE ${bundles.on ? "on" : "off"} reason=${bundles.reason} ` +
         `children=${String(bundles.children)} cpuMeshes=${String(bundles.cpuMeshes)} gpuMeshes=${String(bundles.gpuMeshes)} records=${String(bundles.records)}`,
@@ -1553,14 +1580,16 @@ export class CellRender {
       reuseSafety && !arrayMaterial
         ? this.#bundleSafety.test(shared.mesh.material as Material)
         : undefined;
-    shared.bundlable = reuseSafety
-      ? checked !== undefined &&
-        !ownHook(shared.mesh, "onBeforeRender") &&
-        !ownHook(shared.mesh, "onAfterRender") &&
-        Reflect.get(shared.mesh, "isSkinnedMesh") !== true &&
-        shared.mesh.morphTargetInfluences === undefined &&
-        checked.safe
-      : bundleSafe(shared.mesh);
+    shared.bundlable =
+      lodChainOf(shared.mesh.geometry) === undefined &&
+      (reuseSafety
+        ? checked !== undefined &&
+          !ownHook(shared.mesh, "onBeforeRender") &&
+          !ownHook(shared.mesh, "onAfterRender") &&
+          Reflect.get(shared.mesh, "isSkinnedMesh") !== true &&
+          shared.mesh.morphTargetInfluences === undefined &&
+          checked.safe
+        : bundleSafe(shared.mesh));
     if (shared.bundlable === false) {
       if (shared.bundled) this.bundleOut(shared);
       // A previously culled key may already be detached. Refusal still owes its live source draw.
@@ -1667,7 +1696,9 @@ export class CellRender {
     // replay stays in the world and hands its safe draws to the record on their own, so one glass
     // window does not put the whole building back on the per-object path. See `bundleSafe`.
     const draws = chunkDraws(chunk);
-    const recorded = draws.filter((mesh) => bundleSafe(mesh));
+    const recorded = draws.filter(
+      (mesh) => lodChainOf(mesh.geometry) === undefined && bundleSafe(mesh),
+    );
     if (recorded.length === 0) {
       this.#host.add(chunk);
       return;
@@ -1854,6 +1885,12 @@ export class CellRender {
       parts: (asset.levels[key.level] as readonly IAssetPart[]).length,
     });
     if (region === undefined) return;
+    const levels = this.#gpuLevelKeys.get(key.asset) ?? [];
+    levels[key.level] = {
+      firstKey: region - key.part,
+      parts: asset.levels[key.level]?.length ?? 0,
+    };
+    this.#gpuLevelKeys.set(key.asset, levels);
     const drawn = scene.drawn;
     const args = scene.args;
     const args2 = scene.regionOf(key.key);
@@ -1945,13 +1982,27 @@ export class CellRender {
    * distance, and the scene key each level's parts draw into. A level with no minted key has no parts,
    * so the dispatch draws nothing at that level rather than reading a key that is not there.
    */
+  publishGpuGates(asset: IAssetState): void {
+    const gates = this.gatesOf(asset.id, asset);
+    this.#publishedGpuGates.set(asset.id, {
+      cull: gates.cull,
+      distances: [...gates.distances],
+      impostor: gates.impostor,
+      levels: gates.levels.map((level) => ({ ...level })),
+      locals: asset.levels.map((parts) =>
+        parts.map((part) => Float32Array.from(part.local.elements)),
+      ),
+    });
+  }
+
   gatesOf(id: string, asset: IAssetState): IAssetSlot {
     const gates: { firstKey: number; parts: number }[] = [];
-    // The level's own contiguous run, which is what the kernel's `firstKey + part` addresses. Read
-    // back from the scene rather than remembered here: a table that recorded the key index it saw
-    // last named the wrong part as the first, and a multi-part asset then drew nothing anywhere.
+    // The level's own contiguous run, which is what the kernel's `firstKey + part` addresses. The
+    // owner records it when dressing the key; reading it back from the scene would make the mesh
+    // check agree with a corrupted GPU gate table instead of checking that table independently.
+    const keyed = this.#gpuLevelKeys.get(id);
     for (const [level] of asset.levels.entries())
-      gates.push(this.#gpuScene.levelKeys(`${id}:${String(level)}`) ?? { firstKey: 0, parts: 0 });
+      gates.push(keyed?.[level] ?? { firstKey: 0, parts: 0 });
     return {
       cull: cullDistance(asset.definition.maxDistance),
       distances: asset.distances,
@@ -2083,20 +2134,18 @@ export class CellRender {
    */
   liveGates(): Map<string, ILiveAsset> {
     const out = new Map<string, ILiveAsset>();
-    for (const asset of this.#host.assets()) {
-      if (asset.levels.length === 0) continue;
-      const locals: Float32Array[][] = [];
-      for (const parts of asset.levels) {
-        const level: Float32Array[] = [];
-        for (const part of parts) level.push(Float32Array.from(part.local.elements));
-        locals.push(level);
-      }
+    const slots = this.#gpuScene.gates();
+    for (const [slot] of slots.entries()) {
+      const id = this.#gpuScene.slotAsset(slot);
+      const asset = id === undefined ? undefined : this.#host.asset(id);
+      const published = id === undefined ? undefined : this.#publishedGpuGates.get(id);
+      if (asset === undefined || published === undefined) continue;
       out.set(asset.id, {
-        cull: cullDistance(asset.definition.maxDistance),
-        distances: asset.distances,
+        cull: published.cull,
+        distances: published.distances,
         id: asset.id,
-        impostor: asset.impostor !== undefined,
-        locals,
+        impostor: published.impostor,
+        locals: published.locals,
       });
     }
     return out;
@@ -2400,8 +2449,14 @@ export class CellRender {
   clearCompileRecords(): void {
     this.#recordedWhileBusy.clear();
   }
+  validateGpuFrame(renderer: IRendererLike, frame: number) {
+    return this.#gpuScene.validateCurrentDispatch(renderer, frame);
+  }
+
   releaseGpu(): void {
     this.#gpuScene.dispose();
+    this.#publishedGpuGates.clear();
+    this.#gpuLevelKeys.clear();
     this.#bundleSafety.clear();
     this.#gpuResident.clear();
   }

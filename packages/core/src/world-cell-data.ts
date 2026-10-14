@@ -1,4 +1,13 @@
-import type { Box3, BufferGeometry, Camera, Material, Matrix4, Mesh, Object3D } from "three";
+import type {
+  Box3,
+  BufferGeometry,
+  Camera,
+  InstancedMesh,
+  Material,
+  Matrix4,
+  Mesh,
+  Object3D,
+} from "three";
 
 import type { IAssetLoader } from "./assets.js";
 import type { InstancedBatch } from "./instanced-batch.js";
@@ -260,8 +269,10 @@ export interface IWorldCellsLoadOptions {
   /**
    * The GPU-driven main pass: one compute dispatch culls and LOD-selects every resident placement
    * into a shared matrix buffer, and each main key draws its own region of it through an indirect
-   * record. The CPU keeps only the coarse per-cell visibility, so a walking camera costs no repack
-   * and no `maxDistance`/`lods` refilter.
+   * record. The CPU keeps only coarse per-cell visibility and admits the complete resident
+   * `maxDistance` source set; a walking camera therefore costs no instance repack or cull/LOD
+   * replacement. An explicit `placementReach` remains an admission boundary because it has no GPU
+   * slot equivalent.
    *
    * `true` by default where the backend can run it: it needs compute, storage buffers and
    * `drawIndexedIndirect`, and a backend without them falls back to exactly this class's CPU path —
@@ -277,6 +288,9 @@ export interface IWorldCellsLoadOptions {
    *
    * A readback is a queue submission and a mapped buffer, so this is a mode for answering "which key
    * draws fewer instances than the CPU path" and never a walk to be measured with.
+   * For a fixed-step diagnostic walk, call {@link validateGpuFrame} after the render and await its
+   * promise before advancing the next frame; that opt-in fence checks every dispatch and replaces
+   * the periodic samples for that world.
    */
   readonly gpuSceneValidate?: boolean;
   /**
@@ -355,13 +369,14 @@ export interface IWorldCellsLoadOptions {
   readonly mainGpuShare?: number;
   /**
    * Bake a whole-asset octahedral impostor for every alpha-cutout foliage asset and append it as the
-   * asset's terminal, two-triangle LOD, default false.
+   * asset's terminal, two-triangle LOD. Default false: omission keeps the authored/generated source
+   * levels, and `?tnImpostors=1` or `TN_IMPOSTORS=1` opts a launch in. It is opt-in until the judged
+   * Machinefall capture passes (PRD-473 AC-3); `preserveAuthoredParts` and `lodHysteresis` still
+   * require it to be off.
    *
-   * Opt-in until the impostor casts a forest's shadow: it replaces the coarsest level the wide
-   * shadow levels draw, and its two-triangle card leaves the road and forest floor almost unshaded
-   * (PR #375 visual regression), so a default world keeps its source levels as shadow casters.
+   * Set true to bake them, or leave it off to keep the source levels for a visual comparison.
    *
-   * The bake runs inside the render cadence — one of its sixteen views per `process` — so it costs a
+   * The bake runs inside the render cadence — one atlas view per `process` — so it costs a
    * slice of a frame rather than a hitch, and it starts only after the asset's own model has been
    * adopted. A seamless switch needs the impostor's atlas to cover the same cutout the source draws,
    * so an asset whose levels carry no alpha-cutout part is never baked. `false` drops only the atlas
@@ -551,11 +566,20 @@ export interface ICellProxyState {
   prepared?: IPreparedCellProxy;
   readonly observed: Set<Mesh>;
   readonly hidden: Map<Mesh, boolean>;
+  readonly mainMasks: Map<Mesh, number>;
 }
 
 export interface IResidentCell {
   proxy?: ICellProxyState;
   readonly mainChunkMeshes: Mesh[];
+  readonly chunkInstances: Map<
+    InstancedMesh,
+    {
+      readonly matrix: InstancedMesh["instanceMatrix"];
+      readonly version: number;
+      readonly count: number;
+    }
+  >;
   readonly completedRuns: Set<IWorldRun>;
   chunksLoaded: boolean;
   chunkFailed: boolean;
@@ -602,6 +626,7 @@ export interface IBuildJob {
   filterZ: number;
   /** A refilter's outgoing batches, drawn until this job's own batches are attached. */
   replaced: ICellBatch[];
+  readonly replacement: boolean;
   /** This job's built batches, attached together when the last one is ready. */
   readonly fresh: ICellBatch[];
   /** The run's placement records, read once and kept across the slices that filter them. */
@@ -731,6 +756,7 @@ export interface IWorldCellsStats {
    * was worth anything. See `LEVEL_REFILTER_STEP_METRES`.
    */
   readonly refilters: number;
+  readonly levelRefilters: number;
   /**
    * Cumulative stale cell-assets the refilter passes found, across every update. The pass walks every
    * resident cell and gates it as a whole before it looks at one batch, so a follow point that has
@@ -864,6 +890,7 @@ export interface IWorldCellsStats {
     readonly pending: number;
     readonly bytes: number;
     readonly refused: number;
+    readonly reason: string;
     readonly failures: number;
   };
   readonly pressure: { readonly cells: number; readonly instances: number; readonly bytes: number };
