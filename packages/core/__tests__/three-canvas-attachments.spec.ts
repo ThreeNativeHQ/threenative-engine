@@ -936,6 +936,49 @@ describe.each(["source", "distribution"])("%s compiled draw transient protocol",
     },
   );
 
+  describe.each(["cameraViewMatrix", "cameraProjectionMatrix", "world"])(
+    "%s GPU matrix snapshot",
+    (matrix) => {
+      it.each([0, 8, "missing"] as const)("rejects %s observed floats before drawing", (length) => {
+        const s = transientFixture(mode);
+        s.begin();
+        const group = s.groups.find(
+          (g: { name: string }) => g.name === (matrix === "world" ? "object" : "render"),
+        );
+        if (!group) throw new Error("Missing matrix fixture group");
+        const entries = s.backend.get(group)._tnBindings as {
+          binding: object;
+          uniforms: { name: string; itemSize: number; offset: number }[];
+        }[];
+        const entry = entries.find((e) =>
+          e.uniforms.some((u) => u.itemSize === 16 && (matrix === "world" || u.name === matrix)),
+        );
+        if (!entry) throw new Error("Missing matrix fixture binding");
+        const uniform = entry.uniforms.find(
+          (u: { name: string; itemSize: number }) =>
+            u.itemSize === 16 && (matrix === "world" || u.name === matrix),
+        );
+        if (!uniform) throw new Error("Missing matrix fixture uniform");
+        if (length === "missing") {
+          entry.uniforms = entry.uniforms.filter((u: object) => u !== uniform);
+        } else {
+          const uploaded = s.backend.get(entry.binding);
+          const snapshot = uploaded._tnUniformBytes;
+          if (!(snapshot instanceof Float32Array)) throw new Error("Missing GPU matrix snapshot");
+          uploaded._tnUniformBytes = snapshot.slice(0, uniform.offset + length);
+        }
+        s.draw();
+        expect(s.starts[1]).toMatchObject({
+          colorAttachments: [],
+          depthStencilAttachment: { depthClearValue: 1, depthStoreOp: "store" },
+        });
+        expect(s.draws[0]?.depthStencilAttachment.view.allocation.label).toBe("depthBuffer");
+        expect(s.events.indexOf("draw")).toBeGreaterThan(s.events.indexOf("end"));
+        s.finish();
+      });
+    },
+  );
+
   it.each([
     "partial",
     "discard",
@@ -1194,6 +1237,150 @@ describe.each(["source", "distribution"])("%s transient depth boundaries", (mode
     expect(s.events.indexOf("copy")).toBeLessThan(s.events.indexOf("pipeline"));
     expect(s.events.indexOf("pipeline")).toBeLessThan(s.events.indexOf("draw"));
     expect(s.draws[0]?.depthStencilAttachment.depthLoadOp).toBe("load");
+  });
+
+  it.each(["before", "after", "fallback", "nested"])(
+    "discards the failed outer encoder %s the quad, matching feature-off submissions",
+    (when) => {
+      const snapshots = [];
+      for (const enabled of [false, true]) {
+        const s = transientFixture(mode);
+        if (!enabled) s.backend.device.features.delete("transient-attachments");
+        Reflect.set(s.renderer, "getClearDepth", () => 0.25);
+        Object.assign(s.backend, { updateTimeStampUID: () => undefined });
+        for (const name of ["beginRender", "finishRender", "_abortTransientDepth"])
+          Reflect.set(s.backend, name, Reflect.get(s.methods, name));
+        Object.assign(s.context, { viewportValue: new Vector4(), scissorValue: new Vector4() });
+        const previous = {};
+        const nodeFrame = { renderId: 99 };
+        const lighting = { beginRender: vi.fn(), finishRender: vi.fn() };
+        const renderList = {
+          begin: () => undefined,
+          finish: () => undefined,
+          bundles: [],
+          opaque: [s.quad],
+          transparent: [],
+          transparentDoublePass: [],
+          occlusionQueryCount: 0,
+        };
+        let fail = true;
+        const renderer = {
+          backend: s.backend,
+          _nodes: { nodeFrame },
+          lighting,
+          _currentRenderContext: previous,
+          _currentRenderObjectFunction: previous,
+          _handleObjectFunction: previous,
+          _callDepth: 0,
+          _renderTarget: null,
+          _outputRenderTarget: null,
+          _activeCubeFace: 0,
+          _activeMipmapLevel: 0,
+          _renderContexts: { get: () => s.context },
+          _canvasTarget: s.target,
+          _tnOutputOwner: s.quad,
+          depth: true,
+          stencil: false,
+          opaque: true,
+          info: { calls: 0, render: { calls: 0, frameCalls: 0 } },
+          inspector: { beginRender: () => undefined, finishRender: () => undefined },
+          _updateCamera: (camera: object) => camera,
+          getDrawingBufferSize: (size: Vector2) => size.set(1920, 1080),
+          _renderLists: { get: () => renderList },
+          _projectObject: () => undefined,
+          _background: { update: () => undefined },
+          _renderObjects: () => {
+            if (!fail) {
+              s.draw();
+              return;
+            }
+            if (when !== "before") {
+              s.draw();
+              if (enabled)
+                expect(s.backend.get(s.context)).toMatchObject({
+                  _tnDepth: { logical: 0, source: { used: false } },
+                });
+            }
+            if (when === "fallback") s.copy();
+            if (when === "nested") {
+              const nested = { ...s.context, id: 2 };
+              Reflect.get(s.methods, "beginRender").call(s.backend, nested);
+              s.renderObject.context = nested;
+              try {
+                s.draw();
+              } finally {
+                s.renderObject.context = s.context;
+              }
+              Reflect.get(s.methods, "finishRender").call(s.backend, nested);
+            }
+            Reflect.get(s.methods, "clear").call(s.backend, false, true, false);
+            throw new Error("graph callback failed");
+          },
+        };
+        const render = () =>
+          Reflect.get(
+            (mode === "source" ? SourceWebGPURenderer : WebGPURenderer).prototype,
+            "_renderScene",
+          ).call(renderer, s.quad, s.quad.camera, false);
+        expect(render).toThrow("graph callback failed");
+        expect(s.submissions.map(({ id }) => id)).toEqual(when === "nested" ? [1, 2] : [1]);
+        expect(renderer._currentRenderContext).toBe(previous);
+        expect(renderer._currentRenderObjectFunction).toBe(previous);
+        expect(renderer._handleObjectFunction).toBe(previous);
+        expect(renderer._callDepth).toBe(0);
+        expect(nodeFrame.renderId).toBe(99);
+        expect(lighting.finishRender).toHaveBeenCalledTimes(1);
+        expect(renderer._tnOutputOwner).toBe(s.quad);
+        if (enabled) {
+          const data = s.backend.get(s.context);
+          expect(data._tnDepth).toBeUndefined();
+          expect(data.encoder).toBeUndefined();
+          expect(data.currentPass).toBeUndefined();
+          expect(data.descriptor).toMatchObject({
+            depthStencilAttachment: {
+              view: { allocation: { label: "depthBuffer" } },
+              depthStoreOp: "store",
+            },
+          });
+          const privateDepth = s.allocations.find(
+            ({ label }) => label === "tn-private-output-depth",
+          );
+          expect(privateDepth?.destroyed).toBe(when === "nested" ? 0 : 1);
+          if (when === "before" || when === "after") expect(s.starts).toHaveLength(2);
+        }
+        snapshots.push(
+          s.submissions.map(({ id, commands }) => ({
+            id,
+            commands: commands.filter((command) => command !== "pass:depthBuffer:0"),
+          })),
+        );
+        fail = false;
+        render();
+        expect(s.submissions).toHaveLength(when === "nested" ? 3 : 2);
+        expect(s.submissions.at(-1)?.commands).toContain("draw");
+        if (enabled) expect(s.submissions.at(-1)?.commands.at(-1)).toBe("pass:depthBuffer:0");
+      }
+      // The nested render may use private depth; its independent clear and submission order agree.
+      if (when === "nested") expect(snapshots[1]?.at(-1)).toEqual(snapshots[0]?.at(-1));
+      else expect(snapshots[1]).toEqual(snapshots[0]);
+    },
+  );
+
+  it("retires private depth if queue submission throws after an encoded validated draw", () => {
+    const s = transientFixture(mode);
+    s.begin();
+    s.draw();
+    expect(s.backend.get(s.context)).toMatchObject({
+      _tnDepth: { logical: 0, source: { used: false } },
+    });
+    Reflect.get(s.backend.device, "queue").submit = () => {
+      throw new Error("submit failed");
+    };
+    expect(s.finish).toThrow("submit failed");
+    expect(s.backend.get(s.context)._tnDepth).toBeUndefined();
+    expect(s.allocations.find(({ label }) => label === "tn-private-output-depth")?.destroyed).toBe(
+      1,
+    );
   });
 
   it("restores scoped ownership, XR and output state when the owned render throws", () => {

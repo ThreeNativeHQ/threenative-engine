@@ -18053,3 +18053,319 @@ index 94b48d64ed8f2e57f00cb5fd5bd0112da085aeae..5dbb9bf2ed43fa055c0f7dd2859c1464
  		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
  
  			this.textureUtils.generateMipmaps( dstTexture );
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 2a70eb319b4235c958c7b5b1ede148c808d0b4b2..7e34d05be672a7fa2e38b19c035f744a8b486446 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -85446,41 +85446,41 @@
+ 		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
+ 		const match = chain.exec( body );
+ 		if ( ! match ) return false;
+ 		const matrices = new Map();
+ 		for ( const group of renderObject.getBindings() ) {
+ 
+ 			const groupData = this.get( group );
+ 			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
+ 			for ( const entry of groupData._tnBindings ) {
+ 
+ 				const binding = entry.binding;
+ 				const snapshot = this.get( binding )._tnUniformBytes;
+ 				if ( ! snapshot ) continue;
+ 				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
+ 
+ 			}
+ 
+ 		}
+ 		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
+ 		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
+-		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.every( ( value, i ) => value === expected[ i ] ) );
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.length === 16 && matrices.get( name ).every( ( value, i ) => value === expected[ i ] ) );
+ 
+ 	}
+ 
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		//
+ 
+ 		const device = this.device;
+ 		const occlusionQueryCount = renderContext.occlusionQueryCount;
+ 
+ 		let occlusionQuerySet;
+ 
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			if ( renderContextData.currentOcclusionQuerySet ) renderContextData.currentOcclusionQuerySet.destroy();
+ 			if ( renderContextData.currentOcclusionQueryBuffer ) renderContextData.currentOcclusionQueryBuffer.destroy();
+ 
+ 			// Get a reference to the array of objects with queries. The renderContextData property
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index bfa242835dfef49019dd368e3593a62a221dda3d..4b7a3baea4fc2a99f9453211d2807131f8a86dd4 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -85358,41 +85358,41 @@
+ 		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
+ 		const match = chain.exec( body );
+ 		if ( ! match ) return false;
+ 		const matrices = new Map();
+ 		for ( const group of renderObject.getBindings() ) {
+ 
+ 			const groupData = this.get( group );
+ 			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
+ 			for ( const entry of groupData._tnBindings ) {
+ 
+ 				const binding = entry.binding;
+ 				const snapshot = this.get( binding )._tnUniformBytes;
+ 				if ( ! snapshot ) continue;
+ 				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
+ 
+ 			}
+ 
+ 		}
+ 		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
+ 		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
+-		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.every( ( value, i ) => value === expected[ i ] ) );
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.length === 16 && matrices.get( name ).every( ( value, i ) => value === expected[ i ] ) );
+ 
+ 	}
+ 
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		//
+ 
+ 		const device = this.device;
+ 		const occlusionQueryCount = renderContext.occlusionQueryCount;
+ 
+ 		let occlusionQuerySet;
+ 
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			if ( renderContextData.currentOcclusionQuerySet ) renderContextData.currentOcclusionQuerySet.destroy();
+ 			if ( renderContextData.currentOcclusionQueryBuffer ) renderContextData.currentOcclusionQueryBuffer.destroy();
+ 
+ 			// Get a reference to the array of objects with queries. The renderContextData property
+diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
+index 5dbb9bf2ed43fa055c0f7dd2859c146485825817..0fbcc307d39cbf6d74d9dbc5f199f2b0e4f58b33 100644
+--- a/src/renderers/webgpu/WebGPUBackend.js
++++ b/src/renderers/webgpu/WebGPUBackend.js
+@@ -917,41 +917,41 @@
+ 		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
+ 		const match = chain.exec( body );
+ 		if ( ! match ) return false;
+ 		const matrices = new Map();
+ 		for ( const group of renderObject.getBindings() ) {
+ 
+ 			const groupData = this.get( group );
+ 			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
+ 			for ( const entry of groupData._tnBindings ) {
+ 
+ 				const binding = entry.binding;
+ 				const snapshot = this.get( binding )._tnUniformBytes;
+ 				if ( ! snapshot ) continue;
+ 				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
+ 
+ 			}
+ 
+ 		}
+ 		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
+ 		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
+-		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.every( ( value, i ) => value === expected[ i ] ) );
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.length === 16 && matrices.get( name ).every( ( value, i ) => value === expected[ i ] ) );
+ 
+ 	}
+ 
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		//
+ 
+ 		const device = this.device;
+ 		const occlusionQueryCount = renderContext.occlusionQueryCount;
+ 
+ 		let occlusionQuerySet;
+ 
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			if ( renderContextData.currentOcclusionQuerySet ) renderContextData.currentOcclusionQuerySet.destroy();
+ 			if ( renderContextData.currentOcclusionQueryBuffer ) renderContextData.currentOcclusionQueryBuffer.destroy();
+ 
+ 			// Get a reference to the array of objects with queries. The renderContextData property
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 7e34d05be672a7fa2e38b19c035f744a8b486446..f9ea33ac39db20e96822fda6b90e2bed02817435 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -61462,7 +61462,8 @@ class Renderer {
+ 
+ 		try {
+ 
+-			if ( renderComplete || this.backend.get( renderContext )._tnDepth ) this.backend.finishRender( renderContext );
++			if ( renderComplete ) this.backend.finishRender( renderContext );
++			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
+ 
+ 		} finally {
+ 
+@@ -85412,6 +85413,26 @@ class WebGPUBackend extends Backend {
+ 
+ 	}
+ 
++	_abortTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		try {
++
++			data.currentPass.end();
++			data.encoder.finish(); // Close and discard failed work without submitting or restoring depth.
++
++		} finally {
++
++			data.descriptor.depthStencilAttachment = { ...state.original };
++			delete data.currentPass;
++			delete data.encoder;
++			this._releaseTransientDepth( context );
++
++		}
++
++	}
++
+ 	_releaseTransientDepth( context ) {
+ 
+ 		const data = this.get( context );
+@@ -85968,6 +85989,7 @@ class WebGPUBackend extends Backend {
+ 		try {
+ 
+ 			submit( this.device, renderContextData.encoder.finish() );
++			if ( renderContextData._tnDepth?.logical === 0 ) renderContextData._tnDepth.source.used = true;
+ 
+ 		} finally {
+ 
+@@ -86585,7 +86607,6 @@ class WebGPUBackend extends Backend {
+ 				if ( renderContextData._tnDepth?.active ) {
+ 
+ 					renderContextData._tnDepth.logical = 0;
+-					renderContextData._tnDepth.source.used = true;
+ 
+ 				}
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 4b7a3baea4fc2a99f9453211d2807131f8a86dd4..93cedce745291edfbd333fb76d8154b8eff685bd 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -61415,7 +61415,8 @@ class Renderer {
+ 
+ 		try {
+ 
+-			if ( renderComplete || this.backend.get( renderContext )._tnDepth ) this.backend.finishRender( renderContext );
++			if ( renderComplete ) this.backend.finishRender( renderContext );
++			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
+ 
+ 		} finally {
+ 
+@@ -85324,6 +85325,26 @@ class WebGPUBackend extends Backend {
+ 
+ 	}
+ 
++	_abortTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		try {
++
++			data.currentPass.end();
++			data.encoder.finish(); // Close and discard failed work without submitting or restoring depth.
++
++		} finally {
++
++			data.descriptor.depthStencilAttachment = { ...state.original };
++			delete data.currentPass;
++			delete data.encoder;
++			this._releaseTransientDepth( context );
++
++		}
++
++	}
++
+ 	_releaseTransientDepth( context ) {
+ 
+ 		const data = this.get( context );
+@@ -85880,6 +85901,7 @@ class WebGPUBackend extends Backend {
+ 		try {
+ 
+ 			submit( this.device, renderContextData.encoder.finish() );
++			if ( renderContextData._tnDepth?.logical === 0 ) renderContextData._tnDepth.source.used = true;
+ 
+ 		} finally {
+ 
+@@ -86498,7 +86520,6 @@ class WebGPUBackend extends Backend {
+ 				if ( renderContextData._tnDepth?.active ) {
+ 
+ 					renderContextData._tnDepth.logical = 0;
+-					renderContextData._tnDepth.source.used = true;
+ 
+ 				}
+ 
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index 769c909b0a63708dea7d22efc5379c39bdf57d92..bc495cb324ed9923008fa5685aede53aee44b6d8 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -1764,7 +1764,8 @@ class Renderer {
+ 
+ 		try {
+ 
+-			if ( renderComplete || this.backend.get( renderContext )._tnDepth ) this.backend.finishRender( renderContext );
++			if ( renderComplete ) this.backend.finishRender( renderContext );
++			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
+ 
+ 		} finally {
+ 
+diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
+index 0fbcc307d39cbf6d74d9dbc5f199f2b0e4f58b33..add7f3284d411fd3eb188c2568775595b85204f5 100644
+--- a/src/renderers/webgpu/WebGPUBackend.js
++++ b/src/renderers/webgpu/WebGPUBackend.js
+@@ -883,6 +883,26 @@ class WebGPUBackend extends Backend {
+ 
+ 	}
+ 
++	_abortTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		try {
++
++			data.currentPass.end();
++			data.encoder.finish(); // Close and discard failed work without submitting or restoring depth.
++
++		} finally {
++
++			data.descriptor.depthStencilAttachment = { ...state.original };
++			delete data.currentPass;
++			delete data.encoder;
++			this._releaseTransientDepth( context );
++
++		}
++
++	}
++
+ 	_releaseTransientDepth( context ) {
+ 
+ 		const data = this.get( context );
+@@ -1439,6 +1459,7 @@ class WebGPUBackend extends Backend {
+ 		try {
+ 
+ 			submit( this.device, renderContextData.encoder.finish() );
++			if ( renderContextData._tnDepth?.logical === 0 ) renderContextData._tnDepth.source.used = true;
+ 
+ 		} finally {
+ 
+@@ -2056,7 +2077,6 @@ class WebGPUBackend extends Backend {
+ 				if ( renderContextData._tnDepth?.active ) {
+ 
+ 					renderContextData._tnDepth.logical = 0;
+-					renderContextData._tnDepth.source.used = true;
+ 
+ 				}
+ 
