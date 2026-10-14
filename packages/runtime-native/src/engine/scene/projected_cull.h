@@ -37,6 +37,16 @@ public:
                  bool enabled);
     /** Shows again every object the last apply() hid. */
     void restore();
+    /**
+     * core's `__restoreCull()`. A host that draws after the frame callbacks return (the player draws
+     * in C++ after `beforeRender`) holds it, so the draw sees this frame's hides; the host releases
+     * them once it has drawn. Without a hold this is restore().
+     */
+    void restoreAfterDraw();
+    /** While held, restoreAfterDraw() defers its showing to releaseHeld(). */
+    static void holdRestores(bool hold);
+    /** Shows every object a held restoreAfterDraw() deferred. */
+    static void releaseHeld();
 
     /** Times apply() rebuilt its flat walk (a hierarchy change, another root or camera); for the ctest. */
     [[nodiscard]] uint64_t rebuilds() const { return rebuilds_; }

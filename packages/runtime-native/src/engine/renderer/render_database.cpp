@@ -348,9 +348,29 @@ BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* nam
     return copy.store.get();
 }
 
-RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, bool materialize) {
+RenderDatabase::Record* RenderDatabase::findRecord(const Object3D& object, bool insert) {
+    constexpr uint64_t kIdSlots = uint64_t(1) << 20;  // ponytail: later ids keep the hash; a map if games pass it
+    const uint64_t id = object.id();
+    Record** slot = nullptr;
+    if (id < kIdSlots) {
+        if (id >= byId_.size()) byId_.resize(std::min(std::max(id + 1, uint64_t(byId_.size()) * 2), kIdSlots), nullptr);
+        slot = &byId_[id];
+        if (*slot) return *slot;
+    }
     ++recordLookups_;
-    return record(mesh, records_[&mesh], materialize);
+    Record* found = nullptr;
+    if (insert) {
+        found = &records_[&object];
+    } else if (const auto it = records_.find(&object); it != records_.end()) {
+        found = &it->second;
+    }
+    if (slot) *slot = found;
+    if (slot && found) found->cacheId = id;
+    return found;
+}
+
+RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, bool materialize) {
+    return record(mesh, *findRecord(mesh, true), materialize);
 }
 
 RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool materialize) {
@@ -362,7 +382,9 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
                         r.materialVersion == materialVersion;
     if (!cached) {
         ++rebuilds_;
+        const uint64_t cacheId = r.cacheId;
         r = Record{};
+        r.cacheId = cacheId;
         r.meshId = mesh.id();
         r.geometry = mesh.geometry;
         r.geometryRevision = geometryRevision;
@@ -641,73 +663,81 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 if (mainPass && measure() && !frustum_.intersectsSphere(sphere)) mainPass = false;
                 if (shadowCaster && !inShadowFrustum(object, measure() ? &sphere : nullptr)) shadowCaster = false;
             }
-            const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
-                                 !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
-                                 !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
-                                 !mesh.geometry->instanced &&
-                                 (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
-                                 mesh.matrixWorld.determinant() > 0;
-            Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
-            markSeen(r);
-            if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
-                if (compact) {
-                    addBatchMesh(mesh, r, mainPass, shadowCaster);
-                } else {
-                    DrawItem& d = refresh(mesh, r);
-                    d.batchable = false;
-                    d.mainPass = mainPass;
-                    d.castShadow = shadowCaster;
-                    d.layers = Layers::bits(mesh.layers().mask);
-                    const bool morphed = !mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty();
-                    d.morphGeometry = morphed ? mesh.geometry.get() : nullptr;
-                    d.morphInfluences = morphed ? &mesh.morphTargetInfluences : nullptr;
-                    if (morphed)
+            if (!mainPass && !shadowCaster) {
+                // Outside every frustum: keep its record alive and build nothing (PRD-610 AC-10).
+                if (Record* r = cached ? (cached->meshId == mesh.id() ? cached : nullptr) : findRecord(mesh, false))
+                    markSeen(*r);
+            } else {
+                const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
+                                     !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
+                                     !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
+                                     !mesh.geometry->instanced &&
+                                     (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
+                                     mesh.matrixWorld.determinant() > 0;
+                Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
+                markSeen(r);
+                if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
+                    if (compact) {
+                        addBatchMesh(mesh, r, mainPass, shadowCaster);
+                    } else {
+                        DrawItem& d = refresh(mesh, r);
                         d.batchable = false;
-                    items.push_back(d);
-                    if (type == "SkinnedMesh") {
-                        // three's skinning() updates each skeleton once per frame before its first draw.
-                        const auto& skinned = static_cast<const SkinnedMesh&>(mesh);
-                        DrawItem& d = items.back();
-                        d.skinnedRig = static_cast<SkinnedMesh*>(&object);
-                        d.skinIndices = store(*mesh.geometry, "skinIndex");
-                        d.skinWeights = floatStore(*mesh.geometry, "skinWeight");
-                        if (skinned.skeleton && d.skinIndices && d.skinWeights) {
-                            if (skeletonsUpdated_.insert(skinned.skeleton.get()).second)
-                                skinned.skeleton->update();
-                            d.boneMatrices = &skinned.skeleton->boneMatrices;
-                            d.bindMatrix = toArray(skinned.bindMatrix);
-                            d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
+                        d.mainPass = mainPass;
+                        d.castShadow = shadowCaster;
+                        d.layers = Layers::bits(mesh.layers().mask);
+                        const bool morphed = !mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty();
+                        d.morphGeometry = morphed ? mesh.geometry.get() : nullptr;
+                        d.morphInfluences = morphed ? &mesh.morphTargetInfluences : nullptr;
+                        if (morphed)
+                            d.batchable = false;
+                        items.push_back(d);
+                        if (type == "SkinnedMesh") {
+                            // three's skinning() updates each skeleton once per frame before its first draw.
+                            const auto& skinned = static_cast<const SkinnedMesh&>(mesh);
+                            DrawItem& d = items.back();
+                            d.skinnedRig = static_cast<SkinnedMesh*>(&object);
+                            d.skinIndices = store(*mesh.geometry, "skinIndex");
+                            d.skinWeights = floatStore(*mesh.geometry, "skinWeight");
+                            if (skinned.skeleton && d.skinIndices && d.skinWeights) {
+                                const void* skeleton = skinned.skeleton.get();
+                                if ((skeletonsFresh_ == nullptr || skeletonsFresh_->count(skeleton) == 0) &&
+                                    skeletonsUpdated_.insert(skeleton).second)
+                                    skinned.skeleton->update();
+                                d.boneMatrices = &skinned.skeleton->boneMatrices;
+                                d.bindMatrix = toArray(skinned.bindMatrix);
+                                d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
+                            }
                         }
+                        if (type == "InstancedMesh") {
+                            // Read every frame, as three does: count changes and setColorAt's first call (which
+                            // creates the colour attribute) need no record rebuild.
+                            const auto& instanced = static_cast<const InstancedMesh&>(mesh);
+                            DrawItem& d = items.back();
+                            d.instanceMatrices = instanced.instanceMatrix->store.get();
+                            d.instanceColors = instanced.instanceColor ? instanced.instanceColor->store.get() : nullptr;
+                            d.instanceCount = static_cast<uint32_t>(
+                                std::min<uint64_t>(instanced.count, instanced.instanceMatrix->count()));
+                        }
+                        if (type == "Line" || type == "LineSegments") {
+                            DrawItem& d = items.back();
+                            d.topology = type == "Line" ? WGPUPrimitiveTopology_LineStrip : WGPUPrimitiveTopology_LineList;
+                            d.castShadow = false;  // ponytail: three's shadow pass draws lines; no corpus line casts one
+                            if (!mainPass) items.pop_back();
+                        }
+                        if (type == "Sprite") {
+                            const auto& sprite = static_cast<const Sprite&>(mesh);
+                            DrawItem& d = items.back();
+                            d.sprite = true;
+                            d.castShadow = false;
+                            d.instanceCount = sprite.count;
+                            d.spriteCenter = {sprite.center.x, sprite.center.y};
+                            d.spriteRotation = mesh.material->rotation;
+                            d.spriteSizeAttenuation = mesh.material->sizeAttenuation;
+                            if (!mainPass) items.pop_back();
+                        }
+                        if (mesh.onBeforeRender && mainPass)
+                            callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
                     }
-                    if (type == "InstancedMesh") {
-                        // Read every frame, as three does: count changes and setColorAt's first call (which
-                        // creates the colour attribute) need no record rebuild.
-                        const auto& instanced = static_cast<const InstancedMesh&>(mesh);
-                        DrawItem& d = items.back();
-                        d.instanceMatrices = instanced.instanceMatrix->store.get();
-                        d.instanceColors = instanced.instanceColor ? instanced.instanceColor->store.get() : nullptr;
-                        d.instanceCount = static_cast<uint32_t>(
-                            std::min<uint64_t>(instanced.count, instanced.instanceMatrix->count()));
-                    }
-                    if (type == "Line" || type == "LineSegments") {
-                        DrawItem& d = items.back();
-                        d.topology = type == "Line" ? WGPUPrimitiveTopology_LineStrip : WGPUPrimitiveTopology_LineList;
-                        d.castShadow = false;  // ponytail: three's shadow pass draws lines; no corpus line casts one
-                        if (!mainPass) items.pop_back();
-                    }
-                    if (type == "Sprite") {
-                        const auto& sprite = static_cast<const Sprite&>(mesh);
-                        DrawItem& d = items.back();
-                        d.sprite = true;
-                        d.castShadow = false;
-                        d.instanceCount = sprite.count;
-                        d.spriteCenter = {sprite.center.x, sprite.center.y};
-                        d.spriteRotation = mesh.material->rotation;
-                        d.spriteSizeAttenuation = mesh.material->sizeAttenuation;
-                        if (!mainPass) items.pop_back();
-                    }
-                    if (mesh.onBeforeRender && mainPass)
-                        callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
                 }
             }
         } else if (!lightsOnly && type == "BatchedMesh") {
@@ -782,8 +812,8 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         }
     } else if (!lightsOnly && cached && cached->meshId == object.id()) {
         markSeen(*cached); // flat records also survive another camera's layer mask
-    } else if (const auto it = records_.find(&object); !lightsOnly && it != records_.end()) {
-        markSeen(it->second); // in the scene, on another camera's layer: its record stays
+    } else if (Record* found = lightsOnly ? nullptr : findRecord(object, false)) {
+        markSeen(*found); // in the scene, on another camera's layer: its record stays
     }
     const bool ordered = !updateChildren && &object == slotRoot_;
     for (std::size_t i = 0; i < object.children.size(); ++i) {
@@ -794,9 +824,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             // The pointer survives while its record does; a moved or new mesh looks itself up once.
             Record*& found = slotRecords_[i];
             if (!found || found->meshId != child->id()) {
-                ++recordLookups_;
-                const auto it = records_.find(child);
-                found = it != records_.end() ? &it->second : nullptr;
+                found = findRecord(*child, false);
             }
             slot = found;
             plainChild = true;
@@ -1318,6 +1346,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     if (mapSeen_ != records_.size()) ++recordSweeps_;
     for (auto it = mapSeen_ == records_.size() ? records_.end() : records_.begin(); it != records_.end();) {
         if (it->second.seen != frame_) {
+            if (it->second.cacheId < byId_.size()) byId_[it->second.cacheId] = nullptr;
             it = records_.erase(it);
             erased = true;
         } else {
@@ -1498,7 +1527,10 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
         PerspectiveCamera& virtualCamera = *reflector->camera;
         if (poseReflection(*reflector, camera, virtualCamera)) {
             pass.database->matricesFresh_ = reuseMainFrame && !ranCallbacks_;
+            // Bones the main pass posed this frame are current too: no callback ran to move them.
+            pass.database->skeletonsFresh_ = pass.database->matricesFresh_ ? &skeletonsUpdated_ : nullptr;
             pass.database->render(*pass.renderer, scene, virtualCamera, clear);
+            pass.database->skeletonsFresh_ = nullptr;
         }
         else
             pass.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});

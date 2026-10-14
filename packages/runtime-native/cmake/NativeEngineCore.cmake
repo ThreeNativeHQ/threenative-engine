@@ -344,7 +344,8 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_attribute_defer=attribute_defer
     native_engine_abi_material_uuid=material_uuid
     native_engine_abi_matrix_walk_count=matrix_walk_count
-    native_engine_abi_projected_cull_list=projected_cull_list)
+    native_engine_abi_projected_cull_list=projected_cull_list
+    native_engine_abi_projected_cull_held_restore=projected_cull_held_restore)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/render_graph_test.cpp

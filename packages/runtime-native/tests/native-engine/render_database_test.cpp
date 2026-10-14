@@ -2574,6 +2574,55 @@ void recordsSurviveSiblings() {
     CHECK(drawn() == 11 && database.rebuilds() == built + 1);
 }
 
+// PRD-610: a mesh under a group finds its record by object id, so a steady frame hashes it no more than a scene
+// child; a mesh that leaves is swept and found again when it returns.
+void nestedRecordCache() {
+    for (const bool batching : {false, true}) {
+        Scene scene; Group group; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+        database.batching = batching;
+        camera.position.set(0, 0, 10);
+        camera.lookAt(0, 0, 0);
+        auto mesh = std::make_shared<Mesh>(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
+        scene.add(group); group.add(*mesh);
+        const auto drawn = [&] { return database.prepare(scene, camera, lights).size(); };
+        CHECK(drawn() == 1); CHECK(drawn() == 1);
+        const uint64_t lookups = database.recordLookups(), sweeps = database.recordSweeps();
+        for (int frame = 0; frame < 3; ++frame) CHECK(drawn() == 1);
+        CHECK(database.recordLookups() == lookups);
+        CHECK(database.recordSweeps() == sweeps);
+        group.remove(*mesh);
+        CHECK(drawn() == 0 && database.recordSweeps() == sweeps + 1);
+        group.add(*mesh);
+        CHECK(drawn() == 1);
+        CHECK(drawn() == 1);
+        const uint64_t settled = database.recordLookups();
+        CHECK(drawn() == 1 && database.recordLookups() == settled);
+    }
+}
+
+// PRD-610: a mesh outside every frustum keeps its record and builds nothing until it is back in view.
+void frustumRecordRetention() {
+    Scene scene; Group group; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.batching = false;
+    camera.position.set(0, 0, 10);
+    camera.lookAt(0, 0, 0);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    Mesh mesh(makeBoxGeometry(), material);
+    scene.add(group); group.add(mesh);
+    const auto drawn = [&] { return database.prepare(scene, camera, lights).size(); };
+    CHECK(drawn() == 1);
+    const uint64_t sweeps = database.recordSweeps(), rebuilt = database.rebuilds();
+    mesh.position.z = 20;
+    // The early-out postpones changed material work until the mesh is in view again.
+    material->needsUpdate();
+    for (int frame = 0; frame < 3; ++frame) CHECK(drawn() == 0);
+    CHECK(database.recordSweeps() == sweeps);
+    CHECK(database.rebuilds() == rebuilt);
+    mesh.position.z = 0;
+    CHECK(drawn() == 1 && database.rebuilds() == rebuilt + 1);
+    CHECK(database.recordSweeps() == sweeps);
+}
+
 // The R5 render cut (PRD-573 v1.11): off the flat lane a steady frame finds every record by its scene slot and
 // sweeps nothing, so a frame of 4,096 cubes hashes no object. A mesh that leaves costs one sweep.
 void steadyFrameHashesNoRecord() {
@@ -2834,7 +2883,7 @@ TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_st
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

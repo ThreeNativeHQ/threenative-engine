@@ -131,6 +131,7 @@ class RenderDatabase {
     struct alignas(64) Record {
         uint64_t geometryRevision = 0;
         uint64_t meshId = 0;
+        uint64_t cacheId = UINT64_MAX;  // its slot in byId_, cleared when the sweep erases it
         uint64_t seen = 0; // the render it was last projected in
         uint32_t materialVersion = 0;
         bool drawable = false, materialized = false;
@@ -240,6 +241,10 @@ class RenderDatabase {
     std::unordered_map<const Object3D*, Record> records_;
     std::vector<Record> flatRecords_; // scene-order slots; no per-mesh hash lookup on the flat lane
     std::vector<Record*> slotRecords_; // the scene's plain meshes' records in records_, by scene order
+    // records_ entries by object id, so a hierarchy's meshes skip the hash each frame (PRD-610 AC-10).
+    // The sweep clears an erased record's slot; ids are never reused, so a slot needs no further check.
+    std::vector<Record*> byId_;
+    Record* findRecord(const Object3D& object, bool insert);
     const Object3D* slotRoot_ = nullptr; // the object whose children use slotRecords_ while a prepare projects
     std::vector<uint8_t> flatPlainMeshes_;
     bool flatParentIdentity_ = false;
@@ -264,6 +269,7 @@ class RenderDatabase {
     std::array<double, 4> prepareMs_{};
     std::vector<std::pair<uint64_t, DirectLight>> direct_; // this render's direct lights with their ids
     std::unordered_set<const void*> skeletonsUpdated_;     // skeletons this render already updated
+    const std::unordered_set<const void*>* skeletonsFresh_ = nullptr;  // a reflection: the main pass's, still current
     int hemisphere_ = 0;
 };
 

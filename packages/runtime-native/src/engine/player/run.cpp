@@ -36,6 +36,7 @@
 #include "engine/player/mailbox.h"
 #include "engine/renderer/presentation.h"
 #include "engine/renderer/render_database.h"
+#include "engine/scene/projected_cull.h"
 #include "engine/world/loop/fixed_step.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/presentation.h"
@@ -682,6 +683,12 @@ int Session::initialize() {
             events.drain();
             return;
         }
+        // core restores its projected cull inside beforeRender, before this C++ draw: hold it until the
+        // frame ends so the draw sees the hides, as a browser draw inside render() does.
+        ProjectedCull::holdRestores(true);
+        struct ReleaseCull {
+            ~ReleaseCull() { ProjectedCull::holdRestores(false); ProjectedCull::releaseHeld(); }
+        } releaseCull;
         if (game.beforeRender) game.beforeRender(*renderer, database);
         // Frame callbacks can replace the published view and release its previous owners.
         if (!refreshView() || scene == nullptr || camera == nullptr) { if (spans) gameSpan(kHostFrameSpan, 1); return; }

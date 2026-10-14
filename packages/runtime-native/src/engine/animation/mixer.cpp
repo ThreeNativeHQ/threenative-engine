@@ -43,7 +43,9 @@ KeyframeTrack::KeyframeTrack(std::string trackName, TrackType trackType, const s
 }
 
 std::unique_ptr<Interpolant> KeyframeTrack::createInterpolant() const {
-    return std::make_unique<Interpolant>(interpolation, times, values, valueSize());
+    auto interpolant = std::make_unique<Interpolant>(interpolation, times, values, valueSize());
+    interpolant->detectConstant();  // a track's keyframes are fixed once built
+    return interpolant;
 }
 
 AnimationClip::AnimationClip(std::string clipName, double clipDuration, std::vector<KeyframeTrack> clipTracks,

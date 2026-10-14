@@ -1365,6 +1365,53 @@ void matrix_walk_count() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-610: the player draws in C++ after core's beforeRender restored its cull, so it holds the restore until it
+// has drawn; held or not, the cull's hides are undone exactly once.
+void projected_cull_held_restore() {
+    using namespace tn::engine;
+    auto scene = std::make_shared<Scene>();
+    auto mesh = std::make_shared<Mesh>(std::make_shared<BufferGeometry>(), nullptr);
+    auto position = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    position->setXYZ(0, -0.01, 0, 0).setXYZ(1, 0.01, 0, 0);
+    mesh->geometry->setAttribute("position", position);
+    mesh->position.z = -1000;
+    scene->add(*mesh);
+    PerspectiveCamera camera(50, 1, 0.1, 5000);
+    camera.updateMatrixWorld();
+    scene->updateMatrixWorld();
+    ProjectedCull cull;
+    CHECK(cull.apply(*scene, camera, true, 720, 2, true).culled == 1);
+    CHECK(!mesh->visible());
+    ProjectedCull::holdRestores(true);
+    cull.restoreAfterDraw();
+    CHECK(!mesh->visible());
+    ProjectedCull::releaseHeld();
+    CHECK(mesh->visible());
+    ProjectedCull::holdRestores(false);
+    CHECK(cull.apply(*scene, camera, true, 720, 2, true).culled == 1);
+    cull.restoreAfterDraw();
+    CHECK(mesh->visible());
+    ProjectedCull::holdRestores(false);
+    // The ABI's core-facing restore must honor the same host hold.
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    const tn_version_info_t version = tn_engine_version();
+    CHECK(tn_context_create(&ctx, &version, &d.value) == TN_OK);
+    const auto root = tn::abi::shareObject(ctx, "Scene", scene);
+    const auto view = tn::abi::shareObject(ctx, "PerspectiveCamera", std::make_shared<PerspectiveCamera>(50, 1, 0.1, 5000));
+    const tn_value_t args[] = {ref(view), boolean(true), num(720), num(2), boolean(true)};
+    tn_value_t out{};
+    CHECK(tn_invoke(root, "__cullProjected", args, 5, &out, &d.value) == TN_OK);
+    CHECK(!mesh->visible());
+    ProjectedCull::holdRestores(true);
+    CHECK(tn_invoke(root, "__restoreCull", nullptr, 0, &out, &d.value) == TN_OK);
+    CHECK(!mesh->visible());
+    ProjectedCull::releaseHeld();
+    CHECK(mesh->visible());
+    ProjectedCull::holdRestores(false);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-610 AC-4: the projected-size cull reads a flat list of the tree, built once per hierarchy version, instead
 // of comparing type strings and casting every node every frame (7.7% of a Midway tick). The answer is the same:
 // a hidden subtree is skipped whole, a sub-threshold mesh is hidden for the frame, and an added mesh is seen.
@@ -1423,4 +1470,4 @@ TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count},
-             {"projected_cull_list", projected_cull_list})
+             {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})

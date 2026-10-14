@@ -15,6 +15,9 @@ namespace {
 
 constexpr double kMinDistance = 1e-4;  // render-camera-cull.ts MIN_DISTANCE
 
+bool gHold = false;
+std::vector<std::weak_ptr<Object3D>> gHeld;  // hides a held restoreAfterDraw() still owes
+
 // projection-plan.ts isRenderable: three's isMesh, isSprite, isPoints and isLine classes.
 bool renderable(std::string_view type) {
     return type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "BatchedMesh" ||
@@ -176,6 +179,20 @@ void ProjectedCull::restore() {
     for (const auto& weak : hidden_)
         if (const auto object = weak.lock()) object->setVisible(true);
     hidden_.clear();
+}
+
+void ProjectedCull::restoreAfterDraw() {
+    if (!gHold) return restore();
+    gHeld.insert(gHeld.end(), hidden_.begin(), hidden_.end());
+    hidden_.clear();
+}
+
+void ProjectedCull::holdRestores(bool hold) { gHold = hold; }
+
+void ProjectedCull::releaseHeld() {
+    for (const auto& weak : gHeld)
+        if (const auto object = weak.lock()) object->setVisible(true);
+    gHeld.clear();
 }
 
 }  // namespace tn::engine

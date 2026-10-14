@@ -336,7 +336,8 @@ void registerObject3D(ClassBinding& b) {
     // Engine-internal: core's projected-size cull in one call (scene/projected_cull.h), its state kept
     // per root. `__cullProjected(camera, cameraResolved, scale, minimumPixels, enabled)` hides this
     // frame's sub-threshold objects and returns core's counters in report order; `__restoreCull()`
-    // shows them again. `__alwaysRender` mirrors core's alwaysRender() marker.
+    // shows them again, after the host's draw when it holds restores.
+    // `__alwaysRender` mirrors core's alwaysRender() marker.
     b.methods["__cullProjected"] = [](void* self, const Args& a, Store& store) {
         auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
         if (camera == nullptr) throw Unsupported{"__cullProjected needs a camera"};
@@ -349,7 +350,7 @@ void registerObject3D(ClassBinding& b) {
         return Value::array(std::move(counts));
     };
     b.methods["__restoreCull"] = [](void* self, const Args&, Store&) {
-        projectedCullOf(*as<Object3D>(self)).restore();
+        projectedCullOf(*as<Object3D>(self)).restoreAfterDraw();
         return Value{};
     };
     b.getters["__alwaysRender"] = [](void* self) { return Value::of(as<Object3D>(self)->alwaysRender); };
