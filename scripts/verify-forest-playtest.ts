@@ -15,6 +15,10 @@ import { packageLocalFramework } from "./visual-gate.js";
  */
 
 const LOAD_ANCHOR = "  override async load(ctx: GameCtx): Promise<void> {\n";
+const CLASS_ANCHOR = "export class Play extends Scene<GameState, IPhysicsContext> {\n";
+const SPAWN_X = "Number.isFinite(state.playerX) ? state.playerX : Play.initialState.playerX";
+const SPAWN_ANCHOR = `        x: ${SPAWN_X},\n        y: PLAYER_STAND_Y,\n`;
+const READY_ANCHOR = "      this.#sky === undefined\n";
 const SCENARIO_ROOT = path.resolve(templateRoot(), "..", "template-playtests", "starter-forest");
 
 /** The tool's reply is JSON in the first text block; `load` is the snippet an agent pastes. */
@@ -35,17 +39,34 @@ interface IToolResult {
   readonly isError?: boolean;
 }
 
-/** Adds the printed imports to the file top and the rest to the start of `Play.load`; a moved anchor fails closed. */
+function anchorOnce(source: string, anchor: string, name: string): void {
+  if (source.split(anchor).length !== 2)
+    throw new Error(`TN_FOREST_ANCHOR: ${name} not found exactly once in the starter.`);
+}
+
+/** Load the printed world and place the proof game's player on its measured terrain surface. */
 export function insertWorldLoad(source: string, lines: readonly string[]): string {
   if (lines.length === 0) throw new Error("TN_FOREST_LOAD_EMPTY: the tool printed no load lines.");
-  if (source.split(LOAD_ANCHOR).length !== 2)
-    throw new Error("TN_FOREST_ANCHOR: Play.load not found exactly once in the starter.");
+  anchorOnce(source, LOAD_ANCHOR, "Play.load");
+  anchorOnce(source, CLASS_ANCHOR, "the Play class");
+  anchorOnce(source, SPAWN_ANCHOR, "the Player spawn");
+  anchorOnce(source, READY_ANCHOR, "the Play readiness check");
   const imports = lines.filter((line) => line.startsWith("import "));
   const body = lines.filter((line) => !line.startsWith("import "));
-  const loaded = source.replace(
-    LOAD_ANCHOR,
-    `${LOAD_ANCHOR}${body.map((line) => `    ${line}\n`).join("")}`,
-  );
+  if (!body.some((line) => line.startsWith("const terrainField = ")))
+    throw new Error("TN_FOREST_TERRAIN_FIELD: the load snippet does not declare terrainField.");
+  const retain = "    this.#terrainField = terrainField;\n";
+  const loaded = source
+    .replace(LOAD_ANCHOR, `${LOAD_ANCHOR}${body.map((line) => `    ${line}\n`).join("")}${retain}`)
+    .replace(CLASS_ANCHOR, `${CLASS_ANCHOR}  #terrainField: TerrainHeightfield | undefined;\n`)
+    .replace(
+      READY_ANCHOR,
+      "      this.#sky === undefined ||\n      this.#terrainField === undefined\n",
+    )
+    .replace(
+      SPAWN_ANCHOR,
+      `        x: ${SPAWN_X},\n        y: this.#terrainField.heightAt(${SPAWN_X}, 0) + PLAYER_STAND_Y,\n`,
+    );
   return `${imports.map((line) => `${line}\n`).join("")}${loaded}`;
 }
 
