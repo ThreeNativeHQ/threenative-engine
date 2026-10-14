@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type IMidwayRun,
@@ -459,6 +460,79 @@ describe("groups and loading", () => {
     expect(state.candidate.structural).toBeUndefined();
     expect(state.selection.build).toBe(reference.pkg);
     expect(state.winner.status).toBe("unqualified");
+  });
+
+  it("shows the best package median, including timing-excluded repeats, ahead of a latest regression", async () => {
+    const d = (dir: string, pkg: string, visited: number, pass = true, count = 1000) =>
+      run(
+        dir,
+        [pkgLine(pkg), ...Array(count).fill(worldFrame()), proj(visited)].join("\n"),
+        parityText(pass),
+      );
+    const reference = d("isolated-cache-a1-desktop", "pkg-ac10-cache-a1", 5816);
+    const r1 = d("r1-desktop", "pkg-r", 3469);
+    r1.timingExclusion = "Timing qualification pending";
+    const r2 = d("r2-desktop", "pkg-r", 3467);
+    const state = midwayOf([
+      reference,
+      r1,
+      r2,
+      d("s1-desktop", "pkg-s", 3592),
+      d("outlier1-desktop", "pkg-outlier", 1),
+      d("outlier2-desktop", "pkg-outlier", 9000),
+      d("incomplete-desktop", "pkg-incomplete", 2, true, 999),
+      d("failed-desktop", "pkg-failed", 3, false),
+      d("perf-diagnostic-desktop", "pkg-diagnostic", 4),
+      ...[undefined, undefined, "", " "].map((pkg, i) => ({
+        ...d(`unidentified${i}-desktop`, "pkg-placeholder", 2),
+        pkg,
+      })),
+      ...["TN_AC3_RIG:", "TN_AC3_WALK:", "TN_AC3_ROOT:"].map((marker, i) =>
+        run(
+          `instrumented${i}-desktop`,
+          [
+            pkgLine(`pkg-instrumented${i}`),
+            ...Array(1000).fill(worldFrame()),
+            proj(3339),
+            `${marker}{}`,
+          ].join("\n"),
+          parityText(true),
+        ),
+      ),
+    ]);
+    expect(state.candidate.structural).toMatchObject({
+      build: "pkg-r",
+      projection: 3468,
+      runs: 2,
+      projections: [3469, 3467],
+      target: 1500,
+      pinnedProjection: 5816,
+    });
+    expect(state.kpis.find((k) => k.id === "AC-3")?.current).toBe(5816);
+    expect(state.winner.status).toBe("unqualified");
+    const html = await readFile(new URL("../midway-bench/dashboard.html", import.meta.url), "utf8");
+    const script = (html.split("<script>")[1] as string)
+      .split("</script>")[0]
+      ?.replace("tick(); setInterval(tick, 5000);", "");
+    const elements = new Map<string, { innerHTML?: string }>();
+    runInNewContext(`${script}\nrender(state);`, {
+      state,
+      document: {
+        getElementById: (id: string) => {
+          if (!elements.has(id)) elements.set(id, {});
+          return elements.get(id);
+        },
+      },
+    });
+    expect(html).toContain("Best measured experimental · not accepted");
+    for (const text of [
+      "3,468",
+      "3,469 / 3,467",
+      "1,500",
+      "Not accepted",
+      "structural metric only",
+    ])
+      expect(elements.get("candidate")?.innerHTML).toContain(text);
   });
 
   it("loads <tag>-<arm> dirs oldest first and ignores everything else", async () => {

@@ -630,7 +630,7 @@ export function winnerOf(runs: readonly IMidwayRun[], text?: string) {
   }
 }
 
-/** Every score reads the timed runs only: profiled runs are listed in `runs` and counted nowhere else. */
+/** Timing scores exclude diagnostic runs; experimental structural progress can use timing-excluded runs. */
 export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?: string) {
   const runs = all.filter((r) => !r.profiled && !r.timingExclusion);
   const prd = prdText === undefined ? undefined : prdProgress(prdText);
@@ -640,19 +640,22 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
   );
   const measured = accepted.length ? accepted : reference ? [reference] : [];
   const headline = [...runs.filter((r) => r.arm === "legacy"), ...measured];
-  const latestStructural = all
-    .filter(
-      (r) =>
-        r.arm === "desktop" &&
-        r.pkg !== measured[0]?.pkg &&
-        !r.profiled &&
-        !r.skipped &&
-        r.desktop?.n === PLAYER_FRAME_WINDOW &&
-        !r.desktop.worldWorkInvalid &&
-        r.parity?.pass === true &&
-        finite(r.matrix?.last),
-    )
-    .sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
+  const structuralRuns = all.filter(
+    (r) =>
+      r.arm === "desktop" &&
+      !!r.pkg?.trim() &&
+      r.pkg !== measured[0]?.pkg &&
+      !r.profiled &&
+      !r.skipped &&
+      r.desktop?.n === PLAYER_FRAME_WINDOW &&
+      !r.desktop.worldWorkInvalid &&
+      !parityNote([r]) &&
+      finite(r.matrix?.last),
+  );
+  const bestStructural = measures(structuralRuns, "desktop", (r) => r.matrix?.last).sort(
+    (a, b) => a.value - b.value,
+  )[0];
+  const structuralRun = bestStructural?.runs.at(-1);
   const pinnedProjection = medOf(measured, (r) => r.matrix?.last);
   return {
     winner,
@@ -665,20 +668,25 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
       kpis: kpisOf(runs, prd),
       gap: gapOf(runs),
       breakdown: breakdownOf(runs),
-      structural: latestStructural
-        ? {
-            dir: latestStructural.dir,
-            build: latestStructural.pkg,
-            projection: latestStructural.matrix?.last,
-            pinnedProjection,
-            projectionReductionPct:
-              pinnedProjection !== undefined && pinnedProjection > 0
-                ? (1 - (latestStructural.matrix?.last as number) / pinnedProjection) * 100
-                : undefined,
-            worldWork: latestStructural.desktop?.worldWork,
-            timingExclusion: latestStructural.timingExclusion,
-          }
-        : undefined,
+      structural:
+        bestStructural && structuralRun
+          ? {
+              dir: structuralRun.dir,
+              build: bestStructural.build,
+              projection: bestStructural.value,
+              projections: bestStructural.runs.map((r) => r.matrix?.last as number),
+              runs: bestStructural.runs.length,
+              runDirs: bestStructural.runs.map((r) => r.dir),
+              target: TARGETS.matrixVisited,
+              pinnedProjection,
+              projectionReductionPct:
+                pinnedProjection !== undefined && pinnedProjection > 0
+                  ? (1 - bestStructural.value / pinnedProjection) * 100
+                  : undefined,
+              worldWork: structuralRun.desktop?.worldWork,
+              timingExclusion: bestStructural.runs.find((r) => r.timingExclusion)?.timingExclusion,
+            }
+          : undefined,
     },
     kpis: kpisOf(runs, prd, headline),
     prd,

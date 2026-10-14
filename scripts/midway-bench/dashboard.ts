@@ -294,7 +294,7 @@ export interface IMidwayRun {
   group: string;
   arm: Arm;
   mtimeMs: number;
-  /** Ran with `perf record` and the UI snapshot trace attached (tag starts with `perf-`): its timings are biased. */
+  /** Profiler or native diagnostic instrumentation attached: measurements are excluded from scores. */
   profiled?: true;
   /** Raw readings remain visible, but a known measurement conflict excludes this run from scores. */
   timingExclusion?: string;
@@ -376,7 +376,9 @@ export function runOf(
     ...(parity ? { parity } : {}),
     ...(cullPct === undefined ? {} : { cullPct }),
     ...(pkg ? { pkg } : {}),
-    ...(tag.startsWith("perf-") ? { profiled: true as const } : {}),
+    ...(tag.startsWith("perf-") || /\bTN_AC3_(?:RIG|WALK|ROOT):/.test(log)
+      ? { profiled: true as const }
+      : {}),
     ...(parityText !== undefined && !parity ? { parityMalformed: true as const } : {}),
   };
   return run;
