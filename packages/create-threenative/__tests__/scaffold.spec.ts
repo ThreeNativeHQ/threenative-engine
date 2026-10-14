@@ -249,7 +249,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
   // createProject on the merged tree.
   // PRD-569/570 merge: the measured trees retain particle/onCull and updateRate guidance.
-  "action-rpg": "4b5b69696ed344b4306d71a1040ce86d34e5d815e17c7fdc61e5d86d38437262",
+  "action-rpg": "4abc9ef736d924c2c6d92f2d11f7a8f06cef3562723aa5e5b939bd3792e534a9",
   minimal: "ee2fbdf0a58d98f309614c9ecc31d276d2e7a4ba797c60a0de1fa211271dab44",
   platformer: "400084c29381beb085c2a466f17798bd2f73d701c504101424b9bb498b0faac0",
   puzzle: "41a369c51d108b1f167a8a2d7b4d18d5202479ccecb1c8941f77932d17040f69",
