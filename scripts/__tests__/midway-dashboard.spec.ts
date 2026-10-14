@@ -548,9 +548,17 @@ describe("groups and loading", () => {
       });
     renderState(state);
     expect(html).toContain("Best measured experimental · not accepted");
-    expect(html).toContain("Now: AC-11 + AC-12 · math bridge + animation");
-    expect(elements.get("focus")?.textContent).toContain("AC-4/5 last trials rejected");
-    expect(elements.get("focus")?.textContent).toContain("AC-7 parity unqualified");
+    expect(html).toContain(
+      "Now: AC-4 · visibility/world-matrix invalidation + GameCPU attribution",
+    );
+    expect(elements.get("focus")?.textContent).toContain(
+      "AC-4 visibility/world-matrix invalidation audit + remaining GameCPU attribution",
+    );
+    expect(elements.get("focus")?.textContent).toContain(
+      "AC-12 worker rejected (CPU +136%); rolled back",
+    );
+    expect(elements.get("focus")?.textContent).toContain("AC-11 bulk read pending · default off");
+    expect(elements.get("focus")?.textContent).toContain("AC-5/7 open · qualified proof not met");
     expect(elements.get("focus")?.textContent).toContain("AC-9/10/13 queued");
     expect(elements.get("focus")?.textContent).toContain(
       "AC-3 background stretch · non-blocking · measured ~3k",
