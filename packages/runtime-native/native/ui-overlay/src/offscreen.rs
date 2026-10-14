@@ -1292,7 +1292,7 @@ impl Driver {
             return true;
         }
         let (since_acquire, frame) = self.shared.frames.game_pacing();
-        pace_open(since_acquire, frame, self.capture_time)
+        pace_open(since_acquire, self.in_flight_since.elapsed(), frame, self.capture_time)
     }
 
     /// Draw the view into the kept surface and copy it out, or `None` when the frame is partial.
@@ -1410,12 +1410,22 @@ fn copy_composited(
 
 /// Whether a capture started now lands just before the game takes its next frame.
 ///
-/// `since_acquire` is the time since the game last took a frame, `frame` how long its frames take,
-/// `capture` how long a capture takes. A game that outruns the capture, one that has not taken two
-/// frames yet and one too slow to aim at are not paced: the capture runs back to back, as before.
-fn pace_open(since_acquire: Duration, frame: Duration, capture: Duration) -> bool {
-    if frame.is_zero() || frame > PACE_CEILING || frame < capture * 2 {
+/// `since_acquire` is the time since the game last took a frame, `since_capture` the time since the
+/// last capture started, `frame` how long the game's frames take and `capture` how long a capture
+/// takes. One capture per game frame is enough, because the game sees only the newest. A game that
+/// outruns the capture, one that has not taken two frames yet and one too slow to aim at are not
+/// paced, and neither is one that has stopped taking frames: the capture runs back to back.
+fn pace_open(
+    since_acquire: Duration,
+    since_capture: Duration,
+    frame: Duration,
+    capture: Duration,
+) -> bool {
+    if frame.is_zero() || frame > PACE_CEILING || frame < capture * 2 || since_acquire > frame * 2 {
         return true;
+    }
+    if since_capture < since_acquire {
+        return false;
     }
     since_acquire + capture + PACE_MARGIN >= frame
 }
@@ -1575,14 +1585,16 @@ send('loaded');
     #[test]
     fn a_capture_is_aimed_at_the_games_next_frame_only_when_it_would_otherwise_be_wasted() {
         let ms = Duration::from_millis;
-        // 60 ms game frames, 24 ms captures: wait until a capture would just finish in time.
-        assert!(!pace_open(ms(10), ms(60), ms(24)), "a capture now would finish 26 ms early");
-        assert!(pace_open(ms(30), ms(60), ms(24)), "30 + 24 + margin reaches the next frame");
-        assert!(pace_open(ms(70), ms(60), ms(24)), "a late game never waits");
-        // A game that outruns the capture, an unknown game and a game too slow to aim at.
-        assert!(pace_open(ms(0), ms(16), ms(24)));
-        assert!(pace_open(ms(0), Duration::ZERO, ms(24)));
-        assert!(pace_open(ms(0), ms(500), ms(24)));
+        // 60 ms game frames, 24 ms captures, the last capture was a frame ago.
+        assert!(!pace_open(ms(10), ms(70), ms(60), ms(24)), "a capture now would finish 26 ms early");
+        assert!(pace_open(ms(30), ms(70), ms(60), ms(24)), "30 + 24 + margin reaches the next frame");
+        // Already captured since the game last took a frame: the game would never see a second one.
+        assert!(!pace_open(ms(50), ms(20), ms(60), ms(24)));
+        // A game that outruns the capture, an unknown game, one too slow to aim at, one that stopped.
+        assert!(pace_open(ms(0), ms(0), ms(16), ms(24)));
+        assert!(pace_open(ms(0), ms(0), Duration::ZERO, ms(24)));
+        assert!(pace_open(ms(0), ms(0), ms(500), ms(24)));
+        assert!(pace_open(ms(130), ms(20), ms(60), ms(24)));
     }
 
     #[test]
