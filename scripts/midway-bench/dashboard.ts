@@ -300,6 +300,8 @@ export interface IMidwayRun {
   timingExclusion?: string;
   /** Explicit failed keep rule; raw readings remain visible but cannot score or win. */
   rejection?: string;
+  /** Explicit retained measured reference; does not qualify or promote a winner. */
+  retention?: string;
   /** The build that ran it: the `pkg-<name>` directory of the player path in the log (desktop runs). */
   pkg?: string;
   /** `no samples` when the log held none; `ok` otherwise. */
@@ -447,18 +449,13 @@ export async function loadMidwayRuns(root = runsDir()): Promise<IMidwayRun[]> {
         ? await readRun(root, entry.name, m[1] as string, m[2] as Arm)
         : undefined;
     if (run) {
-      const exclusion = await readFile(
-        path.join(root, entry.name, "timing-exclusion.txt"),
-        "utf8",
-      ).catch((error) => {
-        if (error.code === "ENOENT") return undefined;
-        throw error;
-      });
-      const rejection = await readFile(path.join(root, entry.name, "rejected.txt"), "utf8").catch(
-        (error) => {
-          if (error.code === "ENOENT") return undefined;
-          throw error;
-        },
+      const [exclusion, rejection, retention] = await Promise.all(
+        ["timing-exclusion.txt", "rejected.txt", "retained.txt"].map((file) =>
+          readFile(path.join(root, entry.name, file), "utf8").catch((error) => {
+            if (error.code === "ENOENT") return undefined;
+            throw error;
+          }),
+        ),
       );
       runs.push({
         ...run,
@@ -468,6 +465,11 @@ export async function loadMidwayRuns(root = runsDir()): Promise<IMidwayRun[]> {
         ...(rejection === undefined
           ? {}
           : { rejection: rejection.trim() || "Rejected experiment" }),
+        ...(retention === undefined
+          ? {}
+          : {
+              retention: retention.trim() || "Retained measured reference; not a qualified winner",
+            }),
       });
     }
   }

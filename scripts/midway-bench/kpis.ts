@@ -246,6 +246,8 @@ export interface ITrendPoint {
   arm: Arm;
   v: number;
   runs: number;
+  decision: "retained" | "rejected" | "pending";
+  decisionReason: string;
 }
 export interface ITrend {
   id: string;
@@ -274,8 +276,9 @@ function benchmarksOf(runs: readonly IMidwayRun[], get: (r: IMidwayRun) => numbe
   ];
 }
 
-export function trendsOf(runs: readonly IMidwayRun[]): ITrend[] {
-  const legacy = legacyMs(runs);
+export function trendsOf(runs: readonly IMidwayRun[], history = runs): ITrend[] {
+  const scored = runs.filter((r) => !r.rejection);
+  const legacy = legacyMs(scored);
   const trend = (
     id: string,
     title: string,
@@ -284,20 +287,32 @@ export function trendsOf(runs: readonly IMidwayRun[]): ITrend[] {
     targetLabel: string,
     get: (r: IMidwayRun) => number | undefined,
   ): ITrend => {
-    const points = ARMS.flatMap((arm) => measures(runs, arm, get))
+    const points = ARMS.flatMap((arm) => measures(history, arm, get))
       .sort((x, y) => x.firstSeen - y.firstSeen)
-      .map(
-        (m): ITrendPoint => ({
+      .map((m): ITrendPoint => {
+        const retained = m.runs.every((r) => r.retention && !r.rejection);
+        const rejected = m.runs.every((r) => r.rejection);
+        const mixed = !retained && !rejected && m.runs.some((r) => r.retention || r.rejection);
+        return {
           build: m.build,
           arm: m.runs[0]?.arm as Arm,
           v: m.value,
           runs: m.runs.length,
-        }),
-      );
-    const benchmarks = benchmarksOf(runs, get);
-    const desktop = points.filter((p) => p.arm === "desktop");
-    const first = desktop[0]?.v;
-    const last = desktop.at(-1)?.v;
+          decision: retained ? "retained" : rejected ? "rejected" : "pending",
+          decisionReason:
+            (mixed ? "Mixed outcomes; not all runs retained. " : "") +
+            m.runs
+              .map(
+                (r) =>
+                  `${r.dir}: ${r.rejection ? `REJECTED: ${r.rejection}` : r.retention ? `RETAINED: ${r.retention}` : "PENDING: no explicit decision"}${r.timingExclusion ? `; timing excluded: ${r.timingExclusion}` : ""}`,
+              )
+              .join("\n"),
+        };
+      });
+    const benchmarks = benchmarksOf(scored, get);
+    const desktop = measures(scored, "desktop", get);
+    const first = desktop[0]?.value;
+    const last = desktop.at(-1)?.value;
     return {
       id,
       title,
@@ -720,7 +735,10 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
           : k,
     ),
     prd,
-    trends: trendsOf(runs),
+    trends: trendsOf(
+      runs,
+      all.filter((r) => !r.profiled && (!r.timingExclusion || r.rejection)),
+    ),
     abPairs: abPairsOf(runs),
     breakdown: breakdownOf(headline),
     builds: buildsOf(runs),

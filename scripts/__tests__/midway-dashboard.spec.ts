@@ -400,8 +400,15 @@ describe("groups and loading", () => {
       "Concurrent Midway instances",
     );
     await writeFile(path.join(root, "parallel-desktop", "rejected.txt"), "Keep rule failed");
+    await writeFile(
+      path.join(root, "solo-desktop", "retained.txt"),
+      "Retained measured reference; not a winner",
+    );
     const list = await loadMidwayRuns(root);
     expect(list).toHaveLength(2);
+    expect(list.find((r) => r.tag === "solo")?.retention).toBe(
+      "Retained measured reference; not a winner",
+    );
     expect(list.find((r) => r.tag === "parallel")).toMatchObject({
       timingExclusion: "Concurrent Midway instances",
       rejection: "Keep rule failed",
@@ -755,6 +762,100 @@ describe("progress, trends and PRD boxes", () => {
     ).toBeUndefined();
   });
 
+  it("colors only explicit experiment decisions and keeps rejected history outside scores", async () => {
+    const d = (dir: string, pkg: string, cpu: number, visited: number) =>
+      run(
+        dir,
+        [
+          pkgLine(pkg),
+          ...Array(1000).fill(worldFrame({ ...worldCounters, cpuFrameCpuMs: cpu })),
+          ui(30),
+          proj(visited),
+        ].join("\n"),
+        parityText(true),
+      );
+    const baseline = d("baseline-desktop", "pkg-old", 10, 5000);
+    const kept = d("retained-desktop", "pkg-retained", 8, 3083);
+    kept.retention = "Retained measured reference, not a qualified winner";
+    const rejected = d("rejected-desktop", "pkg-rejected", 1, 100);
+    rejected.rejection = "Instruction regression <keep rule>";
+    rejected.timingExclusion = "Timing noisy; rejection remains visible";
+    const pending = d("latest-pending-desktop", "pkg-pending", 9, 4000);
+    const state = midwayOf([baseline, kept, rejected, pending]);
+    const trend = state.trends.find((t) => t.id === "ms");
+    expect(trend?.points.map((p) => [p.build, p.decision])).toEqual([
+      ["pkg-old", "pending"],
+      ["pkg-retained", "retained"],
+      ["pkg-rejected", "rejected"],
+      ["pkg-pending", "pending"],
+    ]);
+    expect(trend?.deltaPct).toBeCloseTo(10);
+    expect(state.builds.some((b) => b.build === "pkg-rejected")).toBe(false);
+    expect(state.candidate.structural?.build).toBe(kept.pkg);
+    expect(state.winner.status).toBe("unqualified");
+    const numericKeep = midwayOf(
+      [1, 2].flatMap((round) =>
+        [10, 8].map((cpu, i) =>
+          run(
+            `rule-${i === 0 ? "a" : "b"}${round}-desktop`,
+            [
+              pkgLine(i === 0 ? "pkg-rule-a" : "pkg-rule-b"),
+              ...Array(1000).fill(
+                worldFrame({
+                  ...worldCounters,
+                  cpuFrameCpuMs: cpu,
+                  cpuFrameKInstructions: cpu * 1000,
+                }),
+              ),
+              proj(5000),
+            ].join("\n"),
+            parityText(true),
+          ),
+        ),
+      ),
+    );
+    expect(numericKeep.abPairs[0]?.verdict).toBe("keep");
+    expect(
+      numericKeep.trends.find((t) => t.id === "ms")?.points.every((p) => p.decision === "pending"),
+    ).toBe(true);
+    const mixed = midwayOf([kept, { ...rejected, pkg: kept.pkg }]).trends.find((t) => t.id === "ms")
+      ?.points[0];
+    expect(mixed).toMatchObject({
+      decision: "pending",
+      decisionReason: expect.stringContaining("Mixed"),
+    });
+    const html = await readFile(new URL("../midway-bench/dashboard.html", import.meta.url), "utf8");
+    const script = (html.split("<script>")[1] as string)
+      .split("</script>")[0]
+      ?.replace("tick(); setInterval(tick, 5000);", "");
+    const elements = new Map<string, { innerHTML?: string; textContent?: string }>();
+    runInNewContext(`${script}\nrender(state);`, {
+      state,
+      document: {
+        getElementById: (id: string) => {
+          if (!elements.has(id)) elements.set(id, {});
+          return elements.get(id);
+        },
+      },
+    });
+    const svg = elements.get("trend")?.innerHTML;
+    expect(svg).toContain('data-decision="retained"');
+    expect(svg).toContain('data-decision="rejected"');
+    expect(svg).toContain('data-decision="pending"');
+    expect(svg).toContain("Instruction regression &lt;keep rule&gt;");
+    expect(svg).toContain('stroke="var(--desktop)"');
+    const legend = elements.get("trendLegend")?.innerHTML;
+    for (const text of [
+      "runtime lines",
+      "Native engine (desktop)",
+      "retained",
+      "rejected",
+      "pending",
+      "not qualified winner",
+    ])
+      expect(legend).toContain(text);
+  });
+
   it("splits the desktop frame into game, render, other and present", () => {
     const line = `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, frameMs: 40, cpuFrameKInstructions: 20000, cpuFrameCpuMs: 10, gameJsCpuMs: 6, renderCpuMs: 3, presentCpuMs: 30 })}`;
     expect(breakdownOf([run("a1-desktop", line)])).toEqual({
@@ -900,7 +1001,7 @@ describe("progress, trends and PRD boxes", () => {
     expect(kpi["AC-5"]).toMatchObject({ current: 50 });
     expect(kpi["AC-6"]?.current).toBeCloseTo(10 / 14);
     const ms = trendsOf(list).find((t) => t.id === "ms");
-    expect(ms?.points.filter((p) => p.arm === "desktop")).toEqual([
+    expect(ms?.points.filter((p) => p.arm === "desktop")).toMatchObject([
       { build: "pkg-old", arm: "desktop", v: 21, runs: 2 },
       { build: "pkg-new", arm: "desktop", v: 14, runs: 3 },
     ]);
