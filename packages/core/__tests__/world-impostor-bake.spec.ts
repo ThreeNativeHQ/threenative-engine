@@ -2,6 +2,7 @@ import {
   Box3,
   BufferGeometry,
   Color,
+  DataTexture,
   Matrix4,
   type Mesh,
   MeshStandardMaterial,
@@ -159,6 +160,33 @@ describe("WorldImpostorBaker clear-compatible depth", () => {
       const mixed = 0.4 * depthScalar(depth, coverage, -2 * Math.sqrt(3) * 0.2) + 0.6;
       expect((1 - mixed) / (coverage * 0.4)).toBeCloseTo(0.2, 12);
     }
+    baker.abort();
+  });
+});
+
+describe("WorldImpostorBaker cutout capture", () => {
+  const unit = () => boxedGeometry(new Vector3(-1, -1, -1), new Vector3(1, 1, 1));
+
+  it("compensates a mapped cutout's alpha by mip level, so a needle card survives the 128 px bake", () => {
+    // A 2048 px needle card is about nine percent opaque. The 128 px frame samples it from a deep
+    // mip, where a plain 0.5 discard deletes every needle and the atlas keeps only the trunk: the
+    // pine atlas measured 3.7% alpha coverage on Machinefall before this, 13.5% after.
+    const material = new MeshStandardMaterial({ alphaTest: 0.5 });
+    material.map = new DataTexture(new Uint8Array(4 * 2048 * 2048), 2048, 2048);
+    const baker = new WorldImpostorBaker();
+    const pending = baker.begin("needles", [part(unit(), new Matrix4(), material)], {
+      alphaTest: 0.5,
+    });
+    const capture = pending.materials[0] as NodeMaterial;
+    expect(capture.alphaTest).toBe(0.5);
+    expect(capture.alphaTestNode).not.toBeNull();
+    baker.abort();
+  });
+
+  it("keeps the plain number for a cutout with no map, which has no mip chain to compensate", () => {
+    const baker = new WorldImpostorBaker();
+    const pending = baker.begin("flat", [part(unit(), new Matrix4())], { alphaTest: 0.5 });
+    expect((pending.materials[0] as NodeMaterial).alphaTestNode).toBeNull();
     baker.abort();
   });
 });
