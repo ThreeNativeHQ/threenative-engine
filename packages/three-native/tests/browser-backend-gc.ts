@@ -101,10 +101,7 @@ const weakRemoved: WeakRef<Node3D>[] = [];
 for (let i = 0; i < 130; i++) collect();
 await collectAll();
 const leaked = weakRemoved.filter((weak) => weak.deref() !== undefined).length;
-check(
-  leaked === 0,
-  `removed objects are released within 130 safe points (${leaked} of 400 left)`,
-);
+check(leaked === 0, `removed objects are released within 130 safe points (${leaked} of 400 left)`);
 
 if (failures.length > 0) {
   console.error(`TN_BROWSER_GC_FAILED: ${failures.join("; ")}`);
