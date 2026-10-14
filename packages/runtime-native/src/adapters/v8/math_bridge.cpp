@@ -507,9 +507,14 @@ void MathBridge::write(MathKind kind, const std::array<double, 16>& flat, v8::Lo
     const auto number = [&](double v) { return v8::Number::New(isolate_, v).As<v8::Value>(); };
     const auto set = [&](v8::Local<v8::Object> target, std::initializer_list<v8::Local<v8::Value>> values) {
         v8::Local<v8::Value> fn, ignored;
-        std::vector<v8::Local<v8::Value>> args(values);
+        std::array<v8::Local<v8::Value>, 4> args{};
+        if (values.size() > args.size()) {
+            isolate_->ThrowException(v8::Exception::RangeError(literal(isolate_, "TN_NATIVE_MATH_ARGUMENTS: more than four components")));
+            return;
+        }
+        std::copy(values.begin(), values.end(), args.begin());
         if (target->Get(context, key(kSet)).ToLocal(&fn) && fn->IsFunction())
-            (void)fn.As<v8::Function>()->Call(context, target, static_cast<int>(args.size()), args.data()).ToLocal(&ignored);
+            (void)fn.As<v8::Function>()->Call(context, target, static_cast<int>(values.size()), args.data()).ToLocal(&ignored);
     };
     const auto part = [&](int which) {
         v8::Local<v8::Value> value;
