@@ -104,10 +104,12 @@ describe("WorldImpostorSurface material", () => {
     expect(material.normalNode).not.toBeNull();
     expect(material.positionNode).not.toBeNull();
     expect(material.alphaTestNode).not.toBeNull();
-    // The number stays positive for the virtual-shadow alpha caster even though the discard uses the
-    // mip-aware node.
+    // The shadow pass copies the number as its own cutoff and ignores `alphaTestNode`: it must stay
+    // a tiny positive floor, and the mip-aware discard rides on `maskShadowNode` instead. A 0.42
+    // number here discarded every blended fragment in a metres-wide shadow texel.
     expect(material.alphaTest).toBeGreaterThan(0);
-    expect(material.alphaTest).toBeCloseTo(0.42, 6);
+    expect(material.alphaTest).toBeLessThan(0.01);
+    expect(material.maskShadowNode).not.toBeNull();
     expect(material.userData.tnWholeAssetImpostor).toBe(true);
     expect(source.userData.tnWholeAssetImpostor).toBeUndefined();
     expect(material.transparent).toBe(false);

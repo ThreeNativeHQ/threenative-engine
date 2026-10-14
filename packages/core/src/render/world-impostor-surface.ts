@@ -68,6 +68,8 @@ export const IMPOSTOR_MIP_ALPHA_SCALE = 0.75;
 
 /** The alpha cutoff a source part gets when it authored none; the same 0.5 the scatter path uses. */
 const DEFAULT_ALPHA_TEST = 0.5;
+/** The positive alpha number the shadow pass copies; see the material setup in `WorldImpostorSurface`. */
+const IMPOSTOR_SHADOW_ALPHA_FLOOR = 1e-4;
 
 /**
  * The per-instance view-distance attribute a far aggregate writes: one float per placement, the
@@ -371,9 +373,12 @@ export class WorldImpostorSurface {
     material.depthWrite = true;
     material.depthTest = true;
     material.side = DoubleSide;
-    // A number, not only a node: readers that only understand a number (the shadow alpha caster)
-    // must see a positive cutoff even though the discard uses the node below.
-    material.alphaTest = cutoff;
+    // A positive number, never the cutoff: three's shadow pass copies this number as its own cutoff
+    // and ignores `alphaTestNode`, and a shadow-map texel is metres wide, so the blended coverage it
+    // reads is far below the authored 0.5 everywhere and every fragment would be discarded. The
+    // discard that matters runs through `maskShadowNode` below, with the same mip-aware threshold the
+    // main pass uses; this floor only drops empty space.
+    material.alphaTest = IMPOSTOR_SHADOW_ALPHA_FLOOR;
     material.userData = { ...material.userData, tnWholeAssetImpostor: true };
     material.needsUpdate = true;
 
@@ -443,6 +448,7 @@ export class WorldImpostorSurface {
     );
     material.colorNode = vec4(fragment.albedo, fragment.coverage);
     material.alphaTestNode = fragment.threshold;
+    material.maskShadowNode = fragment.coverage.greaterThan(fragment.threshold);
     material.normalNode = Fn((_inputs: unknown, builder: { readonly object: Object3D }) =>
       transformNormal(fragment.normalAsset, instanceViewMatrixNode(builder.object)),
     )();
