@@ -7,6 +7,7 @@ import {
   type Object3D,
   Sphere,
   Texture,
+  TextureUtils,
   Vector3,
 } from "three";
 import { isEngineRenderHook } from "./engine-render-hook.js";
@@ -113,7 +114,6 @@ export function cellProxyMaterialSafe(material: Material): boolean {
     !displacesVertices(material) &&
     Reflect.get(material, "vertexNode") == null &&
     Reflect.get(material, "positionNode") == null &&
-    !material.vertexColors &&
     material.onBeforeCompile === Material.prototype.onBeforeCompile &&
     material.clippingPlanes == null &&
     Object.entries(Reflect.get(material, "defines") ?? {}).every(
@@ -127,10 +127,15 @@ export function cellProxyGeometrySafe(geometry: BufferGeometry): boolean {
     geometry.drawRange.count === Number.POSITIVE_INFINITY &&
     Object.keys(geometry.morphAttributes).length === 0 &&
     geometry.getAttribute("position") != null &&
-    Object.keys(geometry.attributes).every((name) => ["position", "normal", "uv"].includes(name))
+    Object.keys(geometry.attributes).every((name) =>
+      ["position", "normal", "uv", "color"].includes(name),
+    ) &&
+    (geometry.getAttribute("color") == null ||
+      ([3, 4].includes(geometry.getAttribute("color").itemSize) &&
+        geometry.getAttribute("color").count === geometry.getAttribute("position").count))
   );
 }
-export function cellProxySourceSafe(root: Object3D): boolean {
+export function cellProxySourceSafe(root: Object3D, staticInstances?: ReadonlySet<Mesh>): boolean {
   let safe = (Reflect.get(root, "animations")?.length ?? 0) === 0;
   root.traverse((node) => {
     if (
@@ -142,7 +147,10 @@ export function cellProxySourceSafe(root: Object3D): boolean {
     if (!(node instanceof Mesh)) return;
     if (
       Reflect.get(node, "isSkinnedMesh") ||
-      Reflect.get(node, "isInstancedMesh") ||
+      (Reflect.get(node, "isInstancedMesh") &&
+        (staticInstances?.has(node) !== true ||
+          Reflect.get(node, "morphTexture") != null ||
+          Reflect.get(node, "instanceColor") != null)) ||
       Array.isArray(node.material) ||
       !cellProxyGeometrySafe(node.geometry) ||
       !cellProxyMaterialSafe(node.material as Material) ||
@@ -167,26 +175,57 @@ export interface IPreparedCellProxy {
 /** Conservative decoded texture cost. An unreadable image cannot be admitted under a byte cap. */
 function textureBytes(texture: Texture): number {
   const images = Array.isArray(texture.image) ? texture.image : [texture.image];
+  const buffers = new Set<ArrayBufferLike>();
+  let storage = 0;
   let bytes = 0;
   for (const image of images) {
     const width = image?.width;
     const height = image?.height;
-    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0)
+    const depth = image?.depth ?? 1;
+    if (![width, height, depth].every((value) => Number.isSafeInteger(value) && value > 0))
       throw new Error("Cell proxy texture has no measurable decoded extent.");
-    // Four float32 channels and the mip chain: a conservative bound for supported standard maps.
-    bytes += Math.ceil((width * height * 16 * 4) / 3);
+    const mips = image?.mipmaps ?? texture.mipmaps;
+    // Three uses the supplied chain, or generates one only when explicitly requested without mips.
+    const levels =
+      mips.length > 0
+        ? mips.length
+        : texture.generateMipmaps && Reflect.get(texture, "isCompressedTexture") !== true
+          ? Math.floor(Math.log2(Math.max(width, height))) + 1
+          : 1;
+    for (let level = 0; level < levels; level++) {
+      const mip = mips[level] ?? (level === 0 ? image : undefined);
+      const w = Math.max(1, Math.floor(width / 2 ** level));
+      const h = Math.max(1, Math.floor(height / 2 ** level));
+      try {
+        bytes += TextureUtils.getByteLength(w, h, texture.format, texture.type) * depth;
+      } catch {
+        // An unknown format keeps the float32 RGBA upper bound; never guess a compression ratio.
+        bytes += w * h * depth * 16;
+      }
+      const data = mip?.data;
+      if (ArrayBuffer.isView(data) && !buffers.has(data.buffer)) {
+        buffers.add(data.buffer);
+        storage += data.buffer.byteLength;
+      }
+    }
   }
-  for (const mip of texture.mipmaps) bytes += Reflect.get(mip, "data")?.byteLength ?? 0;
+  bytes = Math.max(bytes, storage);
   if (!Number.isSafeInteger(bytes)) throw new Error("Cell proxy texture bytes overflow.");
   return bytes;
 }
+
 /** Reject oversize decoded resources when IO settles, before an admission queue can retain them. */
-export function measureCellProxy(model: Object3D, proxy: IWorldCellProxy): number {
+export function measureCellProxy(
+  model: Object3D,
+  proxy: IWorldCellProxy,
+  includeCopies = false,
+): number {
   if (!cellProxySourceSafe(model))
     throw new Error("Cell proxy has unsupported static geometry or material.");
   const buffers = new Set<ArrayBufferLike>();
   const textures = new Set<Texture>();
   let bytes = 0;
+  let copies = 0;
   let triangles = 0;
   let draws = 0;
   let nodes = 0;
@@ -198,6 +237,9 @@ export function measureCellProxy(model: Object3D, proxy: IWorldCellProxy): numbe
       if (attribute == null) continue;
       const array = Reflect.get(attribute, "array") ?? Reflect.get(attribute, "data")?.array;
       if (array == null) throw new Error("Cell proxy has an unreadable buffer.");
+      // Plain clones copy the view; interleaved clones may share a copied store. Charging each
+      // attribute view is conservative for that sharing and bounds every private allocation.
+      copies += array.byteLength;
       if (!buffers.has(array.buffer)) {
         buffers.add(array.buffer);
         bytes += array.buffer.byteLength;
@@ -213,12 +255,17 @@ export function measureCellProxy(model: Object3D, proxy: IWorldCellProxy): numbe
   for (const texture of textures) bytes += textureBytes(texture);
   if (!Number.isSafeInteger(bytes) || bytes > 4 * 1024 * 1024)
     throw new Error("Cell proxy exceeds the decoded admission unit.");
-  return bytes;
+  return bytes + (includeCopies ? copies : 0);
 }
-export function prepareCellProxy(model: Object3D, proxy: IWorldCellProxy): IPreparedCellProxy {
+export function prepareCellProxy(
+  model: Object3D,
+  proxy: IWorldCellProxy,
+  maxBytes = Number.POSITIVE_INFINITY,
+): IPreparedCellProxy {
   if (!cellProxySourceSafe(model))
     throw new Error("Cell proxy has unsupported static geometry or material.");
-  let bytes = measureCellProxy(model, proxy);
+  const bytes = measureCellProxy(model, proxy, true);
+  if (bytes > maxBytes) throw new Error("Cell proxy exceeds its reserved decoded budget.");
   const root = model.clone(true);
   const meshes: Mesh[] = [];
   const ranges: { start: number; count: number }[] = [];
@@ -230,19 +277,16 @@ export function prepareCellProxy(model: Object3D, proxy: IWorldCellProxy): IPrep
     const declared = new Box3(new Vector3(...proxy.bounds.min), new Vector3(...proxy.bounds.max));
     const margin = 1e-4;
     declared.expandByScalar(margin);
-    if (!declared.containsBox(box)) throw new Error("Cell proxy lies outside its declared bounds.");
+    // The cook declares the exact vertex extent. `box` above is the cheaper geometry-box hull, which
+    // a rotated mesh inflates past that exact extent, so test the vertices themselves.
+    const exact = new Box3().setFromObject(root, true);
+    if (!declared.containsBox(exact))
+      throw new Error("Cell proxy lies outside its declared bounds.");
   }
   // copy() does not invoke the installed clone hook that registers another managed LOD chain.
   root.traverse((node) => {
     if (!(node instanceof Mesh)) return;
     const fixed = new BufferGeometry().copy(baseGeometryOf(node));
-    for (const attribute of [fixed.index, ...Object.values(fixed.attributes)]) {
-      if (attribute != null) {
-        const array = Reflect.get(attribute, "array") ?? Reflect.get(attribute, "data")?.array;
-        if (array == null) throw new Error("Cell proxy fixed copy has no readable array.");
-        bytes += array.byteLength;
-      }
-    }
     node.geometry = fixed;
     meshes.push(node);
     ranges.push({ ...fixed.drawRange });

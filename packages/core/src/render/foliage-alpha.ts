@@ -108,6 +108,20 @@ function nodeTwin(source: Material, nodeClass: NodeMaterialClass): Material {
 }
 
 /**
+ * The mip-compensated cutoff for a source's own map, or `undefined` when it has no map and so no mip
+ * chain to compensate. Shared by every path that alpha-tests a cutout it samples at a distance: the
+ * scatter cutout above and the impostor bake, which renders a needle card into a 128 px frame.
+ */
+export function mipAlphaTestNode(
+  source: Material,
+  cutoff: number,
+  mipScale = MIP_ALPHA_SCALE,
+): Node<"float"> | undefined {
+  const texels = texelSize((source as ICutoutSource).map);
+  return texels === undefined ? undefined : mipThreshold(texels, cutoff, mipScale);
+}
+
+/**
  * The node form of a cutout whose alpha survives the mip chain: Ben Golus's mip-level alpha
  * compensation, as a dynamic `alphaTestNode`.
  *
@@ -142,10 +156,9 @@ export function cutoutSurface(
   cutout.depthWrite = true;
   cutout.alphaTest = cutoff;
   if (nodeClass !== undefined) {
-    const texels = texelSize((source as ICutoutSource).map);
     // No map means no mip chain and no level to read, so the number is the whole cutoff.
-    if (texels !== undefined)
-      (cutout as NodeMaterial).alphaTestNode = mipThreshold(texels, cutoff, mipScale);
+    const node = mipAlphaTestNode(source, cutoff, mipScale);
+    if (node !== undefined) (cutout as NodeMaterial).alphaTestNode = node;
   }
   // `transparent` is a program key in three, so the cutout needs its own compile.
   cutout.needsUpdate = true;
