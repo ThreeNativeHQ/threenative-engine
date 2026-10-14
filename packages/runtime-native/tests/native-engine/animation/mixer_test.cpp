@@ -2,6 +2,9 @@
 // timeline and deltas (six clips on a five-node rig, 600 irregular steps) and compares every node's
 // transform, every action's state, the mixer stats and every loop and finished event with three's.
 #include "check.h"
+#include <cmath>
+#include <limits>
+#include <stdexcept>
 #include "scenario.h"
 #include "engine/animation/skinning/skeleton.h"
 
@@ -66,7 +69,58 @@ void deferredMixer() {
     CHECK(!bone->hasDeferredTransform() && bone->position.x == 0);
 }
 
+double meterClock = 0;
+AnimationMixer* meterReentry = nullptr;
+void cpuTiming() {
+    AnimationMixer mixer(std::make_shared<Object3D>());
+    AnimationMixer::cpuTiming = {};
+    mixer.update(0);
+    CHECK(AnimationMixer::cpuTiming.calls == 0 && AnimationMixer::cpuTiming.ms == 0);
+    const auto clock = []() { return meterClock += 0.25; };
+    meterClock = 0;
+    AnimationMixer::cpuTiming = {clock};
+    mixer.update(0); mixer.update(0);
+    CHECK(AnimationMixer::cpuTiming.calls == 2 && AnimationMixer::cpuTiming.ms == 0.5);
+    meterReentry = &mixer;
+    AnimationMixer::cpuTiming = {[]() {
+        if (auto* nested = meterReentry) { meterReentry = nullptr; nested->update(0); }
+        return meterClock += 0.25;
+    }};
+    mixer.update(0);
+    CHECK(AnimationMixer::cpuTiming.calls == 2 && AnimationMixer::cpuTiming.ms == 0.25);
+    AnimationMixer::cpuTiming = {clock};
+    CHECK(AnimationMixer::cpuTiming.calls == 0 && AnimationMixer::cpuTiming.ms == 0);
+    auto clip = std::make_shared<AnimationClip>("meter", 1, std::vector<KeyframeTrack>{});
+    auto* action = mixer.clipAction(clip);
+    action->setLoop(Loop::Once, 1).play();
+    mixer.addEventListener("finished", [](const MixerEvent&, void* context) {
+        CHECK(AnimationMixer::cpuTiming.calls == 1 && AnimationMixer::cpuTiming.ms == 0.25);
+        meterClock += 100; // arbitrary listener CPU must not enter the native-mixer numerator
+        static_cast<AnimationMixer*>(context)->update(0);
+        throw std::runtime_error("listener");
+    }, &mixer);
+    bool threw = false;
+    try { mixer.update(1); } catch (const std::runtime_error&) { threw = true; }
+    CHECK(threw && AnimationMixer::cpuTiming.available);
+    CHECK(AnimationMixer::cpuTiming.calls == 2 && AnimationMixer::cpuTiming.ms == 0.5);
+    AnimationMixer::cpuTiming = {[]() { return -1.0; }};
+    mixer.update(0);
+    CHECK(!AnimationMixer::cpuTiming.available && AnimationMixer::cpuTiming.calls == 1);
+    AnimationMixer::cpuTiming = {[]() { return std::numeric_limits<double>::quiet_NaN(); }};
+    mixer.update(0);
+    CHECK(!AnimationMixer::cpuTiming.available && AnimationMixer::cpuTiming.ms == 0);
+    meterClock = 1;
+    AnimationMixer::cpuTiming = {[]() { return meterClock -= 0.25; }};
+    mixer.update(0);
+    CHECK(!AnimationMixer::cpuTiming.available && AnimationMixer::cpuTiming.ms == 0);
+    AnimationMixer::cpuTiming = {};
+    mixer.update(0);
+    CHECK(AnimationMixer::cpuTiming.available && AnimationMixer::cpuTiming.clock == nullptr);
+    CHECK(AnimationMixer::cpuTiming.calls == 0 && AnimationMixer::cpuTiming.ms == 0);
+}
+
 void mixer() {
+    cpuTiming();
     deferredMixer();
     const std::size_t diffs = differences(rigReplay().samples, kSamples, "sample");
     std::printf("mixer: %zu samples, %zu differ\n", rigReplay().samples.size(), diffs);

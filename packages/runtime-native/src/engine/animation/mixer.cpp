@@ -3,10 +3,40 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <exception>
 
 namespace tn::engine::animation {
 
+thread_local AnimationMixer::CpuTiming AnimationMixer::cpuTiming;
+
 namespace {
+
+// Reentrant native evaluations count as calls, but their CPU is already inside the outer scope.
+struct MixerCpuScope {
+    inline static thread_local unsigned depth = 0;
+    double (*clock)() = AnimationMixer::cpuTiming.clock;
+    double begin = -1;
+    int exceptions = 0;
+    bool active = clock != nullptr, outer = false;
+    MixerCpuScope() {
+        if (!active) return;
+        ++AnimationMixer::cpuTiming.calls;
+        outer = depth++ == 0;
+        if (outer) { exceptions = std::uncaught_exceptions(); begin = clock(); }
+    }
+    void stop() {
+        if (!active) return;
+        active = false;
+        --depth;
+        if (!outer) return;
+        const double end = clock();
+        auto& timing = AnimationMixer::cpuTiming;
+        if (std::uncaught_exceptions() != exceptions || begin < 0 || end < begin ||
+            !std::isfinite(begin) || !std::isfinite(end)) timing.available = false;
+        else timing.ms += end - begin;
+    }
+    ~MixerCpuScope() { stop(); }
+};
 
 double float32(double x) { return static_cast<double>(static_cast<float>(x)); }
 
@@ -743,6 +773,7 @@ AnimationMixer& AnimationMixer::stopAllAction() {
 }
 
 AnimationMixer& AnimationMixer::update(double deltaTime) {
+    MixerCpuScope cpu;
     ++updateCount_;
     deltaTime *= timeScale;
     const std::size_t nActions = nActiveActions_;
@@ -760,6 +791,7 @@ AnimationMixer& AnimationMixer::update(double deltaTime) {
     updating_ = false;
     std::vector<MixerEvent> pending;
     pending.swap(pendingEvents_);
+    cpu.stop(); // listener callbacks may run arbitrary game code or reenter update
     for (const MixerEvent& event : pending)
         dispatchEvent(event);
     return *this;

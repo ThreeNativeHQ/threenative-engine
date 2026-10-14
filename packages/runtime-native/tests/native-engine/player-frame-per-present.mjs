@@ -21,11 +21,17 @@ const outfile = resolve(work, "game.js");
 // Each frame callback costs 25 ms, more than a 60 Hz tick, so the fixed-step clock falls behind and
 // catches up with several ticks before each drawn frame.
 await writeFile(entry, `
-import { Scene, PerspectiveCamera } from "three";
+import { Scene, PerspectiveCamera, Object3D, AnimationMixer, AnimationClip, VectorKeyframeTrack } from "three";
 globalThis.tn.scene = new Scene();
 globalThis.tn.camera = new PerspectiveCamera();
+const mixer = new AnimationMixer(new Object3D());
+mixer.clipAction(new AnimationClip("meter", 1, [
+  new VectorKeyframeTrack(".position", [0, 1], [0, 0, 0, 1, 0, 0]),
+])).play();
 let calls = 0;
 const frame = () => {
+  mixer.update(1 / 120);
+  mixer.update(1 / 120);
   for (let i = 0; i < 2; i++) globalThis.tn.scene.__cullProjected(globalThis.tn.camera, true, 1, 0, false);
   const end = performance.now() + 25;
   while (performance.now() < end);
@@ -95,6 +101,18 @@ assert(cullFrames.every((frame) => Number.isFinite(frame.projectedCullCpuMs) && 
   frame.projectedCullCpuMs <= frame.cpuFrameCpuMs + 0.01), "cull CPU must be measured inside the main-thread CPU frame");
 assert(cullFrames.reduce((sum, frame) => sum + frame.projectedCullCpuMs, 0) > 0, "repeated cull work must record positive thread CPU");
 console.log("PASS projected cull CPU and two calls per frame");
+// This is native mixer work through property publication; event-listener callbacks are excluded.
+assert(cullFrames.every((frame) => frame.animationMixerCalls === 2), "mixer calls must reset for each CPU frame");
+assert(cullFrames.every((frame) => Object.hasOwn(frame, "animationMixerCpuMs") &&
+  (frame.animationMixerCpuMs === null || (Number.isFinite(frame.animationMixerCpuMs) && frame.animationMixerCpuMs >= 0))),
+  "mixer CPU must be finite/nonnegative or explicitly null when unavailable");
+assert(cullFrames.every((frame) => !Number.isFinite(frame.cpuFrameCpuMs)
+  ? frame.animationMixerCpuMs === null
+  : Number.isFinite(frame.animationMixerCpuMs) && frame.animationMixerCpuMs <= frame.cpuFrameCpuMs + 0.01),
+  "mixer CPU must use its paired main-thread CPU frame, or be null when that clock is unavailable");
+assert(cullFrames.reduce((sum, frame) => sum + frame.animationMixerCpuMs, 0) > 0,
+  "repeated mixer work must record positive thread CPU");
+console.log("PASS native mixer CPU (excluding listeners) and two calls per frame");
 
 // Each frame line also counts the main thread's user-space instructions, the A/B figure that host load does
 // not move (PRD-610). The 25 ms busy callback alone retires millions, so a frame under 1,000 K is a broken

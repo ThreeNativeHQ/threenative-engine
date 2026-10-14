@@ -196,6 +196,15 @@ class AnimationAction {
  */
 class AnimationMixer {
   public:
+    // Native mixer work only, excluding event-listener callbacks; owning-thread diagnostic, default off.
+    struct CpuTiming {
+        double (*clock)() = nullptr;
+        double ms = 0;
+        uint64_t calls = 0;
+        bool available = true;
+    };
+    static thread_local CpuTiming cpuTiming;
+
     explicit AnimationMixer(std::shared_ptr<Object3D> root);
     ~AnimationMixer();
     AnimationMixer(const AnimationMixer&) = delete;

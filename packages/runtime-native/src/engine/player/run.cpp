@@ -32,6 +32,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "engine/animation/mixer.h"
 #include "engine/inspect/endpoint.h"
 #include "engine/player/mailbox.h"
 #include "engine/renderer/presentation.h"
@@ -514,12 +515,15 @@ struct Session {
     bool spans = gameSpan(-1, 0) == 1;
     uint64_t measuredFrames = 0, previousCrossings = 0, updateTicks = 0;
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
+    double updateMixerCpuMs = 0;
+    uint64_t updateMixerCalls = 0;
     double updateCullCpuMs = 0;
     uint64_t updateCullCalls = 0;
     void update(double dt) {
         const auto begin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double cpuBegin = metrics ? threadCpuMs() : -1;
         const auto cullBegin = metrics ? ProjectedCull::cpuTiming : ProjectedCull::CpuTiming{};
+        const auto mixerBegin = metrics ? animation::AnimationMixer::cpuTiming : animation::AnimationMixer::CpuTiming{};
         const double instructionsBegin = metrics ? threadInstructions() : -1;
         const double cyclesBegin = metrics ? threadCycles() : -1;
         if (spans) gameSpan(kHostUpdateSpan, 0);
@@ -528,6 +532,8 @@ struct Session {
         if (metrics) updateMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
         if (cpuBegin >= 0) updateCpuMs += threadCpuMs() - cpuBegin;
         if (metrics) {
+            updateMixerCpuMs += animation::AnimationMixer::cpuTiming.ms - mixerBegin.ms;
+            updateMixerCalls += animation::AnimationMixer::cpuTiming.calls - mixerBegin.calls;
             updateCullCpuMs += ProjectedCull::cpuTiming.ms - cullBegin.ms;
             updateCullCalls += ProjectedCull::cpuTiming.calls - cullBegin.calls;
         }
@@ -540,6 +546,7 @@ struct Session {
 #endif
     explicit Session(const Game& source) : game(source), scene(game.scene), camera(game.camera) {
         ProjectedCull::cpuTiming = {metrics ? &threadCpuMs : nullptr};
+        animation::AnimationMixer::cpuTiming = {metrics ? &threadCpuMs : nullptr};
         // Benchmarks need one rendered sample per driven simulation tick, not a batch of 600 updates.
         if (metrics) game.renderEachTick = true;
         if (spans) gameSpans = {};
@@ -685,6 +692,7 @@ int Session::initialize() {
         const auto frameBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double cpuFrameBegin = metrics ? threadCpuMs() : -1;
         const auto cullBegin = metrics ? ProjectedCull::cpuTiming : ProjectedCull::CpuTiming{};
+        const auto mixerBegin = metrics ? animation::AnimationMixer::cpuTiming : animation::AnimationMixer::CpuTiming{};
         const double instructionsFrameBegin = metrics ? threadInstructions() : -1;
         const double cyclesFrameBegin = metrics ? threadCycles() : -1;
         if (spans) gameSpan(kHostFrameSpan, 0);
@@ -890,6 +898,15 @@ int Session::initialize() {
                 sample = json::Value::makeObject(std::move(members));
             }
             {
+                // Same tick+frame CPU window as cpuFrameCpuMs; event-listener callbacks are excluded.
+                auto members = sample.members();
+                const auto& mixer = animation::AnimationMixer::cpuTiming;
+                members.emplace_back("animationMixerCalls", json::Value::makeNumber(updateMixerCalls + mixer.calls - mixerBegin.calls));
+                members.emplace_back("animationMixerCpuMs", cpuFrameBegin >= 0 && mixer.clock && mixer.available
+                    ? json::Value::makeNumber(updateMixerCpuMs + mixer.ms - mixerBegin.ms) : json::Value::makeNull());
+                sample = json::Value::makeObject(std::move(members));
+            }
+            {
                 const auto world = Object3D::matrixEvaluations();
                 const auto joins = Object3D::joinDependencyVisits();
                 const auto boundaries = Object3D::gpuBoundaryVisits();
@@ -917,6 +934,8 @@ int Session::initialize() {
             previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
             updateMs = 0;
             updateCpuMs = 0;
+            updateMixerCpuMs = 0;
+            updateMixerCalls = 0;
             updateCullCpuMs = 0;
             updateCullCalls = 0;
             updateInstructions = 0;
@@ -978,6 +997,7 @@ int Session::step() {
 }
 
 Session::~Session() {
+    animation::AnimationMixer::cpuTiming = {};
     ProjectedCull::cpuTiming = {};
 #if defined(__APPLE__)
     if (window.metalView)
