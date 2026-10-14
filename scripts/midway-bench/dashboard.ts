@@ -16,7 +16,7 @@ export const runsDir = (env: NodeJS.ProcessEnv = process.env) =>
 
 export const ARMS = ["legacy", "native", "desktop"] as const;
 export type Arm = (typeof ARMS)[number];
-const LAST = 1000;
+export const PLAYER_FRAME_WINDOW = 1000;
 const PLAYER_KEYS = [
   "cpuFrameCpuMs",
   "frameMs",
@@ -85,15 +85,27 @@ export function percentile(values: readonly number[], p: number): number | undef
 }
 
 export interface IDesktopFrames {
+  /** Complete active frames used in the tail, capped at PLAYER_FRAME_WINDOW. */
   n: number;
+  /** Complete active frames available in the whole log, before taking the tail. */
+  eligible: number;
+  /** Parsed player frames excluded for no updates or incomplete measurements. */
+  excluded: number;
   medians: Partial<Record<(typeof PLAYER_KEYS)[number], number>>;
   frameP95?: number;
 }
 
-/** Medians over the last `last` `TN_PLAYER_FRAME` samples of a desktop run. */
-export function playerFrames(text: string, last = LAST) {
+/** CPU and instructions share the last `last` complete, active player frames. */
+export function playerFrames(text: string, last = PLAYER_FRAME_WINDOW) {
   const { values, skipped } = scanJson<Record<string, unknown>>(text, "TN_PLAYER_FRAME:");
-  const tail = values.slice(-last);
+  const eligible = values.filter(
+    (s) =>
+      finite(s.updates) &&
+      Number.isInteger(s.updates) &&
+      s.updates > 0 &&
+      [s.cpuFrameCpuMs, s.cpuFrameKInstructions, s.frameMs].every((v) => finite(v) && v > 0),
+  );
+  const tail = eligible.slice(-last);
   if (!tail.length) return { skipped };
   const medians: IDesktopFrames["medians"] = {};
   for (const key of PLAYER_KEYS) {
@@ -103,7 +115,13 @@ export function playerFrames(text: string, last = LAST) {
   const frameP95 = percentile(tail.map((s) => s.frameMs).filter(finite), 0.95);
   return {
     skipped,
-    frames: { n: tail.length, medians, ...(frameP95 === undefined ? {} : { frameP95 }) },
+    frames: {
+      n: tail.length,
+      eligible: eligible.length,
+      excluded: values.length - eligible.length,
+      medians,
+      ...(frameP95 === undefined ? {} : { frameP95 }),
+    },
   };
 }
 

@@ -35,7 +35,7 @@ import {
 } from "../midway-bench/kpis.js";
 
 const frame = (cpu: number, ms = 40) =>
-  `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: cpu, frameMs: ms, bridgeCalls: 10, hostCpuMs: { update: 1 } })}`;
+  `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, cpuFrameKInstructions: cpu * 1000, cpuFrameCpuMs: cpu, frameMs: ms, bridgeCalls: 10, hostCpuMs: { update: 1 } })}`;
 const budget = (p50: number) =>
   `TN_FRAME_BUDGET:${JSON.stringify({ fps: 60, frame: { p50, p95: p50 * 2 }, hitches: 1 })}`;
 const report = (clock: "wall-clock" | "fixed-step") =>
@@ -82,6 +82,54 @@ describe("scanJson", () => {
 });
 
 describe("log reducers", () => {
+  it("selects complete active frames before taking the tail, excluding the real capture spike", () => {
+    // resume-seek-a1-desktop: active tick 2001 and the zero-update screenshot at tick 2423.
+    const active = {
+      updates: 1,
+      tick: 2001,
+      frameMs: 48.611908,
+      cpuFrameCpuMs: 11.562833999996656,
+      cpuFrameKInstructions: 20255,
+    };
+    const capture = {
+      updates: 0,
+      tick: 2423,
+      frameMs: 265.092619,
+      cpuFrameCpuMs: 213.33693999999377,
+      cpuFrameKInstructions: 1245880,
+    };
+    const log = [
+      active,
+      capture,
+      capture,
+      { ...active, cpuFrameCpuMs: null },
+      { ...active, cpuFrameKInstructions: "missing" },
+      { ...active, updates: -1 },
+      { ...active, frameMs: null },
+      { ...active, cpuFrameKInstructions: 0 },
+      { ...active, cpuFrameCpuMs: 0 },
+      { ...active, frameMs: 0 },
+    ]
+      .map((sample) => `TN_PLAYER_FRAME:${JSON.stringify(sample)}`)
+      .join("\n");
+    expect(playerFrames(log, 1).frames).toMatchObject({
+      n: 1,
+      eligible: 1,
+      excluded: 9,
+      medians: { cpuFrameCpuMs: active.cpuFrameCpuMs, cpuFrameKInstructions: 20255 },
+      frameP95: active.frameMs,
+    });
+  });
+
+  it("exposes fewer than 1000 eligible active frames even when captures fill the log", () => {
+    const active = `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, frameMs: 20, cpuFrameCpuMs: 10, cpuFrameKInstructions: 20000 })}`;
+    const capture = `TN_PLAYER_FRAME:${JSON.stringify({ updates: 0, frameMs: 229, cpuFrameCpuMs: 139, cpuFrameKInstructions: 1250000 })}`;
+    const { frames } = playerFrames(
+      [...Array(999).fill(active), ...Array(5).fill(capture)].join("\n"),
+    );
+    expect(frames).toMatchObject({ n: 999, eligible: 999, excluded: 5 });
+  });
+
   it("takes medians over the last samples and the nearest-rank frame p95", () => {
     const log = [frame(100), ...[1, 2, 3, 4, 5].map((n) => frame(n, n * 10))].join("\n");
     const { frames } = playerFrames(log, 5);
@@ -92,7 +140,10 @@ describe("log reducers", () => {
 
   it("takes the median of main-thread CPU cycles from player frames", () => {
     const log = [300, 100, 200]
-      .map((cpuFrameKCycles) => `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameKCycles })}`)
+      .map(
+        (cpuFrameKCycles) =>
+          `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, frameMs: 20, cpuFrameCpuMs: 10, cpuFrameKInstructions: 20000, cpuFrameKCycles })}`,
+      )
       .join("\n");
     expect(playerFrames(log).frames?.medians.cpuFrameKCycles).toBe(200);
   });
@@ -381,7 +432,7 @@ describe("progress, trends and PRD boxes", () => {
   });
 
   it("splits the desktop frame into game, render, other and present", () => {
-    const line = `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: 10, gameJsCpuMs: 6, renderCpuMs: 3, presentCpuMs: 30 })}`;
+    const line = `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, frameMs: 40, cpuFrameKInstructions: 20000, cpuFrameCpuMs: 10, gameJsCpuMs: 6, renderCpuMs: 3, presentCpuMs: 30 })}`;
     expect(breakdownOf([run("a1-desktop", line)])).toEqual({
       build: "unknown build",
       runs: 1,
@@ -399,7 +450,7 @@ describe("progress, trends and PRD boxes", () => {
       ...b.map((v, i) => run(`t-b${i + 1}-desktop`, frame(v))),
     ];
     const keep = abPairsOf(set([14, 15, 16], [10, 11, 12]))[0];
-    expect(keep).toMatchObject({ stem: "t", verdict: "keep", metric: "ms" });
+    expect(keep).toMatchObject({ stem: "t", verdict: "keep", metric: "instr" });
     expect(keep?.steps[0]).toMatchObject({ from: "a", to: "b", medianFrom: 15, medianTo: 11 });
     expect(abPairsOf(set([14, 15, 16], [10, 11, 14]))[0]?.verdict).toBe("reject");
     expect(abPairsOf(set([14, 15, 16], []))[0]?.verdict).toBe("pending");
@@ -408,7 +459,7 @@ describe("progress, trends and PRD boxes", () => {
 
   it("decides on instructions per frame when every run carries them, and shows ms beside it", () => {
     const fi = (cpu: number, kinstr: number) =>
-      `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: cpu, cpuFrameKInstructions: kinstr })}`;
+      `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, frameMs: 20, cpuFrameCpuMs: cpu, cpuFrameKInstructions: kinstr })}`;
     // ms says B is slower (host noise), instructions say every B beats every A.
     const list = [
       run("t-a1-desktop", fi(10, 52_000)),
@@ -424,9 +475,13 @@ describe("progress, trends and PRD boxes", () => {
       msFrom: 10.5,
       msTo: 12.5,
     });
-    // One run without the counter drops the whole group back to ms, where B loses.
-    const mixed = [...list.slice(0, 3), run("t-b2-desktop", frame(12))];
-    expect(abPairsOf(mixed)[0]).toMatchObject({ metric: "ms", verdict: "reject" });
+    // A parsed frame without instructions cannot enter the shared CPU/instruction window.
+    const incomplete = run(
+      "t-b2-desktop",
+      `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, frameMs: 20, cpuFrameCpuMs: 12 })}`,
+    );
+    expect(incomplete.desktop).toBeUndefined();
+    expect(abPairsOf([...list.slice(0, 3), incomplete])[0]?.arms[1]?.runs).toHaveLength(1);
     expect(instrM(list[0] as IMidwayRun)).toBe(52);
     expect(buildsOf(list)[0]?.instrM).toBeCloseTo(50.25);
     expect(trendsOf(list).find((t) => t.id === "instr")?.points[0]?.v).toBeCloseTo(50.25);
@@ -434,7 +489,7 @@ describe("progress, trends and PRD boxes", () => {
 
   it("compares consecutive arms of a three-arm rotation tag", () => {
     const fi = (kinstr: number) =>
-      `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: 10, cpuFrameKInstructions: kinstr })}`;
+      `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, frameMs: 20, cpuFrameCpuMs: 10, cpuFrameKInstructions: kinstr })}`;
     const rot = (base: number[], ac3: number[], ac4: number[]) => [
       ...base.map((v, i) => run(`instr-base${i + 1}-desktop`, fi(v))),
       ...ac3.map((v, i) => run(`instr-ac3${i + 1}-desktop`, fi(v))),
@@ -572,7 +627,11 @@ describe("deliberate winner lock", () => {
             `locked-${arm}${i}-desktop`,
             [
               pkgLine(`pkg-${arm}`),
-              `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: cpu, cpuFrameKInstructions: instructions })}`,
+              Array(1000)
+                .fill(
+                  `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, frameMs: 20, cpuFrameCpuMs: cpu, cpuFrameKInstructions: instructions })}`,
+                )
+                .join("\n"),
               ui(hud),
               proj(5000),
             ].join("\n"),
@@ -694,6 +753,35 @@ describe("deliberate winner lock", () => {
       expect(winnerOf(list, JSON.stringify(changed)).status).toBe("unqualified");
   });
 
+  it("requires 1000 complete active frames in both pinned arms", () => {
+    for (const index of [0, 1]) {
+      const { list, lock } = fixture();
+      const original = list[index] as IMidwayRun;
+      const active = frame(index === 0 ? 12 : 10);
+      const capture = `TN_PLAYER_FRAME:${JSON.stringify({ updates: 0, frameMs: 229, cpuFrameCpuMs: 139, cpuFrameKInstructions: 1250000 })}`;
+      list[index] = run(
+        original.dir,
+        [
+          pkgLine(original.pkg as string),
+          ...Array(999).fill(active),
+          ...Array(5).fill(capture),
+          ui(40),
+        ].join("\n"),
+        parityText(true),
+      );
+      list[index].mtimeMs = original.mtimeMs;
+      (index === 0 ? lock.baseline : lock.candidate)[0] = {
+        dir: original.dir,
+        evidenceSha256: list[index].evidenceSha256,
+      };
+      expect(list[index].desktop).toMatchObject({ n: 999, eligible: 999, excluded: 5 });
+      expect(winnerOf(list, JSON.stringify(lock))).toMatchObject({
+        status: "unqualified",
+        reason: expect.stringContaining("1000 complete active frames"),
+      });
+    }
+  });
+
   it("rejects mutated evidence, excluded runs, missing parity and absent counters", () => {
     const { list, lock } = fixture();
     for (const patch of [
@@ -701,7 +789,7 @@ describe("deliberate winner lock", () => {
       { timingExclusion: "Concurrent player" },
       { profiled: true as const },
       { parity: undefined },
-      { desktop: { n: 1, medians: { cpuFrameCpuMs: 10 } } },
+      { desktop: { n: 1, eligible: 1, excluded: 0, medians: { cpuFrameCpuMs: 10 } } },
       { ui: undefined },
       { skipped: 1 },
     ]) {
@@ -721,7 +809,11 @@ describe("deliberate winner lock", () => {
         "locked-b1-desktop",
         [
           pkgLine("pkg-b"),
-          `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: cpu, cpuFrameKInstructions: instructions })}`,
+          Array(1000)
+            .fill(
+              `TN_PLAYER_FRAME:${JSON.stringify({ updates: 1, frameMs: 20, cpuFrameCpuMs: cpu, cpuFrameKInstructions: instructions })}`,
+            )
+            .join("\n"),
           ui(hud),
         ].join("\n"),
         parityText(true),

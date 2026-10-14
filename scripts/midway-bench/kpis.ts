@@ -8,6 +8,7 @@ import {
   ARMS,
   type Arm,
   type IMidwayRun,
+  PLAYER_FRAME_WINDOW,
   finite,
   loadMidwayRuns,
   median,
@@ -579,6 +580,7 @@ export function winnerOf(runs: readonly IMidwayRun[], text?: string) {
           run.skipped ||
           run.profiled ||
           run.timingExclusion ||
+          run.desktop?.n !== PLAYER_FRAME_WINDOW ||
           parityNote([run]) ||
           !/^[a-f0-9]{64}$/.test(entry.evidenceSha256) ||
           entry.evidenceSha256 !== run.evidenceSha256 ||
@@ -587,7 +589,7 @@ export function winnerOf(runs: readonly IMidwayRun[], text?: string) {
           !finite(run.ui?.p95)
         )
           throw new Error(
-            "Pinned run is missing, changed, excluded, malformed or lacks instructions, HUD or passing parity.",
+            "Pinned run is missing, changed, excluded, malformed or lacks 1000 complete active frames, instructions, HUD or passing parity.",
           );
         return run;
       });

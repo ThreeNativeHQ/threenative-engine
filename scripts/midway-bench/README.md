@@ -66,6 +66,20 @@ pnpm profile:wasm-page -- --url <native url> --control <legacy url> --cpu-work -
 Three native and three legacy runs, alternating, under the heavy lock. It reports startup, frame
 p50, p95 and p99, hitches, CPU work per frame and (`--memory`) memory per arm.
 
+Desktop flights use the canonical dashboard reducer for both A/B arms, rather than historical
+scratch `frames.py` scripts:
+
+```sh
+pnpm exec tsx -e 'import { readFileSync } from "node:fs"; import { playerFrames } from "./scripts/midway-bench/dashboard.ts"; console.log(playerFrames(readFileSync(process.argv[1], "utf8")));' "$MIDWAY_RUNS/<tag>-desktop/run.log"
+```
+
+CPU and instructions share the last 1,000 complete active player frames (`updates > 0`, with finite,
+positive CPU time, instructions and frame time). Zero-update capture/teardown frames and incomplete
+measurements are excluded before taking the tail. The reducer exposes used, eligible and excluded
+counts; winner qualification requires all 1,000 used frames in every pinned baseline and candidate run.
+HUD p95 still uses all snapshots, and matrix visits still use the last projection observation;
+these windows are not aligned to the CPU/instruction tail. Raw run logs stay unchanged.
+
 ## Dashboard
 
 `pnpm perf:live` also serves the Midway tab at `http://127.0.0.1:8765/midway`: PRD-610 KPI cards, desktop against
