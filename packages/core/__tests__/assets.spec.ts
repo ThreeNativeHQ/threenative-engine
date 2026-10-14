@@ -1266,6 +1266,37 @@ describe("IAssetLoader compressed textures", () => {
     },
   );
 
+  it("allows optional pass-through ASTC startup with a PNG fallback on BC/ETC2 renderers", async () => {
+    // This is the compiler's pass-through model entry: `extensions` preserves extensionsUsed,
+    // while no cooked ASTC format is recorded in the manifest.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "optional.glb": {
+              bytes: 512,
+              extensions: ["EXT_texture_astc"],
+              kind: "model",
+              output: "optional.12345678.glb",
+              passes: [],
+            },
+          },
+        }),
+      ),
+    );
+
+    for (const formats of [S3TC, ETC2]) {
+      const assets = createAssetLoader({
+        basePath: "/assets",
+        renderer: webglRenderer(formats),
+      });
+
+      await expect(assets.compressedTextures?.ready).resolves.toBeUndefined();
+    }
+  });
+
   it("allows raw ASTC startup when the renderer supports ASTC", async () => {
     vi.stubGlobal(
       "fetch",

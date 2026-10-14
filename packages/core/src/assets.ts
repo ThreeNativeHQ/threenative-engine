@@ -251,9 +251,6 @@ function firstRawAstcAsset(logicalPath: string, entry: unknown): IManifestAstcAs
     Object.values(embeddedTextures.formats).some((format) => format === ASTC_FORMAT)
   )
     return { logicalPath, output };
-  if (Array.isArray(entry.extensions) && entry.extensions.includes("EXT_texture_astc")) {
-    return { logicalPath, output };
-  }
   return undefined;
 }
 
