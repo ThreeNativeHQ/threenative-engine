@@ -1349,6 +1349,26 @@ void matrix_walk_count() {
     };
     CHECK(walk(true) == 3 && walk(true) == 3);
     auto* groupObject = engineObject<tn::engine::Object3D>(group);
+    tn_handle_t snapshotHandle{};
+    CHECK(tn_construct(ctx, "Matrix4", nullptr, 0, &snapshotHandle, &d.value) == TN_OK);
+    const tn_value_t snapshotArg = ref(snapshotHandle);
+    auto* snapshot = engineObject<tn::engine::Matrix4>(snapshotHandle);
+    const auto initialWorld = groupObject->matrixWorld;
+    const std::array<double, 16> exactWorld{-2, .25, .5, 0, .75, 3, 1.25, 0, -.5, .125, 4, 0, 7, -8, 9, 1};
+    groupObject->matrixWorld.elements = exactWorld;
+    const auto* nativeFlags = groupObject->ownTransformTracking();
+    CHECK(nativeFlags[0] == 0 && nativeFlags[2] == 1);
+    CHECK(tn_invoke(group, "__tnCopyMatrixWorld", &snapshotArg, 1, &out, &d.value) == TN_OK);
+    CHECK(snapshot->elements == exactWorld && nativeFlags[0] == 0 && nativeFlags[2] == 1);
+    groupObject->enableTrackedTransform();
+    CHECK(tn_invoke(group, "__tnCopyMatrixWorld", &snapshotArg, 1, &out, &d.value) == TN_OK);
+    CHECK(snapshot->elements == exactWorld && nativeFlags[0] == 1 && nativeFlags[2] == 0);
+    groupObject->matrixWorld.elements[12] = 99;
+    CHECK(snapshot->elements == exactWorld);
+    CHECK(tn_invoke(group, "__tnCopyMatrixWorld", nullptr, 0, &out, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    CHECK(tn_invoke(group, "__tnCopyMatrixWorld", &meshArg, 1, &out, &d.value) == TN_ERROR_UNSUPPORTED);
+    CHECK(nativeFlags[2] == 0 && snapshot->elements == exactWorld);
+    groupObject->matrixWorld.copy(initialWorld);
     groupObject->enableTrackedTransform();
     auto* tracking = tn::engine::Object3D::transformTrackingAddress(&groupObject->position);
     for (const char* path : {"position.x", "scale.y", "matrixAutoUpdate", "matrixWorldAutoUpdate", "matrixWorldNeedsUpdate"}) {

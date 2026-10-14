@@ -4,6 +4,7 @@ import {
   AnimationMixer,
   LoopOnce,
   LoopRepeat,
+  Matrix4,
   type Object3D,
   Vector3,
   type VectorKeyframeTrack,
@@ -409,8 +410,15 @@ export class AnimationPlayer {
 
   #uniformWorldScale(): number | undefined {
     const root = this.mixer.getRoot() as Object3D;
-    const owner = root.parent ?? root;
+    const owner = (root.parent ?? root) as Object3D & {
+      __tnCopyMatrixWorld?: (target: Matrix4) => void;
+    };
     owner.updateWorldMatrix(true, false);
+    if (owner.__tnCopyMatrixWorld !== undefined) {
+      // Native copies into owned storage so this read cannot escape the live transform alias.
+      owner.__tnCopyMatrixWorld(scratchMatrixWorld);
+      return uniformYawScale(scratchMatrixWorld);
+    }
     return uniformYawScale(owner.matrixWorld);
   }
 
@@ -805,6 +813,7 @@ export class AnimationPlayer {
 /** Reused so a per-frame stride read costs no allocation. See PRD-189. */
 const scratchWorld = new Vector3();
 const scratchScale = new Vector3();
+const scratchMatrixWorld = new Matrix4();
 
 /**
  * Validate one weighted request into normalized, non-zero target weights.

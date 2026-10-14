@@ -5,6 +5,7 @@ import {
   BufferGeometry,
   Float32BufferAttribute,
   Group,
+  Matrix4,
   MeshBasicMaterial,
   NumberKeyframeTrack,
   Object3D,
@@ -15,6 +16,7 @@ import {
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
+import { RigPreparation } from "../src/rig-preparation.js";
 import { SkeletalMesh3D } from "../src/skeletal-mesh.js";
 
 describe("AnimationPlayer", () => {
@@ -1020,6 +1022,31 @@ describe("SkeletalMesh3D shared preparation reuse", () => {
     } finally {
       setTime.mockRestore();
     }
+  });
+
+  it("reads shared stride scale from a native snapshot without exposing the live world matrix", () => {
+    const { root } = fixture();
+    const matrix = new Matrix4().makeScale(2, 2, 2);
+    const body = Object.assign(new Group(), {
+      __tnCopyMatrixWorld(target: Matrix4): void {
+        expect(this).toBe(body);
+        target.copy(matrix);
+      },
+    });
+    body.add(root);
+    const preparation = new RigPreparation();
+    vi.spyOn(preparation, "stride").mockReturnValue({ groundSpeed: 1, inPlace: true });
+    const player = new AnimationPlayer({ root, clips: [inPlaceClip()], preparation });
+    vi.spyOn(body, "updateWorldMatrix").mockImplementation(() => {});
+    vi.spyOn(body, "getWorldScale").mockImplementation((target) => target.set(2, 2, 2));
+    Object.defineProperty(body, "matrixWorld", {
+      get() {
+        throw new Error("Live native world matrix must not escape");
+      },
+    });
+
+    player.play("walk");
+    expect(player.stride.clipGroundSpeed).toBe(2);
   });
 
   it("keeps per-instance measurement under a non-uniform world scale", () => {

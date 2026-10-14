@@ -568,6 +568,15 @@ void registerObject3D(ClassBinding& b) {
     b.methods["__tnUpdateMatrixWorld"] = [](void* self, const Args& a, Store&) {
         return Value::of(double(as<Object3D>(self)->updateMatrixWorldVisible(boolean(a, 0, false), boolean(a, 1, false))));
     };
+    // Read current world values without leasing the source's live transform view.
+    b.methods["__tnCopyMatrixWorld"] = [](void* self, const Args& a, Store& store) {
+        auto& target = store.ref<Matrix4>(a.at(0), "Matrix4");
+        auto& source = *as<Object3D>(self);
+        source.joinDeferredWorldTransform();
+        Object3D::prepareTransformView(&target);
+        target.copy(source.matrixWorld);
+        return Value{};
+    };
     b.methods["updateMatrix"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->updateMatrix();
         return chain();

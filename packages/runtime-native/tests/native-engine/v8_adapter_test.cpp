@@ -1585,9 +1585,66 @@ void jsMathViews() {
             CHECK(enabled ? bone->hasDeferredTransform() : bone->position.x == 7);
             info.GetReturnValue().Set(enabled);
         }, v8::External::New(rt.isolate, &adapter)).ToLocalChecked()).Check();
+    {
+        const auto source = v8::String::NewFromUtf8Literal(rt.isolate, R"JS(
+            (() => {
+                const owner = new Group();
+                const before = __tracking(owner, true);
+                const scratch = new Matrix4();
+                const beforeCopy = __tracking(owner, true);
+                scratch.copy(owner.matrixWorld);
+                const afterCopy = __tracking(owner, true);
+                const y = scratch.elements[5];
+                const afterRead = __tracking(owner, true);
+                const getterOwner = new Group(), beforeGetter = __tracking(getterOwner, true);
+                void getterOwner.matrixWorld;
+                return `${before} ${beforeCopy} ${afterCopy} ${afterRead} ${y} ${beforeGetter} ${__tracking(getterOwner, true)}`;
+            })()
+        )JS");
+        const auto result = v8::Script::Compile(ctx, source).ToLocalChecked()->Run(ctx).ToLocalChecked();
+        v8::String::Utf8Value text(rt.isolate, result);
+        std::printf("fresh tracked Group scratch-copy probe: before/beforeCopy/afterCopy/afterRead/y/beforeGetter/afterGetter = %s\n", *text);
+        CHECK(std::string(*text) == "100 100 101 101 1 100 101");
+    }
     const char* tracking = R"JS(
         (() => {
             const check = (ok) => { if (!ok) throw Error('tracking assertion'); };
+            const snapshotParent = new Group(), snapshotOwner = new Group(), snapshot = new Matrix4();
+            snapshotParent.add(snapshotOwner);
+            check(__tracking(snapshotOwner, true) === 100);
+            snapshotOwner.__tnCopyMatrixWorld(snapshot);
+            check(__tracking(snapshotOwner, true) === 100 && snapshot.elements.every((v, i) => v === (i % 5 === 0 ? 1 : 0)));
+            for (let frame = 0; frame < 2; frame++) {
+                snapshotParent.position.set(2 + frame, -3, 4);
+                snapshotParent.scale.set(-2, 3, 4);
+                snapshotParent.rotation.set(.1, .2, -.3);
+                snapshotOwner.position.set(1, 2 + frame, -3);
+                snapshotOwner.rotation.set(.4, -.2, .3);
+                snapshotOwner.updateWorldMatrix(true, false);
+                snapshotOwner.__tnCopyMatrixWorld(snapshot);
+                const expected = new Matrix4().compose(snapshotParent.position, snapshotParent.quaternion, snapshotParent.scale)
+                    .multiply(new Matrix4().compose(snapshotOwner.position, snapshotOwner.quaternion, snapshotOwner.scale));
+                check(snapshot.elements.every((v, i) => Math.abs(v - expected.elements[i]) < 1e-12));
+                check(__tracking(snapshotOwner, true) === 100 && __tracking(snapshotParent, true) === 100);
+            }
+            for (const bad of [null, 1, {}, new Vector3()]) {
+                let refused = false;
+                try { snapshotOwner.__tnCopyMatrixWorld(bad); } catch { refused = true; }
+                check(refused && __tracking(snapshotOwner, true) === 100);
+            }
+            const liveTarget = snapshotParent.matrixWorld;
+            snapshotOwner.__tnCopyMatrixWorld(liveTarget);
+            check(liveTarget.elements.every((v, i) => v === snapshot.elements[i]));
+            check(__tracking(snapshotOwner, true) === 100);
+            const snapshotBone = new Bone(); check(__deferBone(snapshotBone));
+            snapshotBone.__tnCopyMatrixWorld(snapshot);
+            check(snapshot.elements[12] === 7 && snapshot.elements[13] === 8 && snapshot.elements[14] === 9);
+            check(__tracking(snapshotBone, true) === 100);
+            const live = snapshotOwner.matrixWorld;
+            check(__tracking(snapshotOwner, true) === 101);
+            live.elements[12] = 123;
+            snapshotOwner.__tnCopyMatrixWorld(snapshot);
+            check(snapshot.elements[12] === 123 && __tracking(snapshotOwner, true) === 101);
             const deferred = new Bone(); check(__deferBone(deferred));
             const keptBonePosition = deferred.position;
             check(keptBonePosition.x === 7 && __tracking(deferred) === 111);
@@ -1674,7 +1731,15 @@ void jsMathViews() {
         v8::Local<v8::Value> result;
         auto script = v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, tracking).ToLocalChecked()).ToLocalChecked();
         const bool ok = script->Run(ctx).ToLocal(&result);
-        if (!ok) { v8::String::Utf8Value error(rt.isolate, caught.Exception()); std::fprintf(stderr, "%s\n", *error); }
+        if (!ok) {
+            v8::String::Utf8Value error(rt.isolate, caught.Exception());
+            std::fprintf(stderr, "%s\n", *error);
+            v8::Local<v8::Value> stack;
+            if (caught.StackTrace(ctx).ToLocal(&stack)) {
+                v8::String::Utf8Value trace(rt.isolate, stack);
+                std::fprintf(stderr, "%s\n", *trace);
+            }
+        }
         CHECK(ok);
     }
     tn_handle_t collected{};
