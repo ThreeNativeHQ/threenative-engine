@@ -548,18 +548,20 @@ describe("groups and loading", () => {
       });
     renderState(state);
     expect(html).toContain("Best measured experimental · not accepted");
-    expect(html).toContain(
-      "Now: AC-4 · visibility/world-matrix invalidation + GameCPU attribution",
-    );
+    expect(html).toContain("Now: AC-5 compositor feasibility + AC-6 CPU scope qualification");
     expect(elements.get("focus")?.textContent).toContain(
-      "AC-4 visibility/world-matrix invalidation audit + remaining GameCPU attribution",
+      "AC-5 compositor feasibility + AC-6 CPU scope qualification",
     );
     expect(elements.get("focus")?.textContent).toContain(
       "AC-12 worker rejected (CPU +136%); rolled back",
     );
     expect(elements.get("focus")?.textContent).toContain("AC-11 bulk read pending · default off");
-    expect(elements.get("focus")?.textContent).toContain("AC-5/7 open · qualified proof not met");
-    expect(elements.get("focus")?.textContent).toContain("AC-9/10/13 queued");
+    expect(elements.get("focus")?.textContent).toContain(
+      "AC-4 visibility trial rejected: instructions +0.27%, world work unchanged, wall +9.24%; no qualified win",
+    );
+    expect(elements.get("focus")?.textContent).toContain("AC-7 open · qualified proof not met");
+    expect(elements.get("focus")?.textContent).toContain("AC-10 audit: no justified cut");
+    expect(elements.get("focus")?.textContent).toContain("AC-9/13 queued");
     expect(elements.get("focus")?.textContent).toContain(
       "AC-3 background stretch · non-blocking · measured ~3k",
     );
