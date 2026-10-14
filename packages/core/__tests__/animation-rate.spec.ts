@@ -15,7 +15,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { AnimationComposer } from "../src/animation-composition.js";
 import { AnimationPlayer } from "../src/animation.js";
-import { RenderCameraCull } from "../src/render-camera-cull.js";
+import { RenderCameraCull, animationRateStates } from "../src/render-camera-cull.js";
 import { SkeletalMesh3D } from "../src/skeletal-mesh.js";
 
 function player(updateRate: "auto" | number = "auto") {
@@ -49,6 +49,54 @@ function rendered(result: AnimationPlayer, z = -100) {
 }
 
 describe("AnimationPlayer update rate", () => {
+  it("declines pose lookup while a public weight fade is pending", () => {
+    const actual = player(8);
+    try {
+      actual.update(1 / 60);
+      expect(animationRateStates.get(actual.root)?.readPose?.()).toBeDefined();
+      actual.mixer.clipAction(actual.clip("clip1")).fadeOut(1);
+      expect(animationRateStates.get(actual.root)?.readPose?.()).toBeUndefined();
+      expect(actual.updateRateReport.rate).toBe(1);
+    } finally {
+      actual.dispose();
+    }
+  });
+
+  it.each([2, 4, 8])(
+    "queries current pose time without advancing the public clock at rate %i",
+    (rate) => {
+      for (const phase of [0, 0.29, 0.87, 0.9999999999999998]) {
+        const actual = player(rate);
+        const expected = player(1);
+        actual.mixer.setTime(phase);
+        expected.mixer.setTime(phase);
+        try {
+          for (let frame = 0; frame < 400; frame += 1) {
+            const dt = [1 / 60, 0, 1 / 30, 1 / 120, 1 / 90][frame % 5] as number;
+            actual.update(dt);
+            expected.update(dt);
+            const action = actual.mixer.clipAction(actual.clip("clip1"));
+            const mixerTime = actual.mixer.time;
+            const actionTime = action.time;
+            const sample = animationRateStates.get(actual.root)?.readPose?.();
+            expect(sample).toBeDefined();
+            expect(sample?.time).toBeCloseTo(
+              expected.mixer.clipAction(expected.clip("clip1")).time,
+              12,
+            );
+            expect(sample?.step).toBe(1 / 60);
+            expect(sample?.clip).toBe(actual.clip("clip1"));
+            expect(actual.mixer.time).toBe(mixerTime);
+            expect(action.time).toBe(actionTime);
+          }
+        } finally {
+          actual.dispose();
+          expected.dispose();
+        }
+      }
+    },
+  );
+
   it.each([1, 8])("preserves public callback mixer state at requested rate %i", (rate) => {
     for (const event of ["loop", "finished"] as const) {
       const candidate = player(rate);

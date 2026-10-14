@@ -1,4 +1,13 @@
-import { type Camera, Frustum, Matrix4, type Object3D, Ray, Sphere, Vector3 } from "three";
+import {
+  type AnimationClip,
+  type Camera,
+  Frustum,
+  Matrix4,
+  type Object3D,
+  Ray,
+  Sphere,
+  Vector3,
+} from "three";
 
 import { isRenderable } from "./projection-plan.js";
 
@@ -77,6 +86,14 @@ const MIN_DISTANCE = 1e-4;
 const ANIMATION_RATE_SOURCES_KEY = "threenative.animationRateSources";
 
 /** Internal observations shared with AnimationPlayer, owned by the root rather than the game. */
+export interface IAnimationPoseSample {
+  readonly root: Object3D;
+  readonly clip: AnimationClip;
+  readonly time: number;
+  readonly step: number;
+  readonly revision: number;
+}
+
 export interface IAnimationRateState {
   rate: number;
   frame: number;
@@ -84,6 +101,7 @@ export interface IAnimationRateState {
   evaluated: boolean;
   evaluation: number;
   prepareDraw?: () => void;
+  readPose?: () => IAnimationPoseSample | undefined;
 }
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
 

@@ -6,12 +6,17 @@ import {
   type EventListener,
   LoopOnce,
   LoopRepeat,
+  NormalAnimationBlendMode,
   type Object3D,
   Vector3,
   type VectorKeyframeTrack,
 } from "three";
 import { clipTrackBindings } from "./clip-audit.js";
-import { type IAnimationRateState, animationRateStates } from "./render-camera-cull.js";
+import {
+  type IAnimationPoseSample,
+  type IAnimationRateState,
+  animationRateStates,
+} from "./render-camera-cull.js";
 import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
 
 export interface IAnimationPlayerOptions {
@@ -334,9 +339,15 @@ export class AnimationPlayer {
     evaluated: true,
     evaluation: 0,
     prepareDraw: () => this.#prepareDraw(),
+    readPose: () => this.#readPose(),
   };
   #drawClip: AnimationClip | undefined;
   #drawTracks: { times: number[]; values: number[] }[] = [];
+  #drawRevision = 0;
+  #firstStep = 0;
+  #poseSample:
+    | { root: Object3D; clip: AnimationClip; time: number; step: number; revision: number }
+    | undefined;
   readonly #staggerOffset = nextAnimationOffset++;
   #updateRate: "auto" | number = "auto";
   #updateFrame = 0;
@@ -346,6 +357,7 @@ export class AnimationPlayer {
   readonly #evaluationScales = new Map<AnimationAction, number>();
   readonly #evaluationPaused = new Set<AnimationAction>();
   readonly #timeScaleInterpolations = new Set<AnimationAction>();
+  readonly #weightInterpolations = new Set<AnimationAction>();
   #evaluating = false;
   #evaluated = false;
   #actions = new Map<string, AnimationAction>();
@@ -459,7 +471,7 @@ export class AnimationPlayer {
     )
       return 1;
     if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners) return 1;
-    if (this.#timeScaleInterpolations.size > 0) return 1;
+    if (this.#timeScaleInterpolations.size > 0 || this.#weightInterpolations.size > 0) return 1;
     if (this.#updateRate !== "auto") return this.#updateRate;
     const state = this.#rateState;
     if (state.source === undefined) return 1;
@@ -470,6 +482,24 @@ export class AnimationPlayer {
     const warp = action.warp.bind(action);
     const stopWarping = action.stopWarping.bind(action);
     const crossFadeFrom = action.crossFadeFrom.bind(action);
+    const fadeIn = action.fadeIn.bind(action);
+    const fadeOut = action.fadeOut.bind(action);
+    const stopFading = action.stopFading.bind(action);
+    action.fadeIn = (duration) => {
+      if (!this.#evaluating) this.#flushPending();
+      this.#weightInterpolations.add(action);
+      return fadeIn(duration);
+    };
+    action.fadeOut = (duration) => {
+      if (!this.#evaluating) this.#flushPending();
+      this.#weightInterpolations.add(action);
+      return fadeOut(duration);
+    };
+    action.stopFading = () => {
+      const result = stopFading();
+      this.#weightInterpolations.delete(action);
+      return result;
+    };
     action.warp = (startTimeScale, endTimeScale, duration) => {
       if (!this.#evaluating) this.#flushPending();
       this.#timeScaleInterpolations.add(action);
@@ -928,6 +958,7 @@ export class AnimationPlayer {
   update(dt: number, force = false): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
+    if (dt > 0 && this.#firstStep === 0) this.#firstStep = dt;
     if (this.mixer.timeScale !== 1) this.#flushPending();
     const elapsed = dt * this.mixer.timeScale;
     this.#pendingDt += elapsed;
@@ -953,6 +984,53 @@ export class AnimationPlayer {
     if (this.#pendingDt !== 0) this.#evaluate(this.#pendingDt);
   }
 
+  #readPose(): IAnimationPoseSample | undefined {
+    if (this.#effectiveUpdateRate() === 1 || this.#firstStep === 0) return undefined;
+    const action = this.#actions.get(this.#current ?? "");
+    if (
+      action === undefined ||
+      !action.isRunning() ||
+      action.loop !== LoopRepeat ||
+      action.repetitions !== Number.POSITIVE_INFINITY ||
+      action.blendMode !== NormalAnimationBlendMode ||
+      action.getEffectiveWeight() !== 1 ||
+      action.weight !== 1 ||
+      !Number.isFinite(action.timeScale) ||
+      action.timeScale <= 0 ||
+      action.getEffectiveTimeScale() !== action.timeScale
+    )
+      return undefined;
+    for (const other of this.#actions.values()) {
+      if (other !== action && other.isScheduled()) return undefined;
+    }
+    const clip = action.getClip();
+    const duration = clip.duration;
+    if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(action.time))
+      return undefined;
+    let time = action.time;
+    const pending = this.#pendingActionTimes.get(action) ?? 0;
+    if (pending !== 0) {
+      time += pending;
+      const seam = Math.round(time / duration) * duration;
+      // Match grouped evaluation at loop seams, preserving the public clock when nothing is pending.
+      if (Math.abs(time - seam) <= Number.EPSILON * 16 * Math.max(duration, Math.abs(time)))
+        time = seam;
+      if (time >= duration || time < 0) time -= duration * Math.floor(time / duration);
+    }
+    this.#poseSample ??= {
+      root: this.root,
+      clip,
+      time,
+      step: this.#firstStep,
+      revision: this.#drawRevision,
+    };
+    const sample = this.#poseSample;
+    sample.clip = clip;
+    sample.time = time;
+    sample.revision = this.#drawRevision;
+    return sample;
+  }
+
   #prepareDraw(): void {
     const clip = this.#clips.get(this.#current ?? "");
     if (clip === undefined) {
@@ -975,6 +1053,7 @@ export class AnimationPlayer {
           );
         }));
     if (this.#drawClip !== clip || changed) {
+      this.#drawRevision += 1;
       this.#drawClip = clip;
       this.#drawTracks = clip.tracks.map((track) => ({
         times: Array.from(track.times),
@@ -1092,6 +1171,7 @@ export class AnimationPlayer {
     this.#blendElapsed = 0;
     this.#blendStarts.clear();
     this.#timeScaleInterpolations.clear();
+    this.#weightInterpolations.clear();
     this.#resetStride();
   }
 
