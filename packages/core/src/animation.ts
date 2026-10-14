@@ -333,7 +333,10 @@ export class AnimationPlayer {
     source: undefined,
     evaluated: true,
     evaluation: 0,
+    prepareDraw: () => this.#prepareDraw(),
   };
+  #drawClip: AnimationClip | undefined;
+  #drawTracks: { times: number[]; values: number[] }[] = [];
   readonly #staggerOffset = nextAnimationOffset++;
   #updateRate: "auto" | number = "auto";
   #updateFrame = 0;
@@ -950,6 +953,41 @@ export class AnimationPlayer {
     if (this.#pendingDt !== 0) this.#evaluate(this.#pendingDt);
   }
 
+  #prepareDraw(): void {
+    const clip = this.#clips.get(this.#current ?? "");
+    if (clip === undefined) {
+      this.#drawClip = undefined;
+      this.#drawTracks.length = 0;
+      return;
+    }
+    // Three exposes mutable track arrays without a revision; identity alone misses in-place edits.
+    const changed =
+      this.#drawClip === clip &&
+      (this.#drawTracks.length !== clip.tracks.length ||
+        clip.tracks.some((track, index) => {
+          const previous = this.#drawTracks[index];
+          return (
+            previous === undefined ||
+            previous.times.length !== track.times.length ||
+            previous.values.length !== track.values.length ||
+            track.times.some((value, at) => value !== previous.times[at]) ||
+            track.values.some((value, at) => value !== previous.values[at])
+          );
+        }));
+    if (this.#drawClip !== clip || changed) {
+      this.#drawClip = clip;
+      this.#drawTracks = clip.tracks.map((track) => ({
+        times: Array.from(track.times),
+        values: Array.from(track.values),
+      }));
+    }
+    if (changed) {
+      this.#evaluate(this.#pendingDt);
+      this.#evaluated = true;
+      this.root.updateMatrixWorld(true);
+    }
+  }
+
   #evaluate(dt: number): void {
     // Read before mixer.update(): the "finished" listener fires inside it for a completing
     // once-clip, and that final frame still counts as advancement.
@@ -1073,6 +1111,8 @@ export class AnimationPlayer {
     this.#actions.clear();
     this.#clips.clear();
     this.#clipGroundSpeed.clear();
+    this.#drawTracks.length = 0;
+    this.#drawClip = undefined;
     this.#preparation = undefined;
     if (animationRateStates.get(this.root) === this.#rateState)
       animationRateStates.delete(this.root);

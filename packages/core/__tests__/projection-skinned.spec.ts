@@ -116,6 +116,66 @@ function expectPalette(batch: SkinnedBatch, slot: number, mesh: SkinnedMesh): vo
 }
 
 describe("skinned lane of the render projection", () => {
+  it.each(["values", "times"] as const)(
+    "flushes pending time before drawing edited clip %s",
+    (field) => {
+      const geometry = rigGeometry();
+      const material = new MeshStandardMaterial();
+      const make = (updateRate: number) => {
+        const root = new Group();
+        const mesh = rig(geometry, material);
+        (mesh.skeleton.bones[0] as Bone).name = "joint";
+        root.add(mesh);
+        const track = new NumberKeyframeTrack("joint.position[x]", [0, 1], [0, 1]);
+        const player = new AnimationPlayer({
+          root,
+          clips: [new AnimationClip("move", 1, [track])],
+          strideSync: false,
+          updateRate,
+        });
+        player.play("move");
+        player.update(0, true);
+        return { root, mesh, track, player };
+      };
+      const actual = make(8);
+      const expected = make(1);
+      const batch = new SkinnedBatch({ first: actual.mesh, capacity: 1, velocity: true });
+      const slot = batch.claim(actual.mesh) as number;
+      const draw = () => {
+        actual.root.updateMatrixWorld(true);
+        batch.begin();
+        batch.write(slot, actual.mesh);
+        batch.end();
+      };
+      try {
+        draw();
+        do {
+          actual.player.update(1 / 60);
+          expected.player.update(1 / 60);
+          draw();
+        } while (actual.player.updateRateReport.evaluated);
+        const previous = batch.palette.slice();
+        actual.track[field][1] = expected.track[field][1] = field === "values" ? 2 : 0.5;
+        expected.player.update(0, true);
+        expected.root.updateMatrixWorld(true);
+        draw();
+        expectPalette(batch, slot, expected.mesh);
+        expect(actual.player.updateRateReport.evaluated).toBe(true);
+        expect(actual.player.mixer.clipAction(actual.player.clip("move")).time).toBeCloseTo(
+          expected.player.mixer.clipAction(expected.player.clip("move")).time,
+          12,
+        );
+        expect([...(batch.history as Float32Array)]).toEqual([...previous]);
+      } finally {
+        actual.player.dispose();
+        expected.player.dispose();
+        batch.dispose();
+        geometry.dispose();
+        material.dispose();
+      }
+    },
+  );
+
   it("attributes each actual palette write, excluding reconcile overhead", () => {
     const { scene } = crowd(8);
     const projection = new SceneRenderProjection(scene);

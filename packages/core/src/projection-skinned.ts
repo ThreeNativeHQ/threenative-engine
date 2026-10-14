@@ -42,6 +42,7 @@ const ANIMATION_RATE_STATE_KEY = "threenative.animationRateState";
 interface IAnimationRateStateLike {
   readonly evaluated: boolean;
   readonly evaluation: number;
+  readonly prepareDraw?: () => void;
 }
 
 /**
@@ -386,6 +387,7 @@ export class SkinnedBatch {
     beginSpan(SPANS.skinnedWrite);
     try {
       const state = animationRateStateOf(rig);
+      if (typeof state?.prepareDraw === "function") state.prepareDraw();
       const writtenWorld = this.#writtenWorldMatrices.get(rig);
       if (
         state !== undefined &&

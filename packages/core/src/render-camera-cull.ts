@@ -83,6 +83,7 @@ export interface IAnimationRateState {
   source: RenderCameraCull | undefined;
   evaluated: boolean;
   evaluation: number;
+  prepareDraw?: () => void;
 }
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
 
