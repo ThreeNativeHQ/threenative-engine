@@ -306,7 +306,10 @@ describe("integration exact Git source selection", () => {
         baseSha: base,
       });
       expect(preflight.candidateSha).toBe(head);
-      expect(preflight.lanes).toEqual(all);
+      // The queue is narrowed like a pull request into develop, so its inventory comes from the
+      // queue's own diff rather than from the whole workflow.
+      expect(preflight.qualification).toBe(false);
+      expect(preflight.lanes).toEqual({ ...none, csg: true });
       // Deliberate gate retirement must be reflected in every exhaustive event inventory.
       for (const eventName of ["pull_request", "merge_group", "workflow_dispatch", "push"]) {
         const target = eventName === "push" ? "main" : "develop";
@@ -330,12 +333,7 @@ describe("integration exact Git source selection", () => {
         expect(inventory.jobs).toContain("fluid-collision");
         expect(inventory.jobs).toContain("fluid-collision-native");
       }
-      expect(preflight.jobs).toEqual(
-        [...workflow.matchAll(/^ {2}([a-z][a-z0-9-]*):\n/gmu)]
-          .map((m) => m[1])
-          .filter((id) => id !== "paths")
-          .sort(),
-      );
+      expect(preflight.jobs).toEqual(["csg"]);
       const reviewPlan = selectionPlan(
         "ci",
         "review exemption",
@@ -345,10 +343,20 @@ describe("integration exact Git source selection", () => {
         0,
         "develop",
       );
-      expect(() =>
+      // PRD-550: a narrowed plan is a develop review or queue entry. Everything else still owes the
+      // exhaustive inventory.
+      expect(
         integrationCandidatePreflight({
           plan: reviewPlan,
           eventName: "merge_group",
+          target: "develop",
+          baseSha: base,
+        }).candidateSha,
+      ).toBe(head);
+      expect(() =>
+        integrationCandidatePreflight({
+          plan: reviewPlan,
+          eventName: "workflow_dispatch",
           target: "develop",
           baseSha: base,
         }),

@@ -102,6 +102,10 @@ describe("core constraints", () => {
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&
           file !== "render/virtual-shadow-pages.ts" &&
+          // The partial redraw resets a shadow rectangle with one internal quad that writes the stock
+          // clear's far depth and transparent black into the shadow map. That material never reaches
+          // the screen, copies nothing from the game and chooses no look.
+          file !== "render/virtual-shadow-partial.ts" &&
           // Alpha antialiasing decides how a cutout edge is RESOLVED, never how it looks: it
           // flips one coverage flag on the game's own material so an alpha-tested silhouette can
           // land on the samples `antialias` already paid for. It constructs no material, reads no
@@ -163,6 +167,9 @@ describe("core constraints", () => {
           // envMap's ABSENCE to count it, and constructs no material, sets no property of one and
           // chooses no environment: that sky stays the game's. The assertions below keep it so.
           file !== "profiling/unlit-foliage-warning.ts" &&
+          // The render-trap audit reads game-authored opacity and environment dimensions to
+          // report ignored inputs. It constructs and changes no appearance; checked below.
+          file !== "profiling/render-trap-audit.ts" &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
@@ -176,6 +183,17 @@ describe("core constraints", () => {
     expect(assets).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    const renderTrapAudit = withoutComments(
+      readFileSync(path.join(sourceDirectory, "profiling/render-trap-audit.ts"), "utf8"),
+    );
+    expect(renderTrapAudit).not.toMatch(
+      /new\s+\w*(Material|Light|Texture|Geometry)|new\s+(Color|Scene)|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(renderTrapAudit).not.toMatch(
+      /\b(material|scene|drawable|environment)\.\w+\s*(=(?!=)|\+=|-=|\*=|\/=|\+\+|--)/u,
+    );
+    expect(renderTrapAudit).not.toMatch(/\.(set|copy|setValues)\s*\(/u);
 
     // The same terms as `warmup.ts` for the same reason: `mergeByMaterial` reads a material's
     // identity to decide which meshes share a draw call, and the material itself is the game's —

@@ -64,6 +64,7 @@ import {
   createMagicWisp,
 } from "../render/magic.js";
 import { type IPortalVortex, createPortalVortex } from "../render/portalVortex.js";
+import { createBurstProbe } from "./burstProbe.js";
 
 const EFFECT_IDS = [
   "fire",
@@ -168,6 +169,23 @@ const PAGE_COUNT = Math.ceil(EFFECT_IDS.length / PAGE_SIZE);
 const COLUMN_COUNT = 3;
 const COLUMN_WIDTH = 4;
 const ROW_DEPTH = 3.2;
+/**
+ * Metres the camera slides sideways per pan: 5 of the page's 9 emitters leave the view and the
+ * frame still clears the capture gate's bright-pixel floor (20 m measured 0.042 against 0.05).
+ */
+const PAN_STEP = 18;
+const RATIO_WINDOW_TICKS = 60;
+
+/**
+ * The frame target the gallery reports to the engine. `B` switches it at run time so one scenario
+ * can take the frame over budget and back without reloading.
+ */
+export const budgetKnob: {
+  maxFps: number | undefined;
+  gpuEstimateMs: number | undefined;
+  gpuComputeMs: number | undefined;
+  overBudgetWindows: number;
+} = { maxFps: undefined, gpuEstimateMs: undefined, gpuComputeMs: undefined, overBudgetWindows: 0 };
 
 export type GalleryState = {
   readonly appliedIds: readonly string[];
@@ -179,6 +197,33 @@ export type GalleryState = {
   readonly gpuCapacity: number;
   readonly portalRingDispatches: number;
   readonly portalRibbonDispatches: number;
+  readonly cullOn: boolean;
+  readonly panned: boolean;
+  readonly tightBudget: boolean;
+  readonly emitterCount: number;
+  readonly pausedEmitters: number;
+  readonly outsideViewPaused: number;
+  readonly overBudgetPaused: number;
+  readonly pausedWithoutReason: number;
+  /** Dispatches per emitter per render over the last tick window; 1 means a running emitter dispatched on every render. */
+  readonly dispatchRatio: number;
+  /** The same ratio over the emitters that were running; 1 means every one still animates. */
+  readonly runningDispatchRatio: number;
+  /** `dispatchRatio` captured when the cull was switched on: the panned view with the cull off. */
+  readonly baselineRatio: number;
+  /** `dispatchRatio` and the paused share captured when the camera pans back: the cull-on pan. */
+  readonly culledRatio: number | null;
+  readonly culledRunningRatio: number | null;
+  readonly culledPausedFraction: number;
+  /** Emitters yielded to the budget at the moment it was relaxed, and whether the least significant went first. */
+  readonly yieldedPeak: number;
+  readonly measuredOverBudgetWindows: number;
+  readonly yieldedLeastFirst: boolean;
+  readonly partialShedding: boolean;
+  readonly partialPausedFraction: number;
+  readonly partialLeastFirst: boolean;
+  /** Shortest time any emitter held a cull state before changing it; 0 until one changed twice. */
+  readonly shortestDwellSeconds: number;
 };
 
 type GalleryCtx = ICtx<GalleryState>;
@@ -193,6 +238,27 @@ const initialState: GalleryState = {
   gpuCapacity: 0,
   portalRingDispatches: 0,
   portalRibbonDispatches: 0,
+  cullOn: true,
+  panned: false,
+  tightBudget: false,
+  emitterCount: 0,
+  pausedEmitters: 0,
+  outsideViewPaused: 0,
+  overBudgetPaused: 0,
+  pausedWithoutReason: 0,
+  dispatchRatio: 0,
+  runningDispatchRatio: 0,
+  baselineRatio: 0,
+  culledRatio: null,
+  culledRunningRatio: null,
+  culledPausedFraction: 0,
+  yieldedPeak: 0,
+  measuredOverBudgetWindows: 0,
+  yieldedLeastFirst: false,
+  partialShedding: false,
+  partialPausedFraction: 0,
+  partialLeastFirst: false,
+  shortestDwellSeconds: 0,
 };
 
 type GalleryEvent = { readonly [key: string]: string | number };
@@ -249,20 +315,19 @@ class GalleryEffectEntity {
     this.#objects = [];
   }
 
-  setVisible(page: number): void {
-    const visible = page === this.page;
-    for (const object of this.objects) {
-      object.visible = visible;
-      if (object instanceof GPUParticles3D) object.emitting = visible;
-    }
-  }
-
   debug(): Record<string, unknown> {
     return {
       effectId: this.effectId,
       gpuCapacity: this.gpuCapacity,
       spawnCommands: this.spawnCommands,
       evaluated: this.#activated,
+      dispatches: this.#objects.reduce(
+        (total, object) => total + (object instanceof GPUParticles3D ? object.dispatches : 0),
+        0,
+      ),
+      culled: this.#objects.filter(
+        (object) => object instanceof GPUParticles3D && object.cull.state !== "running",
+      ).length,
     };
   }
 }
@@ -367,6 +432,7 @@ export class Gallery extends Scene<GalleryState> {
     ctx.add(camera);
     ctx.scene.background = new Color(0x050a16);
     createGalleryStage(ctx);
+    const updateBurstProbe = createBurstProbe(ctx);
 
     const effectEntities = new Map<string, GalleryEffectEntity>();
     for (const [index, id] of EFFECT_IDS.entries()) {
@@ -382,12 +448,24 @@ export class Gallery extends Scene<GalleryState> {
       return entity;
     };
 
+    let cullOn = true;
+    let budgetStage: "partial" | "full" | undefined;
+    let partialObserved = false;
+    const graceSeconds = (): number => (cullOn ? 1 : Number.POSITIVE_INFINITY);
+    const pageEmitters = (): GPUParticles3D[] =>
+      [...effectEntities.values()].flatMap((entity) =>
+        entity.objects.filter(
+          (object): object is GPUParticles3D => object instanceof GPUParticles3D,
+        ),
+      );
+
     const mountParticles = (definition: GalleryEffectDefinition): void => {
       const position = tilePosition(definition.index);
       const particles = definition.factory(definition.seed).map((option, layerIndex) => {
         const particle = ctx.add(new GPUParticles3D(option));
         particle.name = `vfx-${definition.id}-${layerIndex}`;
         particle.position.copy(position);
+        particle.graceSeconds = graceSeconds();
         return particle;
       });
       entityFor(definition.id).setObjects(
@@ -437,7 +515,202 @@ export class Gallery extends Scene<GalleryState> {
       });
     }
 
-    return (frameCtx) => {
+    // One sample per RATIO_WINDOW_TICKS ticks: what the emitters dispatched, what state they are
+    // in and why. The playtest reads these numbers; nothing here changes how an emitter behaves.
+    const lastDispatches = new Map<GPUParticles3D, number>();
+    const lastTransitions = new Map<GPUParticles3D, { count: number; at: number }>();
+    let shortestDwell = Number.POSITIVE_INFINITY;
+    const latest = {
+      ratio: 0,
+      runningRatio: 0,
+      pausedFraction: 0,
+      overBudget: 0,
+      leastFirst: false,
+    };
+    // Fixed steps this scene has run, and the simulated seconds they span. The frame function below
+    // counts them once per step and samples there, so windows, dwell and sampling share one clock.
+    let simulationTicks = 0;
+    let simulatedSeconds = 0;
+    let lastSampleTick = simulationTicks;
+    // Renders since the last sample. An emitter on the render cadence dispatches once per render.
+    let rendersSinceSample = 0;
+    ctx.beforeRender(() => {
+      rendersSinceSample += 1;
+    });
+    const sampleWindow = (): void => {
+      const tick = simulationTicks;
+      const now = simulatedSeconds;
+      const emitters = pageEmitters();
+      for (const emitter of emitters) {
+        const known = lastTransitions.get(emitter);
+        if (known === undefined) {
+          lastTransitions.set(emitter, { count: emitter.cull.transitions, at: now });
+        } else if (known.count !== emitter.cull.transitions) {
+          // The first change has no earlier change to measure a dwell against.
+          if (known.count > 0) shortestDwell = Math.min(shortestDwell, now - known.at);
+          known.count = emitter.cull.transitions;
+          known.at = now;
+        }
+      }
+      if (
+        Math.floor(tick / RATIO_WINDOW_TICKS) === Math.floor(lastSampleTick / RATIO_WINDOW_TICKS) ||
+        rendersSinceSample === 0 ||
+        emitters.length === 0
+      )
+        return;
+      const renders = rendersSinceSample;
+      rendersSinceSample = 0;
+      lastSampleTick = tick;
+      let delta = 0;
+      let runningDelta = 0;
+      let running = 0;
+      let outsideView = 0;
+      let overBudget = 0;
+      let unnamed = 0;
+      const camera = ctx.camera;
+      let pausedMax = Number.NEGATIVE_INFINITY;
+      let runningMin = Number.POSITIVE_INFINITY;
+      for (const emitter of emitters) {
+        const stepped = emitter.dispatches - (lastDispatches.get(emitter) ?? 0);
+        lastDispatches.set(emitter, emitter.dispatches);
+        delta += stepped;
+        const significance = emitter.budget.significance(camera);
+        if (emitter.cull.state === "running") {
+          running += 1;
+          runningDelta += stepped;
+          if (significance !== undefined) runningMin = Math.min(runningMin, significance);
+          continue;
+        }
+        if (emitter.cull.reason === "outside-view") outsideView += 1;
+        else if (emitter.cull.reason === "over-budget") overBudget += 1;
+        else unnamed += 1;
+        if (significance !== undefined) pausedMax = Math.max(pausedMax, significance);
+      }
+      latest.ratio = delta / (renders * emitters.length);
+      latest.runningRatio = running === 0 ? 0 : runningDelta / (renders * running);
+      latest.pausedFraction = (emitters.length - running) / emitters.length;
+      latest.overBudget = overBudget;
+      latest.leastFirst = pausedMax <= runningMin;
+      ctx.state.set({
+        emitterCount: emitters.length,
+        pausedEmitters: emitters.length - running,
+        outsideViewPaused: outsideView,
+        overBudgetPaused: overBudget,
+        pausedWithoutReason: unnamed,
+        dispatchRatio: latest.ratio,
+        runningDispatchRatio: latest.runningRatio,
+        measuredOverBudgetWindows: budgetKnob.overBudgetWindows,
+        shortestDwellSeconds: Number.isFinite(shortestDwell) ? shortestDwell : 0,
+      });
+    };
+
+    return (frameCtx, dt) => {
+      simulationTicks += 1;
+      simulatedSeconds += dt;
+      sampleWindow();
+      updateBurstProbe();
+      const camera = ctx.camera as PerspectiveCamera;
+      if (budgetStage === "partial") {
+        const emitters = pageEmitters();
+        const paused = emitters.filter((emitter) => emitter.cull.state !== "running");
+        const running = emitters.filter((emitter) => emitter.cull.state === "running");
+        const partialShedding =
+          paused.some((emitter) => emitter.cull.reason === "over-budget") && running.length > 0;
+        if (
+          !partialObserved &&
+          budgetKnob.gpuEstimateMs !== undefined &&
+          budgetKnob.gpuComputeMs !== undefined &&
+          Number.isFinite(budgetKnob.gpuEstimateMs) &&
+          Number.isFinite(budgetKnob.gpuComputeMs) &&
+          budgetKnob.gpuComputeMs > 0 &&
+          budgetKnob.gpuComputeMs <= budgetKnob.gpuEstimateMs
+        ) {
+          // Track the measured bucket until partial shedding lands; one old sample can fully shed forever.
+          budgetKnob.maxFps = 1000 / (budgetKnob.gpuEstimateMs - budgetKnob.gpuComputeMs / 2);
+        }
+        frameCtx.state.set({ partialShedding });
+        if (partialShedding && !partialObserved) {
+          partialObserved = true;
+          // Stop increasing pressure at the first partial state; normal decay leaves time to capture.
+          budgetKnob.maxFps = undefined;
+        }
+        if (partialShedding) {
+          const pausedRanks = paused.map((emitter) => emitter.budget.significance(camera));
+          const runningRanks = running.map((emitter) => emitter.budget.significance(camera));
+          frameCtx.state.set({
+            partialPausedFraction: paused.length / emitters.length,
+            partialLeastFirst: pausedRanks.every(
+              (rank) =>
+                rank !== undefined &&
+                Number.isFinite(rank) &&
+                runningRanks.every(
+                  (other) => other !== undefined && Number.isFinite(other) && rank < other,
+                ),
+            ),
+          });
+        }
+      }
+      if (frameCtx.input.justPressed("panLeft") && cullOn) {
+        // The cull-on pan, read before the camera returns and the emitters resume.
+        frameCtx.state.set({
+          culledRatio: latest.ratio,
+          culledRunningRatio: latest.runningRatio,
+          culledPausedFraction: latest.pausedFraction,
+        });
+      }
+      if (frameCtx.input.justPressed("panRight") || frameCtx.input.justPressed("panLeft")) {
+        camera.position.x += frameCtx.input.justPressed("panRight") ? PAN_STEP : -PAN_STEP;
+        frameCtx.state.set({ panned: Math.abs(camera.position.x) > PAN_STEP / 2 });
+      }
+      if (frameCtx.input.justPressed("toggleCull")) {
+        cullOn = !cullOn;
+        // The ratio sampled while the cull was off is the control the cull-on ratio is judged
+        // against, so it is kept before the state flips.
+        for (const emitter of pageEmitters()) emitter.graceSeconds = graceSeconds();
+        frameCtx.state.set(cullOn ? { cullOn, baselineRatio: latest.ratio } : { cullOn });
+      }
+      if (frameCtx.input.justPressed("toggleBudget")) {
+        const tightBudget = budgetStage !== "full";
+        if (tightBudget) {
+          const gpuMs = budgetKnob.gpuEstimateMs;
+          if (gpuMs === undefined || !Number.isFinite(gpuMs) || gpuMs <= 0)
+            throw new Error("Budget probe requires a measured positive GPU frame cost.");
+          if (budgetStage === undefined) {
+            const computeMs = budgetKnob.gpuComputeMs;
+            if (
+              computeMs === undefined ||
+              !Number.isFinite(computeMs) ||
+              computeMs <= 0 ||
+              computeMs > gpuMs
+            )
+              throw new Error(
+                "Partial budget probe requires a measured positive GPU compute cost.",
+              );
+            // Pin the partial target to half the measured compute bucket before full overload.
+            budgetKnob.maxFps = 1000 / (gpuMs - computeMs / 2);
+            budgetStage = "partial";
+            partialObserved = false;
+            frameCtx.state.set({
+              partialShedding: false,
+              partialPausedFraction: 0,
+              partialLeastFirst: false,
+            });
+          } else {
+            budgetKnob.maxFps = 1000 / (gpuMs / 4);
+            budgetStage = "full";
+            frameCtx.state.set({ partialShedding: false });
+          }
+        } else {
+          budgetKnob.maxFps = undefined;
+          budgetStage = undefined;
+        }
+        // Relaxing the budget reads what the tight one had yielded, before anything resumes.
+        frameCtx.state.set(
+          tightBudget
+            ? { tightBudget }
+            : { tightBudget, yieldedPeak: latest.overBudget, yieldedLeastFirst: latest.leastFirst },
+        );
+      }
       if (frameCtx.input.justPressed("nextPage")) {
         const page = (frameCtx.state.getState().page + 1) % PAGE_COUNT;
         mountPage(page);

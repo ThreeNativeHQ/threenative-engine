@@ -1663,6 +1663,42 @@ test("runner derives semantic series from labeled snapshots and the exported fie
   expect(result.pass).toBe(true);
 });
 
+test.each([
+  { initial: undefined, first: 0, firstTick: 1, final: 2, baseline: 0, pass: true },
+  { initial: undefined, first: 2, firstTick: 1, final: 2, baseline: 2, pass: false },
+  { initial: undefined, first: 0, firstTick: 2, final: 2, baseline: undefined, pass: false },
+  { initial: undefined, first: undefined, firstTick: 1, final: 2, baseline: undefined, pass: false },
+  { initial: 2, first: 0, firstTick: 1, final: 2, baseline: 2, pass: false },
+  { initial: 0, first: 1, firstTick: 1, final: undefined, baseline: 0, pass: false },
+])("runner measures spawned component changes only across two observed times %j", (entry) => {
+  const snapshot = (shots: number | undefined, tick: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick },
+    components: shots === undefined ? {} : { tower: { shots } },
+  });
+  const result = buildReport(
+    CONFIG,
+    scenario({ components: [{ entity: "tower", component: "shots", gte: 1, changed: true }] }),
+    snapshot(entry.initial, 0), snapshot(entry.final, 2), [], [], undefined, {}, true, undefined,
+    [{ label: "placed", signals: [], snapshot: snapshot(entry.first, entry.firstTick) }],
+  );
+  expect(result.observations?.components?.tower?.shots?.before).toBe(entry.baseline);
+  expect(result.pass).toBe(entry.pass);
+});
+
+test("runner keeps the pre-scenario baseline for final-value component assertions", () => {
+  const snapshot = (present: boolean, tick: number): IPlaytestObservationSnapshot => ({
+    clock: { mode: "fixed-step", tick },
+    components: present ? { tower: { shots: 2 } } : {},
+  });
+  const result = buildReport(
+    CONFIG, scenario({ components: [{ entity: "tower", component: "shots", gte: 1 }] }),
+    snapshot(false, 0), snapshot(true, 2), [], [], undefined, {}, true, undefined,
+    [{ label: "placed", signals: [], snapshot: snapshot(true, 1) }],
+  );
+  expect(result.observations?.components?.tower?.shots?.before).toBeUndefined();
+  expect(result.pass).toBe(true);
+});
+
 test("runner preserves physics debug series for contact and settled assertions", () => {
   const currentScenario = scenario({
     contacts: [{ atStep: "contact", entity: "player", kind: "contact", minCount: 1, with: "solid-body" }],

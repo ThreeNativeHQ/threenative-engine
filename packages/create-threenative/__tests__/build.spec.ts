@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { TraceMap, encodedMappings } from "@jridgewell/trace-mapping";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
@@ -1338,6 +1339,10 @@ cpSync("public", out, { recursive: true });
     const config = { assets: { output: "public" } } as Parameters<
       typeof assertNativeAssetsCompatible
     >[2];
+    const model = await buildFixtureGlb({ textured: false });
+    await mkdir(path.join(root, "public", "models"), { recursive: true });
+    await writeFile(path.join(root, "public", "models/hero.12345678.glb"), model);
+    await writeFile(path.join(root, "public", "models/rock.87654321.glb"), model);
     await writeFile(
       manifestPath,
       JSON.stringify({

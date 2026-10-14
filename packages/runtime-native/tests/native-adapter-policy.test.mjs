@@ -78,7 +78,9 @@ function runHost(bundle, screenshotPath) {
     "sh",
     [join(WORKSPACE, "scripts", "xvfb.sh"), "env", "SDL_VIDEODRIVER=x11", findBinary(),
       "run", bundle, "--screenshot", shot, "--frames", String(FRAMES)],
-    { cwd: dir, encoding: "utf8", timeout: 120_000 },
+    // A host without a usable GPU logs one line per adapter probe. The 1 MB default cap turns that
+    // log into ENOBUFS, which hides the host's verdict, so the cap is raised well past it.
+    { cwd: dir, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
   );
   return {
     error: child.error,

@@ -11,6 +11,28 @@ const bundlerScript = path.resolve("packages/runtime-native/scripts/bundle.mjs")
 // `bundle.mjs` builds with the *game's* pinned copy, so the fixture borrows the scaffolder's.
 const viteInstall = path.resolve("packages/create-threenative/node_modules/vite");
 
+test("packages the shared terrain game as a portable desktop entry", async () => {
+  const root = await makeTempDir("threenative-terrain-entry-");
+  const output = path.join(root, "terrain.js");
+  await run(process.execPath, [
+    bundlerScript,
+    "--project",
+    path.resolve("examples/abyss-framework"),
+    "--entry",
+    "src/terrain-game.ts",
+    "--target",
+    "desktop",
+    "--output",
+    output,
+  ]);
+  const source = await readFile(output, "utf8");
+  expect(source).toContain("TN_NATIVE_START_FAILED");
+  expect(source).not.toContain("Missing #root element.");
+  expect(
+    JSON.parse(await readFile(path.join(root, "terrain-assets/assets.manifest.json"), "utf8")),
+  ).toEqual({ version: 1, entries: {} });
+}, 120_000);
+
 /**
  * The shipped asset is minified, but core reads `backend.constructor.name` for the renderer's
  * backend stamp and the worker wire reads `value.constructor.name`. The minifier must keep the

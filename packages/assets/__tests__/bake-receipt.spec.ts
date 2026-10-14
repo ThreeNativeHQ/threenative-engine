@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
@@ -278,28 +278,34 @@ describe("bake receipt", () => {
     );
   });
 
-  it("should throw when a pass writes a file under the output root it did not declare", async () => {
-    const root = await makeTempDir("threenative-receipt-stray-");
-    await mkdir(path.join(root, "assets"));
-    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
+  it.each([false, true])(
+    "should throw when a pass writes a file under the output root it did not declare (preserved old timestamp: %s)",
+    async (preserveTimestamp) => {
+      const root = await makeTempDir("threenative-receipt-stray-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
 
-    await expect(
-      compileAssets({
-        cwd: root,
-        transcoder: TRANSCODER,
-        passes: [
-          {
-            name: "stray-writer",
-            apply: async (input: Buffer) => {
-              await mkdir(path.join(root, "public"), { recursive: true });
-              await writeFile(path.join(root, "public", "stray.bin"), "undeclared");
-              return input;
+      await expect(
+        compileAssets({
+          cwd: root,
+          transcoder: TRANSCODER,
+          passes: [
+            {
+              name: "stray-writer",
+              apply: async (input: Buffer) => {
+                await mkdir(path.join(root, "public"), { recursive: true });
+                const strayPath = path.join(root, "public", "stray.bin");
+                await writeFile(strayPath, "undeclared");
+                // A copied output can retain its source's timestamp despite being new to public/.
+                if (preserveTimestamp) await utimes(strayPath, new Date(0), new Date(0));
+                return input;
+              },
             },
-          },
-        ],
-      }),
-    ).rejects.toThrow(/TN_ASSETS_UNDECLARED_OUTPUT.*stray\.bin/su);
-  });
+          ],
+        }),
+      ).rejects.toThrow(/TN_ASSETS_UNDECLARED_OUTPUT.*stray\.bin/su);
+    },
+  );
 
   it("should leave a static file the project authored alone", async () => {
     const root = await makeTempDir("threenative-receipt-static-");
@@ -365,9 +371,9 @@ describe("bake receipt", () => {
     await compileAssets({ cwd: root, config: { budget: "none" } });
 
     await expect(readFile(path.join(root, "public", output ?? ""))).rejects.toThrow(/ENOENT/u);
-    await expect(readFile(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow(
-      /ENOENT/u,
-    );
+    expect(
+      JSON.parse(await readFile(path.join(root, "public", "assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
     expect(await readFile(path.join(root, "public", "icon.txt"), "utf8")).toBe(
       "belongs to the game",
     );

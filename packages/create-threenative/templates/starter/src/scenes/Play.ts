@@ -174,6 +174,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
         mobile: isMobile(),
         software: ctx.renderer.softwareAdapter !== undefined,
+        gpuClass: ctx.renderer.gpuClass?.class,
         // One rule for the frame budget, from the engine: the display refresh capped at 120,
         // 60 on mobile. A game that names `display.maxFps` overrides it here too.
         targetFps: resolveTargetFps(config, getPlatform()).targetFps,
