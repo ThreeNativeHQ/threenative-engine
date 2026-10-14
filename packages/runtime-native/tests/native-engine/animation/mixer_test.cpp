@@ -158,10 +158,13 @@ void workerReads() {
     const auto bone = [] { auto result = std::make_shared<Bone>(); result->enableTrackedTransform(); return result; };
     auto clip = std::make_shared<AnimationClip>("worker", 1, std::vector<KeyframeTrack>{
         KeyframeTrack(".position", TrackType::Vector, {0, 1}, {0, 0, 0, 10, 20, 30})});
+    const auto completed = AnimationMixer::workerEvaluationsTotal;
     auto root = bone(); AnimationMixer mixer(root); auto* action = mixer.clipAction(clip); action->play();
     mixer.update(0.25); CHECK(root->pendingAnimation && mixer.workerEvaluations() == 0);
+    CHECK(AnimationMixer::workerEvaluationsTotal == completed);
     PropertyBinding position(root, ".position"); double value[3]{}; position.getValue(value, 0);
     CHECK(value[0] == 2.5 && value[1] == 5 && mixer.workerEvaluations() == 1 && !root->pendingAnimation);
+    CHECK(AnimationMixer::workerEvaluationsTotal == completed + 1);
     mixer.update(0.25); Vector3 world; root->getWorldPosition(world); CHECK(world.x == 5 && mixer.workerEvaluations() == 2);
     auto* alias = &root->position; Object3D::prepareTransformView(alias);
     mixer.update(0.25); CHECK(alias->x == 7.5 && mixer.workerEvaluations() == 2 && !root->pendingAnimation);

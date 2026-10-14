@@ -199,6 +199,7 @@ class AnimationMixer {
         bool available = true;
     };
     static thread_local CpuTiming cpuTiming;
+    static thread_local uint64_t workerEvaluationsTotal; // completed numerical jobs on this owner thread
 
     explicit AnimationMixer(std::shared_ptr<Object3D> root);
     ~AnimationMixer();

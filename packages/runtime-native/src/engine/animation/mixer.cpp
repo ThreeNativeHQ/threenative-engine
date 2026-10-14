@@ -18,6 +18,7 @@
 namespace tn::engine::animation {
 
 thread_local AnimationMixer::CpuTiming AnimationMixer::cpuTiming;
+thread_local uint64_t AnimationMixer::workerEvaluationsTotal = 0;
 
 namespace {
 
@@ -615,6 +616,7 @@ void AnimationMixer::joinEvaluation() {
     if (!pending->ready.valid()) return;
     pending->ready.get(); // TN_WORKER_ONLY: explicit property/render/lifetime dependency join
     ++workerEvaluations_;
+    ++workerEvaluationsTotal;
     for (std::size_t i = 0; i < pending->interpolants.size(); ++i)
         pending->interpolants[i]->restoreEvaluationCache(*pending->job->tracks[i].interpolant);
     for (std::size_t i = 0; i < pending->bindings.size(); ++i) {

@@ -44,6 +44,7 @@ await bundleNativeEngine({ entry, outfile, boot: false, host: true });
 const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy", TN_PLAYER_METRICS: "1",
   ...(cpuProfile ? { TN_JS_CPU_PROFILE: "1", TN_JS_CPU_PROFILE_START_FRAME: "10" } : {}) };
 delete env.TN_PLAYTEST_MAILBOX_ROOT;
+delete env.TN_ANIMATION_WORKER; // exercise the shipped default-off metrics contract
 const child = spawn(resolve(executable), [outfile], { env });
 const stopped = once(child, "close");
 let output = "";
@@ -101,6 +102,12 @@ assert(cullFrames.every((frame) => Number.isFinite(frame.projectedCullCpuMs) && 
   frame.projectedCullCpuMs <= frame.cpuFrameCpuMs + 0.01), "cull CPU must be measured inside the main-thread CPU frame");
 assert(cullFrames.reduce((sum, frame) => sum + frame.projectedCullCpuMs, 0) > 0, "repeated cull work must record positive thread CPU");
 console.log("PASS projected cull CPU and two calls per frame");
+assert(cullFrames.every((frame, index) => Number.isSafeInteger(frame.animationWorkerEvaluationsTotal) &&
+  frame.animationWorkerEvaluationsTotal >= 0 && (index === 0 ||
+    frame.animationWorkerEvaluationsTotal >= cullFrames[index - 1].animationWorkerEvaluationsTotal)),
+  "completed worker jobs must be finite, nonnegative and cumulative");
+assert(cullFrames.every((frame) => frame.animationWorkerEvaluationsTotal === 0),
+  "default-off worker must complete zero jobs");
 // This is native mixer work through property publication; event-listener callbacks are excluded.
 assert(cullFrames.every((frame) => frame.animationMixerCalls === 2), "mixer calls must reset for each CPU frame");
 assert(cullFrames.every((frame) => Object.hasOwn(frame, "animationMixerCpuMs") &&
