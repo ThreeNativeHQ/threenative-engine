@@ -326,7 +326,10 @@ describe("cell proxy preserves authored texture storage and static colors", () =
       const prepared = prepareCellProxy(mesh, metadata);
       for (const fixed of prepared.meshes) fixed.geometry.dispose();
       expect(() =>
-        prepareCellProxy(mesh, { ...metadata, bounds: { min: [-half, 0, 0], max: [half, 0.5, 0] } }),
+        prepareCellProxy(mesh, {
+          ...metadata,
+          bounds: { min: [-half, 0, 0], max: [half, 0.5, 0] },
+        }),
       ).toThrow("declared bounds");
     } finally {
       geometry.dispose();
