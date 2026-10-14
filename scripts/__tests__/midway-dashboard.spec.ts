@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -24,6 +25,8 @@ import {
   groupsOf,
   instrM,
   kpisOf,
+  legacyMs,
+  mainThreadMs,
   midwayOf,
   prdProgress,
   progressOf,
@@ -35,6 +38,8 @@ const frame = (cpu: number, ms = 40) =>
   `TN_PLAYER_FRAME:${JSON.stringify({ cpuFrameCpuMs: cpu, frameMs: ms, bridgeCalls: 10, hostCpuMs: { update: 1 } })}`;
 const budget = (p50: number) =>
   `TN_FRAME_BUDGET:${JSON.stringify({ fps: 60, frame: { p50, p95: p50 * 2 }, hitches: 1 })}`;
+const report = (clock: "wall-clock" | "fixed-step") =>
+  `\n${JSON.stringify({ assertionResults: [{ id: "diagnostics", pass: true }], clock, pass: true, runtime: "web", scenario: "midway-flight-bench", url: "http://127.0.0.1:43243" }, null, 2)}`;
 const ui = (ms: number) => `TN_UI_SNAPSHOT:${JSON.stringify({ requests: 1, lastRoundTripMs: ms })}`;
 const proj = (visited: number) =>
   `TN_PROJECTION:{"matrixWorld":{"mode":"visible","visited":${visited}},"path":"js"}`;
@@ -45,7 +50,7 @@ let clock = 0;
 const pkgLine = (name: string) =>
   `"url": "/home/u/.cache/tmp-tn/${name}/tn-native-engine-player-v8"`;
 const run = (dir: string, log: string, parity?: string) => {
-  const [, tag, arm] = /^(.+)-(legacy|native|desktop)$/.exec(dir) as [
+  const [, tag, arm] = /^(.+)-(legacy|native|desktop)$/.exec(dir) as unknown as [
     string,
     string,
     "legacy" | "native" | "desktop",
@@ -102,8 +107,8 @@ describe("log reducers", () => {
   it("drops frame budget windows without a numeric p50", () => {
     const r = frameBudget(
       [
-        budget(10),
-        budget(20),
+        budget(10) + report("wall-clock"),
+        budget(20) + report("wall-clock"),
         'TN_FRAME_BUDGET:{"frame":{"p50":"x"}}',
         "TN_FRAME_BUDGET:{oops",
       ].join("\n"),
@@ -145,9 +150,9 @@ describe("log reducers", () => {
 
 describe("PRD-610 KPIs", () => {
   const runs = (desktopMs: number, hud: number, visited: number, parity = true): IMidwayRun[] => [
-    run("ref1-legacy", budget(10)),
-    run("ref2-legacy", budget(12)),
-    run("c1-native", budget(9), parityText(true)),
+    run("ref1-legacy", budget(10) + report("wall-clock")),
+    run("ref2-legacy", budget(12) + report("wall-clock")),
+    run("c1-native", budget(9) + report("wall-clock"), parityText(true)),
     run("w1-desktop", [frame(desktopMs), ui(hud), proj(visited)].join("\n"), parityText(parity)),
   ];
   const verdicts = (list: IMidwayRun[]) =>
@@ -187,7 +192,9 @@ describe("PRD-610 KPIs", () => {
       "pending",
       "pending",
     ]);
-    expect(verdicts([run("ref1-legacy", budget(10))])["AC-6"]).toBe("pending");
+    expect(verdicts([run("ref1-legacy", budget(10) + report("wall-clock"))])["AC-6"]).toBe(
+      "pending",
+    );
   });
 });
 
@@ -320,7 +327,7 @@ describe("progress, trends and PRD boxes", () => {
 
   it("scores a KPI from the first recorded run, with a regression below zero", () => {
     const list = [
-      run("ref1-legacy", budget(10)),
+      run("ref1-legacy", budget(10) + report("wall-clock")),
       run(
         "w1-desktop",
         [pkgLine("pkg-a"), frame(20), ui(80), proj(9000)].join("\n"),
@@ -360,7 +367,7 @@ describe("progress, trends and PRD boxes", () => {
 
   it("builds trends with the legacy target and the improvement against the first desktop run", () => {
     const list = [
-      run("ref1-legacy", budget(11)),
+      run("ref1-legacy", budget(11) + report("wall-clock")),
       run("a1-desktop", [pkgLine("pkg-a"), frame(20)].join("\n")),
       run("a2-desktop", [pkgLine("pkg-b"), frame(15)].join("\n")),
     ];
@@ -449,10 +456,10 @@ describe("progress, trends and PRD boxes", () => {
 
   it("reports the native and web Wasm gap to three.js in ms and percent", () => {
     const list = [
-      run("r1-legacy", budget(10)),
-      run("r2-legacy", budget(12)),
+      run("r1-legacy", budget(10) + report("wall-clock")),
+      run("r2-legacy", budget(12) + report("wall-clock")),
       run("d1-desktop", frame(14.3)),
-      run("c1-native", budget(8.8)),
+      run("c1-native", budget(8.8) + report("wall-clock")),
     ];
     const gap = gapOf(list);
     expect(gap.legacyMs).toBe(11);
@@ -470,8 +477,8 @@ describe("progress, trends and PRD boxes", () => {
 
   it("gives each trend its three.js and web Wasm benchmark lines when they exist", () => {
     const list = [
-      run("r1-legacy", [budget(10), proj(6000)].join("\n")),
-      run("c1-native", budget(9)),
+      run("r1-legacy", [proj(6000), budget(10) + report("wall-clock")].join("\n")),
+      run("c1-native", budget(9) + report("wall-clock")),
       run("d1-desktop", [frame(14), ui(60), proj(5000)].join("\n")),
     ];
     const by = Object.fromEntries(trendsOf(list).map((t) => [t.id, t.benchmarks]));
@@ -495,7 +502,7 @@ describe("progress, trends and PRD boxes", () => {
     const d = (dir: string, pkg: string, cpu: number, hud: number, visited: number) =>
       run(dir, [pkgLine(pkg), frame(cpu), ui(hud), proj(visited)].join("\n"), parityText(true));
     const list = [
-      run("ref1-legacy", budget(10)),
+      run("ref1-legacy", budget(10) + report("wall-clock")),
       d("a1-desktop", "pkg-old", 20, 80, 9000),
       d("b1-desktop", "pkg-new", 14, 40, 3000),
       d("b2-desktop", "pkg-new", 12, 50, 3400),
@@ -530,7 +537,7 @@ describe("progress, trends and PRD boxes", () => {
     const d = (dir: string, pkg: string, cpu: number, visited: number) =>
       run(dir, [pkgLine(pkg), frame(cpu), ui(30), proj(visited)].join("\n"), parityText(true));
     const list = [
-      run("ref1-legacy", budget(10)),
+      run("ref1-legacy", budget(10) + report("wall-clock")),
       d("a1-desktop", "pkg-old", 20, 9000),
       d("b1-desktop", "pkg-new", 14, 3000),
       d("perf-b-desktop", "pkg-prof", 40, 100),
@@ -627,7 +634,7 @@ describe("deliberate winner lock", () => {
       [pkgLine("pkg-ac10-cache-b1"), frame(13.028)].join("\n"),
     );
     const state = midwayOf([
-      run("ref1-legacy", budget(11.3)),
+      run("ref1-legacy", budget(11.3) + report("wall-clock")),
       original,
       reference,
       samePackage,
@@ -663,7 +670,7 @@ describe("deliberate winner lock", () => {
         parityText(true),
       );
       const state = midwayOf(
-        [...list, later, run("ref1-legacy", budget(11))],
+        [...list, later, run("ref1-legacy", budget(11) + report("wall-clock"))],
         undefined,
         JSON.stringify(lock),
       );
@@ -708,7 +715,7 @@ describe("deliberate winner lock", () => {
       [10, 24000, 40],
       [13, 22000, 40],
       [10, 22000, 61],
-    ]) {
+    ] as const) {
       const { list, lock } = fixture();
       list[1] = run(
         "locked-b1-desktop",
@@ -722,6 +729,167 @@ describe("deliberate winner lock", () => {
       list[1].mtimeMs = (list[0]?.mtimeMs ?? 0) + 0.5;
       lock.candidate[0] = { dir: list[1].dir, evidenceSha256: list[1].evidenceSha256 };
       expect(winnerOf(list, JSON.stringify(lock)).status).toBe("unqualified");
+    }
+  });
+});
+
+describe("PRD-610 browser acquisition", () => {
+  const desktop = (cpu: number) =>
+    runOf(
+      "d1-desktop",
+      "d1",
+      "desktop",
+      ++clock,
+      [pkgLine("pkg-d"), frame(cpu)].join("\n"),
+      parityText(true),
+    );
+
+  it("does not qualify fixed-step browser CPU against native", () => {
+    const list = [run("ref1-legacy", budget(11.3) + report("fixed-step")), desktop(8)];
+    expect(kpisOf(list).find((k) => k.id === "AC-6")?.verdict).toBe("pending");
+  });
+
+  it("does not qualify an unknown browser acquisition against native", () => {
+    const list = [run("ref1-legacy", budget(11.3)), desktop(8)];
+    expect(kpisOf(list).find((k) => k.id === "AC-6")?.verdict).toBe("pending");
+  });
+
+  it("qualifies wall-clock browser CPU against native", () => {
+    const list = [run("ref1-legacy", budget(11.3) + report("wall-clock")), desktop(8)];
+    expect(kpisOf(list).find((k) => k.id === "AC-6")?.verdict).toBe("pass");
+  });
+
+  it("rejects mixed browser acquisitions in a ratio", () => {
+    const mixed = [
+      run("ref1-legacy", budget(11.3) + report("wall-clock")),
+      runOf(
+        "c1-native",
+        "c1",
+        "native",
+        ++clock,
+        budget(8) + report("fixed-step"),
+        parityText(true),
+      ),
+    ];
+    expect(kpisOf(mixed).find((k) => k.id === "AC-7")?.verdict).toBe("pending");
+  });
+
+  it("accepts a browser ratio when both acquisitions use wall-clock", () => {
+    const same = [
+      run("ref1-legacy", budget(11.3) + report("wall-clock")),
+      runOf(
+        "c1-native",
+        "c1",
+        "native",
+        ++clock,
+        budget(8) + report("wall-clock"),
+        parityText(true),
+      ),
+    ];
+    expect(kpisOf(same).find((k) => k.id === "AC-7")?.verdict).toBe("pass");
+  });
+});
+
+describe("measurement defect regressions", () => {
+  it("passes browser flags to one invocation of the actual flight script", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "midway-flight-"));
+    try {
+      const bin = path.join(root, "node_modules/.bin");
+      await mkdir(bin, { recursive: true });
+      const runner = path.join(bin, "threenative-playtest");
+      const pnpm = path.join(bin, "pnpm");
+      await writeFile(
+        runner,
+        '#!/bin/sh\nprintf "invocation\\n" >> "$ARGV_LOG"\nprintf "%s\\n" "$@" >> "$ARGV_LOG"\npnpm --version\n',
+      );
+      await writeFile(pnpm, "#!/bin/sh\nexit 0\n");
+      await chmod(runner, 0o755);
+      await chmod(pnpm, 0o755);
+      const argvLog = path.join(root, "argv.log");
+      const result = spawnSync(
+        "sh",
+        [path.resolve("scripts/midway-bench/flight.sh"), "legacy", "smoke"],
+        {
+          encoding: "utf8",
+          timeout: 10000,
+          env: {
+            ...process.env,
+            PATH: `${bin}:${process.env.PATH}`,
+            MIDWAY_LEGACY_DIR: root,
+            MIDWAY_RUNS: path.join(root, "runs"),
+            MIDWAY_SCENARIO: path.resolve("scripts/midway-bench/flight-bench.playtest.json"),
+            ARGV_LOG: argvLog,
+            TN_HEAVY_LOCK: "",
+            TN_VK_ICD: "",
+            TN_VK_LIB: "",
+          },
+        },
+      );
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      const argv = (await readFile(argvLog, "utf8")).trimEnd().split("\n");
+      expect(argv).toEqual([
+        "invocation",
+        "--scenario",
+        path.resolve("scripts/midway-bench/flight-bench.playtest.json"),
+        "--browser-recipe",
+        "webgpu",
+        "--timeout",
+        "180000",
+        "--headed",
+        "--artifacts",
+        path.join(root, "runs/smoke-legacy"),
+        "--live-clock",
+        "--server-command",
+        "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("takes acquisition from the terminal report despite an earlier unrelated clock", () => {
+    const log = `message: {"clock":"wall-clock"}\n${budget(11.3)}${report("fixed-step")}`;
+    const r = run("ref1-legacy", log);
+    expect(r.clock).toBe("fixed-step");
+    expect(mainThreadMs(r)).toBeUndefined();
+    expect(r.budget?.frameP50).toBe(11.3);
+  });
+
+  it("does not acquire a clock from missing, malformed or injected reports", () => {
+    for (const tail of [
+      "",
+      ' "clock": "wall-clock"',
+      '\n{"clock":"wall-clock"}',
+      report("wall-clock").slice(0, -1),
+      report("wall-clock").replace('"pass": true', '"pass": false'),
+      `${report("fixed-step")}\nmessage: {"clock":"wall-clock"}`,
+      `${report("fixed-step")}\n{"clock":"wall-clock"}`,
+    ]) {
+      const r = run("ref1-legacy", `message: {"clock":"wall-clock"}\n${budget(11.3)}${tail}`);
+      expect(r.clock, tail).toBeUndefined();
+      expect(mainThreadMs(r), tail).toBeUndefined();
+    }
+  });
+
+  it("excludes fixed-step and unknown browser CPU from every reference and trend", () => {
+    for (const clock of [undefined, "fixed-step"] as const) {
+      const list = [
+        run("ref1-legacy", budget(11.3) + (clock ? report(clock) : "")),
+        run("c1-native", budget(8) + (clock ? report(clock) : ""), parityText(true)),
+        run("d1-desktop", frame(9), parityText(true)),
+      ];
+      expect(legacyMs(list)).toBeUndefined();
+      expect(gapOf(list)).toEqual({ legacyMs: undefined, desktop: undefined, wasm: undefined });
+      const ms = trendsOf(list).find((t) => t.id === "ms");
+      expect(ms?.target).toBeUndefined();
+      expect(ms?.benchmarks).toEqual([]);
+      expect(ms?.points.map((p) => p.arm)).toEqual(["desktop"]);
+      for (const k of kpisOf(list).filter((k) => ["AC-6", "AC-7"].includes(k.id))) {
+        expect(k.verdict).toBe("pending");
+        expect(k.current).toBeUndefined();
+        expect(k.baseline).toBeUndefined();
+        expect(k.detail).toContain("live-clock");
+      }
     }
   });
 });

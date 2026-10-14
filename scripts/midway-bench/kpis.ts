@@ -24,9 +24,13 @@ const PRD = new URL(
 
 export type Verdict = "pass" | "fail" | "pending";
 
-/** Main-thread ms per frame that every arm reports: desktop `cpuFrameCpuMs`, web `frame.p50`. */
+/** Matched-work CPU: desktop `cpuFrameCpuMs`, web `frame.p50` only with live-clock acquisition. */
 export const mainThreadMs = (run: IMidwayRun) =>
-  run.arm === "desktop" ? run.desktop?.medians.cpuFrameCpuMs : run.budget?.frameP50;
+  run.arm === "desktop"
+    ? run.desktop?.medians.cpuFrameCpuMs
+    : run.clock === "wall-clock"
+      ? run.budget?.frameP50
+      : undefined;
 
 /** The legacy reference: median over every legacy run that has a frame time. */
 export const legacyMs = (runs: readonly IMidwayRun[]) =>
@@ -188,12 +192,14 @@ export function kpisOf(
       "x",
       TARGETS.ratio,
       e,
-      (l) =>
-        `${(medOf(l.runs, mainThreadMs) as number).toFixed(2)} ms vs legacy ${(legacy as number).toFixed(2)} ms, ${bad ?? "parity PASS"}. Run level, poses are not separated in the logs.`,
+      (l) => {
+        const timing = `${(medOf(l.runs, mainThreadMs) as number).toFixed(2)} ms vs legacy ${legacy?.toFixed(2)} ms`;
+        return `${timing}, ${bad ?? "parity PASS"}. Run level, poses are not separated in the logs.`;
+      },
       (l) =>
         bad === undefined &&
         (floor === "above" ? l.value > TARGETS.ratio : l.value >= TARGETS.ratio),
-      `no samples: need a ${arm} run and a legacy run`,
+      `no comparable CPU samples: need live-clock browser acquisition and a ${arm} run`,
     );
   };
   return [

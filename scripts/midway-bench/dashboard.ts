@@ -237,6 +237,8 @@ export interface IMidwayRun {
   status: "ok" | "no samples";
   desktop?: IDesktopFrames;
   budget?: IBudget;
+  /** Runner clock acquisition for this run: `wall-clock` or `fixed-step`, from the run report. */
+  clock?: "fixed-step" | "wall-clock";
   ui?: { n: number; p50: number; p95: number };
   matrix?: { n: number; last: number; max: number };
   parity?: IParity;
@@ -263,6 +265,29 @@ export function runOf(
   const matrix = matrixWalk(log);
   const parity = parityText === undefined ? undefined : parityOf(parityText);
   const cullPct = cullOf(cullText);
+  // Only the final standalone runner report establishes acquisition; log messages cannot.
+  let clock: IMidwayRun["clock"];
+  const start = [...log.matchAll(/^\{/gm)].at(-1)?.index;
+  if (start !== undefined && objectEnd(log, start) === log.trimEnd().length) {
+    try {
+      const report = JSON.parse(log.slice(start));
+      if (
+        Array.isArray(report.assertionResults) &&
+        report.assertionResults.length > 0 &&
+        report.assertionResults.every(
+          (assertion: { pass?: unknown } | null) => assertion?.pass === true,
+        ) &&
+        report.pass === true &&
+        report.runtime === "web" &&
+        typeof report.scenario === "string" &&
+        typeof report.url === "string" &&
+        (report.clock === "fixed-step" || report.clock === "wall-clock")
+      )
+        clock = report.clock;
+    } catch {
+      // Malformed terminal reports leave acquisition unknown.
+    }
+  }
   const pkg = /\/((?:pkg|player)-[\w.-]+)\/tn-native-engine-player-v8/.exec(log)?.[1];
   const desktop = "frames" in player ? player.frames : undefined;
   const run: IMidwayRun = {
@@ -278,6 +303,7 @@ export function runOf(
     skipped: player.skipped + budget.skipped + ui.skipped,
     ...(desktop ? { desktop } : {}),
     ...(budget.budget ? { budget: budget.budget } : {}),
+    ...(clock ? { clock } : {}),
     ...("ui" in ui ? { ui: ui.ui } : {}),
     ...(matrix ? { matrix } : {}),
     ...(parity ? { parity } : {}),

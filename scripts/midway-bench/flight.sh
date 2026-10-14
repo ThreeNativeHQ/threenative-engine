@@ -42,18 +42,22 @@ loadnow
 cd "$GAME" || exit 2
 LOCK=${TN_HEAVY_LOCK:+flock $TN_HEAVY_LOCK}
 GPU_ENV=${TN_VK_ICD:+VK_ICD_FILENAMES=$TN_VK_ICD}
+# The runner paints on a private Xvfb unless TN_PLAYTEST_HOST_DISPLAY asks for the session's display.
+NO_DISPLAY="-u DISPLAY"
+[ -n "${TN_PLAYTEST_HOST_DISPLAY:-}" ] && NO_DISPLAY=
 # A loaded host stalls the page's `describe` past the playtest's default operation timeout, so give it room.
 if [ "$ARM" = desktop ]; then
   # shellcheck disable=SC2086
-  $LOCK env -u DISPLAY $GPU_ENV ${TN_VK_LIB:+LD_LIBRARY_PATH=$TN_VK_LIB} \
+  $LOCK env $NO_DISPLAY $GPU_ENV ${TN_VK_LIB:+LD_LIBRARY_PATH=$TN_VK_LIB} \
     node "$REPO/packages/playtest/dist/runner/cli.js" "$SCENARIO" --target desktop \
     --executable "$GAME/tn-native-engine-player-v8" --host-arg "$GAME/game.js" \
     --headed --timeout 240000 --artifacts "$OUT" > "$OUT/run.log" 2>&1
 else
 # shellcheck disable=SC2086
-$LOCK env -u DISPLAY $GPU_ENV ${TN_VK_LIB:+LD_LIBRARY_PATH=$TN_VK_LIB} \
+$LOCK env $NO_DISPLAY $GPU_ENV ${TN_VK_LIB:+LD_LIBRARY_PATH=$TN_VK_LIB} \
   node_modules/.bin/threenative-playtest --scenario "$SCENARIO" \
   --browser-recipe webgpu --timeout 180000 --headed --artifacts "$OUT" \
+  --live-clock \
   --server-command 'pnpm dev --host 127.0.0.1 --port $PORT --strictPort' > "$OUT/run.log" 2>&1
 fi
 STATUS=$?
