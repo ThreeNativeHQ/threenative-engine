@@ -2734,6 +2734,12 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-pipeline-cache-test)
     tn_register_contract_test(threenative-stall-budget-hitch-test)
     tn_register_contract_test(threenative-transient-attachments-test)
+    add_test(NAME threenative-transient-attachments-test-feature-off
+        COMMAND $<TARGET_FILE:threenative-transient-attachments-test> --feature-off)
+    add_test(NAME threenative-transient-attachments-test-direct
+        COMMAND $<TARGET_FILE:threenative-transient-attachments-test> --direct)
+    set_tests_properties(threenative-transient-attachments-test-feature-off
+        threenative-transient-attachments-test-direct PROPERTIES LABELS "native-contract")
     tn_register_contract_test(threenative-timestamp-query-test)
     tn_register_contract_test(threenative-exposure-graph-test)
     add_test(NAME threenative-exposure-graph-test-validation-negative
