@@ -45,6 +45,12 @@ use webkit2gtk::{
     WebContextExt, WebView, WebViewExt,
 };
 
+/// `TN_UI_OVERLAY_CAPTURE=snapshot` keeps the `get_snapshot` capture; anything else reads the
+/// page's own compositor frames.
+fn compositor_capture_enabled() -> bool {
+    std::env::var("TN_UI_OVERLAY_CAPTURE").map_or(true, |value| value != "snapshot")
+}
+
 /// The private script-message channel the page reports keyboard focus on.
 ///
 /// Not part of the bridge contract: `@threenative/core/ui-bridge` knows nothing about it and must
@@ -68,6 +74,32 @@ const BUSY_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_INTERVAL: Duration = Duration::from_millis(250);
 /// How often the web thread looks for work from the game. This is the ceiling on pointer latency.
 const SERVICE_INTERVAL: Duration = Duration::from_millis(8);
+
+/// The compositor capture's coverage layer: a full-viewport, near-invisible plate (alpha 1/255).
+///
+/// WebKitGTK's compositor hands the host a buffer holding only the region it repainted when the
+/// view background is not opaque, so a frame is complete only if the whole surface was damaged. This
+/// layer is that damage: `will-change: transform` makes it a layer of its own and the `data-tn-fx`
+/// attribute moves it by 0.01 px, which repaints the surface each time `COMPOSITOR_NUDGE` runs. An
+/// attribute rather than a class or a custom property, because a page that rewrites `className`
+/// drops a class and a custom property on the root does not repaint the layer. Every pixel the
+/// layer covers is non-zero, so a zero word in a buffer means the buffer is partial. It sits over
+/// everything and takes no input.
+const COMPOSITOR_STYLE: &str = "html::before{content:'';position:fixed;inset:0;pointer-events:none;\
+background:rgba(0,0,0,.004);will-change:transform;z-index:2147483647}\
+html[data-tn-fx]::before{transform:translateX(.01px)}";
+
+/// Moves the coverage layer, so the next compositor frame covers the whole surface.
+const COMPOSITOR_NUDGE: &str = "document.documentElement.toggleAttribute('data-tn-fx')";
+
+/// What the coverage layer leaves on a pixel nothing else touched: premultiplied BGRA, alpha 1.
+const COVERAGE_PIXEL: u32 = 0x0100_0000;
+
+/// How long a compositor capture may wait for a complete frame before it counts as missed.
+const COMPOSITOR_TIMEOUT: Duration = Duration::from_millis(250);
+
+/// Consecutive missed captures after which the overlay goes back to `get_snapshot` for good.
+const COMPOSITOR_MISS_LIMIT: u32 = 3;
 /// Attach waits this long for the web thread to say whether it came up.
 const READY_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -367,6 +399,17 @@ fn web_thread(
         &[],
     ));
 
+    let compositor = compositor_capture_enabled();
+    if compositor {
+        content_manager.add_style_sheet(&webkit2gtk::UserStyleSheet::new(
+            COMPOSITOR_STYLE,
+            webkit2gtk::UserContentInjectedFrames::TopFrame,
+            webkit2gtk::UserStyleLevel::User,
+            &[],
+            &[],
+        ));
+    }
+
     let settings = webkit2gtk::Settings::new();
     // See the module comment: accelerated compositing aborts the process on an offscreen window.
     settings.set_hardware_acceleration_policy(webkit2gtk::HardwareAccelerationPolicy::Never);
@@ -391,7 +434,18 @@ fn web_thread(
         window.clone(),
         width,
         height,
+        compositor,
     )));
+
+    // The compositor capture reads the view when WebKit commits a frame. `try_borrow_mut`: a frame
+    // committed while the driver is mid-service is read at the next one, the request still waits.
+    let damaged = Rc::clone(&driver);
+    window.connect_damage_event(move |_, _| {
+        if let Ok(mut driver) = damaged.try_borrow_mut() {
+            driver.damaged();
+        }
+        false
+    });
 
     let loaded = Rc::clone(&driver);
     let loaded_handler = view.connect_load_changed(move |_, event| {
@@ -778,6 +832,15 @@ struct Driver {
     /// the page's own rAF, which invalidates exactly what changed; forcing a full redraw per poll
     /// makes WebKit re-raster the whole page on every ask, which is most of the measured round trip.
     force_draw: bool,
+    /// Whether captures read the page's compositor frames rather than asking for a snapshot.
+    /// Starts true unless `TN_UI_OVERLAY_CAPTURE=snapshot`, and goes false for good after
+    /// `COMPOSITOR_MISS_LIMIT` captures in a row that never produced a complete frame.
+    compositor: bool,
+    /// Compositor captures in a row that timed out, and frames dropped for being partial.
+    misses: u32,
+    partial_frames: u64,
+    /// The surface the view is drawn into, kept between frames and replaced when the size changes.
+    surface: Option<gtk::cairo::ImageSurface>,
 }
 
 impl Driver {
@@ -787,6 +850,7 @@ impl Driver {
         window: gtk::OffscreenWindow,
         width: u32,
         height: u32,
+        compositor: bool,
     ) -> Self {
         Self {
             shared,
@@ -806,6 +870,10 @@ impl Driver {
             previous: None,
             pool: Vec::new(),
             force_draw: true,
+            compositor,
+            misses: 0,
+            partial_frames: 0,
+            surface: None,
         }
     }
 
@@ -818,14 +886,16 @@ impl Driver {
         let now = self.last_report;
         let waiting = in_flight_since.map(|at| at.elapsed().as_millis()).unwrap_or(0);
         println!(
-            "TN_UI_SNAPSHOT:{{\"requests\":{},\"inFlight\":{},\"waitingMs\":{},\"lastRoundTripMs\":{},\"intervalMs\":{},\"quietMs\":{},\"counter\":{}}}",
+            "TN_UI_SNAPSHOT:{{\"requests\":{},\"inFlight\":{},\"waitingMs\":{},\"lastRoundTripMs\":{},\"intervalMs\":{},\"quietMs\":{},\"counter\":{},\"capture\":\"{}\",\"partialFrames\":{}}}",
             self.requests,
             in_flight_since.is_some(),
             waiting,
             self.last_round_trip.as_millis(),
             self.cadence.wait(now).as_millis(),
             self.cadence.quiet(now).as_millis(),
-            self.shared.frames.published()
+            self.shared.frames.published(),
+            if self.compositor { "compositor" } else { "snapshot" },
+            self.partial_frames
         );
     }
 
@@ -875,6 +945,9 @@ impl Driver {
                     this.wake();
                 }
             }
+        }
+        if this.compositor && this.in_flight && this.in_flight_since.elapsed() > COMPOSITOR_TIMEOUT {
+            this.compositor_missed();
         }
         let waiting = this.in_flight.then_some(this.in_flight_since);
         this.report(waiting);
@@ -1005,12 +1078,27 @@ impl Driver {
         );
     }
 
-    fn request(&mut self, driver: &Rc<RefCell<Driver>>) {
+    /// Mark one capture as asked for.
+    fn begin_request(&mut self) {
         self.in_flight = true;
         self.in_flight_since = Instant::now();
         self.cadence.requested(self.in_flight_since);
         self.requests += 1;
         trace_snapshot("request", self.requests, "");
+    }
+
+    /// Ask the page for a frame that covers the whole surface. `damaged` takes it from there and
+    /// `service` gives up on it after `COMPOSITOR_TIMEOUT`.
+    fn request_compositor(&mut self) {
+        self.begin_request();
+        self.evaluate(COMPOSITOR_NUDGE);
+    }
+
+    fn request(&mut self, driver: &Rc<RefCell<Driver>>) {
+        if self.compositor {
+            return self.request_compositor();
+        }
+        self.begin_request();
         // See `force_draw`: only the first ask after create, and the first after a resize, need a
         // full invalidation. The page's own rAF invalidates every later change, and re-rasterizing
         // the whole page on every poll is the cost this avoids.
@@ -1036,6 +1124,43 @@ impl Driver {
         let read_started = Instant::now();
         let read = self.read(result);
         self.last_read = read_started.elapsed();
+        self.settle(read, now);
+    }
+
+    /// A compositor frame was committed. Take it if a capture is waiting and the frame is whole.
+    fn damaged(&mut self) {
+        trace_snapshot("damage", self.requests, &format!(",\"waiting\":{}", self.in_flight));
+        if !self.compositor || !self.in_flight {
+            return;
+        }
+        let read_started = Instant::now();
+        let Some(read) = self.read_view() else {
+            self.partial_frames += 1;
+            return;
+        };
+        self.in_flight = false;
+        self.misses = 0;
+        let now = Instant::now();
+        self.last_round_trip = self.in_flight_since.elapsed();
+        self.last_read = read_started.elapsed();
+        self.settle(Some(read), now);
+    }
+
+    /// No complete frame arrived in time. A page that cannot be read this way is read the old way.
+    fn compositor_missed(&mut self) {
+        self.in_flight = false;
+        self.misses += 1;
+        self.last_round_trip = self.in_flight_since.elapsed();
+        self.cadence.settled(Instant::now(), false);
+        if self.misses >= COMPOSITOR_MISS_LIMIT {
+            println!("TN_UI_SNAPSHOT:{{\"fallback\":\"snapshot\",\"misses\":{}}}", self.misses);
+            self.compositor = false;
+            self.force_draw = true;
+        }
+    }
+
+    /// Publish what a capture read, or back off when it read nothing usable.
+    fn settle(&mut self, read: Option<(u32, u32, u32, Vec<u8>, bool)>, now: Instant) {
         let Some((width, height, stride, buffer, unchanged)) = read else {
             // A snapshot that failed or came back in a shape we cannot upload: try again, but not
             // in a tight loop, so a permanently broken web view cannot spin a core.
@@ -1119,6 +1244,48 @@ impl Driver {
     }
 }
 
+impl Driver {
+    /// Draw the view into the kept surface and copy it out, or `None` when the frame is partial.
+    fn read_view(&mut self) -> Option<(u32, u32, u32, Vec<u8>, bool)> {
+        use gtk::cairo::{Context, Format, ImageSurface, Operator};
+        let (width, height) = (self.view.allocated_width(), self.view.allocated_height());
+        if width <= 0 || height <= 0 {
+            return None;
+        }
+        if self.surface.as_ref().map(|s| (s.width(), s.height())) != Some((width, height)) {
+            self.surface = Some(ImageSurface::create(Format::ARgb32, width, height).ok()?);
+        }
+        let surface = self.surface.as_mut()?;
+        {
+            let context = Context::new(&*surface).ok()?;
+            context.set_operator(Operator::Clear);
+            context.paint().ok()?;
+            context.set_operator(Operator::Over);
+            self.view.draw(&context);
+        }
+        surface.flush();
+        let stride = surface.stride();
+        let length = stride as usize * height as usize;
+        let data = surface.data().ok()?;
+        let previous = self.previous.clone();
+        let mut buffer = self.pool.pop().unwrap_or_default();
+        let unchanged = copy_composited(
+            &data[..length],
+            stride as usize,
+            width as usize,
+            previous.as_deref().map(Vec::as_slice),
+            &mut buffer,
+        );
+        match unchanged {
+            Some(unchanged) => Some((width as u32, height as u32, stride as u32, buffer, unchanged)),
+            None => {
+                self.pool.push(buffer);
+                None
+            }
+        }
+    }
+}
+
 /// Copy `data` into `buffer` one row at a time, deciding equality against `previous` as it goes.
 ///
 /// `row` is the stride in bytes. Returns true only when every copied byte matches a `previous` of
@@ -1151,6 +1318,44 @@ fn copy_and_compare(
         None => buffer.extend_from_slice(data),
     }
     unchanged
+}
+
+/// Copy a compositor frame into `buffer`, or `None` when the frame is partial.
+///
+/// `width` is in pixels and `row` is the stride in bytes. A frame is complete only if no pixel is
+/// zero, because the coverage layer (`COMPOSITOR_STYLE`) leaves a non-zero word on every pixel it
+/// covers. The coverage word itself is written back as transparent, so what the game blends is the
+/// page. Equality against `previous` is decided in the same pass, as `copy_and_compare` does.
+fn copy_composited(
+    data: &[u8],
+    row: usize,
+    width: usize,
+    previous: Option<&[u8]>,
+    buffer: &mut Vec<u8>,
+) -> Option<bool> {
+    buffer.clear();
+    buffer.resize(data.len(), 0);
+    let previous = previous.filter(|previous| previous.len() == data.len());
+    let mut unchanged = previous.is_some();
+    let mut start = 0;
+    while start < data.len() {
+        let end = (start + row).min(data.len());
+        let used = (start + width * 4).min(end);
+        let out = &mut buffer[start..end];
+        for (source, target) in data[start..used].chunks_exact(4).zip(out.chunks_exact_mut(4)) {
+            let word = u32::from_ne_bytes([source[0], source[1], source[2], source[3]]);
+            if word == 0 {
+                return None;
+            }
+            let word = if word == COVERAGE_PIXEL { 0 } else { word };
+            target.copy_from_slice(&word.to_ne_bytes());
+        }
+        if unchanged && previous.is_some_and(|previous| out != &previous[start..end]) {
+            unchanged = false;
+        }
+        start = end;
+    }
+    Some(unchanged)
 }
 
 /// A JSON string literal holding `frame`, so a quote or a newline in the payload cannot end it.
@@ -1260,6 +1465,50 @@ send('loaded');
         std::fs::remove_dir_all(directory).unwrap();
     }
     use super::*;
+
+    fn words(values: &[u32]) -> Vec<u8> {
+        values.iter().flat_map(|word| word.to_ne_bytes()).collect()
+    }
+
+    #[test]
+    fn a_complete_compositor_frame_loses_the_coverage_pixel_and_keeps_the_page() {
+        let page = 0x80_40_20_10u32;
+        let data = words(&[COVERAGE_PIXEL, page, COVERAGE_PIXEL, 0xff_00_00_00]);
+        let mut buffer = Vec::new();
+        assert_eq!(copy_composited(&data, 8, 2, None, &mut buffer), Some(false));
+        assert_eq!(buffer, words(&[0, page, 0, 0xff_00_00_00]));
+    }
+
+    #[test]
+    fn a_compositor_frame_with_an_undamaged_pixel_is_partial() {
+        let data = words(&[COVERAGE_PIXEL, 0, COVERAGE_PIXEL, COVERAGE_PIXEL]);
+        assert_eq!(copy_composited(&data, 8, 2, None, &mut Vec::new()), None);
+    }
+
+    #[test]
+    fn a_compositor_frame_is_unchanged_only_against_the_same_page() {
+        let data = words(&[COVERAGE_PIXEL, 0x80_40_20_10]);
+        let mut buffer = Vec::new();
+        copy_composited(&data, 8, 2, None, &mut buffer).unwrap();
+        let published = buffer.clone();
+        assert_eq!(copy_composited(&data, 8, 2, Some(&published), &mut buffer), Some(true));
+        let moved = words(&[COVERAGE_PIXEL, 0x80_40_20_11]);
+        assert_eq!(copy_composited(&moved, 8, 2, Some(&published), &mut buffer), Some(false));
+        assert_eq!(
+            copy_composited(&data, 8, 2, Some(&published[..4]), &mut buffer),
+            Some(false),
+            "a frame of another size is never unchanged"
+        );
+    }
+
+    #[test]
+    fn padding_after_the_last_pixel_of_a_row_is_not_a_hole() {
+        // Two pixels of 4 bytes in a 12-byte stride: the last word is padding and may be zero.
+        let data = words(&[COVERAGE_PIXEL, 0x80_40_20_10, 0, COVERAGE_PIXEL, 0xff_00_00_00, 0]);
+        let mut buffer = Vec::new();
+        assert_eq!(copy_composited(&data, 12, 2, None, &mut buffer), Some(false));
+        assert_eq!(&buffer[..8], &words(&[0, 0x80_40_20_10])[..]);
+    }
 
     #[test]
     fn startup_timeout_does_not_wait_for_an_unresponsive_worker() {

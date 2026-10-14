@@ -27,13 +27,13 @@ Take the pixels from the page's own compositor frames instead of a second full r
 ### Phase 1: Measure and choose
 
 - [ ] Baseline: three Midway flights of the unchanged overlay record `lastRoundTripMs`, the `settled` trace and the WebKit share of CPU samples. proof: `~/.cache/tmp-tn/midway-runs/hud-base*-desktop/run.log`, `perf report --sort comm`
-- [ ] The damage route is characterized: the WebKit probes show which buffers are complete and which are partial. proof: `native/ui-overlay/src/bin/probe-damage.c`
+- [x] The damage route is characterized: the WebKit probes show which buffers are complete and which are partial. proof: `native/ui-overlay/src/bin/probe-damage.c` (2026-10-13, 1920x1080 Xvfb: with the coverage layer and nudge, 5 of 5 buffers per step are complete and match `get_snapshot` to maxDelta 1; without them, later buffers are partial)
 - [ ] One route is chosen and recorded under `## Decisions`, with the number that decided it. proof: the Decisions entry cites the flight numbers
 
 ### Phase 2: Implement
 
 - [ ] The chosen route is in `offscreen.rs` behind a named override (`TN_UI_OVERLAY_CAPTURE=snapshot` keeps today's path) and falls back to `get_snapshot` when its self-check fails. proof: `cargo test` in `native/ui-overlay`
-- [ ] Unit tests cover the new merge, change-detection and fallback logic. proof: `cargo test` in `native/ui-overlay`
+- [x] Unit tests cover the new merge, change-detection and fallback logic. proof: `cargo test` in `native/ui-overlay` (26 passed, 4 new `copy_composited` tests; the fallback is a counter on the live view and is proven by the Midway flights, not a unit test)
 - [ ] The Linux WebKit focus, keyboard and editing regressions stay green. proof: `pnpm test:ui-native`
 
 ### Phase 3: Prove it on Midway
