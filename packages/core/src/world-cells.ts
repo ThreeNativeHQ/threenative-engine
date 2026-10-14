@@ -6700,13 +6700,13 @@ export class WorldCells extends Group implements IComputeDriven {
       proxyDraws += state.prepared?.meshes.length ?? 0;
       replacedSources += state.hidden.size + state.mainMasks.size;
     }
+    const why = hlod.reason === "" ? "" : ` reason=${JSON.stringify(hlod.reason)}`;
     console.info(
       `TN_WORLD_HLOD on=${String(hlod.on)} loaded=${String(hlod.loaded)} ` +
         `compiled=${String(hlod.compiled)} observed=${String(hlod.observed)} ` +
         `active=${String(hlod.active)} pending=${String(hlod.pending)} ` +
         `draws=${String(proxyDraws)} replaced=${String(replacedSources)} ` +
-        `bytes=${String(hlod.bytes)} refused=${String(hlod.refused)} failures=${String(hlod.failures)}` +
-        (hlod.reason === "" ? "" : ` reason=${JSON.stringify(hlod.reason)}`),
+        `bytes=${String(hlod.bytes)} refused=${String(hlod.refused)} failures=${String(hlod.failures)}${why}`,
     );
     // The bundles on their own line, because the pair reads against a different question: how many
     // objects are recorded, and how many times the recording was thrown away and redone. A walk
