@@ -16,6 +16,9 @@
 #include <typeinfo>
 #include "engine/scene/geometries.h"
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace tn::engine {
 
@@ -1518,6 +1521,8 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     const auto start = cpuMs ? Clock::now() : Clock::time_point{};
     const auto previousJoints = gpuJoints_;
     gpuJoints_ = renderer.prepareGpuJoints(scene, reflecting_ ? gpuJoints_ : nullptr);
+    static const bool drawUse = [] { const auto* flag = std::getenv("TN_GPU_JOINT_DRAW_USE"); return flag && std::strcmp(flag, "1") == 0; }();
+    if (drawUse && !reflecting_ && gpuJoints_) gpuJoints_->drawUse.assign(gpuJoints_->rigs.size(), 0);
     if (previousJoints && previousJoints != gpuJoints_) scene.updateMatrixWorld(true);
     gpuPreparing_ = true;
     try { prepare(scene, camera, lights_); } catch (...) { gpuPreparing_ = false; throw; }
@@ -1534,6 +1539,11 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
         clear = {world->background->r, world->background->g, world->background->b, 1};
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};
     const auto result = renderer.render(items_, cameraState_, lights_, clear);
+    if (drawUse && !reflecting_) {
+        const auto eligible = gpuJoints_ ? gpuJoints_->rigs.size() : 0;
+        const auto drawn = gpuJoints_ ? std::count(gpuJoints_->drawUse.begin(), gpuJoints_->drawUse.end(), uint8_t{1}) : 0;
+        std::printf("TN_GPU_JOINT_DRAW_USE:{\"eligible\":%zu,\"drawn\":%zu,\"unused\":%zu}\n", eligible, size_t(drawn), eligible - size_t(drawn));
+    }
     if (cpuMs) *cpuMs = {std::chrono::duration<double, std::milli>(prepared - start).count(),
                         std::chrono::duration<double, std::milli>(Clock::now() - prepared).count()};
     return result;

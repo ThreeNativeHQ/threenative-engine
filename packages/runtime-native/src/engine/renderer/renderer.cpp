@@ -2795,6 +2795,18 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     planNormals();
 
+    if (!compilation && gpuJoints_ && !gpuJoints_->drawUse.empty()) {
+        const auto mark = [](const Planned& p) {
+            const auto& item = *p.item;
+            if (!item.gpuJoints || !item.instanceCount) return;
+            auto& use = item.gpuJoints->drawUse;
+            if (item.gpuJointRigs.empty()) use.at(item.gpuJointRig) = 1;
+            else for (const auto rig : item.gpuJointRigs) use.at(rig) = 1;
+        };
+        for (const auto& p : plan) mark(p);
+        for (const auto& pass : shadowPasses) for (const auto& p : pass.draws) mark(p);
+    }
+
     // Encode: state changes only where they change; per draw, its dynamic offsets and the draw. The
     // shadow passes first, so the main pass samples this frame's maps.
     WGPURenderPipeline bound = nullptr;

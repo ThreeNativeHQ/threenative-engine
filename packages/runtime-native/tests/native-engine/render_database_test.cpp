@@ -3049,6 +3049,8 @@ void reflectionReuse() {
 }
 
 void gpuJointProduction() {
+    const auto* drawUseFlag = std::getenv("TN_GPU_JOINT_DRAW_USE");
+    const bool drawUse = drawUseFlag && std::strcmp(drawUseFlag, "1") == 0;
     const Vector3 directions[6] = {{-1,0,0}, {1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
     const Vector3 ups[6] = {{0,-1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}, {0,-1,0}, {0,-1,0}};
     for (int face = 0; face < 6; ++face) {
@@ -3243,6 +3245,8 @@ void gpuJointProduction() {
         const auto validationBefore = Object3D::gpuValidationVisits_;
         CHECK(admittedPlan != nullptr);
         if (!admittedPlan) return;
+        CHECK(admittedPlan->drawUse.size() == (drawUse ? 3 : 0));
+        if (drawUse) CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == (frame == 2 ? 2 : 3));
         CHECK(admittedPlan->current());
         CHECK(Object3D::gpuValidationVisits_ - validationBefore == 18); // three rigs, placement and four ancestors each
         accelerated.scene.matrixWorldAutoUpdate = false;
@@ -3284,6 +3288,35 @@ void gpuJointProduction() {
         std::printf("GPU batching frame %d: main %zu draws/%zu instances, reflection %zu draws/%zu instances, shadow %u batches\n",
                     frame, admitted, instances, mirrorGpu, mirrorInstances, gpu.lastFrame().shadowSkinned.batches);
         CHECK(accelerated.tips[0]->skipsGpuJointSubtree());
+    }
+    if (drawUse) {
+        for (const auto& mover : accelerated.movers) mover->setVisible(false);
+        database.render(gpu, accelerated.scene, accelerated.camera);
+        CHECK(admittedPlan->drawUse == std::vector<uint8_t>(3, 0)); // Reset removes last frame's use.
+        accelerated.movers[0]->setVisible(true);
+        accelerated.meshes[0]->setLayer(1);
+        accelerated.camera.disableLayer(1);
+        accelerated.reflector->camera->enableLayer(1);
+        database.render(gpu, accelerated.scene, accelerated.camera);
+        CHECK(gpu.lastFrame().mainSkinned.batches == 0);
+        CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == 1); // Reflection only.
+        accelerated.reflector->camera->disableLayer(1);
+        database.shadowMapEnabled = true;
+        for (auto* child : accelerated.scene.children) if (auto* sun = dynamic_cast<DirectionalLight*>(child)) sun->shadow.camera->enableLayer(1);
+        for (int repeat = 0; repeat < 2; ++repeat) {
+            database.render(gpu, accelerated.scene, accelerated.camera);
+            CHECK(gpu.lastFrame().mainSkinned.batches == 0);
+            CHECK(gpu.lastFrame().shadowSkinned.batches > 0);
+            CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == 1); // Shadow only, including steady replay.
+        }
+        accelerated.meshes[0]->setLayer(0);
+        database.shadowMapEnabled = false;
+        for (int repeat = 0; repeat < 2; ++repeat) {
+            database.render(gpu, accelerated.scene, accelerated.camera);
+            CHECK(gpu.lastFrame().mainSkinned.batches == 1);
+            CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == 1); // Main bundle reuse.
+        }
+        for (const auto& mover : accelerated.movers) mover->setVisible(true);
     }
     const auto joins = Object3D::joinDependencyVisits(), updates = Object3D::matrixEvaluations();
     accelerated.tips[0]->materializeWorldTransformIfPending();

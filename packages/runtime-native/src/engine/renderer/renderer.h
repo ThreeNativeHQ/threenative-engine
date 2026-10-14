@@ -48,6 +48,7 @@ struct GpuJointScene {
     std::shared_ptr<bool> valid = std::make_shared<bool>(true);
     std::shared_ptr<std::vector<float>> locals = std::make_shared<std::vector<float>>();
     std::vector<Rig> rigs;
+    std::vector<uint8_t> drawUse; // Diagnostic-only, unioned across main, shadow and reflection passes.
     std::vector<std::weak_ptr<Bone>> bones;
     std::vector<JointComputeRig> topology;
     std::vector<uint32_t> parents;
