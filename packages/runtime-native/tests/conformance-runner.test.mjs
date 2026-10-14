@@ -121,6 +121,15 @@ test("the GPU scene BVH row requires a hardware adapter", () => {
   assert.equal(row?.requiresHardwareAdapter, true);
 });
 
+test("a diagnostic row reusing a scene fixture keeps that scene's visual tolerance", () => {
+  // Both rows render buildVirtualShadowScene; first-frame GPU assertions add the diagnostic proof.
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const scene = registry.tests.find(({ id }) => id === "33-virtual-shadow");
+  const diagnostic = registry.tests.find(({ id }) => id === "virtual-shadow-first-frame");
+  assert.ok(scene && diagnostic, "both virtual-shadow rows must be registered");
+  assert.deepEqual(diagnostic.tolerance, scene.tolerance);
+});
+
 test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () => {
   // Fixture is the real web report from the Android parity run that failed on 2026-08-31, with the
   // adapter refusals reclassified the way the runner now reports them.
