@@ -4,6 +4,16 @@
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <cstdlib>
+#include <cstdio>
+#include "engine/animation/skinning/skeleton.h"
+#ifndef __EMSCRIPTEN__
+#include <condition_variable>
+#include <deque>
+#include <future>
+#include <mutex>
+#include <thread>
+#endif
 
 namespace tn::engine::animation {
 
@@ -18,9 +28,9 @@ struct MixerCpuScope {
     double begin = -1;
     int exceptions = 0;
     bool active = clock != nullptr, outer = false;
-    MixerCpuScope() {
+    explicit MixerCpuScope(bool count = true) {
         if (!active) return;
-        ++AnimationMixer::cpuTiming.calls;
+        if (count) ++AnimationMixer::cpuTiming.calls;
         outer = depth++ == 0;
         if (outer) { exceptions = std::uncaught_exceptions(); begin = clock(); }
     }
@@ -96,17 +106,19 @@ AnimationClip& AnimationClip::resetDuration() {
 // ---- PropertyMixer
 
 PropertyMixer::PropertyMixer(PropertyBinding propertyBinding, TrackType type, std::size_t size)
-    : valueSize(size), buffer(size * (type == TrackType::Quaternion ? 6 : 5), 0.0), type_(type),
-      binding(std::move(propertyBinding)) {}
+    : PropertyAccumulator(type, size), binding(std::move(propertyBinding)) {}
+
+PropertyAccumulator::PropertyAccumulator(TrackType type, std::size_t size)
+    : valueSize(size), buffer(size * (type == TrackType::Quaternion ? 6 : 5), 0.0), type_(type) {}
 
 // three's _select: a boolean property takes the source whole once its share reaches one half.
-void PropertyMixer::select(std::size_t dst, std::size_t src, double t) {
+void PropertyAccumulator::select(std::size_t dst, std::size_t src, double t) {
     if (t >= 0.5)
         for (std::size_t i = 0; i != valueSize; ++i)
             buffer[dst + i] = buffer[src + i];
 }
 
-void PropertyMixer::mix(std::size_t dst, std::size_t src, double t) {
+void PropertyAccumulator::mix(std::size_t dst, std::size_t src, double t) {
     if (type_ == TrackType::Bool)
         return select(dst, src, t);
     if (type_ == TrackType::Quaternion) {
@@ -118,7 +130,7 @@ void PropertyMixer::mix(std::size_t dst, std::size_t src, double t) {
         buffer[dst + i] = buffer[dst + i] * s + buffer[src + i] * t;
 }
 
-void PropertyMixer::mixAdditive(std::size_t dst, std::size_t src, double t) {
+void PropertyAccumulator::mixAdditive(std::size_t dst, std::size_t src, double t) {
     if (type_ == TrackType::Bool)
         return select(dst, src, t);
     if (type_ == TrackType::Quaternion) {
@@ -131,7 +143,7 @@ void PropertyMixer::mixAdditive(std::size_t dst, std::size_t src, double t) {
         buffer[dst + i] = buffer[dst + i] + buffer[src + i] * t;
 }
 
-void PropertyMixer::setIdentity() {
+void PropertyAccumulator::setIdentity() {
     if (type_ == TrackType::Bool) { // _setAdditiveIdentityOther: the original value
         for (std::size_t i = 0; i < valueSize; ++i)
             buffer[kAddIndex * valueSize + i] = buffer[kOrigIndex * valueSize + i];
@@ -144,7 +156,7 @@ void PropertyMixer::setIdentity() {
         buffer[start + 3] = 1;
 }
 
-void PropertyMixer::accumulate(int accuIndex, double weight) {
+void PropertyAccumulator::accumulate(int accuIndex, double weight) {
     const std::size_t stride = valueSize, offset = static_cast<std::size_t>(accuIndex) * stride + stride;
     double currentWeight = cumulativeWeight;
     if (currentWeight == 0) {
@@ -158,14 +170,14 @@ void PropertyMixer::accumulate(int accuIndex, double weight) {
     cumulativeWeight = currentWeight;
 }
 
-void PropertyMixer::accumulateAdditive(double weight) {
+void PropertyAccumulator::accumulateAdditive(double weight) {
     if (cumulativeWeightAdditive == 0)
         setIdentity();
     mixAdditive(valueSize * kAddIndex, 0, weight);
     cumulativeWeightAdditive += weight;
 }
 
-void PropertyMixer::apply(int accuIndex) {
+bool PropertyAccumulator::finish(int accuIndex) {
     const std::size_t stride = valueSize, offset = static_cast<std::size_t>(accuIndex) * stride + stride;
     const double weight = cumulativeWeight, weightAdditive = cumulativeWeightAdditive;
     cumulativeWeight = 0;
@@ -176,10 +188,14 @@ void PropertyMixer::apply(int accuIndex) {
         mixAdditive(offset, kAddIndex * stride, 1);
     for (std::size_t i = stride, e = stride + stride; i != e; ++i) {
         if (buffer[i] != buffer[i + stride]) {
-            binding.setValue(buffer.data(), offset);
-            break;
+            return true;
         }
     }
+    return false;
+}
+
+void PropertyMixer::apply(int accuIndex) {
+    if (finish(accuIndex)) binding.setValue(buffer.data(), (std::size_t(accuIndex) + 1) * valueSize);
 }
 
 void PropertyMixer::saveOriginalState() {
@@ -347,6 +363,10 @@ void AnimationAction::update(double t, double deltaTime, double timeDirection, i
     const double clipTime = updateTime(deltaTime);
     const double w = updateWeight(t);
     if (w > 0) {
+        if (mixer_.pendingEvaluation_) {
+            for (std::size_t j = 0; j < interpolants_.size(); ++j) mixer_.collectTrack(*this, j, clipTime, w);
+            return;
+        }
         if (blendMode == BlendMode::Additive) {
             for (std::size_t j = 0; j != interpolants_.size(); ++j) {
                 interpolants_[j]->evaluate(clipTime);
@@ -510,10 +530,117 @@ AnimationAction& AnimationAction::scheduleFading(double duration, double weightN
     return *this;
 }
 
+#ifndef __EMSCRIPTEN__
+namespace {
+struct NumericJob {
+    struct Track { double time, weight; BlendMode blend; std::size_t property; std::unique_ptr<Interpolant> interpolant; };
+    std::vector<PropertyAccumulator> properties;
+    std::vector<Track> tracks;
+    std::vector<bool> changed;
+    int accumulator = 0;
+    std::thread::id owner = std::this_thread::get_id();
+    void evaluate() {
+        if (owner == std::this_thread::get_id()) throw std::logic_error("TN_ANIMATION_WORKER_THREAD: evaluation remained on owner");
+        for (const auto& track : tracks) {
+            auto& property = properties[track.property];
+            track.interpolant->setResultBuffer(property.buffer.data());
+            track.interpolant->evaluate(track.time);
+            if (track.blend == BlendMode::Additive) property.accumulateAdditive(track.weight);
+            else property.accumulate(accumulator, track.weight);
+        }
+        for (auto& property : properties) changed.push_back(property.finish(accumulator));
+    }
+};
+// One persistent numerical worker, not a general engine job pool. No scene or language objects cross it.
+class MixerWorker {
+    std::mutex mutex_;
+    std::condition_variable ready_; // TN_WORKER_ONLY: parks the numerical worker between jobs
+    std::deque<std::packaged_task<void()>> jobs_;
+    bool stopping_ = false;
+    std::thread thread_{[this] {
+        std::unique_lock lock(mutex_);
+        for (;;) {
+            ready_.wait(lock, [this] { return stopping_ || !jobs_.empty(); });
+            if (jobs_.empty()) return;
+            auto job = std::move(jobs_.front()); jobs_.pop_front();
+            lock.unlock(); job(); lock.lock();
+        }
+    }};
+  public:
+    ~MixerWorker() { { std::lock_guard lock(mutex_); stopping_ = true; } ready_.notify_one(); thread_.join(); }
+    std::future<void> submit(std::shared_ptr<NumericJob> job) {
+        std::packaged_task<void()> task([job = std::move(job)] { job->evaluate(); });
+        auto future = task.get_future();
+        { std::lock_guard lock(mutex_); jobs_.push_back(std::move(task)); }
+        ready_.notify_one(); return future;
+    }
+};
+thread_local std::vector<AnimationMixer*> pendingMixers;
+}
+struct AnimationMixer::WorkerState {
+    std::shared_ptr<NumericJob> job = std::make_shared<NumericJob>();
+    std::future<void> ready;
+    std::vector<PropertyMixer*> bindings;
+    std::vector<Interpolant*> interpolants;
+    std::vector<std::shared_ptr<Bone>> owners; // owner thread only; never captured by the numerical task
+};
+#endif
+
 // ---- AnimationMixer
 
-AnimationMixer::AnimationMixer(std::shared_ptr<Object3D> root) : root_(std::move(root)) {}
-AnimationMixer::~AnimationMixer() = default;
+AnimationMixer::AnimationMixer(std::shared_ptr<Object3D> root) : root_(std::move(root)) {
+    const auto trial = std::getenv("TN_ANIMATION_WORKER");
+    workerTrial_ = trial && std::string_view(trial) == "1";
+}
+AnimationMixer::~AnimationMixer() {
+#ifndef __EMSCRIPTEN__
+    if (workerTrial_ && ownerThread_ != std::this_thread::get_id()) {
+        std::fprintf(stderr, "TN_ANIMATION_WORKER_OWNER: mixer destruction requires its owner thread\n");
+        std::terminate(); // cannot publish bindings or discard pinned scene objects on a foreign thread
+    }
+#endif
+    try { joinEvaluation(); }
+    catch (const std::exception& error) { std::fprintf(stderr, "TN_ANIMATION_WORKER_FAILED: %s\n", error.what()); }
+}
+
+void AnimationMixer::joinEvaluation() {
+#ifndef __EMSCRIPTEN__
+    if (workerTrial_ && ownerThread_ != std::this_thread::get_id())
+        throw std::logic_error("TN_ANIMATION_WORKER_OWNER: mixer publication requires its owner thread");
+    auto pending = std::exchange(pendingEvaluation_, {});
+    if (!pending) return;
+    MixerCpuScope cpu(false);
+    std::erase(pendingMixers, this);
+    for (const auto& bone : pending->owners) bone->pendingAnimation = {};
+    if (!pending->ready.valid()) return;
+    pending->ready.get(); // TN_WORKER_ONLY: explicit property/render/lifetime dependency join
+    ++workerEvaluations_;
+    for (std::size_t i = 0; i < pending->interpolants.size(); ++i)
+        pending->interpolants[i]->restoreEvaluationCache(*pending->job->tracks[i].interpolant);
+    for (std::size_t i = 0; i < pending->bindings.size(); ++i) {
+        auto& target = *pending->bindings[i]; const auto& result = pending->job->properties[i];
+        std::copy(result.buffer.begin(), result.buffer.end(), target.buffer.begin());
+        target.cumulativeWeight = result.cumulativeWeight;
+        target.cumulativeWeightAdditive = result.cumulativeWeightAdditive;
+        if (pending->job->changed[i]) target.binding.setValue(target.buffer.data(), (std::size_t(pending->job->accumulator) + 1) * target.valueSize);
+    }
+#endif
+}
+
+void AnimationMixer::joinPendingEvaluations() {
+#ifndef __EMSCRIPTEN__
+    while (!pendingMixers.empty()) pendingMixers.back()->joinEvaluation();
+#endif
+}
+
+void AnimationMixer::collectTrack(AnimationAction& action, std::size_t track, double time, double weight) {
+#ifndef __EMSCRIPTEN__
+    auto& tracks = pendingEvaluation_->job->tracks;
+    tracks.push_back({time, weight, action.blendMode, *action.propertyBindings_[track]->cacheIndex,
+                      action.interpolants_[track]->snapshotOwned()});
+    pendingEvaluation_->interpolants.push_back(action.interpolants_[track].get());
+#endif
+}
 
 AnimationMixer::ActionsForClip* AnimationMixer::actionsFor(const AnimationClip* clip) {
     for (ActionsForClip& entry : actionsByClip_)
@@ -564,6 +691,7 @@ void AnimationMixer::bindAction(AnimationAction& action, AnimationAction* /*prot
 }
 
 void AnimationMixer::activateAction(AnimationAction& action) {
+    joinEvaluation();
     if (isActiveAction(action))
         return;
     if (!action.cacheIndex_) {
@@ -582,6 +710,7 @@ void AnimationMixer::activateAction(AnimationAction& action) {
 }
 
 void AnimationMixer::deactivateAction(AnimationAction& action) {
+    joinEvaluation();
     if (!isActiveAction(action))
         return;
     for (PropertyMixer* binding : action.propertyBindings_) {
@@ -774,6 +903,7 @@ AnimationMixer& AnimationMixer::stopAllAction() {
 
 AnimationMixer& AnimationMixer::update(double deltaTime) {
     MixerCpuScope cpu;
+    joinEvaluation();
     ++updateCount_;
     deltaTime *= timeScale;
     const std::size_t nActions = nActiveActions_;
@@ -782,13 +912,38 @@ AnimationMixer& AnimationMixer::update(double deltaTime) {
     const int accuIndex = accuIndex_ ^= 1;
     // Events wait for both loops: a listener that uncaches an action shrinks the lists they walk.
     // Actions live as long as the mixer (ownedActions_), so a queued event's action stays valid.
+#ifndef __EMSCRIPTEN__
+    if (workerTrial_ && nActiveBindings_) {
+        auto pending = std::make_shared<WorkerState>();
+        pending->job->accumulator = accuIndex;
+        for (std::size_t i = 0; i < nActiveBindings_; ++i) {
+            auto bone = bindings_[i]->binding.workerBone(bindings_[i]->valueSize);
+            if (!bone) { pending.reset(); break; }
+            pending->owners.push_back(std::move(bone));
+            pending->bindings.push_back(bindings_[i]);
+            pending->job->properties.push_back(*bindings_[i]);
+        }
+        pendingEvaluation_ = std::move(pending);
+    }
+#endif
     updating_ = true;
-    for (std::size_t i = 0; i != nActions; ++i)
-        actions_[i]->update(t, deltaTime, timeDirection, accuIndex);
-    const std::size_t nBindings = nActiveBindings_;
-    for (std::size_t i = 0; i != nBindings; ++i)
-        bindings_[i]->apply(accuIndex);
+    try {
+        for (std::size_t i = 0; i != nActions; ++i) actions_[i]->update(t, deltaTime, timeDirection, accuIndex);
+#ifndef __EMSCRIPTEN__
+        if (pendingEvaluation_) {
+            static MixerWorker worker;
+            pendingEvaluation_->ready = worker.submit(pendingEvaluation_->job);
+            pendingMixers.push_back(this);
+            for (const auto& bone : pendingEvaluation_->owners) {
+                bone->pendingAnimation = [this] { joinEvaluation(); };
+                bone->matrixWorldNeedsUpdate = true;
+            }
+        } else
+#endif
+            for (std::size_t i = 0; i != nActiveBindings_; ++i) bindings_[i]->apply(accuIndex);
+    } catch (...) { updating_ = false; joinEvaluation(); throw; }
     updating_ = false;
+    if (!pendingEvents_.empty()) joinEvaluation();
     std::vector<MixerEvent> pending;
     pending.swap(pendingEvents_);
     cpu.stop(); // listener callbacks may run arbitrary game code or reenter update
@@ -798,6 +953,7 @@ AnimationMixer& AnimationMixer::update(double deltaTime) {
 }
 
 AnimationMixer& AnimationMixer::setTime(double t) {
+    joinEvaluation();
     time = 0;
     for (AnimationAction* action : actions_)
         action->time = 0;
@@ -805,6 +961,7 @@ AnimationMixer& AnimationMixer::setTime(double t) {
 }
 
 void AnimationMixer::uncacheClip(const AnimationClip& clip) {
+    joinEvaluation();
     ActionsForClip* forClip = actionsFor(&clip);
     if (!forClip)
         return;
@@ -825,6 +982,7 @@ void AnimationMixer::uncacheClip(const AnimationClip& clip) {
 }
 
 void AnimationMixer::uncacheRoot(const Object3D& root) {
+    joinEvaluation();
     const std::vector<ActionsForClip> snapshot = actionsByClip_; // `for in` over the keys present at the start
     for (const ActionsForClip& entry : snapshot) {
         ActionsForClip* forClip = actionsFor(entry.clip);

@@ -44,6 +44,7 @@ bool Bone::enableDeferredTransform(std::shared_ptr<std::vector<float>> stream, s
 }
 
 bool Bone::deferTransformValue(int component, const double* values) {
+    joinPendingAnimation(); // a later external write must follow queued animation publication
     if (!deferred_) return false;
     const auto* flags = ownTransformTracking();
     if (flags[2] || !matrixAutoUpdate || !matrixWorldAutoUpdate || pivot) return false;
@@ -66,6 +67,7 @@ bool Bone::deferTransformValue(int component, const double* values) {
 }
 
 void Bone::materializeLocalTransform() {
+    joinPendingAnimation();
     if (!pending_) return;
     pending_ = false;
     position.fromArray(deferredTRS_.data());
@@ -88,6 +90,7 @@ void Bone::exposeLocalTransform() {
 }
 
 void Bone::materializeWorldTransformIfPending() {
+    joinPendingAnimation();
     if (publicationCount_ == 0) return;
     joinDeferredWorldTransform();
 }

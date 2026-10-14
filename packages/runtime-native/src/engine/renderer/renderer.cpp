@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "engine/animation/mixer.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/render_target_pass.h"
 
@@ -2664,6 +2665,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             jointOutputs[rig] = jointWritten;
             jointWritten += gpuJoints_->topology[rig].count;
         }
+        animation::AnimationMixer::joinPendingEvaluations(); // publish before this direct packed-TRS consumer
         if (!gpuJointPass_ || !gpuJointPass_->remapOutputs(jointOutputs) ||
             gpu_.writeBuffer(gpuJointLocals_, 0, gpuJoints_->locals->data(), gpuJoints_->locals->size() * 4) != GpuStatus::Ok ||
             !gpuJointPass_->dispatch(encoder)) {

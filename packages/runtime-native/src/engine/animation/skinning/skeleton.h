@@ -18,6 +18,7 @@
 //   - `Skeleton` is neither copyable nor movable, matching its per-instance palette buffer.
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string_view>
 #include <vector>
@@ -40,13 +41,16 @@ class Bone : public Object3D {
                                  std::shared_ptr<bool> valid);
 
     bool deferTransformValue(int component, const double* values);
+    // Owner-thread publication hook; a worker never receives this object or its stream.
+    std::function<void()> pendingAnimation;
+    void joinPendingAnimation() { if (pendingAnimation) { auto join = pendingAnimation; join(); } }
     void materializeLocalTransform() override;
     void materializeWorldTransformIfPending();
     [[nodiscard]] bool hasDeferredTransformPublication() const override { return publication_; }
     void prepareLocalTransformWrite() override;
     void exposeLocalTransform() override;
-    [[nodiscard]] const std::array<double, 10>& deferredTransformValues() const { return deferredTRS_; }
-    [[nodiscard]] bool hasDeferredTransform() const { return pending_; }
+    [[nodiscard]] const std::array<double, 10>& deferredTransformValues() const { const_cast<Bone*>(this)->joinPendingAnimation(); return deferredTRS_; }
+    [[nodiscard]] bool hasDeferredTransform() const { return pending_ || bool(pendingAnimation); }
 
     Bone(const Bone&) = delete;
     Bone& operator=(const Bone&) = delete;
