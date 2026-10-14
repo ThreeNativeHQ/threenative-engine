@@ -1094,7 +1094,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
                 return parser.loadTextureImage(
                   textureIndex,
                   extension.source,
-                  astcLoader as unknown as Parameters<typeof parser.loadTextureImage>[2],
+                  astcLoader as NonNullable<Parameters<typeof loader.setKTX2Loader>[0]>,
                 );
               },
             };
