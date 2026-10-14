@@ -241,6 +241,7 @@ async function bakeUv2(
   atlasSize: number,
   padding: number,
   logicalPath: string,
+  astc: boolean,
 ): Promise<IAssetPassOutput> {
   const startedAt = performance.now();
   const api = await createAtlasApi();
@@ -253,7 +254,7 @@ async function bakeUv2(
     );
     writeAtlas(document, rows, atlas);
     const bake = await bakeStaticLightmap(document, atlas.width, atlas.height, padding);
-    const lightmap = await encodeLinearRgbaKtx2(bake.pixels, bake.width, bake.height);
+    const lightmap = await encodeLinearRgbaKtx2(bake.pixels, bake.width, bake.height, astc);
     return {
       auxiliaryOutputs: [
         {
@@ -263,7 +264,7 @@ async function bakeUv2(
           metadata: {
             bytesBefore: bake.pixels.byteLength,
             dilatedTexels: bake.dilatedTexels,
-            format: "etc1s",
+            format: astc ? "astc4x4" : "etc1s",
             materialTargets: bake.materialTargets,
             occludedTexels: bake.occludedTexels,
             texCoord: 1,
@@ -294,6 +295,11 @@ async function bakeUv2(
 }
 
 export function lightmapPass(options: ILightmapPassOptions): IAssetPass {
+  return createLightmapPass(options);
+}
+
+/** Compiler-only target selection; public lightmap options remain target-independent. */
+export function createLightmapPass(options: ILightmapPassOptions, astc = false): IAssetPass {
   const atlasSize = positiveInteger(options.atlasSize, "atlasSize");
   const padding = positiveInteger(options.padding, "padding");
   // BC7 (and BC1/ETC2) compress in 4x4 blocks: an atlas edge that is not a multiple of four
@@ -305,7 +311,11 @@ export function lightmapPass(options: ILightmapPassOptions): IAssetPass {
   }
   return {
     appliesTo: ["model"],
-    cacheKey: JSON.stringify({ atlasSize, padding }),
+    cacheKey: JSON.stringify({
+      atlasSize,
+      padding,
+      ...(astc ? { gpuFormat: "astc4x4-linear-v1" } : {}),
+    }),
     name: "lightmap-uv2",
     async apply(input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> {
       if (!/\.glb$/iu.test(logicalPath)) return input;
@@ -313,7 +323,7 @@ export function lightmapPass(options: ILightmapPassOptions): IAssetPass {
       assertStatic(document, logicalPath);
       const rows = primitivesOf(document);
       if (rows.length === 0) return input;
-      return bakeUv2(document, rows, atlasSize, padding, logicalPath);
+      return bakeUv2(document, rows, atlasSize, padding, logicalPath, astc);
     },
   };
 }
