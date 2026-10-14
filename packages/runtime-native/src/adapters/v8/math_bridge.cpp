@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <limits>
 #include <mutex>
 
@@ -59,6 +60,8 @@ struct MathBridge::Entry {
 };
 
 MathBridge::MathBridge(v8::Isolate* isolate, tn_context_t* context) : isolate_(isolate), context_(context) {
+    const char* bulk = std::getenv("TN_JS_MATH_BULK_READ");
+    bulkEnabled_ = bulk && std::strcmp(bulk, "1") == 0;
     for (std::size_t k = 0; k < kMathKinds; ++k) types_[k] = tn_type_id(kNames[k]);
 }
 
@@ -83,6 +86,8 @@ bool MathBridge::install(v8::Local<v8::Context> context, v8::Local<v8::Object> t
     const auto script = mystral::runtime_scripts::find("tn_math");
     v8::HandleScope scope(isolate_);
     jsContext_.Reset(isolate_, context);
+    scratch_.clear();
+    bulkReader_.Reset();
     keys_.clear();
     for (const char* name : kKeyNames) keys_.emplace_back(isolate_, literal(isolate_, name));
     used_.fill(0);
@@ -122,6 +127,12 @@ bool MathBridge::install(v8::Local<v8::Context> context, v8::Local<v8::Object> t
         !bridge->Get(context, literal(isolate_, "bytes")).ToLocal(&bytes) || !bytes->IsObject())
         return fail("the installer answered no views");
     link_.Reset(isolate_, link.As<v8::Function>());
+    if (bulkEnabled_) {
+        v8::Local<v8::Value> reader;
+        if (!bridge->Get(context, literal(isolate_, "bulkRead")).ToLocal(&reader) || !reader->IsFunction())
+            return fail("the bulk reader is missing");
+        bulkReader_.Reset(isolate_, reader.As<v8::Function>());
+    }
     tags_.fill(-1);
     const v8::Local<v8::Array> names = kinds.As<v8::Array>();
     for (uint32_t tag = 0; tag < names->Length() && tag < tags_.size(); ++tag) {
@@ -259,6 +270,26 @@ double MathBridge::read(v8::Local<v8::Object> object, int which) {
     return value->NumberValue(context).FromMaybe(std::numeric_limits<double>::quiet_NaN());
 }
 
+bool MathBridge::readBulk(v8::Local<v8::Object> object, bool quaternion, std::array<double, 16>& flat) {
+    const std::size_t index = scratchDepth_++;
+    struct Depth { std::size_t& depth; ~Depth() { --depth; } } release{scratchDepth_};
+    if (scratch_.size() <= index) {
+        auto owned = std::make_unique<Scratch>();
+        auto buffer = v8::ArrayBuffer::New(isolate_, 4 * sizeof(double));
+        owned->backing = buffer->GetBackingStore();
+        owned->view.Reset(isolate_, v8::Float64Array::New(buffer, 0, 4));
+        scratch_.push_back(std::move(owned));
+    }
+    // Reentrant getters may grow the pool; keep the pointee, not a vector element reference.
+    Scratch* owned = scratch_[index].get();
+    v8::Local<v8::Value> args[] = {object, owned->view.Get(isolate_), v8::Boolean::New(isolate_, quaternion)};
+    v8::Local<v8::Value> ignored;
+    if (!bulkReader_.Get(isolate_)->Call(isolate_->GetCurrentContext(), v8::Undefined(isolate_), 3, args).ToLocal(&ignored))
+        return false;
+    std::copy_n(static_cast<const double*>(owned->backing->Data()), quaternion ? 4 : 3, flat.begin());
+    return true;
+}
+
 namespace {
 template <typename T>
 T& as(void* object) {
@@ -302,6 +333,16 @@ void MathBridge::flatten(MathKind kind, const void* object, std::array<double, 1
 
 bool MathBridge::fill(MathKind kind, void* object, v8::Local<v8::Object> js, std::array<double, 16>& flat) {
     using namespace tn::engine;
+    if (bulkEnabled_ && (kind == MathKind::Vector3 || kind == MathKind::Quaternion)) {
+        if (!readBulk(js, kind == MathKind::Quaternion, flat)) return false;
+        if (kind == MathKind::Vector3) {
+            auto& v = as<Vector3>(object); v.x = flat[0]; v.y = flat[1]; v.z = flat[2];
+        } else {
+            auto& q = as<Quaternion>(object); q.x = flat[0]; q.y = flat[1]; q.z = flat[2]; q.w = flat[3];
+        }
+        flatten(kind, object, flat);
+        return true;
+    }
     v8::Local<v8::Context> context = isolate_->GetCurrentContext();
     const auto elements = [&](double* out, std::size_t count) {
         v8::Local<v8::Value> value;
@@ -405,6 +446,8 @@ bool MathBridge::standIn(v8::Local<v8::Value> value, Stand& stand, tn_value_t& o
     MathKind kind;
     if (!kindOf(value, kind)) return false;
     Slot& slot = acquire(kind, stand, value.As<v8::Object>());
+    // Component getters may reenter and grow this kind's slot vector.
+    const tn_handle_t handle = slot.handle;
     if (!fill(kind, slot.object.get(), value.As<v8::Object>(), stand.uses_.back().before)) {
         --used_[static_cast<std::size_t>(kind)];
         stand.uses_.pop_back();
@@ -412,7 +455,7 @@ bool MathBridge::standIn(v8::Local<v8::Value> value, Stand& stand, tn_value_t& o
     }
     out = tn_value_t{};
     out.kind = TN_VALUE_HANDLE;
-    out.handle = slot.handle;
+    out.handle = handle;
     return true;
 }
 

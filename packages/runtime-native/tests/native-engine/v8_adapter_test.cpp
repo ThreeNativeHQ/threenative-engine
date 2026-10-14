@@ -1559,6 +1559,89 @@ void jsMathViews() {
     v8::Local<v8::Context> ctx = v8::Context::New(rt.isolate);
     v8::Context::Scope contextScope(ctx);
     adapter.install(ctx, ctx->Global());
+    // AC-11: characterize observable conversion order before batching component reads.
+    {
+        const auto source = v8::String::NewFromUtf8Literal(rt.isolate, R"JS(
+            (() => {
+                const node = new Object3D();
+                node.position.set(10, 20, 30); node.updateMatrixWorld(true);
+                const cases = [];
+                for (const failure of ['get', 'coerce', 'none', 'reenter', 'reenter-vector']) {
+                    const log = [], target = new Vector3(), boom = new Error(failure);
+                    let written, answer, identity = false, caught = false, errorText;
+                    Object.defineProperty(target, '$tn', { get() { log.push('tag'); return 1; } });
+                    for (const [key, value] of [['x', 1], ['y', 2], ['z', 3]]) {
+                        Object.defineProperty(target, key, { configurable: true, get() {
+                            log.push('get:' + key);
+                            if (failure === 'get' && key === 'x') throw boom;
+                            if (failure === 'reenter' && key === 'y') {
+                                const inner = new Quaternion();
+                                log.push('inner:' + (node.getWorldQuaternion(inner) === inner) + ':' + inner.w);
+                            }
+                            if (failure === 'reenter-vector' && key === 'y') {
+                                const inner = new Vector3();
+                                log.push('inner:' + (node.getWorldPosition(inner) === inner) + ':' + inner.x);
+                            }
+                            return { valueOf() {
+                                log.push('coerce:' + key);
+                                if (failure === 'coerce' && key === 'x') throw boom;
+                                return value;
+                            } };
+                        } });
+                    }
+                    target.set = function (x, y, z) { log.push('set'); written = [x, y, z]; return this; };
+                    try { answer = node.localToWorld(target); identity = answer === target; }
+                    catch (error) { caught = error === boom; errorText = String(error); }
+                    // A fresh successful conversion checks that no pending exception leaks out.
+                    const recovery = new Vector3();
+                    const recovered = node.getWorldPosition(recovery) === recovery && recovery.x === 10;
+                    cases.push({ failure, log, written, identity, returned: answer === undefined ? 'undefined' : answer === node ? 'node' : 'other', caught, errorText, recovered });
+                }
+                return JSON.stringify(cases);
+            })()
+        )JS");
+        v8::TryCatch caught(rt.isolate);
+        v8::Local<v8::Value> result;
+        const bool ran = v8::Script::Compile(ctx, source).ToLocalChecked()->Run(ctx).ToLocal(&result);
+        CHECK(ran);
+        if (ran) {
+            v8::String::Utf8Value text(rt.isolate, result);
+            // Current ABI behavior swallows component read/coercion exceptions, continues in
+            // order, and publishes NaNs (JSON null). This characterizes compatibility, not a
+            // recommendation for exception policy. localToWorld returns its native receiver;
+            // getWorldPosition/getWorldQuaternion preserve their JS target's identity.
+            const char* expected =
+                "[{\"failure\":\"get\",\"log\":[\"tag\",\"get:x\",\"get:y\",\"coerce:y\",\"get:z\",\"coerce:z\",\"set\"],\"written\":[null,null,null],\"identity\":false,\"returned\":\"node\",\"caught\":false,\"recovered\":true},"
+                "{\"failure\":\"coerce\",\"log\":[\"tag\",\"get:x\",\"coerce:x\",\"get:y\",\"coerce:y\",\"get:z\",\"coerce:z\",\"set\"],\"written\":[null,null,null],\"identity\":false,\"returned\":\"node\",\"caught\":false,\"recovered\":true},"
+                "{\"failure\":\"none\",\"log\":[\"tag\",\"get:x\",\"coerce:x\",\"get:y\",\"coerce:y\",\"get:z\",\"coerce:z\",\"set\"],\"written\":[11,22,33],\"identity\":false,\"returned\":\"node\",\"caught\":false,\"recovered\":true},"
+                "{\"failure\":\"reenter\",\"log\":[\"tag\",\"get:x\",\"coerce:x\",\"get:y\",\"inner:true:1\",\"coerce:y\",\"get:z\",\"coerce:z\",\"set\"],\"written\":[11,22,33],\"identity\":false,\"returned\":\"node\",\"caught\":false,\"recovered\":true},"
+                "{\"failure\":\"reenter-vector\",\"log\":[\"tag\",\"get:x\",\"coerce:x\",\"get:y\",\"inner:true:10\",\"coerce:y\",\"get:z\",\"coerce:z\",\"set\"],\"written\":[11,22,33],\"identity\":false,\"returned\":\"node\",\"caught\":false,\"recovered\":true}]";
+            CHECK(std::string(*text) == expected);
+            if (std::string(*text) != expected)
+                std::fprintf(stderr, "AC11 conversion observations: %s\n", *text);
+        } else {
+            v8::String::Utf8Value error(rt.isolate, caught.Exception());
+            std::fprintf(stderr, "AC11 conversion exception: %s\n", *error);
+        }
+    }
+    {
+        const auto source = v8::String::NewFromUtf8Literal(rt.isolate, R"JS(
+            (() => {
+                const node = new Object3D(), q = new Quaternion(), log = [];
+                for (const key of ['x', 'y', 'z', 'w']) {
+                    Object.defineProperty(q, key, { get() {
+                        log.push(key);
+                        return { valueOf() { log.push('number:' + key); if (key === 'x') throw new Error('x'); return 0; } };
+                    } });
+                }
+                q.set = function (...values) { log.push('set:' + values.join()); return this; };
+                return (node.getWorldQuaternion(q) === q) + ':' + log.join('|');
+            })()
+        )JS");
+        const auto result = v8::Script::Compile(ctx, source).ToLocalChecked()->Run(ctx).ToLocalChecked();
+        v8::String::Utf8Value text(rt.isolate, result);
+        CHECK(std::string(*text) == "true:x|number:x|y|number:y|z|number:z|w|number:w|set:0,0,0,1");
+    }
     ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__crossings"),
         v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
             info.GetReturnValue().Set(static_cast<double>(tn::abi::crossings()));
