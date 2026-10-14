@@ -159,6 +159,8 @@ The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Ph
 
 ## Decisions
 
+- 2026-10-14 (execution): AC-14 production serving, build provenance and refusal checks are implemented. Focused checks pass 122 tests (Midway dashboard, desktop bundling/packaging and source-dirty guards), plus the browser acquisition fixture and playtest typecheck. The real clean-build preparation and legacy flight remain unverified, so AC-14 stays open. AC-15 discovery found that browser `fixedStep` advances simulation separately from rendering, while the native driven-clock contract already checks one update and render per tick. Couple browser updates and renders before collecting the matched baseline; the existing fixed-step flag alone is insufficient. Thread-attached `perf` instruction probes succeeded on this host. No lever verdict has been made.
+
 - 2026-10-13 (João): benchmarks have two tiers. Cheap benchmarks (the R-ladder) iterate, and final benchmarks (Midway, then other real games) decide. This PRD's speed ACs are final-tier only.
 - 2026-10-13 (lead): out of scope here, for a follow-up PRD if they still matter after AC-6:
   - the 2D canvas `globalCompositeOperation` (Midway's wear scratches paint dark specks)
@@ -193,7 +195,7 @@ The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Ph
 - [x] AC-2 [local]: the player logs `TN_FRAME_BUDGET` every 300 frames during free-run flight. proof: Midway `flight.sh desktop` log with at least 3 in-flight budget lines — Evidence: 2026-10-13, Xvfb. The AC-1 player's `flight.sh desktop` run logged 24 `TN_FRAME_BUDGET` windows, 8 of them in flight (windows 17 to 24), with parity PASS. A 120 s free run with no runner logged 27 budget lines over 2,065 frames.
 
 #### Phase 2: One honest yardstick
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `scripts/midway-bench/{flight.sh,install.sh,kpis.ts,dashboard.ts,README.md}`, `scripts/__tests__/midway-*.spec.ts`.
 **Implementation:**
 

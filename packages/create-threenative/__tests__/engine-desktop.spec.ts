@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -23,6 +23,80 @@ async function temp(prefix: string): Promise<string> {
 }
 
 describe("engine: native on desktop", () => {
+  it.each(["no-git", "no-repo", "consumer-git", "dirty-engine"])(
+    "bundles outside the engine checkout (%s)",
+    async (state) => {
+      const root = await temp("threenative-installed-bundler-");
+      const native = path.join(root, "packages/runtime-native");
+      await mkdir(path.join(native, "scripts"), { recursive: true });
+      for (const name of ["bundle-native-engine.mjs", "package-engine-desktop.mjs"])
+        await copyFile(
+          path.resolve("packages/runtime-native/scripts", name),
+          path.join(native, "scripts", name),
+        );
+      for (const name of ["src", "node_modules", "package.json"])
+        await symlink(path.resolve("packages/runtime-native", name), path.join(native, name));
+      for (const name of ["core", "create-threenative", "three-native"])
+        await symlink(path.resolve("packages", name), path.join(root, "packages", name));
+      await writeFile(
+        path.join(root, "package.json"),
+        JSON.stringify({
+          name: state === "dirty-engine" ? "threenative" : "unrelated-consumer",
+          type: "module",
+        }),
+      );
+      if (state === "consumer-git" || state === "dirty-engine") {
+        execFileSync("git", ["init", "--quiet", root]);
+        execFileSync("git", ["add", "."], { cwd: root });
+        execFileSync(
+          "git",
+          [
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.com",
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "consumer",
+          ],
+          { cwd: root },
+        );
+      }
+      if (state === "dirty-engine") {
+        const script = path.join(native, "scripts/bundle-native-engine.mjs");
+        await writeFile(script, `${readFileSync(script, "utf8")}\n// dirty source fixture\n`);
+      }
+      await writeFile(path.join(root, "game.ts"), "export default {};\n");
+      await writeFile(path.join(root, "player"), "player");
+      const result = execFileSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+      import { bundleNativeEngine } from ${JSON.stringify(path.join(native, "scripts/bundle-native-engine.mjs"))};
+      import { packageEngineDesktop } from ${JSON.stringify(path.join(native, "scripts/package-engine-desktop.mjs"))};
+      const result = await bundleNativeEngine({ entry: 'game.ts', outfile: 'game.js', boot: false });
+      if (result.engineCommit !== undefined) throw new Error('consumer HEAD stamped as engine');
+      await packageEngineDesktop({ project: '.', entry: 'game.ts', player: 'player', output: 'out' }, {
+        bundle: (options) => bundleNativeEngine({ ...options, boot: false }), cook: async () => {},
+      });
+    `,
+        ],
+        {
+          cwd: root,
+          env: { ...process.env, ...(state === "no-git" ? { PATH: root } : {}) },
+          encoding: "utf8",
+        },
+      );
+      expect(result).toContain("ThreeNative desktop artifact");
+      expect(existsSync(path.join(root, "out/game.js"))).toBe(true);
+      expect(existsSync(path.join(root, "out/midway-provenance.json"))).toBe(false);
+    },
+  );
+
   it("routes the build to the engine player, never to the legacy host's prebuilt", async () => {
     const root = await temp("threenative-engine-desktop-");
     // An installed runtime-native with no engine bundler: the build must name that, not install a prebuilt.

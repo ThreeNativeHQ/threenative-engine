@@ -385,6 +385,8 @@ async function runStandalonePlaytestInternal(
     }
     ensureRunning();
     page = await context.newPage();
+    const requestUrls = new Set<string>();
+    page.on("request", (request) => requestUrls.add(request.url()));
     ensureRunning();
     await page.addInitScript((liveClock) => {
       // Announce the runner before any game code evaluates, so an adapter can hold its loop
@@ -824,6 +826,7 @@ async function runStandalonePlaytestInternal(
       undefined,
       tone,
     );
+    report.acquisition = { requestUrls: [...requestUrls] };
     await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
       network: networkEntries,

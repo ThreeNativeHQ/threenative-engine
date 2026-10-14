@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // PRD-531's VM artifact: the game bundle for the engine player on V8, explicitly selected.
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, realpathSync, readFileSync } from "node:fs";
 import { readFile, mkdir, writeFile, rename, unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -93,6 +94,15 @@ function unboundDiagnostic(specifier, name) {
 
 /** Bundle the portable entry against native imports; publish nothing when a binding is absent. */
 export async function bundleNativeEngine({ entry, outfile, boot = true, define = {}, host = boot }) {
+  let engineCommit;
+  try {
+    const git = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    // Installed packages can sit inside somebody else's repository, or have no git at all.
+    if (realpathSync(git(["rev-parse", "--show-toplevel"])) === realpathSync(repo)
+      && JSON.parse(readFileSync(resolve(repo, "package.json"), "utf8")).name === "threenative"
+      && !git(["status", "--porcelain", "--untracked-files=normal", "--", "packages", "scripts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ":(exclude,glob)packages/**/__tests__/**", ":(exclude,glob)packages/runtime-native/tests/**", ":(exclude,glob)scripts/__tests__/**"]))
+      engineCommit = git(["rev-parse", "HEAD"]);
+  } catch { /* Ordinary bundling does not require source provenance. */ }
   entry = resolve(entry);
   outfile = resolve(outfile);
   if (entry === outfile) throw new Error("TN_NATIVE_ENGINE_OUTPUT: entry and output must differ");
@@ -212,7 +222,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
   } finally {
     await unlink(temporary).catch((error) => { if (error.code !== "ENOENT") throw error; });
   }
-  return { outfile, bytes: Buffer.byteLength(output), profile: { engine: "native", gameRuntime: "v8" } };
+  return { outfile, engineCommit, bytes: Buffer.byteLength(output), profile: { engine: "native", gameRuntime: "v8" } };
 }
 
 /**

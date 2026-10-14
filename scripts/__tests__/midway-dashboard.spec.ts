@@ -1,5 +1,7 @@
-import { spawnSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFileSync, realpathSync } from "node:fs";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
@@ -1411,34 +1413,122 @@ describe("PRD-610 browser acquisition", () => {
 });
 
 describe("measurement defect regressions", () => {
-  it.each(["", "wall-clock", "fixed-step", "unknown"])(
-    "passes browser clock %j to one invocation of the actual flight script",
+  it.each([
+    "",
+    "wall-clock",
+    "fixed-step",
+    "unknown",
+    "dev-client",
+    "missing",
+    "malformed",
+    "mismatch",
+    "stale",
+    "stale-build",
+    "stale-desktop",
+    "no-requests",
+    "unbuilt",
+    "native-production",
+    "native-dev-client",
+  ])(
+    "runs production acquisition case %j through the actual flight script",
     async (browserClock) => {
       const root = await mkdtemp(path.join(os.tmpdir(), "midway-flight-"));
       try {
+        const player = path.join(root, "desktop");
+        await mkdir(player);
+        await writeFile(path.join(root, "engine.bin"), "engine");
+        await writeFile(path.join(player, "game.js"), "bundle");
+        const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+        const commit = "a".repeat(40);
+        const provenance = {
+          buildProtocol: browserClock === "unbuilt" ? undefined : "midway-clean-build-v1",
+          engineCommit: commit,
+          artifacts: { "engine.bin": sha("engine") },
+        };
+        if (browserClock !== "missing")
+          await writeFile(
+            path.join(root, "midway-provenance.json"),
+            browserClock === "malformed" ? "{}" : JSON.stringify(provenance),
+          );
+        await writeFile(
+          path.join(player, "midway-provenance.json"),
+          JSON.stringify({
+            buildProtocol: "midway-clean-build-v1",
+            engineCommit: browserClock === "mismatch" ? "b".repeat(40) : commit,
+            artifacts: { "game.js": sha("bundle") },
+          }),
+        );
+        if (browserClock === "stale") await writeFile(path.join(root, "engine.bin"), "changed");
+        await mkdir(path.join(root, "dist"));
+        await writeFile(path.join(root, "dist/game.js"), "production");
+        await writeFile(
+          path.join(root, "dist.build-report.json"),
+          JSON.stringify({
+            schemaVersion: 1,
+            target: "web",
+            artifact: { kind: "directory", sha256: sha(`game.js ${sha("production")}`) },
+          }),
+        );
+        if (browserClock === "stale-build")
+          await writeFile(path.join(root, "dist/game.js"), "changed");
+        if (browserClock === "stale-desktop")
+          await writeFile(path.join(player, "game.js"), "changed");
+        const acquisition =
+          browserClock === "no-requests"
+            ? undefined
+            : {
+                requestUrls: [
+                  ["dev-client", "native-dev-client"].includes(browserClock)
+                    ? "http://localhost:5173/@vite/client"
+                    : "http://localhost:5173/assets/game.js",
+                ],
+              };
+        const terminalReport = JSON.parse(
+          report(browserClock === "fixed-step" ? "fixed-step" : "wall-clock"),
+        );
+        await writeFile(
+          path.join(root, "fixture.report"),
+          `\n${JSON.stringify({ ...terminalReport, acquisition }, null, 2)}`,
+        );
         const bin = path.join(root, "node_modules/.bin");
         await mkdir(bin, { recursive: true });
         const runner = path.join(bin, "threenative-playtest");
         const pnpm = path.join(bin, "pnpm");
         await writeFile(
           runner,
-          '#!/bin/sh\nprintf "invocation\\n" >> "$ARGV_LOG"\nprintf "%s\\n" "$@" >> "$ARGV_LOG"\npnpm --version\n',
+          '#!/bin/sh\nprintf "invocation\\n" >> "$ARGV_LOG"\nprintf "%s\\n" "$@" >> "$ARGV_LOG"\nwhile [ "$#" -gt 0 ]; do if [ "$1" = --artifacts ]; then shift; OUT=$1; elif [ "$1" = --server-command ]; then shift; SERVER=$1; fi; shift; done\nPORT=54321 sh -c "$SERVER" || exit $?\ncat fixture.report\n',
         );
-        await writeFile(pnpm, "#!/bin/sh\nexit 0\n");
+        await writeFile(
+          pnpm,
+          '#!/bin/sh\nprintf "%s\\n" "$*" >> "$BUILD_LOG"\n[ "$2" != tsx ] || echo "PARITY PASS"\nexit 0\n',
+        );
         await chmod(runner, 0o755);
         await chmod(pnpm, 0o755);
         const argvLog = path.join(root, "argv.log");
         const result = spawnSync(
           "sh",
-          [path.resolve("scripts/midway-bench/flight.sh"), "legacy", "smoke"],
+          [
+            path.resolve("scripts/midway-bench/flight.sh"),
+            browserClock.startsWith("native-") ? "native" : "legacy",
+            "smoke",
+          ],
           {
             encoding: "utf8",
             timeout: 10000,
             env: {
               ...process.env,
               PATH: `${bin}:${process.env.PATH}`,
-              MIDWAY_BROWSER_CLOCK: browserClock,
+              MIDWAY_BROWSER_CLOCK: ["", "wall-clock", "fixed-step", "unknown"].includes(
+                browserClock,
+              )
+                ? browserClock
+                : "wall-clock",
+              MIDWAY_PLAYER_DIR: player,
+              MIDWAY_PARITY_REFS: "reference-a reference-b",
+              CASE: browserClock,
+              BUILD_LOG: path.join(root, "build.log"),
               MIDWAY_LEGACY_DIR: root,
+              MIDWAY_NATIVE_DIR: root,
               MIDWAY_RUNS: path.join(root, "runs"),
               MIDWAY_SCENARIO: path.resolve("scripts/midway-bench/flight-bench.playtest.json"),
               ARGV_LOG: argvLog,
@@ -1454,7 +1544,43 @@ describe("measurement defect regressions", () => {
           await expect(readFile(argvLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
           return;
         }
+        if (
+          [
+            "dev-client",
+            "missing",
+            "malformed",
+            "mismatch",
+            "stale",
+            "stale-build",
+            "stale-desktop",
+            "no-requests",
+            "unbuilt",
+            "native-dev-client",
+          ].includes(browserClock)
+        ) {
+          expect(result.status, result.stdout + result.stderr).not.toBe(0);
+          expect(result.stdout + result.stderr).toMatch(
+            /provenance|commit|stale|vite.client|acquisition/i,
+          );
+          return;
+        }
         expect(result.status, result.stdout + result.stderr).toBe(0);
+        expect(
+          (await readFile(path.join(root, "build.log"), "utf8")).startsWith(
+            "run build:web\nexec vite preview --host 127.0.0.1 --port 54321 --strictPort\n",
+          ),
+        ).toBe(true);
+        const flightLog = await readFile(
+          path.join(
+            root,
+            `runs/smoke-${browserClock.startsWith("native-") ? "native" : "legacy"}/run.log`,
+          ),
+          "utf8",
+        );
+        expect(flightLog).toContain(`engineCommit=${commit}`);
+        expect(run("smoke-legacy", flightLog).clock).toBe(
+          browserClock === "fixed-step" ? "fixed-step" : "wall-clock",
+        );
         const argv = (await readFile(argvLog, "utf8")).trimEnd().split("\n");
         expect(argv).toEqual([
           "invocation",
@@ -1466,11 +1592,275 @@ describe("measurement defect regressions", () => {
           "180000",
           "--headed",
           "--artifacts",
-          path.join(root, "runs/smoke-legacy"),
+          path.join(root, `runs/smoke-${browserClock.startsWith("native-") ? "native" : "legacy"}`),
           ...(browserClock === "fixed-step" ? [] : ["--live-clock"]),
           "--server-command",
-          "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
+          "pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort",
         ]);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([
+    "packages/core/__tests__/source.spec.ts",
+    "packages/runtime-native/tests/native-engine/compute_test.cpp",
+    "scripts/__tests__/source.spec.ts",
+    "packages/runtime-native/src/engine/source.cpp",
+  ])("scopes both provenance guards to production inputs: %s", async (file) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "midway-source-scope-"));
+    try {
+      await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+      await writeFile(path.join(root, "package.json"), '{"name":"threenative"}');
+      await writeFile(path.join(root, file), "committed");
+      execFileSync("git", ["init", "--quiet", root]);
+      execFileSync("git", ["add", "."], { cwd: root });
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=Fixture",
+          "-c",
+          "user.email=fixture@example.com",
+          "commit",
+          "--quiet",
+          "-m",
+          "source",
+        ],
+        { cwd: root },
+      );
+      const commit = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: root,
+        encoding: "utf8",
+      }).trim();
+      const install = await readFile(path.resolve("scripts/midway-bench/install.sh"), "utf8");
+      const bundler = await readFile(
+        path.resolve("packages/runtime-native/scripts/bundle-native-engine.mjs"),
+        "utf8",
+      );
+      const installGuard = install.match(/const sourceCommit = \(\) => \{[\s\S]*?\n    \};/)?.[0];
+      const bundleGuard = bundler.match(
+        /  let engineCommit;[\s\S]*?(?=  entry = resolve\(entry\);)/,
+      )?.[0];
+      expect(installGuard).toBeDefined();
+      expect(bundleGuard).toBeDefined();
+      const context = {
+        repo: root,
+        execFileSync,
+        readFileSync,
+        realpathSync,
+        path,
+        resolve: path.resolve,
+        git: (args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim(),
+      };
+      const production = file.includes("/src/");
+      // Exercise modified, staged and untracked inputs with the real git pathspecs.
+      for (const state of ["modified", "staged", "untracked"]) {
+        if (state === "untracked")
+          execFileSync("git", ["rm", "--cached", "--force", file], { cwd: root });
+        await writeFile(path.join(root, file), "dirty");
+        if (state === "staged") execFileSync("git", ["add", file], { cwd: root });
+        const sourceCommit = () =>
+          runInNewContext(`(() => { ${installGuard}; return sourceCommit(); })()`, context);
+        if (production) expect(sourceCommit).toThrow("clean owning engine checkout");
+        else expect(sourceCommit()).toBe(commit);
+        expect(runInNewContext(`(() => { ${bundleGuard}; return engineCommit; })()`, context)).toBe(
+          production ? undefined : commit,
+        );
+        expect(await readFile(path.join(root, file), "utf8")).toBe("dirty");
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["dirty", "build-failure"])(
+    "refuses a source/build provenance gap: %s",
+    async (state) => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "midway-dirty-source-"));
+      try {
+        await mkdir(path.join(root, "scripts/midway-bench"), { recursive: true });
+        await mkdir(path.join(root, "packages"));
+        await mkdir(path.join(root, "bin"));
+        await writeFile(
+          path.join(root, "bin/pnpm"),
+          '#!/bin/sh\necho "fixture build failed" >&2\nexit 47\n',
+        );
+        await chmod(path.join(root, "bin/pnpm"), 0o755);
+        await copyFile(
+          path.resolve("scripts/midway-bench/install.sh"),
+          path.join(root, "scripts/midway-bench/install.sh"),
+        );
+        await writeFile(path.join(root, "package.json"), '{"name":"threenative"}');
+        await writeFile(path.join(root, "packages/engine.cpp"), "committed");
+        execFileSync("git", ["init", "--quiet", root]);
+        execFileSync("git", ["add", "."], { cwd: root });
+        execFileSync(
+          "git",
+          [
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.com",
+            "commit",
+            "--quiet",
+            "-m",
+            "source",
+          ],
+          { cwd: root },
+        );
+        if (state === "dirty") await writeFile(path.join(root, "packages/engine.cpp"), "dirty");
+        const result = spawnSync("sh", [path.join(root, "scripts/midway-bench/install.sh"), root], {
+          encoding: "utf8",
+          timeout: 10000,
+          env: {
+            ...process.env,
+            PATH: `${path.join(root, "bin")}:${process.env.PATH}`,
+            MIDWAY_PACKS: path.join(root, "packs"),
+          },
+        });
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain(
+          state === "dirty" ? "clean owning engine checkout" : "fixture build failed",
+        );
+        await expect(
+          readFile(path.join(root, "packs/midway-provenance.json")),
+        ).rejects.toMatchObject({ code: "ENOENT" });
+        expect(await readFile(path.join(root, "packages/engine.cpp"), "utf8")).toBe(
+          state === "dirty" ? "dirty" : "committed",
+        );
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each(["missing", "stale", "valid"])(
+    "requires genuine cached package provenance for --no-pack: %s",
+    async (state) => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "midway-install-"));
+      try {
+        const packs = path.join(root, "packs");
+        const bin = path.join(root, "bin");
+        await mkdir(packs);
+        await mkdir(bin);
+        await mkdir(path.join(root, "node_modules/three"), { recursive: true });
+        await writeFile(path.join(root, "node_modules/three/package.json"), "{}");
+        await writeFile(path.join(root, "pnpm-lock.yaml"), "lock");
+        await writeFile(
+          path.join(root, "package.json"),
+          JSON.stringify({ dependencies: { react: "19.2.0", three: "0.185.1" } }),
+        );
+        const artifacts: Record<string, string> = {};
+        for (const name of [
+          "threenative-core",
+          "threenative-physics",
+          "threenative-ui",
+          "threenative-assets",
+          "threenative-playtest",
+          "threenative-runtime-native",
+          "create-threenative",
+          "three",
+        ]) {
+          const file = `${name}-1.0.0.tgz`;
+          await writeFile(path.join(packs, file), "packed");
+          artifacts[file] = createHash("sha256").update("packed").digest("hex");
+        }
+        const engineCommit = "c".repeat(40);
+        if (state !== "missing")
+          await writeFile(
+            path.join(packs, "midway-provenance.json"),
+            JSON.stringify({ buildProtocol: "midway-clean-build-v1", engineCommit, artifacts }),
+          );
+        if (state === "stale") await writeFile(path.join(packs, "three-1.0.0.tgz"), "changed");
+        await writeFile(path.join(bin, "pnpm"), "#!/bin/sh\nexit 0\n");
+        await chmod(path.join(bin, "pnpm"), 0o755);
+        const result = spawnSync(
+          "sh",
+          [path.resolve("scripts/midway-bench/install.sh"), root, "--no-pack"],
+          {
+            encoding: "utf8",
+            timeout: 10000,
+            env: { ...process.env, MIDWAY_PACKS: packs, PATH: `${bin}:${process.env.PATH}` },
+          },
+        );
+        if (state !== "valid") {
+          expect(result.status).not.toBe(0);
+          expect(result.stderr).toMatch(/provenance/);
+          return;
+        }
+        expect(result.status, result.stdout + result.stderr).toBe(0);
+        const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+        expect(pkg.dependencies.react).toBe("19.2.0");
+        expect(pkg.dependencies.three).toBe(`file:${path.join(packs, "three-1.0.0.tgz")}`);
+        const receipt = JSON.parse(
+          await readFile(path.join(root, "midway-provenance.json"), "utf8"),
+        );
+        expect(receipt.engineCommit).toBe(engineCommit);
+        expect(receipt.artifacts["node_modules/three"]).toMatch(/^[a-f0-9]{64}$/);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each(["valid", "stale-player", "wrong-commit", "unbuilt"])(
+    "checks desktop build provenance: %s",
+    async (state) => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "midway-package-"));
+      try {
+        const script = path.resolve("packages/runtime-native/scripts/package-engine-desktop.mjs");
+        const { packageEngineDesktop } = await import(script);
+        const player = path.join(root, "player");
+        const output = path.join(root, "desktop");
+        const engineCommit = "d".repeat(40);
+        await writeFile(player, "player");
+        const buildReceipt = path.join(root, "build-receipt.json");
+        await writeFile(
+          buildReceipt,
+          JSON.stringify({
+            buildProtocol: state === "unbuilt" ? undefined : "midway-clean-build-v1",
+            engineCommit: state === "wrong-commit" ? "e".repeat(40) : engineCommit,
+            playerSha256: createHash("sha256")
+              .update(state === "stale-player" ? "old-player" : "player")
+              .digest("hex"),
+          }),
+        );
+        const packaging = packageEngineDesktop(
+          { project: root, entry: "unused", player, output, buildReceipt },
+          {
+            bundle: async ({ outfile }: { outfile: string }) => {
+              await writeFile(outfile, "bundle");
+              return { engineCommit };
+            },
+            cook: async () => {
+              await mkdir(path.join(output, "native"));
+              await writeFile(path.join(output, "native/assets.tnpk"), "assets");
+            },
+          },
+        );
+        if (state !== "valid") {
+          await expect(packaging).rejects.toThrow("TN_ENGINE_PROVENANCE_INVALID");
+          await expect(readFile(path.join(output, "midway-provenance.json"))).rejects.toMatchObject(
+            { code: "ENOENT" },
+          );
+          return;
+        }
+        await packaging;
+        const verify = () =>
+          spawnSync(
+            "sh",
+            [path.resolve("scripts/midway-bench/install.sh"), output, "--verify", output],
+            { encoding: "utf8", timeout: 10000 },
+          );
+        const valid = verify();
+        expect(valid.status, valid.stderr).toBe(0);
+        expect(valid.stdout.trim()).toBe(engineCommit);
+        await writeFile(path.join(output, "native/new.bin"), "added");
+        const stale = verify();
+        expect(stale.status).not.toBe(0);
+        expect(stale.stderr).toContain("stale directory provenance");
       } finally {
         await rm(root, { recursive: true, force: true });
       }

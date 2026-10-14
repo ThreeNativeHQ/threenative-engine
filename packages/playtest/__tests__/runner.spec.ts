@@ -1211,9 +1211,14 @@ test("browser runner times out a resource wait with the last observation", async
 
 test("served fixture reports the production protocol limits and valid capabilities", async () => {
   const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
-  const server = createServer((_request, response) => {
+  const server = createServer((request, response) => {
+    if (request.url === "/@vite/client") {
+      response.writeHead(200, { "content-type": "text/javascript" });
+      response.end("/* acquisition fixture */");
+      return;
+    }
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    response.end(fixtureHtml);
+    response.end(`${fixtureHtml}<script src="/@vite/client"></script>`);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -1265,6 +1270,9 @@ test("served fixture reports the production protocol limits and valid capabiliti
       url: `http://127.0.0.1:${address.port}`,
     });
     expect(report.pass).toBe(true);
+    expect(report.acquisition?.requestUrls).toContain(`http://127.0.0.1:${address.port}/`);
+    expect(report.acquisition?.requestUrls).toContain(`http://127.0.0.1:${address.port}/@vite/client`);
+    expect(new Set(report.acquisition?.requestUrls).size).toBe(report.acquisition?.requestUrls.length);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => error === undefined ? resolve() : reject(error)),

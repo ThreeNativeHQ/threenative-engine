@@ -41,11 +41,22 @@ OUT=$RUNS/$TAG-$ARM
 SCENARIO=${MIDWAY_SCENARIO:-$HERE/flight-bench.playtest.json}
 [ "$ARM" = desktop ] && SCENARIO=${MIDWAY_SCENARIO:-$HERE/flight-bench-desktop.playtest.json}
 mkdir -p "$OUT"
+: > "$OUT/run.log"
 # The host's load around the run: the dashboard leaves a run flown on a loaded host out of its ms trends.
 loadnow() { echo "load $(cut -d' ' -f1 /proc/loadavg)" >> "$OUT/host-load.txt"; }
 echo "cores $(nproc)" > "$OUT/host-load.txt"
 loadnow
+LEGACY=${MIDWAY_LEGACY_DIR:?set MIDWAY_LEGACY_DIR for matched provenance}
+NATIVE=${MIDWAY_NATIVE_DIR:?set MIDWAY_NATIVE_DIR for matched provenance}
+COMMIT=$(sh "$HERE/install.sh" "$LEGACY" --verify "${MIDWAY_PLAYER_DIR:-}" "$NATIVE") || exit 2
+BUILD_MODE=production
+[ "$ARM" = desktop ] && BUILD_MODE=desktop-bundle
+echo "arm=$ARM buildMode=$BUILD_MODE engineCommit=$COMMIT" > "$OUT/run.log"
 cd "$GAME" || exit 2
+if [ "$ARM" != desktop ]; then
+  pnpm run build:web >> "$OUT/run.log" 2>&1 || { tail -30 "$OUT/run.log" >&2; exit 2; }
+  sh "$HERE/install.sh" "$GAME" --verify-web "${MIDWAY_PLAYER_DIR:-}" >> "$OUT/run.log" 2>&1 || { tail -30 "$OUT/run.log" >&2; exit 2; }
+fi
 LOCK=${TN_HEAVY_LOCK:+flock $TN_HEAVY_LOCK}
 GPU_ENV=${TN_VK_ICD:+VK_ICD_FILENAMES=$TN_VK_ICD}
 # The runner paints on a private Xvfb unless TN_PLAYTEST_HOST_DISPLAY asks for the session's display.
@@ -57,20 +68,33 @@ if [ "$ARM" = desktop ]; then
   $LOCK env $NO_DISPLAY $GPU_ENV ${TN_VK_LIB:+LD_LIBRARY_PATH=$TN_VK_LIB} \
     node "$REPO/packages/playtest/dist/runner/cli.js" "$SCENARIO" --target desktop \
     --executable "$GAME/tn-native-engine-player-v8" --host-arg "$GAME/game.js" \
-    --headed --timeout 240000 --artifacts "$OUT" > "$OUT/run.log" 2>&1
+    --headed --timeout 240000 --artifacts "$OUT" >> "$OUT/run.log" 2>&1
 else
 # shellcheck disable=SC2086
 $LOCK env $NO_DISPLAY $GPU_ENV ${TN_VK_LIB:+LD_LIBRARY_PATH=$TN_VK_LIB} \
   node_modules/.bin/threenative-playtest --scenario "$SCENARIO" \
   --browser-recipe webgpu --timeout 180000 --headed --artifacts "$OUT" \
   $BROWSER_CLOCK_ARG \
-  --server-command 'pnpm dev --host 127.0.0.1 --port $PORT --strictPort' > "$OUT/run.log" 2>&1
+  --server-command 'pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort' >> "$OUT/run.log" 2>&1
 fi
 STATUS=$?
 loadnow
 echo "$ARM exit $STATUS"
 tail -30 "$OUT/run.log"
 [ "$STATUS" = 0 ] || exit "$STATUS"
+sh "$HERE/install.sh" "$LEGACY" --verify "${MIDWAY_PLAYER_DIR:-}" "$NATIVE" > /dev/null 2>> "$OUT/run.log" || { tail -30 "$OUT/run.log" >&2; exit 2; }
+if [ "$ARM" != desktop ]; then
+  sh "$HERE/install.sh" "$GAME" --verify-web "${MIDWAY_PLAYER_DIR:-}" > /dev/null 2>> "$OUT/run.log" || { tail -30 "$OUT/run.log" >&2; exit 2; }
+  node --input-type=module - "$OUT/run.log" >> "$OUT/run.log" 2>&1 <<'JS' || { tail -30 "$OUT/run.log" >&2; exit 2; }
+import { readFileSync } from "node:fs";
+const log = readFileSync(process.argv[2], "utf8");
+const start = log.lastIndexOf('\n{');
+const report = JSON.parse(log.slice(start < 0 ? 0 : start + 1));
+const requests = report.acquisition?.requestUrls;
+if (!Array.isArray(requests) || !requests.length || requests.some((url) => typeof url !== "string")) throw new Error("missing/malformed acquisition request evidence");
+if (requests.some((url) => decodeURIComponent(new URL(url).pathname).endsWith("/@vite/client"))) throw new Error("production flight loaded /@vite/client");
+JS
+fi
 if [ "$ARM" != legacy ]; then
   # shellcheck disable=SC2086
   (cd "$REPO" && pnpm exec tsx scripts/midway-bench/parity.ts "$OUT" $MIDWAY_PARITY_REFS) | tee "$OUT/parity.json" | tail -1

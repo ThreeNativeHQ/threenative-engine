@@ -15,26 +15,80 @@ with the engine arm graded against the three.js arm before any timing counts.
 ## Setup
 
 Two copies of the same game commit outside every repo: one with `engine: "legacy"` and one with
-`engine: "native"`. Never edit the game's gameplay source. Build the packages, then install:
+`engine: "native"`. Never edit the game's gameplay source. Configure the builds as described below,
+then rebuild and install:
 
 ```sh
-MIDWAY_PACKS=... sh scripts/midway-bench/install.sh "$MIDWAY_NATIVE_DIR"
+export MIDWAY_PACKS="$HOME/.cache/tmp-tn/midway-packs"
+sh scripts/midway-bench/install.sh "$MIDWAY_LEGACY_DIR"
+sh scripts/midway-bench/install.sh "$MIDWAY_NATIVE_DIR" --no-pack
 ```
 
-`pnpm pack` ships each package's existing `dist`, so rebuild `packages/create-threenative`
-(`pnpm exec tsup --config tsup.config.ts`) after a `three-native` change, and the Wasm host
-(`cmake --build packages/runtime-native/build/wasm --target tn-native-engine-web`) after a C++ change.
+`install.sh` now rebuilds before packing: `pnpm build`, `node packages/runtime-native/scripts/build-native-ui-overlay.mjs`,
+then clean CMake builds of `tn-native-engine-web` and `tn-native-engine-player-v8`. It refuses dirty engine/package/tooling
+sources, an unrelated Git root, or CMake caches configured from another checkout. It checks the
+source revision again after building and packing. Preserve unrelated edits (including compute
+tests); prepare from a clean, committed revision instead of resetting them.
+
+The two CMake build directories must already be configured with their dependencies installed.
+From the clean engine checkout, configure them if needed, then run the installation commands above:
+
+```sh
+cmake --preset wasm -S packages/runtime-native
+cmake --preset tn-linux -S packages/runtime-native -B packages/runtime-native/build/tn-engine-ui \
+  -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON
+```
+
+`$MIDWAY_PACKS/midway-provenance.json` is written only after successful builds and packing. Its
+`engineCommit` covers the clean engine source revision used by those commands; `buildProtocol`
+names this rebuild protocol, and `playerSha256` binds the freshly built player. Tarball hashes
+bind the packed bytes. Installation verifies them and records the same commit/protocol with
+installed engine/three package hashes, `package.json` and the game lockfile. It packs the checkout's
+patched upstream `three`, preserving the game's other dependency declarations. `--no-pack` requires
+this build receipt; historical HEAD-only receipts must be rebuilt, not relabeled. Receipts assume
+the configured dependency/toolchain inputs are trusted; they do not attest their compiler revision.
+
+Repackage desktop through the existing entrypoint with the build receipt. It requires the
+bundler's clean source commit to match the receipt and the player bytes to match its build hash.
+For the existing local Midway copies:
+
+```sh
+export MIDWAY_LEGACY_DIR="$HOME/.cache/tmp-tn/midway-legacy"
+export MIDWAY_NATIVE_DIR="$HOME/.cache/tmp-tn/midway-native"
+export MIDWAY_PLAYER_DIR="$HOME/.cache/tmp-tn/midway-player-ac14"
+node packages/runtime-native/scripts/package-engine-desktop.mjs \
+  --project "$MIDWAY_NATIVE_DIR" --entry "$MIDWAY_NATIVE_DIR/src/game.ts" \
+  --player packages/runtime-native/build/tn-engine-ui/tn-native-engine-player-v8 \
+  --build-receipt "$MIDWAY_PACKS/midway-provenance.json" \
+  --ui "$MIDWAY_NATIVE_DIR/.threenative/build/ui" --output "$MIDWAY_PLAYER_DIR"
+```
+
+Both browser copies and the desktop package must carry matching commit receipts before any arm
+launches. The desktop commit covers the bundler source plus the rebuilt player validated against
+the preparation receipt. Artifact hashes cover the packaged player, game bundle, assets and UI;
+they do not attest the game's source revision. Packaging without `--build-receipt` still works,
+including without Git or inside an unrelated consumer repository, but emits no benchmark receipt.
+Old desktop packages cannot acquire provenance at flight time: rebuild and repackage them.
 
 ## Run
 
 Take two legacy runs first. They are the reference, and they must agree with each other.
 
 ```sh
-export MIDWAY_LEGACY_DIR=... MIDWAY_NATIVE_DIR=...
+export MIDWAY_LEGACY_DIR=... MIDWAY_NATIVE_DIR=... MIDWAY_PLAYER_DIR=...
 sh scripts/midway-bench/flight.sh legacy a
 sh scripts/midway-bench/flight.sh legacy b
 MIDWAY_PARITY_REFS="$MIDWAY_RUNS/a-legacy $MIDWAY_RUNS/b-legacy" sh scripts/midway-bench/flight.sh native c1
 ```
+
+Every browser flight runs `pnpm run build:web`, validates `dist` against
+`dist.build-report.json`, then serves it with `pnpm exec vite preview` on the runner's port.
+`run.log` names the arm, production build mode, recorded engine commit and artifact SHA-256.
+Changed package/build bytes, missing or malformed receipts and mismatched commits fail closed.
+The runner records each distinct actual browser request URL once in the terminal report's
+`acquisition.requestUrls`, without trace snapshots or screenshots. Missing/malformed acquisition
+evidence or any request for `/@vite/client` rejects the run. The browser clock choice still forwards
+unchanged (`wall-clock` by default, `fixed-step` for visual references).
 
 `flight.sh` exits 3 when the parity check fails: do not time that build. Optional env:
 `TN_HEAVY_LOCK` (a flock file shared with other GPU lanes), `TN_VK_ICD` and `TN_VK_LIB` (a per-process
