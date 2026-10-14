@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +12,8 @@ import { bundleNativeEngine } from "../../scripts/bundle-native-engine.mjs";
 
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const executable = process.argv[2];
-assert(executable, "Usage: player-frame-per-present.mjs <tn-native-engine-player-v8> [--cpu-profile] [--main-thread-cpu]");
+assert(executable, "Usage: player-frame-per-present.mjs <tn-native-engine-player-v8> [--cpu-profile] [--main-thread-cpu] [--driven-clock]");
+const drivenClock = process.argv.includes("--driven-clock");
 const cpuProfile = process.argv.includes("--cpu-profile");
 const mainThreadCpu = process.argv.includes("--main-thread-cpu");
 const work = await mkdtemp(resolve(native, "build/player-frame-per-present-"));
@@ -25,6 +26,9 @@ await writeFile(entry, `
 import { Scene, PerspectiveCamera, Object3D, AnimationMixer, AnimationClip, VectorKeyframeTrack } from "three";
 globalThis.tn.scene = new Scene();
 globalThis.tn.camera = new PerspectiveCamera();
+${drivenClock ? `const player = new Object3D(); player.name = "player";
+globalThis.tn.scene.add(player);
+globalThis.tn.onUpdate(() => { player.position.x++; });` : ""}
 const mixer = new AnimationMixer(new Object3D());
 mixer.clipAction(new AnimationClip("meter", 1, [
   new VectorKeyframeTrack(".position", [0, 1], [0, 0, 0, 1, 0, 0]),
@@ -34,7 +38,7 @@ const frame = () => {
   mixer.update(1 / 120);
   mixer.update(1 / 120);
   for (let i = 0; i < 2; i++) globalThis.tn.scene.__cullProjected(globalThis.tn.camera, true, 1, 0, false);
-  const end = performance.now() + 25;
+  const end = performance.now() + ${drivenClock ? 0 : 25};
   while (performance.now() < end);
   if (++calls <= 40) globalThis.tn.log("FRAME_CALLBACK " + calls);
   requestAnimationFrame(frame);
@@ -47,6 +51,58 @@ const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy
 delete env.TN_PLAYER_MAIN_THREAD_CPU;
 if (mainThreadCpu) env.TN_PLAYER_MAIN_THREAD_CPU = "1";
 delete env.TN_PLAYTEST_MAILBOX_ROOT;
+if (drivenClock) {
+  const mailbox = resolve(work, "mailbox");
+  mkdirSync(mailbox);
+  env.TN_PLAYTEST_MAILBOX_ROOT = mailbox;
+  const request = resolve(mailbox, "tn-playtest-request.json");
+  const response = resolve(mailbox, "tn-playtest-response.json");
+  const child = spawn(resolve(executable), [outfile], { env });
+  const stopped = once(child, "close");
+  let output = "";
+  child.stdout.on("data", (chunk) => { output += chunk; });
+  child.stderr.on("data", (chunk) => { output += chunk; });
+  const answer = async (id) => {
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline && child.exitCode === null && child.signalCode === null) {
+      if (existsSync(response)) {
+        const text = readFileSync(response, "utf8");
+        if (text.includes(`"id":"${id}"`)) { unlinkSync(response); return JSON.parse(text); }
+      }
+      await new Promise((done) => setTimeout(done, 20));
+    }
+    assert.fail(`missing mailbox answer ${id}: ${output.slice(-2000)}`);
+  };
+  let advanced;
+  let sampled;
+  try {
+    await answer("ready");
+    writeFileSync(request, JSON.stringify({ id: "advance", method: "advance", argument: 2500 }));
+    advanced = await answer("advance");
+    writeFileSync(request, JSON.stringify({ id: "sample", method: "sample", argument: { resources: ["state"] } }));
+    sampled = await answer("sample");
+  } finally {
+    child.kill();
+    const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
+    const [, signal] = await stopped;
+    clearTimeout(timer);
+    assert.notEqual(signal, "SIGKILL", "driven player must stop within five seconds");
+  }
+  assert.equal(advanced.error, undefined);
+  assert.equal(sampled.error, undefined);
+  assert.equal(advanced.result.ticks, 2500);
+  assert.equal(advanced.result.clock.tick, 2500, "host clock must count every driven update");
+  assert.equal(sampled.result.clock.tick, 2500, "sample clock must share the driven clock");
+  assert.equal(sampled.result.resources.state.tick, 2500, "game resource must share the driven clock");
+  assert.equal(sampled.result.resources.state.playerX, 2500, "each requested tick must execute one game update");
+  const frames = output.split("\n").filter((line) => line.startsWith("TN_PLAYER_FRAME:"))
+    .map((line) => JSON.parse(line.slice("TN_PLAYER_FRAME:".length))).filter((frame) => frame.updates === 1);
+  assert.equal(frames.length, 2500, "metrics mode must render each driven update");
+  frames.forEach((frame, index) => assert.equal(frame.tick, index + 1, "frame clock must advance exactly once per update"));
+  console.log("PASS 2500 driven updates share authoritative host, sample, resource and rendered-frame ticks");
+  rmSync(work, { recursive: true, force: true });
+  process.exit(0);
+}
 const child = spawn(resolve(executable), [outfile], { env });
 const stopped = once(child, "close");
 let output = "";

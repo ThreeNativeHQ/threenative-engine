@@ -499,6 +499,7 @@ struct Session {
     double gpuThreadCpuMs = -1;  // the GPU thread's CPU for the previous frame's present job
     double gpuJobCpuMs = -1;     // written by that job; copied above only after a wait
     world::FixedStepClock clock{kTickStep, 5};
+    uint64_t drivenTicks = 0;
     double nowMs = 0;
     std::unique_ptr<inspect::Endpoint> endpoint;
     std::unique_ptr<Mailbox> mailbox;
@@ -556,6 +557,7 @@ struct Session {
         if (metrics) game.renderEachTick = true;
         if (spans) gameSpans = {};
     }
+    uint64_t tick() const { return runner ? drivenTicks : clock.tick(); }
     int initialize();
     int step();
     ~Session();
@@ -633,11 +635,10 @@ int Session::initialize() {
     host.scene = game.scene;
     host.gameRuntime = game.gameRuntime;
     host.observe = game.observe;
-    host.tick = [this] { return clock.tick(); };
+    host.tick = [this] { return tick(); };
     host.step = [this] {
-        // One fixed update per driven tick, so the reported clock is the engine's own.
-        nowMs += 1000.0 * kTickStep;
-        clock.advance(nowMs);
+        // A runner requests updates directly; the wall-time accumulator may bank zero or two.
+        ++drivenTicks;
         update(kTickStep);
         if (game.renderEachTick && renderFrame)
             renderFrame();
@@ -662,7 +663,7 @@ int Session::initialize() {
             const auto& stats = renderer->lastFrame();
             return json::Value::makeObject({{"main", pass(stats.mainSkinned)}, {"shadow", pass(stats.shadowSkinned)}});
         }
-        return game.resource ? game.resource(id, clock.tick()) : json::Value::makeNull();
+        return game.resource ? game.resource(id, tick()) : json::Value::makeNull();
     };
     endpoint = std::make_unique<inspect::Endpoint>(std::move(host));
     if (game.attach)
@@ -856,7 +857,7 @@ int Session::initialize() {
             const double duration = updateMs + elapsed(frameBegin);
             auto sample = frameTiming(gameMs, renderMs, duration - presentMs, duration,
                                       (game.bridgeCalls ? game.bridgeCalls() : 0) - previousCrossings,
-                                      clock.tick(), updateTicks, gameCpuMs,
+                                      tick(), updateTicks, gameCpuMs,
                                       cpuFrameBegin >= 0 ? updateCpuMs + threadCpuMs() - cpuFrameBegin - presentCpuMs : -1,
                                       presentTimed ? presentCpuMs : -1, renderCpuMs);
             if (presentTimed && renderCpuMs >= 0) {
