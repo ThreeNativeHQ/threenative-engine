@@ -1309,6 +1309,7 @@ describe("deliberate winner lock", () => {
   it("rejects a pinned run with malformed world counters while retaining CPU samples", () => {
     const { list, lock } = fixture();
     const original = list[1];
+    if (!original) throw new Error("Missing candidate run fixture");
     list[1] = run(
       original.dir,
       [
@@ -1639,9 +1640,9 @@ describe("measurement defect regressions", () => {
         path.resolve("packages/runtime-native/scripts/bundle-native-engine.mjs"),
         "utf8",
       );
-      const installGuard = install.match(/const sourceCommit = \(\) => \{[\s\S]*?\n    \};/)?.[0];
+      const installGuard = install.match(/const sourceCommit = \(\) => \{[\s\S]*?\n {4}\};/)?.[0];
       const bundleGuard = bundler.match(
-        /  let engineCommit;[\s\S]*?(?=  entry = resolve\(entry\);)/,
+        / {2}let engineCommit;[\s\S]*?(?= {2}entry = resolve\(entry\);)/,
       )?.[0];
       expect(installGuard).toBeDefined();
       expect(bundleGuard).toBeDefined();

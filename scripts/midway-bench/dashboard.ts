@@ -109,7 +109,10 @@ export interface IDesktopFrames {
 }
 
 /** CPU and instructions share the last `last` complete, active player frames. */
-export function playerFrames(text: string, last = PLAYER_FRAME_WINDOW) {
+export function playerFrames(
+  text: string,
+  last = PLAYER_FRAME_WINDOW,
+): { skipped: number; frames?: IDesktopFrames } {
   const { values, skipped } = scanJson<Record<string, unknown>>(text, "TN_PLAYER_FRAME:");
   const eligible = values.filter(
     (s) =>

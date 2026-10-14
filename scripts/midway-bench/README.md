@@ -52,12 +52,16 @@ the configured dependency/toolchain inputs are trusted; they do not attest their
 
 Repackage desktop through the existing entrypoint with the build receipt. It requires the
 bundler's clean source commit to match the receipt and the player bytes to match its build hash.
-For the existing local Midway copies:
+For the existing local Midway copies, run from the owning engine checkout and freshly build the
+UI before packaging. The installed runtime-native package does not yet ship the bundler, so the
+installed game's generic `build:desktop` fails with `TN_ENGINE_BUNDLER_MISSING`. This UI helper is
+checkout source only, not a public installed export; do not reuse stale UI output.
 
 ```sh
 export MIDWAY_LEGACY_DIR="$HOME/.cache/tmp-tn/midway-legacy"
 export MIDWAY_NATIVE_DIR="$HOME/.cache/tmp-tn/midway-native"
 export MIDWAY_PLAYER_DIR="$HOME/.cache/tmp-tn/midway-player-ac14"
+node --import tsx --input-type=module --eval 'import { buildUi } from "./packages/create-threenative/src/build.ts"; import { loadConfig } from "./packages/create-threenative/src/config.ts"; const cwd = process.env.MIDWAY_NATIVE_DIR; console.log(await buildUi(cwd, await loadConfig(cwd, { target: "desktop" })));'
 node packages/runtime-native/scripts/package-engine-desktop.mjs \
   --project "$MIDWAY_NATIVE_DIR" --entry "$MIDWAY_NATIVE_DIR/src/game.ts" \
   --player packages/runtime-native/build/tn-engine-ui/tn-native-engine-player-v8 \
