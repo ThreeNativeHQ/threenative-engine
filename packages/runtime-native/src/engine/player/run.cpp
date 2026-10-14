@@ -673,10 +673,7 @@ int Session::initialize() {
                    lastBoundaryVisits = Object3D::gpuBoundaryVisits(),
                    lastProjectionVisits = Object3D::gpuProjectionVisits_,
                    lastValidationVisits = Object3D::gpuValidationVisits_,
-                   lastMaintenanceVisits = Object3D::gpuMaintenanceVisits_,
-                   lastDirtyPropagationVisits = Object3D::dirtyPropagationVisits(),
-                   lastSubtreeSkipVisits = Object3D::subtreeSkipVisits(),
-                   lastTransformNotifications = Object3D::transformViewWrites()]() mutable {
+                   lastMaintenanceVisits = Object3D::gpuMaintenanceVisits_]() mutable {
         const auto frameBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double cpuFrameBegin = metrics ? threadCpuMs() : -1;
         const double instructionsFrameBegin = metrics ? threadInstructions() : -1;
@@ -882,30 +879,20 @@ int Session::initialize() {
                 const auto projections = Object3D::gpuProjectionVisits_;
                 const auto validations = Object3D::gpuValidationVisits_;
                 const auto maintenance = Object3D::gpuMaintenanceVisits_;
-                const auto propagation = Object3D::dirtyPropagationVisits();
-                const auto subtreeSkips = Object3D::subtreeSkipVisits();
-                const auto notifications = Object3D::transformViewWrites();
                 auto members = sample.members();
-                members.emplace_back("worldVisitCounterVersion", json::Value::makeNumber(3));
+                members.emplace_back("worldVisitCounterVersion", json::Value::makeNumber(2));
                 members.emplace_back("worldUpdateVisits", json::Value::makeNumber(double(world - lastWorldVisits)));
                 members.emplace_back("joinDependencyVisits", json::Value::makeNumber(double(joins - lastJoinVisits)));
                 members.emplace_back("gpuBoundaryVisits", json::Value::makeNumber(double(boundaries - lastBoundaryVisits)));
                 members.emplace_back("gpuProjectionBoundaryVisits", json::Value::makeNumber(double(projections - lastProjectionVisits)));
                 members.emplace_back("gpuPlanValidationVisits", json::Value::makeNumber(double(validations - lastValidationVisits)));
                 members.emplace_back("gpuPlanMaintenanceVisits", json::Value::makeNumber(double(maintenance - lastMaintenanceVisits)));
-                members.emplace_back("worldDirtyPropagationVisits", json::Value::makeNumber(double(propagation - lastDirtyPropagationVisits)));
-                members.emplace_back("worldSubtreeSkipVisits", json::Value::makeNumber(double(subtreeSkips - lastSubtreeSkipVisits)));
-                // Tracking notifications are not node visits or exclusively V8 crossings.
-                members.emplace_back("transformTrackingNotifications", json::Value::makeNumber(double(notifications - lastTransformNotifications)));
                 members.emplace_back("worldWorkVisitsTotal", json::Value::makeNumber(double(
                     world - lastWorldVisits + joins - lastJoinVisits + boundaries - lastBoundaryVisits +
-                    projections - lastProjectionVisits + validations - lastValidationVisits + maintenance - lastMaintenanceVisits +
-                    propagation - lastDirtyPropagationVisits + subtreeSkips - lastSubtreeSkipVisits)));
+                    projections - lastProjectionVisits + validations - lastValidationVisits + maintenance - lastMaintenanceVisits)));
                 sample = json::Value::makeObject(std::move(members));
                 lastWorldVisits = world; lastJoinVisits = joins; lastBoundaryVisits = boundaries;
                 lastProjectionVisits = projections; lastValidationVisits = validations; lastMaintenanceVisits = maintenance;
-                lastDirtyPropagationVisits = propagation; lastSubtreeSkipVisits = subtreeSkips;
-                lastTransformNotifications = notifications;
             }
             ++measuredFrames;
             std::printf("TN_PLAYER_FRAME:%s\n", json::stringify(sample).c_str());

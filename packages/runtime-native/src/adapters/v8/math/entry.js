@@ -58,17 +58,17 @@ globalThis.__tnMathInstall = function install(target, layoutText) {
 
   const orders = layout.eulerOrders;
   const orderIndex = Object.fromEntries(orders.map((order, index) => [order, index]));
-  // Private accessors notify ancestors once per dirty interval; only explicit raw aliases escape.
+  // Literal private accessors keep the JIT write path local; only explicit raw aliases escape.
   const trackedView = (name, prefix = "") => {
     const info = layout[name];
     const Base = CLASSES[name];
     const fields = Object.entries(info.fields).map(([key, byte]) => [prefix + key, byte / 8]);
-    const dirty = "if (this.#dirty && !this.#dirty[1]) { this.#mark(false); this.#dirty[1] = 1; }";
-    const escapeMark = "if (this.#dirty && !this.#dirty[2]) { this.#mark(true); this.#dirty[2] = 1; }";
+    const dirty = "if (this.#dirty) this.#dirty[1] = 1;";
+    const escapeMark = "if (this.#dirty) this.#dirty[2] = 1;";
     const View = new Function("orders", "orderIndex", `return class {
-      #a; #o; #dirty; #mark;
-      constructor(a, o, dirty, mark) {
-        this.#a = a; this.#o = o; this.#dirty = dirty; this.#mark = mark;
+      #a; #o; #dirty;
+      constructor(a, o, dirty) {
+        this.#a = a; this.#o = o; this.#dirty = dirty;
         ${name === "Quaternion" || name === "Euler" ? `this.is${name} = true;` : ""}
         for (const key of ${JSON.stringify(name === "Euler" ? ["_a", "_o"] : ["_a"])}) {
           const descriptor = Object.getOwnPropertyDescriptor(new.target.prototype, key);
@@ -97,7 +97,7 @@ globalThis.__tnMathInstall = function install(target, layoutText) {
   for (const name of ["Vector2", "Vector3", "Vector4"]) {
     const info = layout[name];
     const View = trackedView(name);
-    views[name] = (buffer, offset, dirty, mark) => new View(doubles(buffer, offset, info.bytes), undefined, metadata(dirty), mark);
+    views[name] = (buffer, offset, dirty) => new View(doubles(buffer, offset, info.bytes), undefined, metadata(dirty));
   }
   const vector3 = (buffer, offset) => views.Vector3(buffer, offset);
 
@@ -108,8 +108,8 @@ globalThis.__tnMathInstall = function install(target, layoutText) {
     const e = this._e;
     if (e !== undefined) e.setFromQuaternion(this, e._order, false);
   };
-  views.Quaternion = (buffer, offset, dirty, mark) => {
-    const view = new QuaternionView(doubles(buffer, offset, quaternionInfo.bytes), undefined, metadata(dirty), mark);
+  views.Quaternion = (buffer, offset, dirty) => {
+    const view = new QuaternionView(doubles(buffer, offset, quaternionInfo.bytes), undefined, metadata(dirty));
     view._e = undefined;
     return view;
   };
@@ -119,9 +119,9 @@ globalThis.__tnMathInstall = function install(target, layoutText) {
     const q = this._q;
     if (q !== undefined) q.setFromEuler(this, false);
   };
-  views.Euler = (buffer, offset, dirty, mark) => {
+  views.Euler = (buffer, offset, dirty) => {
     const view = new EulerView(new Float64Array(buffer, offset, 3),
-      new Int32Array(buffer, offset + eulerInfo.order, 1), metadata(dirty), mark);
+      new Int32Array(buffer, offset + eulerInfo.order, 1), metadata(dirty));
     view._q = undefined;
     return view;
   };

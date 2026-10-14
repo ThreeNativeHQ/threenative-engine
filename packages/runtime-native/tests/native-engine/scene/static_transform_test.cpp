@@ -6,7 +6,6 @@
 // isStatic and the census must be three's, bit for bit.
 #include "check.h"
 #include "engine/scene/static_transform.h"
-#include "engine/scene/nodes.h"
 
 #include <bit>
 #include <cinttypes>
@@ -124,81 +123,6 @@ void staticTransform() {
     CHECK(mismatched == 0);
 }
 
-void trackedSubtrees() {
-    uint64_t unchanged[2]{};
-    for (int manualRoot = 0; manualRoot < 2; ++manualRoot) {
-        Scene scene; scene.enableTrackedTransform(); scene.matrixWorldAutoUpdate = !manualRoot;
-        Group helper, moving; helper.enableTrackedTransform(); moving.enableTrackedTransform();
-        scene.add(helper); scene.add(moving);
-        std::vector<std::shared_ptr<Object3D>> nodes;
-        for (int branch = 0; branch < 8; ++branch) {
-            auto group = std::make_shared<Group>(); group->enableTrackedTransform(); helper.add(*group); nodes.push_back(group);
-            for (int leaf = 0; leaf < 8; ++leaf) {
-                auto object = std::make_shared<Object3D>(); object->enableTrackedTransform();
-                object->position.set(branch, leaf, 0); object->markLocalTransformDirty();
-                group->add(*object); nodes.push_back(object);
-            }
-        }
-        scene.updateMatrixWorldVisible(false, true);
-        const auto before = Object3D::matrixEvaluations(), propagationBefore = Object3D::dirtyPropagationVisits();
-        const auto unchangedVisits = scene.updateMatrixWorldVisible(false, true);
-        unchanged[manualRoot] = Object3D::matrixEvaluations() - before;
-        std::printf("tracked helper unchanged evaluations (%s Scene): %llu\n", manualRoot ? "core-manual" : "default",
-            static_cast<unsigned long long>(unchanged[manualRoot]));
-        CHECK(unchangedVisits + Object3D::dirtyPropagationVisits() - propagationBefore <= 4);
-        const auto writeBefore = Object3D::dirtyPropagationVisits(), updateBefore = Object3D::matrixEvaluations();
-        auto& leaf = *nodes.back(); leaf.position.x = 23; leaf.markLocalTransformDirty();
-        moving.position.y = 9; moving.markLocalTransformDirty();
-        const auto writtenVisits = scene.updateMatrixWorldVisible(false, true);
-        const auto propagation = Object3D::dirtyPropagationVisits() - writeBefore;
-        std::printf("tracked helper work: unchanged %u visits, changed %u visits + %llu propagation, %llu evaluations\n",
-            unchangedVisits, writtenVisits, static_cast<unsigned long long>(propagation),
-            static_cast<unsigned long long>(Object3D::matrixEvaluations() - updateBefore));
-        CHECK(writtenVisits + propagation < 40);
-        CHECK(leaf.matrixWorld.elements[12] == 23 && moving.matrixWorld.elements[13] == 9);
-        leaf.position.x = 31; leaf.markLocalTransformDirty(); scene.updateWorldMatrix(false, false);
-        scene.updateMatrixWorldVisible(false, true); // parent-only query must retain a dirty descendant
-        CHECK(leaf.matrixWorld.elements[12] == 31); leaf.position.x = 23; leaf.markLocalTransformDirty();
-        moving.add(leaf); scene.updateMatrixWorldVisible(false, true);
-        CHECK(leaf.matrixWorld.elements[12] == 23 && leaf.matrixWorld.elements[13] == 16);
-        moving.remove(leaf); leaf.updateMatrixWorldVisible(false, true);
-        CHECK(leaf.matrixWorld.elements[13] == 7);
-        helper.setVisible(false); scene.updateMatrixWorldVisible(false, true);
-        auto& pending = *nodes[1]; pending.position.x = 41; pending.markLocalTransformDirty();
-        scene.updateMatrixWorldVisible(false, true); helper.setVisible(true);
-        scene.updateMatrixWorldVisible(false, true); CHECK(pending.matrixWorld.elements[12] == 41);
-        const auto offsets = Object3D::flagOffsets(); auto* flags = static_cast<unsigned char*>(const_cast<void*>(helper.flags()));
-        flags[offsets.visible] = 0; helper.position.x = 5; helper.markLocalTransformDirty();
-        scene.updateMatrixWorldVisible(false, true); // hidden descendants become stale after parent motion
-        flags[offsets.visible] = 1; scene.updateMatrixWorldVisible(false, true);
-        CHECK(pending.matrixWorld.elements[12] == 46); // raw visibility restore cannot hide pending state
-        CHECK(Object3D::leaseTransform(&pending.matrixWorld) == 5);
-        pending.position.x = 51; scene.updateMatrixWorldVisible(false, true); // escaped raw writes stay eager
-        CHECK(pending.matrixWorld.elements[12] == 56);
-        Object3D::unleaseTransform(&pending.matrixWorld);
-        moving.add(pending); scene.updateMatrixWorldVisible(false, true);
-        pending.position.x = 61; scene.updateMatrixWorldVisible(false, true);
-        CHECK(pending.matrixWorld.elements[12] == 61);
-        moving.remove(pending); scene.updateMatrixWorldVisible(false, true);
-        auto eager = std::make_unique<Object3D>(); helper.add(*eager);
-        scene.updateMatrixWorldVisible(false, true); eager->position.x = 71;
-        scene.updateMatrixWorldVisible(false, true); CHECK(eager->matrixWorld.elements[12] == 76);
-        eager.reset(); scene.updateMatrixWorldVisible(false, true); // destructor retires eager aggregate
-        struct Boundary : Object3D {} boundary; boundary.enableTrackedTransform(); helper.add(boundary);
-        auto valid = std::make_shared<bool>(true); boundary.gpuJointBoundary = valid;
-        boundary.gpuJointHierarchy = Object3D::hierarchyVersion();
-        const auto gpuBefore = Object3D::gpuBoundaryVisits(); scene.updateMatrixWorldVisible(false, true);
-        CHECK(Object3D::gpuBoundaryVisits() == gpuBefore + 1);
-        *valid = false; boundary.position.x = 81; boundary.markLocalTransformDirty();
-        scene.updateMatrixWorldVisible(false, true); CHECK(boundary.matrixWorld.elements[12] == 86);
-        const auto forcedBefore = Object3D::matrixEvaluations();
-        const auto forced = scene.updateMatrixWorldVisible(true, false);
-        CHECK(Object3D::matrixEvaluations() - forcedBefore == forced);
-
-    }
-    CHECK(unchanged[0] <= 2 && unchanged[1] <= 2);
-}
-
 } // namespace
 
-TN_TEST_MAIN({"static_transform", staticTransform}, {"tracked_subtrees", trackedSubtrees})
+TN_TEST_MAIN({"static_transform", staticTransform})

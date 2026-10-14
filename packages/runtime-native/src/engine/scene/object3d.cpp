@@ -5,7 +5,6 @@
 // two callbacks below use their own locals, so no temporary is shared across a re-entry.
 
 #include "engine/scene/object3d.h"
-#include "engine/scene/nodes.h"
 
 #include "engine/foundation/uuid.h"
 
@@ -88,71 +87,20 @@ Object3D::TransformLayout Object3D::transformLayout() {
     return layout;
 }
 
-void Object3D::markSubtreeDirty() {
-    for (auto* node = this; node; node = node->parent) {
-        ++dirtyPropagationVisits_;
-        if (node->subtreeDirty_) break;
-        node->subtreeDirty_ = true;
-    }
-}
-
-void Object3D::adjustEagerSubtree(int64_t delta) {
-    for (auto* node = this; node; node = node->parent) {
-        ++dirtyPropagationVisits_;
-        node->eagerSubtree_ = uint32_t(int64_t(node->eagerSubtree_) + delta);
-        node->holdsBones_ = -1;
-    }
-}
-
-void Object3D::refreshTrackedEligibility() {
-    const auto* flags = ownTransformTracking();
-    const auto& kind = typeid(*this);
-    const bool eager = !flags[0] || flags[2] ||
-        (kind != typeid(Object3D) && kind != typeid(Group) && kind != typeid(Mesh));
-    if (eager == eagerSelf_) return;
-    eagerSelf_ = eager;
-    adjustEagerSubtree(eager ? 1 : -1);
-    markSubtreeDirty();
-}
-
 void Object3D::enableTrackedTransform() {
     auto& flags = transform_.page->tracking[transform_.index];
-    if (!flags[0]) {
-        flags = {1, 1, 0};
-        refreshTrackedEligibility();
-        markSubtreeDirty();
-    }
+    if (!flags[0]) flags = {1, 1, 0};
 }
 
 uint8_t* Object3D::ownTransformTracking() const { return transform_.page->tracking[transform_.index].data(); }
 
-void Object3D::markLocalTransformDirty() {
-    ownTransformTracking()[1] = 1;
-    markSubtreeDirty();
-}
+void Object3D::markLocalTransformDirty() { transform_.page->tracking[transform_.index][1] = 1; }
 
 uint8_t* Object3D::transformTrackingAddress(const void* address) {
     auto& pool = transforms();
     const std::lock_guard lock(pool.mutex);
     const Found found = findLocked(pool, address);
     return found.page ? found.page->tracking[found.index].data() : nullptr;
-}
-
-void Object3D::markTransformViewDirty(const void* address, bool escaped) {
-    ++transformViewWrites_;
-    Object3D* owner = nullptr;
-    {
-        auto& pool = transforms();
-        const std::lock_guard lock(pool.mutex);
-        const auto found = findLocked(pool, address);
-        if (found.page) owner = found.page->owners[found.index];
-    }
-    if (!owner) return;
-    if (escaped) {
-        owner->ownTransformTracking()[2] = 1;
-        owner->refreshTrackedEligibility();
-        owner->markSubtreeDirty();
-    } else owner->markLocalTransformDirty();
 }
 
 void Object3D::joinDeferredWorldTransform() {
@@ -180,21 +128,16 @@ void Object3D::prepareTransformView(const void* address) {
     if (!owner) return;
     if (column == 5) owner->joinDeferredWorldTransform();
     owner->exposeLocalTransform();
-    owner->refreshTrackedEligibility();
 }
 
 int Object3D::leaseTransform(const void* address) {
-    int column = -1;
-    {
-        auto& pool = transforms();
-        const std::lock_guard lock(pool.mutex);
-        const Found found = findLocked(pool, address);
-        if (found.page == nullptr) return -1;
-        ++found.page->leases[found.index];
-        column = found.column;
-    }
-    if (column >= 4) markTransformViewDirty(address, true);
-    return column;
+    auto& pool = transforms();
+    const std::lock_guard lock(pool.mutex);
+    const Found found = findLocked(pool, address);
+    if (found.page == nullptr) return -1;
+    ++found.page->leases[found.index];
+    if (found.column >= 4) found.page->tracking[found.index][2] = 1;
+    return found.column;
 }
 
 const void* Object3D::transformColumnAddress(const void* address, int column) {
@@ -355,7 +298,6 @@ void Object3D::onQuaternionChange(void* context) {
 void Object3D::setVisible(bool value) {
     if (visible_ == value) return;
     visible_ = value;
-    markSubtreeDirty();
     bump();
 }
 
@@ -543,8 +485,6 @@ Object3D::~Object3D() {
     ++hierarchyRevision;
     for (Object3D* child : children) child->parent = nullptr;  // owned children die after this body
     if (parent != nullptr) {
-        parent->adjustEagerSubtree(-int64_t(eagerSubtree_));
-        parent->markSubtreeDirty();
         auto& siblings = parent->children;
         siblings.erase(std::remove(siblings.begin(), siblings.end(), this), siblings.end());
     }
@@ -567,8 +507,6 @@ Object3D& Object3D::add(Object3D& object) {
     object.removeFromParent();
     object.parent = this;
     children.push_back(&object);
-    adjustEagerSubtree(object.eagerSubtree_);
-    markSubtreeDirty();
     ++hierarchyRevision;
     own(object);
     object.dispatchEvent(addedEvent);
@@ -589,8 +527,6 @@ Object3D& Object3D::remove(Object3D& object) {
     if (found == children.end()) return *this;
     const std::shared_ptr<Object3D> keep = object.weak_from_this().lock();  // alive until this returns
     children.erase(found);
-    adjustEagerSubtree(-int64_t(object.eagerSubtree_));
-    markSubtreeDirty();
     ++hierarchyRevision;
     disown(object);
     object.parent = nullptr;
@@ -633,8 +569,6 @@ Object3D& Object3D::attach(Object3D& object) {
     object.removeFromParent();
     object.parent = this;
     children.push_back(&object);
-    adjustEagerSubtree(object.eagerSubtree_);
-    markSubtreeDirty();
     ++hierarchyRevision;
     own(object);
 
@@ -751,9 +685,6 @@ inline bool bitsDiffer(const std::array<double, 16>& a, const std::array<double,
 bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
     lastWorldEvaluation_ = ++matrixEvaluations_;
     materializeLocalTransform();
-    auto* tracking = ownTransformTracking();
-    const bool localDirty = tracking[1] != 0;
-    if (tracking[0] && !tracking[2]) tracking[1] = 0;
     if (plain && identityParent && matrixAutoUpdate && matrixWorldAutoUpdate && !pivot) {
         Matrix4 composed;
         composed.compose(position, quaternion, scale);
@@ -802,7 +733,7 @@ bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain
     }
 
     // A manually owned world matrix can change without a revision; retain its forced child update.
-    if (!matrixWorldAutoUpdate && (!tracking[0] || tracking[2] || localDirty)) force = true;
+    if (!matrixWorldAutoUpdate) force = true;
     return force;
 }
 
@@ -814,13 +745,6 @@ void Object3D::updateMatrixWorld(bool force) {
 
 uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
     if (skipsGpuJointSubtree()) { ++gpuBoundaryVisits_; return 1; }
-    const uint64_t parentId = parent ? parent->id() + 1 : 0;
-    const uint64_t parentRevision = parent ? parent->revision() : 0;
-    if (!force && !subtreeDirty_ && !eagerSubtree_ && !matrixWorldNeedsUpdate && !worldStale_ &&
-        !ownTransformTracking()[1] && worldParentId_ == parentId && worldParentRevision_ == parentRevision) {
-        ++subtreeSkipVisits_;
-        return 1;
-    }
     bool childForce = updateMatrixWorldSelf(force);
     afterMatrixWorld();
     uint32_t visited = 1;
@@ -833,19 +757,13 @@ uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
         }
         if (holdsBones_ == 0) {
             worldStale_ = worldStale_ || childForce;
-            subtreeDirty_ = subtreeDirty_ || worldStale_;
             return visited;
         }
     }
     if (worldStale_) childForce = true;
     worldStale_ = false;
     if (isStatic && !matrixWorldAutoUpdate) return visited;
-    bool pending = ownTransformTracking()[0] && !ownTransformTracking()[2] && ownTransformTracking()[1];
-    for (Object3D* child : children) {
-        visited += child->updateMatrixWorldVisible(childForce, prune);
-        pending = pending || child->subtreeDirty_;
-    }
-    subtreeDirty_ = pending;
+    for (Object3D* child : children) visited += child->updateMatrixWorldVisible(childForce, prune);
     return visited;
 }
 

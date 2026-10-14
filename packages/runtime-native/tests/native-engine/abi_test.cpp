@@ -1064,20 +1064,6 @@ void object_addresses() {
         for (const auto& [member, address] : binding.getters.at("__addresses")(&object).fields) got[member] = address.number;
         CHECK(got == expected);
     }
-    auto root = std::make_shared<tn::engine::Object3D>(), branch = std::make_shared<tn::engine::Object3D>(),
-         leaf = std::make_shared<tn::engine::Object3D>();
-    for (auto* object : {root.get(), branch.get(), leaf.get()}) object->enableTrackedTransform();
-    root->add(*branch); branch->add(*leaf);
-    root->updateMatrixWorldVisible(false, false);
-    root->updateMatrixWorldVisible(false, false);
-    auto* tracking = leaf->ownTransformTracking();
-    CHECK(tracking[0] == 1 && tracking[1] == 0 && tracking[2] == 0);
-    const auto address = static_cast<uintptr_t>(classes.at("Vector3").getters.at("__address")(&leaf->position).number);
-    CHECK(tracking[1] == 0 && tracking[2] == 1);
-    root->updateMatrixWorldVisible(false, false);
-    reinterpret_cast<double*>(address)[0] = 7;
-    root->updateMatrixWorldVisible(false, false);
-    CHECK(leaf->matrixWorld.elements[12] == 7);
 }
 
 // One `__attributes` read answers each attribute, the handle `getAttribute` returns, and its `__shape`.
