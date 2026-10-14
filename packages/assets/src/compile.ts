@@ -2271,12 +2271,14 @@ async function walkOutputFiles(root: string, prefix = ""): Promise<string[]> {
  * delete less than the bake produced, the second run would still find the undeleted file, and the
  * gate would pass while proving nothing. Only files touched during this run are considered — a
  * project's own hand-authored `public/icon.png` is not a bake output and is left alone.
+ * Pre-pass paths identify new files even when their mtime is backdated.
  */
 async function assertNoUndeclaredOutputs(
   outputRoot: string,
   declared: ReadonlySet<string>,
   since: number,
   writtenBefore: ReadonlySet<string>,
+  pathsBefore: ReadonlySet<string>,
 ): Promise<void> {
   const undeclared: string[] = [];
   for (const relative of await walkOutputFiles(outputRoot)) {
@@ -2287,10 +2289,14 @@ async function assertNoUndeclaredOutputs(
     )
       continue;
     if (declared.has(relative)) continue;
-    // A file the previous receipt lists was written by an earlier bake, however close its mtime
-    // is to this run's start: with the cache skipping unchanged inputs, two bakes can be one
-    // millisecond apart, and the previous bake's now-stale output is not this bake's leak.
+    // Prior-receipt files belong to an earlier bake, not this run's leak.
     if (writtenBefore.has(relative)) continue;
+    // A new path appearing during this run is undeclared regardless of mtime.
+    if (!pathsBefore.has(relative)) {
+      undeclared.push(relative);
+      continue;
+    }
+    // A pre-existing path keeps the old mtime guard for touches/overwrites.
     const info = await stat(path.join(outputRoot, relative));
     if (info.mtimeMs + 1 >= since) undeclared.push(relative);
   }
@@ -2400,13 +2406,9 @@ export async function compileAssets(
   }
   const previous = await readExistingManifest(manifestPath);
 
-  // Read before the first write *and before the source walk*, so the undeclared-output guard can
-  // tell this run's files from the project's own static ones. Taking it after the walk shrinks the
-  // margin by however long the walk took, and `TN_ASSETS_UNDECLARED_OUTPUT` then misses a stray
-  // file whose mtime the filesystem truncated below it — which is exactly how
-  // `bake-receipt.spec.ts` went red on a loaded CI shard while passing locally. It never reaches
-  // the receipt: that stays deterministic.
   const runStart = Date.now();
+  // Pre-pass snapshot: new-file presence beats mtime; pre-existing touches keep the old guard.
+  const outputPathsBefore = new Set(await walkOutputFiles(layout.outputRoot));
 
   const sources = await walkSources(layout.sourceRoot);
   const excluded = sources.filter((logical) =>
@@ -3026,7 +3028,13 @@ export async function compileAssets(
     );
   }
   const currentReceiptPaths = new Set(receiptOutputs.map((output) => output.path));
-  await assertNoUndeclaredOutputs(layout.outputRoot, currentReceiptPaths, runStart, writtenBefore);
+  await assertNoUndeclaredOutputs(
+    layout.outputRoot,
+    currentReceiptPaths,
+    runStart,
+    writtenBefore,
+    outputPathsBefore,
+  );
   const staleOutputs = await resolveStaleReceiptOutputs(
     layout.outputRoot,
     new Set([...writtenBefore, ...pendingPaths]),
