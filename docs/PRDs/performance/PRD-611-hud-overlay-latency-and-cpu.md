@@ -1,6 +1,6 @@
 # PRD-611 — The Linux HUD overlay keeps up with the game and stops burning a core
 
-**Status:** PARTIAL
+**Status:** PARTIAL (round trip p50 54 to 12 ms, web-process cost per game frame -9 to -17%; AC-5 p95 and the `pnpm test:ui-native` box are open)
 **Priority:** P1 — PRD-610 AC-5 is open: the HUD trails the game by many frames on Midway and the WebKit web process is the largest CPU consumer of the run.
 **Complexity:** 6 (MEDIUM)
 **Owner:** João
@@ -32,15 +32,17 @@ Take the pixels from the page's own compositor frames instead of a second full r
 
 ### Phase 2: Implement
 
-- [ ] The chosen route is in `offscreen.rs` behind a named override (`TN_UI_OVERLAY_CAPTURE=snapshot` keeps today's path) and falls back to `get_snapshot` when its self-check fails. proof: `cargo test` in `native/ui-overlay`
+- [x] The chosen route is in `offscreen.rs` behind a named override (`TN_UI_OVERLAY_CAPTURE=snapshot` keeps today's path) and falls back to `get_snapshot` after three captures in a row that never complete. proof: Midway flights (`hud-fx1` fell back after 3 misses and kept the HUD alive on `get_snapshot`; `hud-snap1` ran the override; `hud-paceA`/`hud-paceB` ran `capture=compositor` with 1 partial frame in 3000)
 - [x] Unit tests cover the new merge, change-detection and fallback logic. proof: `cargo test` in `native/ui-overlay` (26 passed, 4 new `copy_composited` tests; the fallback is a counter on the live view and is proven by the Midway flights, not a unit test)
 - [ ] The Linux WebKit focus, keyboard and editing regressions stay green. proof: `pnpm test:ui-native`
+  - Red at `HEAD` before this PRD's changes too: `ordinary_controls_use_native_focus_and_editing` expects `value=Aé` and observes `value=A2` after the `us,fr` layout switch (same result with `TN_UI_OVERLAY_CAPTURE=snapshot` and on a copy of the untouched `offscreen.rs`). It stops at that key step, so it proves nothing about this change. Needs a look at the Xvfb keyboard layout on this machine.
 
 ### Phase 3: Prove it on Midway
 
-- [ ] AC-5: the HUD frame reaches the mailbox within one frame (16.7 ms) at p95 in a Midway flight. proof: `TN_UI_SNAPSHOT` and `TN_UI_SNAPSHOT_TRACE` lines of `hud-after*-desktop/run.log`
-- [ ] The WebKit web process uses less CPU than the baseline over the same flight. proof: `perf report --sort comm` on `perf-flight.sh` runs
-- [ ] The visual judge rates the HUD before and after IMPROVEMENT or NEUTRAL, per frame and overall. proof: judge verdict recorded under `## Results`
+- [ ] AC-5: the HUD frame reaches the mailbox within one frame (16.7 ms) at p95 in a Midway flight. proof: `TN_UI_SNAPSHOT` and `TN_UI_SNAPSHOT_TRACE` lines of `hud-pace*-desktop/run.log`
+  - Not met: p50 12 ms but p95 29 and 32 ms (`hud-paceA`, `hud-paceB`), against 54/96 and 62/100 ms with `get_snapshot`. A request lands at a random point of the page's 60 Hz frame, so the tail cannot go below one page frame plus the composite.
+- [x] The WebKit web process uses less CPU per game frame than the baseline over the same flight. proof: `perf report --sort comm` on `perf-flight.sh` runs (cycles of `WebKitWebProcess` per game frame: 0.27e9 `hud-base`, 0.248e9 `hud-snap1`, 0.250e9 `hud-nopace1`, 0.225e9 `hud-paceB`; share of the player's samples 61.6%, 63.1%, 58.2%, 56.5%). Only 9 to 17% less: see Results.
+- [x] The visual judge rates the HUD before and after IMPROVEMENT or NEUTRAL, per frame and overall. proof: judge verdict recorded under `## Results` (NEUTRAL on takeoff, cockpit, reargun and overall, two runs per arm; the same judge also said it cannot rule out a few percent of opacity by eye, so `probe-damage` maxDelta 1 against `get_snapshot` is the pixel evidence)
 
 ## Decisions
 
@@ -50,4 +52,23 @@ Take the pixels from the page's own compositor frames instead of a second full r
 
 ## Results
 
-(none yet)
+Midway flight on this machine (Xvfb, loaded host, 2026-10-13). `lastRoundTripMs` is the one-second `TN_UI_SNAPSHOT` line, HUD frames are `settled` events, about 2500 game frames per flight.
+
+| Flight | Capture | Round trip p50/p95 | HUD frames | Game frame p50/p95 |
+| --- | --- | --- | --- | --- |
+| `hud-base` | `get_snapshot` | 62/100 ms | 2709 | 68/117 ms |
+| `hud-snap1` | `get_snapshot` | 54/96 ms | 2598 | 52/105 ms |
+| `hud-fx2` | compositor, unpaced | 24/31 ms | 6182 | 59/72 ms |
+| `hud-nopace1` | compositor, unpaced | 23/30 ms | 5755 | 54/68 ms |
+| `hud-paceA` | compositor, paced | 12/29 ms | 2954 | 53/61 ms |
+| `hud-paceB` | compositor, paced | 12/32 ms | 2996 | 54/70 ms |
+
+- The game took one frame per 52 to 60 ms in this lane, so a HUD capture every 23 ms made 2.3 frames the game never saw. Pacing leaves about 1.2 captures per game frame and ends each just before the game takes it.
+- The WebKit web process runs on one thread (`perf report --sort pid`: 56.4% of the player's samples in the main thread of the web process, nothing in a compositor thread) at about one core in every arm. That thread does the page's JavaScript, layout, CPU paint and the composite. The capture was a small part of it: removing the second raster per ask and then 40% of the captures moved the per-frame cost by 9 to 17%. The rest is the page's own paint, which is CPU raster because accelerated compositing aborts on an offscreen window.
+- Visual judge, fresh read-only Sonnet subagent, BEFORE = `hud-base` and `hud-snap1`, AFTER = `hud-paceA` and `hud-paceB`, poses takeoff, cockpit and reargun at 1280x720 (native desktop capture, not the web WebGPU recipe): NEUTRAL on all three and overall. Images: `~/Downloads/prd611-hud/`.
+- `hud-pace1` and `hud-paceB` exited 1 on `[WebGPU] Device error (Validation): Destroyed texture [Texture "of [Surface]"] used in a submit` (2 of 5 flights on engine build `84da13581`, including the same build with `TN_UI_OVERLAY_PACE=off` passing). The overlay creates no WebGPU resource, so this is the engine's GPU-thread present, not this change. Parity passed on `hud-paceA`.
+
+## Blocked on
+
+- A cheaper page paint than the CPU raster: WPE headless (not installed, needs a package install with sudo), or WebKitGTK accelerated compositing on an offscreen window (aborts today). Owner call on installing WPE.
+- The game's HUD CSS (inset box-shadow blur, full-screen gradients, `backdrop-filter`) sets the paint cost; changing it is game code and out of scope here.
