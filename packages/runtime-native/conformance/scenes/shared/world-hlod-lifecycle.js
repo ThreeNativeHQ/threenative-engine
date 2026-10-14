@@ -226,6 +226,9 @@ export async function startScene(canvas, dimensions) {
       };
       return {
         detail,
+        get census() {
+          return `stage=${stage} ${lastCensus}`;
+        },
         render() {
           updateModelLods(world, camera, dimensions.height);
           world.update(worldRenderer, camera);
@@ -248,6 +251,9 @@ export async function startScene(canvas, dimensions) {
   );
   // The harness may open native startup readiness as soon as startScene resolves. Keep both
   // targets behind the lifecycle proof, rather than letting a merely initialized scene pass.
+  // A software GPU (the Android emulator) compiles the proxy pipelines far slower than a frame
+  // count allows, so the wait is wall-clock: 30 s, inside the harness's 45 s native budget.
+  const startedAt = performance.now();
   await new Promise((resolve, reject) => {
     let frames = 0;
     const check = () => {
@@ -255,8 +261,13 @@ export async function startScene(canvas, dimensions) {
       if (proof.active && proof.nearRestored && proof.shadowCovered && proof.collisionRetained && proof.evicted) {
         console.info("TN_WORLD_HLOD_CONFORMANCE_COMPLETE gpu=true joined=true sourceShadow=true near=true evicted=true collisionAttachment=true");
         resolve();
-      } else if (++frames >= 180) {
-        reject(new Error(`World HLOD lifecycle did not complete before capture: ${JSON.stringify(proof)}`));
+      } else if (++frames >= 180 && performance.now() - startedAt >= 30_000) {
+        reject(
+          new Error(
+            `World HLOD lifecycle did not complete before capture: ${JSON.stringify(proof)} ` +
+              `after ${String(frames)} frames, ${state.subject.census}`,
+          ),
+        );
       } else requestAnimationFrame(check);
     };
     check();
