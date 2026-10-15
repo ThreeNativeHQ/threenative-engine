@@ -11,6 +11,7 @@ import {
   DiscreteLodPlugin,
   TN_DISCRETE_LOD,
   baseGeometryOf,
+  lodBias,
   setLodBias,
   updateModelLods,
 } from "../src/model-lod.js";
@@ -222,6 +223,35 @@ describe("DiscreteLodPlugin", () => {
 });
 
 describe("adaptive LOD bias on the CPU path", () => {
+  it("shares adaptive LOD bias across duplicated entry modules", async () => {
+    const previous = lodBias();
+    vi.resetModules();
+    const main = await import("../src/model-lod.js");
+    vi.resetModules();
+    const world = await import("../src/model-lod.js");
+    try {
+      expect(main.setLodBias).not.toBe(world.setLodBias);
+      main.setLodBias(1);
+      expect(world.biasedLodDistance(46)).toBe(46);
+      world.setLodBias(2.5);
+      expect(main.lodBias()).toBe(2.5);
+      expect(main.biasedLodDistance(46)).toBe(115);
+      main.setLodBias(1.4);
+      expect(world.lodBias()).toBe(1.4);
+      expect(world.biasedLodDistance(46)).toBeCloseTo(64.4);
+      for (const invalid of [0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        world.setLodBias(2.5);
+        main.setLodBias(invalid);
+        expect(world.lodBias()).toBe(1);
+        expect(world.biasedLodDistance(46)).toBe(46);
+      }
+    } finally {
+      main.setLodBias(previous);
+      world.setLodBias(previous);
+      vi.resetModules();
+    }
+  });
+
   it("coarsens a fixed-distance selection and never refines it below what was authored", async () => {
     const target = mesh();
     const plugin = new DiscreteLodPlugin();
