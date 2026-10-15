@@ -133,7 +133,7 @@ const short = (dir) => dir.replace(/-(desktop|native|legacy)$/, "");
 
 function kpi(k) {
   const unit = { x: "×", "%": "%", ms: "ms", nodes: "nodes" }[k.unit];
-  const fmt = (v) => (k.unit === "x" ? v.toFixed(2) : k.unit === "%" ? v.toFixed(k.id === "AC-4" ? 2 : 1) : num(v));
+  const fmt = (v) => (typeof v !== "number" || !Number.isFinite(v) ? "—" : k.unit === "x" ? v.toFixed(2) : k.unit === "%" ? v.toFixed(k.id === "AC-4" ? 2 : 1) : num(v));
   const deferred = k.id === "AC-3" && k.verdict === "fail";
   const tgt = `${k.better === "lower" ? "≤" : "≥"} ${fmt(k.target)} ${unit}`;
   if (k.verdict === "pending")
