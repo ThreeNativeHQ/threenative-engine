@@ -14,7 +14,10 @@ import {
   playClipAt,
 } from "../conformance/scenes/shared/planned-animation-support.js";
 import { advanceRotationWithRaf } from "../conformance/scenes/shared/raf-rotation.js";
-import { createSkinnedMeshAnimationProof } from "../conformance/scenes/shared/skinned-mesh-animation.js";
+import {
+  createRawSkinnedProof,
+  createSkinnedMeshAnimationProof,
+} from "../conformance/scenes/shared/skinned-mesh-animation.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const sceneNames = [
@@ -46,7 +49,10 @@ test("row 46 parses and evaluates an upstream glTF AnimationClip", async () => {
   const { mixer } = playClipAt(proof.gltf.scene, proof.clip, 0.5);
   assert.equal(mixer.time, 0.5);
   assert.ok(Math.abs(proof.animatedRoot.position.y - 0.075) < 1e-6);
-  assert.throws(() => assertAnimatedGltf({ scene: proof.gltf.scene, animations: [] }), /AnimationClip/u);
+  assert.throws(
+    () => assertAnimatedGltf({ scene: proof.gltf.scene, animations: [] }),
+    /AnimationClip/u,
+  );
 });
 
 test("row 50 advances only through three requestAnimationFrame callbacks", async () => {
@@ -79,6 +85,42 @@ test("rows 51 through 53 exercise mixer, skeleton, and morph target semantics", 
   const morph = createMorphTargetAnimationProof();
   assert.equal(morph.mesh.morphTargetInfluences.length, 1);
   assert.ok(Math.abs(morph.mesh.morphTargetInfluences[0] - 0.65) < 1e-6);
+});
+
+test("row 52 RAW fixture owns genuine players and independently retiring display slots", () => {
+  const proof = createRawSkinnedProof();
+  try {
+    proof.advance();
+    assert.equal(proof.batch.bones, 12);
+    assert.equal(proof.players.length, 2);
+    assert.deepEqual(
+      proof.receipt().slots.map((slot) => slot.currentRaw),
+      [true, true],
+    );
+    const initial = proof.receipt().slots[0].currentTime;
+    proof.advance();
+    assert.ok(proof.receipt().slots[0].currentTime > initial);
+    let calls = 0;
+    proof.rigs[1].skeleton.update = () => {
+      calls += 1;
+    };
+    proof.advance();
+    assert.deepEqual(
+      proof.receipt().slots.map((slot) => slot.currentRaw),
+      [true, false],
+    );
+    assert.equal(calls, 0);
+    proof.rigs[1].skeleton.update = proof.stockUpdate;
+    for (let tick = 0; tick < 8; tick++) {
+      proof.advance();
+      if (proof.players[1].updateRateReport.evaluated) break;
+    }
+    assert.equal(proof.players[1].updateRateReport.evaluated, true);
+    assert.equal(proof.receipt().slots[1].retired, true);
+    assert.equal(proof.receipt().slots[1].currentRaw, false);
+  } finally {
+    proof.dispose();
+  }
 });
 
 test("all six rows are same-source, fail-closed, deterministic, and target-neutral", () => {
