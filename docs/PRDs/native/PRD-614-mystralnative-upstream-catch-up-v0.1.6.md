@@ -66,7 +66,7 @@ default X11 run is proved again. The frame-op stream encodes `writeBuffer` in JS
 - [ ] AC-1 [local]: A native desktop game run with `SDL_VIDEODRIVER=wayland` under a headless Wayland compositor presents 300 non-blank frames. proof: `weston --backend=headless` + `SDL_VIDEODRIVER=wayland pnpm native:verify:desktop` — Evidence: pending.
 - [x] AC-2 [local]: The default X11 run still presents 300 non-blank frames. proof: `pnpm native:verify:desktop` — PASS 2026-10-15 on the rebuilt candidate, observed SDL driver `x11`, 300 nonblank frames; complete audio/stability/physics/native-contract/loading/UI/bundle command exits 0.
 - [ ] AC-3 [local]: `device.queue.writeBuffer(buffer, 0, new Uint8Array(0))` returns without an exception on native, as on web. proof: new case in `pnpm parity` (`packages/runtime-native/conformance/registry.json`), RED then GREEN on both the direct binding and frame-op stream paths — Evidence: pending.
-- [ ] AC-4 [shared]: The dispatched `native-platforms.yml` linux-arm64 leg is GREEN with Canvas 2D enabled, arm64 Skia, quiche `0.24.6-4`, SWC `swc-41` and libwebp aarch64. proof: `gh workflow run native-platforms.yml --ref <candidate-branch>` followed by `gh run view <run-id>` confirming the linux-arm64 job and dependency/build logs on the candidate SHA — Evidence: pending.
+- [x] AC-4 [shared]: The dispatched `native-platforms.yml` linux-arm64 leg is GREEN with Canvas 2D enabled, arm64 Skia, quiche `0.24.6-4`, SWC `swc-41` and libwebp aarch64. proof: [run 38695846954](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/38695846954), successful job `116292229770` on `a8b355190995c09adecb2278e408f3b2129f72e3`; actual configure, verified locked payloads and 300-frame starter artifacts pass.
 
 ## Blocked on
 
@@ -126,9 +126,11 @@ packages/runtime-native/build/tn-linux/threenative-frame-op-stream-replay-test w
 ```
 
 #### Phase 3: linux-arm64 proof, then provenance
-**Status:** NOT STARTED
+**Status:** PARTIAL — required linux-arm64 job passes with the specified dependencies and Canvas 2D; NOTICE waits for AC-1 and AC-3.
 **Files:** Native dependency/build scripts, arm64 Skia/Canvas 2D configuration, existing `.github/workflows/native-platforms.yml` only if required, and `packages/runtime-native/NOTICE`.
 **Implementation:** Adapt the upstream linux-arm64 changes to the existing leg; include arm64 Skia, quiche `0.24.6-4`, SWC `swc-41` and libwebp aarch64 with Canvas 2D enabled. Dispatch the workflow against the candidate branch and require its linux-arm64 leg to be GREEN. Only after AC-1 through AC-4 pass, set `Upstream provenance baseline:` to the full hash and name v0.1.6.
-- [ ] linux-arm64 dependency/build configuration includes arm64 Skia, quiche `0.24.6-4`, SWC `swc-41`, libwebp aarch64 and Canvas 2D enabled. proof: dispatched `native-platforms.yml` linux-arm64 dependency/build logs on the candidate SHA
-- [ ] AC-4 dispatched linux-arm64 leg is GREEN. proof: `gh workflow run native-platforms.yml --ref <candidate-branch>` + `gh run view <run-id>` (successful linux-arm64 job on the candidate SHA)
+- [x] linux-arm64 dependency/build configuration includes arm64 Skia, quiche `0.24.6-4`, SWC `swc-41`, libwebp aarch64 and Canvas 2D enabled. proof: actual job `116292229770` configures `TN_ENABLE_CANVAS2D="ON"`, resolves `Release/arm64/libskia.a` and aarch64 libwebp, and verifies `quiche-linux-aarch64` / `swc-linux-aarch64` against the candidate lock.
+- [x] AC-4 dispatched linux-arm64 leg is GREEN. proof: [run 38695846954](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/38695846954), candidate `a8b355190995c09adecb2278e408f3b2129f72e3`, attempt 1, job `116292229770` concludes success; starter and container reports each pass 300 frames and nonblank captures.
 - [ ] After AC-1 through AC-4 are green, NOTICE names `bafab09d599bd55aeb7433ba7131c3f320334c99` and v0.1.6. proof: `git diff -- packages/runtime-native/NOTICE` + `pnpm check:docs`
+
+Verified CI evidence (2026-10-15): the exact-candidate receipt binds the successful job, build configuration and reports. The starter capture has 13,117 colors and the container capture 13,145; movement, collection/restart, visibility and diagnostics assertions pass. Log lines 2861/2870 verify the locked SWC/quiche arm64 payload IDs; their candidate lock URLs are `swc-41/swc-linux-arm64.zip` and `quiche-0.24.6-4/quiche-linux-arm64.zip`. The preceding titles print unchanged x64 default version strings, which are cosmetic and do not identify the verified archives. This proves the required arm64 leg, not the still-running whole native matrix.
