@@ -43,7 +43,7 @@ export function Menu() {
       >
         restart
       </button>
-      <span>WASD / arrows to move · space to jump the gap · reach the flag</span>
+      <span>WASD / arrows to move · shift to run · space to jump the gap · reach the flag</span>
     </div>
   );
 }

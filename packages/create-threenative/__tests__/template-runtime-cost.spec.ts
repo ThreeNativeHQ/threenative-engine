@@ -25,6 +25,7 @@ import { templatedRig } from "./templated-rig.js";
 const MANNEQUIN_CLIPS = [
   "Idle_Loop",
   "Jog_Fwd_Loop",
+  "Walk_Loop",
   "Jump_Start",
   "Jump_Loop",
   "Jump_Land",

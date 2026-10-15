@@ -44,6 +44,20 @@
     },
     {
       "kind": "input",
+      "label": "running",
+      "press": ["KeyD", "ShiftLeft"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-back",
+      "press": ["KeyA", "ShiftLeft"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
       "label": "stopped",
       "press": [],
       "holdTicks": 45,
@@ -67,7 +81,7 @@
       "kind": "input",
       "label": "aligned-with-crate",
       "press": ["KeyW"],
-      "holdTicks": 45,
+      "holdTicks": 60,
       "release": false
     },
     {
@@ -113,11 +127,11 @@
         "atSteps": [
           {
             "label": "forward",
-            "equals": "Jog_Fwd_Loop"
+            "equals": "Walk_Loop"
           },
           {
             "label": "right",
-            "equals": "Jog_Fwd_Loop"
+            "equals": "Walk_Loop"
           },
           {
             "label": "stopped",
@@ -126,6 +140,10 @@
           {
             "label": "jump",
             "equals": "Jump_Start"
+          },
+          {
+            "label": "running",
+            "equals": "Jog_Fwd_Loop"
           }
         ]
       },
@@ -153,6 +171,20 @@
         "path": "0",
         "gte": 0,
         "changed": true
+      },
+      {
+        "entity": "player",
+        "component": "gait",
+        "atSteps": [
+          {
+            "label": "forward",
+            "equals": "walk"
+          },
+          {
+            "label": "running",
+            "equals": "run"
+          }
+        ]
       }
     ]
   },
