@@ -1,0 +1,107 @@
+{
+  "arm": "BEFORE",
+  "run": 1,
+  "advancedTicks": 240,
+  "identity": {
+    "commit": "11b0a70cf6e9822908050f5d58210e3dffa48edb",
+    "sourcePath": "artifacts/prd564/visual-qualified-347b8bf28/before-worldEnvironment.ts",
+    "canonicalPath": "packages/create-threenative/templates/starter/src/render/worldEnvironment.ts",
+    "sha256": "502ba75647b59067fe6aac1174faf2cad0b82c763d0bd988f313b30b1cd78099",
+    "gitBlob": "7fa978e09543e3ce65f8a5b51a9d6125f7002030",
+    "engineHead": "085595ed2241df2b572a8c71d6198380fb3e2ed9"
+  },
+  "quality": {
+    "gradeIntensity": 1,
+    "grainAnimated": false,
+    "grainIntensity": 0.0039,
+    "tier": "high"
+  },
+  "qualityReceipt": {
+    "settings": {
+      "gradeIntensity": 1,
+      "grainAnimated": false,
+      "grainIntensity": 0.0039,
+      "tier": "high"
+    },
+    "liveTier": "high",
+    "debug": {
+      "stages": [
+        "ambientOcclusion",
+        "bloom",
+        "vignette",
+        "antialias",
+        "grade",
+        "grain"
+      ],
+      "dropped": [],
+      "tier": "high",
+      "source": "auto",
+      "changed": false,
+      "reason": "compiling",
+      "budgetMs": 16.666666666666668,
+      "overloadBudgetMs": 17.500000000000004,
+      "meter": "presented",
+      "fallback": "gpu-stale",
+      "gpuMs": 0.49,
+      "cpuMs": 27.7,
+      "costMs": 216.7,
+      "window": 1
+    }
+  },
+  "timeProtocol": "Live RAF, matching retained AFTER run1",
+  "qualityOverrideSha256": "8c54c7efe22c9b861439c13bc479c04bd7cbf9e6c7a6549ede2490a412103bbe",
+  "observations": [
+    {
+      "requestedScale": 1,
+      "expectedSubrect": false,
+      "resolutionSubrect": false,
+      "resolutionSubrectProperty": "absent (renderer publishes only active=true)",
+      "surface": {
+        "atFloor": false,
+        "drawingBufferHeight": 720,
+        "drawingBufferWidth": 1280,
+        "resolutionScale": 1,
+        "sampleCount": 4,
+        "scaleSource": "auto-pinned"
+      }
+    },
+    {
+      "requestedScale": 0.72,
+      "expectedSubrect": false,
+      "resolutionSubrect": false,
+      "resolutionSubrectProperty": "absent (renderer publishes only active=true)",
+      "surface": {
+        "atFloor": false,
+        "drawingBufferHeight": 518,
+        "drawingBufferWidth": 922,
+        "resolutionScale": 0.72,
+        "sampleCount": 4,
+        "scaleSource": "auto-pinned"
+      }
+    }
+  ],
+  "provenance": {
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  }
+}
