@@ -723,6 +723,107 @@ describe("TerrainTiles", () => {
     }
   });
 
+  it("preserves each tile's selection when cameras, scales and eligible level counts switch back", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      sampleHeight: (x, z) => x * x * (0.001 + 0.00001 * x) + 0.003 * z * z,
+      residentByteBudget: 2_000_000,
+      residentTileBudget: 9,
+      tileResolution: 9,
+      tileSize: 32,
+      streamRadius: 1,
+      lodDistances: [10, 25],
+      mergeTiles: false,
+      skirtDepth: 1,
+    });
+    const perspective = new PerspectiveCamera(60, 16 / 9, 0.1, 10_000);
+    const orthographic = new OrthographicCamera(-80, 80, 45, -45, 0.1, 10_000);
+    for (const camera of [perspective, orthographic]) {
+      camera.position.set(0, 50, 200);
+      camera.lookAt(0, 0, 0);
+    }
+    // These decisions were measured on c13b3e1ac before reusing selector scratch arrays.
+    const stages = [
+      {
+        camera: perspective,
+        height: 720,
+        budget: 4,
+        scale: 1,
+        x: 0,
+        levels: [0, 1, 1, 1, 1, 2, 2, 2, 2],
+        targets: [0, 2, 2, 2, 2, 2, 2, 2, 2],
+      },
+      {
+        camera: perspective,
+        height: 1440,
+        budget: 1,
+        scale: 2,
+        x: 7,
+        levels: [0, 1, 1, 0, 0, 1, 1, 0, 0],
+        targets: [0, 1, 1, 0, 0, 1, 1, 0, 0],
+      },
+      {
+        camera: orthographic,
+        height: 720,
+        budget: 1,
+        scale: 1,
+        x: -7,
+        levels: [0, 1, 1, 1, 1, 1, 1, 1, 1],
+        targets: [0, 1, 1, 1, 1, 1, 1, 1, 1],
+      },
+      {
+        camera: orthographic,
+        height: 1440,
+        budget: 0.25,
+        scale: 3,
+        x: 0,
+        levels: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+        targets: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      },
+      {
+        camera: perspective,
+        height: 720,
+        budget: 4,
+        scale: 1,
+        x: 0,
+        levels: [0, 1, 1, 1, 1, 2, 2, 2, 2],
+        targets: [0, 2, 2, 2, 2, 2, 2, 2, 2],
+      },
+    ];
+    try {
+      for (const stage of stages) {
+        tiles.scale.setScalar(stage.scale);
+        tiles.follow({ x: stage.x, z: 0 }, undefined, {
+          camera: stage.camera,
+          viewportHeight: stage.height,
+          maxPixelError: stage.budget,
+          hysteresis: 0.15,
+        });
+        for (let frame = 0; frame < 3; frame++) tiles.process();
+        const decisions = tiles.debug().lodDecisions as {
+          key: string;
+          lodLevel: number;
+          targetLod: number;
+        }[];
+        expect(decisions.map(({ key }) => key)).toEqual([
+          "0:0",
+          "0:-1",
+          "-1:0",
+          "1:0",
+          "0:1",
+          "-1:-1",
+          "1:-1",
+          "-1:1",
+          "1:1",
+        ]);
+        expect(decisions.map(({ lodLevel }) => lodLevel)).toEqual(stage.levels);
+        expect(decisions.map(({ targetLod }) => targetLod)).toEqual(stage.targets);
+      }
+    } finally {
+      tiles.dispose();
+    }
+  });
+
   it("projects retained metre errors through the installed selector rather than treating metres as pixels", () => {
     const tiles = new TerrainTiles({
       surface: new MeshBasicMaterial(),
