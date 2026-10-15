@@ -43,6 +43,8 @@ export function installStartupProof(
       | StartupProofController
       | undefined;
     if (controller === undefined) throw new Error("TN_STARTUP_PROOF_CONTROLLER_MISSING");
+    const previousFrameBudget = runtime.runtimeDiagnosticsSeries?.().at(-1);
+    const previousPhases = previousFrameBudget?.phases;
     visibleWorldFrame += 1;
     controller.holdCurrentCallback();
     label.textContent = `${startupProof.toUpperCase()} FIRST-VISIBLE-WORLD FRAME ${String(visibleWorldFrame)}`;
@@ -53,6 +55,8 @@ export function installStartupProof(
       const census = runtime.pipelineCensus?.();
       if (frameBudget === undefined)
         throw new Error(`TN_STARTUP_PROOF_FRAME_BUDGET_MISSING:${String(frame)}`);
+      if (frameBudget.phases === undefined || frameBudget.phases === previousPhases)
+        throw new Error(`TN_STARTUP_PROOF_FRAME_BUDGET_STALE:${String(frame)}`);
       if (census === undefined) throw new Error(`TN_STARTUP_PROOF_CENSUS_MISSING:${String(frame)}`);
       const record = {
         arm: startupProof,
