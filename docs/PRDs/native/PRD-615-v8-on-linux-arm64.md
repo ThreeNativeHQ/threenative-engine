@@ -16,7 +16,7 @@ once per recipe and caches the payload in the `ci-v8-android` release
 (`native-platforms.yml:180-255`, `.github/actions/android-v8-source`, `scripts/build-android-v8.mjs`).
 
 João, 2026-10-14: "i dont like QuickJS. V8 is way more performant." Upstream MystralNative also
-ships linux-arm64 with QuickJS only (see [PRD-614](PRD-614-mystralnative-upstream-catch-up-v0.1.6.md)),
+ships linux-arm64 with QuickJS only (see [PRD-614](https://github.com/ThreeNativeHQ/threenative-engine/pull/507)),
 so this is fork-owned work with no upstream to port.
 
 ## Solution
