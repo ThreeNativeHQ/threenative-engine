@@ -6,6 +6,8 @@
 **Owner:** João
 **Depends on:** PRD-573 (the epic; this PRD closes its final-tier v1.10 box and rides PR #493)
 
+**Release (owner, 2026-10-15):** v1 ships with this PRD PARTIAL. Its open boxes stay open and none is ticked by the release. The bulk-reader experiment (`TN_JS_MATH_BULK_READ`) is reverted: instructions fell 0.77%, timing was inconclusive.
+
 **Current focus (re-plan 2, 2026-10-14):** finish AC-15 (three qualified pairs), then AC-20 first. The matched yardstick shows that the player runs about half of Chromium's instructions per frame at about 60% of its IPC. The stall gap is now the largest lever; the time-share levers (AC-16 to AC-18) follow on top of it.
 
 ## Context

@@ -15,9 +15,9 @@ that PR and ticks its box, with the result, in the same commit.
 **Goal:** frame cost and load time of an established engine: first Godot desktop as the measurable
 bar, then Unreal-class. **Route:** one owned C++ engine behind the three.js API, native on Dawn or
 wgpu and Wasm (`tn-native-engine-web`) on the web; game code on V8 or browser JS. A game opts in
-with `engine: "native"`; the legacy host stays the default until the engine is at least 2x and
-stable; then native becomes the default, and the legacy engine is deleted after one clean release
-([PRD-535](../native-engine/PRD-535-n21-the-js-engine-is-deleted.md)).
+with `engine: "native"` until 2026-10-15. Since then native is the default for web and desktop and
+`engine: "legacy"` is the named override (decisions below). The legacy engine is deleted after one
+clean release ([PRD-535](../native-engine/PRD-535-n21-the-js-engine-is-deleted.md)).
 
 Midway web when the work opened (native Wasm page against three.js): CPU busy per frame 2.32x
 faster, frame p50 0.24x, first frame 0.48–0.62x, `enter` 0.96–1.09x, `ready` 0.73–1.05x. Engine
@@ -40,6 +40,18 @@ shares: animation about 13%, cull and project about 11%, `Renderer::render` 21%,
   and dashboard headline is judged there. Why: R5 read native 2.8x and web 1.4x, yet on Midway the
   desktop player felt like 20 FPS with a 138 ms HUD lag while three.js in the browser ran at 51
   FPS, and the web engine was 0.71x.
+- 2026-10-15 (owner): release v1 now. [PRD-610](PRD-610-native-engine-wins-on-real-games.md) ships
+  PARTIAL and its open boxes stay open. The PR leaves draft and does not merge before the owner says so.
+- 2026-10-15 (owner): the C++ engine is the default now. A game that sets no `engine` runs on it
+  (Wasm engine on web, V8 engine player on desktop), and `engine: "legacy"` is the named override. This
+  supersedes the "switch at 2x" rule above. The legacy engine stays until one clean release has passed.
+  Android and iOS still run the legacy host. Measured on release day: the V8 engine bundler refuses seven
+  of the 13 templates (`TN_NATIVE_ENGINE_UNBOUND`), four more stop at runtime on the engine player, and
+  the web Wasm engine fails the last two on its parameterless TSL `Fn`. All 13 pin `engine: "legacy"` in
+  `threenative.config.ts` until slice 8 clears them, so the default changes no template today. The release also
+  needs the Wasm engine, the desktop bundler and the engine player in the published packages (open boxes in
+  Phase v1.10).
+- 2026-10-15 (owner): housekeeping. Delete junk and reduce the file count; keep every behaviour.
 - Deferred, filed again only on scorecard evidence: transform compose skip (if
   `updateMatrixWorldSelf` is above 2% of the frame), projection reuse and SIMD world matrices (if
   transforms, cull and project stay at 10% or more), GPU-written indirect arguments (if CPU cull and
@@ -57,8 +69,9 @@ shares: animation about 13%, cull and project about 11%, `Renderer::render` 21%,
   design reference (UE `release` `396c9f059`).
 
 **Stability gate S** (closes every cycle): `pnpm test:templates` and `pnpm test:playtest` green on
-web; `pnpm native:verify:desktop` green; an 1800+ frame soak with no crash and no RSS growth; while
-the engine is opt-in, default (`engine: "legacy"`) build output byte-identical to the base commit.
+web; `pnpm native:verify:desktop` green; an 1800+ frame soak with no crash and no RSS growth. Until
+2026-10-15 S also required the default build output to match the base commit byte for byte. The default
+is now native, so S instead requires that a game with `engine: "legacy"` still builds and plays.
 From v2 S adds the Android emulator journey; from v3, a ThreadSanitizer engine run.
 
 ```mermaid
@@ -74,7 +87,8 @@ flowchart LR
 ## Cycle v1 — land the engine
 
 Each slice is one commit series cut from `origin/develop` with Perry files dropped. Engine targets
-stay `EXCLUDE_FROM_ALL` and `engine: "legacy"` stays the default, so every slice is inert or opt-in.
+stay `EXCLUDE_FROM_ALL` and `engine: "legacy"` stayed the default while the slices landed, so every
+slice was inert or opt-in. The default flipped on 2026-10-15 (see Decisions).
 
 #### Phase v1.0: Charter decision (slice 0)
 **Status:** DONE
@@ -158,7 +172,11 @@ Today: `perf` has p95, p99 and hitches but no memory or host load; `bench:scoreb
   Cheap tier only (decision 2026-10-13): this box no longer closes the v1 KPI. The next box does.
 - [ ] Final tier: the native desktop player runs Midway at frame p50 and main-thread CPU per frame at least 2x the legacy desktop host on the same scripted flight, parity PASS, HUD round trip under one frame. 2026-10-13: open and losing. The owner played both and found the player at about 20 FPS with a 138 ms HUD lag, against 51 FPS for three.js in the browser. Engine C++ takes 75% of the main thread (cull, matrix walk, animation, render project). proof: `scripts/midway-bench/flight.sh desktop` timing pairs. Work: [PRD-610](PRD-610-native-engine-wins-on-real-games.md)
 - [ ] Native steady frame CPU is at least 2x three.js on Midway web, frame p50 no worse. proof: `pnpm profile:wasm-page -- --url <native> --control <three.js> --cpu-work`
-- [ ] Stability gate S is green, and native becomes the default. proof: the S commands on the default switch commit
+- [ ] Stability gate S is green. proof: the S commands on the release commit. Partial 2026-10-15: `pnpm budgets` exit 0 after a regenerated native coverage record; native ctest 394 of 397 (`native_engine_target_graph` fails only in a build with the web overlay ON, `native_engine_pacing` and `native_engine_player_real_input` pass alone and fail under `-j4` load); `pnpm native:verify:desktop` NOT green here, because the legacy host's screenshot request times out under Xvfb (`startup-stall.png`) and no baseline host exists to prove that environmental.
+- [x] The C++ engine is the default for a game that sets no `engine`, and `engine: "legacy"` is the named override (owner decision 2026-10-15). proof: red-green in `packages/create-threenative/__tests__/config.spec.ts` (`validateEngine(undefined)` was "legacy", now "native"), the create-threenative suite 102 files, 1566 tests, `pnpm check:docs`, the prose-lane specs 7 files, 272 tests. Result 2026-10-15: the root and template AGENTS.md name the default and the override, and the build errors name `engine: "legacy"`.
+- [x] A scaffolded template builds and plays on the engine player on desktop with the default engine. proof: scaffold `minimal`, `threenative build --target desktop`, then the template's own `play` scenario with `"target": "desktop"`. Result 2026-10-15 (RTX 2080, Xvfb, engine player `tn-native-engine-player-v8` with native physics): pass, 3 of 3 assertions (`components` position changed, `renderChain.tier`, `diagnostics`). Boot runs of the other templates on the same player: `puzzle` passes (180 ticks, no console error); `platformer` and `tower-defense` stop on `MeshStandardMaterial.flatShading` ("not a bound material property"); `racing` stops on `mesh.computeBoundingSphere is not a function`; `rts` logs `TN_V8_FRAME_FAILED: updateRanges.push is not a function` every frame; `starter` fails in the bundler with 18 `TN_NATIVE_ENGINE_UNBOUND`. Two player faults found and fixed on the way: it refused the runner's `--width`, `--height` and `--windowed`, and it reported no `runtime.network` (every desktop playtest on the player failed since develop's network check).
+- [ ] No template runs on the native engine yet, so no template changes pixels, and the legacy-versus-native visual judge is not run. All 13 templates pin `engine: "legacy"` with a "PRD-573 slice 8" comment: the web Wasm engine's TSL `Fn` takes no parameters (minimal and puzzle fail every web playtest with `TN_PLAYTEST_BRIDGE_MISSING` and a startup `TypeError`), and the desktop engine refuses or stops on the symbols above. proof: delete a template's pin, then `pnpm test` (web) and a `--target desktop` playtest both pass, then a visual judge on legacy-versus-native captures. A legacy desktop capture is not available on this lane (the legacy host screenshot times out under Xvfb), so the judge needs a lane with a real display. Work: PRD-617, every template runs on the native engine (filed on local `develop`, not yet on `origin/develop`)
+- [ ] The release ships the web Wasm engine, the desktop engine bundler and the engine player. proof: `npm pack` of `@threenative/runtime-native` and `@threenative/core` from a clean checkout lists `build/web/tn-native-engine-web.{mjs,wasm}`, the bundler and the player, and a scaffold installed from those tarballs builds with `engine` unset. Today the Wasm files are in the `files` list but no CI job builds them (`TN_WASM_ENGINE_MISSING` names the build command), and the player is a local `THREENATIVE_ENGINE_PLAYER` path.
 
 #### Phase v1.11: Native reconcile (the route to the v1.10 KPI)
 
