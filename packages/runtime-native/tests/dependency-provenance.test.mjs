@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test } from 'vitest';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const LOCK_PATH = join(PACKAGE_ROOT, 'native-deps.lock.json');
@@ -158,7 +158,7 @@ test('a same-lock receipt naming another payload must not count as a cache hit',
   // An x64 checkout that selects the arm64 payload shares the lock hash, so a lock-hash-only check
   // reports a hit and the arm64 build keeps linking foreign-architecture quiche/swc/webp. The
   // selected payload id belongs to the hit; a receipt without it is the stale-cache path.
-  const root = mkdtempSync(join(tmpdir(), 'tn-dep-cache-'));
+  const root = makeTempDirSync('tn-dep-cache-');
   const realFetch = globalThis.fetch;
   try {
     // The real downloader in an isolated package root: destDir is derived from the module's own
