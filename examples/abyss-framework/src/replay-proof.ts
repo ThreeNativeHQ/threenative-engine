@@ -222,6 +222,7 @@ export function installReplayProof(
         return driver(runtime);
       },
       recordAndReplay: async (steps: readonly ReplayProofStep[]) => {
+        await game.start();
         game.stop();
         await game.start();
         const runtime = getRuntime();
