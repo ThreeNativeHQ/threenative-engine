@@ -654,21 +654,31 @@ void Object3D::traverseAncestors(Visitor visitor, void* context) {
 
 // ------------------------------------------------------------------------------ matrices
 
+const Matrix4& Object3D::composedLocalMatrix() {
+    const auto& q = static_cast<const Quaternion&>(quaternion);
+    const std::array<double, 13> inputs{position.x, position.y, position.z, q.x, q.y, q.z, q.w,
+        scale.x, scale.y, scale.z, pivot ? pivot->x : 0., pivot ? pivot->y : 0., pivot ? pivot->z : 0.};
+    const uint8_t state = pivot ? 2 : 1;
+    if (composeState_ != state || std::memcmp(inputs.data(), composeInputs_.data(), sizeof(inputs)) != 0) {
+        composedLocal_.compose(position, quaternion, scale);
+        if (pivot) {
+            const double px = pivot->x, py = pivot->y, pz = pivot->z;
+            double* te = composedLocal_.elements.data();
+            te[12] += px - te[0] * px - te[4] * py - te[8] * pz;
+            te[13] += py - te[1] * px - te[5] * py - te[9] * pz;
+            te[14] += pz - te[2] * px - te[6] * py - te[10] * pz;
+        }
+        composeInputs_ = inputs;
+        composeState_ = state;
+    }
+    return composedLocal_;
+}
+
 void Object3D::updateMatrix() {
     materializeLocalTransform();
-    Matrix4 composed;
-    composed.compose(position, quaternion, scale);
-
-    if (pivot.has_value()) {
-        const double px = pivot->x, py = pivot->y, pz = pivot->z;
-        double* te = composed.elements.data();
-        te[12] += px - te[0] * px - te[4] * py - te[8] * pz;
-        te[13] += py - te[1] * px - te[5] * py - te[9] * pz;
-        te[14] += pz - te[2] * px - te[6] * py - te[10] * pz;
-    }
-
+    const Matrix4& composed = composedLocalMatrix();
     matrixWorldNeedsUpdate = true;
-    // three recomposes every frame for every auto-update object; only a changed matrix is a change.
+    // Raw matrix edits are repaired even when the TRS/pivot cache hits; revision counts changes.
     if (std::memcmp(matrix.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0) bump();
     matrix.copy(composed);
 }
@@ -695,8 +705,7 @@ bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain
     const auto* tracking = ownTransformTracking();
     const bool escapedAutoWorld = tracking[0] && tracking[2] && matrixWorldAutoUpdate;
     if (plain && identityParent && matrixAutoUpdate && matrixWorldAutoUpdate && !pivot) {
-        Matrix4 composed;
-        composed.compose(position, quaternion, scale);
+        const Matrix4& composed = composedLocalMatrix();
         const bool changed = bitsDiffer(matrix.elements, composed.elements);
         matrix.copy(composed);
         if (changed) bump();
@@ -814,6 +823,7 @@ void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool f
 }
 
 Object3D& Object3D::copy(const Object3D& source) {
+    composeState_ = 0;
     const_cast<Object3D&>(source).materializeLocalTransform();
     prepareLocalTransformWrite();
     markLocalTransformDirty();

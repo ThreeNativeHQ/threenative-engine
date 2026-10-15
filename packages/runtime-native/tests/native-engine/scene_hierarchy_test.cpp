@@ -434,6 +434,63 @@ void revision() {
     manual.updateMatrixWorld();
     CHECK(manual.matrixWorld.elements[12] == 33 && manualChild->matrixWorld.elements[12] == 33);
     Object3D::unleaseTransform(&manual.matrixWorld);
+
+    std::printf("TN_COMPOSE_NODE_BYTES:%zu\n", sizeof(Object3D));
+    for (const bool flat : {false, true}) {
+        Object3D object;
+        const auto checkLocal = [&] {
+            Matrix4 expected;
+            expected.compose(object.position, object.quaternion, object.scale);
+            if (object.pivot) {
+                const auto& p = *object.pivot; auto& e = expected.elements;
+                e[12] += p.x - e[0] * p.x - e[4] * p.y - e[8] * p.z;
+                e[13] += p.y - e[1] * p.x - e[5] * p.y - e[9] * p.z;
+                e[14] += p.z - e[2] * p.x - e[6] * p.y - e[10] * p.z;
+            }
+            object.updateMatrixWorldSelf(false, flat, true);
+            CHECK(std::memcmp(expected.elements.data(), object.matrix.elements.data(), sizeof(double) * 16) == 0);
+        };
+        checkLocal();
+        const auto first = object.revision(); checkLocal(); CHECK(object.revision() == first);
+        object.position.x = 2; object.scale.z = 3;
+        static_cast<Quaternion&>(object.quaternion).x = .25; // bypass notification, as a raw view can
+        checkLocal();
+        object.pivot = Vector3{}; checkLocal();
+        object.pivot->x = 4; checkLocal(); object.pivot.reset(); checkLocal();
+        const auto beforeRepair = object.revision();
+        object.matrix.elements[0] = 43; checkLocal();
+        CHECK(object.revision() == beforeRepair + 1);
+        object.position.x = -0.; checkLocal();
+        for (const uint64_t payload : {UINT64_C(0x7ff8000000000001), UINT64_C(0x7ff8000000000002)}) {
+            const auto beforeNaN = object.revision();
+            std::memcpy(&object.position.x, &payload, sizeof(payload)); checkLocal();
+            CHECK(object.revision() > beforeNaN);
+            const auto nanRevision = object.revision(); checkLocal(); CHECK(object.revision() == nanRevision);
+        }
+        object.position.x = 0; checkLocal();
+        object.matrixAutoUpdate = false; object.matrix.makeTranslation(7, 8, 9);
+        object.updateMatrixWorldSelf(true, flat, true); CHECK(object.matrix.elements[12] == 7);
+        object.matrixAutoUpdate = true; checkLocal();
+        object.matrixWorldAutoUpdate = false; object.matrixWorld.elements[12] = 99;
+        object.position.z = 5; checkLocal(); CHECK(object.matrixWorld.elements[12] == 99);
+        object.matrixWorldAutoUpdate = true;
+        object.updateMatrixWorldSelf(true, flat, true);
+        CHECK(object.matrixWorld.elements == object.matrix.elements);
+        Vector3 position; object.getWorldPosition(position); CHECK(position.x == object.matrix.elements[12]);
+        Object3D copy; copy.position.x = 100; copy.updateMatrix(); copy.copy(object); copy.updateMatrix();
+        CHECK(copy.matrix.elements == object.matrix.elements);
+    }
+    Object3D parentA, parentB, moved;
+    parentA.position.x = 3; parentB.position.x = 9; moved.position.x = 2;
+    parentA.add(moved); parentA.updateMatrixWorld(); CHECK(moved.matrixWorld.elements[12] == 5);
+    parentB.add(moved); parentB.updateMatrixWorld(); CHECK(moved.matrixWorld.elements[12] == 11);
+    parentB.position.x = 10; Vector3 worldPosition; moved.getWorldPosition(worldPosition); CHECK(worldPosition.x == 12);
+    struct AuthoredUpdate : Object3D {
+        int calls = 0;
+        void updateMatrix() override { ++calls; Object3D::updateMatrix(); matrix.elements[12] += calls; }
+    } authored;
+    authored.updateMatrixWorldSelf(); authored.updateMatrixWorldSelf();
+    CHECK(authored.calls == 2 && authored.matrixWorld.elements[12] == 2);
 }
 
 // Ported from three r185 test/unit/src/core/Object3D.tests.js. The source holds 37 QUnit.test

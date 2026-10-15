@@ -465,6 +465,11 @@ public:
     Object3D& copy(const Object3D& source);
 
 private:
+    // Experimental full-cost cache: 13 binary64 inputs, 16 output words, presence/validity state.
+    std::array<double, 13> composeInputs_{};
+    Matrix4 composedLocal_;
+    uint8_t composeState_ = 0; // 0 invalid, 1 no pivot, 2 pivot present
+    const Matrix4& composedLocalMatrix();
     void bump() { ++revision_; }
     uint64_t worldParentId_ = 0, worldParentRevision_ = 0;
 
