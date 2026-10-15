@@ -4,6 +4,10 @@ import type { AbyssState } from "./scenes/Abyss.js";
 
 type ReplayPlugin = { readonly recording: Recording | undefined };
 type StartupProofArm = "before" | "after";
+type StartupProofController = {
+  holdCurrentCallback(): void;
+  paint(callback: () => void): void;
+};
 
 type ReplayProofStep = {
   readonly holdTicks?: number;
@@ -34,23 +38,35 @@ export function installStartupProof(
   let visibleWorldFrame = 0;
   const unregister = ctx.beforeRender(() => {
     const proofHost = globalThis as Record<string, unknown>;
-    if (
-      proofHost.__TN_STARTUP_READY__ !== true ||
-      proofHost.__TN_STARTUP_PROOF_REQUEST__ !== true ||
-      visibleWorldFrame >= 5
-    )
-      return;
-    proofHost.__TN_STARTUP_PROOF_REQUEST__ = false;
+    if (proofHost.__TN_STARTUP_READY__ !== true || visibleWorldFrame >= 5) return;
+    const controller = proofHost.__TN_STARTUP_PROOF_CONTROLLER__ as
+      | StartupProofController
+      | undefined;
+    if (controller === undefined) throw new Error("TN_STARTUP_PROOF_CONTROLLER_MISSING");
     visibleWorldFrame += 1;
+    controller.holdCurrentCallback();
     label.textContent = `${startupProof.toUpperCase()} FIRST-VISIBLE-WORLD FRAME ${String(visibleWorldFrame)}`;
-    console.log(
-      `TN_STARTUP_VISIBLE_WORLD:${JSON.stringify({
+    const frame = visibleWorldFrame;
+    queueMicrotask(() => {
+      const series = runtime.runtimeDiagnosticsSeries?.() ?? [];
+      const frameBudget = series.at(-1);
+      const census = runtime.pipelineCensus?.();
+      if (frameBudget === undefined)
+        throw new Error(`TN_STARTUP_PROOF_FRAME_BUDGET_MISSING:${String(frame)}`);
+      if (census === undefined) throw new Error(`TN_STARTUP_PROOF_CENSUS_MISSING:${String(frame)}`);
+      const record = {
         arm: startupProof,
-        frame: visibleWorldFrame,
-        tick: runtime.tick(),
+        census,
+        frame,
+        frameBudget,
         readyMs: runtime.startupTimeline?.().readyMs,
-      })}`,
-    );
+        tick: runtime.tick(),
+      };
+      controller.paint(() => {
+        Object.assign(proofHost, { __TN_STARTUP_PROOF_RECORD__: { ...record, painted: true } });
+        console.log(`TN_STARTUP_VISIBLE_WORLD:${JSON.stringify({ ...record, painted: true })}`);
+      });
+    });
   });
   return () => {
     unregister();
