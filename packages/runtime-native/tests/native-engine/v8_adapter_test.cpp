@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <limits>
 #include <memory>
@@ -57,7 +58,8 @@ struct Runtime {
 };
 
 // Runs a script in a fresh context with the engine installed; returns the script's string result.
-std::string run(Runtime& rt, Adapter& adapter, const char* source) {
+std::string run(Runtime& rt, Adapter& adapter, const char* source,
+                const std::function<void(v8::Local<v8::Value>)>& observe = {}) {
     v8::HandleScope scope(rt.isolate);
     v8::Local<v8::Context> ctx = v8::Context::New(rt.isolate);
     v8::Context::Scope contextScope(ctx);
@@ -70,6 +72,7 @@ std::string run(Runtime& rt, Adapter& adapter, const char* source) {
         v8::String::Utf8Value error(rt.isolate, tryCatch.Exception());
         return std::string("THROWN ") + (*error ? *error : "?");
     }
+    if (observe) observe(result);
     v8::String::Utf8Value text(rt.isolate, result);
     return *text ? *text : "";
 }
@@ -1948,9 +1951,121 @@ void jsMathMembers() {
     CHECK(got == want);
 }
 
+// PRD-617: exercise the same native bindings that templates call.
+void templateMaterial() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const m = new MeshStandardMaterial({ flatShading: true });
+        const initial = m.flatShading;
+        const copy = m.clone();
+        m.flatShading = false;
+        if (!initial || !copy.flatShading || m.flatShading !== false) throw new Error('flatShading state');
+        copy
+    )JS", [&](v8::Local<v8::Value> result) {
+        tn_handle_t handle{};
+        CHECK(adapter.unwrap(result, handle));
+        const auto* object = tn::abi::objectOf(handle);
+        if (!object) { CHECK(false); return; }
+        const auto& material = *static_cast<tn::engine::Material*>(object->ptr.get());
+        CHECK(material.flatShading);
+        tn::engine::shader::VertexVariant variant;
+        variant.flatShading = material.flatShading;
+        const auto program = tn::engine::shader::buildStandard({}, variant);
+        const auto wgsl = tn::engine::shader::WgslEmitter::emit(program.fragment);
+        CHECK(wgsl.ok());
+        CHECK(wgsl.code.find("dpdx(") != std::string::npos);
+        CHECK(wgsl.code.find("dpdy(") != std::string::npos);
+    });
+    std::printf("template material: %s\n", got.c_str());
+    CHECK(got == "[object Object]");
+}
+
+void templateBounds() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const geometry = new BoxGeometry(2, 4, 6);
+        const mesh = new InstancedMesh(geometry, new MeshStandardMaterial(), 2);
+        mesh.setMatrixAt(0, new Matrix4().makeTranslation(-5, 0, 0));
+        mesh.setMatrixAt(1, new Matrix4().makeTranslation(5, 0, 0));
+        const result = mesh.computeBoundingSphere();
+        const sphere = geometry.boundingSphere;
+        [result === undefined, sphere.center.x === 0, sphere.center.y === 0,
+         sphere.center.z === 0, Math.abs(sphere.radius - Math.sqrt(14)) < 1e-12,
+         Math.abs(mesh.boundingSphere.radius - (5 + Math.sqrt(14))) < 1e-12].join(' ')
+    )JS");
+    std::printf("template bounds: %s\n", got.c_str());
+    CHECK(got == "true true true true true true");
+}
+
+void templateRanges() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const a = new BufferAttribute(new Float32Array(12), 3);
+        const ranges = a.updateRanges;
+        const checks = [Array.isArray(ranges), ranges === a.updateRanges];
+        checks.push(ranges.push({ start: 3, count: 6 }) === 1);
+        checks.push(a.updateRanges[0].start === 3 && a.updateRanges[0].count === 6);
+        a.addUpdateRange(0, 3);
+        checks.push(ranges.length === 2);
+        a.clearUpdateRanges();
+        checks.push(ranges.length === 0 && ranges === a.updateRanges);
+        ranges.push({ start: 0, count: 3 });
+        ranges[0].count = 6;
+        a.addUpdateRange(6, 3);
+        a.needsUpdate = true;
+        checks.push(ranges[0].count === 6 && ranges.length === 2);
+        const append = ranges.push;
+        const other = [];
+        append.call(other, { start: 0, count: 1 });
+        checks.push(other.length === 1 && ranges.length === 2);
+        let refused = false;
+        try { append({ start: 0, count: 1 }); } catch (error) { refused = error instanceof TypeError; }
+        checks.push(refused);
+        const push = ranges.push.bind(ranges);
+        a.clearUpdateRanges();
+        push({ start: 9, count: 3 });
+        checks.push(ranges.length === 1 && ranges[0].start === 9);
+        a.clearUpdateRanges();
+        ranges.push({ start: 6, count: 3 });
+        const version = a.version;
+        a.needsUpdate = true;
+        checks.push(a.version === version + 1 && a.updateRanges.length === 1);
+        const range = ranges[0]; range.count = 2;
+        a.needsUpdate = true;
+        if (!checks.every(Boolean)) throw new Error(checks.join(' '));
+        a
+    )JS", [&](v8::Local<v8::Value> result) {
+        tn_handle_t handle{};
+        CHECK(adapter.unwrap(result, handle));
+        const auto* object = tn::abi::objectOf(handle);
+        if (!object) { CHECK(false); return; }
+        auto& attribute = *static_cast<tn::engine::BufferAttribute*>(object->ptr.get());
+        CHECK(attribute.updateRanges().size() == 1);
+        if (attribute.updateRanges().size() == 1) {
+            CHECK(attribute.updateRanges()[0].start == 6);
+            CHECK(attribute.updateRanges()[0].count == 2);
+        }
+        // The renderer clears this same store after uploading its ranges.
+        attribute.clearUpdateRanges();
+        auto ctx = rt.isolate->GetCurrentContext();
+        v8::Local<v8::Value> cleared;
+        CHECK(v8::Script::Compile(ctx, v8::String::NewFromUtf8Literal(rt.isolate,
+            "ranges.length === 0 && a.updateRanges === ranges")).ToLocalChecked()->Run(ctx).ToLocal(&cleared));
+        CHECK(!cleared.IsEmpty() && cleared->IsTrue());
+    });
+    std::printf("template ranges: %s\n", got.c_str());
+    CHECK(got == "[object Object]");
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},

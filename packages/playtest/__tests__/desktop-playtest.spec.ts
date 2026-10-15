@@ -8,6 +8,8 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
+  evaluateRichPlaytestAssertions,
+  type IPlaytestScenario,
   type IPlaytestBridgeV1,
   type IPlaytestObservationSnapshot,
   type JsonValue,
@@ -15,11 +17,12 @@ import {
 import { assertCaptureNotBlank } from "../src/capture.js";
 import { exitCodeForReport, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs, type IStandalonePlaytestConfig } from "../src/runner/config.js";
-import { DesktopPlaytestDriver, LocalDeviceMailbox } from "../src/runner/desktop.js";
+import { DesktopPlaytestDriver, LocalDeviceMailbox, desktopConsoleType } from "../src/runner/desktop.js";
 import { runDesktopPlaytest } from "../src/runner/desktopRunner.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { normalizedRuntimeDiagnostics } from "../src/runner/observationSampling.js";
 import type { IDevicePlaytestDriver } from "../src/runner/androidRunner.js";
+import type { IPlaytestReport } from "../src/report.js";
 import { connectDevicePlaytestBridge, type IDeviceBridgeInstallation } from "../src/three/device.js";
 
 beforeEach(() => {
@@ -1106,4 +1109,31 @@ test("desktop completion opt-in follows deterministic prefix, restores controls 
       if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
     }
   }
+});
+
+
+test.each([
+  {},
+  { noConsoleErrors: false, noRuntimeDiagnostics: false, consoleErrorsOptOutReason: "Known console noise", runtimeDiagnosticsOptOutReason: "Known runtime noise" },
+])("V8 frame failures on stdout fail the verdict despite diagnostic opt-outs %j", (policy) => {
+  const failure = "[Playtest] TN_V8_FRAME_FAILED: TypeError: attribute.updateRanges.push is not a function";
+  const entries = [{ text: failure, type: desktopConsoleType("stdout", failure) }];
+  const diagnostics = normalizedRuntimeDiagnostics(undefined, undefined as never, entries);
+  expect(diagnostics.recentRuntimeErrors).toEqual([{ text: failure, type: "error" }]);
+  const report: IPlaytestReport = {
+    diagnostics: [], distance: 0, entity: "player", expectMoved: false, frames: 1,
+    observations: { console: entries, hud: {}, network: [], resources: {}, runtimeDiagnostics: diagnostics },
+    target: "desktop", trivialityOptOuts: [],
+  };
+  const scenario = {
+    assert: { diagnostics: policy }, name: "frame-failure", schemaVersion: 1,
+    steps: [], subject: "player", target: "desktop",
+    viewport: { height: 360, width: 640 }, warmupFrames: 0,
+  } as IPlaytestScenario;
+  const result = evaluateRichPlaytestAssertions({ report, scenario });
+  expect(result.assertions).toContainEqual(expect.objectContaining({ id: "diagnostics", pass: false }));
+  expect(exitCodeForReport({
+    assertionResults: result.assertions, diagnostics: result.diagnostics,
+    pass: result.assertions.every((assertion) => assertion.pass),
+  })).toBe(1);
 });

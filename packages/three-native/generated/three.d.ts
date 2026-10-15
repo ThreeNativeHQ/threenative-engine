@@ -917,6 +917,7 @@ count: number;
 instanceColor: InstancedBufferAttribute | null;
 readonly instanceMatrix: InstancedBufferAttribute;
 boundingBox: Box3 | null;
+boundingSphere: Sphere | null;
 
   getColorAt(index: number, color: Color): Color;
 
@@ -927,6 +928,8 @@ boundingBox: Box3 | null;
   setMatrixAt(index: number, matrix: Matrix4): this;
 
   computeBoundingBox(): void;
+
+  computeBoundingSphere(): void;
 }
 
 /** Catalog partial (native-not-implemented): three/IntType. */
@@ -1627,6 +1630,7 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 bumpMap: Texture | null;
 fragmentNode: Node | null;
+flatShading: boolean;
 
   clone(): this;
 
@@ -3269,6 +3273,7 @@ forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+flatShading: boolean;
 
   clone(): this;
 
@@ -3306,6 +3311,7 @@ forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+flatShading: boolean;
 
   clone(): this;
 

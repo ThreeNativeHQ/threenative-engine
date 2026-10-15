@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, wr
 import { join } from 'node:path';
 
 import { promisify } from 'node:util';
-import { afterEach, test } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
 import { PNG } from 'pngjs';
 
 import {
@@ -1389,13 +1389,13 @@ test('a cached runtime without its verified helper is never reused', async () =>
 test('macOS is built but unpublished, and says so instead of 404ing', () => {
   const root = makeTempDirSync('threenative-unpublished-');
   roots.push(root);
-  // The published cohort is exactly what a release stages, and it excludes these four rows.
+  // The published cohort is exactly what a release stages, and it excludes these macOS rows.
   assert.deepEqual(
     PREBUILT_KEYS.filter((key) => !PUBLISHED_PREBUILT_KEYS.includes(key)).sort(),
     [...UNPUBLISHED_PREBUILT_KEYS].sort(),
   );
   // Windows ships unsigned - SmartScreen warns, Gatekeeper refuses - so only macOS is held back.
-  assert.deepEqual([...UNPUBLISHED_PREBUILT_KEYS].sort(), ['darwin-arm64', 'darwin-arm64-tools']);
+  assert.deepEqual([...UNPUBLISHED_PREBUILT_KEYS].sort(), ['darwin-arm64', 'darwin-arm64-engine-player', 'darwin-arm64-tools']);
   assert.ok(PUBLISHED_PREBUILT_KEYS.includes('win32-x64'));
   assert.ok(PUBLISHED_PREBUILT_KEYS.includes('win32-x64-tools'));
   // A complete candidate still refuses them, and names the reason rather than a missing asset:
@@ -1977,4 +1977,43 @@ test('macOS notarization staples and re-archives the signed bundle', () => {
   assert.ok(calls.includes('xcrun notarytool'));
   assert.ok(calls.includes('xcrun stapler'));
   assert.equal(archiveWrites, 2, 'the stapled bundle is archived again');
+});
+
+
+test('engine player assets install and verify checksums on each desktop platform', async () => {
+  const root = makeTempDirSync('threenative-engine-player-');
+  roots.push(root);
+  const manifestPath = join(root, 'prebuilt-lock.json');
+  try {
+    for (const [platform, arch] of [['linux', 'x64'], ['win32', 'x64']]) {
+      const key = `${platform}-${arch}-engine-player`;
+      assert.ok(PUBLISHED_PREBUILT_KEYS.includes(key));
+      assert.equal(PREBUILT_ASSET_NAMES[key], `threenative-engine-player-${platform}-${arch}${platform === 'win32' ? '.exe' : ''}`);
+      const payload = Buffer.from(`player:${key}`);
+      const artifact = { sha256: sha256(payload), url: `https://fixture.invalid/${key}` };
+      const writeManifest = () => writeFileSync(manifestPath, JSON.stringify({ artifacts: { [key]: artifact } }));
+      writeManifest();
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(payload)));
+      const output = join(root, platform, `tn-native-engine-player-v8${platform === 'win32' ? '.exe' : ''}`);
+      const install = { platform, arch, enginePlayer: true, output, manifestPath };
+      await installPrebuilt(install);
+      assert.deepEqual(readFileSync(output), payload);
+      assert.equal(JSON.parse(readFileSync(join(root, platform, 'engine-player-install-status.json'))).sha256, sha256(payload));
+      vi.stubGlobal('fetch', vi.fn(() => { throw new Error('offline'); }));
+      assert.equal(await installPrebuilt({ ...install, reuse: true }), output);
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(payload)));
+      artifact.sha256 = '0'.repeat(64);
+      writeManifest();
+      await assert.rejects(installPrebuilt({ ...install, reuse: true }), /Checksum verification failed/);
+      assert.equal(existsSync(output), false);
+    }
+    assert.ok(UNPUBLISHED_PREBUILT_KEYS.includes('darwin-arm64-engine-player'));
+    assert.equal(PREBUILT_ASSET_NAMES['darwin-arm64-engine-player'], 'threenative-engine-player-darwin-arm64');
+    await assert.rejects(installPrebuilt({ platform: 'darwin', arch: 'arm64', enginePlayer: true, output: join(root, 'mac-player'), manifestPath }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED');
+    assert.throws(() => readRelease(join(root, 'not-released.json'), 'linux-x64-engine-player'), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
+    await assert.rejects(downloadReleaseArtifact('linux-x64-engine-player', { manifestUrl: 'https://fixture.invalid/not-released' }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes('linux-x64-engine-player'));
+    writeFileSync(manifestPath, JSON.stringify({ artifacts: {} }));
+    await assert.rejects(installPrebuilt({ platform: 'linux', arch: 'x64', enginePlayer: true, output: join(root, 'absent-player'), manifestPath }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes('linux-x64-engine-player'));
+  } finally { vi.unstubAllGlobals(); }
 });

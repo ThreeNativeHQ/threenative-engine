@@ -1,9 +1,12 @@
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
+import { markNormalTarget } from "./pass-node.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { type IRttClasses, defineRtt } from "./rtt.js";
 import { defineStorage } from "./storage.js";
+import { defineTslExtras } from "./tsl-extras.js";
 import { defineStruct } from "./tsl-struct.js";
 import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
+import { defineWgslFn } from "./wgsl-fn.js";
 /**
  * TSL on the Wasm engine (PRD-540): three's `three/tsl` authoring functions and node methods as JS
  * wrappers over node ids, built by the engine's one TSL name table (`tn_tsl_call`, shared with the
@@ -13,7 +16,6 @@ import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "
  * the engine's `scope:open` and `scope:close`, so their statements land in the engine's open body
  * (tn::abi::TslScopes, shared with the V8 back end).
  */
-import { defineWgslFn } from "./wgsl-fn.js";
 
 /** One argument as `tn_tsl_call` takes it. */
 export type TslArgValue =
@@ -399,32 +401,28 @@ export function defineTsl(
   );
   exports.wgslFn = defineWgslFn(exports.wgslFunction as Parameters<typeof defineWgslFn>[0]);
   exports.struct = defineStruct(exports.struct as Parameters<typeof defineStruct>[0]);
-  // Fn builds once at definition; calling the returned function returns that graph, as on V8.
-  // A callback with parameters (`Fn(([a, b]) => ...)`) builds per call, inline with the caller's arguments:
-  // an array of them, or the one plain object the caller passes; setLayout only chains.
+  // Each call binds its own inputs (positional, an array, nodes or one named object) before the callback
+  // builds the graph; setLayout only chains, since the engine inlines.
   exports.Fn = (callback: unknown) => {
-    if (typeof callback === "function" && callback.length > 0) {
-      const inline = (...args: unknown[]) => {
-        const named =
-          args.length === 1 &&
-          typeof args[0] === "object" &&
-          args[0] !== null &&
-          !Array.isArray(args[0]) &&
-          !(TSL_NODE in args[0]);
-        const input = named
-          ? args[0]
-          : args.map((value) =>
-              typeof value === "number"
-                ? (exports.float as (value: number) => unknown)(value)
-                : value,
-            );
-        return wrap(capture("Fn", callback, input));
-      };
-      return Object.assign(inline, { setLayout: () => inline });
-    }
-    const graph = wrap(capture("Fn", callback));
-    const built = () => graph;
-    return Object.assign(built, { setLayout: () => built });
+    if (typeof callback !== "function") throw new TypeError("TN_TSL Fn: expected a callback");
+    const inline = (...args: unknown[]) => {
+      const first = args[0];
+      const inputs =
+        args.length === 1 &&
+        first !== null &&
+        typeof first === "object" &&
+        !isTslNode(first) &&
+        (Array.isArray(first) || first.constructor === Object)
+          ? first
+          : args;
+      const asNode = (value: unknown) =>
+        isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
+      const parameters = Array.isArray(inputs)
+        ? inputs.map(asNode)
+        : Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, asNode(value)]));
+      return wrap(capture("Fn", callback, parameters));
+    };
+    return Object.assign(inline, { setLayout: () => inline });
   };
   for (const name of ["atomicAdd", "atomicStore"])
     exports[name] = (...args: unknown[]) => {
@@ -518,5 +516,13 @@ export function defineTsl(
   exports.uniformArray = live.uniformArray;
   exports.reference = live.reference;
   if (classes !== undefined) withConstValues(exports, classes);
+  Object.assign(exports, defineTslExtras(exports as never));
+  // mrt()'s `normal: vec4(normalView, 0)` names the engine's normal target (pass-node.ts), as on the V8 player.
+  // Only the two-argument zero-alpha form can name it, so normalView is built then and not at install.
+  const vec4 = exports.vec4 as (...args: unknown[]) => object;
+  exports.vec4 = (...args: unknown[]) =>
+    args.length === 2 && args[1] === 0
+      ? (markNormalTarget(vec4, exports.normalView) as typeof vec4)(...args)
+      : vec4(...args);
   return { exports, sync: live.sync };
 }

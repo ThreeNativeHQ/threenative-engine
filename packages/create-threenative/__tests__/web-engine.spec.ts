@@ -307,6 +307,15 @@ describe("createWebEnginePlugin", () => {
       );
   });
 
+  it("resolves the display addons the engine refuses to the same module, never upstream", () => {
+    // Upstream's SSRNode runs `Fn(...).setLayout(...)` at import, which the engine's Fn does not carry.
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    for (const node of ["FXAANode", "GodraysNode", "SSGINode", "SSRNode", "SharpenNode"])
+      expect(plugin.resolveId(`three/addons/tsl/display/${node}.js`)).toMatch(
+        /(?:three-native\/src\/addons\/post-effects-web\.ts|web-engine-post-effects\.js)$/u,
+      );
+  });
+
   it("resolves three's GLTFLoader to the engine glTF loader, never upstream", () => {
     expect(
       createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(

@@ -6907,6 +6907,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "boundingSphere",
+          "type": "Sphere | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -7008,6 +7017,19 @@
         },
         {
           "name": "computeBoundingBox",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "computeBoundingSphere",
           "async": false,
           "overloads": [
             {
@@ -12522,8 +12544,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -13041,6 +13062,15 @@
         {
           "name": "fragmentNode",
           "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "flatShading",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -26775,6 +26805,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "flatShading",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -27063,6 +27102,15 @@
         {
           "name": "polygonOffsetUnits",
           "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "flatShading",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {

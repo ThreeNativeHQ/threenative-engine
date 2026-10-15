@@ -1306,6 +1306,85 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 info.GetReturnValue().Set(view);
             }, v8::External::New(isolate_, this)).ToLocalChecked());
     }
+    // Keep array mutations and the renderer's range clearing on the same native store.
+    const char* rangesSource = R"JS((prototype) => {
+        const read = Object.getOwnPropertyDescriptor(prototype, "updateRanges").get;
+        const add = prototype.addUpdateRange, clear = prototype.clearUpdateRanges;
+        const states = new WeakMap();
+        Object.defineProperty(prototype, "updateRanges", { configurable: true, get() {
+            if (states.has(this)) return states.get(this);
+            const owner = this, target = [];
+            let snapshot;
+            const refresh = () => {
+                const current = read.call(owner);
+                if (current !== snapshot) {
+                    target.splice(0, target.length, ...JSON.parse(current));
+                    snapshot = current;
+                }
+            };
+            const write = () => {
+                for (const range of target) {
+                    if (!range || !Number.isSafeInteger(range.start) || range.start < 0 ||
+                        !Number.isSafeInteger(range.count) || range.count < 0)
+                        throw new TypeError("TN_NATIVE_UNSUPPORTED updateRanges: expected nonnegative integer start and count");
+                }
+                clear.call(owner);
+                for (const range of target) add.call(owner, range.start, range.count);
+                snapshot = read.call(owner);
+            };
+            const mutators = new Set(["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin"]);
+            const proxy = new Proxy(target, {
+                get(array, key, receiver) {
+                    refresh();
+                    if (mutators.has(key)) return function() {
+                        "use strict";
+                        if (this !== proxy) return Array.prototype[key].apply(this, arguments);
+                        refresh();
+                        const previous = array.slice();
+                        try {
+                            const result = Array.prototype[key].apply(array, arguments);
+                            write();
+                            return result === array ? proxy : result;
+                        } catch (error) { array.splice(0, array.length, ...previous); throw error; }
+                    };
+                    return Reflect.get(array, key, receiver);
+                },
+                set(array, key, value) {
+                    refresh();
+                    const previous = array.slice();
+                    try { Reflect.set(array, key, value); write(); return true; }
+                    catch (error) { array.splice(0, array.length, ...previous); throw error; }
+                },
+                ownKeys(array) { refresh(); return Reflect.ownKeys(array); },
+                getOwnPropertyDescriptor(array, key) { refresh(); return Reflect.getOwnPropertyDescriptor(array, key); }
+            });
+            // A range record is an ordinary JS object; copy edits before needsUpdate publishes it.
+            const update = Object.getOwnPropertyDescriptor(prototype, "needsUpdate").set;
+            Object.defineProperty(owner, "needsUpdate", { configurable: true, set(value) {
+                if (value) { refresh(); write(); }
+                update.call(owner, value);
+            } });
+            states.set(owner, proxy);
+            return proxy;
+        } });
+        prototype.addUpdateRange = function(start, count) {
+            this.updateRanges.push({ start, count });
+        };
+    })JS";
+    v8::Local<v8::Value> rangesFactory;
+    if (!v8::Script::Compile(context, str(isolate_, rangesSource)).ToLocalChecked()->Run(context).ToLocal(&rangesFactory))
+        throw std::runtime_error("TN_NATIVE_UPDATE_RANGES: cannot install array binding");
+    for (const auto& [name, binding] : registry()) {
+        if (!isAttributeClass(name)) continue;
+        const auto cls = classes_.find(tn_type_id(name.c_str()));
+        if (cls == classes_.end()) continue;
+        v8::Local<v8::Value> prototype;
+        if (!cls->second.Get(isolate_)->GetFunction(context).ToLocalChecked()->Get(context, str(isolate_, "prototype")).ToLocal(&prototype))
+            throw std::runtime_error("TN_NATIVE_UPDATE_RANGES: attribute prototype missing");
+        v8::Local<v8::Value> installed;
+        if (!rangesFactory.As<v8::Function>()->Call(context, target, 1, &prototype).ToLocal(&installed))
+            throw std::runtime_error("TN_NATIVE_UPDATE_RANGES: cannot bind attribute array");
+    }
     // Last, so the math classes replace the native ones as globals.
     if (jsMath_) {
         if (!math_) math_ = std::make_unique<MathBridge>(isolate_, context_);

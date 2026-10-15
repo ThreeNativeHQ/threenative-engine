@@ -1339,6 +1339,30 @@ void material_uuid() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// three's `geometry.setIndex(null)` removes the index (core's mergeParts deindexes this way); the web
+// platformer failed to start on it with TN_NATIVE_UNSUPPORTED.
+void geometry_index_null() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t geometry{};
+    CHECK(tn_construct(ctx, "BufferGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    const double indices[] = {0, 1, 2};
+    tn_value_t list{};
+    list.kind = TN_VALUE_NUMBERS;
+    list.numbers = indices;
+    list.count = 3;
+    tn_value_t out{};
+    CHECK(tn_invoke(geometry, "setIndex", &list, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_invoke(geometry, "getIndex", nullptr, 0, &out, &d.value) == TN_OK && out.kind == TN_VALUE_HANDLE);
+    const tn_value_t none{};  // TN_VALUE_NULL
+    CHECK(none.kind == TN_VALUE_NULL);
+    CHECK(tn_invoke(geometry, "setIndex", &none, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_invoke(geometry, "getIndex", nullptr, 0, &out, &d.value) == TN_OK && out.kind == TN_VALUE_NULL);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-610: core's per-frame `__tnUpdateMatrixWorld(force, prune)` answers the nodes its own walk visited, so no
 // second walk counts the tree. With `prune` a hidden subtree composes only its root, as core's JS pass does
 // (9,903 nodes a Midway frame against 779): its world matrices catch up, forced, on the first frame it shows.
@@ -1891,5 +1915,5 @@ void starter_post_bindings() {
 TN_TEST_MAIN({"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
-             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count},
+             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})
