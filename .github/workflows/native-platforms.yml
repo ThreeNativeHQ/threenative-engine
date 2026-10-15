@@ -99,10 +99,10 @@ jobs:
       # inputs there), so a row an ordinary pull request does not owe is dropped by shaping the
       # matrix instead. x64 and arm64 run the identical release-container proof; the arm64 leg is
       # GitHub's free hosted `ubuntu-24.04-arm` runner, because there is no V8 or Dawn prebuilt for
-      # Linux arm64 (kuoruan/libv8 ships Linux x64 only; Dawn's ubuntu-latest asset is x64) and a
-      # source V8 build is not allowed in CI — so that host is built with QuickJS over wgpu-native,
-      # the one WebGPU backend publishing an arm64 Linux archive, which scripts/download-deps.mjs
-      # and scripts/native-build.mjs select from `process.arch`. A reduced run keeps x64 alone, and
+      # Linux arm64 (kuoruan/libv8 ships Linux x64 only; Dawn's ubuntu-latest asset is x64).
+      # The ARM host consumes the locked source-built V8 payload over wgpu-native; dependency
+      # verification fails closed rather than building V8 in a consumer lane.
+      # A reduced run keeps x64 alone, and
       # x64 routes through the same TN_RUNNER switch every other movable Linux job uses (PRD-480).
       - id: rows
         env:

@@ -3031,6 +3031,86 @@ describe("CI pipeline structure", () => {
     expect(callers).toBe(9);
   });
 
+  it("selects QuickJS for the packaged fallback without changing native features", async () => {
+    const integration = await readFile(
+      path.join(repo, ".github/workflows/integration.yml"),
+      "utf8",
+    );
+    const job = requiredJob(integration, "packaged-quickjs");
+    const name = "Build the QuickJS host required by the packaged fallback";
+    const step = job.slice(job.indexOf(`      - name: ${name}`)).split("\n      - ")[0];
+    const script = step.includes("        run: |")
+      ? workflowRunScript(job, name)
+      : step.match(/ {8}run: (.+)/u)?.[1];
+    expect(script).toBeTruthy();
+    const directory = await makeTempDir("packaged-quickjs-selection-");
+    const runtime = path.join(directory, "packages/runtime-native");
+    await mkdir(runtime, { recursive: true });
+    await writeFile(
+      path.join(runtime, "CMakeLists.txt"),
+      `
+cmake_minimum_required(VERSION 3.20)
+project(fallback_selection NONE)
+foreach(flag MYSTRAL_USE_V8 MYSTRAL_USE_QUICKJS MYSTRAL_USE_WGPU MYSTRAL_USE_DAWN TN_ENABLE_CANVAS2D TN_ENABLE_NATIVE_PHYSICS TN_ENABLE_UI_OVERLAY)
+  option(\${flag} "fixture feature" OFF)
+endforeach()
+if(MYSTRAL_USE_V8)
+  set(engine v8)
+else()
+  set(engine quickjs)
+endif()
+file(WRITE "\${CMAKE_BINARY_DIR}/mystral" "#!/bin/sh\nprintf 'Native WebGPU JS runtime - wgpu-native + \${engine} build\\n'\n")
+file(CHMOD "\${CMAKE_BINARY_DIR}/mystral" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
+add_custom_target(mystral)
+`,
+    );
+    const result = spawnSync(
+      "bash",
+      [
+        "-e",
+        "-u",
+        "-o",
+        "pipefail",
+        "-c",
+        `
+pnpm() {
+  cmake -S packages/runtime-native -B packages/runtime-native/build/tn-linux \\
+    -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF -DMYSTRAL_USE_WGPU=ON -DMYSTRAL_USE_DAWN=OFF \\
+    -DTN_ENABLE_CANVAS2D=ON -DTN_ENABLE_NATIVE_PHYSICS=ON -DTN_ENABLE_UI_OVERLAY=ON
+}
+node() { test "$*" = "packages/runtime-native/scripts/download-deps.mjs --only quickjs"; }
+${script}
+`,
+      ],
+      { cwd: directory, encoding: "utf8", timeout: 30_000 },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    const cache = await readFile(path.join(runtime, "build/tn-linux/CMakeCache.txt"), "utf8");
+    expect(cache).toMatch(/^MYSTRAL_USE_V8:BOOL=OFF$/mu);
+    expect(cache).toMatch(/^MYSTRAL_USE_QUICKJS:BOOL=ON$/mu);
+    for (const feature of [
+      "MYSTRAL_USE_WGPU",
+      "TN_ENABLE_CANVAS2D",
+      "TN_ENABLE_NATIVE_PHYSICS",
+      "TN_ENABLE_UI_OVERLAY",
+    ])
+      expect(cache).toMatch(new RegExp(`^${feature}:BOOL=ON$`, "mu"));
+    expect(cache).toMatch(/^MYSTRAL_USE_DAWN:BOOL=OFF$/mu);
+    const { resolveRuntimeAssetCapabilities } = await import(
+      "../../packages/create-threenative/src/build.js"
+    );
+    expect(
+      resolveRuntimeAssetCapabilities("desktop", path.join(runtime, "build/tn-linux/mystral")),
+    ).toMatchObject({
+      engine: "quickjs",
+      webAssembly: false,
+      decoders: { ktx2: false, meshopt: false, draco: false },
+    });
+    expect(job).toContain(
+      "THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral",
+    );
+  });
+
   it("keeps the native contracts and primary CI documentation honest", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const test = requiredJob(ci, "test-native");
