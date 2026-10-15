@@ -196,7 +196,8 @@ Value Endpoint::describe() const {
     // Only names in packages/playtest/src/capabilities.ts: an unregistered name fails the run with
     // TN_PLAYTEST_BRIDGE_CAPABILITY_UNKNOWN. runtime.fixedStep is mandatory on a device bridge.
     return obj({{"capabilities", Value::makeArray({str("runtime.fixedStep"), str("entity.observe"),
-                                                   str("entity.setup"), str("runtime.resources")})},
+                                                   str("entity.setup"), str("runtime.resources"),
+                                                   str("runtime.network")})},
                 {"limits", obj({{"maxEntitiesPerSample", num(100)},
                                 {"maxEventsPerDrain", num(1000)},
                                 {"maxPayloadBytes", num(double(kMaxPayloadBytes))},
@@ -269,7 +270,10 @@ bool Endpoint::sample(const Value* argument, Value& result, std::string& error) 
             }
         }
     }
-    std::vector<std::pair<std::string, Value>> snapshot{{"clock", clock()}};
+    // The player has no fetch, so a run it hosts makes no request: the desktop runner's network check
+    // (develop PRD-566) reads this honest zero instead of failing on a missing observer.
+    std::vector<std::pair<std::string, Value>> snapshot{
+        {"clock", clock()}, {"network", obj({{"entries", Value::makeArray({})}, {"requests", num(0)}})}};
     if (argument && argument->find("entities"))
         snapshot.emplace_back("entities", Value::makeArray(std::move(entities)));
     if (askedResources)

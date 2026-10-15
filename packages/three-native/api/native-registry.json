@@ -5,6 +5,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -261,6 +262,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -563,6 +565,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -959,6 +962,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -1656,6 +1660,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -2162,6 +2167,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -2314,6 +2320,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -2692,6 +2699,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -2991,6 +2999,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -3249,6 +3258,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -3592,6 +3602,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -3974,6 +3985,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -4889,6 +4901,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -5119,6 +5132,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -5322,6 +5336,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -5614,6 +5629,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -6084,6 +6100,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -6387,6 +6404,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -6809,6 +6827,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",
@@ -7017,6 +7036,7 @@
       "methods": [
         "__cullProjected",
         "__restoreCull",
+        "__tnCopyMatrixWorld",
         "__tnProjectionReport",
         "__tnStructureStamp",
         "__tnUpdateMatrixWorld",

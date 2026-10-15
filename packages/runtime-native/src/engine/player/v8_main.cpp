@@ -1340,6 +1340,12 @@ int main(int argc, char** argv) {
             gamePath = argv[++i];
         else if (argument == "--check-game")
             checkGame = true;
+        // The playtest runner sizes the window with the legacy host's flags. The player reads its surface
+        // from TN_PLAYER_WIDTH and TN_PLAYER_HEIGHT (run.cpp validates them), and it always opens windowed.
+        else if ((argument == "--width" || argument == "--height") && i + 1 < argc)
+            setenv(argument == "--width" ? "TN_PLAYER_WIDTH" : "TN_PLAYER_HEIGHT", argv[++i], 1);
+        else if (argument == "--windowed") {
+        }
         else if (argument == "--check-request" && i + 1 < argc)
             checkRequest = argv[++i];
         else if (argument == "--cpu-prof" || argument.rfind("--cpu-prof=", 0) == 0) {
