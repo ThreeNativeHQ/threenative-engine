@@ -234,6 +234,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_shader_invalid=shader_invalid
         native_engine_renderer_time_uniform=time_uniform
         native_engine_renderer_steady_state=steady_state
+        native_engine_renderer_normal_pass_is_not_tallied=normal_pass_is_not_tallied
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
         native_engine_renderer_updates=updates

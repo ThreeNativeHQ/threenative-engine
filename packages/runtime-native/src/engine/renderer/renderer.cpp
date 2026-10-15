@@ -2961,7 +2961,11 @@ void Renderer::encodeFrame(FrameJob& job) {
     const BufferStore* boundVertex[8] = {};  // by vertex buffer slot (attribute location)
     const BufferStore* boundIndex = nullptr;
     lastFrame_ = FrameStats{};
-    auto encode = [&](auto pass, const Planned& p, bool counted) {
+    // Which of three's Info counters a draw lands in. The normal and velocity passes are extra targets
+    // of the one scene pass three counts once, so they tally nowhere.
+    enum class Tally { Main, Shadow, Extra };
+    auto encode = [&](auto pass, const Planned& p, Tally tally) {
+        const bool counted = tally == Tally::Main;
         // The same commands record a direct pass or a cached bundle.
 #define TN_ENCODE(name, ...) \
         if constexpr (std::is_same_v<decltype(pass), WGPURenderBundleEncoder>) \
@@ -3001,15 +3005,17 @@ void Renderer::encodeFrame(FrameJob& job) {
             }
             const uint32_t count = static_cast<uint32_t>(indices.bytes / (wide ? 4 : 2));
             TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
-            (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
+            if (tally != Tally::Extra)
+                (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
         } else {
             const uint32_t count = static_cast<uint32_t>(geometry_->cache.resolved(*item.positions).bytes / 12);
             TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
-            (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);
+            if (tally != Tally::Extra)
+                (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);
         }
-        if (counted) ++lastFrame_.draws;
-        else ++lastFrame_.shadowDraws;
-        if (item.boneMatrices) {
+        if (tally == Tally::Main) ++lastFrame_.draws;
+        else if (tally == Tally::Shadow) ++lastFrame_.shadowDraws;
+        if (item.boneMatrices && tally != Tally::Extra) {
             auto& stats = counted ? lastFrame_.mainSkinned : lastFrame_.shadowSkinned;
             ++stats.draws;
             if (item.boneStride) {
@@ -3064,7 +3070,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         }
         bound = nullptr;
         boundIndex = nullptr;
-        for (const Planned& p : shadowPlan.draws) encode(shadowPass, p, false); // three's info counts the main pass
+        for (const Planned& p : shadowPlan.draws) encode(shadowPass, p, Tally::Shadow); // three's info counts the main pass
         wgpuRenderPassEncoderEnd(shadowPass);
         wgpuRenderPassEncoderRelease(shadowPass);
     }
@@ -3095,7 +3101,7 @@ void Renderer::encodeFrame(FrameJob& job) {
             bound = nullptr;
             boundIndex = nullptr;
             std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
-            for (std::size_t k = from; k < to; ++k) encode(bundle, plan[k], true);
+            for (std::size_t k = from; k < to; ++k) encode(bundle, plan[k], Tally::Main);
             WGPURenderBundleDescriptor finish{};
             const WGPURenderBundle recorded = wgpuRenderBundleEncoderFinish(bundle, &finish);
             wgpuRenderBundleEncoderRelease(bundle);
@@ -3154,7 +3160,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         normalDesc.depthStencilAttachment = &normalDepth;
         auto normalEncoder = wgpuCommandEncoderBeginRenderPass(encoder, &normalDesc);
         bound = nullptr; boundIndex = nullptr;
-        for (const Planned& p : normalPlan) encode(normalEncoder, p, false);
+        for (const Planned& p : normalPlan) encode(normalEncoder, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(normalEncoder); wgpuRenderPassEncoderRelease(normalEncoder);
     }
     if (traa_) {
@@ -3170,7 +3176,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         motionDesc.depthStencilAttachment = &motionDepth;
         auto velocityPass = wgpuCommandEncoderBeginRenderPass(encoder, &motionDesc);
         bound = nullptr; boundIndex = nullptr;
-        for (const Planned& p : velocityPlan) encode(velocityPass, p, false);
+        for (const Planned& p : velocityPlan) encode(velocityPass, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
         traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }

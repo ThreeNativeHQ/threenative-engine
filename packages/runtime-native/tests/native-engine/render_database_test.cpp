@@ -1214,6 +1214,30 @@ void renderTarget() {
     CHECK(renderer.geometry().stats().fullUploads == afterTarget);
 }
 
+// three draws the normal target in the scene pass it counts once, so a post graph that reads `normal`
+// adds no draws and no triangles to the frame's counters (the engine's extra normal pass used to land
+// in the shadow tally, which put the web platformer at 873 draws against three's 431).
+void normalPassIsNotTallied() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 72);
+    LitScene s;
+    const auto depth = g::texture("depth", g::uv()), normal = g::texture("normal", g::uv());
+    const auto colour = g::texture("scene", g::uv());
+    const auto occlusion = g::effectNode(g::gtaoEffect(depth, normal));
+    renderer.setPostGraph(g::mul(colour, g::swizzle(occlusion, "x")));
+    RenderDatabase database;
+    for (int i = 0; i < 3; ++i) {
+        database.render(renderer, s.scene, s.camera);
+        renderer.poll();
+        events.drain();
+    }
+    CHECK(renderer.lastFrame().shadowDraws == 0 && renderer.lastFrame().shadowTriangles == 0);
+}
+
 // A steady frame does no setup work: after warm-up, sixty more frames of a lit node-material scene with
 // shadows and the template's bloom + GTAO/denoise chain compile no pipeline, build no pipeline text
 // key, create no bind group, serialize no graph key and build no program. Each of these was a
@@ -3459,7 +3483,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
