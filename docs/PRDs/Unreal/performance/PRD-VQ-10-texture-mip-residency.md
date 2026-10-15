@@ -51,7 +51,7 @@ the game's, and the synthetic 256 MiB below remains a fixture value only. **A We
 shrink in place.** A `GPUTexture` has a fixed size and mip count, and a mip cannot be freed. A drop
 or a restore is therefore a new texture of the other variant, swapped into every material that
 binds it, and the old one is destroyed only after the GPU has finished the frames that used it.
-Mobile variants use [PRD-568](../assets/PRD-568-mobile-builds-ship-gpu-ready-astc.md)'s ASTC output,
+Mobile variants use [PRD-568](../../done/PRD-568-mobile-builds-ship-gpu-ready-astc.md)'s ASTC output,
 where it applies.
 
 ## Required behavior

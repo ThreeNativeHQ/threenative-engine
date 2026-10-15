@@ -949,6 +949,38 @@
       "required": true
     },
     {
+      "id": "world-hlod-lifecycle",
+      "title": "hand-placed chunk HLOD swap, protected shadow/collision source and eviction",
+      "category": "world",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-hlod-lifecycle.js",
+      "browserRecipe": "webgpu",
+      "captureFrames": 180,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "world-gpu-scene-readback",
+      "title": "GPU WorldCells validation reuses two readback targets per layout across late cutout atlas publication",
+      "category": "world",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-gpu-scene-readback.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "captureFrames": 1200,
+      "nativeFrames": 1200,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "world-terrain-inline-hash",
       "title": "terrain merge and seam jobs settle inline on a workerless host",
       "category": "world",

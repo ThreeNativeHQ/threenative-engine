@@ -2,6 +2,7 @@ import {
   Box3,
   BufferGeometry,
   Color,
+  DataTexture,
   Matrix4,
   type Mesh,
   MeshStandardMaterial,
@@ -108,6 +109,87 @@ function part(
 ): IImpostorPart {
   return { geometry, local, material };
 }
+
+/** Evaluate the actual scalar MRT depth node with a source coverage and view-space Z. */
+function depthScalar(node: unknown, coverage: number, viewZ: number): number {
+  if (typeof node !== "object" || node === null) throw new Error("Missing depth node");
+  const value: unknown = Reflect.get(node, "value");
+  if (typeof value === "number") return value;
+  const component: unknown = Reflect.get(node, "components");
+  if (component === "w") return coverage;
+  if (component === "z") return viewZ;
+  const op: unknown = Reflect.get(node, "op");
+  if (op === "*" || op === "-") {
+    const a = depthScalar(Reflect.get(node, "aNode"), coverage, viewZ);
+    const b = depthScalar(Reflect.get(node, "bNode"), coverage, viewZ);
+    return op === "*" ? a * b : a - b;
+  }
+  return depthScalar(Reflect.get(node, "node"), coverage, viewZ);
+}
+
+describe("WorldImpostorBaker clear-compatible depth", () => {
+  it("preserves covered depth when actual four-tap MRT data filters against alpha-one clear", () => {
+    const baker = new WorldImpostorBaker();
+    const pending = baker.begin("cutout", [
+      part(boxedGeometry(new Vector3(-1, -1, -1), new Vector3(1, 1, 1)), new Matrix4()),
+    ]);
+    const normal = (pending.materials[0] as NodeMaterial | undefined)?.mrtNode?.outputNodes
+      .normal as unknown as {
+      node: { nodes: unknown[] };
+    };
+    const depth = normal.node.nodes.at(-1);
+    // Actual frame9 texels around the false interior hit: two covered side-face samples and two
+    // clear texels. The secondary WebGPU MRT clears to alpha1 even when attachment0 clears to0.
+    const taps = [
+      [0.7565290066424867, 1, 5 / 255],
+      [0.22265083162391738, 0, 1],
+      [0.01608596874537347, 1, 6 / 255],
+      [0.004734192988222438, 0, 1],
+    ] as const;
+    const alpha = taps.reduce((sum, [weight, coverage]) => sum + weight * coverage, 0);
+    const old = taps.reduce((sum, [weight, , stored]) => sum + weight * stored, 0) / alpha;
+    const encoded = taps.reduce(
+      (sum, [weight, coverage, fraction]) =>
+        sum +
+        weight * (coverage === 0 ? 1 : depthScalar(depth, coverage, -2 * Math.sqrt(3) * fraction)),
+      0,
+    );
+    expect(old).toBeCloseTo(0.3139952341250269, 12);
+    expect((1 - encoded) / alpha).toBeCloseTo(0.019689490830327828, 12);
+    for (const coverage of [0.51, 0.7, 1]) {
+      const mixed = 0.4 * depthScalar(depth, coverage, -2 * Math.sqrt(3) * 0.2) + 0.6;
+      expect((1 - mixed) / (coverage * 0.4)).toBeCloseTo(0.2, 12);
+    }
+    baker.abort();
+  });
+});
+
+describe("WorldImpostorBaker cutout capture", () => {
+  const unit = () => boxedGeometry(new Vector3(-1, -1, -1), new Vector3(1, 1, 1));
+
+  it("compensates a mapped cutout's alpha by mip level, so a needle card survives the 128 px bake", () => {
+    // A 2048 px needle card is about nine percent opaque. The 128 px frame samples it from a deep
+    // mip, where a plain 0.5 discard deletes every needle and the atlas keeps only the trunk: the
+    // pine atlas measured 3.7% alpha coverage on Machinefall before this, 13.5% after.
+    const material = new MeshStandardMaterial({ alphaTest: 0.5 });
+    material.map = new DataTexture(new Uint8Array(4 * 2048 * 2048), 2048, 2048);
+    const baker = new WorldImpostorBaker();
+    const pending = baker.begin("needles", [part(unit(), new Matrix4(), material)], {
+      alphaTest: 0.5,
+    });
+    const capture = pending.materials[0] as NodeMaterial;
+    expect(capture.alphaTest).toBe(0.5);
+    expect(capture.alphaTestNode).not.toBeNull();
+    baker.abort();
+  });
+
+  it("keeps the plain number for a cutout with no map, which has no mip chain to compensate", () => {
+    const baker = new WorldImpostorBaker();
+    const pending = baker.begin("flat", [part(unit(), new Matrix4())], { alphaTest: 0.5 });
+    expect((pending.materials[0] as NodeMaterial).alphaTestNode).toBeNull();
+    baker.abort();
+  });
+});
 
 describe("WorldImpostorBaker octahedral frame", () => {
   it("places every view on the unit sphere with a full-sphere octahedral grid", () => {

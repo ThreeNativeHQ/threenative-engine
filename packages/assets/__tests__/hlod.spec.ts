@@ -972,6 +972,68 @@ describe("scatter cell HLOD", () => {
     expect(cutoutTriangles).toBe(source.opaqueTriangles * 2);
   });
 
+  it("falls back to a chunks-only proxy when a cell's scatter exceeds the bake budget", async () => {
+    const chunk = await denseChunk(8);
+    const raw = JSON.parse(worldJson([{ chunks: ["chunk.glb"], x: 0, z: 0 }]).toString());
+    // The scatter asset alone is over the 64 MiB source budget: the cell used to decline whole.
+    raw.assets = {
+      pine: { glb: "pine.glb", bounds: { min: [0, 0, 0], max: [8, 0, 8] } },
+    };
+    raw.cells[0].runs = [{ asset: "pine", offset: 0, count: 2 }];
+    const world = readWorldPackage(Buffer.from(JSON.stringify(raw))) as NonNullable<
+      ReturnType<typeof readWorldPackage>
+    >;
+    const files = new Map([
+      ["world/chunk.glb", chunk.buffer],
+      ["world/pine.glb", Buffer.alloc(65 * 1024 * 1024)],
+      [
+        "world/placements.bin",
+        Buffer.from(new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 4, 0, 0, 0, 0, 0, 1, 1]).buffer),
+      ],
+    ]);
+    const result = await cookWorldProxies({
+      read: async (logical) => files.get(logical) as Buffer,
+      world,
+      worldLogical: "world/world.json",
+    });
+    expect(result.declined).toEqual([]);
+    expect(result.proxies).toHaveLength(1);
+    expect(result.proxies[0]).toMatchObject({
+      scope: "chunks",
+      sourceTriangles: chunk.opaqueTriangles * 2,
+    });
+    const metadata = JSON.parse(applyProxiesToWorld(world, result.proxies).toString()).cells[0]
+      .proxy;
+    expect(metadata.scope).toBe("chunks");
+  });
+
+  it("still declines the whole cell when its scatter is ineligible, not merely large", async () => {
+    const chunk = await denseChunk(8);
+    const raw = JSON.parse(worldJson([{ chunks: ["chunk.glb"], x: 0, z: 0 }]).toString());
+    raw.assets = {
+      pine: { glb: "pine.glb", bounds: { min: [0, 0, 0], max: [8, 0, 8] }, maxDistance: 50 },
+    };
+    raw.cells[0].runs = [{ asset: "pine", offset: 0, count: 2 }];
+    const world = readWorldPackage(Buffer.from(JSON.stringify(raw))) as NonNullable<
+      ReturnType<typeof readWorldPackage>
+    >;
+    const files = new Map([
+      ["world/chunk.glb", chunk.buffer],
+      ["world/pine.glb", chunk.buffer],
+      [
+        "world/placements.bin",
+        Buffer.from(new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 4, 0, 0, 0, 0, 0, 1, 1]).buffer),
+      ],
+    ]);
+    const result = await cookWorldProxies({
+      read: async (logical) => files.get(logical) as Buffer,
+      world,
+      worldLogical: "world/world.json",
+    });
+    expect(result.proxies).toHaveLength(0);
+    expect(result.declined).toEqual([{ reason: "scatter-distance-filter", x: 0, z: 0 }]);
+  });
+
   it("compiles scatter through the existing overlay and emits deterministic proxy bytes", async () => {
     const root = await makeTempDir("threenative-hlod-scatter-");
     const source = await denseChunk(8);

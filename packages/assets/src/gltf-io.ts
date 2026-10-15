@@ -1,8 +1,107 @@
-import { type Document, type GLTF, NodeIO } from "@gltf-transform/core";
+import {
+  type Document,
+  Extension,
+  type GLTF,
+  NodeIO,
+  PropertyType,
+  type ReaderContext,
+  type Texture,
+  type WriterContext,
+} from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import { KHR_DF_MODEL_ASTC, read as readKTX2 } from "ktx-parse";
 import { MeshoptDecoder } from "meshoptimizer";
 import { TNDiscreteLod } from "./lod/extension.js";
 import { TNVirtualGeometry } from "./virtual/extension.js";
+
+/** Raw ASTC owns this vendor-draft extension; Basis KTX2 owns KHR_texture_basisu. */
+export function isRawAstc(texture: Texture): boolean {
+  const image = texture.getImage();
+  if (texture.getMimeType() !== "image/ktx2" || image === null) return false;
+  const container = readKTX2(image);
+  return (
+    (container.vkFormat === 157 || container.vkFormat === 158) &&
+    container.supercompressionScheme === 0
+  );
+}
+
+export class EXTTextureAstc extends Extension {
+  static override EXTENSION_NAME = "EXT_texture_astc";
+  override extensionName = EXTTextureAstc.EXTENSION_NAME;
+  override prereadTypes = [PropertyType.TEXTURE];
+  override preread(context: ReaderContext): this {
+    for (const texture of context.jsonDoc.json.textures ?? []) {
+      const astc = texture.extensions?.[this.extensionName] as { source?: number } | undefined;
+      if (astc === undefined) continue;
+      if (texture.source !== undefined || texture.extensions?.KHR_texture_basisu !== undefined)
+        throw new Error(
+          "TN_ASSETS_ASTC_FALLBACK: paired authored ASTC fallbacks cannot yet be preserved.",
+        );
+      if (!Number.isInteger(astc.source) || !context.jsonDoc.json.images?.[astc.source ?? -1])
+        throw new Error("TN_ASSETS_ASTC_SOURCE: missing ASTC image source.");
+      texture.source = astc.source;
+    }
+    return this;
+  }
+  read(context: ReaderContext): this {
+    for (const definition of context.jsonDoc.json.textures ?? []) {
+      const astc = definition.extensions?.[this.extensionName] as { source: number } | undefined;
+      if (astc === undefined) continue;
+      const texture = context.textures[astc.source];
+      if (texture === undefined || !isRawAstc(texture))
+        throw new Error("TN_ASSETS_ASTC_SOURCE: extension source must be raw ASTC 4x4 KTX2.");
+    }
+    this.setRequired(true);
+    return this;
+  }
+  write(context: WriterContext): this {
+    for (const texture of this.document.getRoot().listTextures()) {
+      if (!isRawAstc(texture)) continue;
+      const image = texture.getImage();
+      if (image === null) throw new Error("TN_ASSETS_ASTC_SOURCE: missing image bytes.");
+      const container = readKTX2(image);
+      const dfd = container.dataFormatDescriptor[0];
+      if (
+        container.pixelWidth <= 0 ||
+        container.pixelHeight <= 0 ||
+        container.pixelWidth > 0x7fffffff ||
+        container.pixelHeight > 0x7fffffff ||
+        container.pixelDepth !== 0 ||
+        container.layerCount !== 0 ||
+        container.faceCount !== 1 ||
+        container.levelCount !==
+          Math.floor(Math.log2(Math.max(container.pixelWidth, container.pixelHeight))) + 1 ||
+        container.levels.length !== container.levelCount ||
+        container.levels.some((level, mip) => {
+          const bytes =
+            16 *
+            Math.ceil(Math.max(1, container.pixelWidth >> mip) / 4) *
+            Math.ceil(Math.max(1, container.pixelHeight >> mip) / 4);
+          return level.levelData.byteLength !== bytes || level.uncompressedByteLength !== bytes;
+        }) ||
+        dfd?.colorModel !== KHR_DF_MODEL_ASTC ||
+        dfd.texelBlockDimension.join() !== "3,3,0,0" ||
+        dfd.bytesPlane.join() !== "16,0,0,0,0,0,0,0" ||
+        dfd.colorPrimaries !== (container.vkFormat === 158 ? 1 : 0) ||
+        dfd.transferFunction !== (container.vkFormat === 158 ? 2 : 1) ||
+        (dfd.flags & 1) !== 0 ||
+        (container.keyValue.KTXorientation !== undefined &&
+          container.keyValue.KTXorientation !== "rd")
+      )
+        throw new Error(
+          "TN_ASSETS_ASTC_METADATA: raw glTF ASTC must carry full mips, matching primaries/transfer, straight alpha and rd orientation.",
+        );
+      const imageIndex = context.imageIndexMap.get(texture);
+      for (const definition of context.jsonDoc.json.textures ?? []) {
+        if (definition.source !== imageIndex) continue;
+        definition.extensions ??= {};
+        definition.extensions[this.extensionName] = { source: imageIndex };
+        definition.source = undefined;
+      }
+    }
+    return this;
+  }
+}
 
 const DRACO_EXTENSION = "KHR_draco_mesh_compression";
 
@@ -40,7 +139,7 @@ export function peekExtensions(input: Buffer): ReadonlySet<string> {
 export async function createGltfReader(input: Buffer): Promise<NodeIO> {
   await MeshoptDecoder.ready;
   let io = new NodeIO()
-    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry, TNDiscreteLod])
+    .registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc, TNVirtualGeometry, TNDiscreteLod])
     .registerDependencies({ "meshopt.decoder": MeshoptDecoder });
   if (peekExtensions(input).has(DRACO_EXTENSION)) {
     const { createDecoderModule } = await import("draco3dgltf");

@@ -1,3 +1,12 @@
+import {
+  KHR_DF_MODEL_ASTC,
+  KHR_DF_TRANSFER_LINEAR,
+  KHR_DF_TRANSFER_SRGB,
+  KHR_SUPERCOMPRESSION_NONE,
+  VK_FORMAT_ASTC_4x4_SRGB_BLOCK,
+  VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
+  read as readKTX2,
+} from "ktx-parse";
 import BASIS from "../vendor/basis-encoder/basis_encoder.js";
 
 /** Included in both pass and shared-image cache keys whenever encoded bytes can change. */
@@ -46,8 +55,31 @@ interface IBasisEncoder {
   setPackUASTCFlags(flags: number): void;
 }
 
+interface IEncoderKtx2File {
+  close(): void;
+  delete(): void;
+  isValid(): boolean;
+  isASTC_LDR(): boolean;
+  startTranscoding(): boolean;
+  getWidth(): number;
+  getHeight(): number;
+  getLevels(): number;
+  getImageTranscodedSizeInBytes(mip: number, layer: number, face: number, format: number): number;
+  transcodeImage(
+    dst: Uint8Array,
+    mip: number,
+    layer: number,
+    face: number,
+    format: number,
+    alpha: number,
+    channel0: number,
+    channel1: number,
+  ): boolean;
+}
+
 interface IBasisModule {
   readonly BasisEncoder: new () => IBasisEncoder;
+  readonly KTX2File: new (bytes: Uint8Array) => IEncoderKtx2File;
   initializeBasis(): void;
 }
 
@@ -135,5 +167,85 @@ export async function encodeToKTX2(
     );
   } finally {
     encoder.delete();
+  }
+}
+
+/** Validate and decode every final ASTC mip; retain only tight RGBA8 mip zero for scoring. */
+export async function decodeAstcKtx2(
+  encoded: Uint8Array,
+  width: number,
+  height: number,
+): Promise<Uint8Array> {
+  const container = readKTX2(encoded);
+  const descriptor = container.dataFormatDescriptor[0];
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width <= 0 ||
+    height <= 0 ||
+    width * height > MAX_SOURCE_TEXELS ||
+    ![VK_FORMAT_ASTC_4x4_UNORM_BLOCK, VK_FORMAT_ASTC_4x4_SRGB_BLOCK].includes(container.vkFormat) ||
+    container.pixelWidth !== width ||
+    container.pixelHeight !== height ||
+    container.typeSize !== 1 ||
+    container.pixelDepth !== 0 ||
+    container.layerCount !== 0 ||
+    container.faceCount !== 1 ||
+    container.supercompressionScheme !== KHR_SUPERCOMPRESSION_NONE ||
+    container.globalData !== null ||
+    container.dataFormatDescriptor.length !== 1 ||
+    container.levelCount !== Math.floor(Math.log2(Math.max(width, height))) + 1 ||
+    container.levels.length !== container.levelCount ||
+    descriptor?.colorModel !== KHR_DF_MODEL_ASTC ||
+    descriptor.transferFunction !==
+      (container.vkFormat === VK_FORMAT_ASTC_4x4_SRGB_BLOCK
+        ? KHR_DF_TRANSFER_SRGB
+        : KHR_DF_TRANSFER_LINEAR) ||
+    descriptor.texelBlockDimension.join() !== "3,3,0,0" ||
+    descriptor.bytesPlane.join() !== "16,0,0,0,0,0,0,0"
+  )
+    throw new Error(
+      "TN_ASSETS_QUALITY_DECODE: expected a full 2D ASTC 4x4 mip chain matching the comparison.",
+    );
+  const file = new (await basisModule()).KTX2File(encoded);
+  try {
+    if (
+      !file.isValid() ||
+      !file.isASTC_LDR() ||
+      file.getWidth() !== width ||
+      file.getHeight() !== height ||
+      file.getLevels() !== container.levelCount ||
+      !file.startTranscoding()
+    )
+      throw new Error("TN_ASSETS_QUALITY_DECODE: the installed encoder rejected final ASTC.");
+    let mipZero: Uint8Array | undefined;
+    // cTFRGBA32 in the pinned Basis Universal transcoder_texture_format enum.
+    const format = 13;
+    for (const [mip, level] of container.levels.entries()) {
+      const mipWidth = Math.max(1, Math.floor(width / 2 ** mip));
+      const mipHeight = Math.max(1, Math.floor(height / 2 ** mip));
+      const blocks = Math.ceil(mipWidth / 4) * Math.ceil(mipHeight / 4) * 16;
+      const pixels = mipWidth * mipHeight * 4;
+      if (
+        level.levelData.byteLength !== blocks ||
+        level.uncompressedByteLength !== blocks ||
+        file.getImageTranscodedSizeInBytes(mip, 0, 0, format) !== pixels
+      )
+        throw new Error(`TN_ASSETS_QUALITY_DECODE: invalid ASTC mip ${String(mip)} size.`);
+      const decoded = new Uint8Array(pixels);
+      if (!file.transcodeImage(decoded, mip, 0, 0, format, 0, -1, -1))
+        throw new Error(
+          `TN_ASSETS_QUALITY_DECODE: ASTC mip ${String(mip)} RGBA32 transcode failed.`,
+        );
+      if (mip === 0) mipZero = decoded;
+    }
+    if (mipZero === undefined) throw new Error("TN_ASSETS_QUALITY_DECODE: missing ASTC mip zero.");
+    return mipZero;
+  } finally {
+    try {
+      file.close();
+    } finally {
+      file.delete();
+    }
   }
 }

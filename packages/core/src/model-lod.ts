@@ -483,7 +483,25 @@ interface IJoinedRungDef {
  * no authored node identity, so picking must not answer with them: `isLodJoinProxy` is how the
  * framework picker keeps returning the authored primitives whether or not the camera joined them.
  */
-const joinedProxies = new WeakSet<object>();
+// The root and /world entry points bundle this module separately, just like CHAINS_KEY below.
+// Visibility handoffs must reach the rung selected by the other entry in the same realm.
+const JOIN_STATE_KEY = Symbol.for("threenative.discreteLodJoinState");
+const joinHost = globalThis as Record<symbol, unknown>;
+const joinState = (joinHost[JOIN_STATE_KEY] ?? {
+  proxies: new WeakSet<object>(),
+  owners: new WeakMap<Mesh, Object3D>(),
+}) as { proxies: WeakSet<object>; owners: WeakMap<Mesh, Object3D> };
+joinHost[JOIN_STATE_KEY] = joinState;
+const joinedProxies = joinState.proxies;
+const joinedOwners = joinState.owners;
+
+/** Internal layer ownership handoff: a joined rung represents the same source render passes. */
+export function setModelLodLayers(mesh: Mesh, mask: number): void {
+  mesh.layers.mask = mask;
+  joinedOwners.get(mesh)?.traverse((node) => {
+    if ((node as Partial<Mesh>).isMesh === true) node.layers.mask = mask;
+  });
+}
 
 /** True when `object` was inserted by the runtime as a joined-rung proxy, not authored in the file. */
 export function isLodJoinProxy(object: object): boolean {
@@ -659,6 +677,20 @@ class JoinedRung {
       if (mesh.isMesh === true && this.#geometries.has(mesh.geometry)) members.push(mesh);
     });
     if (members.length < this.#memberCount) return false;
+    const first = members[0];
+    if (first === undefined) return false;
+    // A joined draw cannot represent different per-member render-pass ownership.
+    if (
+      members.some(
+        (member) =>
+          member.layers.mask !== first.layers.mask ||
+          member.castShadow !== first.castShadow ||
+          member.receiveShadow !== first.receiveShadow,
+      )
+    ) {
+      this.deactivate(container);
+      return false;
+    }
     // The honest risk of joining siblings: their relative transforms are baked into the rung, so a
     // node a script moves independently must be refused. A source member with a baseline that no
     // longer matches its authored local transform is exactly that. (A clone is baselined on its
@@ -683,13 +715,19 @@ class JoinedRung {
       joinedProxies.add(node);
       // A stock `Raycaster` ignores `visible`; a no-op raycast keeps the authored primitives the
       // only picking surface even for a game that runs `intersectObjects` on the scene directly.
-      if ((node as Partial<Mesh>).isMesh === true) node.raycast = () => undefined;
+      if ((node as Partial<Mesh>).isMesh === true) {
+        node.raycast = () => undefined;
+        node.layers.mask = first.layers.mask;
+        node.castShadow = first.castShadow;
+        node.receiveShadow = first.receiveShadow;
+      }
     });
     const restored: { mesh: Mesh; visible: boolean }[] = [];
     for (const member of members) restored.push({ mesh: member, visible: member.visible });
     for (const { mesh } of restored) {
       mesh.visible = false;
       this.#hidden.add(mesh);
+      joinedOwners.set(mesh, proxy);
     }
     container.add(proxy);
     this.#activations.set(container, { proxy, restored });
@@ -706,6 +744,7 @@ class JoinedRung {
     for (const { mesh, visible } of activation.restored) {
       mesh.visible = visible;
       this.#hidden.delete(mesh);
+      joinedOwners.delete(mesh);
     }
     activation.proxy.removeFromParent();
     this.#activations.delete(container);
@@ -1169,17 +1208,21 @@ function hookSubtree(tracking: ITrackedRoot, subtree: object): void {
 }
 
 function unhookSubtree(tracking: ITrackedRoot, subtree: object): void {
-  (subtree as IGraphNode).traverse((node) => {
+  // Releasing a controller can remove a joined sibling. Snapshot before releasing so Three's
+  // traversal never indexes a children array that the release just shortened.
+  const nodes: object[] = [];
+  (subtree as IGraphNode).traverse((node) => nodes.push(node));
+  for (const node of nodes) {
     tracking.items.delete(node as Mesh);
     // A removed mesh must not leave a joined proxy behind in a container that stays in the scene.
     controllers.get(node as Mesh)?.release();
-    if (!tracking.hooked.has(node)) return;
+    if (!tracking.hooked.has(node)) continue;
     tracking.hooked.delete(node);
     const link = node as Partial<IGraphNode>;
-    if (typeof link.removeEventListener !== "function") return;
+    if (typeof link.removeEventListener !== "function") continue;
     link.removeEventListener("childadded", tracking.onAdded);
     (link as IGraphNode).removeEventListener("childremoved", tracking.onRemoved);
-  });
+  }
 }
 
 function trackRoot(root: IGraphNode): ITrackedRoot {
