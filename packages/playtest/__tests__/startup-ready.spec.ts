@@ -341,3 +341,21 @@ test("an unreadable liveness probe never invents a crash", async () => {
     }),
   ).resolves.toEqual({ rule: "sustained-frames", startup: ready });
 });
+
+test("startup frame timeouts consume the remaining deadline without resetting it", async () => {
+  let clock = 0;
+  const budgets: Array<number | undefined> = [];
+  const timeout = new PlaytestBridgeError(playtestDiagnostic("TN_PLAYTEST_OPERATION_TIMEOUT", "RAF stalled", "Check rendering"));
+  await expect(waitForStartupReady({
+    bridge: source(["runtime.startup"], [collapsing]),
+    now: () => clock,
+    timeoutMs: 200,
+    pump: async (remainingMs) => {
+      budgets.push(remainingMs);
+      clock += 50;
+      throw timeout;
+    },
+  })).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+  expect(budgets).toEqual([200, 150, 100, 50]);
+  expect(clock).toBe(200);
+});

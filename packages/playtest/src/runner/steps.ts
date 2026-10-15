@@ -22,7 +22,7 @@ import {
 import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright";
 
-import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
+import { advanceTimeoutMs, connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import { sampleElementVisibility } from "./sampling.js";
 import {
   PERFORMANCE_BROWSER_ARGS,
@@ -665,18 +665,45 @@ export async function sampleAfterTransition(
   return bridge.sample(request);
 }
 
-export async function waitFrames(page: Page, frames: number): Promise<void> {
+export async function waitFrames(page: Page, frames: number, timeoutMs?: number): Promise<void> {
   if (frames <= 0) return;
-  await page.evaluate((count) => new Promise<void>((resolveFrame) => {
-    const schedule = (globalThis as unknown as {
-      requestAnimationFrame(callback: () => void): number;
-    }).requestAnimationFrame;
-    let remaining = count;
-    const next = () => {
-      remaining -= 1;
-      if (remaining <= 0) resolveFrame();
-      else schedule(next);
-    };
-    schedule(next);
-  }), frames);
+  let budgetMs: number;
+  if (timeoutMs === undefined) {
+    budgetMs = advanceTimeoutMs(frames);
+  } else if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    // An expired or malformed budget must not start a fresh deadline.
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_OPERATION_TIMEOUT",
+      `waitFrames requested ${frames} frame(s) but the supplied remaining budget of ${String(timeoutMs)}ms is not a positive, finite value.`,
+      "Check that the page is producing requestAnimationFrame callbacks; the wait cannot complete while rendering is stalled.",
+    ));
+  } else {
+    budgetMs = timeoutMs;
+  }
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      page.evaluate((count) => new Promise<void>((resolveFrame) => {
+        const schedule = (globalThis as unknown as {
+          requestAnimationFrame(callback: () => void): number;
+        }).requestAnimationFrame;
+        let remaining = count;
+        const next = () => {
+          remaining -= 1;
+          if (remaining <= 0) resolveFrame();
+          else schedule(next);
+        };
+        schedule(next);
+      }), frames),
+      new Promise<void>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new PlaytestBridgeError(playtestDiagnostic(
+          "TN_PLAYTEST_OPERATION_TIMEOUT",
+          `waitFrames requested ${frames} frame(s) exceeded ${budgetMs}ms.`,
+          "Check that the page is producing requestAnimationFrame callbacks; the wait cannot complete while rendering is stalled.",
+        ))), budgetMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
 }

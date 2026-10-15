@@ -4,6 +4,7 @@ import { expect, test, vi } from "vitest";
 import { chromium } from "playwright";
 import { runStandalonePlaytest } from "../src/runner/runner.js";
 import { PlaytestBridgeError } from "../src/runner/bridgeClient.js";
+import { waitFrames } from "../src/runner/steps.js";
 
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
@@ -132,4 +133,92 @@ test.each([
   } finally {
     launch.mockRestore();
   }
+});
+
+test("waitFrames does nothing for zero or negative frame counts", async () => {
+  const page = { evaluate: vi.fn() };
+  await waitFrames(page as never, 0);
+  await waitFrames(page as never, -3);
+  expect(page.evaluate).not.toHaveBeenCalled();
+});
+
+test("waitFrames rejects a pending RAF at the supplied remaining budget", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = { evaluate: vi.fn(() => new Promise<void>(() => {})) };
+    const pending = waitFrames(page as never, 1, 50).catch((error) => error);
+    await vi.advanceTimersByTimeAsync(50);
+    const error = await pending;
+    expect(error).toMatchObject({ diagnostic: { code: "TN_PLAYTEST_OPERATION_TIMEOUT" } });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("waitFrames preserves queued RAF ordering through a long supplied budget", async () => {
+  vi.useFakeTimers();
+  const callbacks: Array<() => void> = [];
+  const schedule = vi.fn((callback: () => void) => { callbacks.push(callback); return callbacks.length; });
+  vi.stubGlobal("requestAnimationFrame", schedule);
+  try {
+    const page = { evaluate: vi.fn((callback: (count: number) => Promise<void>, count: number) => callback(count)) };
+    const settled = vi.fn();
+    const pending = waitFrames(page as never, 3, 40_000).then(() => { settled(); });
+    for (let frame = 0; frame < 3; frame += 1) {
+      expect(callbacks).toHaveLength(1);
+      expect(settled).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(12_000);
+      const callback = callbacks.shift();
+      expect(callback).toBeTypeOf("function");
+      callback?.();
+    }
+    await pending;
+    expect(schedule).toHaveBeenCalledTimes(3);
+    expect(callbacks).toHaveLength(0);
+    expect(settled).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  }
+});
+
+test("waitFrames rejects after N minus one RAF callbacks and releases its timer", async () => {
+  vi.useFakeTimers();
+  const callbacks: Array<() => void> = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: () => void) => { callbacks.push(callback); return callbacks.length; });
+  try {
+    const page = { evaluate: vi.fn((callback: (count: number) => Promise<void>, count: number) => callback(count)) };
+    const pending = waitFrames(page as never, 3, 50).catch((error) => error);
+    for (let frame = 0; frame < 2; frame += 1) {
+      const callback = callbacks.shift();
+      expect(callback).toBeTypeOf("function");
+      callback?.();
+    }
+    expect(callbacks).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await pending).toMatchObject({ diagnostic: { code: "TN_PLAYTEST_OPERATION_TIMEOUT" } });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  }
+});
+
+test("waitFrames rejects an already-expired supplied budget without launching page.evaluate", async () => {
+  const page = { evaluate: vi.fn(() => new Promise<void>(() => {})) };
+  await expect(waitFrames(page as never, 1, 0)).rejects.toMatchObject({
+    diagnostic: { code: "TN_PLAYTEST_OPERATION_TIMEOUT" },
+  });
+  expect(page.evaluate).not.toHaveBeenCalled();
+});
+
+test("waitFrames rejects malformed supplied budgets", async () => {
+  const page = { evaluate: vi.fn(() => new Promise<void>(() => {})) };
+  for (const budget of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+    await expect(waitFrames(page as never, 1, budget)).rejects.toMatchObject({
+      diagnostic: { code: "TN_PLAYTEST_OPERATION_TIMEOUT" },
+    });
+  }
+  expect(page.evaluate).not.toHaveBeenCalled();
 });

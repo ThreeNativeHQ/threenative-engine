@@ -471,7 +471,7 @@ async function runStandalonePlaytestInternal(
           aborted: () => tearingDown,
           bridge,
           declaredSoftware: activeConfig.allowSoftwareAdapter === true,
-          pump: () => waitFrames(activePage, 1),
+          pump: (remainingMs?: number) => waitFrames(activePage, 1, remainingMs),
         });
     const runtimeReady = await page.evaluate(() =>
       document.readyState !== "loading" && document.querySelector("canvas") !== null,

@@ -34,7 +34,7 @@ export interface IWaitForStartupReadyOptions {
    * passes a short wait. This is not scenario semantics — no step is being counted here — it is
    * the boundary before the first observation is taken.
    */
-  readonly pump: () => Promise<void>;
+  readonly pump: (remainingMs?: number) => Promise<void>;
   /**
    * True once the run is being torn down, so the wait stops instead of outliving it.
    *
@@ -112,7 +112,7 @@ export async function waitForStartupReady(
       ));
     }
     try {
-      await pump();
+      await pump(deadline - now());
     } catch (error) {
       if (
         error instanceof PlaytestBridgeError &&
