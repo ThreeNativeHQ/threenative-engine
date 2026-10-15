@@ -689,6 +689,8 @@ int Session::initialize() {
 
     freeRunStart = std::chrono::steady_clock::now();
     database.shadowMapEnabled = game.shadowMapEnabled;
+    // Diagnostic (PRD-613 stage 0): per-frame prepare split and upload bytes in TN_PLAYER_FRAME.
+    database.profiling = metrics && std::getenv("TN_RENDER_PREPARE_SPLIT") != nullptr;
     previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
     renderFrame = [this, lastWorldVisits = Object3D::matrixEvaluations(),
                    lastJoinVisits = Object3D::joinDependencyVisits(),
@@ -878,6 +880,31 @@ int Session::initialize() {
                 auto members = sample.members();
                 members.emplace_back("renderPrepareMs", json::Value::makeNumber(renderSplitMs[0]));
                 members.emplace_back("renderEncodeMs", json::Value::makeNumber(renderSplitMs[1]));
+                if (database.profiling) {
+                    static uint64_t lastGeometryBytes = 0, lastTextureBytes = 0;
+                    const auto& split = database.lastPrepareMs();
+                    const uint64_t geometryBytes = renderer->geometry().stats().bytesUploaded;
+                    const uint64_t textureBytes = renderer->textureUploadBytes();
+                    const auto [groups, batched] = database.lastBatches();
+                    const auto& phases = database.lastRenderPhaseMs();
+                    members.emplace_back("renderJointsMs", json::Value::makeNumber(phases[0]));
+                    members.emplace_back("renderScenePrepareMs", json::Value::makeNumber(phases[1]));
+                    members.emplace_back("renderReflectionsMs", json::Value::makeNumber(phases[2]));
+                    members.emplace_back("reflectionPrepareMs", json::Value::makeNumber(database.lastReflectionMs()[0]));
+                    members.emplace_back("reflectionEncodeMs", json::Value::makeNumber(database.lastReflectionMs()[1]));
+                    members.emplace_back("reflectionItems", json::Value::makeNumber(double(database.lastReflectionItems())));
+                    members.emplace_back("prepareMatrixMs", json::Value::makeNumber(split[0]));
+                    members.emplace_back("prepareProjectMs", json::Value::makeNumber(split[1]));
+                    members.emplace_back("prepareBatchMs", json::Value::makeNumber(split[2]));
+                    members.emplace_back("prepareOtherMs", json::Value::makeNumber(split[3]));
+                    members.emplace_back("drawItems", json::Value::makeNumber(double(database.drawn().size())));
+                    members.emplace_back("batchGroups", json::Value::makeNumber(double(groups)));
+                    members.emplace_back("batchMembers", json::Value::makeNumber(double(batched)));
+                    members.emplace_back("geometryUploadBytes", json::Value::makeNumber(double(geometryBytes - lastGeometryBytes)));
+                    members.emplace_back("textureUploadBytes", json::Value::makeNumber(double(textureBytes - lastTextureBytes)));
+                    lastGeometryBytes = geometryBytes;
+                    lastTextureBytes = textureBytes;
+                }
                 sample = json::Value::makeObject(std::move(members));
             }
             if (instructionsFrameBegin >= 0) {

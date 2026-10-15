@@ -26,15 +26,36 @@ Package rule (`packages/runtime-native/AGENTS.md`): the JavaScript runtime that 
 
 Known hazards: encode syncs a live `BufferStore` and clears its update ranges (`renderer/renderer.cpp`, `renderer/geometry_cache.cpp`); `DrawItem.material` points to database-owned params (`renderer/render_database.cpp`); `cmake/CheckNoBlockingWaits.cmake` allows only the `GpuThread` join.
 
+### Stage 0 split (2026-10-14)
+
+`TN_RENDER_PREPARE_SPLIT=1` (diagnostic, off by default) adds the render phases to `TN_PLAYER_FRAME`. Two screens (`s0-split-2`, `s0-split-3`) ran on a loaded host (load 9 to 27 from other sessions), so absolute times read about 1.5x to 2x high; the shares and counts hold. In-window medians, wall ms per frame, takeoff / cockpit / rear gunner:
+
+| Phase inside `database.render` | takeoff | cockpit | rear gunner |
+|---|---|---|---|
+| GPU-joint prep | 0.10 | 0.09 | 0.09 |
+| Scene prepare (`RenderDatabase::prepare`: matrix 0.04 to 0.14, project 1.50 to 1.82, batch, other) | 1.85 | 2.25 | 3.05 |
+| **Ocean reflection pass** (`renderReflections`) | 0.85 | 2.67 | 4.32 |
+| of which reflection prepare / encode | 0.43 / 0.30 | 0.57 / **1.96** | 1.44 / 2.24 |
+| Main encode and submit | 0.87 | 2.09 | 3.13 |
+| Draw items main / reflection | 43 / 5 | 158 / 8 | 352 / 202 |
+| Geometry bytes uploaded per frame | 0 | 576,000 | 576,000 |
+
+Findings:
+
+- The ocean's planar reflection (`WaterSurface3D`, `reflection: {resolutionScale: .5, layers: 1 << REFLECTED_LAYER}` in the game) is the largest render phase at cockpit and rear gunner: about half of the render wall. The layer mask reaches the native reflection camera (`three-native/src/reflector.ts` runs the `getVirtualCamera` wrapper once against the engine camera).
+- At cockpit the reflection pass encodes 8 draw items in about 2 ms (loaded). That cost is per pass, not per object. A call-graph profile names it before any lever is built.
+- Batched members are 26 / 27 / 13 of 43 / 158 / 352 draws, so the plain-opaque compact lane that stage 2 targets is a small share at cockpit and rear gunner.
+- Consequence for the plan: the reflection pass cannot take the inline fallback. It moves to the render thread with the main pass, and the per-pass reflection cost is a lever in its own right.
+
 ## Solution
 
 A second `GpuThread` instance is the render thread (created beside the existing one in `player/run.cpp`). It adds no new class, condition variable or join, so `cmake/CheckNoBlockingWaits.cmake` needs no waiver.
 
 - **Baton rule.** After the main thread waits on the render thread and then the `GpuThread`, both are idle. Only in that window does main touch the `Renderer`, `GpuResources`, `GeometryCache`, `PipelineCache` and the queue: geometry and canvas-texture sync, handle resolve, the retire drain. Then it posts packet N. While the render thread runs, main touches none of them. One frame is in flight in total.
 - **Frame packet, no mirrored tree.** Main keeps the traversal, LOD, skeleton update, shadow-camera update, `onBeforeRender` callbacks and `ProjectedCull::apply` (about 0.3 ms; it writes JS-visible `visible`). The draw data that main already writes (`items_`, `Record::Draw`, skinned palettes, batch stores, lights, camera state, shadow frustums) becomes two ping-pong sets selected by frame parity, so stage 1 copies nothing. Stage 2 adds a flat per-frame `MeshRef` array (about 190 B per visible plain opaque mesh) with per-frame deduped `GeometryInfo` and `MaterialSnap` tables. The packet has no parent or child links and no JS-owned pointers, and nothing mutates it after the post.
-- **Render thread job.** Apply deltas (output, sample count, size, overlay), then resolve (cull, batch, sort, fog and environment), encode, prepare the blit, post present to the `GpuThread`, and mail `lastFrame_`, diagnostics and `renderThreadCpuMs` back. Encode exceptions are caught and rethrown at the next handoff.
+- **Render thread job.** Apply deltas (output, sample count, size, overlay), then the reflection passes (their prepare runs on main with the scene prepare; their encode runs here), then resolve (cull, batch, sort, fog and environment), encode, prepare the blit, post present to the `GpuThread`, and mail `lastFrame_`, diagnostics and `renderThreadCpuMs` back. Encode exceptions are caught and rethrown at the next handoff.
 - **Lifetime.** One mutex guards `GpuResources::Shared` (`destroy`, `submit`, completion). A `shared_ptr<Packet>` holds CPU references and is retired by a final `GpuThread` job; its destructor only queues objects for main to drop, because the last reference to an `Object3D`-adjacent object must die on main.
-- **Inline fallback.** The first frame, resize, held renders, reflections, `tn.renderTarget`, `readTarget`, `readFrame` and `compileAsync` wait for both threads and take today's inline path. A diagnostic counts fallbacks; Midway must show zero in steady state.
+- **Inline fallback.** The first frame, resize, held renders, `tn.renderTarget`, `readTarget`, `readFrame` and `compileAsync` wait for both threads and take today's inline path. A diagnostic counts fallbacks; Midway must show zero in steady state.
 - **Switch.** `TN_RENDER_THREAD=0|1`, default on once Phase 3 passes.
 - **Hooks.** `renderCpuMs` becomes main-thread only (the KPI). `renderEncodeMs`, `renderThreadCpuMs` and `renderer.info.render` arrive from the mailbox one frame late, as `gpuThreadCpuMs` does today. Screenshots and readbacks post after encode N on the render thread, so they still read frame N.
 
@@ -63,7 +84,7 @@ Boxes live under each phase.
 **Status:** NOT STARTED
 **Files:** `player/run.cpp`, `renderer/gpu_resources.{h,cpp}`, `renderer/render_database.{h,cpp}`, `renderer/renderer.cpp`, `tests/native-engine/render_thread_order_test.cpp`
 
-- [ ] **Stage 0 split.** One matched run logs the prepare split per pose (matrix walk, project, batch, other), the plain-opaque share of draws and the geometry bytes uploaded per frame, and the numbers land in this PRD. proof: matched native screen with `database.profiling` on
+- [x] **Stage 0 split.** One matched run logs the prepare split per pose (matrix walk, project, batch, other), the plain-opaque share of draws and the geometry bytes uploaded per frame, and the numbers land in this PRD. proof: matched native screen with `database.profiling` on — screens `s0-split-2` and `s0-split-3` (`TN_RENDER_PREPARE_SPLIT=1`), table in Context; loaded host, so shares only; the batched-member count stands in for the plain-opaque share.
 - [ ] **Order ctest.** Frame N encodes only frame N's packet; a live mutation of transform, material colour, attribute bytes or a uniform node after the post does not reach frame N; at most one frame in flight; a test hook that aliases live data goes red. proof: `ctest -R native_engine_render_thread_order`, plus a ThreadSanitizer build of that test
 - [ ] **Stage 1 lever.** With `TN_RENDER_THREAD=1`, main-thread CPU per frame drops at all three poses against `TN_RENDER_THREAD=0`, every on-run below every off-run, parity PASS. proof: two alternating matched native screens per arm, `cmp.py`
 

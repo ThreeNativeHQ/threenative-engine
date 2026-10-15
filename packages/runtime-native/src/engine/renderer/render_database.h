@@ -85,6 +85,11 @@ class RenderDatabase {
     bool profiling = false;
     // Matrix setup, projection/record refresh (including fused flat-scene matrices), batch packing, remaining.
     [[nodiscard]] const std::array<double, 4>& lastPrepareMs() const { return prepareMs_; }
+    // With profiling: wall ms of the GPU-joint prep, the scene prepare and the reflection passes in render().
+    [[nodiscard]] const std::array<double, 3>& lastRenderPhaseMs() const { return renderPhaseMs_; }
+    // With profiling: the reflection passes' {prepare, encode} wall ms and draw items this frame.
+    [[nodiscard]] const std::array<double, 2>& lastReflectionMs() const { return reflectionMs_; }
+    [[nodiscard]] std::size_t lastReflectionItems() const { return reflectionItems_; }
     /** three's `renderer.shadowMap.enabled`: off, no light draws or reads a shadow map. */
     bool shadowMapEnabled = false;
     /** three's `renderer.shadowMap.type`: PCFShadowMap (1) or PCFSoftShadowMap (2). */
@@ -270,6 +275,9 @@ class RenderDatabase {
     BufferStore* floatStore(const BufferGeometry& g, const char* name);
     uint64_t frame_ = 0;
     std::size_t previousDrawCount_ = 0;
+    std::array<double, 3> renderPhaseMs_{};
+    std::array<double, 2> reflectionMs_{};
+    std::size_t reflectionItems_ = 0;
     std::array<double, 4> prepareMs_{};
     std::vector<std::pair<uint64_t, DirectLight>> direct_; // this render's direct lights with their ids
     std::unordered_set<const void*> skeletonsUpdated_;     // skeletons this render already updated

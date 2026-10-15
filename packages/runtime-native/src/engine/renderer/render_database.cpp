@@ -1518,16 +1518,21 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
 
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear, std::array<double, 2>* cpuMs) {
     using Clock = std::chrono::steady_clock;
-    const auto start = cpuMs ? Clock::now() : Clock::time_point{};
+    const auto start = (cpuMs || profiling) ? Clock::now() : Clock::time_point{};
     const auto previousJoints = gpuJoints_;
     gpuJoints_ = renderer.prepareGpuJoints(scene, reflecting_ ? gpuJoints_ : nullptr);
+    const auto jointsDone = profiling ? Clock::now() : Clock::time_point{};
     static const bool drawUse = [] { const auto* flag = std::getenv("TN_GPU_JOINT_DRAW_USE"); return flag && std::strcmp(flag, "1") == 0; }();
     if (drawUse && !reflecting_ && gpuJoints_) gpuJoints_->drawUse.assign(gpuJoints_->rigs.size(), 0);
     if (previousJoints && previousJoints != gpuJoints_) scene.updateMatrixWorld(true);
     gpuPreparing_ = true;
     try { prepare(scene, camera, lights_); } catch (...) { gpuPreparing_ = false; throw; }
     gpuPreparing_ = false;
+    const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
     if (!reflecting_) renderReflections(renderer, scene, camera, items_, clear);
+    if (profiling) renderPhaseMs_ = {std::chrono::duration<double, std::milli>(jointsDone - start).count(),
+                                    std::chrono::duration<double, std::milli>(preparedScene - jointsDone).count(),
+                                    std::chrono::duration<double, std::milli>(Clock::now() - preparedScene).count()};
     cameraState_.matrixWorld = toArray(camera.matrixWorld);
     cameraState_.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     cameraState_.projectionMatrix = toArray(camera.projectionMatrix);
@@ -1554,6 +1559,8 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
                                        std::array<double, 4> clear) {
     for (auto it = reflections_.begin(); it != reflections_.end();)
         it = it->second.owner.expired() ? reflections_.erase(it) : std::next(it);
+    reflectionMs_ = {0, 0};
+    reflectionItems_ = 0;
     std::vector<std::shared_ptr<const Reflector>> drawn;
     std::vector<Material*> hidden;
     for (const DrawItem& item : items) {
@@ -1597,7 +1604,14 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
             // Bones the main pass posed this frame are current too: no callback ran to move them.
             pass.database->skeletonsFresh_ = pass.database->matricesFresh_ ? &skeletonsUpdated_ : nullptr;
             pass.database->gpuJoints_ = gpuJoints_;
-            pass.database->render(*pass.renderer, scene, virtualCamera, clear);
+            std::array<double, 2> split{0, 0};
+            pass.database->profiling = profiling;
+            pass.database->render(*pass.renderer, scene, virtualCamera, clear, profiling ? &split : nullptr);
+            if (profiling) {
+                reflectionMs_[0] += split[0];
+                reflectionMs_[1] += split[1];
+                reflectionItems_ += pass.database->drawn().size();
+            }
             pass.database->skeletonsFresh_ = nullptr;
         }
         else
