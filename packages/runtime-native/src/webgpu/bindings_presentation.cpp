@@ -791,6 +791,24 @@ void reportPresentTick(BindingsState* state, uint64_t frames) {
 #if defined(__ANDROID__)
     __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", marker.c_str());
 #endif
+    bool transientGranted = false;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    transientGranted = wgpuDeviceHasFeature(state->device, WGPUFeatureName_TransientAttachments);
+#endif
+    uint64_t transientCount = 0, transientNominalBytes = 0;
+    for (const auto& [id, info] : state->registries.textureRegistry) {
+        if (!info.transientAttachment) continue;
+        ++transientCount;
+        transientNominalBytes += info.transientNominalBytes;
+    }
+    std::ostringstream transient;
+    transient << "TN_TRANSIENT_ATTACHMENTS:{\"granted\":" << (transientGranted ? "true" : "false")
+              << ",\"count\":" << transientCount << ",\"nominalBytes\":" << transientNominalBytes << "}";
+    std::cout << transient.str() << std::endl;
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", transient.str().c_str());
+#endif
+
     // The per-bucket breakdown is the part that names a cause, so it goes out periodically rather
     // than every tick: the running total above is enough to watch growth, and this answers "which
     // allocation" once a run has settled.

@@ -65,7 +65,7 @@ import type {
 } from "./passes/compact.js";
 import { decodeImageBytes } from "./passes/decode-image.js";
 import { globMatch } from "./passes/glob.js";
-import { lightmapPass } from "./passes/lightmap.js";
+import { createLightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { TEXTURE_SIZE_SLOTS, type TextureMaxSize } from "./passes/model-textures.js";
 import { modelPass } from "./passes/model.js";
@@ -1580,7 +1580,9 @@ function parseModelQuantize(raw: unknown): IModelQuantizeOptions {
 function embeddedTexturesFor(
   configured: IModelTexturesOptions | "none" | undefined,
   ktx2: boolean,
+  astc = false,
 ): { readonly textures?: IModelTexturesOptions | "none" } {
+  if (astc && configured !== "none") return { textures: { ...configured, astc: true } };
   if (ktx2) return {};
   if (configured !== undefined && configured !== "none" && configured.maxSize !== undefined) {
     return {
@@ -1636,6 +1638,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   };
   const runtimeDecoderAvailable =
     runtimeDecoderCapabilities.ktx2 && runtimeDecoderCapabilities.meshopt;
+  const mobileAstc = options.platform === "android" || options.platform === "ios";
   const audio = parseAudioConfig(config.audio);
   const configuredTextures = parseTexturesConfig(config.textures);
   const configuredModels = parseModelsConfig(config.models);
@@ -1653,7 +1656,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       ? []
       : [
           (configuredModels.passes?.meshopt ?? true) ? "meshopt" : undefined,
-          configuredModels.textures === "none" ? undefined : "KTX2",
+          configuredModels.textures === "none" || mobileAstc ? undefined : "KTX2",
         ].filter((decoder): decoder is "meshopt" | "KTX2" => decoder !== undefined);
   const models =
     configuredModels === undefined
@@ -1665,9 +1668,18 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
             : {
                 passes: { ...(configuredModels.passes ?? {}), meshopt: false },
               }),
-          ...embeddedTexturesFor(configuredModels.textures, runtimeDecoderCapabilities.ktx2),
+          ...embeddedTexturesFor(
+            configuredModels.textures,
+            runtimeDecoderCapabilities.ktx2,
+            mobileAstc,
+          ),
         };
-  const textures = configuredTextures;
+  const textures =
+    configuredTextures === undefined
+      ? undefined
+      : mobileAstc
+        ? { ...configuredTextures, astc: true }
+        : configuredTextures;
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
     ?.lightmap;
   // The built-in registry runs only when the caller did not replace it wholesale; each
@@ -1677,7 +1689,19 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const builtinPasses: IAssetPass[] = [];
   const passSpecs: PassSpec[] = [];
   const registerBuiltin = (pass: IAssetPass, spec: PassSpec): void => {
-    if (spec.needsRuntimeDecoder === true && !runtimeDecoderAvailable) return;
+    if (
+      spec.needsRuntimeDecoder === true &&
+      !(spec.kind === "texture"
+        ? runtimeDecoderCapabilities.ktx2
+        : spec.kind === "model"
+          ? (!(spec.options.passes?.meshopt ?? true) || runtimeDecoderCapabilities.meshopt) &&
+            (spec.options.textures === "none" ||
+              spec.options.textures?.decoderFree === true ||
+              spec.options.textures?.astc === true ||
+              runtimeDecoderCapabilities.ktx2)
+          : runtimeDecoderAvailable)
+    )
+      return;
     builtinPasses.push(pass);
     passSpecs.push(spec);
   };
@@ -1692,13 +1716,14 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     if (textures !== undefined) {
       registerBuiltin(texturePass(textures), {
         kind: "texture",
-        needsRuntimeDecoder: true,
+        needsRuntimeDecoder: !mobileAstc,
         options: textures,
       });
     }
     if (
       textures !== undefined &&
       !runtimeDecoderCapabilities.ktx2 &&
+      !mobileAstc &&
       textures.maxSize !== undefined
     ) {
       // The KTX2 pass dropped for this target, but the declared cap is still honoured: the
@@ -1712,9 +1737,10 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       });
     }
     if (lightmap !== undefined) {
-      registerBuiltin(lightmapPass(lightmap), {
+      registerBuiltin(createLightmapPass(lightmap, mobileAstc), {
         kind: "lightmap",
-        needsRuntimeDecoder: true,
+        ...(mobileAstc ? { astc: true } : {}),
+        needsRuntimeDecoder: !mobileAstc,
         options: lightmap,
       });
     }
@@ -1787,7 +1813,11 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
           ? "config"
           : modelCompressionDecoders.length === 0
             ? undefined
-            : runtimeDecoderAvailable
+            : modelCompressionDecoders.every((decoder) =>
+                  decoder === "KTX2"
+                    ? runtimeDecoderCapabilities.ktx2
+                    : runtimeDecoderCapabilities.meshopt,
+                )
               ? undefined
               : "platform",
     modelCompressionDecoders,
@@ -1804,11 +1834,14 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         ? undefined
         : configuredTextures === undefined
           ? "config"
-          : runtimeDecoderCapabilities.ktx2
+          : runtimeDecoderCapabilities.ktx2 || mobileAstc
             ? undefined
             : "platform",
     texturesActive:
-      textures !== undefined && options.passes === undefined && runtimeDecoderAvailable,
+      textures !== undefined &&
+      options.passes === undefined &&
+      runtimeDecoderCapabilities.ktx2 &&
+      !mobileAstc,
   };
 }
 
@@ -2416,23 +2449,14 @@ async function writeManifest(
   }
 }
 
-/** Every file under `root` with its mtime, so a file this run never wrote is told apart by more than a clock margin. */
-async function snapshotOutputMtimes(root: string): Promise<Map<string, number>> {
-  const mtimes = new Map<string, number>();
-  for (const relative of await walkOutputFiles(root)) {
-    const info = await stat(path.join(root, relative)).catch(() => undefined);
-    if (info !== undefined) mtimes.set(relative, info.mtimeMs);
-  }
-  return mtimes;
-}
-
 /** Every file under `root`, as paths relative to it with `/` separators on every platform. */
 async function walkOutputFiles(root: string, prefix = ""): Promise<string[]> {
   let entries: Dirent[];
   try {
     entries = await readdir(path.join(root, prefix), { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
   }
   const files: string[] = [];
   for (const entry of entries) {
@@ -2448,16 +2472,16 @@ async function walkOutputFiles(root: string, prefix = ""): Promise<string[]> {
  *
  * Without this, a pass that writes a file it does not report is invisible: the delete-test would
  * delete less than the bake produced, the second run would still find the undeleted file, and the
- * gate would pass while proving nothing. Only files touched during this run are considered — a
- * project's own hand-authored `public/icon.png` is not a bake output and is left alone, even when
- * it was written within the mtime margin of the run's start: `existedBefore` holds its mtime then.
+ * gate would pass while proving nothing. New paths are checked regardless of their timestamps;
+ * existing paths are checked when touched during this run. An untouched hand-authored
+ * `public/icon.png` is not a bake output and is left alone.
  */
 async function assertNoUndeclaredOutputs(
   outputRoot: string,
   declared: ReadonlySet<string>,
   since: number,
   writtenBefore: ReadonlySet<string>,
-  existedBefore: ReadonlyMap<string, number>,
+  existingBefore: ReadonlySet<string>,
 ): Promise<void> {
   const undeclared: string[] = [];
   for (const relative of await walkOutputFiles(outputRoot)) {
@@ -2473,8 +2497,7 @@ async function assertNoUndeclaredOutputs(
     // millisecond apart, and the previous bake's now-stale output is not this bake's leak.
     if (writtenBefore.has(relative)) continue;
     const info = await stat(path.join(outputRoot, relative));
-    if (existedBefore.get(relative) === info.mtimeMs) continue;
-    if (info.mtimeMs + 1 >= since) undeclared.push(relative);
+    if (!existingBefore.has(relative) || info.mtimeMs + 1 >= since) undeclared.push(relative);
   }
   if (undeclared.length > 0) {
     throw new Error(
@@ -2588,14 +2611,10 @@ export async function compileAssets(
   }
   const previous = await readExistingManifest(manifestPath);
 
-  // Read before the first write *and before the source walk*, so the undeclared-output guard can
-  // tell this run's files from the project's own static ones. Taking it after the walk shrinks the
-  // margin by however long the walk took, and `TN_ASSETS_UNDECLARED_OUTPUT` then misses a stray
-  // file whose mtime the filesystem truncated below it — which is exactly how
-  // `bake-receipt.spec.ts` went red on a loaded CI shard while passing locally. It never reaches
-  // the receipt: that stays deterministic.
+  // Snapshot before the first write and source walk: new outputs can retain old timestamps when
+  // copied, so modification time alone cannot distinguish them from authored static files.
   const runStart = Date.now();
-  const existedBefore = await snapshotOutputMtimes(layout.outputRoot);
+  const existingBefore = new Set(await walkOutputFiles(layout.outputRoot));
 
   const sources = await walkSources(layout.sourceRoot);
   const excluded = sources.filter((logical) =>
@@ -3233,7 +3252,7 @@ export async function compileAssets(
     currentReceiptPaths,
     runStart,
     writtenBefore,
-    existedBefore,
+    existingBefore,
   );
   const staleOutputs = await resolveStaleReceiptOutputs(
     layout.outputRoot,

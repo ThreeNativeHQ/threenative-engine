@@ -2,7 +2,7 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-46 native contract targets; 3 configured
+47 native contract targets; 3 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
@@ -48,7 +48,7 @@ change requires this opt-in command to refresh the record.
 | `src/storage/` | 86.54% |
 | `src/utils/` | 0.00% |
 | `src/vfs/` | 76.59% |
-| `src/webgpu/` | 71.72% |
+| `src/webgpu/` | 71.87% |
 | `src/webtransport/` | 72.50% |
 | `src/workers/` | 80.69% |
 

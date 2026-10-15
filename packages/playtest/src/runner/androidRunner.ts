@@ -639,8 +639,17 @@ async function runDevicePlaytestInternal(
       failureEvidenceCaptured = true;
       // Preserve this failed host's output before stop/transport cleanup. Diagnostic
       // collection is best effort and must never replace the original failure.
-      const consoleEntries = await target.driver.captureConsole().catch(() => []);
-      await writeFile(join(config.artifactDirectory, "console.json"), `${JSON.stringify(consoleEntries, null, 2)}\n`, "utf8").catch(() => undefined);
+      const consoleEntries = await target.driver.captureConsole().catch((captureError: unknown) => [
+        {
+          text: captureError instanceof Error ? captureError.message : String(captureError),
+          type: "error",
+        },
+      ]);
+      await writeFile(
+        join(config.artifactDirectory, "console.json"),
+        `${JSON.stringify(consoleEntries, null, 2)}\n`,
+        "utf8",
+      ).catch(() => undefined);
       if (
         diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT" ||
         diagnostic.code === "TN_PLAYTEST_STARTUP_HOST_EXITED"

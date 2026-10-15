@@ -7,6 +7,7 @@ import {
   IMAGE_QUALITY_IDENTITY,
   imageQuality,
   resolveImageQualityFloor,
+  transcodeKtx2ToAstc,
 } from "../image-quality.js";
 import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
@@ -54,6 +55,8 @@ export interface ITextureOverride {
 }
 
 export interface ITexturePassOptions {
+  /** Compiler-selected mobile output; the quality ladder measures final ASTC bytes. */
+  readonly astc?: boolean;
   readonly floor?: Partial<IImageQualityFloor>;
   /** Internal reporting control; selection still measures and enforces the floor. */
   readonly measureQuality?: boolean;
@@ -80,13 +83,14 @@ export async function encodeLinearRgbaKtx2(
   data: Uint8Array,
   width: number,
   height: number,
+  astc = false,
 ): Promise<Buffer> {
   const encoded = await encodeToKTX2(new Uint8Array([0]), {
     generateMipmap: true,
     imageDecoder: async () => ({ data, height, width }),
     isPerceptual: false,
     isSetKTX2SRGBTransferFunc: false,
-    isUASTC: false,
+    isUASTC: astc,
     qualityLevel: DEFAULT_ETC1S_QUALITY,
   });
   const container = readKTX2(encoded);
@@ -95,7 +99,7 @@ export async function encodeLinearRgbaKtx2(
       `TN_ASSETS_MIP_CHAIN_INCOMPLETE: generated lightmap encoded without a mip chain (${String(container.levelCount)} level(s)).`,
     );
   }
-  return Buffer.from(encoded);
+  return Buffer.from(astc ? await transcodeKtx2ToAstc(encoded, 0) : encoded);
 }
 
 /**
@@ -109,6 +113,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
     appliesTo: ["texture"],
     configuration: {
       encoder: KTX2_ENCODER_VERSION,
+      ...(options.astc === true ? { gpuFormat: "astc4x4-final-quality-v4-bottom-up" } : {}),
       instrument: IMAGE_QUALITY_IDENTITY,
       floor: resolveImageQualityFloor(options.floor),
       keepSmallerSource: true,
@@ -160,11 +165,24 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
       if (target.width % BLOCK_SIZE !== 0 || target.height % BLOCK_SIZE !== 0) {
         return unalignedOutcome(input, logicalPath, choice.codec, choice.explicit, target);
       }
-      const selected = await encodeTextureLadder(data, target.width, target.height, {
+      // Standalone ASTC uploads without the flipY that PNG gets, so its first stored row is the bottom row.
+      // The ladder scores these pixels. The PNG fallback below keeps reading `data`.
+      let encodeInput = data;
+      if (options.astc === true) {
+        const stride = target.width * 4;
+        encodeInput = new Uint8Array(data.length);
+        for (let row = 0; row < target.height; row += 1)
+          encodeInput.set(
+            data.subarray((target.height - 1 - row) * stride, (target.height - row) * stride),
+            row * stride,
+          );
+      }
+      const selected = await encodeTextureLadder(encodeInput, target.width, target.height, {
         slots: [choice.normalMap ? "normalTexture" : "baseColorTexture"],
         floor: options.floor,
         srgb: !choice.normalMap,
         quality: choice.quality,
+        ...(options.astc === true ? { astc: true } : {}),
         ...(!resized && !choice.explicit ? { maxBytes: input.byteLength } : {}),
         ...(choice.explicit ? { forced: choice.codec } : {}),
       });
@@ -213,8 +231,13 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
       return {
         buffer: Buffer.from(encoded),
         entry: {
-          format: selected.codec,
-          transcodeTargets: TRANSCODE_TARGETS[selected.codec as Exclude<TextureCodec, "none">],
+          ...(options.astc === true
+            ? { format: "astc4x4" }
+            : {
+                format: selected.codec,
+                transcodeTargets:
+                  TRANSCODE_TARGETS[selected.codec as Exclude<TextureCodec, "none">],
+              }),
           ...(options.measureQuality === false
             ? {}
             : {

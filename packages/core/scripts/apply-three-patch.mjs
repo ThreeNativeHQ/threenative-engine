@@ -273,12 +273,15 @@ function assertKnownExtension(status, unchanged, file, upgrades) {
 }
 
 /** Upgrade only exact known prior blobs; a custom edit never enters this migration. */
-function upgradeKnownFile(original, file, upgrades) {
+function upgradeKnownFile(original, file, upgrades, seen = new Set()) {
   const normalized = original.replaceAll("\r\n", "\n");
   const upgrade = upgrades.find(
     (candidate) => candidate.oldPath === file && candidate.oldBlob === blobHash(normalized),
   );
   if (upgrade === undefined) return original;
+  if (seen.has(upgrade.oldBlob))
+    throw new Error(`TN_THREE_PATCH_INVALID: cyclic known upgrade for ${file}.`);
+  seen.add(upgrade.oldBlob);
   const lines = normalized.split("\n");
   const states = classifyFile(lines, upgrade.hunks);
   if (states.some((state) => state !== "stock"))
@@ -286,7 +289,7 @@ function upgradeKnownFile(original, file, upgrades) {
   const contents = applyFile(lines, upgrade.hunks, states, file).join("\n");
   if (blobHash(contents) !== upgrade.newBlob)
     throw new Error(`TN_THREE_PATCH_INVALID: known upgrade output does not match ${file}.`);
-  return contents;
+  return upgradeKnownFile(contents, file, upgrades, seen);
 }
 
 function blobHash(contents) {
