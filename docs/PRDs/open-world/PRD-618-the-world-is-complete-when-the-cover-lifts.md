@@ -1,14 +1,14 @@
 # PRD-618 — The world is complete when the cover lifts, and far trees keep their shape
 
 **Status:** NOT STARTED
-**Priority:** P1 — AC-1 to AC-8 are open: on the Strata forest, shadows and nearby props appear after the loading bar ends, and far spruces read as noise (owner report, 2026-10-15).
+**Priority:** P1 — AC-1 to AC-9 are open: on the Strata forest, shadows and nearby props appear after the loading bar ends, and far spruces read as noise (owner report, 2026-10-15).
 **Complexity:** 4 (MEDIUM) — 6–10 implementation files (`virtual-shadow.ts`, core `game.ts`, `world-cells.ts`, the Strata `loading.ts`, `game.ts`, `propStreaming.ts`, `props.ts`, `prep-fab-temperate.mjs`) (+2); startup readiness state (+2). Risk override: none.
 **Owner:** unassigned
 **Depends on:** [PRD-616](../performance/PRD-616-the-startup-warm-up-builds-what-the-first-frame-draws.md) for AC-2 only: until the warm-up builds the pipelines of the real output pass, a warm-up behind the cover cannot remove the pipeline builds after the reveal. Related, not blocking: [PRD-606](../Unreal/open-world/PRD-606-a-fast-travel-destination-is-ready-before-the-cover-lifts.md) (`settle()` after a teleport uses the same readiness), [PRD-537](PRD-537-far-hills-show-the-forest.md) (Machinefall impostors and their shadow regression).
 
 ## Context
 
-Owner report (2026-10-15), Strata terrain preview, `?world=forest`: the loading bar finishes, then near content still loads in front of the player. Shadows appear about one second after the reveal. Far trees look bad.
+Owner report (2026-10-15), Strata terrain preview, `?world=forest`: the loading bar finishes, then near content still loads in front of the player. Shadows on the trees appear about one second apart from the reveal, so the first frames are not the finished frame. Far trees look bad. The owner's screenshot of the forest edge shows it: trees past the 60 m switch have blocky, square leaf patches with gaps, a flat dark green, and almost no shadow on the ground below them; the near trees on the right have full crowns and ground shadows.
 
 Layer: both. The cover, the shadow node and the cell admission are engine mechanism (`packages/core/`). The far tree level, the LOD distances and the reveal policy are game source (`examples/strata-terrain-preview/src/render/`, `scripts/`).
 
@@ -26,6 +26,16 @@ Layer: both. The cover, the shadow node and the cell admission are engine mechan
 7. **Impostors cannot be used here.** Engine world impostors exist (`packages/core/src/world-impostor.ts`, octahedral, colour and normal baked) but stay opt-in (`?tnImpostors=1`, PRD-473 #505). The game sets `preserveAuthoredParts: true`, and `WorldCells` refuses that with impostors on (`world-cells.ts`, the `preserveAuthoredParts` guard).
 8. **Hard pop at the level boundary.** `world-cells.ts:6786`: "ponytail: a hard switch, no crossfade". The two levels differ in silhouette, so the 60 m switch is visible.
 9. **Shadows do not match the cutout.** The shadow pass reads the scalar `alphaTest`, not the mip-adjusted `alphaTestNode` (`pack.ts:250`), so a far tree casts a different shape from the one it shows.
+
+### What Unreal does (UE source checkout, read 2026-10-15; clean-room summary, no code copied)
+
+Paths are relative to `Engine/Source/Runtime/` unless stated.
+
+- **The reveal blocks on a query, with two quiet passes.** `UWorld::BlockTillLevelStreamingCompleted` (`Engine/Private/World.cpp:4813-4860`) pumps the streamer and resets its pass count to 2 while any visibility or async request is pending. World Partition calls it before BeginPlay and at match start (`WorldPartition/WorldPartition.cpp:1214-1227`). The completion query uses the grid's own loading range, not a caller radius (`WorldPartitionStreamingPolicy.cpp:1126-1128`).
+- **Virtual shadow pages have no delay and no per-frame page budget.** Every requested page renders in the frame its invalidation is processed. A light with no previous render keeps no cached page, so its first frame renders all pages (`Renderer/Private/VirtualShadowMaps/VirtualShadowMapCacheManager.cpp:270`, `:322-335`). A newly unculled primitive invalidates its pages one frame late (`:1281-1305`). The only throttle, `r.Shadow.Virtual.DeferredInvalidationBudget`, defaults to unbounded and carries work over to later frames instead of waiting on a timer (`VirtualShadowMapArray.cpp:119-127`).
+- **Late shaders mean "not drawn yet", not "drawn wrong".** With `r.PSOPrecache.ProxyCreationStrategy` 1 (default), a primitive has no scene proxy until its pipelines compile (`Engine/Private/PSOPrecache.cpp:36-42`). The reveal does not wait on them, so this is Unreal's own pop-in source.
+- **LOD switches dither, in every pass that clips.** Two LODs draw complementary per-pixel hash masks during the transition, including the shadow depth pass (`Engine/Shaders/Private/MaterialTemplate.ush:4483-4497`, `:2891-2920`). Instanced foliage drives it by distance with a per-instance random range so the switch is not a line (`Engine/Shaders/Private/LocalVertexFactory.ush:932-941`, `foliage.RandomLODRange`). LOD is picked by projected screen size, not metres (`Engine/Private/SceneManagement.cpp:966-1046`).
+- **Simplified foliage keeps its area.** After simplification, surviving leaf boundaries grow outward by lost area ÷ perimeter, capped at 4× (`Developer/NaniteBuilder/Private/Cluster.cpp:1065` → `MeshSimplify.cpp:1285-1397`). Cutout textures can rescale mips to hold alpha coverage (`bDoScaleMipsForAlphaCoverage`, `Engine/Classes/Engine/Texture.h:1371-1375`).
 
 ## Solution
 
@@ -45,10 +55,11 @@ flowchart LR
   F -- yes --> H[cover lifts]
 ```
 
-1. **Engine, `WorldCells`:** `readinessAt` accepts the camera. The required set becomes the cells that intersect the camera frustum within each placement's own draw reach, not a circle. The circle form stays for PRD-606 callers.
-2. **Engine, `VirtualShadowNode`:** while the startup cover is active, `invalidationDelay` is 0 and every due level renders in one frame. The node exposes `settled` (no level due, no delayed invalidation). Core `game.ts` adds it to the startup readiness beside `compileSettled`. After the reveal, the current delays and the one-level budget stay unchanged.
+1. **Engine, `WorldCells`:** `readinessAt` accepts the camera. The required set becomes the cells that intersect the camera frustum within each placement's own draw reach, not a circle. The circle form stays for PRD-606 callers. Like Unreal, readiness must hold for 2 consecutive polls before the cover lifts, so a request that starts in the last ready frame cannot slip past.
+2. **Engine, `VirtualShadowNode`:** while the startup cover is active, `invalidationDelay` is 0 and every due level renders in one frame. The node exposes `settled` (no level due, no delayed invalidation). Core `game.ts` adds it to the startup readiness beside `compileSettled`. After the reveal, the current delays and the one-level budget stay unchanged for steady-state refresh. Unreal has no such delay at all; replacing the post-reveal delay with a carry-over queue is a follow-up, not this PRD.
 3. **Game, Strata:** `loading.ts` stops its own fire-and-forget compile and lifts the cover on the core startup readiness. `game.ts` passes the camera to `readinessAt`. The 60 m default goes.
-4. **Game, far spruce:** the prep script builds the far level with the card thinner from `packages/assets/src/lod/cards.ts`, not meshopt. Past `LOD_BANDS.far`, spruce draws an engine impostor. This needs `WorldCells` to allow impostors for assets that have no authored level at that distance while `preserveAuthoredParts` keeps the authored ones. The shadow pass uses the same cutout as the view.
+4. **Game, far spruce:** the prep script builds the far level with the card thinner from `packages/assets/src/lod/cards.ts`, not meshopt. The thinner grows the surviving cards to hold the crown's area, capped at 4× (the Unreal rule). Past `LOD_BANDS.far`, spruce draws an engine impostor. This needs `WorldCells` to allow impostors for assets that have no authored level at that distance while `preserveAuthoredParts` keeps the authored ones. The shadow pass uses the same cutout as the view.
+5. **Engine, LOD transition:** the hard switch at `world-cells.ts:6786` becomes a dithered crossfade: across a band at each boundary, both levels draw with complementary per-pixel masks, in the view and the shadow pass, with a per-instance random offset. The mechanism is engine; the band width comes from the game's `lodHysteresis`.
 
 **Risks:**
 
@@ -67,6 +78,7 @@ The boxes live in the phases below; each names the AC it proves.
 - AC-5 [local]: A visual judge subagent compares the reveal frame and the +3 s frame, BEFORE and AFTER, two headed runs per arm. Criterion: nothing appears, darkens or changes shape between the two frames. Verdict IMPROVEMENT. proof: root `AGENTS.md` visual judge rule.
 - AC-6 [local]: The forest overview and river views draw spruce past `LOD_BANDS.far` as impostors (`stats().impostor.drawn > 0`, `pending = 0` at the reveal). proof: the AC-1 scenario run from the `overview` view.
 - AC-7 [local]: A visual judge subagent rates far trees on the `overview` and `river` views, BEFORE and AFTER, two headed runs per arm. Criteria: crowns keep a solid silhouette, no speckle or shimmer, shadows match the visible crown, no visible pop at 60 m and 150 m. Verdict IMPROVEMENT. proof: `capture-strata-worlds` skill, `--worlds forest`.
+- AC-9 [local]: Inside a level's transition band, both levels draw and their dither masks are complementary (every pixel covered exactly once), in the view and the shadow pass. proof: `pnpm --filter @threenative/core test -- world-cells` with a new transition spec.
 - AC-8 [local]: Steady-state frame time on the `overview` view does not get worse: AFTER p50 at most BEFORE p50 + 5%, paired runs. proof: `measure-steady-state-fps` skill on the forest overview.
 
 ## Blocked on
@@ -81,6 +93,7 @@ The boxes live in the phases below; each names the AC it proves.
 | Shadow settle in startup readiness | core `game.ts` startup readiness → `VirtualShadowNode.settled` | Shadows rendered after the reveal | AC-1, AC-5 |
 | Cover lifts on core readiness | Strata `loading.ts` → core startup readiness | The fire-and-forget `compileAsync` in `loading.ts:513-521` is deleted | AC-1, AC-2 |
 | Card-thinned far spruce + impostor band | `prep-fab-temperate.mjs` → `pack.ts` levels → `WorldCells` | meshopt `simplify` on spruce is deleted | AC-6, AC-7 |
+| Dithered LOD transition | `WorldCells` level switch → view and shadow materials | The hard switch at `world-cells.ts:6786` is deleted | AC-9, AC-7 |
 
 ## Decisions
 
@@ -112,10 +125,11 @@ The boxes live in the phases below; each names the AC it proves.
 #### Phase 3: Far trees keep their shape
 
 **Status:** NOT STARTED
-**Files:** `examples/strata-terrain-preview/scripts/prep-fab-temperate.mjs` (card thinner), `src/render/pack.ts` (third level, shadow cutout), `src/render/propStreaming.ts` (impostors on), `packages/core/src/world-cells.ts` (impostors beside authored levels).
-**Implementation:** Solution step 4. The game picks the distances and the look. The engine only allows the impostor band beside authored levels.
+**Files:** `examples/strata-terrain-preview/scripts/prep-fab-temperate.mjs` (card thinner), `src/render/pack.ts` (third level, shadow cutout), `src/render/propStreaming.ts` (impostors on), `packages/core/src/world-cells.ts` (impostors beside authored levels, dithered transition).
+**Implementation:** Solution steps 4 and 5. If the judge still sees far speckle, the next lever is coverage-preserving cutout mips in the cook. The game picks the distances and the look. The engine only allows the impostor band beside authored levels.
 **Verification:** AC-6 to AC-8 on the owner's machine with the licensed assets.
 
 - [ ] AC-6 impostors drawn past 150 m. proof: AC-1 scenario from the `overview` view.
+- [ ] AC-9 dithered transition in view and shadow pass. proof: `pnpm --filter @threenative/core test -- world-cells`.
 - [ ] AC-7 judge IMPROVEMENT. proof: judge subagent verdict on the PR.
 - [ ] AC-8 frame time holds. proof: `measure-steady-state-fps`.
