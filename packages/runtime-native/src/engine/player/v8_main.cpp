@@ -1028,7 +1028,11 @@ bool V8Game::start(const std::string& path, std::string& error) {
         v8str(isolate_, path));
     if (!v8::Script::Compile(ctx, v8str(isolate_, source.str()), &origin).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());
-        return error = std::string("the game bundle failed: ") + (*message ? *message : "?"), false;
+        v8::Local<v8::Value> stackValue;
+        v8::String::Utf8Value stack(isolate_, tryCatch.StackTrace(ctx).ToLocal(&stackValue) ? stackValue : v8::Local<v8::Value>());
+        return error = std::string("the game bundle failed: ") + (*message ? *message : "?") +
+                       (*stack && std::string_view(*stack) != std::string_view(*message ? *message : "") ? std::string("\n") + *stack : std::string()),
+               false;
     }
     isolate_->PerformMicrotaskCheckpoint();
     const auto failed = [&] {

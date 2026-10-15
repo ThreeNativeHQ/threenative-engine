@@ -340,6 +340,38 @@ describe("starter post bindings", () => {
     ]);
   });
 
+  it("builds an Fn with parameters per call and chains setLayout", () => {
+    const calls: string[] = [];
+    let serial = 0;
+    const { exports: tsl } = defineTsl({
+      call: (name) => {
+        calls.push(name);
+        return ++serial;
+      },
+      release: vi.fn(),
+      set: vi.fn(),
+      setUniform: vi.fn(),
+      setPost: vi.fn(),
+      effectParameter: vi.fn(),
+    });
+    const seen: unknown[] = [];
+    const blend = (
+      tsl.Fn as (f: (input: unknown) => unknown) => {
+        (...args: unknown[]): unknown;
+        setLayout(layout: object): unknown;
+      }
+    )(([colour, weight]: unknown) => {
+      seen.push(colour, weight);
+    });
+    expect(blend.setLayout({ name: "blend" })).toBe(blend);
+    expect(calls).toEqual([]);
+    const left = blend(1, 2);
+    expect(left).not.toBe(blend(1, 2));
+    expect(calls.filter((name) => name === "scope:open")).toHaveLength(2);
+    expect((seen[0] as object | undefined) !== undefined).toBe(true);
+    expect(typeof seen[0]).toBe("object");
+  });
+
   it("uses the existing struct schema and preserves positional member order", () => {
     const instance = { newStruct: vi.fn() };
     const newStruct = vi.fn(() => instance);

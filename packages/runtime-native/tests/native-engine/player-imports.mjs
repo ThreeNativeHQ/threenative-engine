@@ -285,6 +285,11 @@ const summed = Fn(() => {
   return height.add(uv().x.dFdx().abs()).add(uv().y.dFdy().sign()).add(float(-8).cbrt());
 })();
 check(summed && typeof summed.addAssign === "function" && typeof summed.cbrt === "function", "assign forms, dFdx, sign, cbrt");
+// The starter's temporal resolve: Fn with array parameters, built per call, and setLayout chaining; an object argument names its parameters.
+const blend = Fn(([colour, weight]) => { const w = weight.toVar(); w.mulAssign(0.5); return colour.mul(w); }).setLayout({ name: "blend", type: "vec3", inputs: [] });
+const blended = blend(vec3(1, 2, 3), 2);
+check(blended && typeof blended.mul === "function" && blend(vec3(1), float(1)) !== blended, "Fn with array parameters");
+check(typeof Fn(({ x }) => x.add(1))({ x: float(1) }).add === "function", "Fn with named parameters");
 // Every swizzle three answers, as Midway's ocean reads positionWorld.xz.
 const lanes = vec3(1, 2, 3);
 check(lanes.xz && lanes.zxy && lanes.st && lanes.bgr && lanes.xxxx && lanes.xyzwx === undefined, "swizzles");

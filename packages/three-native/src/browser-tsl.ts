@@ -391,9 +391,29 @@ export function defineTsl(
   exports.wgslFn = defineWgslFn(exports.wgslFunction as Parameters<typeof defineWgslFn>[0]);
   exports.struct = defineStruct(exports.struct as Parameters<typeof defineStruct>[0]);
   // Fn builds once at definition; calling the returned function returns that graph, as on V8.
+  // A callback with parameters (`Fn(([a, b]) => ...)`) builds per call, inline with the caller's arguments:
+  // an array of them, or the one plain object the caller passes; setLayout only chains.
   exports.Fn = (callback: unknown) => {
+    if (typeof callback === "function" && callback.length > 0) {
+      const inline = (...args: unknown[]) => {
+        const named =
+          args.length === 1 &&
+          typeof args[0] === "object" &&
+          args[0] !== null &&
+          !Array.isArray(args[0]) &&
+          !(TSL_NODE in args[0]);
+        const input = named
+          ? args[0]
+          : args.map((value) =>
+              typeof value === "number" ? (exports.float as (value: number) => unknown)(value) : value,
+            );
+        return wrap(capture("Fn", callback, input));
+      };
+      return Object.assign(inline, { setLayout: () => inline });
+    }
     const graph = wrap(capture("Fn", callback));
-    return () => graph;
+    const built = () => graph;
+    return Object.assign(built, { setLayout: () => built });
   };
   for (const name of ["atomicAdd", "atomicStore"])
     exports[name] = (...args: unknown[]) => {
