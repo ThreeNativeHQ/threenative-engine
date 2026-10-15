@@ -10,6 +10,7 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -31,13 +32,26 @@ export const LINUX_ARM64_V8_BUILD = Object.freeze({
     architecture: "arm64",
     index:
       "https://ports.ubuntu.com/ubuntu-ports/dists/noble-updates/universe/binary-arm64/Packages.xz",
+    compilerRt: Object.freeze({
+      packageVersion: "1:18.1.3-1",
+      index: "https://ports.ubuntu.com/ubuntu-ports/dists/noble/universe/binary-arm64/Packages.xz",
+      archive: "/usr/lib/llvm-18/lib/clang/18/lib/linux/libclang_rt.builtins-aarch64.a",
+      objects: 278,
+      sha256: "af24a6be2920609e5dea1218caad93a17885497e764cef2dc78512fdec159e98",
+    }),
     packages: Object.freeze({
+      "libclang-rt-18-dev": "daeaee613fd98916b48201352499b417131c605601d73429c6c71cb4c81ee56d",
       "clang-18": "e3a70e054d3c0d0841cd7d1555deeab82d75609d34438b1cfc1b187b0add7d77",
       "lld-18": "c33a2e048536e6d902a9f209d114d049b5becbedb94d11eb77f313cad95a830c",
       "llvm-18": "1d9c87ff9fe17d0ee00703ec0f339ab687e2807b3508b51cf517e05281de104d",
     }),
   }),
 });
+const SDK = ".threenative-llvm-18";
+const BUILTINS = "lib/clang/18/lib/aarch64-unknown-linux-gnu/libclang_rt.builtins.a";
+const packageVersion = (name) => name === "libclang-rt-18-dev"
+  ? LINUX_ARM64_V8_BUILD.toolchain.compilerRt.packageVersion
+  : LINUX_ARM64_V8_BUILD.toolchain.packageVersion;
 const RECEIPT = "build-receipt.json";
 const LINUX_PACKAGES = ["libglib2.0-dev", "pkg-config"];
 const GLIB_MODULES = ["glib-2.0", "gmodule-2.0", "gobject-2.0", "gthread-2.0"];
@@ -109,7 +123,8 @@ export function linuxArm64V8GnArgs() {
     "use_custom_libcxx_for_host=false",
     "clang_use_chrome_plugins=false",
     "is_clang=true",
-    `clang_base_path="${LINUX_ARM64_V8_BUILD.toolchain.base}"`,
+    `clang_base_path="//${SDK}"`,
+    'clang_version="18"',
     "use_lld=true",
     "use_thin_lto=false",
   ].join(" ");
@@ -175,6 +190,7 @@ function validateLinuxPrerequisites(linux) {
 export function inspectLinuxArm64V8Toolchain({
   run = (program, args) => execFileSync(program, args, { encoding: "utf8" }),
   hash = sha256,
+  read = readFileSync,
 } = {}) {
   const pin = LINUX_ARM64_V8_BUILD.toolchain;
   const packages = {};
@@ -184,8 +200,8 @@ export function inspectLinuxArm64V8Toolchain({
       "-f=${Package}\t${Version}\t${Architecture}\t${Status}",
       name,
     ]).trim();
-    if (identity !== `${name}\t${pin.packageVersion}\tarm64\tinstall ok installed`)
-      throw new Error(`V8 requires native ${name}=${pin.packageVersion}: ${identity}`);
+    if (identity !== `${name}\t${packageVersion(name)}\tarm64\tinstall ok installed`)
+      throw new Error(`V8 requires native ${name}=${packageVersion(name)}: ${identity}`);
     if (run("dpkg", ["--verify", name]).trim())
       throw new Error(`V8 toolchain package ${name} failed installed-file integrity`);
     packages[name] = identity;
@@ -207,12 +223,20 @@ export function inspectLinuxArm64V8Toolchain({
   for (const name of GLIB_MODULES)
     linux.modules[name] = run("/usr/bin/pkg-config", ["--modversion", name]).trim();
   validateLinuxPrerequisites(linux);
-  return { packages, binaries, linux };
+  const archive = pin.compilerRt.archive;
+  const compilerRt = { archive, sha256: hash(archive), objects: assertArm64V8Archive(read(archive)) };
+  if (compilerRt.sha256 !== pin.compilerRt.sha256 || compilerRt.objects !== pin.compilerRt.objects)
+    throw new Error("V8 compiler-rt archive checksum mismatch");
+  return { packages, binaries, linux, compilerRt };
 }
 
 function validateToolchain(receipt) {
   validateLinuxPrerequisites(receipt?.linux);
   const pin = LINUX_ARM64_V8_BUILD.toolchain;
+  if (receipt?.compilerRt?.archive !== pin.compilerRt.archive ||
+    receipt?.compilerRt?.sha256 !== pin.compilerRt.sha256 ||
+    receipt?.compilerRt?.objects !== pin.compilerRt.objects)
+    throw new Error("V8 compiler-rt receipt is incomplete or mismatched");
   if (
     !receipt ||
     Object.keys(receipt.packages ?? {}).length !== Object.keys(pin.packages).length ||
@@ -224,7 +248,7 @@ function validateToolchain(receipt) {
     typeof receipt.gn?.version !== "string" || !receipt.gn.version.includes(LINUX_ARM64_V8_BUILD.gn.slice(0, 8)))
     throw new Error("V8 GN receipt must match the pinned native CIPD package, SHA-256 and revision");
   for (const name of Object.keys(pin.packages)) {
-    if (receipt.packages[name] !== `${name}\t${pin.packageVersion}\tarm64\tinstall ok installed`)
+    if (receipt.packages[name] !== `${name}\t${packageVersion(name)}\tarm64\tinstall ok installed`)
       throw new Error("V8 toolchain package identity mismatch");
   }
   for (const name of BINARIES) {
@@ -283,6 +307,26 @@ export function verifyLinuxArm64V8Installation(root) {
   )
     throw new Error("Linux arm64 V8 payload checksum/coverage mismatch");
   return actual;
+}
+
+// Chromium's pinned layout differs from Ubuntu's; never modify either upstream tree or SDK.
+export function prepareLinuxArm64V8Sdk(source, run = execFileSync) {
+  const sdk = join(source, SDK);
+  rmSync(sdk, { recursive: true, force: true });
+  mkdirSync(join(sdk, dirname(BUILTINS)), { recursive: true });
+  symlinkSync(join(LINUX_ARM64_V8_BUILD.toolchain.base, "bin"), join(sdk, "bin"));
+  symlinkSync("/usr/lib/llvm-18/lib/clang/18/include", join(sdk, "lib/clang/18/include"));
+  symlinkSync(LINUX_ARM64_V8_BUILD.toolchain.compilerRt.archive, join(sdk, BUILTINS));
+  const input = join(sdk, "preflight.cc");
+  const output = join(sdk, "preflight");
+  // __multi3 forces a real builtins dependency; headers also exercise Clang's resource lookup.
+  writeFileSync(input, "#include <stddef.h>\nextern \"C\" __int128 __multi3(__int128, __int128);\nint main() { return __multi3(6, 7) != 42; }\n");
+  run(join(sdk, "bin/clang++"), ["-fuse-ld=lld", input, join(sdk, BUILTINS), "-latomic", "-o", output]);
+  const elf = readFileSync(output);
+  if (elf.length < 64 || !elf.subarray(0, 7).equals(Buffer.from([127, 69, 76, 70, 2, 1, 1])) ||
+    ![2, 3].includes(elf.readUInt16LE(16)) || elf.readUInt16LE(18) !== 183)
+    throw new Error("V8 compiler preflight is not an aarch64 ELF executable");
+  run(output, []);
 }
 
 export function provisionLinuxArm64V8(destination, { force = false, env = process.env } = {}) {
@@ -375,6 +419,7 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
     if (!gnVersion.includes(LINUX_ARM64_V8_BUILD.gn.slice(0, 8)))
       throw new Error(`Pinned GN version mismatch: ${gnVersion}`);
     toolchain.gn = { package: LINUX_ARM64_V8_BUILD.gnPackage, sha256: sha256(gn), version: gnVersion };
+    prepareLinuxArm64V8Sdk(source, run);
     run(gn, ["gen", "out/linux-arm64", `--args=${linuxArm64V8GnArgs()}`], source);
     run("/usr/bin/ninja", [`-j${jobs}`, "-C", "out/linux-arm64", "v8_monolith"], source);
     rmSync(stage, { recursive: true, force: true });

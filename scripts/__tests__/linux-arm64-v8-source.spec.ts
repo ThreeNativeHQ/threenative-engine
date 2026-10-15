@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -17,6 +18,7 @@ import {
   createLinuxArm64V8Receipt,
   inspectLinuxArm64V8Toolchain,
   linuxArm64V8GnArgs,
+  prepareLinuxArm64V8Sdk,
   provisionLinuxArm64V8,
   runLinuxArm64V8Command,
   verifyLinuxArm64V8Installation,
@@ -47,13 +49,16 @@ function toolchain() {
     ...inspectLinuxArm64V8Toolchain({
       run: (program: string, args: string[]) =>
         program === "dpkg-query"
-          ? `${args.at(-1)}\t1:18.1.3-1ubuntu1\tarm64\tinstall ok installed`
+          ? `${args.at(-1)}\t${args.at(-1) === "libclang-rt-18-dev" ? "1:18.1.3-1" : "1:18.1.3-1ubuntu1"}\tarm64\tinstall ok installed`
           : program === "dpkg"
             ? ""
             : program === "/usr/bin/pkg-config"
               ? "2.80.0"
               : `LLVM version ${version}`,
-      hash: () => "a".repeat(64),
+      hash: (path: string) =>
+        path.endsWith(".a") ? LINUX_ARM64_V8_BUILD.toolchain.compilerRt.sha256 : "a".repeat(64),
+      read: () =>
+        Buffer.concat([archive(), ...Array.from({ length: 277 }, () => archive().subarray(8))]),
     }),
     gn: {
       package: LINUX_ARM64_V8_BUILD.gnPackage,
@@ -241,7 +246,8 @@ describe("recipe and toolchain", () => {
       "use_sysroot=false",
       "use_custom_libcxx=false",
       "clang_use_chrome_plugins=false",
-      'clang_base_path="/usr/lib/llvm-18"',
+      'clang_base_path="//.threenative-llvm-18"',
+      'clang_version="18"',
       "use_lld=true",
     ])
       expect(args).toContain(arg);
@@ -255,7 +261,7 @@ describe("recipe and toolchain", () => {
       expect(() => inspectLinuxArm64V8Toolchain({ run: () => output })).toThrow("requires native");
     const run = (program: string, args: string[]) =>
       program === "dpkg-query"
-        ? `${args.at(-1)}\t1:18.1.3-1ubuntu1\tarm64\tinstall ok installed`
+        ? `${args.at(-1)}\t${args.at(-1) === "libclang-rt-18-dev" ? "1:18.1.3-1" : "1:18.1.3-1ubuntu1"}\tarm64\tinstall ok installed`
         : program === "dpkg"
           ? "modified"
           : "clang version 20.0.0";
@@ -265,6 +271,54 @@ describe("recipe and toolchain", () => {
         run: (program: string, args: string[]) => (program === "dpkg" ? "" : run(program, args)),
       }),
     ).toThrow("must be 18.1.3");
+  });
+  it("rejects absent, substituted or incomplete compiler-rt receipts", () => {
+    for (const corrupt of [
+      (rt: Record<string, unknown>) => {
+        rt.sha256 = "a".repeat(64);
+      },
+      (rt: Record<string, unknown>) => {
+        rt.objects = 1;
+      },
+      (rt: Record<string, unknown>) => {
+        delete rt.archive;
+      },
+    ]) {
+      const root = fixture();
+      editReceipt(root, (receipt) => corrupt(receipt.toolchain.compilerRt));
+      expect(() => verifyLinuxArm64V8Installation(root)).toThrow("compiler-rt receipt");
+    }
+  });
+  it("adapts only the private SDK and requires a native preflight executable to run", () => {
+    const root = mkdtempSync(join(tmpdir(), "v8-sdk-"));
+    roots.push(root);
+    const run = vi.fn((_program: string, args: string[]) => {
+      if (args.length) {
+        const elf = archive().subarray(68);
+        elf.writeUInt16LE(3, 16);
+        writeFileSync(args.at(-1)!, elf);
+      }
+    });
+    prepareLinuxArm64V8Sdk(root, run);
+    const sdk = join(root, ".threenative-llvm-18");
+    expect(readlinkSync(join(sdk, "bin"))).toBe("/usr/lib/llvm-18/bin");
+    expect(readlinkSync(join(sdk, "lib/clang/18/include"))).toBe(
+      "/usr/lib/llvm-18/lib/clang/18/include",
+    );
+    const builtins = join(sdk, "lib/clang/18/lib/aarch64-unknown-linux-gnu/libclang_rt.builtins.a");
+    expect(readlinkSync(builtins)).toBe(LINUX_ARM64_V8_BUILD.toolchain.compilerRt.archive);
+    expect(run.mock.calls[0][1]).toContain(builtins);
+    expect(run.mock.calls[1]).toEqual([join(sdk, "preflight"), []]);
+    expect(() =>
+      prepareLinuxArm64V8Sdk(root, (_program: string, args: string[]) => {
+        writeFileSync(args.at(-1)!, archive(62).subarray(68));
+      }),
+    ).toThrow("aarch64 ELF executable");
+    expect(() =>
+      prepareLinuxArm64V8Sdk(root, () => {
+        throw new Error("link failed");
+      }),
+    ).toThrow("link failed");
   });
   it("validates command flags and routes --force", () => {
     const provision = vi.fn();
