@@ -491,13 +491,15 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
 
 #if defined(__linux__) && !defined(__ANDROID__)
 /**
- * PRD-610: the game thread owns one physical core. Every other thread of the player and its child
- * processes (the GPU present worker, the render thread, shader compiles, V8 workers, the HUD overlay
- * and its WebKit processes) runs on the remaining CPUs. On Xvfb the NVIDIA present waits in a
- * busy loop, and sharing a core with it cost the game thread 15 to 30% of its IPC on Midway.
- * TN_PLAYER_MAIN_CORE=off leaves placement to the OS; a CPU number names the core to take.
- * Auto picks the core the firmware ranks last (ACPI CPPC, the last one on a tie): the scheduler packs
- * other busy work onto the top-ranked cores first, and a game thread pinned there competed with it.
+ * PRD-610: the game thread keeps its own cores. It takes one L3 domain (a Ryzen CCD), or one physical
+ * core where all cores share one L3. Every other thread of the player and its child processes (the GPU
+ * present worker, the render thread, shader compiles, V8 workers, the HUD overlay and its WebKit
+ * processes) runs on the remaining CPUs. On Xvfb the NVIDIA present waits in a busy loop, and sharing
+ * cores with it cost the game thread 15 to 30% of its IPC on Midway.
+ * TN_PLAYER_MAIN_CORE=off leaves placement to the OS; a CPU number names the core to start from.
+ * Auto starts from the core the firmware ranks last (ACPI CPPC) among the fastest by max frequency:
+ * the scheduler packs other busy work onto top-ranked cores first, and a game thread pinned there
+ * competed with it.
  */
 struct ThreadPlacement {
     cpu_set_t helpers{};
@@ -512,12 +514,10 @@ struct ThreadPlacement {
         }
         return value;
     }
-    /** The CPUs of `cpu`'s physical core, from "11,23" or "0-1". */
-    static cpu_set_t siblingsOf(int cpu) {
+    /** A sysfs CPU list ("11,23", "6-11,18-23") as a set; empty when unreadable. */
+    static cpu_set_t readList(const std::string& path) {
         cpu_set_t set;
         CPU_ZERO(&set);
-        CPU_SET(cpu, &set);
-        std::string path = "/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/topology/thread_siblings_list";
         if (std::FILE* file = std::fopen(path.c_str(), "r")) {
             int first = 0, last = 0;
             char separator = 0;
@@ -544,18 +544,28 @@ struct ThreadPlacement {
                 return;
             }
         } else {
-            long lowest = LONG_MAX;
+            // The fastest cores by max frequency first (P-cores on a hybrid CPU), then the last CPPC rank among them.
+            const auto cpuFile = [](int c, const char* name) { return "/sys/devices/system/cpu/cpu" + std::to_string(c) + name; };
+            long fastest = -1, lowest = LONG_MAX;
+            for (int c = 0; c < CPU_SETSIZE; ++c)
+                if (CPU_ISSET(c, &allowed)) fastest = std::max(fastest, readNumber(cpuFile(c, "/cpufreq/cpuinfo_max_freq")));
             for (int c = 0; c < CPU_SETSIZE; ++c) {
-                if (!CPU_ISSET(c, &allowed)) continue;
-                const std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(c);
-                long rank = readNumber(base + "/acpi_cppc/highest_perf");
-                if (rank < 0) rank = readNumber(base + "/cpufreq/cpuinfo_max_freq");
+                if (!CPU_ISSET(c, &allowed) || readNumber(cpuFile(c, "/cpufreq/cpuinfo_max_freq")) != fastest) continue;
+                const long rank = std::max(0L, readNumber(cpuFile(c, "/acpi_cppc/highest_perf")));
                 if (rank <= lowest) lowest = rank, chosen = c;
             }
         }
-        const cpu_set_t core = siblingsOf(chosen);
+        // Several L3 domains (a Ryzen CCD): the game thread takes the chosen core's domain and the helpers the
+        // others, so neither shares a core or an L3 with the other. One shared L3: the game thread takes the core.
+        const std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(chosen);
+        const cpu_set_t domain = readList(base + "/cache/index3/shared_cpu_list");
         cpu_set_t main;
-        CPU_AND(&main, &core, &allowed);
+        CPU_AND(&main, &domain, &allowed);
+        if (CPU_COUNT(&main) == 0 || CPU_EQUAL(&main, &allowed)) {
+            const cpu_set_t core = readList(base + "/topology/thread_siblings_list");
+            CPU_AND(&main, &core, &allowed);
+        }
+        if (CPU_COUNT(&main) == 0) CPU_SET(chosen, &main);
         CPU_XOR(&helpers, &allowed, &main);
         if (CPU_COUNT(&helpers) == 0 || sched_setaffinity(0, sizeof main, &main) != 0) return;
         active = true;
