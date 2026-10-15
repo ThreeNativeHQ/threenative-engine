@@ -352,10 +352,26 @@ export function defineTsl(
   const exports: Record<string, unknown> = {};
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
-  // Fn builds once at definition; calling the returned function returns that graph, as on V8.
+  // Each call binds its own inputs before the callback builds the graph.
   exports.Fn = (callback: unknown) => {
-    const graph = wrap(capture("Fn", callback));
-    return () => graph;
+    if (typeof callback !== "function") throw new TypeError("TN_TSL Fn: expected a callback");
+    return (...args: unknown[]) => {
+      const first = args[0];
+      const inputs =
+        args.length === 1 &&
+        first !== null &&
+        typeof first === "object" &&
+        !isTslNode(first) &&
+        (Array.isArray(first) || first.constructor === Object)
+          ? first
+          : args;
+      const asNode = (value: unknown) =>
+        isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
+      const parameters = Array.isArray(inputs)
+        ? inputs.map(asNode)
+        : Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, asNode(value)]));
+      return wrap(capture("Fn", callback, parameters));
+    };
   };
   exports.If = (condition: unknown, callback: unknown) => {
     statement("If");

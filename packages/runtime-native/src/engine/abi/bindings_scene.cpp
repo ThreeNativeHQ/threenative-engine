@@ -1621,6 +1621,16 @@ void registerAnimationClip(ClassBinding& b) {
 void registerInstancedMesh(ClassBinding& b) {
     registerMesh(b);
     registerObjectBounds<InstancedMesh>(b);
+    b.methods["computeBoundingSphere"] = [](void* self, const Args&, Store&) {
+        as<InstancedMesh>(self)->computeBoundingSphere();
+        return Value::undefined();
+    };
+    b.members["boundingSphere"] = [](void* self, const Args&, Store& store) {
+        return store.share("Sphere", as<InstancedMesh>(self)->boundingSphere);
+    };
+    b.setters["boundingSphere"] = [](void* self, const Value& value, Store& store) {
+        as<InstancedMesh>(self)->boundingSphere = value.kind == Value::Kind::Null ? nullptr : store.shared<Sphere>(value, "Sphere");
+    };
     b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
         std::shared_ptr<BufferGeometry> geometry;
         std::shared_ptr<Material> material;

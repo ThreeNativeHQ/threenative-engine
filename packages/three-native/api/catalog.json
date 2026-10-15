@@ -22,8 +22,16 @@
         "gaps": ["aggregate-lowering", "storage-members", "member-assignment"]
       },
       "parameters": [
-        { "name": "membersLayout", "type": "Record<string, string>", "optional": false },
-        { "name": "name", "type": "string", "optional": true }
+        {
+          "name": "membersLayout",
+          "type": "Record<string, string>",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "optional": true
+        }
       ],
       "returns": "Function"
     },
@@ -6870,6 +6878,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "boundingSphere",
+          "type": "Sphere | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -6971,6 +6988,19 @@
         },
         {
           "name": "computeBoundingBox",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "computeBoundingSphere",
           "async": false,
           "overloads": [
             {
@@ -12476,8 +12506,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12986,6 +13015,15 @@
         {
           "name": "bumpMap",
           "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "flatShading",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -18740,7 +18778,7 @@
         {
           "name": "skeleton",
           "type": "Skeleton",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -18758,7 +18796,7 @@
         {
           "name": "bindMatrix",
           "type": "Matrix4",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -18767,7 +18805,7 @@
         {
           "name": "bindMatrixInverse",
           "type": "Matrix4",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -26393,6 +26431,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "flatShading",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -26681,6 +26728,15 @@
         {
           "name": "polygonOffsetUnits",
           "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "flatShading",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {

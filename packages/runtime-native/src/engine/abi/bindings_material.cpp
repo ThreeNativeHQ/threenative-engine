@@ -207,6 +207,7 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialColor(b, "color", &Material::color);
     materialMapSlot(b);
     if (type == MaterialType::Basic) return;
+    materialBool(b, "flatShading", &Material::flatShading);
     // A tangent-space normal map, which the lit programs perturb with three's perturbNormal2Arb, and
     // its scale: the member alias, written whole with a Vector2 (three's setValues assigns it).
     materialMapSlot(b, "normalMap");

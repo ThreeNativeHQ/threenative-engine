@@ -910,6 +910,7 @@ count: number;
 instanceColor: InstancedBufferAttribute | null;
 readonly instanceMatrix: InstancedBufferAttribute;
 boundingBox: Box3 | null;
+boundingSphere: Sphere | null;
 
   getColorAt(index: number, color: Color): Color;
 
@@ -920,6 +921,8 @@ boundingBox: Box3 | null;
   setMatrixAt(index: number, matrix: Matrix4): this;
 
   computeBoundingBox(): void;
+
+  computeBoundingSphere(): void;
 }
 
 /** Catalog partial (native-not-implemented): three/IntType. */
@@ -1618,6 +1621,7 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 bumpMap: Texture | null;
+flatShading: boolean;
 
   clone(): this;
 
@@ -2392,10 +2396,10 @@ readonly bones: Bone[];
 /** Catalog supported: three/webgpu/SkinnedMesh. */
 export declare class SkinnedMesh extends Mesh {
 constructor();
-readonly skeleton: Skeleton;
+skeleton: Skeleton;
 bindMode: "attached" | "detached";
-readonly bindMatrix: Matrix4;
-readonly bindMatrixInverse: Matrix4;
+bindMatrix: Matrix4;
+bindMatrixInverse: Matrix4;
 boundingBox: Box3 | null;
 
   bind(skeleton: Skeleton, bindMatrix?: Matrix4): void;
@@ -3218,6 +3222,7 @@ forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+flatShading: boolean;
 
   clone(): this;
 
@@ -3255,6 +3260,7 @@ forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+flatShading: boolean;
 
   clone(): this;
 

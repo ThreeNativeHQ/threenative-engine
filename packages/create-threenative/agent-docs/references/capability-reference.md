@@ -4226,6 +4226,21 @@ const lane = decideDisplayStrategy({ env: process.env, platform: "linux" });
 if (lane.kind === "private-xvfb") throw new Error("refuse to judge this frame rate");
 ```
 
+### `desktopConsoleType`
+
+`function` — Drive a local desktop playtest mailbox.
+
+```ts
+export function desktopConsoleType(stream: "stderr" | "stdout", line: string): string { … }
+```
+
+- **Use when:** run a desktop target through the playtest protocol · exchange observations with a native desktop host
+- **Constraints:** the mailbox lifecycle must be disposed after the run
+
+```ts
+const driver = new DesktopPlaytestDriver(options);
+```
+
 ### `DesktopPlaytestDriver`
 
 `class` — Drive a local desktop playtest mailbox.
