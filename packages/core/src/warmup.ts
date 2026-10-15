@@ -952,17 +952,25 @@ export async function warmUpScene(
     return invokeCompile(scene, options.targetScene);
   };
 
+  let gpuDrainSettled = true;
   const finish = (report: IWarmUpReport): IWarmUpReport => {
     const coveredPassIncomplete =
       renderer.warmUpWorldPass !== undefined && passResult === undefined;
+    const drainNormalized = gpuDrainSettled
+      ? report
+      : {
+          ...report,
+          timedOut: true,
+        };
     const normalized = coveredPassIncomplete
       ? {
-          ...report,
-          abandoned: Math.max(1, report.abandoned),
-          timedOut: report.timedOut || now() >= startedAt + budgetMs,
+          ...drainNormalized,
+          abandoned: Math.max(1, drainNormalized.abandoned),
+          timedOut: drainNormalized.timedOut || now() >= startedAt + budgetMs,
         }
-      : report;
+      : drainNormalized;
     const complete =
+      gpuDrainSettled &&
       !normalized.unsupported &&
       !normalized.timedOut &&
       normalized.abandoned === 0 &&
@@ -1014,7 +1022,7 @@ export async function warmUpScene(
     )?.backend?.device?.queue;
     if (typeof queue?.onSubmittedWorkDone !== "function") return;
     const drained = Promise.resolve().then(() => queue.onSubmittedWorkDone?.());
-    await withinDeadline(startedAt + budgetMs, drained, yieldFrame, now);
+    gpuDrainSettled = await withinDeadline(startedAt + budgetMs, drained, yieldFrame, now);
   };
   const withPasses = (report: IWarmUpReport): IWarmUpReport =>
     passResult === undefined

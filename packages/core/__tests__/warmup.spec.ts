@@ -512,6 +512,16 @@ describe("scene warm-up", () => {
   });
 
   test("should stop waiting for the GPU when the budget runs out", async () => {
+    const storage = new Map<string, string>();
+    const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
     const renderer = {
       compileAsync: () => Promise.resolve(),
       render: () => undefined,
@@ -526,11 +536,20 @@ describe("scene warm-up", () => {
       mesh("ground"),
       { children: [], isLight: true, castShadow: true, name: "sun" },
     ]);
-    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
-      budgetMs: 60,
-      yieldFrame: () => Promise.resolve(),
-    });
-    expect(report.passes).toEqual(["main", "shadow"]);
+    try {
+      const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+        budgetMs: 60,
+        cache: { key: "stalled-gpu" },
+        yieldFrame: () => Promise.resolve(),
+      });
+      expect(report.passes).toEqual(["main", "shadow"]);
+      expect(report).toMatchObject({ compiled: 1, abandoned: 0, timedOut: true });
+      expect(report.cache).not.toBe("stored");
+      expect(storage.size).toBe(0);
+    } finally {
+      if (previousStorage === undefined) Reflect.deleteProperty(globalThis, "localStorage");
+      else Object.defineProperty(globalThis, "localStorage", previousStorage);
+    }
   }, 10_000);
 
   test("should name a reflection pass when a material carries a reflector node", async () => {

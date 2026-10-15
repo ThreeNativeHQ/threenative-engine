@@ -1302,14 +1302,35 @@ describe("createRenderer", () => {
       let boundTarget: unknown = "previous-target";
       let boundMrt: unknown = "previous-mrt";
       const targetCalls: unknown[] = [];
+      let chunk: Object3D | undefined;
+      let worldPass: ReturnType<typeof pass> | undefined;
+      let invokePassUpdate: (() => void) | undefined;
+      let seenScene: unknown;
+      let seenChunkParent: unknown;
+      const originalContextNode = { getFlowContextData: () => ({ original: true }) };
+      const rawRender = vi.fn(() => {
+        seenScene = worldPass?.scene;
+        seenChunkParent = chunk?.parent;
+        const update = invokePassUpdate;
+        invokePassUpdate = undefined;
+        update?.();
+        if (throws) throw new Error("covered output render failed");
+      });
       const raw = {
+        autoClear: false,
         compute: () => undefined,
+        contextNode: originalContextNode,
         dispose: () => undefined,
         domElement: canvas,
         getMRT: () => boundMrt,
+        getDrawingBufferSize: (size: { set: (width: number, height: number) => unknown }) =>
+          size.set(320, 180),
+        getOutputRenderTarget: () => null,
         getRenderTarget: () => boundTarget,
         init: async () => undefined,
-        render: () => undefined,
+        opaque: false,
+        outputColorSpace: "original-output-color-space",
+        render: rawRender,
         setMRT: (value: unknown) => {
           boundMrt = value;
         },
@@ -1318,31 +1339,34 @@ describe("createRenderer", () => {
           boundTarget = value;
         },
         setSize: () => undefined,
+        toneMapping: 17,
+        transparent: false,
+        xr: { enabled: true },
       };
-      const renderPipeline = vi.spyOn(RenderPipeline.prototype, "render").mockImplementation(() => {
-        if (throws) throw new Error("covered output render failed");
-      });
 
       try {
         const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
         const authoredScene = new Scene();
         const authoredCamera = new PerspectiveCamera();
-        const worldPass = pass(authoredScene, authoredCamera);
+        worldPass = pass(authoredScene, authoredCamera);
         const outputNode = worldPass.add(pass(new Scene(), new PerspectiveCamera()));
+        worldPass.name = "warm-world-pass";
+        worldPass.contextNode = { getFlowContextData: () => ({ pass: true }) } as never;
+        worldPass.overrideMaterial = {} as never;
+        worldPass.setLayers({ mask: 2 } as never);
         renderer.setOutputNode(outputNode, worldPass);
 
         const targetScene = new Scene();
-        const chunk = new Object3D();
+        chunk = new Object3D();
         chunk.position.set(3, 4, 5);
         const originalMatrix = chunk.matrix.clone();
         const camera = new PerspectiveCamera();
-        let seenScene: unknown;
-        let seenChunkParent: unknown;
-        renderPipeline.mockImplementation(() => {
-          seenScene = worldPass.scene;
-          seenChunkParent = chunk.parent;
-          if (throws) throw new Error("covered output render failed");
-        });
+        const originalCameraMask = camera.layers.mask;
+        targetScene.name = "target-scene";
+        targetScene.overrideMaterial = {} as never;
+        const originalTargetName = targetScene.name;
+        const targetOverrideMaterial = targetScene.overrideMaterial;
+        invokePassUpdate = () => worldPass?.updateBefore({ renderer: raw } as never);
 
         const warm = () => renderer.warmUpWorldPass?.(chunk, camera, targetScene);
         if (throws) expect(warm).toThrow("covered output render failed");
@@ -1356,11 +1380,21 @@ describe("createRenderer", () => {
         expect(chunk.matrix.equals(originalMatrix)).toBe(true);
         expect(boundTarget).toBe("previous-target");
         expect(boundMrt).toBe("previous-mrt");
+        expect(raw.autoClear).toBe(false);
+        expect(raw.transparent).toBe(false);
+        expect(raw.opaque).toBe(false);
+        expect(raw.contextNode).toBe(originalContextNode);
+        expect(raw.toneMapping).toBe(17);
+        expect(raw.outputColorSpace).toBe("original-output-color-space");
+        expect(raw.xr.enabled).toBe(true);
+        expect(camera.layers.mask).toBe(originalCameraMask);
+        expect(targetScene.name).toBe(originalTargetName);
+        expect(targetScene.overrideMaterial).toBe(targetOverrideMaterial);
         expect(targetCalls.length).toBeGreaterThan(0);
         expect(targetCalls).not.toContain(null);
+        expect(rawRender).toHaveBeenCalled();
         renderer.dispose();
       } finally {
-        renderPipeline.mockRestore();
         if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
         else Object.defineProperty(globalThis, "navigator", descriptor);
       }

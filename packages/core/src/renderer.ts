@@ -724,6 +724,50 @@ function wrapRenderer(
         const previousPassCamera = outputPass?.camera;
         const previousTarget = "_renderTarget" in raw ? raw._renderTarget : raw.getRenderTarget?.();
         const previousMrt = raw.getMRT?.();
+        const warmRaw = raw as RendererInstance & {
+          contextNode?: unknown;
+          opaque?: boolean;
+          outputColorSpace?: unknown;
+          toneMapping?: unknown;
+          transparent?: boolean;
+        };
+        const rawObject = raw as unknown as Record<string, unknown>;
+        const hadOwnAutoClear = Object.hasOwn(rawObject, "autoClear");
+        const hadOwnTransparent = Object.hasOwn(rawObject, "transparent");
+        const hadOwnOpaque = Object.hasOwn(rawObject, "opaque");
+        const hadOwnContextNode = Object.hasOwn(rawObject, "contextNode");
+        const hadOwnToneMapping = Object.hasOwn(rawObject, "toneMapping");
+        const hadOwnOutputColorSpace = Object.hasOwn(rawObject, "outputColorSpace");
+        const previousAutoClear = warmRaw.autoClear;
+        const previousTransparent = warmRaw.transparent;
+        const previousOpaque = warmRaw.opaque;
+        const previousContextNode = warmRaw.contextNode;
+        const previousToneMapping = warmRaw.toneMapping;
+        const previousOutputColorSpace = warmRaw.outputColorSpace;
+        const previousXr = warmRaw.xr;
+        const hadOwnXrEnabled = previousXr !== undefined && Object.hasOwn(previousXr, "enabled");
+        const previousXrEnabled = previousXr?.enabled;
+        const sceneObject = scene as unknown as Record<string, unknown>;
+        const outputRootObject = outputRoot as unknown as Record<string, unknown>;
+        const hadOwnSceneOverrideMaterial = Object.hasOwn(sceneObject, "overrideMaterial");
+        const hadOwnOutputRootOverrideMaterial = Object.hasOwn(
+          outputRootObject,
+          "overrideMaterial",
+        );
+        const previousSceneName = scene.name;
+        const previousOutputRootName = outputRoot.name;
+        const previousSceneOverrideMaterial = sceneObject.overrideMaterial;
+        const previousOutputRootOverrideMaterial = outputRootObject.overrideMaterial;
+        const previousCameraMask = camera.layers.mask;
+        const restoreField = (
+          object: Record<string, unknown>,
+          key: string,
+          hadOwn: boolean,
+          value: unknown,
+        ): void => {
+          if (hadOwn) object[key] = value;
+          else Reflect.deleteProperty(object, key);
+        };
         const originalParent = scene.parent;
         const originalMatrix = scene.matrix.clone();
         const originalMatrixWorld = scene.matrixWorld.clone();
@@ -773,6 +817,39 @@ function wrapRenderer(
           }
           if (raw.setMRT !== undefined) raw.setMRT(previousMrt);
           if (raw.setRenderTarget !== undefined) raw.setRenderTarget(previousTarget);
+          restoreField(rawObject, "autoClear", hadOwnAutoClear, previousAutoClear);
+          restoreField(rawObject, "transparent", hadOwnTransparent, previousTransparent);
+          restoreField(rawObject, "opaque", hadOwnOpaque, previousOpaque);
+          restoreField(rawObject, "contextNode", hadOwnContextNode, previousContextNode);
+          restoreField(rawObject, "toneMapping", hadOwnToneMapping, previousToneMapping);
+          restoreField(
+            rawObject,
+            "outputColorSpace",
+            hadOwnOutputColorSpace,
+            previousOutputColorSpace,
+          );
+          if (previousXr !== undefined)
+            restoreField(
+              previousXr as unknown as Record<string, unknown>,
+              "enabled",
+              hadOwnXrEnabled,
+              previousXrEnabled,
+            );
+          restoreField(
+            sceneObject,
+            "overrideMaterial",
+            hadOwnSceneOverrideMaterial,
+            previousSceneOverrideMaterial,
+          );
+          restoreField(
+            outputRootObject,
+            "overrideMaterial",
+            hadOwnOutputRootOverrideMaterial,
+            previousOutputRootOverrideMaterial,
+          );
+          scene.name = previousSceneName;
+          outputRoot.name = previousOutputRootName;
+          camera.layers.mask = previousCameraMask;
           for (const entry of hidden) entry.object.visible = entry.visible;
           if (attached) {
             outputRoot.remove(scene);
