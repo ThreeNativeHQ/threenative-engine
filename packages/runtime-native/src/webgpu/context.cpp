@@ -7,7 +7,6 @@
 
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/bindings.h"
-#include <array>
 #include <cstdlib>
 #include <string>
 #include <SDL3/SDL.h>
@@ -416,6 +415,9 @@ static void reportGrantedFeatures(WGPUDevice device) {
         {WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc"},
         {WGPUFeatureName_IndirectFirstInstance, "indirect-first-instance"},
         {WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable"},
+#if defined(MYSTRAL_WEBGPU_DAWN)
+        {WGPUFeatureName_TransientAttachments, "transient-attachments"},
+#endif
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
         {WGPUFeatureName_CoreFeaturesAndLimits, "core-features-and-limits"},
 #endif
@@ -431,8 +433,7 @@ static void reportGrantedFeatures(WGPUDevice device) {
 }
 
 struct RequiredFeatures {
-    std::array<WGPUFeatureName, 10> names{};
-    size_t count = 0;
+    std::vector<WGPUFeatureName> names;
     bool hasIndirectFirstInstance = false;
     bool hasTimestampQuery = false;
     bool hasPipelineCache = false;
@@ -445,8 +446,7 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
         const bool supported = wgpuAdapterHasFeature(adapter, feature) != 0;
         std::cout << "[WebGPU] adapter feature probe " << label << ": "
                   << (supported ? "yes" : "no") << std::endl;
-        if (supported && result.count < result.names.size())
-            result.names[result.count++] = feature;
+        if (supported) result.names.push_back(feature);
         return supported;
     };
 
@@ -485,6 +485,12 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
     appendIfSupported(WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable");
     // Float LUTs need linear filtering for continuous color grading.
     appendIfSupported(WGPUFeatureName_Float32Filterable, "float32-filterable");
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    // Comparison control: omit the feature at device creation, preserving ordinary allocations.
+    const char* transientControl = std::getenv("TN_TRANSIENT_ATTACHMENTS");
+    if (!transientControl || std::strcmp(transientControl, "0") != 0)
+        appendIfSupported(WGPUFeatureName_TransientAttachments, "transient-attachments");
+#endif
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
     appendIfSupported(WGPUFeatureName_CoreFeaturesAndLimits, "core-features-and-limits");
 #endif
@@ -682,8 +688,8 @@ bool Context::initializeHeadless() {
     const auto requiredFeatures = buildRequiredFeatures(adapter_, allowIndirectFirstInstance);
     hasIndirectFirstInstance_ = requiredFeatures.hasIndirectFirstInstance;
     hasTimestampQuery_ = requiredFeatures.hasTimestampQuery;
-    deviceDesc.requiredFeatureCount = requiredFeatures.count;
-    deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
+    deviceDesc.requiredFeatureCount = requiredFeatures.names.size();
+    deviceDesc.requiredFeatures = !requiredFeatures.names.empty() ? requiredFeatures.names.data() : nullptr;
 
     installDeviceCallbacks(deviceDesc);
 
@@ -975,8 +981,8 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     const auto requiredFeatures = buildRequiredFeatures(adapter_, allowIndirectFirstInstance);
     hasIndirectFirstInstance_ = requiredFeatures.hasIndirectFirstInstance;
     hasTimestampQuery_ = requiredFeatures.hasTimestampQuery;
-    deviceDesc.requiredFeatureCount = requiredFeatures.count;
-    deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
+    deviceDesc.requiredFeatureCount = requiredFeatures.names.size();
+    deviceDesc.requiredFeatures = !requiredFeatures.names.empty() ? requiredFeatures.names.data() : nullptr;
 
     // Set up error callback
     installDeviceCallbacks(deviceDesc);
@@ -1156,8 +1162,8 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     const auto requiredFeatures = buildRequiredFeatures(adapter_, allowIndirectFirstInstance);
     hasIndirectFirstInstance_ = requiredFeatures.hasIndirectFirstInstance;
     hasTimestampQuery_ = requiredFeatures.hasTimestampQuery;
-    deviceDesc.requiredFeatureCount = requiredFeatures.count;
-    deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
+    deviceDesc.requiredFeatureCount = requiredFeatures.names.size();
+    deviceDesc.requiredFeatures = !requiredFeatures.names.empty() ? requiredFeatures.names.data() : nullptr;
 
     installDeviceCallbacks(deviceDesc);
 
