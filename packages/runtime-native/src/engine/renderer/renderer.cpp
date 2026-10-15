@@ -1121,8 +1121,10 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
             e.buffer = gpu_.buffer(storage.buffer);
             e.size = storage.capacity;
-        } else if (sourceScene_ && (b.name == "t_scene" || b.name == "smp_scene" || b.name == "t_depth" ||
+        } else if (sourceScene_ && &stage != &outputFragment_ && &stage != &blitFragment_ &&
+                   (b.name == "t_scene" || b.name == "smp_scene" || b.name == "t_depth" ||
                                     b.name == "smp_depth" || viewportBinding(b.name))) {
+            // The output and blit passes keep this renderer's own scene colour, also named t_scene.
             const bool sourceDepth =
                 b.name.find("depth") != std::string::npos || b.name.find("Depth") != std::string::npos;
             if (b.kind == shader::BindingKind::Texture)
