@@ -241,6 +241,35 @@ describe("replay", () => {
     input.dispose();
   });
 
+  it("should record on a host canvas that has no getBoundingClientRect", async () => {
+    // The native engine's canvas is a size-only surface at the window origin.
+    const canvas = Object.assign(new EventTarget(), {
+      clientHeight: 180,
+      clientWidth: 320,
+    }) as unknown as HTMLCanvasElement;
+    const input = new InputMap(undefined, new EventTarget(), canvas);
+    const plugin = replay();
+    const ctx = {
+      input,
+      random: createRandom(90210),
+      renderer: { domElement: canvas },
+    } as unknown as ICtx;
+    await plugin.setup?.(ctx, runtime());
+    canvas.dispatchEvent(
+      Object.assign(new Event("pointerdown"), {
+        buttons: 1,
+        clientX: 12,
+        clientY: 24,
+        pointerId: 0,
+      }),
+    );
+    input.tick();
+    plugin.beforeUpdate?.(ctx, 1 / 60);
+
+    expect(plugin.recording?.input[0]?.pointer).toEqual([12, 24, 1, 320, 180]);
+    input.dispose();
+  });
+
   it("should release synthetic input after replay", async () => {
     const recorded = await recordThreeTicks();
     const target = new EventTarget();

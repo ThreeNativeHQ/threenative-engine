@@ -23,7 +23,7 @@ function pointerViewport(ctx: ReplayContext, point: Point = [0, 0, 0]): Pointer 
   // stale offset would silently corrupt recorded pointer coordinates. Only the comparisons
   // below are optimised — tuple fields, not joined strings.
   const canvas = ctx.renderer?.domElement;
-  const rect = canvas?.getBoundingClientRect();
+  const rect = canvas?.getBoundingClientRect?.();
   return [
     point[0] - (rect?.left ?? 0),
     point[1] - (rect?.top ?? 0),
