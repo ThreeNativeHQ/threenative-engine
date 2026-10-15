@@ -638,6 +638,10 @@ describe("pipeline census", () => {
       { nodeBuilds: 1, beforeWarmUpSettled: false },
       { nodeBuilds: 0, beforeWarmUpSettled: false, afterWarmUpScope: "chunk:0" },
     ]);
+    expect(report.nodeBuilds?.map(({ beforeWarmUpSettled }) => beforeWarmUpSettled)).toEqual([
+      true,
+      false,
+    ]);
   });
 
   it("observes the renderer-owned node seam for a real Mesh instead of patching the Mesh", () => {

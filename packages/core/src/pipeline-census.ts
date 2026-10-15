@@ -747,6 +747,8 @@ export class PipelineCensus {
     for (const event of this.#events) {
       if (event.settledMs !== undefined) event.beforeWarmUpSettled = event.settledMs <= boundaryMs;
     }
+    for (const nodeBuild of this.#nodeBuildEvents)
+      Object.assign(nodeBuild, { beforeWarmUpSettled: nodeBuild.startedMs <= boundaryMs });
   }
 
   /** Mark one repeatable streamed warm-up boundary; target-bound scopes close on their first world frame. */
