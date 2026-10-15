@@ -213,12 +213,6 @@ export interface IWarmUpReport {
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
 export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
-  /** Compiles through an authored output pass target when one is installed. */
-  compileWorldPassAsync?: (
-    scene: Object3D,
-    camera: Camera,
-    targetScene?: Object3D,
-  ) => Promise<boolean>;
   computeAsync?: (node: unknown) => Promise<void>;
   pipelineCensus?: () => IPipelineCensus;
   /** Performs one covered output-pipeline render without marking first present. */
@@ -944,15 +938,7 @@ export async function warmUpScene(
     // Stock Three compileAsync has no render-depth input, so an output pipeline's covered render
     // is the only path that can build the world graph against the target the first frame draws.
     if (renderer.warmUpWorldPass !== undefined) return Promise.resolve();
-    if (renderer.compileWorldPassAsync === undefined)
-      return invokeCompile(scene, options.targetScene);
-    return renderer.compileWorldPassAsync(scene, camera, options.targetScene).then((used) => {
-      if (used) {
-        attempted += 1;
-        return;
-      }
-      return invokeCompile(scene, options.targetScene);
-    });
+    return invokeCompile(scene, options.targetScene);
   };
 
   const finish = (report: IWarmUpReport): IWarmUpReport => {

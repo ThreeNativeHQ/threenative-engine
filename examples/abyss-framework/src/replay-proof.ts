@@ -1,8 +1,9 @@
 import { createReplayDriver } from "@threenative/core";
-import type { IGame, IGamePluginRuntime, Recording } from "@threenative/core";
+import type { ICtx, IGame, IGamePluginRuntime, Recording } from "@threenative/core";
 import type { AbyssState } from "./scenes/Abyss.js";
 
 type ReplayPlugin = { readonly recording: Recording | undefined };
+type StartupProofArm = "before" | "after";
 
 type ReplayProofStep = {
   readonly holdTicks?: number;
@@ -12,6 +13,50 @@ type ReplayProofStep = {
 };
 
 type ReplayTrace = { position: [number, number, number]; score: number }[];
+
+function parseStartupProof(value: string | null): StartupProofArm | undefined {
+  return value === "before" || value === "after" ? value : undefined;
+}
+
+export function installStartupProof(
+  ctx: Pick<ICtx<AbyssState>, "beforeRender">,
+  runtime: IGamePluginRuntime | undefined,
+): (() => void) | undefined {
+  const startupProof = parseStartupProof(
+    new URLSearchParams(globalThis.location.search).get("startupProof"),
+  );
+  if (startupProof === undefined || runtime === undefined) return undefined;
+  const label = document.createElement("div");
+  label.dataset.tnStartupProof = startupProof;
+  label.style.cssText =
+    "position:fixed;z-index:2147483647;left:0;bottom:0;padding:8px 16px;background:#000;color:#fff;font:700 32px monospace;line-height:1;pointer-events:none";
+  document.body.append(label);
+  let visibleWorldFrame = 0;
+  const unregister = ctx.beforeRender(() => {
+    const proofHost = globalThis as Record<string, unknown>;
+    if (
+      proofHost.__TN_STARTUP_READY__ !== true ||
+      proofHost.__TN_STARTUP_PROOF_REQUEST__ !== true ||
+      visibleWorldFrame >= 5
+    )
+      return;
+    proofHost.__TN_STARTUP_PROOF_REQUEST__ = false;
+    visibleWorldFrame += 1;
+    label.textContent = `${startupProof.toUpperCase()} FIRST-VISIBLE-WORLD FRAME ${String(visibleWorldFrame)}`;
+    console.log(
+      `TN_STARTUP_VISIBLE_WORLD:${JSON.stringify({
+        arm: startupProof,
+        frame: visibleWorldFrame,
+        tick: runtime.tick(),
+        readyMs: runtime.startupTimeline?.().readyMs,
+      })}`,
+    );
+  });
+  return () => {
+    unregister();
+    label.remove();
+  };
+}
 
 function dispatchKey(target: EventTarget, type: "keydown" | "keyup", code: string): void {
   target.dispatchEvent(Object.assign(new Event(type), { code }));

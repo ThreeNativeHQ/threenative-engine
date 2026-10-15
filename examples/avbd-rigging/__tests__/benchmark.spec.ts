@@ -14,6 +14,7 @@ const census = {
     uniquePipelines: 2,
     recordedEvents: 2,
     droppedEvents: 0,
+    nodeBuilds: 0,
     deviceCreations: 2,
     directCreations: 0,
   },

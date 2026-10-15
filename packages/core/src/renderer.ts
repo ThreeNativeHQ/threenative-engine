@@ -174,8 +174,6 @@ export interface IRendererLike {
   warmUpSettled?(): void;
   /** Marks a repeatable streamed warm-up boundary for the next first draw. */
   warmUpScopeSettled?(label: string): void;
-  /** Compiles against the authored output pass target, when one is installed. */
-  compileWorldPassAsync?(scene: Object3D, camera: Camera, targetScene?: Object3D): Promise<boolean>;
   /** Performs one covered output-pipeline render without marking first present. */
   warmUpWorldPass?(scene: Object3D, camera: Camera): void;
   /**
@@ -705,35 +703,6 @@ function wrapRenderer(
     ...(pipelineCensus === undefined
       ? {}
       : { warmUpScopeSettled: (label: string) => pipelineCensus.warmUpScopeSettled(label) }),
-    compileWorldPassAsync: async (scene, camera, targetScene) => {
-      if (outputPass === undefined) return false;
-      const compilePass = outputPass.compileAsync;
-      if (typeof compilePass !== "function") return false;
-      const previousScene = outputPass.scene;
-      const previousCamera = outputPass.camera;
-      const previousTarget = raw.getRenderTarget?.();
-      const previousMrt = raw.getMRT?.();
-      setOutputPipelineRoot(outputPass, targetScene ?? scene, camera);
-      try {
-        if (targetScene !== undefined && targetScene !== scene) {
-          if (typeof raw.setRenderTarget !== "function" || typeof raw.setMRT !== "function")
-            return false;
-          raw.setRenderTarget(outputPass.renderTarget);
-          raw.setMRT(outputPass.getMRT());
-          if (typeof raw.compileAsync !== "function") return false;
-          await raw.compileAsync(scene, camera, targetScene);
-        } else {
-          await compilePass.call(outputPass, raw as unknown as Parameters<typeof compilePass>[0]);
-        }
-        return true;
-      } finally {
-        outputPass.scene = previousScene;
-        outputPass.camera = previousCamera;
-        if (previousTarget !== undefined && typeof raw.setRenderTarget === "function")
-          raw.setRenderTarget(previousTarget);
-        if (previousMrt !== undefined && typeof raw.setMRT === "function") raw.setMRT(previousMrt);
-      }
-    },
     get warmUpWorldPass() {
       if (outputPipeline === undefined) return undefined;
       return (scene: Object3D, camera: Camera): void => {

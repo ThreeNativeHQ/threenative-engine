@@ -8,6 +8,42 @@ validator itself reads, so this page cannot disagree with the runtime. Assertion
 closed: a malformed assertion throws at load, and a scenario whose assertions all hold
 trivially fails `TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING`.
 
+### `tone`
+
+Bounds display-referred luminance from a captured PNG frame, using a shared 256-bin histogram. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web, desktop, bevy · **Requires:** browser.screenshot
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `atStep` | non-empty string | no |
+| `region` | { x: number, y: number, width: number, height: number } | no |
+| `compare` | { region: object, metric: string, minDelta: number } | no |
+| `mean` | { min?: number, max?: number } | no |
+| `p1` | { min?: number, max?: number } | no |
+| `p50` | { min?: number, max?: number } | no |
+| `p99` | { min?: number, max?: number } | no |
+| `clipFraction` | { min?: number, max?: number } | no |
+| `blackFraction` | { min?: number, max?: number } | no |
+
+
+```json
+{
+  "tone": [
+    {
+      "atStep": "landed",
+      "mean": {
+        "min": 60,
+        "max": 140
+      },
+      "p99": {
+        "min": 150
+      }
+    }
+  ]
+}
+```
+
 ### `deviceMetrics`
 
 Reports the device's thermal, power and battery state around the run and judges whether the run is comparable with a cool one. **Use when** that is the thing the scenario must prove.
@@ -426,7 +462,7 @@ Proves DOM state inside a same-origin webview overlay iframe. **Use when** that 
 
 Proves console, network, runtime, and readiness diagnostics stayed clean. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web · **Requires:** browser.console, browser.network, runtime.diagnostics
+- **Supported on:** web, desktop · **Requires:** browser.console, browser.network, runtime.diagnostics
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -528,6 +564,31 @@ Proves projected entity visibility in the viewport. **Use when** that is the thi
       "entity": "player",
       "minProjectedPixels": 1200,
       "maxOffscreenRatio": 0.05
+    }
+  ]
+}
+```
+
+### `audio`
+
+Proves which labelled audio cues the game actually played, and how often. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web, desktop · **Requires:** runtime.audio
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `cue` | string | yes |
+| `minPlays` | non-negative integer | no |
+| `maxPlays` | non-negative integer | no |
+| `minGapMs` | non-negative integer | no |
+
+
+```json
+{
+  "audio": [
+    {
+      "cue": "speech:p01",
+      "maxPlays": 1
     }
   ]
 }
@@ -667,40 +728,6 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
 }
 ```
 
-### `audio`
-
-Proves which labelled audio cues the game actually played, and how often. Every other audio check
-is about the *file* — it exists, it decodes, it is inside its budget — and all of them stay green
-while a one-shot line sounds a second time mid-match. **Use when** that is the thing the scenario
-must prove.
-
-Label a cue by passing a cue name to the audio bus when the game plays it; unlabelled sounds are never counted.
-When it fails, `observations.json/runtimeObservations/gameplay/audio/recentCues` says when each
-play happened.
-
-- **Supported on:** web, desktop · **Requires:** runtime.audio
-
-| Field | Type | Required |
-| --- | --- | --- |
-| `cue` | string | yes |
-| `minPlays` | non-negative integer (defaults to 1) | no |
-| `maxPlays` | non-negative integer; 0 proves silence | no |
-| `minGapMs` | non-negative integer; fewest ms since the line before it | no |
-
-
-```json
-{
-  "audio": [
-    {
-      "cue": "speech:p01",
-      "minPlays": 1,
-      "maxPlays": 1,
-      "minGapMs": 500
-    }
-  ]
-}
-```
-
 ### `scene`
 
 Bounds the room the game is played in — the lights, materials, fog and camera framing the renderer was handed. Fails closed on a bridge that does not report the scene. **Use when** that is the thing the scenario must prove.
@@ -816,6 +843,30 @@ Bounds when the application's startup milestones happened: the world entered, fi
 }
 ```
 
+### `pipelineCensus`
+
+Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; missing, incomplete, or malformed census evidence fails closed. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web, desktop, bevy · **Requires:** runtime.pipelineCensus
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `maxNodeBuildsAfterWarmUpSettled` | non-negative integer | no |
+| `maxRenderPipelineCreationsAfterWarmUpSettled` | non-negative integer | no |
+| `warmUpScope` | string | no |
+| `maxNodeBuildsAfterWarmUpScope` | non-negative integer | no |
+| `maxRenderPipelineCreationsAfterWarmUpScope` | non-negative integer | no |
+
+
+```json
+{
+  "pipelineCensus": {
+    "maxNodeBuildsAfterWarmUpSettled": 0,
+    "maxRenderPipelineCreationsAfterWarmUpSettled": 0
+  }
+}
+```
+
 ### `renderChain`
 
 Proves the render chain reports its quality tier, authored stage ids/order, graph-output changes for named stages, and, when asserted, a bounded temporal-history rejection fraction. **Use when** that is the thing the scenario must prove.
@@ -828,6 +879,7 @@ Proves the render chain reports its quality tier, authored stage ids/order, grap
 | `stages` | object | no |
 | `contributions` | object | no |
 | `velocity` | object | no |
+| `perAdapter` | object | no |
 
 
 ```json
@@ -856,20 +908,3 @@ Proves the render chain reports its quality tier, authored stage ids/order, grap
   }
 }
 ```
-
-
-## Captured tone
-
-Use `tone` to gate exposure from decoded frame pixels. Each row takes an optional `atStep`
-(named step; omitted means final frame) and at least one metric bound. `mean`, `p1`, `p50`, `p99`
-use display luminance 0..255; `clipFraction` and `blackFraction` use 0..1. Bounds take inclusive
-min/max numbers. Empty, invalid and contradictory bounds throw at load; a missing capture fails.
-
-```json
-{ "tone": [{ "atStep": "landed", "mean": { "min": 60, "max": 140 }, "p99": { "min": 150 }, "clipFraction": { "max": 0.005 } }] }
-```
-
-The host uses one rounded 256-bin Rec.709 luminance histogram; fully transparent pixels are
-excluded. The CLI command `threenative-playtest tone shot.png other.png` reports the same six
-metrics plus an unweighted frame-average row without starting a browser. Tone is an exposure
-gate, not an aesthetic verdict. Retain and inspect the actual runtime screenshots.
