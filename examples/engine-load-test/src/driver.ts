@@ -82,6 +82,7 @@ export interface IRungReport {
   ladder?: ILadderCounts;
   /** PRD-464: what the rung's own read-back frame said about itself, sampled on the last warmup frame. */
   renderCheck?: IFrameStats;
+  framePng?: string;
   /** Pipelines created inside the measured window; warmup compiles are not counted. */
   pipelineCompiles: number;
   stageReport?: unknown;
@@ -436,6 +437,9 @@ export async function measureRung(
   const stageReport = hooks?.snapshot({ measuredFrameCount: measuredFrames });
   hooks?.dispose();
   sampleMemory();
+  const capture = (globalThis as { __TN_BENCH_CAPTURE__?: () => Promise<string> })
+    .__TN_BENCH_CAPTURE__;
+  const framePng = await capture?.();
   const crossingTop =
     censusAtOpen === undefined ? undefined : topCrossings(censusAtOpen, census(), measuredFrames);
   return {
@@ -458,6 +462,7 @@ export async function measureRung(
     ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
     ...(ladder === undefined ? {} : { ladder }),
     ...(renderCheck === undefined ? {} : { renderCheck }),
+    ...(framePng === undefined ? {} : { framePng }),
     pipelineCompiles: harness.pipelineCompiles() - compilesAtWindowStart,
     stageReport,
     stepMs,

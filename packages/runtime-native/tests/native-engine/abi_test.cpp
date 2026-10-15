@@ -7,10 +7,15 @@
 #include "engine/abi/pooled_shared.h"
 #include "engine/abi/bindings.h"
 #include "engine/animation/mixer.h"
+#include "engine/animation/skinning/skeleton.h"
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
 #include "engine/scene/nodes.h"
+#include "engine/scene/camera.h"
+#include "engine/scene/geometry.h"
+#include "engine/scene/projected_cull.h"
 
+#include <cmath>
 #include <cstring>
 #include <map>
 
@@ -18,6 +23,10 @@
 #include <cstring>
 #include <string>
 #include <stdexcept>
+
+namespace tn::binding {
+// How many times the matrix walk's node count was recounted (bindings_scene.cpp).
+}  // namespace tn::binding
 
 extern "C" uintptr_t tnw_attribute_view(const tn_handle_t* attribute, uint64_t* out);
 extern "C" void tnw_attribute_view_release(uintptr_t lease);
@@ -219,6 +228,22 @@ void scene() {
     CHECK(tn_get(child, "matrixWorld.elements", &result, &d.value) == TN_OK);
     CHECK(result.kind == TN_VALUE_NUMBERS && result.count == 16);
     CHECK(result.numbers[12] == 1 && result.numbers[13] == 4 && result.numbers[14] == 3);
+
+    tn_handle_t deferredRoot{}, deferredChild{};
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &deferredRoot, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Object3D", nullptr, 0, &deferredChild, &d.value) == TN_OK);
+    auto deferredBone = std::static_pointer_cast<tn::engine::Bone>(tn::abi::objectOf(deferredRoot)->ptr);
+    auto* band = static_cast<tn::engine::Object3D*>(tn::abi::objectOf(deferredChild)->ptr.get());
+    band->position.set(1, 0, 0); deferredBone->add(*band); deferredBone->updateMatrixWorld(true);
+    deferredBone->enableTrackedTransform(); CHECK(deferredBone->enableDeferredTransform());
+    tn::engine::animation::PropertyBinding deferredBinding(deferredBone, ".position");
+    const double pose[] = {7, 8, 9}; deferredBinding.setValue(pose, 0);
+    tn::engine::Vector3 joined; deferredBone->getWorldPosition(joined);
+    CHECK(tn_get(deferredChild, "matrixWorld.elements", &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_NUMBERS && result.numbers[12] == 8);
+    const double nextPose[] = {11, 12, 13}; deferredBinding.setValue(nextPose, 0);
+    CHECK(tn_get(deferredRoot, "matrixWorld.elements", &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_NUMBERS && result.numbers[12] == 11);
 
     // `mesh.position` is the member, not a copy: the same handle every time, and a write through it
     // is the object's own write.
@@ -1263,9 +1288,282 @@ void attribute_defer() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// Midway cockpit: a game keys a batch, a cache or a dedupe map by `material.uuid`. An unbound uuid read
+// as undefined, so every material shared one key and a cockpit merged into its first material.
+void material_uuid() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto uuidOf = [&](tn_handle_t handle) {
+        tn_value_t out{};
+        CHECK(tn_get(handle, "uuid", &out, &d.value) == TN_OK && out.kind == TN_VALUE_STRING);
+        return text(out);
+    };
+    const auto v4 = [](const std::string& u) {
+        return u.size() == 36 && u[8] == '-' && u[13] == '-' && u[14] == '4' && u[18] == '-' &&
+               std::strchr("89ab", u[19]) != nullptr && u[23] == '-';
+    };
+    tn_handle_t a{}, b{}, standard{}, geometry{}, other{};
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &a, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &b, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshStandardMaterial", nullptr, 0, &standard, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "BufferGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "BufferGeometry", nullptr, 0, &other, &d.value) == TN_OK);
+    const std::string ua = uuidOf(a);
+    CHECK(v4(ua) && uuidOf(a) == ua);  // three's format, stable across reads
+    CHECK(uuidOf(b) != ua && uuidOf(standard) != ua && uuidOf(standard) != uuidOf(b));
+    CHECK(v4(uuidOf(geometry)) && uuidOf(geometry) != uuidOf(other));
+    tn_value_t out{};
+    CHECK(tn_invoke(a, "clone", nullptr, 0, &out, &d.value) == TN_OK && out.kind == TN_VALUE_HANDLE);
+    CHECK(uuidOf(out.handle) != ua);  // a clone is another material
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// PRD-610: core's per-frame `__tnUpdateMatrixWorld(force, prune)` answers the nodes its own walk visited, so no
+// second walk counts the tree. With `prune` a hidden subtree composes only its root, as core's JS pass does
+// (9,903 nodes a Midway frame against 779): its world matrices catch up, forced, on the first frame it shows.
+// A hidden node with a Bone under it is walked whole, because a visible SkinnedMesh draws with those matrices,
+// and a subtree core froze with markStatic is a leaf (its JS pass stops there too).
+void matrix_walk_count() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, group{}, mesh{}, rig{}, bone{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &mesh, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &rig, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &bone, &d.value) == TN_OK);
+    tn_value_t out{};
+    const tn_value_t groupArg = ref(group), meshArg = ref(mesh), rigArg = ref(rig), boneArg = ref(bone);
+    CHECK(tn_invoke(scene, "add", &groupArg, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_invoke(group, "add", &meshArg, 1, &out, &d.value) == TN_OK);
+    const auto walk = [&](bool prune) {
+        const tn_value_t args[] = {boolean(false), boolean(prune)};
+        tn_value_t walked{};
+        CHECK(tn_invoke(scene, "__tnUpdateMatrixWorld", args, 2, &walked, &d.value) == TN_OK);
+        CHECK(walked.kind == TN_VALUE_NUMBER);
+        return walked.number;
+    };
+    CHECK(walk(true) == 3 && walk(true) == 3);
+    auto* groupObject = engineObject<tn::engine::Object3D>(group);
+    tn_handle_t snapshotHandle{};
+    CHECK(tn_construct(ctx, "Matrix4", nullptr, 0, &snapshotHandle, &d.value) == TN_OK);
+    const tn_value_t snapshotArg = ref(snapshotHandle);
+    auto* snapshot = engineObject<tn::engine::Matrix4>(snapshotHandle);
+    const auto initialWorld = groupObject->matrixWorld;
+    const std::array<double, 16> exactWorld{-2, .25, .5, 0, .75, 3, 1.25, 0, -.5, .125, 4, 0, 7, -8, 9, 1};
+    groupObject->matrixWorld.elements = exactWorld;
+    const auto* nativeFlags = groupObject->ownTransformTracking();
+    CHECK(nativeFlags[0] == 0 && nativeFlags[2] == 1);
+    CHECK(tn_invoke(group, "__tnCopyMatrixWorld", &snapshotArg, 1, &out, &d.value) == TN_OK);
+    CHECK(snapshot->elements == exactWorld && nativeFlags[0] == 0 && nativeFlags[2] == 1);
+    groupObject->enableTrackedTransform();
+    CHECK(tn_invoke(group, "__tnCopyMatrixWorld", &snapshotArg, 1, &out, &d.value) == TN_OK);
+    CHECK(snapshot->elements == exactWorld && nativeFlags[0] == 1 && nativeFlags[2] == 0);
+    groupObject->matrixWorld.elements[12] = 99;
+    CHECK(snapshot->elements == exactWorld);
+    CHECK(tn_invoke(group, "__tnCopyMatrixWorld", nullptr, 0, &out, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    CHECK(tn_invoke(group, "__tnCopyMatrixWorld", &meshArg, 1, &out, &d.value) == TN_ERROR_UNSUPPORTED);
+    CHECK(nativeFlags[2] == 0 && snapshot->elements == exactWorld);
+    groupObject->matrixWorld.copy(initialWorld);
+    groupObject->enableTrackedTransform();
+    auto* tracking = tn::engine::Object3D::transformTrackingAddress(&groupObject->position);
+    for (const char* path : {"position.x", "scale.y", "matrixAutoUpdate", "matrixWorldAutoUpdate", "matrixWorldNeedsUpdate"}) {
+        const tn_value_t value = std::strcmp(path, "position.x") == 0 ? num(0) :
+            std::strcmp(path, "scale.y") == 0 ? num(1) : boolean(true);
+        tracking[1] = 0;
+        CHECK(tn_set(group, path, &value, &d.value) == TN_OK);
+        CHECK(tracking[1] == 1);
+        CHECK(tracking[2] == 0);
+    }
+    tn_value_t addresses{};
+    CHECK(tn_get(group, "__addresses", &addresses, &d.value) == TN_OK);
+    CHECK(tracking[2] == 1);
+    groupObject->enableTrackedTransform();
+    CHECK(tracking[2] == 1);
+    auto* meshNative = engineObject<tn::engine::Object3D>(mesh);
+    meshNative->enableTrackedTransform();
+    auto* meshTracking = tn::engine::Object3D::transformTrackingAddress(&meshNative->position);
+    tn_value_t position{}, address{};
+    CHECK(tn_get(mesh, "position", &position, &d.value) == TN_OK && position.kind == TN_VALUE_HANDLE);
+    CHECK(meshTracking[2] == 0);
+    CHECK(tn_get(position.handle, "__address", &address, &d.value) == TN_OK);
+    CHECK(address.kind == TN_VALUE_NUMBER && address.number == double(reinterpret_cast<uintptr_t>(&meshNative->position)));
+    CHECK(meshTracking[2] == 1);
+    // A hidden group composes itself and stops: its mesh is not visited, pruned or not asked to prune.
+    const tn_value_t hidden = boolean(false), shown = boolean(true);
+    CHECK(tn_set(group, "visible", &hidden, &d.value) == TN_OK);
+    CHECK(walk(true) == 2);
+    CHECK(walk(false) == 3);
+    // The group moves while hidden: the mesh's world matrix waits, then catches up the frame the group shows.
+    auto* meshObject = engineObject<tn::engine::Object3D>(mesh);
+    CHECK(walk(true) == 2);
+    engineObject<tn::engine::Object3D>(group)->position.x = 5;
+    CHECK(walk(true) == 2);
+    CHECK(meshObject->matrixWorld.elements[12] == 0);
+    CHECK(tn_set(group, "visible", &shown, &d.value) == TN_OK);
+    CHECK(walk(true) == 3);
+    CHECK(meshObject->matrixWorld.elements[12] == 5);
+    // A hidden rig is walked whole: a skinned mesh elsewhere draws with its bones.
+    CHECK(tn_invoke(scene, "add", &rigArg, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_invoke(rig, "add", &boneArg, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_set(rig, "visible", &hidden, &d.value) == TN_OK);
+    CHECK(walk(true) == 5);
+    // A subtree frozen by core's markStatic (`static` on, the root's matrixWorldAutoUpdate off) is a leaf, in
+    // either mode: its matrices were composed when it froze. Re-armed (the world compose back on), it is walked.
+    const tn_value_t on = boolean(true), off = boolean(false);
+    CHECK(tn_set(rig, "visible", &shown, &d.value) == TN_OK);
+    CHECK(tn_set(group, "static", &on, &d.value) == TN_OK && tn_set(mesh, "static", &on, &d.value) == TN_OK);
+    CHECK(walk(true) == 5);  // static alone is three's renderer hint, not a freeze
+    CHECK(tn_set(group, "matrixWorldAutoUpdate", &off, &d.value) == TN_OK);
+    CHECK(walk(true) == 4 && walk(false) == 4);
+    tn_value_t flagValue{};
+    CHECK(tn_get(group, "static", &flagValue, &d.value) == TN_OK && flagValue.kind == TN_VALUE_BOOL && flagValue.boolean);
+    CHECK(tn_set(group, "matrixWorldAutoUpdate", &on, &d.value) == TN_OK);
+    CHECK(walk(true) == 5);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// PRD-610: the player draws in C++ after core's beforeRender restored its cull, so it holds the restore until it
+// has drawn; held or not, the cull's hides are undone exactly once.
+void projected_cull_held_restore() {
+    using namespace tn::engine;
+    auto scene = std::make_shared<Scene>();
+    auto mesh = std::make_shared<Mesh>(std::make_shared<BufferGeometry>(), nullptr);
+    auto position = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    position->setXYZ(0, -0.01, 0, 0).setXYZ(1, 0.01, 0, 0);
+    mesh->geometry->setAttribute("position", position);
+    mesh->position.z = -1000;
+    scene->add(*mesh);
+    PerspectiveCamera camera(50, 1, 0.1, 5000);
+    camera.updateMatrixWorld();
+    scene->updateMatrixWorld();
+    ProjectedCull cull;
+    CHECK(cull.apply(*scene, camera, true, 720, 2, true).culled == 1);
+    CHECK(!mesh->visible());
+    ProjectedCull::holdRestores(true);
+    cull.restoreAfterDraw();
+    CHECK(!mesh->visible());
+    ProjectedCull::releaseHeld();
+    CHECK(mesh->visible());
+    ProjectedCull::holdRestores(false);
+    CHECK(cull.apply(*scene, camera, true, 720, 2, true).culled == 1);
+    cull.restoreAfterDraw();
+    CHECK(mesh->visible());
+    ProjectedCull::holdRestores(false);
+    // The ABI's core-facing restore must honor the same host hold.
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    const tn_version_info_t version = tn_engine_version();
+    CHECK(tn_context_create(&ctx, &version, &d.value) == TN_OK);
+    const auto root = tn::abi::shareObject(ctx, "Scene", scene);
+    const auto view = tn::abi::shareObject(ctx, "PerspectiveCamera", std::make_shared<PerspectiveCamera>(50, 1, 0.1, 5000));
+    const tn_value_t args[] = {ref(view), boolean(true), num(720), num(2), boolean(true)};
+    tn_value_t out{};
+    CHECK(tn_invoke(root, "__cullProjected", args, 5, &out, &d.value) == TN_OK);
+    CHECK(!mesh->visible());
+    ProjectedCull::holdRestores(true);
+    CHECK(tn_invoke(root, "__restoreCull", nullptr, 0, &out, &d.value) == TN_OK);
+    CHECK(!mesh->visible());
+    ProjectedCull::releaseHeld();
+    CHECK(mesh->visible());
+    ProjectedCull::holdRestores(false);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// PRD-610 AC-4: the projected-size cull reads a flat list of the tree, built once per hierarchy version, instead
+// of comparing type strings and casting every node every frame (7.7% of a Midway tick). The answer is the same:
+// a hidden subtree is skipped whole, a sub-threshold mesh is hidden for the frame, and an added mesh is seen.
+void projected_cull_list() {
+    using namespace tn::engine;
+    auto scene = std::make_shared<Scene>();
+    auto group = std::make_shared<Object3D>();
+    auto geometry = std::make_shared<BufferGeometry>();
+    auto narrow = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    narrow->setXYZ(0, -0.01, 0, 0).setXYZ(1, 0.01, 0, 0);
+    geometry->setAttribute("position", narrow);
+    auto nearMesh = std::make_shared<Mesh>(geometry, nullptr);
+    auto farMesh = std::make_shared<Mesh>(geometry, nullptr);
+    nearMesh->position.z = -2;
+    farMesh->position.z = -1000;
+    scene->add(*group);
+    group->add(*nearMesh);
+    group->add(*farMesh);
+    PerspectiveCamera camera(50, 1, 0.1, 5000);
+    camera.updateMatrixWorld();
+    scene->updateMatrixWorld();
+    const double scale = 720 / (2 * std::tan(25 * 3.141592653589793 / 180));
+    ProjectedCull cull;
+    for (int frame = 0; frame < 6; ++frame) {
+        const auto report = cull.apply(*scene, camera, true, scale, 2, true);
+        CHECK(report.considered == 2 && report.culled == 1);
+        CHECK(nearMesh->visible() && !farMesh->visible());
+    }
+    CHECK(cull.rebuilds() == 1);  // six frames, one walk of the tree
+    group->setVisible(false);
+    CHECK(cull.apply(*scene, camera, true, scale, 2, true).considered == 0);
+    group->setVisible(true);
+    CHECK(cull.apply(*scene, camera, true, scale, 2, true).considered == 2);
+    CHECK(cull.rebuilds() == 1);  // visibility is not a hierarchy change
+    auto added = std::make_shared<Mesh>(geometry, nullptr);
+    added->position.z = -3;
+    scene->add(*added);
+    scene->updateMatrixWorld();
+    const auto report = cull.apply(*scene, camera, true, scale, 2, true);
+    CHECK(report.considered == 3 && report.culled == 1 && cull.rebuilds() == 2);
+    cull.restore();
+    CHECK(farMesh->visible());
+    // A position attribute swapped on the geometry is read, not the one cached before it: the larger
+    // bound it gives keeps the far mesh above the pixel threshold.
+    auto wide = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    wide->setXYZ(0, -50, -50, -50).setXYZ(1, 50, 50, 50);
+    wide->setNeedsUpdate();
+    geometry->setAttribute("position", wide);
+    CHECK(cull.apply(*scene, camera, true, scale, 2, true).culled == 0);
+    cull.restore();
+    CHECK(ProjectedCull::cpuTiming.calls == 0 && ProjectedCull::cpuTiming.clock == nullptr);
+    ProjectedCull::cpuTiming = {[]() { static double ms = 0; return ms += 0.25; }};
+    for (int call = 0; call < 6; ++call) cull.apply(*scene, camera, true, scale, 2, true);
+    CHECK(ProjectedCull::cpuTiming.calls == 6 && ProjectedCull::cpuTiming.ms == 1.5);
+    cull.restore();
+    CHECK(ProjectedCull::cpuTiming.calls == 6 && ProjectedCull::cpuTiming.ms == 1.5);
+    ProjectedCull::cpuTiming = {ProjectedCull::cpuTiming.clock};
+    cull.apply(*scene, camera, true, scale, 2, true);
+    CHECK(ProjectedCull::cpuTiming.calls == 1 && ProjectedCull::cpuTiming.ms == 0.25);
+    ProjectedCull::cpuTiming = {[]() { return -1.0; }};
+    cull.apply(*scene, camera, true, scale, 2, true);
+    CHECK(!ProjectedCull::cpuTiming.available && ProjectedCull::cpuTiming.calls == 1);
+    ProjectedCull::cpuTiming = {};
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+void gpu_bind_escape() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr; Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t mesh{}, skeleton{};
+    CHECK(tn_construct(ctx, "SkinnedMesh", nullptr, 0, &mesh, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Skeleton", nullptr, 0, &skeleton, &d.value) == TN_OK);
+    auto* rig = static_cast<tn::engine::SkinnedMesh*>(tn::abi::objectOf(mesh)->ptr.get());
+    auto valid = std::make_shared<bool>(true); rig->gpuSkinValidity = valid;
+    tn_value_t result{};
+    CHECK(!rig->gpuBindExposed);
+    CHECK(tn_get(mesh, "bindMatrix", &result, &d.value) == TN_OK);
+    CHECK(rig->gpuBindExposed && !*valid && result.kind == TN_VALUE_HANDLE);
+    *valid = true;
+    CHECK(tn_get(mesh, "bindMatrixInverse", &result, &d.value) == TN_OK && !*valid);
+    auto* nativeSkeleton = static_cast<tn::engine::Skeleton*>(tn::abi::objectOf(skeleton)->ptr.get());
+    nativeSkeleton->gpuSkinValidity = valid; *valid = true;
+    CHECK(tn_get(skeleton, "boneMatrices", &result, &d.value) == TN_OK && !*valid);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+TN_TEST_MAIN({"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
-             {"attribute_defer", attribute_defer})
+             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count},
+             {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})

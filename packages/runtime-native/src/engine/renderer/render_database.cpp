@@ -16,6 +16,9 @@
 #include <typeinfo>
 #include "engine/scene/geometries.h"
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace tn::engine {
 
@@ -348,9 +351,29 @@ BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* nam
     return copy.store.get();
 }
 
-RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, bool materialize) {
+RenderDatabase::Record* RenderDatabase::findRecord(const Object3D& object, bool insert) {
+    constexpr uint64_t kIdSlots = uint64_t(1) << 20;  // ponytail: later ids keep the hash; a map if games pass it
+    const uint64_t id = object.id();
+    Record** slot = nullptr;
+    if (id < kIdSlots) {
+        if (id >= byId_.size()) byId_.resize(std::min(std::max(id + 1, uint64_t(byId_.size()) * 2), kIdSlots), nullptr);
+        slot = &byId_[id];
+        if (*slot) return *slot;
+    }
     ++recordLookups_;
-    return record(mesh, records_[&mesh], materialize);
+    Record* found = nullptr;
+    if (insert) {
+        found = &records_[&object];
+    } else if (const auto it = records_.find(&object); it != records_.end()) {
+        found = &it->second;
+    }
+    if (slot) *slot = found;
+    if (slot && found) found->cacheId = id;
+    return found;
+}
+
+RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, bool materialize) {
+    return record(mesh, *findRecord(mesh, true), materialize);
 }
 
 RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool materialize) {
@@ -360,9 +383,14 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     const bool cached = r.drawable && r.meshId == mesh.id() && r.geometry == mesh.geometry &&
                         r.geometryRevision == geometryRevision && r.material.get() == material &&
                         r.materialVersion == materialVersion;
+    auto& diagnostic = Material::diagnostics();
     if (!cached) {
+        Material::DiagnosticTimer rebuildTimer(diagnostic.enabled, diagnostic.recordCpuNs);
+        if (diagnostic.enabled) ++diagnostic.recordRebuilds;
         ++rebuilds_;
+        const uint64_t cacheId = r.cacheId;
         r = Record{};
+        r.cacheId = cacheId;
         r.meshId = mesh.id();
         r.geometry = mesh.geometry;
         r.geometryRevision = geometryRevision;
@@ -498,6 +526,9 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
     if (std::all_of(roots.begin(), roots.end(), [](const void* root) { return root == nullptr; })) return none;
     GraphSources& cached = graphSources_[&material];
     if (cached.roots != roots || cached.version != material.version()) {
+        auto& diagnostic = Material::diagnostics();
+        Material::DiagnosticTimer rebuildTimer(diagnostic.enabled, diagnostic.graphCpuNs);
+        if (diagnostic.enabled) ++diagnostic.graphRebuilds;
         GraphFind found = findGraphSources(material);
         cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
                               std::move(found.textures), std::move(found.storages)};
@@ -509,6 +540,7 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
 // this prepare's camera frustum. InstancedMesh uses its instance-aware sphere, computed once when
 // null, as three does.
 bool RenderDatabase::boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere) {
+    ++sphereMeasures_;
     if (type == "Sprite") {
         sphere.set(Vector3(0, 0, 0), 0.7071067811865476);
     } else if (type == "InstancedMesh") {
@@ -567,6 +599,9 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
         const Object3D* node = light;
         while (node->visible() && node != &root) node = node->parent;
         if (!node->visible()) continue;
+        // project() collects a light only if the camera's layers see it: an unseen light's shadow is
+        // never drawn, so its casters are not gathered either (a mirror pass on its own layer sees none).
+        if (reuseMainFrame && !light->layers().test(mainCamera.layers())) continue;
         Object3D& obj = *light;
         const std::string_view type = obj.type();
         if (type == "DirectionalLight") {
@@ -607,6 +642,7 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                              bool updateChildren, bool force, Record* cached, bool plainMesh, bool lightsOnly, const Object3D* excluded) {
     if (&object == excluded) return;
+    if (object.skipsGpuJointSubtree()) { ++Object3D::gpuProjectionVisits_; return; }
     if (!object.visible()) {
         if (updateChildren)
             for (Object3D* child : object.children)
@@ -637,73 +673,97 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 if (mainPass && measure() && !frustum_.intersectsSphere(sphere)) mainPass = false;
                 if (shadowCaster && !inShadowFrustum(object, measure() ? &sphere : nullptr)) shadowCaster = false;
             }
-            const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
-                                 !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
-                                 !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
-                                 !mesh.geometry->instanced &&
-                                 (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
-                                 mesh.matrixWorld.determinant() > 0;
-            Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
-            markSeen(r);
-            if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
-                if (compact) {
-                    addBatchMesh(mesh, r, mainPass, shadowCaster);
-                } else {
-                    DrawItem& d = refresh(mesh, r);
-                    d.batchable = false;
-                    d.mainPass = mainPass;
-                    d.castShadow = shadowCaster;
-                    d.layers = Layers::bits(mesh.layers().mask);
-                    const bool morphed = !mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty();
-                    d.morphGeometry = morphed ? mesh.geometry.get() : nullptr;
-                    d.morphInfluences = morphed ? &mesh.morphTargetInfluences : nullptr;
-                    if (morphed)
+            if (!mainPass && !shadowCaster) {
+                // Outside every frustum: keep its record alive and build nothing (PRD-610 AC-10).
+                if (Record* r = cached ? (cached->meshId == mesh.id() ? cached : nullptr) : findRecord(mesh, false))
+                    markSeen(*r);
+            } else {
+                const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
+                                     !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
+                                     !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
+                                     !mesh.geometry->instanced &&
+                                     (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
+                                     mesh.matrixWorld.determinant() > 0;
+                Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
+                markSeen(r);
+                if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
+                    if (compact) {
+                        addBatchMesh(mesh, r, mainPass, shadowCaster);
+                    } else {
+                        DrawItem& d = refresh(mesh, r);
                         d.batchable = false;
-                    items.push_back(d);
-                    if (type == "SkinnedMesh") {
-                        // three's skinning() updates each skeleton once per frame before its first draw.
-                        const auto& skinned = static_cast<const SkinnedMesh&>(mesh);
-                        DrawItem& d = items.back();
-                        d.skinnedRig = static_cast<SkinnedMesh*>(&object);
-                        d.skinIndices = store(*mesh.geometry, "skinIndex");
-                        d.skinWeights = floatStore(*mesh.geometry, "skinWeight");
-                        if (skinned.skeleton && d.skinIndices && d.skinWeights) {
-                            if (skeletonsUpdated_.insert(skinned.skeleton.get()).second)
-                                skinned.skeleton->update();
-                            d.boneMatrices = &skinned.skeleton->boneMatrices;
-                            d.bindMatrix = toArray(skinned.bindMatrix);
-                            d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
+                        d.mainPass = mainPass;
+                        d.castShadow = shadowCaster;
+                        d.layers = Layers::bits(mesh.layers().mask);
+                        const bool morphed = !mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty();
+                        d.morphGeometry = morphed ? mesh.geometry.get() : nullptr;
+                        d.morphInfluences = morphed ? &mesh.morphTargetInfluences : nullptr;
+                        if (morphed)
+                            d.batchable = false;
+                        items.push_back(d);
+                        if (type == "SkinnedMesh") {
+                            // three's skinning() updates each skeleton once per frame before its first draw.
+                            const auto& skinned = static_cast<const SkinnedMesh&>(mesh);
+                            DrawItem& d = items.back();
+                            d.skinnedRig = static_cast<SkinnedMesh*>(&object);
+                            d.skinIndices = store(*mesh.geometry, "skinIndex");
+                            d.skinWeights = floatStore(*mesh.geometry, "skinWeight");
+                            if (skinned.skeleton && d.skinIndices && d.skinWeights) {
+                                const void* skeleton = skinned.skeleton.get();
+                                const bool gpu = gpuJoints_ && *gpuJoints_->valid && gpuJoints_->byMesh.count(&skinned);
+                                if (!gpu && (skeletonsFresh_ == nullptr || skeletonsFresh_->count(skeleton) == 0) &&
+                                    skeletonsUpdated_.insert(skeleton).second)
+                                    skinned.skeleton->updateAfterWorldWalk(worldsFreshSince_);
+                                d.boneMatrices = &skinned.skeleton->boneMatrices;
+                                d.bindMatrix = toArray(skinned.bindMatrix);
+                                d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
+                                if (gpu) {
+                                    const auto index = gpuJoints_->byMesh.at(&skinned);
+                                    auto& saved = gpuJoints_->rigs[index];
+                                    const auto placement = saved.placement.lock();
+                                    auto* matrices = reinterpret_cast<float*>(saved.instances->data());
+                                    for (int k = 0; k < 16; ++k) matrices[k] = float(placement->matrixWorld.elements[k]);
+                                    saved.instances->needsUpdate();
+                                    d.sortOrigin = {d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]};
+                                    d.matrixWorld = Matrix4{}.elements;
+                                    d.bindMatrix = d.bindMatrixInverse = Matrix4{}.elements;
+                                    d.instanceMatrices = saved.instances.get(); d.instanceCount = 1;
+                                    d.boneStride = uint32_t(skinned.skeleton->bones.size());
+                                    d.gpuJoints = gpuJoints_; d.gpuJointRig = index;
+                                } else { d.gpuJoints.reset(); d.boneStride = 0; }
+
+                            }
                         }
+                        if (type == "InstancedMesh") {
+                            // Read every frame, as three does: count changes and setColorAt's first call (which
+                            // creates the colour attribute) need no record rebuild.
+                            const auto& instanced = static_cast<const InstancedMesh&>(mesh);
+                            DrawItem& d = items.back();
+                            d.instanceMatrices = instanced.instanceMatrix->store.get();
+                            d.instanceColors = instanced.instanceColor ? instanced.instanceColor->store.get() : nullptr;
+                            d.instanceCount = static_cast<uint32_t>(
+                                std::min<uint64_t>(instanced.count, instanced.instanceMatrix->count()));
+                        }
+                        if (type == "Line" || type == "LineSegments") {
+                            DrawItem& d = items.back();
+                            d.topology = type == "Line" ? WGPUPrimitiveTopology_LineStrip : WGPUPrimitiveTopology_LineList;
+                            d.castShadow = false;  // ponytail: three's shadow pass draws lines; no corpus line casts one
+                            if (!mainPass) items.pop_back();
+                        }
+                        if (type == "Sprite") {
+                            const auto& sprite = static_cast<const Sprite&>(mesh);
+                            DrawItem& d = items.back();
+                            d.sprite = true;
+                            d.castShadow = false;
+                            d.instanceCount = sprite.count;
+                            d.spriteCenter = {sprite.center.x, sprite.center.y};
+                            d.spriteRotation = mesh.material->rotation;
+                            d.spriteSizeAttenuation = mesh.material->sizeAttenuation;
+                            if (!mainPass) items.pop_back();
+                        }
+                        if (mesh.onBeforeRender && mainPass)
+                            callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
                     }
-                    if (type == "InstancedMesh") {
-                        // Read every frame, as three does: count changes and setColorAt's first call (which
-                        // creates the colour attribute) need no record rebuild.
-                        const auto& instanced = static_cast<const InstancedMesh&>(mesh);
-                        DrawItem& d = items.back();
-                        d.instanceMatrices = instanced.instanceMatrix->store.get();
-                        d.instanceColors = instanced.instanceColor ? instanced.instanceColor->store.get() : nullptr;
-                        d.instanceCount = static_cast<uint32_t>(
-                            std::min<uint64_t>(instanced.count, instanced.instanceMatrix->count()));
-                    }
-                    if (type == "Line" || type == "LineSegments") {
-                        DrawItem& d = items.back();
-                        d.topology = type == "Line" ? WGPUPrimitiveTopology_LineStrip : WGPUPrimitiveTopology_LineList;
-                        d.castShadow = false;  // ponytail: three's shadow pass draws lines; no corpus line casts one
-                        if (!mainPass) items.pop_back();
-                    }
-                    if (type == "Sprite") {
-                        const auto& sprite = static_cast<const Sprite&>(mesh);
-                        DrawItem& d = items.back();
-                        d.sprite = true;
-                        d.castShadow = false;
-                        d.instanceCount = sprite.count;
-                        d.spriteCenter = {sprite.center.x, sprite.center.y};
-                        d.spriteRotation = mesh.material->rotation;
-                        d.spriteSizeAttenuation = mesh.material->sizeAttenuation;
-                        if (!mainPass) items.pop_back();
-                    }
-                    if (mesh.onBeforeRender && mainPass)
-                        callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
                 }
             }
         } else if (!lightsOnly && type == "BatchedMesh") {
@@ -778,8 +838,8 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         }
     } else if (!lightsOnly && cached && cached->meshId == object.id()) {
         markSeen(*cached); // flat records also survive another camera's layer mask
-    } else if (const auto it = records_.find(&object); !lightsOnly && it != records_.end()) {
-        markSeen(it->second); // in the scene, on another camera's layer: its record stays
+    } else if (Record* found = lightsOnly ? nullptr : findRecord(object, false)) {
+        markSeen(*found); // in the scene, on another camera's layer: its record stays
     }
     const bool ordered = !updateChildren && &object == slotRoot_;
     for (std::size_t i = 0; i < object.children.size(); ++i) {
@@ -790,9 +850,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             // The pointer survives while its record does; a moved or new mesh looks itself up once.
             Record*& found = slotRecords_[i];
             if (!found || found->meshId != child->id()) {
-                ++recordLookups_;
-                const auto it = records_.find(child);
-                found = it != records_.end() ? &it->second : nullptr;
+                found = findRecord(*child, false);
             }
             slot = found;
             plainChild = true;
@@ -853,7 +911,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     // A decline writes no verdict, so a settled one is an empty decision until its rescan; an empty
     // scene (still loading) or a projecting one is judged again next frame, as SceneRenderProjection.
     projection::Decision decision;
-    if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig; }) &&
+    if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig && !item.gpuJoints; }) &&
         ++framesSinceDeclineScan_ >= kDeclineRescanFrames) {
         decision = projection::decide(scene, 200, true);
         framesSinceDeclineScan_ = decision.projecting || decision.sourceRenderables == 0 ? kDeclineRescanFrames : 0;
@@ -865,12 +923,12 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         const std::size_t i = item - items.data();
         const DrawItem& d = items[i];
         const auto verdict = decision.verdict.find(d.skinnedRig);
-        const bool skinned = d.boneMatrices && verdict != decision.verdict.end() && verdict->second == "skinned";
+        const bool skinned = bool(d.gpuJoints) || (d.boneMatrices && verdict != decision.verdict.end() && verdict->second == "skinned");
         if (!d.batchable && !skinned)
             continue;
         auto same = [&](const std::vector<std::size_t>& g) {
             const DrawItem& o = items[g.front()];
-            if (bool(o.skinnedRig) != bool(d.skinnedRig))
+            if (bool(o.skinnedRig) != bool(d.skinnedRig) || o.gpuJoints != d.gpuJoints)
                 return false;
             if (skinned &&
                 (o.skinnedRig->geometry != d.skinnedRig->geometry ||
@@ -913,7 +971,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         if (!skinned && g.size() < kMinBatchMembers)
             continue;
         SkinnedPalette* palette = nullptr;
-        if (skinned) {
+        if (skinned && !items[g.front()].gpuJoints) {
             skinnedPalettes_.push_back(
                 std::make_unique<SkinnedPalette>(items[g.front()].skinnedRig->skeleton->bones.size(), g.size(), false));
             palette = skinnedPalettes_.back().get();
@@ -936,23 +994,34 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         auto* colors = uniform ? reinterpret_cast<float*>(batchColors_[slot]->data()) : nullptr;
         std::size_t colorOffset = 0;
         for (std::size_t i : g) {
+            const Object3D* placement = nullptr;
             if (palette) {
                 const auto slot = palette->claim(items[i].skinnedRig);
-                palette->write(*slot, *items[i].skinnedRig, false); // project updated this skeleton once
+                placement = palette->writeRelative(*slot, *items[i].skinnedRig);
             }
-            // SkinnedPalette already folds world placement into the bones. Instance transforms
-            // must be identity; applying each rig's matrix here would transform it twice.
+            // Relative palettes carry placement here; eager world palettes retain identity.
             const Matrix identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-            for (double e : palette ? identity : items[i].matrixWorld)
+            Matrix transform = placement ? toArray(placement->matrixWorld)
+                                     : palette ? identity
+                                               : items[i].matrixWorld;
+            if (items[i].gpuJoints) {
+                const auto* saved = reinterpret_cast<const float*>(items[i].instanceMatrices->data());
+                for (int k = 0; k < 16; ++k) transform[k] = saved[k];
+            }
+            for (double e : transform)
                 matrices[matrixOffset++] = static_cast<float>(e);
             if (colors) for (float c : items[i].material->color) colors[colorOffset++] = c;
             absorbed_[i] = true;
         }
         store.needsUpdate();
         DrawItem d = items[g.front()];
+        if (d.gpuJoints) {
+            d.gpuJointRigs.clear();
+            for (std::size_t i : g) d.gpuJointRigs.push_back(items[i].gpuJointRig);
+        }
         if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
         d.cache = &batchCaches_[slot];
-        d.sortOrigin = {d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]};
+        d.sortOrigin = d.sortOrigin.value_or(std::array<double, 3>{d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]});
         d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         d.instanceMatrices = &store;
         d.instanceCount = static_cast<uint32_t>(g.size());
@@ -1186,6 +1255,7 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
 }
 
 const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene) {
+    if (!gpuPreparing_ && gpuJoints_) { gpuJoints_->revoke(); gpuJoints_.reset(); }
     using Clock = std::chrono::steady_clock;
     const auto start = profiling ? Clock::now() : Clock::time_point{};
     if (targetScene && targetScene != &scene && targetScene->matrixWorldAutoUpdate) targetScene->updateMatrixWorld();
@@ -1197,8 +1267,10 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     // Renderer.render: world matrices first, then the camera in the renderer's coordinate system.
     // Fusion is safe only when matrix updates and light queries cannot run authored hooks.
     // Recheck the public child vector before any update: callers can reorder or replace its slots.
+    // A reflection pass of this frame finds them current and leaves the fused walk, which updates, off.
+    const bool fresh = std::exchange(matricesFresh_, false);
     const auto& cameraType = typeid(camera);
-    bool flat = typeid(scene) == typeid(Scene) && scene.matrixWorldAutoUpdate && camera.parent == nullptr &&
+    bool flat = !fresh && typeid(scene) == typeid(Scene) && scene.matrixWorldAutoUpdate && camera.parent == nullptr &&
                 camera.children.empty() && !shadowMapEnabled && (cameraType == typeid(PerspectiveCamera) ||
                                       cameraType == typeid(OrthographicCamera) || cameraType == typeid(Camera));
     if (flat) {
@@ -1223,10 +1295,21 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         }
     }
     bool force = false;
-    if (flat)
+    worldsFreshSince_ = 0;
+    if (flat) {
+        worldsFreshSince_ = Object3D::matrixEvaluations() + 1;
+        ++matrixWalks_;
         force = scene.updateMatrixWorldSelf();
-    else if (scene.matrixWorldAutoUpdate)
+    } else if (scene.matrixWorldAutoUpdate && !fresh) {
+        worldsFreshSince_ = Object3D::matrixEvaluations() + 1;
+        ++matrixWalks_;
         scene.updateMatrixWorld();
+    }
+    if (gpuJoints_ && !gpuJoints_->current()) {
+        gpuJoints_->revoke(); gpuJoints_.reset();
+        worldsFreshSince_ = Object3D::matrixEvaluations() + 1;
+        scene.updateMatrixWorld(true); // The external matrix pass may already have skipped Bones.
+    }
     if (camera.parent == nullptr && camera.matrixWorldAutoUpdate)
         camera.updateMatrixWorld();
     if (camera.coordinateSystem != CoordinateSystem::WebGPU) {
@@ -1288,6 +1371,15 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     // three's onBeforeRender, before the object is drawn: after projection, so a callback that edits
     // the scene cannot invalidate the traversal, and before submission, so a uniform it sets (a
     // material colour) reaches this frame. A callee that threw is a diagnostic, never a crash.
+    if (gpuJoints_ && !callbacks_.empty()) {
+        if (compiling_ && std::none_of(items.begin(), items.end(), [](const DrawItem& item) { return bool(item.gpuJoints); })) {
+            gpuJoints_.reset(); // An unrelated compile root does not own the borrowed plan.
+        } else {
+            gpuJoints_->revoke(); gpuJoints_.reset();
+            scene.updateMatrixWorld(true);
+            return prepare(scene, camera, lights, targetScene);
+        }
+    }
     for (const PendingCallback& p : callbacks_) {
         const RenderCallback callback = p.mesh->onBeforeRender;
         if (!callback)
@@ -1297,6 +1389,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
             diagnostics_.push_back("TN_CALLBACK_FAILED onBeforeRender: " + error);
         p.record->draw->params = paramsOf(*p.record->material);
     }
+    ranCallbacks_ = !callbacks_.empty();
     callbacks_.clear();
     if (hemisphere_ > 1)
         diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) +
@@ -1308,6 +1401,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     if (mapSeen_ != records_.size()) ++recordSweeps_;
     for (auto it = mapSeen_ == records_.size() ? records_.end() : records_.begin(); it != records_.end();) {
         if (it->second.seen != frame_) {
+            if (it->second.cacheId < byId_.size()) byId_[it->second.cacheId] = nullptr;
             it = records_.erase(it);
             erased = true;
         } else {
@@ -1414,7 +1508,12 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
 std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(Renderer& renderer,
     Object3D& root, Camera& camera, Object3D* targetScene, WGPUTextureFormat outputFormat) {
     LightState lights;
-    const auto& items = prepare(root, camera, lights, targetScene);
+    gpuJoints_ = renderer.currentGpuJoints();
+    gpuPreparing_ = true;
+    compiling_ = true;
+    try { prepare(root, camera, lights, targetScene); } catch (...) { gpuPreparing_ = compiling_ = false; throw; }
+    gpuPreparing_ = compiling_ = false;
+    const auto& items = items_;
     if (!diagnostics_.empty()) throw std::runtime_error(diagnostics_.front());
     CameraState state;
     state.matrixWorld = toArray(camera.matrixWorld);
@@ -1424,10 +1523,25 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
 }
 
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear, std::array<double, 2>* cpuMs) {
+    // Planning rewrites the draws a pending encode reads, so a second frame in flight is refused first.
+    if (renderer.framePending())
+        throw std::logic_error("TN_RENDER_THREAD_BATON: a frame was planned before the previous one was encoded");
     using Clock = std::chrono::steady_clock;
-    const auto start = cpuMs ? Clock::now() : Clock::time_point{};
-    prepare(scene, camera, lights_);
+    const auto start = (cpuMs || profiling) ? Clock::now() : Clock::time_point{};
+    const auto previousJoints = gpuJoints_;
+    gpuJoints_ = renderer.prepareGpuJoints(scene, reflecting_ ? gpuJoints_ : nullptr);
+    const auto jointsDone = profiling ? Clock::now() : Clock::time_point{};
+    static const bool drawUse = [] { const auto* flag = std::getenv("TN_GPU_JOINT_DRAW_USE"); return flag && std::strcmp(flag, "1") == 0; }();
+    if (drawUse && !reflecting_ && gpuJoints_) gpuJoints_->drawUse.assign(gpuJoints_->rigs.size(), 0);
+    if (previousJoints && previousJoints != gpuJoints_) scene.updateMatrixWorld(true);
+    gpuPreparing_ = true;
+    try { prepare(scene, camera, lights_); } catch (...) { gpuPreparing_ = false; throw; }
+    gpuPreparing_ = false;
+    const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
     if (!reflecting_) renderReflections(renderer, scene, camera, items_, clear);
+    if (profiling) renderPhaseMs_ = {std::chrono::duration<double, std::milli>(jointsDone - start).count(),
+                                    std::chrono::duration<double, std::milli>(preparedScene - jointsDone).count(),
+                                    std::chrono::duration<double, std::milli>(Clock::now() - preparedScene).count()};
     cameraState_.matrixWorld = toArray(camera.matrixWorld);
     cameraState_.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     cameraState_.projectionMatrix = toArray(camera.projectionMatrix);
@@ -1438,7 +1552,19 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     if (const auto* world = dynamic_cast<const Scene*>(&scene); world && world->background)
         clear = {world->background->r, world->background->g, world->background->b, 1};
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};
-    const auto result = renderer.render(items_, cameraState_, lights_, clear);
+    uint64_t result;
+    if (encodeJobs) {
+        result = renderer.renderDeferred(items_, cameraState_, lights_, clear);
+        encodeJobs->push_back([&renderer] { renderer.encodePending(); });
+    } else {
+        result = renderer.render(items_, cameraState_, lights_, clear);
+    }
+    if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();
+    if (drawUse && !reflecting_) {
+        const auto eligible = gpuJoints_ ? gpuJoints_->rigs.size() : 0;
+        const auto drawn = gpuJoints_ ? std::count(gpuJoints_->drawUse.begin(), gpuJoints_->drawUse.end(), uint8_t{1}) : 0;
+        std::printf("TN_GPU_JOINT_DRAW_USE:{\"eligible\":%zu,\"drawn\":%zu,\"unused\":%zu}\n", eligible, size_t(drawn), eligible - size_t(drawn));
+    }
     if (cpuMs) *cpuMs = {std::chrono::duration<double, std::milli>(prepared - start).count(),
                         std::chrono::duration<double, std::milli>(Clock::now() - prepared).count()};
     return result;
@@ -1448,6 +1574,8 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
                                        std::array<double, 4> clear) {
     for (auto it = reflections_.begin(); it != reflections_.end();)
         it = it->second.owner.expired() ? reflections_.erase(it) : std::next(it);
+    reflectionMs_ = {0, 0};
+    reflectionItems_ = 0;
     std::vector<std::shared_ptr<const Reflector>> drawn;
     std::vector<Material*> hidden;
     for (const DrawItem& item : items) {
@@ -1480,14 +1608,32 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
             pass.database->reflecting_ = true;
         }
         pass.database->batching = batching;
+        pass.database->reuseMainFrame = reuseMainFrame;
         pass.database->shadowMapEnabled = shadowMapEnabled;
         pass.renderer->setOutput(renderer.output());
         pass.renderer->setSize(uint32_t(std::lround(renderer.width() * reflector->resolutionScale)),
                                uint32_t(std::lround(renderer.height() * reflector->resolutionScale)));
         PerspectiveCamera& virtualCamera = *reflector->camera;
-        if (poseReflection(*reflector, camera, virtualCamera))
-            pass.database->render(*pass.renderer, scene, virtualCamera, clear);
-        else
+        if (poseReflection(*reflector, camera, virtualCamera)) {
+            pass.database->matricesFresh_ = reuseMainFrame && !ranCallbacks_;
+            // Bones the main pass posed this frame are current too: no callback ran to move them.
+            pass.database->skeletonsFresh_ = pass.database->matricesFresh_ ? &skeletonsUpdated_ : nullptr;
+            pass.database->gpuJoints_ = gpuJoints_;
+            std::array<double, 2> split{0, 0};
+            pass.database->profiling = profiling;
+            pass.database->encodeJobs = encodeJobs;
+            pass.database->render(*pass.renderer, scene, virtualCamera, clear, profiling ? &split : nullptr);
+            if (profiling) {
+                reflectionMs_[0] += split[0];
+                reflectionMs_[1] += split[1];
+                reflectionItems_ += pass.database->drawn().size();
+            }
+            pass.database->skeletonsFresh_ = nullptr;
+        }
+        else if (encodeJobs) {
+            pass.renderer->renderDeferred({}, CameraState{}, LightState{}, {0, 0, 0, 0});
+            encodeJobs->push_back([renderer = pass.renderer.get()] { renderer->encodePending(); });
+        } else
             pass.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
         for (const auto& message : pass.database->diagnostics()) diagnostics_.push_back(message);
     }

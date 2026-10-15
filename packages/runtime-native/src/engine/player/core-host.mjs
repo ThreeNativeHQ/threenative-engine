@@ -50,17 +50,24 @@ globalThis.setInterval = (callback, delay) => {
 globalThis.clearInterval = globalThis.clearTimeout;
 
 const runnerAttached = () => globalThis.TN_PLAYTEST_ENDPOINT !== undefined;
-// Frame callbacks follow the presented frame, not the 60 Hz tick, under a runner and for a script that says
-// so (`__tnFramePaced`, the load test): one callback per drawn frame, so an uncapped run measures frames.
-const framePaced = () => runnerAttached() || globalThis.__tnFramePaced === true;
-const flushFrames = (now) => {
+// Frame callbacks follow the presented frame, never the 60 Hz tick: one callback per drawn frame, as a page's
+// requestAnimationFrame. Flushing them per catch-up tick ran core's whole frame (update, matrix walk, cull)
+// up to five times per drawn frame, and each pass made the next frame later (PRD-610).
+globalThis.tn.onFrame((frameMs) => {
   const pending = [...frames.values()];
   frames.clear();
-  for (const callback of pending) callback(now);
-};
-globalThis.tn.onFrame((frameMs) => {
-  if (framePaced()) flushFrames(frameMs);
+  for (const callback of pending) callback(frameMs);
 });
+
+// A person's input from the player's window (SDL through the legacy host's DOM translation), as the events
+// core's listeners on the canvas read. A key also enters the held set, so the per-tick diff below does not
+// raise it a second time.
+globalThis.__tnDispatchInput = (event) => {
+  if (event.type === "keydown") held.add(event.code);
+  else if (event.type === "keyup") held.delete(event.code);
+  const dom = { ...event, isTrusted: true, target: canvas, preventDefault() {}, stopPropagation() {} };
+  for (const callback of [...(listeners.get(event.type) ?? [])]) callback(dom);
+};
 
 globalThis.tn.onUpdate((dt) => {
   time += dt * 1000;
@@ -86,10 +93,8 @@ globalThis.tn.onUpdate((dt) => {
     const bridge = globalThis.__THREENATIVE_PLAYTEST_BRIDGE__;
     if (typeof bridge?.advance === "function") {
       globalThis.__tnGameSpan?.(GAME_SPANS.playtest, 0);
-      try { void bridge.advance(1); } finally { globalThis.__tnGameSpan?.(GAME_SPANS.playtest, 1); }
+      try { void bridge.advance(1, { render: false }); } finally { globalThis.__tnGameSpan?.(GAME_SPANS.playtest, 1); }
     }
-  } else if (!framePaced()) {
-    flushFrames(time);
   }
   audio.updateAudio();
 });

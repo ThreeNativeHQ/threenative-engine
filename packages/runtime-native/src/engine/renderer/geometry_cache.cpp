@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 namespace tn::engine {
@@ -26,6 +27,8 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
     const uint64_t byteLength = (store.byteLength() + 3) & ~uint64_t{3};
     auto [it, isNew] = entries_.try_emplace(&store);
     Entry& e = it->second;
+    e.bytes = store.byteLength();
+    e.scalar = store.scalar();
     // A released store's copy at this address belongs to the dead store, never to this one.
     if (!isNew && e.tracked && e.owner.expired()) {
         gpu_.destroy(e.buffer);
@@ -67,6 +70,12 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
     return e.buffer;
 }
 
+GeometryCache::Resolved GeometryCache::resolved(const BufferStore& store) const {
+    const auto it = entries_.find(&store);
+    if (it == entries_.end()) throw std::runtime_error("TN_RENDER_THREAD_UNSYNCED: a drawn store reached encode without a sync");
+    return {it->second.buffer, it->second.bytes, it->second.scalar};
+}
+
 void GeometryCache::forget(const BufferStore& store) {
     const auto it = entries_.find(&store);
     if (it == entries_.end()) return;
@@ -75,7 +84,11 @@ void GeometryCache::forget(const BufferStore& store) {
 }
 
 void GeometryCache::sweep() {
-    // Every frame walks every entry, so no lock() per entry: a live owner is the store at the key.
+    // Only a store that died or let its copy go has anything to sweep; every pass of a frame asks.
+    if (sweptAt_ == BufferStore::released()) return;
+    sweptAt_ = BufferStore::released();
+    ++stats_.sweeps;
+    // A walk checks every entry, so no lock() per entry: a live owner is the store at the key.
     // ponytail: single-thread safe only; PRD-574 needs a strong reference if a second thread
     // can release stores.
     for (auto it = entries_.begin(); it != entries_.end();) {

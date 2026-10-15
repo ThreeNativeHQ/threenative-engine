@@ -15,6 +15,9 @@ namespace {
 
 constexpr double kMinDistance = 1e-4;  // render-camera-cull.ts MIN_DISTANCE
 
+bool gHold = false;
+std::vector<std::weak_ptr<Object3D>> gHeld;  // hides a held restoreAfterDraw() still owes
+
 // projection-plan.ts isRenderable: three's isMesh, isSprite, isPoints and isLine classes.
 bool renderable(std::string_view type) {
     return type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "BatchedMesh" ||
@@ -23,8 +26,11 @@ bool renderable(std::string_view type) {
 
 }  // namespace
 
+ProjectedCull::CpuTiming ProjectedCull::cpuTiming;
+
 ProjectedCull::Report ProjectedCull::apply(Object3D& root, const Camera& camera, bool cameraResolved, double scale,
                                            double minimumPixels, bool enabled) {
+    const double cpuBegin = cpuTiming.clock ? cpuTiming.clock() : -1;
     restore();
     Report report;
     Frustum frustum;
@@ -38,19 +44,24 @@ ProjectedCull::Report ProjectedCull::apply(Object3D& root, const Camera& camera,
     // boundsOf: an InstancedMesh's own bound, else its geometry's, recomputed when the position
     // buffer moved and given up on when it moves on consecutive consults (rewritten every frame).
     enum class Bound { Sphere, Dynamic, None };
-    const auto boundsOf = [this](const Object3D& object, const Sphere*& sphere) -> Bound {
+    const auto boundsOf = [this](Node& node, const Sphere*& sphere) -> Bound {
         sphere = nullptr;
-        if (object.type() == "InstancedMesh") {
-            const auto& own = static_cast<const InstancedMesh&>(object).boundingSphere;
+        const Mesh* mesh = node.mesh;
+        if (node.instanced) {
+            const auto& own = static_cast<const InstancedMesh*>(mesh)->boundingSphere;
             if (own) return sphere = own.get(), Bound::Sphere;
         }
-        const auto* mesh = dynamic_cast<const Mesh*>(&object);
-        const BufferGeometry* geometry = mesh ? mesh->geometry.get() : nullptr;
+        const BufferGeometry* geometry = mesh->geometry.get();
         if (geometry == nullptr) return Bound::None;
         auto& mutableGeometry = const_cast<BufferGeometry&>(*geometry);
-        const auto position = geometry->attributes.find("position");
-        const bool versioned = position != geometry->attributes.end() && position->second != nullptr;
-        const uint32_t version = versioned ? position->second->version() : 0;
+        if (node.geometry != geometry || node.geometryRevision != geometry->revision()) {
+            const auto found = geometry->attributes.find("position");
+            node.position = found != geometry->attributes.end() ? found->second.get() : nullptr;
+            node.geometry = geometry;
+            node.geometryRevision = geometry->revision();
+        }
+        const bool versioned = node.position != nullptr;
+        const uint32_t version = versioned ? node.position->version() : 0;
         const auto answer = [&]() -> Bound {
             sphere = geometry->boundingSphere.get();
             return sphere ? Bound::Sphere : Bound::None;
@@ -89,15 +100,13 @@ ProjectedCull::Report ProjectedCull::apply(Object3D& root, const Camera& camera,
         v.changedLastConsult = true;
         return answer();
     };
-    const auto visit = [&](Object3D& object) {
-        if (!renderable(object.type())) return;
+    const auto visit = [&](Node& node) {
+        Object3D& object = *node.object;
         ++report.considered;
-        if (cameraResolved)
-            for (const Object3D* node = object.parent; node != nullptr; node = node->parent)
-                if (node == &camera) {
-                    ++report.cameraAttached;
-                    return;
-                }
+        if (cameraResolved && node.cameraAttached) {
+            ++report.cameraAttached;
+            return;
+        }
         if (object.alwaysRender) {
             ++report.marked;
             return;
@@ -107,7 +116,7 @@ ProjectedCull::Report ProjectedCull::apply(Object3D& root, const Camera& camera,
             return;
         }
         const Sphere* sphere = nullptr;
-        const Bound bound = boundsOf(object, sphere);
+        const Bound bound = boundsOf(node, sphere);
         if (bound == Bound::Dynamic) {
             ++report.dynamicBounds;
             return;
@@ -132,21 +141,67 @@ ProjectedCull::Report ProjectedCull::apply(Object3D& root, const Camera& camera,
         hidden_.push_back(object.weak_from_this());
         ++report.culled;
     };
+    if (nodesRoot_ != &root || nodesCamera_ != &camera || nodesVersion_ != Object3D::hierarchyVersion())
+        rebuild(root, camera);
     // three's traverseVisible: a node is checked, then visited, then its children walked, so a node
-    // the visit hides still has its children visited.
-    const auto walk = [&](auto& self, Object3D& object) -> void {
-        if (!object.visible()) return;
-        visit(object);
-        for (Object3D* child : object.children) self(self, *child);
-    };
-    walk(walk, root);
+    // the visit hides still has its children visited. A hidden node skips its whole subtree.
+    for (uint32_t i = 0; i < nodes_.size();) {
+        Node& node = nodes_[i];
+        if (!node.object->visible()) {
+            i = node.end;
+            continue;
+        }
+        if (node.mesh != nullptr) visit(node);
+        ++i;
+    }
+    if (cpuTiming.clock) {
+        const double cpuEnd = cpuTiming.clock();
+        ++cpuTiming.calls;
+        if (cpuBegin < 0 || cpuEnd < cpuBegin || !std::isfinite(cpuBegin) || !std::isfinite(cpuEnd)) cpuTiming.available = false;
+        else cpuTiming.ms += cpuEnd - cpuBegin;
+    }
     return report;
+}
+
+void ProjectedCull::rebuild(Object3D& root, const Camera& camera) {
+    ++rebuilds_;
+    nodes_.clear();
+    const auto add = [&](auto& self, Object3D& object, bool underCamera) -> void {
+        const auto index = uint32_t(nodes_.size());
+        const std::string_view type = object.type();
+        const Mesh* mesh = renderable(type) ? static_cast<const Mesh*>(&object) : nullptr;
+        nodes_.push_back({&object, mesh, 0, underCamera, type == "InstancedMesh"});
+        const bool childrenUnderCamera = underCamera || &object == &camera;
+        for (Object3D* child : object.children) self(self, *child, childrenUnderCamera);
+        nodes_[index].end = uint32_t(nodes_.size());
+    };
+    bool rootUnderCamera = false;
+    for (const Object3D* node = root.parent; node != nullptr; node = node->parent)
+        if (node == &camera) rootUnderCamera = true;
+    add(add, root, rootUnderCamera);
+    nodesRoot_ = &root;
+    nodesCamera_ = &camera;
+    nodesVersion_ = Object3D::hierarchyVersion();
 }
 
 void ProjectedCull::restore() {
     for (const auto& weak : hidden_)
         if (const auto object = weak.lock()) object->setVisible(true);
     hidden_.clear();
+}
+
+void ProjectedCull::restoreAfterDraw() {
+    if (!gHold) return restore();
+    gHeld.insert(gHeld.end(), hidden_.begin(), hidden_.end());
+    hidden_.clear();
+}
+
+void ProjectedCull::holdRestores(bool hold) { gHold = hold; }
+
+void ProjectedCull::releaseHeld() {
+    for (const auto& weak : gHeld)
+        if (const auto object = weak.lock()) object->setVisible(true);
+    gHeld.clear();
 }
 
 }  // namespace tn::engine

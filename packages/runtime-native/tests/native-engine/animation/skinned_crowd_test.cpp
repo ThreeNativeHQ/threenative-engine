@@ -4,10 +4,102 @@
 
 #include <cstring>
 #include <algorithm>
+#include <regex>
+#include <unordered_map>
 
 using namespace tn::engine;
 
+// Resolve generated straight-line WGSL lets so assertions follow operands, not declaration order.
+std::string vertexOutput(const std::string& code, const char* output) {
+    std::unordered_map<std::string, std::string> values;
+    const std::regex identifier(R"(\b[el][0-9]+\b)");
+    const auto expand = [&](const std::string& expression) {
+        std::string result;
+        std::size_t begin = 0;
+        for (auto token = std::sregex_iterator(expression.begin(), expression.end(), identifier);
+             token != std::sregex_iterator(); ++token) {
+            result += expression.substr(begin, token->position() - begin);
+            const auto found = values.find(token->str());
+            result += found == values.end() ? token->str() : found->second;
+            begin = token->position() + token->length();
+        }
+        return result + expression.substr(begin);
+    };
+    const std::regex assignment(R"((?:let )?([a-zA-Z0-9_.]+) = ([^;]+);)");
+    for (auto line = std::sregex_iterator(code.begin(), code.end(), assignment); line != std::sregex_iterator();
+         ++line) {
+        const std::string expression = expand((*line)[2]);
+        if ((*line)[1] == output)
+            return expression;
+        values[(*line)[1]] = expression;
+    }
+    return {};
+}
+
+void paletteShaderOrder() {
+    for (bool palette : {false, true})
+        for (bool storage : {false, true}) {
+            shader::VertexVariant variant;
+            variant.instanced = variant.skinned = true;
+            variant.skinnedPalette = palette;
+            variant.instanceStorage = storage;
+            for (int material = 0; material < 5; ++material) {
+                auto programs = material == 0   ? shader::buildBasic(variant)
+                                : material == 1 ? shader::buildStandard({}, variant)
+                                : material == 2 ? shader::buildLambert(variant)
+                                : material == 3 ? shader::buildPhong(variant)
+                                                : shader::buildPhysical({}, variant);
+                const auto module = shader::buildStage(programs.vertex, 0);
+                CHECK(module.wgsl.ok());
+                for (const char* output : {"out.position", "out.o_normalView"}) {
+                    const std::string expression = vertexOutput(module.wgsl.code, output);
+                    if (std::string(output) == "out.o_normalView" && material == 0)
+                        continue;
+                    CHECK(!expression.empty());
+                    const auto placement = expression.find(storage ? "s_instances" : "a_instanceMatrix");
+                    const auto bone = expression.find("s_boneMatrices");
+                    CHECK(placement != std::string::npos && bone != std::string::npos);
+                    CHECK(palette ? placement < bone : bone < placement);
+                    if (palette && placement != std::string::npos && bone != std::string::npos) {
+                        Matrix4 root, pose, world;
+                        root.makeRotationY(0.7).scale(Vector3(1.4, 1.4, 1.4)).setPosition(Vector3(3, 2, -4));
+                        pose.makeRotationZ(-0.6).setPosition(Vector3(0.5, 0.2, 1));
+                        world.multiplyMatrices(root, pose);
+                        for (bool legacy : {false, true}) {
+                            const Matrix4 instance = legacy ? Matrix4() : root;
+                            const Matrix4 skin = legacy ? world : pose;
+                            Vector3 actual(0.3, 0.7, -0.2), expected = actual, reversed = actual;
+                            if (std::string(output) == "out.position") {
+                                expected.applyMatrix4(world);
+                                reversed.applyMatrix4(instance).applyMatrix4(skin);
+                                if (placement < bone)
+                                    actual.applyMatrix4(skin).applyMatrix4(instance);
+                                else
+                                    actual.applyMatrix4(instance).applyMatrix4(skin);
+                            } else {
+                                Matrix3 instanceNormal;
+                                instanceNormal.getNormalMatrix(instance);
+                                expected.transformDirection(world);
+                                reversed.applyMatrix3(instanceNormal).normalize().transformDirection(skin);
+                                if (placement < bone)
+                                    actual.transformDirection(skin).applyMatrix3(instanceNormal).normalize();
+                                else
+                                    actual.applyMatrix3(instanceNormal).normalize().transformDirection(skin);
+                            }
+                            CHECK(actual.distanceTo(expected) < 1e-12);
+                            if (!legacy)
+                                CHECK(reversed.distanceTo(expected) > 0.01);
+                        }
+                    }
+                    if (placement == std::string::npos || bone == std::string::npos)
+                        std::fprintf(stderr, "%s\n", module.wgsl.code.c_str());
+                }
+            }
+        }
+}
+
 void crowdCpu() {
+    paletteShaderOrder();
     player::SkinnedCrowd crowd;
     crowd.update(1.0 / 60);
     RenderDatabase db;

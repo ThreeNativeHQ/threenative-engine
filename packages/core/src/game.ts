@@ -149,7 +149,9 @@ export interface IGameRuntimeObservations {
 }
 
 export interface IGamePluginRuntime {
-  readonly fixedStep: (ticks: number) => number;
+  readonly fixedStep: (ticks: number, options?: { render?: boolean }) => number;
+  /** Completed scene updates and primary world render requests, independent of budget windows. */
+  readonly frameCounts?: () => { updates: number; renders: number };
   /**
    * Announces that a diagnostics consumer is going to read render metrics, turning per-frame
    * sample collection on for the rest of the run. Optional: a runtime without collection
@@ -1638,6 +1640,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // say nothing new.
     const devMetricsEnabled = isDevLaunch();
     let postedVerdict: string | undefined;
+    let updates = 0;
+    let renders = 0;
     const gameLoop: FixedStepLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
@@ -1833,6 +1837,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           renderRoot.matrixWorldAutoUpdate = false;
           this.#matrixWorld?.apply(renderRoot);
           renderer.render(renderRoot, camera);
+          renders += 1;
           // *After* the render, because that is where the draw happened. The matrices read here are
           // the ones drawn: the walk above refreshed them and `render()` did not touch them. The
           // frozen roots are passed because the draw root is the projection's mirror when the
@@ -1990,11 +1995,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
         const scene = this.#scene;
         const frame = this.#sceneFrame;
-        if (frame !== undefined) frame(ctx, dt);
+        if (frame !== undefined) {
+          frame(ctx, dt);
+          updates += 1;
+        }
         // An async goto() installs the incoming scene before its load resolves; until enter()
         // has run there is no gameplay to step and a game-overridden update() would run against
         // a cleared graph.
-        else if (this.#sceneEntered && scene !== undefined) scene.update(ctx, dt);
+        else if (this.#sceneEntered && scene !== undefined) {
+          scene.update(ctx, dt);
+          updates += 1;
+        }
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
@@ -2016,7 +2027,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       readonly resolveEntered: () => void;
     }> = [];
     const runtime: IGamePluginRuntime = {
-      fixedStep: (ticks) => gameLoop.advance(ticks),
+      fixedStep: (ticks, options) => gameLoop.advance(ticks, options),
+      frameCounts: () => ({ updates, renders }),
       frameBudgetWindow: () => this.#frameBudget?.window(),
       freezeClock: () => gameLoop.freezeClock(),
       enableRuntimeDiagnostics: () => {
@@ -2045,6 +2057,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       step: gameLoop.step,
       runtimeDiagnosticsSeries: () => gameLoop.runtimeDiagnosticsSeries(),
     };
+    Object.assign(runtime, {
+      _setClockMode: (mode: "fixed-step" | "wall-clock") => gameLoop._setClockMode(mode),
+    });
     // A boot that throws must end exactly like an aborted boot: every cleanup attempted, every
     // resource released — and the original error rethrown, not a teardown error standing in
     // for it. The abort branches below stay outside these guards: they tear down themselves.

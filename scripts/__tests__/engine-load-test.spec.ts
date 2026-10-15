@@ -5,7 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ILadderArm, MeasurementClock } from "../../examples/engine-load-test/src/driver.js";
-import { drawnFrameReader } from "../../examples/engine-load-test/src/frame-read.js";
+import {
+  downscaleFrame,
+  drawnFrameReader,
+} from "../../examples/engine-load-test/src/frame-read.js";
 import {
   type ILoadTestHarness,
   countPipelineCreates,
@@ -3276,6 +3279,38 @@ describe("the completed-work measurement boundary", () => {
     vi.unstubAllGlobals();
   });
 
+  it("captures the last measured web frame after closing the completed-work window", async () => {
+    const { measureRung } = await loadDriver();
+    const { clock, advance } = virtualClock();
+    const capture = vi.fn(async () => {
+      advance(1000);
+      return "fixture-png";
+    });
+    vi.stubGlobal("__TN_BENCH_CAPTURE__", capture);
+    try {
+      const result = await measureRung(
+        stubHarness(
+          {
+            onSubmittedWorkDone: async () => {
+              advance(POST_DRAIN_MS);
+            },
+          },
+          advance,
+        ),
+        ARM,
+        { mode: "L1", objectCount: 1 },
+        0,
+        KNOBS,
+        clock,
+      );
+      expect(result.framePng).toBe("fixture-png");
+      expect(capture).toHaveBeenCalledOnce();
+      expect(result.completedWorkMeanMs).toBe(28.5);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   // The driver reads the page's query string at module scope, which node has no `location` for.
   async function loadDriver(): Promise<
     typeof import("../../examples/engine-load-test/src/driver.js")
@@ -3398,6 +3433,33 @@ describe("the completed-work measurement boundary", () => {
     // read from the drained clock, so the boundary change moves the primary metric and nothing else.
     expect(report.frameMs).toEqual([26, 26]);
     expect(report.stepMs).toEqual([STEP_MS, STEP_MS]);
+  });
+
+  it("captures a no-post rung strictly after its measured window closes", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock();
+    const { harness } = drainingHarness(advance);
+    const capture = vi.fn(async () => {
+      advance(1000);
+      return "small-frame";
+    });
+    vi.stubGlobal("__TN_BENCH_CAPTURE__", capture);
+    try {
+      const result = await measureRung(
+        harness,
+        ARM,
+        { mode: "L1", objectCount: 64 },
+        0,
+        KNOBS,
+        clock,
+      );
+      expect(capture).toHaveBeenCalledOnce();
+      expect(result.framePng).toBe("small-frame");
+      expect(result.completedWorkMeanMs).toBe(28.5);
+      expect(result.frameMs).toEqual([26, 26]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("reports the same window on a clock with no cadence, where it equals the submit sum", async () => {
@@ -4009,6 +4071,7 @@ describe("the per-frame phase telemetry", () => {
 });
 
 describe("the same-run pair guard", () => {
+  const framePath = path.resolve("scripts/__tests__/fixtures/engine-load-test/scene.png");
   const wobble = (base: number): number[] => [
     base,
     base + 1,
@@ -4043,6 +4106,7 @@ describe("the same-run pair guard", () => {
         arm: name,
         rungs: [
           rung({
+            framePath,
             cpuMsPerFrame: options.cpu ?? 10,
             drawCalls: 40,
             frameMs: wobble(options.frame ?? 10),
@@ -4058,6 +4122,148 @@ describe("the same-run pair guard", () => {
       readHostLoad({ cores: () => 12, loadavg: () => [options.load ?? 1, 0, 0] }),
     );
   const labels = ["tn-desktop", "tn-engine-desktop"] as const;
+
+  it("records identical and noisy PNG parity in JSON rows and markdown", () => {
+    const left = arm("tn-desktop");
+    const right = arm("tn-engine-desktop");
+    expect(pairRows([left], [right], labels)[0]?.visual).toMatchObject({ score: 0, waived: false });
+    (right.rungs[0] as IRunReport["rungs"][number]).framePath = path.resolve(
+      "scripts/__tests__/fixtures/engine-load-test/noise.png",
+    );
+    expect(pairRows([left], [right], labels)[0]?.visual?.score).toBeLessThan(0.02);
+    expect(renderPairMarkdown([left], [right], labels)).toContain("| visual |");
+  });
+
+  it("rejects color loss with similar luminance and checks every round and repeat", async () => {
+    const { visualParity } = await import("../engine-load-test/visual.js");
+    const left = arm("tn-desktop");
+    const right = arm("tn-engine-desktop");
+    (right.rungs[0] as IRunReport["rungs"][number]).framePath = path.resolve(
+      "scripts/__tests__/fixtures/engine-load-test/tinted.png",
+    );
+    expect(() => pairRows([left], [right], labels)).toThrow(/TN_BENCH_VISUAL_PARITY/u);
+    expect(visualParity([left], [left, right])).toHaveLength(2);
+    expect(visualParity([left], [left, right])[1]?.error).toBe("TN_BENCH_VISUAL_MISSING");
+    vi.stubEnv("TN_BENCH_WAIVE", "drawCalls");
+    try {
+      expect(() => pairRows([left], [right], labels)).toThrow(/TN_BENCH_VISUAL_PARITY/u);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("refuses a blocked windscreen even when scene counters match", () => {
+    const right = arm("tn-engine-desktop");
+    (right.rungs[0] as IRunReport["rungs"][number]).framePath = path.resolve(
+      "scripts/__tests__/fixtures/engine-load-test/blocked.png",
+    );
+    expect(pairVerdict([arm("tn-desktop")], [right], labels).problem).toContain(
+      "TN_BENCH_VISUAL_PARITY",
+    );
+    expect(() => pairRows([arm("tn-desktop")], [right], labels)).toThrow(/TN_BENCH_VISUAL_PARITY/u);
+  });
+
+  it("fails closed for absent, unreadable and malformed frames unless visual is explicitly waived", () => {
+    for (const frame of [undefined, "/missing/frame.png", path.resolve("package.json")]) {
+      const right = arm("tn-engine-desktop");
+      (right.rungs[0] as IRunReport["rungs"][number]).framePath = frame;
+      expect(() => pairRows([arm("tn-desktop")], [right], labels)).toThrow(
+        /TN_BENCH_VISUAL_MISSING/u,
+      );
+      vi.stubEnv("TN_BENCH_WAIVE", "drawCalls,visual");
+      try {
+        expect(pairRows([arm("tn-desktop")], [right], labels)[0]?.visual).toMatchObject({
+          waived: true,
+        });
+        expect(renderPairMarkdown([arm("tn-desktop")], [right], labels)).toContain(
+          "TN_BENCH_WAIVE=visual",
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }
+  });
+
+  it("persists PNG and native RGBA transports beside JSON without retaining transport pixels", async () => {
+    const { saveFrames } = await import("../engine-load-test/visual.js");
+    const { PNG } = await import("pngjs");
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bench-frames-"));
+    try {
+      const raw = fs.readFileSync(framePath);
+      const decoded = PNG.sync.read(raw);
+      const run = arm("tn-desktop");
+      (run.rungs[0] as IRunReport["rungs"][number]).frameRgba = {
+        width: decoded.width,
+        height: decoded.height,
+        data: decoded.data.toString("hex"),
+      };
+      (run.rungs[0] as IRunReport["rungs"][number]).framePath = undefined;
+      const parsed = parseRunReport({
+        ...run,
+        rungs: run.rungs.map((rung) => ({ ...rung, mode: "L1", ladder: undefined })),
+      });
+      await saveFrames(parsed, path.join(directory, "native.json"));
+      expect(
+        PNG.sync.read(
+          fs.readFileSync((parsed.rungs[0] as IRunReport["rungs"][number]).framePath as string),
+        ).data,
+      ).toEqual(decoded.data);
+      expect((parsed.rungs[0] as IRunReport["rungs"][number]).frameRgba).toBeUndefined();
+      (run.rungs[0] as IRunReport["rungs"][number]).framePng = raw.toString("base64");
+      (run.rungs[0] as IRunReport["rungs"][number]).frameRgba = undefined;
+      await saveFrames(run, path.join(directory, "web.json"));
+      expect(
+        fs.readFileSync((run.rungs[0] as IRunReport["rungs"][number]).framePath as string),
+      ).toEqual(raw);
+      expect((run.rungs[0] as IRunReport["rungs"][number]).framePng).toBeUndefined();
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects report frames larger than 160x90 and preserves fixture verdicts after downscaling", async () => {
+    const { saveFrames, visualParity } = await import("../engine-load-test/visual.js");
+    const { PNG } = await import("pngjs");
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bench-small-frames-"));
+    try {
+      const oversized = new PNG({ width: 161, height: 90 });
+      const run = arm("tn-desktop", {
+        rung: { framePng: PNG.sync.write(oversized).toString("base64") },
+      });
+      await expect(saveFrames(run, path.join(directory, "oversized.json"))).rejects.toThrow(
+        "TN_BENCH_VISUAL_MISSING",
+      );
+      for (const fixture of ["scene", "noise", "tinted", "blocked"]) {
+        const right = arm("tn-engine-desktop", {
+          rung: {
+            framePath: path.resolve(`scripts/__tests__/fixtures/engine-load-test/${fixture}.png`),
+          },
+        });
+        const before = visualParity([arm("tn-desktop")], [right])[0];
+        const smallReports = [arm("tn-desktop"), right];
+        for (const [index, smallReport] of smallReports.entries()) {
+          const image = PNG.sync.read(fs.readFileSync(smallReport.rungs[0]?.framePath as string));
+          const small = new PNG({ width: 160, height: 90 });
+          small.data = Buffer.from(downscaleFrame(image.data, image.width, image.height));
+          (smallReport.rungs[0] as IRunReport["rungs"][number]).framePng = PNG.sync
+            .write(small)
+            .toString("base64");
+          await saveFrames(smallReport, path.join(directory, `${fixture}-${index}.json`));
+          const saved = PNG.sync.read(fs.readFileSync(smallReport.rungs[0]?.framePath as string));
+          expect(saved.width).toBeLessThanOrEqual(160);
+          expect(saved.height).toBeLessThanOrEqual(90);
+        }
+        const after = visualParity(
+          [smallReports[0] as IRunReport],
+          [smallReports[1] as IRunReport],
+        )[0];
+        expect(after?.error).toBe(before?.error);
+        expect(Math.abs((after?.score as number) - (before?.score as number))).toBeLessThan(0.003);
+      }
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
 
   it("derives FPS from mean frame time and 1% low from p99", () => {
     const left = arm("tn-desktop", { rung: { frameMs: [10, 10, 10, 20] } });
@@ -4277,6 +4483,30 @@ describe("the same-run pair guard", () => {
 });
 
 describe("the probe's read-back on a host that draws after the frame callback", () => {
+  it("stores at most 160x90 RGBA in a report, with box averages rather than sampled pixels", () => {
+    const pixels = new Uint8Array(1920 * 1080 * 4);
+    for (let y = 0; y < 1080; y++)
+      for (let x = 0; x < 1920; x++)
+        pixels.set(x % 2 === 0 ? [0, 20, 40, 60] : [200, 220, 240, 160], (y * 1920 + x) * 4);
+    const small = downscaleFrame(pixels, 1920, 1080);
+    const parsed = parseRunReport(
+      report({
+        rungs: [
+          rung({
+            frameRgba: { width: 160, height: 90, data: Buffer.from(small).toString("hex") },
+          }),
+        ],
+      }),
+    );
+    expect(parsed.rungs[0]?.frameRgba?.data).toHaveLength(160 * 90 * 8);
+    expect(Array.from(small.slice(0, 4))).toEqual([100, 120, 140, 110]);
+    expect(small.slice(-4)).toEqual(small.slice(0, 4));
+    expect(
+      downscaleFrame(new Uint8Array([0, 0, 0, 0, 255, 255, 255, 255]), 2, 1).slice(79 * 4, 81 * 4),
+    ).toEqual(new Uint8Array([0, 0, 0, 0, 255, 255, 255, 255]));
+    expect(() => downscaleFrame(pixels, 1, 1)).toThrow("TN_BENCH_PROBE_SIZE");
+  });
+
   it("reads the frame the callback stepped, not the one before it", async () => {
     const stepped = 4;
     let drawn = 3; // the player draws what a callback left only once that callback returns

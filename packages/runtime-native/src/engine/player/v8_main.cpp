@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <cmath>
 #include <map>
@@ -46,6 +47,7 @@
 #include "engine/abi/abi_internal.h"
 #include "engine/inspect/endpoint.h"
 #include "engine/player/run.h"
+#include "mystral/platform/input.h"
 #include "mystral/platform/ui_overlay.h"
 #include <SDL3/SDL.h>
 #include "engine/scene/camera.h"
@@ -65,6 +67,13 @@
 #include "mystral/physics/native_bindings.h"
 
 namespace mystral::js { std::unique_ptr<Engine> createV8Engine(); }
+#if TN_PLAYER_CANVAS2D
+#include "mystral/canvas/canvas2d.h"
+namespace mystral::canvas {
+js::JSValueHandle createCanvas2DContext(js::Engine* engine, int width, int height,
+                                        std::vector<std::unique_ptr<Canvas2DContext>>& ownedContexts);
+}
+#endif
 
 using namespace tn::engine;
 
@@ -175,6 +184,10 @@ class V8Game {
     uint64_t liveWrappers() const { return adapter_ ? adapter_->liveWrappers() : 0; }
 
   private:
+#if TN_PLAYER_CANVAS2D
+    // Declared before services_ so the contexts outlive the JS objects that point at them.
+    std::vector<std::unique_ptr<mystral::canvas::Canvas2DContext>> canvases_;
+#endif
     std::unique_ptr<mystral::js::Engine> services_;
     v8::Isolate* isolate_ = nullptr;
     tn_context_t* context_ = nullptr;  // the engine's context (engine objects), not the JS one
@@ -192,6 +205,16 @@ class V8Game {
     std::shared_ptr<void> sceneHold_, cameraHold_;
     std::set<std::string> held_;  // keys the game sees as held, by DOM key and by code, filled each tick
     std::set<std::string> heldCodes_;  // the same keys by code alone (`KeyW`), for the keydown events core reads
+    /** A person's input from the window (platform/input.cpp's DOM-shaped events), queued until the tick that delivers it. */
+    struct WindowInput {
+        std::string type, code, key, pointerType;
+        double x = 0, y = 0, movementX = 0, movementY = 0, deltaX = 0, deltaY = 0;
+        int button = 0, buttons = 0, pointerId = 1;
+        bool pointer = false;
+    };
+    std::deque<WindowInput> windowInput_;
+    void installWindowInput();
+    void deliverWindowInput(v8::Local<v8::Context> ctx);
     inspect::Endpoint* endpoint_ = nullptr;
     std::string assetPath_;
     std::vector<uint8_t> assetBytes_;
@@ -227,14 +250,18 @@ class V8Game {
         triangles_ = renderer.lastFrame().triangles + renderer.lastFrame().shadowTriangles;
         pipelineCompiles_ = renderer.pipelines().compiles();
         frameClockMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStartedAt_).count();
+        profileFrame();
     }
     /** The page's queued frames, on the thread that owns JavaScript (legacy runtime.cpp drainUiMessages):
      *  hit regions stay with the host, everything else goes to core's `__tnUiGameReceive`. */
     void uiFrame();
     /** A frame with nothing to draw yet: the game's frame callbacks still run (run.h frameWithoutView). */
-    void frameWithoutView() { presentFrame(); }
+    void frameWithoutView() { presentFrame(); profileFrame(false); }
+    /** PRD-613: the loop's wait for the frame its render thread has in flight; absent without that thread. */
+    void setRenderBarrier(std::function<void()> barrier) { renderBarrier_ = std::move(barrier); }
     void beforeRender(Renderer& renderer, RenderDatabase& database) {
         presentFrame();  // the game's frame callbacks may change the renderer state applied below
+        idleRenderer();  // the settings below are the renderer's own, so the frame in flight ends first
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
         renderer.setSampleCount(samples_);
@@ -242,7 +269,14 @@ class V8Game {
         database.shadowMapType = shadowMapType_;
     }
   private:
+    // Everything this game does to the renderer outside the loop's own handoff calls this first.
+    void idleRenderer() { if (renderBarrier_) renderBarrier_(); }
+    std::function<void()> renderBarrier_;
     void presentFrame();
+    void profileFrame(bool drawn = true);
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    uint64_t profileFrames_ = 0;
+#endif
     // The frame clock tn.onFrame reads: it moves only by each presented frame's own duration, from
     // the game's frame callbacks through present (the TN_FRAME_BUDGET quantity, owner 2026-10-08),
     // so a runner's tick batches and idle waits between frames are never counted as frame time.
@@ -269,7 +303,70 @@ class V8Game {
     /** The engine object a JS wrapper stands for, when it is one of `cls` (or any Object3D for "Object3D"). */
     tn::binding::Object* engineObject(v8::Local<v8::Value> value, std::string_view cls);
     static void decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info);
+    void installDocument(v8::Local<v8::Context> ctx);
 };
+
+// `document.createElement("canvas")` for a game's procedural textures, over the legacy host's Skia 2D
+// context. The element's size is read when getContext("2d") runs, as a game sets width and height first.
+// A build without Skia answers getContext with null and says so once, never a context that draws nothing.
+constexpr const char* kDocumentShim = R"JS(
+(() => {
+  if (typeof globalThis.document !== "undefined") return;
+  const create2d = globalThis.__tnCreateCanvas2D;
+  let warned = false;
+  const canvas = () => {
+    const el = { tagName: "CANVAS", width: 300, height: 150, style: {}, __ctx: null, __size: "" };
+    el.getContext = (type) => {
+      if (type !== "2d") return null;
+      if (!create2d) {
+        if (!warned) {
+          warned = true;
+          console.warn("TN_PLAYER_CANVAS2D_UNAVAILABLE: this player build has no 2D canvas; canvas.getContext('2d') answers null");
+        }
+        return null;
+      }
+      const size = el.width + "x" + el.height;
+      if (el.__ctx === null || el.__size !== size) {
+        el.__ctx = create2d(el.width, el.height);
+        el.__ctx.canvas = el;
+        el.__size = size;
+      }
+      return el.__ctx;
+    };
+    // ctx.drawImage(otherCanvas, ...) finds the source's context here, as the legacy host's elements expose it.
+    Object.defineProperty(el, "_context2d", { get: () => el.getContext("2d") });
+    el.toDataURL = () => { throw new Error("TN_PLAYER_CANVAS_TODATAURL: canvas.toDataURL is not available in the engine player"); };
+    return el;
+  };
+  globalThis.document = {
+    createElement: (tag) => {
+      if (String(tag).toLowerCase() === "canvas") return canvas();
+      throw new Error("TN_PLAYER_DOCUMENT: document.createElement('" + tag + "') is not available in the engine player");
+    },
+  };
+  globalThis.document.createElementNS = (_ns, tag) => globalThis.document.createElement(tag);
+})();
+)JS";
+
+void V8Game::installDocument(v8::Local<v8::Context> ctx) {
+#if TN_PLAYER_CANVAS2D
+    mystral::js::Engine* engine = services_.get();
+    engine->setGlobalProperty("__tnCreateCanvas2D",
+        engine->newFunction("__tnCreateCanvas2D", [this, engine](void*, const std::vector<mystral::js::JSValueHandle>& args) {
+            const int width = args.size() > 0 ? static_cast<int>(engine->toNumber(args[0])) : 300;
+            const int height = args.size() > 1 ? static_cast<int>(engine->toNumber(args[1])) : 150;
+            if (width <= 0 || height <= 0 || width > 16384 || height > 16384) {
+                engine->throwException("TN_PLAYER_CANVAS2D_SIZE: canvas size must be 1..16384 pixels");
+                return engine->newUndefined();
+            }
+            return mystral::canvas::createCanvas2DContext(engine, width, height, canvases_);
+        }));
+#endif
+    v8::Local<v8::Script> shim;
+    v8::Local<v8::Value> ignored;
+    if (!v8::Script::Compile(ctx, v8str(isolate_, kDocumentShim)).ToLocal(&shim) || !shim->Run(ctx).ToLocal(&ignored))
+        std::cerr << "TN_PLAYER_DOCUMENT: the document shim failed to install\n";
+}
 
 void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
@@ -553,6 +650,7 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto* camera = info.Length() == 3 ? game.engineObject(info[2], "Camera") : nullptr;
     if (target == nullptr || root == nullptr || camera == nullptr)
         return refuse("TN_NATIVE_RENDER_TARGET: expected a RenderTarget, an Object3D and a camera");
+    game.idleRenderer();
     // three's WebGPURenderer clears a target to its clear colour (setClearColor), black and opaque by default.
     const auto refused = renderToTarget(*game.renderer_, *static_cast<RenderTarget*>(target->ptr.get()),
                                         *static_cast<Object3D*>(root->ptr.get()), *static_cast<Camera*>(camera->ptr.get()),
@@ -592,6 +690,7 @@ void V8Game::readFrame(const v8::FunctionCallbackInfo<v8::Value>& info) {
         return;
     }
     auto pending = std::make_shared<v8::Global<v8::Promise::Resolver>>(isolate, resolver);
+    game.idleRenderer();
     const GpuStatus started = game.renderer_->readPixels([&game, pending](GpuStatus status, std::vector<uint8_t> bytes) {
         game.settleRead(*pending, status, bytes);
     });
@@ -619,6 +718,7 @@ void V8Game::readTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
         region[i] = static_cast<uint32_t>(value);
     }
     auto pending = std::make_shared<v8::Global<v8::Promise::Resolver>>(isolate, resolver);
+    game.idleRenderer();
     const GpuStatus started = readRenderTarget(*static_cast<RenderTarget*>(target->ptr.get()), region[0], region[1],
         region[2], region[3], [&game, pending](GpuStatus status, std::vector<uint8_t> bytes) {
             game.settleRead(*pending, status, bytes);
@@ -655,11 +755,20 @@ void V8Game::compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
 void V8Game::pollCompilations() {
     if (!renderer_ || compilations_.empty()) return;  // boot can call before the device is initialized
+    idleRenderer();
     v8::Isolate::Scope isolateScope(isolate_);
     v8::HandleScope scope(isolate_);
     auto ctx = js_.Get(isolate_);
     v8::Context::Scope contextScope(ctx);
+    // Promises settle after the list is final: V8 runs a continuation as the resolving call returns, and a
+    // continuation that calls compileAsync again grows (and moves) the list under a live iterator.
+    struct Settled {
+        v8::Global<v8::Promise::Resolver> resolver;
+        std::optional<std::string> error;
+    };
+    std::vector<Settled> settled;
     for (auto it = compilations_.begin(); it != compilations_.end();) {
+        std::optional<std::string> error;
         try {
             if (!it->pipelines) {
                 renderer_->setOutput(it->output);
@@ -677,11 +786,16 @@ void V8Game::pollCompilations() {
                 else if (!pipeline->get()) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: async creation returned null");
             }
             if (pending) { ++it; continue; }
-            it->resolver.Get(isolate_)->Resolve(ctx, v8::Undefined(isolate_)).Check();
-        } catch (const std::exception& error) {
-            it->resolver.Get(isolate_)->Reject(ctx, v8::Exception::Error(v8str(isolate_, error.what()))).Check();
+        } catch (const std::exception& failure) {
+            error = failure.what();
         }
+        settled.push_back({std::move(it->resolver), std::move(error)});
         it = compilations_.erase(it);
+    }
+    for (Settled& done : settled) {
+        const auto resolver = done.resolver.Get(isolate_);
+        if (done.error) resolver->Reject(ctx, v8::Exception::Error(v8str(isolate_, *done.error))).Check();
+        else resolver->Resolve(ctx, v8::Undefined(isolate_)).Check();
     }
 }
 
@@ -691,6 +805,7 @@ void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
     shader::graph::Node graph;
     const auto apply = [&](shader::graph::Node value) {
         if (value == game.post_) return;  // RenderPipeline.render() hands the same graph every frame
+        game.idleRenderer();
         if (game.renderer_) game.renderer_->setPostGraph(value);
         game.post_ = std::move(value);
     };
@@ -779,6 +894,11 @@ bool V8Game::start(const std::string& path, std::string& error) {
         (std::filesystem::path(path).parent_path() / "native/assets.tnpk").string();
     services_ = mystral::js::createV8Engine();
     if (!services_) return error = "TN_PLAYER_V8_SERVICES: no V8 engine", false;
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    // The desktop runner terminates the player with SIGTERM; V8 must flush on its owning thread.
+    if (mystral::js::g_startCpuProfile)
+        std::signal(SIGTERM, [](int) { mystral::js::g_cpuProfileStopRequested = 1; });
+#endif
     isolate_ = static_cast<v8::Isolate*>(services_->getRawContext());
 
     const tn_version_info_t own = tn_engine_version();
@@ -800,11 +920,13 @@ bool V8Game::start(const std::string& path, std::string& error) {
     adapter_->install(ctx, ctx->Global());
     // WebAudio is the legacy host's (SDL output, worker decode); the three audio classes sit on it.
     mystral::audio::initializeAudioBindings(services_.get());
+    installDocument(ctx);
 #if TN_PLAYER_NATIVE_PHYSICS
     if (!mystral::physics::initializeNativePhysicsBindings(services_.get()))
         return error = "TN_NATIVE_PHYSICS_MISSING: resident installation failed", false;
 #endif
 
+    installWindowInput();
     v8::Local<v8::External> held = v8::External::New(isolate_, &held_);
     ctx->Global()
         ->Set(ctx, v8str(isolate_, "__tnHeldCodes"),
@@ -899,7 +1021,12 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "surfaceSize"), v8::Function::New(ctx, &surfaceSize, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "presentMode"), v8str(isolate_, player::presentModeName())).Check();
     v8::Local<v8::Script> script;
-    if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
+    v8::ScriptOrigin origin(
+#if V8_MAJOR_VERSION < 12
+        isolate_,
+#endif
+        v8str(isolate_, path));
+    if (!v8::Script::Compile(ctx, v8str(isolate_, source.str()), &origin).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());
         return error = std::string("the game bundle failed: ") + (*message ? *message : "?"), false;
     }
@@ -965,8 +1092,15 @@ int V8Game::view(std::string& error) {
 }
 
 V8Game::~V8Game() {
+    mystral::platform::setKeyboardCallback({});
+    mystral::platform::setMouseCallback({});
+    mystral::platform::setPointerCallback({});
+    mystral::platform::setWheelCallback({});
     if (isolate_ == nullptr)
         return;
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
+#endif
     {
         v8::Isolate::Scope isolateScope(isolate_);
         v8::HandleScope scope(isolate_);
@@ -984,6 +1118,76 @@ V8Game::~V8Game() {
         tn_diagnostic_release(&diagnostic);
     }
     services_.reset();
+}
+
+// The legacy host's translation puts SDL's keys, mouse and wheel in DOM shape; this queues them for the
+// next tick, where core's canvas listeners see them as a page's would. Auto-repeat is dropped: a held
+// key is already down.
+void V8Game::installWindowInput() {
+    using namespace mystral::platform;
+    setKeyboardCallback([this](const KeyboardEventData& e) {
+        if (e.repeat) return;
+        windowInput_.push_back({.type = e.type, .code = e.code, .key = e.key});
+    });
+    setMouseCallback([this](const MouseEventData& e) {
+        windowInput_.push_back({.type = e.type, .x = e.clientX, .y = e.clientY, .movementX = e.movementX,
+                                .movementY = e.movementY, .button = e.button, .buttons = e.buttons});
+    });
+    setPointerCallback([this](const PointerEventData& e) {
+        windowInput_.push_back({.type = e.type, .pointerType = e.pointerType, .x = e.clientX, .y = e.clientY,
+                                .movementX = e.movementX, .movementY = e.movementY, .button = e.button,
+                                .buttons = e.buttons, .pointerId = e.pointerId, .pointer = true});
+    });
+    setWheelCallback([this](const WheelEventData& e) {
+        windowInput_.push_back({.type = e.type, .x = e.clientX, .y = e.clientY, .deltaX = e.deltaX, .deltaY = e.deltaY});
+    });
+}
+
+void V8Game::deliverWindowInput(v8::Local<v8::Context> ctx) {
+    if (windowInput_.empty()) return;
+    v8::Local<v8::Value> dispatch;
+    const bool ready = ctx->Global()->Get(ctx, v8str(isolate_, "__tnDispatchInput")).ToLocal(&dispatch) && dispatch->IsFunction();
+    for (const WindowInput& input : windowInput_) {
+        if (input.type == "keydown") {
+            held_.insert(input.key);
+            held_.insert(input.code);
+            heldCodes_.insert(input.code);
+        } else if (input.type == "keyup") {
+            held_.erase(input.key);
+            held_.erase(input.code);
+            heldCodes_.erase(input.code);
+        }
+        if (!ready) continue;
+        v8::Local<v8::Object> event = v8::Object::New(isolate_);
+        const auto number = [&](const char* name, double value) {
+            event->Set(ctx, v8str(isolate_, name), v8::Number::New(isolate_, value)).Check();
+        };
+        event->Set(ctx, v8str(isolate_, "type"), v8str(isolate_, input.type)).Check();
+        if (!input.code.empty()) {
+            event->Set(ctx, v8str(isolate_, "code"), v8str(isolate_, input.code)).Check();
+            event->Set(ctx, v8str(isolate_, "key"), v8str(isolate_, input.key)).Check();
+        }
+        number("clientX", input.x);
+        number("clientY", input.y);
+        number("movementX", input.movementX);
+        number("movementY", input.movementY);
+        number("deltaX", input.deltaX);
+        number("deltaY", input.deltaY);
+        number("deltaMode", 0);
+        number("button", input.button);
+        number("buttons", input.buttons);
+        if (input.pointer) {
+            number("pointerId", input.pointerId);
+            event->Set(ctx, v8str(isolate_, "pointerType"), v8str(isolate_, input.pointerType)).Check();
+        }
+        v8::TryCatch tryCatch(isolate_);
+        v8::Local<v8::Value> argument = event, ignored;
+        if (!dispatch.As<v8::Function>()->Call(ctx, ctx->Global(), 1, &argument).ToLocal(&ignored)) {
+            v8::String::Utf8Value message(isolate_, tryCatch.Exception());
+            std::printf("[Playtest] TN_V8_INPUT_FAILED: %s\n", *message ? *message : "an input listener threw");
+        }
+    }
+    windowInput_.clear();
 }
 
 void V8Game::tick(double dt) {
@@ -1014,6 +1218,7 @@ void V8Game::tick(double dt) {
                                                          event.pointerId);
         }
     }
+    deliverWindowInput(ctx);
     // Finished decodes settle and ended sources fire `onended` before the game's update reads them.
     mystral::audio::processAudioEvents();
     v8::TryCatch tryCatch(isolate_);
@@ -1077,6 +1282,25 @@ void V8Game::uiFrame() {
     }
 }
 
+void V8Game::profileFrame(bool drawn) {
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    if (!mystral::js::g_startCpuProfile) return;
+    static const uint32_t startFrame = [] {
+        const char* value = std::getenv("TN_JS_CPU_PROFILE_START_FRAME");
+        return value != nullptr ? static_cast<uint32_t>(std::strtoul(value, nullptr, 10)) : 226u;
+    }();
+    if (drawn && ++profileFrames_ == startFrame) {
+        mystral::js::g_startCpuProfile();
+        std::printf("TN_PLAYER_CPU_PROFILE_START_FRAME:%llu\n", static_cast<unsigned long long>(profileFrames_));
+    }
+    if (mystral::js::g_cpuProfileStopRequested && mystral::js::g_dumpCpuProfile) {
+        mystral::js::g_dumpCpuProfile();
+        std::fflush(stdout);
+        std::_Exit(mystral::js::g_cpuProfileFailed ? 1 : 0);
+    }
+#endif
+}
+
 void V8Game::safePoint() {
     v8::Isolate::Scope isolateScope(isolate_);
     v8::HandleScope scope(isolate_);
@@ -1108,6 +1332,7 @@ int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
     std::string gamePath;
     std::string checkRequest;
+    std::string cpuProfilePath;
     bool checkGame = false;
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
@@ -1117,6 +1342,17 @@ int main(int argc, char** argv) {
             checkGame = true;
         else if (argument == "--check-request" && i + 1 < argc)
             checkRequest = argv[++i];
+        else if (argument == "--cpu-prof" || argument.rfind("--cpu-prof=", 0) == 0) {
+            if (argument == "--cpu-prof") {
+                if (i + 1 >= argc)
+                    return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --cpu-prof requires a nonempty file path\n"), 2;
+                cpuProfilePath = argv[++i];
+            } else {
+                cpuProfilePath = argument.substr(std::string("--cpu-prof=").size());
+            }
+            if (cpuProfilePath.empty() || cpuProfilePath.rfind("--", 0) == 0)
+                return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --cpu-prof requires a nonempty file path\n"), 2;
+        }
         else if (argument.rfind("--", 0) != 0)
             gamePath = argument;
         else
@@ -1126,6 +1362,21 @@ int main(int argc, char** argv) {
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: a game bundle path is required\n"), 2;
     if (!checkRequest.empty() && !checkGame)
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --check-request requires --check-game\n"), 2;
+
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    mystral::js::g_cpuProfilePath = cpuProfilePath;
+#else
+    if (!cpuProfilePath.empty())
+        return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --cpu-prof requires a build compiled with TN_JS_PROFILE=ON. Rebuild with -DTN_JS_PROFILE=ON.\n"), 2;
+#endif
+    const auto finish = [&cpuProfilePath](int status) {
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+        if (!cpuProfilePath.empty() && mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
+        return mystral::js::g_cpuProfileFailed ? 1 : status;
+#else
+        return status;
+#endif
+    };
 
     V8Game game(!checkGame);
     // The adapter's identity, read the way core reads it (a request of its own beside the renderer's):
@@ -1170,6 +1421,8 @@ int main(int argc, char** argv) {
             json::Value parsed; json::Error error;
             if (!json::parse(response, parsed, error) || parsed.find("error")) return 1;
         }
+        const int status = finish(0);
+        if (status != 0) return status;
         return std::printf("TN_PLAYER_V8_GAME_CHECK: engine=native gameRuntime=v8 startup=passed shadowMap=%s:%d\n",
                            game.shadowMapEnabled() ? "on" : "off", game.shadowMapType()), 0;
     }
@@ -1186,6 +1439,7 @@ int main(int argc, char** argv) {
     configured.bridgeCalls = [] { return tn::abi::crossings(); };
     configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.frameWithoutView = [&game] { game.frameWithoutView(); };
+    configured.setRenderBarrier = [&game](std::function<void()> barrier) { game.setRenderBarrier(std::move(barrier)); };
     // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside
     // the executable for the legacy host), through the legacy host's overlay seam; TN_UI_RENDERER=
     // native-css picks the CSS backend. The loop reaches it only through these hooks.
@@ -1253,5 +1507,5 @@ int main(int argc, char** argv) {
             {"names", json::Value::makeObject(std::move(names))}})).c_str());
         std::fflush(stdout);
     }
-    return status;
+    return finish(status);
 }

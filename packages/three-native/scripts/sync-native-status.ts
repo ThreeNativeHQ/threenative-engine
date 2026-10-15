@@ -640,7 +640,7 @@ function addMissingMembers(dump: IRegistryDump, byName: Map<string, MutableClass
     }
     const getters = [
       ...binding.getters.filter((member) => !member.includes(".") && published(member)),
-      ...binding.members.filter((member) => !member.includes(".")),
+      ...binding.members.filter((member) => !member.includes(".") && published(member)),
     ];
     for (const member of getters) {
       if (covered.has(member) || binding.methods.includes(member)) continue;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <memory>
 #include <span>
 #include <string>
 #include <utility>
@@ -42,6 +44,36 @@ private:
     shader::StageModule module_;
     WGPUComputePipeline pipeline_ = nullptr;
     Handle uniforms_;
+    std::string error_;
+};
+
+// Internal palette kernel. Indices are joint/packed-TRS/matrix offsets, never byte offsets.
+struct JointComputeRig {
+    uint32_t count, parentBase, inputBase, fixedBase, outputBase;
+};
+
+class JointComputePass {
+public:
+    // parents are rig-local (UINT32_MAX means root); fixed holds bridge, inverseBind*bind per joint.
+    // locals holds position/quaternion/scale as three vec4<f32>s; output is array<mat4x4<f32>>.
+    JointComputePass(WGPUDevice device, GpuResources& gpu, std::span<const JointComputeRig> rigs,
+                     std::span<const uint32_t> parents, std::span<const std::array<float, 16>> fixed,
+                     Handle locals, Handle output);
+    ~JointComputePass();
+    JointComputePass(const JointComputePass&) = delete;
+    JointComputePass& operator=(const JointComputePass&) = delete;
+    const std::string& error() const { return error_; }
+    bool dispatch(WGPUCommandEncoder encoder);
+    // Renderer-owned output permutation; joint/parent order and bindings remain fixed.
+    bool remapOutputs(std::span<const uint32_t> bases);
+
+private:
+    GpuResources& gpu_;
+    std::unique_ptr<ComputePass> pass_;
+    std::array<Handle, 4> storage_{};
+    uint32_t count_ = 0;
+    uint64_t outputMatrices_ = 0;
+    std::vector<uint32_t> headers_;
     std::string error_;
 };
 

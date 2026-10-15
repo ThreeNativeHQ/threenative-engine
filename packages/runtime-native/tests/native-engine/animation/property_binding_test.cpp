@@ -4,6 +4,7 @@
 // generator ran it on three, and each step's node transforms and binding reads must be three's bits.
 #include "check.h"
 #include "engine/animation/property_binding.h"
+#include "engine/animation/skinning/skeleton.h"
 
 #include <bit>
 #include <cinttypes>
@@ -57,7 +58,89 @@ template <typename Array> std::string join(const Array& values) {
     return out;
 }
 
+void deferredBinding() {
+    auto streamBone = std::make_shared<Bone>(); streamBone->enableTrackedTransform();
+    auto stream = std::make_shared<std::vector<float>>(24, -1.0f);
+    auto valid = std::make_shared<bool>(true);
+    CHECK(!streamBone->enableDeferredTransform(stream, 13, valid));
+    CHECK(streamBone->enableDeferredTransform(stream, 12, valid));
+    CHECK((*stream)[12] == 0 && (*stream)[19] == 1 && (*stream)[20] == 1 && (*stream)[23] == 0);
+    PropertyBinding streamed(streamBone, ".position"); double packedValues[] = {1.0000000000000002, 2, 3};
+    streamed.setValue(packedValues, 0);
+    CHECK((*stream)[12] == 1 && (*stream)[13] == 2 && (*stream)[14] == 3 && (*stream)[15] == 0);
+    CHECK(streamBone->deferredTransformValues()[0] == packedValues[0]);
+    std::weak_ptr<std::vector<float>> kept = stream; stream.reset();
+    CHECK(!kept.expired()); // Bone owns the sink even when the scene-plan handle is released
+    streamed.setValue(packedValues, 0);
+    streamBone->exposeLocalTransform();
+    CHECK(!*valid && kept.expired() && streamBone->position.x == packedValues[0]);
+    auto resized = std::make_shared<std::vector<float>>(12); auto validResize = std::make_shared<bool>(true);
+    auto resizeBone = std::make_shared<Bone>(); resizeBone->enableTrackedTransform();
+    CHECK(resizeBone->enableDeferredTransform(resized, 0, validResize));
+    PropertyBinding resizeBinding(resizeBone, ".position"); resizeBinding.setValue(packedValues, 0);
+    resized->clear(); packedValues[0] = 7; resizeBinding.setValue(packedValues, 0);
+    CHECK(!*validResize && resizeBone->position.x == 7 && resizeBone->position.y == 2);
+    auto deathValid = std::make_shared<bool>(true);
+    { auto dying = std::make_shared<Bone>(); dying->enableTrackedTransform();
+      CHECK(dying->enableDeferredTransform(std::make_shared<std::vector<float>>(12), 0, deathValid)); }
+    CHECK(!*deathValid);
+    auto bone = std::make_shared<Bone>();
+    PropertyBinding position(bone, ".position"), scale(bone, ".scale"), component(bone, ".position[x]");
+    double values[] = {2.0000000000000004, 3, 4}, out[3]{};
+    CHECK(!bone->enableDeferredTransform()); // plain C++ remains eager
+    position.setValue(values, 0);
+    CHECK(bone->position.x == values[0]);
+    bone->enableTrackedTransform();
+    CHECK(bone->enableDeferredTransform());
+    values[0] = 8.000000000000002;
+    position.setValue(values, 0);
+    CHECK(bone->hasDeferredTransform() && bone->position.x != values[0]);
+    values[0] = -99; // pending values never alias a mixer accumulator
+    CHECK(bone->deferredTransformValues()[0] == 8.000000000000002);
+    position.getValue(out, 0);
+    CHECK(out[0] == 8.000000000000002 && out[1] == 3);
+    values[0] = 5; position.setValue(values, 0);
+    double scales[] = {2, 3, 4}; scale.setValue(scales, 0);
+    double x[] = {11}; component.setValue(x, 0);
+    CHECK(bone->position.x == 11 && bone->position.y == 3 && bone->scale.y == 3);
+    CHECK(!bone->hasDeferredTransform());
+    values[0] = 12; position.setValue(values, 0);
+    CHECK(bone->position.x == 12); // unsupported component revoked admission
+    CHECK(bone->enableDeferredTransform());
+    values[0] = 17; position.setValue(values, 0);
+    auto head = std::make_shared<Object3D>(); head->position.set(1, 0, 0); bone->add(*head);
+    auto untouched = std::make_shared<Bone>(); untouched->enableTrackedTransform(); CHECK(untouched->enableDeferredTransform());
+    PropertyBinding other(untouched, ".position"); other.setValue(values, 0);
+    Vector3 world; head->getWorldPosition(world);
+    CHECK(world.x == 19 && untouched->hasDeferredTransform()); // only needed ancestor path
+    values[0] = 20; position.setValue(values, 0);
+    position.getValue(out, 0); CHECK(!bone->hasDeferredTransform());
+    Skeleton skeleton({bone}, {Matrix4{}}); skeleton.update();
+    CHECK(skeleton.boneMatrices[12] == 20); // local read must not hide the outstanding world join
+    auto childBone = std::make_shared<Bone>(); childBone->position.set(1, 0, 0); bone->add(*childBone);
+    bone->updateMatrixWorld(true);
+    Skeleton childSkeleton({childBone}, {Matrix4{}});
+    values[0] = 23; position.setValue(values, 0);
+    bone->getWorldPosition(world); // parent joined first, leaving unchanged descendants stale
+    CHECK(!bone->matrixWorldNeedsUpdate && !childBone->matrixWorldNeedsUpdate);
+    childSkeleton.update(); CHECK(childSkeleton.boneMatrices[12] == 25);
+    values[0] = 24; position.setValue(values, 0); bone->getWorldPosition(world);
+    Object3D::prepareTransformView(&head->matrixWorld);
+    CHECK(head->matrixWorld.elements[12] == 26);
+    values[0] = 21; position.setValue(values, 0);
+    position.unbind(); CHECK(bone->position.x == 21 && !bone->hasDeferredTransform());
+    CHECK(bone->enableDeferredTransform());
+    values[0] = 25; position.setValue(values, 0);
+    Object3D copy; copy.copy(*bone); CHECK(copy.position.x == 25);
+    values[0] = 28; position.setValue(values, 0);
+    Object3D::prepareTransformView(&bone->position);
+    CHECK(bone->position.x == 28 && !bone->enableDeferredTransform());
+    values[0] = 30; position.setValue(values, 0); CHECK(bone->position.x == 30);
+    other.setValue(values, 0); untouched.reset(); other.setValue(values, 0); // released node safe
+}
+
 void binding() {
+    deferredBinding();
     const std::pair<const char*, std::size_t> tracks[] = {
         {".position", 3},         {"hand.position", 3},    {"arm.L.quaternion", 4},      {"hand.scale[y]", 1},
         {"armB/hand.visible", 1}, {"missing.position", 3}, {"hand.material.opacity", 1}, {"hand.foo", 1},
@@ -165,6 +248,13 @@ void released() {
     root->add(*hand);
     PropertyBinding binding(root, "hand.position");
     const double in[3] = {1, 2, 3};
+    auto* tracking = Object3D::transformTrackingAddress(&hand->position);
+    for (const char* path : {"hand.position", "hand.scale", "hand.scale[x]"}) {
+        PropertyBinding transform(root, path);
+        tracking[1] = 0;
+        transform.setValue(in, 0);
+        CHECK(tracking[1] == 1);
+    }
     binding.setValue(in, 0);
     CHECK(binding.bound() && hand->position.y == 2);
     root->remove(*hand);

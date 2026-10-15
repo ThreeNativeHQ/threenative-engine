@@ -124,7 +124,7 @@ private:
     WGPUDevice device_;
     std::unordered_map<std::string, WGPURenderPipeline> pipelines_;
     std::unordered_map<IdKey, WGPURenderPipeline, IdKeyHash> byId_;  // aliases of pipelines_, never owners
-    uint64_t compiles_ = 0;
+    std::atomic<uint64_t> compiles_{0};  // read by the game thread while the render thread encodes
     uint64_t textLookups_ = 0;
 };
 

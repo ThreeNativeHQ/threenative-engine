@@ -6,6 +6,10 @@
 // `input_tick`: input injected before tick N is what tick N's game code reads, not tick N+1's.
 #include "check.h"
 #include "engine/inspect/endpoint.h"
+#include "engine/scene/material.h"
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #include "engine/world/loop/fixed_step.h"
 
 #include <cstdint>
@@ -71,7 +75,160 @@ std::string request(const std::string& id, const std::string& method, const std:
            (argument.empty() ? "" : ",\"argument\":" + argument) + "}";
 }
 
+void automaticRenderHold() {
+#ifndef _WIN32
+    auto& stats = Material::diagnostics();
+    const auto savedStats = stats;
+    stats = {};
+    std::fflush(stdout);
+    FILE* captured = std::tmpfile();
+    CHECK(captured != nullptr);
+    if (!captured) { stats = savedStats; return; }
+    const int savedStdout = dup(fileno(stdout));
+    CHECK(savedStdout >= 0);
+    if (savedStdout < 0) { std::fclose(captured); stats = savedStats; return; }
+    const int redirected = dup2(fileno(captured), fileno(stdout));
+    CHECK(redirected >= 0);
+    if (redirected < 0) { close(savedStdout); std::fclose(captured); stats = savedStats; return; }
+#endif
+    Host host;
+    Endpoint unsupported(host);
+    CHECK(reply(unsupported, request("h", "_holdAutomaticRender", "true")).find("error") != nullptr);
+    CHECK(!unsupported.automaticRenderHeld());
+    uint64_t updates = 0;
+    host.tick = [&] { return updates + 9007199254740993ULL; };
+    host.step = [&] { ++updates;
+#ifndef _WIN32
+        if (stats.enabled) ++stats.writes;
+#endif
+    };
+    host.renderEachTick = true;
+    Endpoint endpoint(host);
+    CHECK(!endpoint.automaticRenderHeld());
+    for (const std::string argument : {"", "null", "1", "\"true\"", "{}"}) {
+        const auto answer = reply(endpoint, request("h", "_holdAutomaticRender", argument));
+        CHECK(answer.find("error")->find("message")->string().rfind("TN_INSPECT_INVALID_ARGUMENT", 0) == 0);
+        CHECK(!endpoint.automaticRenderHeld());
+    }
+    CHECK(reply(endpoint, request("h", "_holdAutomaticRender", "true")).find("error") == nullptr);
+    CHECK(endpoint.automaticRenderHeld());
+#ifndef _WIN32
+    stats.enabled = true;
+    CHECK(reply(endpoint, request("h", "_holdAutomaticRender", "true")).find("error") == nullptr);
+#endif
+    CHECK(reply(endpoint, request("s", "sample", "{}")).find("error") == nullptr);
+    CHECK(updates == 0);
+    CHECK(reply(endpoint, request("a", "advance", "1000")).find("error") == nullptr);
+    CHECK(updates == 1000);
+    CHECK(endpoint.automaticRenderHeld());
+    CHECK(reply(endpoint, request("s", "sample", "{}")).find("error") == nullptr);
+    CHECK(updates == 1000);
+    CHECK(reply(endpoint, request("h", "_holdAutomaticRender", "false")).find("error") == nullptr);
+    CHECK(!endpoint.automaticRenderHeld());
+#ifndef _WIN32
+    std::fflush(stdout);
+    CHECK(dup2(savedStdout, fileno(stdout)) >= 0); close(savedStdout);
+    std::rewind(captured);
+    std::vector<json::Value> markers;
+    char line[4096]; std::string raw;
+    while (std::fgets(line, sizeof(line), captured)) {
+        const std::string text(line), prefix = "TN_PLAYER_RENDER_HOLD:"; raw += text;
+        if (text.rfind(prefix, 0) != 0) continue;
+        json::Value value; json::Error error;
+        CHECK(json::parse(text.substr(prefix.size()), value, error)); markers.push_back(std::move(value));
+    }
+    std::fclose(captured);
+    CHECK(raw.find("TN_PLAYER_RENDER_HOLD:{\"held\":true,\"tick\":9007199254740993}\n") != std::string::npos);
+    CHECK(markers.size() == 3);
+    if (markers.size() == 3) {
+        CHECK(markers[0].find("materialDiagnostic") == nullptr);
+        const auto* beforeTick = markers[1].find("tick"); const auto* afterTick = markers[2].find("tick");
+        const auto* before = markers[1].find("materialDiagnostic"); const auto* after = markers[2].find("materialDiagnostic");
+        CHECK(beforeTick && afterTick && before && after);
+        if (beforeTick && afterTick && before && after) {
+            const auto* beforeWrites = before->find("writes"); const auto* afterWrites = after->find("writes");
+            CHECK(beforeWrites && afterWrites);
+            CHECK(beforeTick->number() - afterTick->number() == -1000);
+            if (beforeWrites && afterWrites) CHECK(afterWrites->number() - beforeWrites->number() == 1000);
+        }
+    }
+    stats = savedStats;
+#endif
+}
+
+void liveClockProtocol() {
+    Host host;
+    Endpoint unsupported(host);
+    CHECK(reply(unsupported, request("u", "_setClockMode", "\"wall-clock\"")).find("error"));
+    bool live = false;
+    int transitions = 0;
+    host.renderEachTick = true;
+    host.setLiveClock = [&](bool enabled) { live = enabled; ++transitions; };
+    host.observe = [](const std::string& method, const json::Value*, json::Value& result, std::string&) {
+        if (method != "sample") return false;
+        result = json::Value::makeObject({{"clock", json::Value::makeObject({{"mode", json::Value::makeString("fixed-step")}})}});
+        return true;
+    };
+    Endpoint endpoint(host);
+    const auto record = [&](double time) { endpoint.recordPresentation(time, endpoint.presentationEpoch(), true); };
+    CHECK(reply(endpoint, request("bad", "_setClockMode", "true")).find("error"));
+    CHECK(!live && transitions == 0);
+    reply(endpoint, request("hold", "_holdAutomaticRender", "true"));
+    CHECK(!reply(endpoint, request("held", "_setClockMode", "\"wall-clock\"")).find("error"));
+    reply(endpoint, request("release", "_holdAutomaticRender", "false"));
+    CHECK(!reply(endpoint, request("live", "_setClockMode", "\"wall-clock\"")).find("error"));
+    CHECK(live && transitions == 1);
+    reply(endpoint, request("same", "_setClockMode", "\"wall-clock\""));
+    CHECK(transitions == 1);
+    CHECK(reply(endpoint, request("advance", "advance", "1")).find("error"));
+    CHECK(!reply(endpoint, request("holdlive", "_holdAutomaticRender", "true")).find("error"));
+    record(90);
+    CHECK(reply(endpoint, request("excluded", "_presentationCompletions", "")).find("result")->find("samples")->items().empty());
+    reply(endpoint, request("resume", "_holdAutomaticRender", "false"));
+    CHECK(reply(endpoint, request("sample", "sample", "{}")).find("result")->find("clock")->find("mode")->string() == "wall-clock");
+    endpoint.recordPresentation(99, endpoint.presentationEpoch(), false);
+    auto failed = reply(endpoint, request("failedpresent", "_presentationCompletions", ""));
+    CHECK(failed.find("result")->find("samples")->items().empty());
+    CHECK(failed.find("result")->find("sequence")->number() == 0);
+    record(100);
+    record(125); // full-loop delay belongs in completion intervals
+    auto cadence = reply(endpoint, request("cadence", "_presentationCompletions", ""));
+    const auto& samples = cadence.find("result")->find("samples")->items();
+    CHECK(samples.size() == 2);
+    CHECK(samples.back().find("completedAtMs")->number() - samples.front().find("completedAtMs")->number() == 25);
+    CHECK(samples.back().find("sequence")->number() == 2);
+    const double epoch = cadence.find("result")->find("epoch")->number();
+    auto negotiated = reply(endpoint, request("pollmode", "_setClockMode", "\"wall-clock\""));
+    CHECK(negotiated.find("result")->find("epoch") && negotiated.find("result")->find("epoch")->number() == epoch);
+    auto unchanged = reply(endpoint, request("unchanged", "_presentationCompletions", ""));
+    CHECK(transitions == 1 && unchanged.find("result")->find("epoch")->number() == epoch);
+    CHECK(unchanged.find("result")->find("samples")->items().size() == 2);
+    CHECK(unchanged.find("result")->find("sequence")->number() == 2);
+    const auto queuedEpoch = endpoint.presentationEpoch();
+    reply(endpoint, request("pause", "_holdAutomaticRender", "true"));
+    record(500);
+    reply(endpoint, request("unpause", "_holdAutomaticRender", "false"));
+    endpoint.recordPresentation(900, queuedEpoch, true); // an old queued job completing after hold release must be rejected
+    CHECK(reply(endpoint, request("stale", "_presentationCompletions", "")).find("result")->find("samples")->items().empty());
+    record(1000);
+    CHECK(reply(endpoint, request("epoch", "_presentationCompletions", "")).find("result")->find("epoch")->number() > epoch);
+    CHECK(reply(endpoint, request("gap", "_presentationCompletions", "")).find("result")->find("samples")->items().size() == 1);
+    record(1000); // invalid/nonmonotonic observations fail closed
+    CHECK(!reply(endpoint, request("invalid", "_presentationCompletions", "")).find("result")->find("valid")->boolean());
+    reply(endpoint, request("fixed", "_setClockMode", "\"fixed-step\""));
+    CHECK(!live && transitions == 2);
+    record(200);
+    CHECK(reply(endpoint, request("cleared", "_presentationCompletions", "")).find("result")->find("samples")->items().empty());
+    reply(endpoint, request("liveagain", "_setClockMode", "\"wall-clock\""));
+    for (int i = 0; i < 2049; ++i) record(300 + i);
+    cadence = reply(endpoint, request("bounded", "_presentationCompletions", ""));
+    CHECK(cadence.find("result")->find("samples")->items().size() == 2048);
+    CHECK(cadence.find("result")->find("dropped")->number() == 1);
+}
+
 void protocol() {
+    automaticRenderHold();
+    liveClockProtocol();
     Game game;
     // Valid and invalid arguments for every method device.ts dispatches.
     struct Case {
@@ -118,7 +275,10 @@ void protocol() {
     std::size_t bad = 0, n = 0;
     for (const Case& c : cases) {
         const std::string id = "r" + std::to_string(n++);
+        auto* tracking = Object3D::transformTrackingAddress(&game.player->position);
+        tracking[1] = 0;
         const json::Value r = reply(*game.endpoint, request(id, c.method, c.argument));
+        if (c.method == "applySetup" && c.ok) CHECK(tracking[1] == 1);
         const json::Value* echoed = r.find("id");
         const json::Value* error = r.find("error");
         const bool answered = r.find("result") != nullptr;
@@ -165,6 +325,7 @@ void protocol() {
     std::printf("inspect protocol: %zu message types, %zu cases, %zu wrong\n", std::size(kMethods), cases.size(), bad);
     CHECK(bad == 0);
 }
+
 
 void inputTick() {
     Game game;

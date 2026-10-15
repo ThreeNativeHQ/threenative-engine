@@ -60,6 +60,6 @@ bool Presenter::begin(Frame& frame) {
     return false;
 }
 
-void Presenter::present() { context_.present(); }
+bool Presenter::present() { return context_.present(); }
 
 }  // namespace tn::engine

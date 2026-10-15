@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -54,6 +55,16 @@ class RenderDatabase {
     /** Records found by hashing the object, and record sweeps run; a steady frame does neither (PRD-573 v1.11). */
     [[nodiscard]] uint64_t recordLookups() const { return recordLookups_; }
     [[nodiscard]] uint64_t recordSweeps() const { return recordSweeps_; }
+    [[nodiscard]] uint64_t sphereMeasures() const { return sphereMeasures_; }
+    /** Scene matrix walks prepare() ran since construction; a reflection pass that reuses the frame runs none. */
+    [[nodiscard]] uint64_t matrixWalks() const { return matrixWalks_; }
+    /** What the last prepare drew, before sorting. */
+    [[nodiscard]] const std::vector<DrawItem>& drawn() const { return items_; }
+    /** The database behind a reflector's pass, null before its first frame. */
+    [[nodiscard]] const RenderDatabase* reflectionDatabase(const void* reflector) const {
+        const auto found = reflections_.find(reflector);
+        return found == reflections_.end() ? nullptr : found->second.database.get();
+    }
     /** Why the last render left something out (TN_NATIVE_MATERIAL_UNSUPPORTED, TN_NATIVE_LIGHTS_UNSUPPORTED...). */
     [[nodiscard]] const std::vector<std::string>& diagnostics() const { return diagnostics_; }
 
@@ -65,9 +76,27 @@ class RenderDatabase {
      * On by default; off draws every mesh on its own, subject to the measured pixel-edge budget.
      */
     bool batching = true;
+    /**
+     * With a sink (PRD-613), render() plans every pass here and leaves each pass's encode half in it, in the
+     * order the passes must run, instead of encoding: the caller runs the jobs on its render thread, one frame
+     * in flight, and touches no renderer until they finish. Null encodes inline, as before.
+     */
+    std::vector<std::function<void()>>* encodeJobs = nullptr;
+    /**
+     * A reflection pass reuses the frame's work instead of redoing it (PRD-610 AC-10): it does not walk
+     * the scene's matrices again after this render's own walk, unless a render callback may have moved
+     * something, and it gathers shadow casters only for lights its camera sees. Off, every pass repeats
+     * the work, as a separate render would; the pixels are the same.
+     */
+    bool reuseMainFrame = true;
     bool profiling = false;
     // Matrix setup, projection/record refresh (including fused flat-scene matrices), batch packing, remaining.
     [[nodiscard]] const std::array<double, 4>& lastPrepareMs() const { return prepareMs_; }
+    // With profiling: wall ms of the GPU-joint prep, the scene prepare and the reflection passes in render().
+    [[nodiscard]] const std::array<double, 3>& lastRenderPhaseMs() const { return renderPhaseMs_; }
+    // With profiling: the reflection passes' {prepare, encode} wall ms and draw items this frame.
+    [[nodiscard]] const std::array<double, 2>& lastReflectionMs() const { return reflectionMs_; }
+    [[nodiscard]] std::size_t lastReflectionItems() const { return reflectionItems_; }
     /** three's `renderer.shadowMap.enabled`: off, no light draws or reads a shadow map. */
     bool shadowMapEnabled = false;
     /** three's `renderer.shadowMap.type`: PCFShadowMap (1) or PCFSoftShadowMap (2). */
@@ -102,6 +131,14 @@ class RenderDatabase {
     };
     std::unordered_map<const void*, ReflectionPass> reflections_;
     bool reflecting_ = false;
+    // Set by the frame's database on a reflection pass: the scene's world matrices are already current.
+    std::shared_ptr<GpuJointScene> gpuJoints_;
+    bool gpuPreparing_ = false;
+    bool compiling_ = false;
+    bool matricesFresh_ = false;
+    uint64_t worldsFreshSince_ = 0;
+    bool ranCallbacks_ = false;  // this prepare ran onBeforeRender hooks, which may have moved objects
+    uint64_t matrixWalks_ = 0;
     void renderReflections(Renderer& renderer, Object3D& scene, Camera& camera, std::vector<DrawItem>& items,
                            std::array<double, 4> clear);
     std::shared_ptr<BufferGeometry> backgroundGeometry_;
@@ -110,6 +147,7 @@ class RenderDatabase {
     struct alignas(64) Record {
         uint64_t geometryRevision = 0;
         uint64_t meshId = 0;
+        uint64_t cacheId = UINT64_MAX;  // its slot in byId_, cleared when the sweep erases it
         uint64_t seen = 0; // the render it was last projected in
         uint32_t materialVersion = 0;
         bool drawable = false, materialized = false;
@@ -219,6 +257,10 @@ class RenderDatabase {
     std::unordered_map<const Object3D*, Record> records_;
     std::vector<Record> flatRecords_; // scene-order slots; no per-mesh hash lookup on the flat lane
     std::vector<Record*> slotRecords_; // the scene's plain meshes' records in records_, by scene order
+    // records_ entries by object id, so a hierarchy's meshes skip the hash each frame (PRD-610 AC-10).
+    // The sweep clears an erased record's slot; ids are never reused, so a slot needs no further check.
+    std::vector<Record*> byId_;
+    Record* findRecord(const Object3D& object, bool insert);
     const Object3D* slotRoot_ = nullptr; // the object whose children use slotRecords_ while a prepare projects
     std::vector<uint8_t> flatPlainMeshes_;
     bool flatParentIdentity_ = false;
@@ -227,7 +269,7 @@ class RenderDatabase {
     std::vector<uint32_t> floatKeys_;
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;
-    uint64_t recordLookups_ = 0, recordSweeps_ = 0;
+    uint64_t recordLookups_ = 0, recordSweeps_ = 0, sphereMeasures_ = 0;
     // A float32 copy per attribute. The source is held weakly: a freed store (or one whose address a
     // new store took) reads as expired, so a stale copy is never served and a dead entry can be swept.
     struct Converted {
@@ -240,9 +282,13 @@ class RenderDatabase {
     BufferStore* floatStore(const BufferGeometry& g, const char* name);
     uint64_t frame_ = 0;
     std::size_t previousDrawCount_ = 0;
+    std::array<double, 3> renderPhaseMs_{};
+    std::array<double, 2> reflectionMs_{};
+    std::size_t reflectionItems_ = 0;
     std::array<double, 4> prepareMs_{};
     std::vector<std::pair<uint64_t, DirectLight>> direct_; // this render's direct lights with their ids
     std::unordered_set<const void*> skeletonsUpdated_;     // skeletons this render already updated
+    const std::unordered_set<const void*>* skeletonsFresh_ = nullptr;  // a reflection: the main pass's, still current
     int hemisphere_ = 0;
 };
 

@@ -32,6 +32,26 @@ namespace tn::engine {
 class Bone : public Object3D {
   public:
     Bone() = default;
+    ~Bone() override { prepareLocalTransformWrite(); if (publication_) --publicationCount_; }
+    // Internal admission only: no production caller until a GPU consumer owns the scene plan.
+    bool enableDeferredTransform();
+    // The scene plan allocates once and uploads this whole stream; relocation revokes admission.
+    bool enableDeferredTransform(std::shared_ptr<std::vector<float>> stream, std::size_t offset,
+                                 std::shared_ptr<bool> valid);
+
+    bool deferTransformValue(int component, const double* values);
+    void materializeLocalTransform() override;
+    void materializeWorldTransformIfPending();
+    [[nodiscard]] bool hasDeferredTransformPublication() const override { return publication_; }
+    void prepareLocalTransformWrite() override;
+    void exposeLocalTransform() override;
+    [[nodiscard]] const std::array<double, 10>& deferredTransformValues() const {
+        if (poseObservationEnabled) { poseObservationEscapedValues = true; if (poseObserver) poseObserver(*this, 5); }
+        return deferredTRS_;
+    }
+    mutable bool poseObservationEscapedValues = false; // A retained native reference can read any later interval.
+    [[nodiscard]] bool hasDeferredTransform() const { return pending_; }
+
     Bone(const Bone&) = delete;
     Bone& operator=(const Bone&) = delete;
 
@@ -39,6 +59,16 @@ class Bone : public Object3D {
 
     /** three's `isBone`, the flag `Skeleton.pose` reads on a parent. */
     bool isBone = true;
+  private:
+    std::array<double, 10> deferredTRS_{}; // position, quaternion, scale; original mixer doubles
+    inline static std::size_t publicationCount_ = 0;
+    bool deferred_ = false, pending_ = false, publication_ = false;
+    std::shared_ptr<std::vector<float>> stream_;
+    std::shared_ptr<bool> streamValid_;
+    float* streamData_ = nullptr;
+    std::size_t streamOffset_ = 0;
+
+
 };
 
 /**
@@ -48,6 +78,9 @@ class Bone : public Object3D {
 class Skeleton {
   public:
     Skeleton() = default;
+    std::weak_ptr<bool> gpuSkinValidity;
+    void revokeGpuSkinning() { if (const auto valid = gpuSkinValidity.lock()) *valid = false; }
+
     /**
      * `bones` is copied, as three's `bones.slice(0)`; `boneInverses` empty means "compute them",
      * exactly three's `boneInverses.length === 0` branch.
@@ -64,6 +97,8 @@ class Skeleton {
     void pose();
     /** Folds each bone's `matrixWorld` with its inverse into `boneMatrices`, as float32. */
     void update();
+    // Internal renderer path, immediately after its world walk and before authored callbacks.
+    void updateAfterWorldWalk(uint64_t firstEvaluation);
     /** The first bone whose name matches, or null. A null slot is skipped, never dereferenced. */
     [[nodiscard]] Bone* getBoneByName(std::string_view name) const;
 
@@ -91,11 +126,16 @@ class SkinnedMesh : public Mesh {
     void bind(std::shared_ptr<Skeleton> skeleton, const Matrix4* bindMatrix = nullptr);
     void pose() { if (skeleton) skeleton->pose(); }
     void updateMatrixWorld(bool force = false) override;
+    void afterMatrixWorld() override;
     Vector3& getVertexPosition(uint64_t index, Vector3& target) const override;
     Vector3& applyBoneTransform(uint64_t index, Vector3& target) const;
     void computeBoundingBox();
     std::shared_ptr<Box3> boundingBox;
     std::shared_ptr<Skeleton> skeleton;
+    std::weak_ptr<bool> gpuSkinValidity;
+    bool gpuBindExposed = false;
+    void revokeGpuSkinning() { if (const auto valid = gpuSkinValidity.lock()) *valid = false; }
+    void exposeGpuBind() { gpuBindExposed = true; revokeGpuSkinning(); }
     bool attached = true; // bindMode: "attached" (true) or "detached"
     Matrix4 bindMatrix;
     Matrix4 bindMatrixInverse;

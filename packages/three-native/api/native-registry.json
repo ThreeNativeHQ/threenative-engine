@@ -87,6 +87,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -127,6 +128,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -417,6 +419,7 @@
         "scale.y",
         "scale.z",
         "sortObjects",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -520,6 +523,7 @@
         "scale.y",
         "scale.z",
         "sortObjects",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -637,6 +641,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -672,6 +677,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -798,7 +804,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -922,7 +929,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1032,6 +1040,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -1067,6 +1076,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -1210,7 +1220,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1309,7 +1320,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1430,7 +1442,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1507,7 +1520,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1739,6 +1753,7 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -1794,6 +1809,7 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "static",
         "target",
         "up.x",
         "up.y",
@@ -1896,7 +1912,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -1995,7 +2012,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -2222,6 +2240,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -2257,6 +2276,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -2379,6 +2399,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -2423,6 +2444,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -2512,7 +2534,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -2638,7 +2661,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "instanceCount",
@@ -2819,6 +2843,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -2923,6 +2948,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -3049,6 +3075,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -3085,6 +3112,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -3171,7 +3199,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -3364,6 +3393,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -3465,6 +3495,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -3522,6 +3553,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -3704,6 +3736,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -3805,6 +3838,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -4085,6 +4119,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -4186,6 +4221,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -4243,6 +4279,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4306,6 +4343,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "vertexNode",
         "visible"
@@ -4375,6 +4413,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4446,6 +4485,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4535,6 +4575,7 @@
         "transmission",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4656,6 +4697,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -4758,6 +4800,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "vertexNode",
         "visible"
@@ -4924,6 +4967,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -4959,6 +5003,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -5044,7 +5089,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -5162,6 +5208,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "top",
         "type",
         "up.x",
@@ -5204,6 +5251,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "top",
         "up.x",
         "up.y",
@@ -5371,6 +5419,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -5414,6 +5463,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -5534,7 +5584,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -5658,6 +5709,7 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -5711,6 +5763,7 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -5923,7 +5976,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -6000,7 +6054,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -6116,6 +6171,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -6163,6 +6219,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -6278,7 +6335,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -6480,6 +6538,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -6586,6 +6645,7 @@
         "scale.y",
         "scale.z",
         "skeleton",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -6719,7 +6779,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -6845,6 +6906,7 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -6900,6 +6962,7 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -7101,6 +7164,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "type",
         "up.x",
         "up.y",
@@ -7205,6 +7269,7 @@
         "scale.x",
         "scale.y",
         "scale.z",
+        "static",
         "up.x",
         "up.y",
         "up.z",
@@ -7264,6 +7329,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "visible"
       ],
@@ -7331,6 +7397,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "uuid",
         "vertexColors",
         "vertexNode",
         "visible"
@@ -7479,7 +7546,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -7556,7 +7624,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",
@@ -7633,7 +7702,8 @@
         "name",
         "parameters",
         "revision",
-        "type"
+        "type",
+        "uuid"
       ],
       "setters": [
         "morphAttributes.normal",

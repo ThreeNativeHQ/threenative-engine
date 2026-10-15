@@ -366,6 +366,8 @@ if(SDL3_SOURCE_DIRS)
         # SDL_appid.c member when mystral-tools pulls it in. SDL_uclibc contributes objects to the
         # same archive, so keep both static producers position independent.
         if(TARGET SDL3-static)
+            # The desktop tray symbol rewrite uses objcopy, which requires non-LTO objects.
+            set_property(TARGET SDL3-static PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
             set_target_properties(SDL3-static PROPERTIES POSITION_INDEPENDENT_CODE ON)
         endif()
         if(TARGET SDL_uclibc)
@@ -824,7 +826,7 @@ endif()
 # Prebuilts from kuoruan/libv8: https://github.com/kuoruan/libv8/releases
 # See docs/V8_PREBUILTS.md for fork/update information
 if(MYSTRAL_USE_V8)
-    set(V8_DIR ${THIRD_PARTY_DIR}/v8)
+    set(V8_DIR "${THIRD_PARTY_DIR}/v8" CACHE PATH "Desktop V8 headers and monolith")
     # Android ships a shared `libv8android.so` rather than the desktop monolith archive, and it
     # lives beside the desktop one so a host build and a device build can coexist in one checkout.
     # Without this the arm64 link pulls in the x86_64 archive and fails object by object.

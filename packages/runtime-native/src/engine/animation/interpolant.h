@@ -39,6 +39,8 @@ class Interpolant {
     Interpolant(const Interpolant&) = delete;
     Interpolant& operator=(const Interpolant&) = delete;
 
+    /** For values that never change again (a track's): when every keyframe equals the first, evaluate reads it. */
+    void detectConstant();
     /** The value at `t`, in the result buffer (three's `evaluate`). */
     std::span<const double> evaluate(double t);
 
@@ -67,6 +69,8 @@ class Interpolant {
     double* result_;
     bool float32_ = true;
     std::size_t cachedIndex_ = 0;
+    // Every keyframe repeats the first (an exporter writes full TRS tracks for still bones): any time reads it.
+    bool constant_ = false;
     // CubicInterpolant's per-interval state, -0 until the first interval like three's.
     double weightPrev_ = -0.0, weightNext_ = -0.0;
     std::size_t offsetPrev_ = 0, offsetNext_ = 0;

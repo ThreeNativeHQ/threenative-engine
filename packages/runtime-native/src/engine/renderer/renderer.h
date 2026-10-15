@@ -3,6 +3,8 @@
 #include <chrono>
 #include <functional>
 #include <array>
+#include <atomic>
+#include <mutex>
 #include <map>
 #include <cstdint>
 #include <optional>
@@ -19,6 +21,7 @@
 #include "engine/scene/geometry.h"
 #include "engine/renderer/geometry_cache.h"
 #include "engine/renderer/gpu_resources.h"
+#include "engine/renderer/compute.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/probes/volume.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
@@ -31,6 +34,31 @@ namespace tn::engine {
 using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elements
 
 class SkinnedMesh;
+class Bone;
+struct GpuJointScene {
+    struct Rig {
+        std::weak_ptr<SkinnedMesh> mesh;
+        std::weak_ptr<Object3D> placement;
+        const void* skeleton = nullptr;
+        const void* geometry = nullptr;
+        const void* material = nullptr;
+        Matrix bind{};
+        uint32_t outputBase = 0;
+        std::shared_ptr<BufferStore> instances;
+    };
+    uint64_t hierarchy = 0;
+    std::shared_ptr<bool> valid = std::make_shared<bool>(true);
+    std::shared_ptr<std::vector<float>> locals = std::make_shared<std::vector<float>>();
+    std::vector<Rig> rigs;
+    std::vector<uint8_t> drawUse; // Diagnostic-only, unioned across main, shadow and reflection passes.
+    std::vector<std::weak_ptr<Bone>> bones;
+    std::vector<JointComputeRig> topology;
+    std::vector<uint32_t> parents;
+    std::vector<std::array<float, 16>> fixed;
+    std::unordered_map<const SkinnedMesh*, uint32_t> byMesh;
+    void revoke();
+    bool current() const;
+};
 class TraaPass;
 class PostEffects;
 struct TraaOptions;
@@ -135,6 +163,9 @@ struct DrawItem {
     const std::vector<float>* boneMatrices = nullptr;
     Matrix bindMatrix{}, bindMatrixInverse{};
     SkinnedMesh* skinnedRig = nullptr; // authored rig, for projection eligibility and palette writes
+    std::shared_ptr<GpuJointScene> gpuJoints;
+    uint32_t gpuJointRig = 0;
+    std::vector<uint32_t> gpuJointRigs; // Batch instance order; singleton draws use gpuJointRig.
     uint32_t boneStride = 0;           // palette matrices per instance; zero on exact skinned draws
     /** three's flipSided: mirrored authored meshes reverse the front-face winding. */
     [[nodiscard]] WGPUFrontFace frontFace() const {
@@ -256,6 +287,12 @@ public:
      */
     void setStorage(const std::string& name, Handle buffer, uint64_t bytes) { externalStorage_[name] = {buffer, bytes}; }
 
+    // Internal production admission: resources are validated before Bone boundaries become live.
+    std::shared_ptr<GpuJointScene> prepareGpuJoints(Object3D& scene, std::shared_ptr<GpuJointScene> shared = {});
+    std::shared_ptr<GpuJointScene> currentGpuJoints() const {
+        return gpuJoints_ && gpuJoints_->current() ? gpuJoints_ : nullptr;
+    }
+
     // VirtualShadowNode's explicit depth, fixed refresh/gate path. Unsupported policies are
     // named at this boundary rather than silently selected by a light's ordinary shadow.
     /** ProbeVolume's seven padded SH sub-volumes, bound by the sampling node's name. */
@@ -314,6 +351,18 @@ public:
      */
     uint64_t render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                     std::array<double, 4> clear = {0, 0, 0, 0});
+    /**
+     * render() in two halves for the render thread (PRD-613). `renderDeferred` does everything that reads
+     * scene-owned data (syncs, texture and geometry uploads, uniform packing, program lookup) and returns;
+     * `encodePending` then records and submits the frame from what that half froze, on any one thread,
+     * and reads nothing the game can write. The game thread touches this renderer only before the first
+     * call and after the second; a call that breaks the order throws TN_RENDER_THREAD_BATON.
+     */
+    uint64_t renderDeferred(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
+                            std::array<double, 4> clear = {0, 0, 0, 0});
+    void encodePending();
+    /** True from `renderDeferred` until `encodePending` returns: the game thread plans nothing meanwhile. */
+    bool framePending() const { return pendingEncode_ || encoding_; }
     /** Pipeline preparation only: shares render's planning, submits no frame. */
     std::vector<std::shared_ptr<PipelineCompilation>> compileAsync(std::span<const DrawItem> items,
         const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm);
@@ -324,10 +373,26 @@ public:
      */
     bool blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat format);
     /**
+     * blitTo in two halves (PRD-610 AC-9): the game thread prepares the pipelines and bind groups,
+     * and `encodeBlit` records the pass on any thread without touching this renderer.
+     */
+    struct BlitPlan {
+        WGPUDevice device = nullptr;
+        WGPURenderPipeline pipeline = nullptr, over = nullptr;
+        WGPUBindGroup group = nullptr, overGroup = nullptr;
+        WGPUBuffer triangle = nullptr;
+        uint32_t location = 0;
+    };
+    std::optional<BlitPlan> prepareBlit(WGPUTextureFormat format);
+    /** Records the plan's pass into `target` and releases its bind groups. */
+    static WGPUCommandBuffer encodeBlit(BlitPlan& plan, WGPUTextureView target);
+    /**
      * PRD-554: a UI overlay's newest frame, premultiplied 8-bit rows from the top (`bgra` for a desktop
      * web view's B,G,R,A; `stride` bytes per row, 0 for tight), which blitTo draws "over" the frame,
      * stretched to the target. `version` names the pixels: the same version uploads nothing, so a
-     * steady UI costs one draw and no copy. A null `pixels` removes the overlay.
+     * steady UI costs one draw and no copy. A null `pixels` removes the overlay. With a GPU thread the upload
+     * runs there from `pixels` itself, which must stay valid until that thread's next wait() (a UI overlay
+     * frame is valid until the next uiOverlayFrame call, which the player makes only after that wait).
      */
     void setOverlay(const uint8_t* pixels, uint32_t width, uint32_t height, uint64_t version, uint32_t stride = 0,
                     bool bgra = false);
@@ -391,7 +456,14 @@ public:
         };
         SkinnedPass mainSkinned, shadowSkinned;
     };
-    const FrameStats& lastFrame() const { return lastFrame_; }
+    /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
+    const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
+    /** Game thread, with the render thread idle: publishes the stats of the frame `encodePending` last finished. */
+    void collectFrame() {
+        std::lock_guard lock(frameMailMutex_);
+        published_ = frameMail_;
+        publishes_ = true;
+    }
     /**
      * GPU time of the most recent frame whose timestamps came back, first shadow pass (else scene
      * pass) start to output pass end, in milliseconds; negative until one has, and always on a device without timestamp-query.
@@ -453,7 +525,18 @@ private:
                                 kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightFieldCount };
     uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
         std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
-        WGPUTextureFormat outputFormat);
+        WGPUTextureFormat outputFormat, bool defer = false);
+    // renderPrepared's plan, frozen for encodePending: the draws with their programs, pipelines and uniform slices.
+    struct Planned;
+    struct ShadowPass;
+    struct FrameJob;
+    void encodeFrame(FrameJob& job);
+    std::unique_ptr<FrameJob> job_;
+    bool pendingEncode_ = false;
+    std::atomic<bool> encoding_{false};
+    mutable std::mutex frameMailMutex_;
+    FrameStats frameMail_, published_;
+    bool publishes_ = false;
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
@@ -682,7 +765,7 @@ private:
     // Shared with the readback callback by weak reference: a backend may deliver it after this
     // renderer is gone (wgpu does at teardown), and it must then find nothing to write into.
     struct Timing {
-        bool pending = false;  // a resolve is being read back; the next frames are not timed
+        std::atomic<bool> pending{false};  // a resolve is being read back; the next frames are not timed
         double lastMs = -1;
         std::array<double, 4> segments{};  // shadow passes, scene pass, post (between), output pass, in ms
         uint64_t samples = 0;
@@ -709,6 +792,12 @@ private:
     };
     std::map<std::string, ProbeTexture> probeTextures_;
     std::map<std::string, FrameStorage> storages_;
+    std::shared_ptr<GpuJointScene> gpuJoints_;
+    Object3D* gpuJointScene_ = nullptr;
+    uint64_t gpuJointScan_ = ~uint64_t(0);
+    Handle gpuJointLocals_;
+    std::unique_ptr<JointComputePass> gpuJointPass_;
+    bool bindGpuJoints(const std::shared_ptr<GpuJointScene>& plan);
     std::map<std::string, std::pair<Handle, uint64_t>> externalStorage_;  // setStorage, by name
     // A material's diffuse map: its GPU texture/sampler, and, per (program, texture), the bind group
     // that binds it alongside the frame's uniforms. Cleared when the uniform buffer is rebuilt.

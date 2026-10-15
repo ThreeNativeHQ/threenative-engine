@@ -19,6 +19,11 @@ class PostEffects {
     /** Takes each live effect's current `resolutionScale` (set after install, as three reads it every
      *  frame) and rebuilds the targets when one changed; true when the targets are new. */
     bool syncScales();
+    /**
+     * Copies what `render` reads from the game's uniform nodes and effect parameters (PRD-613): the game
+     * thread calls it with the render thread idle, then `render` runs on the copy while the game writes on.
+     */
+    void captureUniforms();
     void input(const std::string& name, WGPUTextureView view);
     /** True when any pass reads the named resource ("normal" asks the renderer for a normal target). */
     bool reads(const std::string& name) const;
@@ -45,6 +50,7 @@ class PostEffects {
         WGPUBindGroupLayout layout = nullptr;
         WGPUPipelineLayout pipelineLayout = nullptr;
         bool rendered = false;
+        std::map<std::string, std::vector<float>> captured;  // the live nodes' and effect's values, over `source.uniforms`
         // The bind group of the last frame and what it binds: reused while every entry is the same,
         // dropped with the targets (a released view's handle can come back for a new one).
         WGPUBindGroup group = nullptr;
@@ -60,5 +66,6 @@ class PostEffects {
     std::map<std::string, WGPUTextureView> inputs_;
     WGPUSampler linear_ = nullptr;
     uint32_t width_ = 0, height_ = 0;
+    bool captured_ = false;
 };
 } // namespace tn::engine

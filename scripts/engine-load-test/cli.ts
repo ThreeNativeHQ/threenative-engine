@@ -21,7 +21,7 @@ import {
   startProcess,
   waitForUrl,
 } from "./browser.js";
-import { renderPairMarkdown } from "./pair.js";
+import { pairRows, pairVerdict, renderPairMarkdown } from "./pair.js";
 import {
   BenchError,
   type IPerformanceBaseline,
@@ -51,6 +51,7 @@ import {
   freshWasm,
   webArtifactBytes,
 } from "./run-web-engine.js";
+import { saveFrames } from "./visual.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const artifactRoot = path.join(repoRoot, "artifacts/engine-load-test");
@@ -452,6 +453,7 @@ async function runArmCommand(arm: string, options: ILadderOptions): Promise<void
   }
   // Read after the run, so the load that gets recorded is the load the timed window ran under.
   const report = withHostLoad(measured, readHostLoad());
+  await saveFrames(report, file);
   await writeFile(
     file,
     `${JSON.stringify(report, null, 2)}\n`,
@@ -658,15 +660,23 @@ async function runPairCommand(spec: string): Promise<void> {
       // Read after the run, so the load that gets recorded is the load the timed window ran under.
       const report = withHostLoad(measured, readHostLoad());
       scoreboardRows(report);
-      await writeFile(
-        path.join(directory, `${tag}-${arm}-r${round}.json`),
-        `${JSON.stringify(report, null, 2)}\n`,
-      );
+      const file = path.join(directory, `${tag}-${arm}-r${round}.json`);
+      await saveFrames(report, file);
+      await writeFile(file, `${JSON.stringify(report, null, 2)}\n`);
       runs.get(arm)?.push(report);
     }
   }
   const labels = [first as string, second as string] as const;
+  const left = runs.get(labels[0]) ?? [];
+  const right = runs.get(labels[1]) ?? [];
+  const verdict = pairVerdict(left, right, labels);
+  const pair = { labels, waivers: process.env.TN_BENCH_WAIVE ?? "", ...verdict };
+  await writeFile(path.join(directory, `${tag}-pair.json`), `${JSON.stringify(pair, null, 2)}\n`);
   try {
+    await writeFile(
+      path.join(directory, `${tag}-pair.json`),
+      `${JSON.stringify({ ...pair, comparisons: pairRows(left, right, labels) }, null, 2)}\n`,
+    );
     const markdown = renderPairMarkdown(
       runs.get(labels[0]) ?? [],
       runs.get(labels[1]) ?? [],
@@ -676,7 +686,10 @@ async function runPairCommand(spec: string): Promise<void> {
     process.stdout.write(`${markdown}\n`);
   } catch (error) {
     if (error instanceof BenchError)
-      await writeFile(path.join(directory, `${tag}-pair-PARITY-FAILED.md`), `${error.message}\n`);
+      await writeFile(
+        path.join(directory, `${tag}-pair-PARITY-FAILED.md`),
+        `${error.message}\n\n${JSON.stringify(pair.visual, null, 2)}\nWaivers: TN_BENCH_WAIVE=${pair.waivers}\n`,
+      );
     throw error;
   }
 }

@@ -115,6 +115,17 @@ target_sources(tn_player_v8_services PRIVATE src/audio/audio_context.cpp src/aud
     src/audio/async_audio_decode.cpp src/audio/vorbis_impl.c)
 target_include_directories(tn_player_v8_services PRIVATE ${THIRD_PARTY_DIR}/stb
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
+# The legacy host's Skia 2D canvas, so a game's procedural textures draw (document.createElement("canvas")).
+target_sources(tn_player_v8_services PRIVATE src/canvas/canvas2d.cpp src/canvas/canvas2d_bindings.cpp)
+if(TARGET skia::skia)
+    target_link_libraries(tn_player_v8_services PRIVATE skia::skia)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        find_package(Fontconfig REQUIRED)
+        find_package(Freetype REQUIRED)
+        target_link_libraries(tn_player_v8_services PRIVATE Fontconfig::Fontconfig Freetype::Freetype)
+    endif()
+    target_compile_definitions(tn-native-engine-player-v8 PRIVATE TN_PLAYER_CANVAS2D=1)
+endif()
 add_dependencies(tn_player_v8_services threenative-runtime-scripts)
 target_link_libraries(tn_player_v8_services PUBLIC tn_engine_player)
 if(TN_ENABLE_NATIVE_PHYSICS AND TARGET threenative-native-physics)
@@ -227,10 +238,64 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-free-run.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_free_run PROPERTIES LABELS "native-engine")
+    # PRD-610: a slow free-running frame runs its frame callbacks once per drawn frame, not once per catch-up tick.
+    add_test(NAME native_engine_player_frame_per_present
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-frame-per-present.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_frame_per_present PROPERTIES LABELS "native-engine")
+    # PRD-610: the game thread owns one physical core; every other player thread runs off it (Linux desktop).
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_test(NAME native_engine_player_thread_placement
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-thread-placement.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_thread_placement PROPERTIES LABELS "native-engine")
+    endif()
+    # PRD-554: a game's web HUD is drawn over the player's frame and takes a press (needs the opt-in overlay
+    # build, -DTN_ENGINE_PLAYER_UI_OVERLAY=ON, and the built playtest runner; it starts its own Xvfb).
+    if(TN_ENGINE_PLAYER_UI_OVERLAY)
+        add_test(NAME native_engine_player_ui_overlay
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-ui-overlay.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_ui_overlay PROPERTIES LABELS "native-engine" TIMEOUT 300)
+    endif()
+    # A person's keys, mouse and wheel reach the game: real X11 events (xdotool, XTEST) on the player's window under
+    # its own Xvfb, not the playtest mailbox. The second run has the web HUD overlay attached.
+    find_program(TN_XDOTOOL xdotool)
+    if(TN_XDOTOOL AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_test(NAME native_engine_player_real_input
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-real-input.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_real_input PROPERTIES LABELS "native-engine" TIMEOUT 300)
+        if(TN_ENGINE_PLAYER_UI_OVERLAY)
+            add_test(NAME native_engine_player_real_input_ui
+                COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-real-input.mjs
+                    $<TARGET_FILE:tn-native-engine-player-v8> --ui)
+            set_tests_properties(native_engine_player_real_input_ui PROPERTIES LABELS "native-engine" TIMEOUT 300)
+        endif()
+    endif()
     add_test(NAME native_engine_player_async_bridge
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-async-bridge.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_async_bridge PROPERTIES LABELS "native-engine")
+    # A compileAsync continuation that compiles again settles every promise (Midway's boot crashed the player here).
+    add_test(NAME native_engine_player_compile_reentry
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-compile-reentry.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_compile_reentry PROPERTIES LABELS "native-engine")
+    # A game's 2D canvas draws into a CanvasTexture (Midway's gun steel was flat near-white without it).
+    add_test(NAME native_engine_player_canvas2d
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas2d.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_canvas2d PROPERTIES LABELS "native-engine")
+    # A decal canvas copied into a texture canvas with drawImage keeps its text (Midway's NO STEP placards).
+    add_test(NAME native_engine_player_canvas_decal
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-canvas-decal.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_canvas_decal PROPERTIES LABELS "native-engine")
+    add_test(NAME native_engine_player_window_title
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-window-title.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_window_title PROPERTIES LABELS "native-engine")
     # PRD-551: QuadMesh into RenderTargets and readRenderTargetPixelsAsync on the real player (headless GPU).
     add_test(NAME native_engine_player_render_target
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-render-target.mjs

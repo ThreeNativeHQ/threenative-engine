@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "engine/animation/skinning/skeleton.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/lights.h"
 #include "engine/scene/material.h"
@@ -169,6 +170,7 @@ void PropertyBinding::bind() {
         node_ = node; // an object no shared_ptr owns cannot be held, so it reads as not found
     }
     raw_ = node.get();
+    bone_ = dynamic_cast<Bone*>(raw_);
     if (!node) {
         diagnostic = "PropertyBinding: No target node found for track: " + path + ".";
         return;
@@ -246,7 +248,17 @@ void PropertyBinding::bind() {
     return unsupported("property " + property);
 }
 
+void PropertyBinding::materializeValue() {
+    if (!node_.expired() && raw_) raw_->materializeLocalTransform();
+}
+
+bool PropertyBinding::unescapedBoneTransform() const {
+    return !node_.expired() && bone_ && !bone_->poseObservationEscapedValues &&
+        (target_ == Target::Position || target_ == Target::Quaternion || target_ == Target::Scale);
+}
+
 void PropertyBinding::unbind() {
+    materializeValue();
     node_.reset();
     material_.reset();
     target_ = Target::Unavailable;
@@ -259,6 +271,7 @@ void PropertyBinding::getValue(double* buffer, std::size_t offset) {
     Object3D* node = node_.expired() ? nullptr : raw_;
     if (!node)
         return;
+    node->materializeLocalTransform();
     const auto put = [&](const auto& array) { std::copy(array.begin(), array.end(), buffer + offset); };
     switch (target_) {
     case Target::Unavailable:
@@ -310,21 +323,29 @@ void PropertyBinding::setValue(const double* buffer, std::size_t offset) {
     Object3D* node = node_.expired() ? nullptr : raw_;
     if (!node || target_ == Target::Unavailable)
         return;
+    const bool wholeTRS = target_ == Target::Position || target_ == Target::Quaternion || target_ == Target::Scale;
+    if (wholeTRS && bone_ &&
+        bone_->deferTransformValue(target_ == Target::Position ? 0 : target_ == Target::Quaternion ? 3 : 7, buffer + offset)) return;
+    if (wholeTRS || target_ == Target::Component) node->prepareLocalTransformWrite();
     const int at = static_cast<int>(offset);
     switch (target_) {
     case Target::Unavailable:
         return;
     case Target::Position:
         node->position.fromArray(buffer, at);
+        node->markLocalTransformDirty();
         break;
     case Target::Scale:
         node->scale.fromArray(buffer, at);
+        node->markLocalTransformDirty();
         break;
     case Target::Quaternion:
         node->quaternion.fromArray(buffer, at);
+        node->markLocalTransformDirty();
         break;
     case Target::Component:
         (((*node).*vector_)()).setComponent(component_, buffer[offset]);
+        node->markLocalTransformDirty();
         break;
     // three stores the number itself; any read of `visible` treats it as JavaScript truthiness.
     case Target::Visible:

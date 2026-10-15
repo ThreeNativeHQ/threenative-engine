@@ -1,0 +1,101 @@
+{
+  "name": "midway-flight-bench-desktop",
+  "schemaVersion": 1,
+  "target": "desktop",
+  "warmupFrames": 30,
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "briefing",
+      "waitTicks": 420
+    },
+    {
+      "pointerPosition": {
+        "x": 0.149,
+        "y": 0.831,
+        "buttons": 1
+      },
+      "release": true,
+      "waitTicks": 30,
+      "label": "take-the-deck"
+    },
+    {
+      "label": "deck-taken",
+      "waitForResource": {
+        "id": "state",
+        "path": "ui.screens.flight",
+        "equals": true
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "input",
+      "label": "accelerate-on-deck",
+      "press": "KeyW",
+      "holdTicks": 900,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "brief-pull-back",
+      "press": "ArrowDown",
+      "holdTicks": 45,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "released-stick-climb",
+      "waitTicks": 900,
+      "release": true,
+      "screenshot": "takeoff.png"
+    },
+    {
+      "kind": "input",
+      "label": "cockpit",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "canopy-and-instruments",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "cockpit.png"
+    },
+    {
+      "kind": "input",
+      "label": "rear-gunner",
+      "press": "KeyY",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "gun-view",
+      "waitTicks": 60,
+      "release": true,
+      "screenshot": "reargun.png"
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "state",
+        "path": "airborne",
+        "atSteps": [
+          {
+            "label": "released-stick-climb",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "altitude",
+        "gte": 40,
+        "changed": true
+      }
+    ]
+  }
+}

@@ -23,6 +23,15 @@
 
 namespace tn::adapters::v8adapter {
 
+// Only these native clone return paths create fresh scene nodes; never admit arbitrary ABI handles.
+static void trackFreshClone(Adapter& adapter, const std::string& method, const tn_value_t& result) {
+    if (!adapter.jsMath() || method != "clone" || result.kind != TN_VALUE_HANDLE) return;
+    const auto* object = tn::abi::objectOf(result.handle);
+    if (!object || !tn::binding::isObject3DClass(object->cls)) return;
+    static_cast<engine::Object3D*>(object->ptr.get())->traverse(
+        [](engine::Object3D& node, void*) { node.enableTrackedTransform(); }, nullptr);
+}
+
 // An engine wrapper's internal fields: 0 is its Wrapper record, 1.. cache the wrappers of its fixed
 // members (`position`, `rotation`, ...) so a read is a slot load, not a property lookup. A
 // PropertyBinding has two fields, so the count also tells the two kinds apart.
@@ -824,6 +833,10 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     throwStatus(isolate, diagnostic);
                     return;
                 }
+                if (a.jsMath() && tn::binding::isObject3DClass(*cls)) {
+                    auto* native = tn::abi::objectOf(h);
+                    static_cast<engine::Object3D*>(native->ptr.get())->enableTrackedTransform();
+                }
                 // The construct call's own receiver becomes the wrapper: `new` returns it.
                 v8::Local<v8::Object> object = info.This();
                 auto* w = new Wrapper{&a, h, {}};
@@ -863,6 +876,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                        throwStatus(isolate, diagnostic);
                                        return;
                                    }
+                                   trackFreshClone(*d->adapter, d->name, result);
                                    // A chaining call answers the object it was called on: that is this wrapper.
                                    if (result.kind == TN_VALUE_HANDLE && result.handle.index == h.index &&
                                        result.handle.generation == h.generation && result.handle.type == h.type &&
@@ -890,6 +904,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    return;
                                }
                                stand.copyBack();
+                               trackFreshClone(*d->adapter, d->name, result);
                                auto converted = fromValue(*d->adapter, result, &stand);
                                if (intersections && info.Length() > 2 && !info[2]->IsUndefined()) {
                                    if (!info[2]->IsArray() || !converted->IsArray()) {

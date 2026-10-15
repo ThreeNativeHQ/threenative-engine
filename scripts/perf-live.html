@@ -33,6 +33,8 @@
   header { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:baseline; justify-content:space-between; }
   h1 { font-size:17px; margin:0; font-weight:650; }
   h2 { font-size:15px; margin:0 0 4px; font-weight:650; }
+  nav.tabs { display:flex; gap:6px; } nav.tabs a { padding:4px 12px; border-radius:999px; color:var(--mute); text-decoration:none; border:1px solid var(--line); }
+  nav.tabs a[aria-current] { background:var(--accent); border-color:var(--accent); color:#fff; }
   .mute { color:var(--mute); } .sm { font-size:12.5px; }
   .pill { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; background:var(--grey-bg); color:var(--mute); }
   #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px; }
@@ -88,12 +90,13 @@
 <main>
 <header>
   <h1>Epic scoreboard <span class="mute">· PRD-573 · native C++ engine vs legacy three.js</span></h1>
+  <nav class="tabs"><a href="/" aria-current="page">Epic scoreboard</a><a href="/midway">Midway</a></nav>
   <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
 </header>
 
-<section class="card" id="compare"></section>
-
 <section class="card hero s-none" id="hero"></section>
+<section class="card hero s-none" id="cheapHero"></section>
+<section class="card" id="compare"></section>
 
 <section class="card" id="trend"></section>
 <section class="card" id="frame" hidden></section>
@@ -107,8 +110,8 @@
 </details>
 </main>
 <script>
-const TARGET = 2;
-const WEB_TARGET = 1.3; // owner, 2026-10-12: tn-web p50 ÷ tn-engine-web p50, main-thread wall time
+const TARGET = 3;
+const WEB_TARGET = 2; // owner, 2026-10-13 (was 1.3, met at 1.41x): tn-web p50 ÷ tn-engine-web p50, main-thread wall time
 const STALE_HOURS = 6;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const $ = (id) => document.getElementById(id);
@@ -125,6 +128,8 @@ function ago(ms) {
   return `${Math.round(s / 86400)} days ago`;
 }
 let hero = { status: "none" }, points = [], epic = [], rows = [], web = { pairs: [], cuts: [], census: [] }, desktop = { kpi: [], gpu: { status: "PENDING" }, godot: { status: "PENDING" } };
+
+let midway;
 
 // ---- 0. Native desktop and web, side by side -----------------------------------------------------------
 // Same phase order and colours in both columns. Each column scales its own two bars to the larger one.
@@ -222,9 +227,18 @@ function renderCompare() {
 
 // ---- 1. Hero -------------------------------------------------------------------------------------------
 function renderHero() {
-  const h = hero, el = $("hero");
+  const gap = midway?.candidate?.gap, legacy = gap?.legacyMs;
+  $("hero").innerHTML = `<h2>Midway · final tier</h2><p class="q">Native engine vs three.js · experimental · unqualified</p><div class="meta">${["desktop", "wasm"].map((arm) => {
+    const side = gap?.[arm];
+    const ratio = Number.isFinite(legacy) && legacy > 0 && Number.isFinite(side?.ms) && side.ms > 0 ? legacy / side.ms : undefined;
+    return `<div><h2>${arm === "desktop" ? "Desktop native" : "Web Wasm"}</h2><div class="num">${ratio === undefined ? "PENDING" : ratio.toFixed(2) + "×"}</div><p class="sm">${ratio === undefined ? "No eligible arm/reference timing." : `${esc(side.build)} · median of ${side.runs} run(s)<br>three.js ${legacy.toFixed(2)} ms ÷ native ${side.ms.toFixed(2)} ms`}</p></div>`;
+  }).join("")}</div><p class="fine">Ratios are diagnostic, not matched-work speedups. Desktop uses native thread CPU against browser active wall time; these are different instruments. Web Wasm uses browser active wall time. Goal 2–3×; timing qualification remains pending. <a href="/midway">Midway measurements and qualification</a></p>`;
+}
+
+function renderCheapTier() {
+  const h = hero, el = $("cheapHero");
   el.className = `card hero s-${h.status}`;
-  const q = '<p class="q">Is the native C++ engine at least 2× cheaper in CPU per frame than the legacy three.js arm on rung R5, and is it getting closer?</p>';
+  const q = '<h2>Cheap tier · R5 synthetic workload</h2><p class="q">Is the native C++ engine at least 2× cheaper in CPU per frame than the legacy three.js arm on rung R5, and is it getting closer?</p>';
   if (h.ratio === undefined) { el.innerHTML = `${q}<div class="num">–</div><p class="sentence">${esc(h.sentence)}</p>`; return; }
   const pos = Math.min(100, (h.ratio / TARGET) * 100);
   const d = h.delta;
@@ -239,7 +253,7 @@ function renderHero() {
     <div class="gauge" role="img" aria-label="KPI ${h.ratio.toFixed(2)}× on a scale from 0 to ${TARGET}×"><i style="width:${pos}%"></i>
       <b style="left:50%" title="parity"></b><b style="left:100%" title="target"></b>
       <u style="left:0">0×</u><u style="left:50%">1× parity</u><u style="left:100%">2× target</u></div>
-    <div class="meta">${delta}<span class="mute">Last measured ${ago(h.now - h.t)} at ${esc(h.label)}</span></div>
+    <div class="meta">${delta}<span class="mute">Last measured ${ago(h.now - h.t)} at ${esc(h.label)}${h.lane ? ` · ${esc(h.lane)}` : ""}</span></div>
     ${h.reason ? `<p class="reason"><b>Stale.</b> ${esc(h.reason)}</p>` : ""}
     <p class="legend"><span style="--c:var(--green)">green: 2× or more</span><span style="--c:var(--orange)">orange: 1× to 2×</span><span style="--c:var(--red)">red: below 1×</span><span style="--c:var(--yellow)">yellow: stale (over ${STALE_HOURS} h, or R2/R3 newer)</span></p>
     <p class="fine">KPI = legacy ÷ native thread CPU per frame, screen present left out, at R5 with 4,096 objects. Higher is better.
@@ -419,7 +433,7 @@ function renderDetails() {
 }
 
 function render() {
-  renderCompare(); renderHero(); renderTrend(); renderFrame(); renderDesktop(); renderWeb(); renderEpic();
+  renderCompare(); renderHero(); renderCheapTier(); renderTrend(); renderFrame(); renderDesktop(); renderWeb(); renderEpic();
   if ($("details").open) renderDetails();
 }
 $("details").addEventListener("toggle", () => $("details").open && renderDetails());
@@ -427,8 +441,8 @@ $("details").addEventListener("toggle", () => $("details").open && renderDetails
 async function tick() {
   try {
     const get = (u) => fetch(u, { cache: "no-store" }).then((x) => x.json());
-    const [h, p, e, r, w, d] = await Promise.all([get("/api/hero"), get("/api/points"), get("/api/epic"), get("/api/rows"), get("/api/web"), get("/api/desktop")]);
-    hero = h; points = p; epic = e; rows = r.rows; web = w; desktop = d;
+    const [h, p, e, r, w, d, m] = await Promise.all([get("/api/hero"), get("/api/points"), get("/api/epic"), get("/api/rows"), get("/api/web"), get("/api/desktop"), get("/api/midway")]);
+    hero = h; points = p; epic = e; rows = r.rows; web = w; desktop = d; midway = m;
     render();
     $("status").textContent = `live · ${points.length} points · updated ${new Date().toLocaleTimeString()}`;
     $("dot").style.background = "var(--green)";

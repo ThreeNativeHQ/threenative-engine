@@ -115,4 +115,7 @@ void resizes() {
 
 }  // namespace
 
-TN_TEST_MAIN({"resizes", resizes})
+TN_TEST_MAIN({"resizes", resizes}, {"missing_surface", [] {
+    mystral::webgpu::Context context;
+    CHECK(!context.present()); // no acquisition means no successful presentation
+}})

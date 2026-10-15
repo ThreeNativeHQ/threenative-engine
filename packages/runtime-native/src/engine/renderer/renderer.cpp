@@ -8,16 +8,19 @@
 #include <cctype>
 #include <cmath>
 #include <unordered_map>
+#include "engine/animation/skinning/palette.h"
 #include <iterator>
 #include <cstring>
 #include <stdexcept>
 #include <type_traits>
+#include <typeinfo>
 #include <vector>
 
 #include "engine/shader/dfg_lut.h"
 #include "engine/shader/sprite.h"
 #include "engine/scene/texture.h"
 #include "engine/scene/nodes.h"
+#include "engine/scene/material.h"
 #include "engine/scene/camera.h"
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/renderer/post/traa.h"
@@ -29,6 +32,16 @@
 namespace tn::engine {
 
 namespace {
+
+bool gpuJointAncestorEligible(const Object3D& ancestor, const SkinnedMesh& rig) {
+    const auto* flags = ancestor.ownTransformTracking();
+    if (!flags || !flags[0] || ancestor.onBeforeRender) return false;
+    if (!flags[2]) return true;
+    // Only CPU-eager auto-world nodes strictly outside the rig's placement may escape.
+    return &ancestor != &rig && &ancestor != rig.parent && ancestor.matrixWorldAutoUpdate &&
+        (typeid(ancestor) == typeid(Object3D) ||
+        typeid(ancestor) == typeid(Group) || typeid(ancestor) == typeid(Mesh));
+}
 
 WGPUTextureFormat textureFormat(const Texture& texture) {
     return texture.isFloat() ? WGPUTextureFormat_RGBA32Float
@@ -205,6 +218,24 @@ std::array<double, 9> uvTransformOf(const Texture& t) {
 // A TSL texture(object, uv) binding (tsl_call's "nodeMap<id>"): the draw's own texture, in either stage.
 bool graphTextureBinding(std::string_view name) { return name.rfind("t_nodeMap", 0) == 0; }
 
+// The store a vertex attribute reads for a draw, by the attribute's name; null for a name the draw lacks.
+// Shared by the plan, which syncs it, and the encode half, which binds it.
+BufferStore* vertexSourceOf(const DrawItem& item, const shader::VertexAttribute& a) {
+    const bool column = a.name.rfind("instanceMatrix", 0) == 0;
+    BufferStore* source = a.name == "position"        ? item.positions
+                          : a.name == "normal"        ? item.normals
+                          : a.name == "uv"            ? item.uvs
+                          : a.name == "color"         ? item.colors
+                          : a.name == "instanceColor" ? item.instanceColors
+                          : a.name == "skinIndex"     ? item.skinIndices
+                          : a.name == "skinWeight"    ? item.skinWeights
+                          : column                   ? item.instanceMatrices : nullptr;
+    // Any other name is one of the geometry's own attributes (TSL attribute(name)).
+    for (const DrawItem::CustomAttribute& custom : item.attributes)
+        if (!source && custom.name == a.name) source = custom.store;
+    return source;
+}
+
 // Bit i set: the vertex stage's attribute i is one of the draw's InstancedBufferAttributes.
 uint64_t instanceStepMask(const shader::StageModule& vertex, const DrawItem& item) {
     uint64_t mask = 0;
@@ -227,7 +258,7 @@ bool readsViewport(const shader::StageModule& stage) {
 
 bool perDrawFragment(const shader::StageModule& stage) {
     for (const shader::Binding& binding : stage.bindings)
-        if (binding.name == "t_map" || binding.name == "t_env" || graphTextureBinding(binding.name) ||
+        if (binding.name == "t_map" || binding.name == "t_env" || binding.name == "t_reflector" || graphTextureBinding(binding.name) ||
             viewportBinding(binding.name))
             return true;
     return false;
@@ -374,6 +405,38 @@ fn importanceSampleGGX_VNDF(Xi: vec2<f32>, V: vec3<f32>, roughness: f32) -> vec3
 
 }  // namespace
 
+// What a frame's plan holds for its encode half (PRD-613): everything renderPrepared resolved from
+// scene-owned data, so encodeFrame needs none of it. One job lives in the renderer and is reused.
+struct Renderer::Planned {
+    const DrawItem* item;
+    Program* program;
+    WGPURenderPipeline pipeline;
+    uint32_t vertexOffset, fragmentOffset;
+    WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
+    WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
+};
+
+struct Renderer::ShadowPass {
+    WGPUTextureView target;
+    int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
+    std::vector<Planned> draws;
+};
+
+struct Renderer::FrameJob {
+    std::vector<Planned> plan, velocityPlan, normalPlan;
+    std::vector<ShadowPass> shadowPasses;
+    WGPURenderPassColorAttachment color{};
+    WGPURenderPassDepthStencilAttachment depth{};
+    WGPURenderPassTimestampWrites_Compat sceneTimes{};
+    WGPUCommandEncoder encoder = nullptr;
+    WGPURenderPipeline pageClear = nullptr;
+    CameraState camera;
+    WGPUTextureView presentTarget = nullptr;
+    WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
+    bool timed = false, normalPass = false;
+    std::vector<uint64_t> bundleKey;  // the main bundle's inputs, built while the draws' stores were live
+};
+
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
     : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(device) {
     geometry_->gpu.shareSubmissions(gpu_);
@@ -486,6 +549,7 @@ void Renderer::setProbeVolume(const std::string& name, const probes::ProbeVolume
     WGPUTextureDataLayout_Compat layout{};
     layout.bytesPerRow = size.width * 4 * sizeof(float);
     layout.rowsPerImage = size.height;
+    gpu_.sync();  // ordered after any submit still on the GPU thread
     wgpuQueueWriteTexture(queue_, &destination, data.data(), data.size_bytes(), &layout, &size);
     if (resized && uniformCapacity_) rebuildGroups();
 }
@@ -502,7 +566,178 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
     table.buffer = gpu_.createBuffer(table.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
 }
 
+void GpuJointScene::revoke() {
+    *valid = false;
+    for (const auto& weak : bones) {
+        ++Object3D::gpuMaintenanceVisits_;
+        if (auto bone = weak.lock()) bone->prepareLocalTransformWrite();
+    }
+}
+
+bool GpuJointScene::current() const {
+    if (!*valid) { return false; }
+    if (hierarchy != Object3D::hierarchyVersion()) { return false; }
+    for (const auto& saved : rigs) {
+        const auto rig = saved.mesh.lock();
+        const auto placement = saved.placement.lock();
+        if (rig) ++Object3D::gpuValidationVisits_;
+        if (placement) ++Object3D::gpuValidationVisits_;
+        if (!rig || !placement || rig->gpuBindExposed || !rig->attached ||
+            rig->skeleton.get() != saved.skeleton || rig->geometry.get() != saved.geometry ||
+            rig->material.get() != saved.material || rig->bindMatrix.elements != saved.bind ||
+            rig->onBeforeRender) { return false; }
+        if (!isSimilarityTransform(placement->matrixWorld.elements.data())) {
+            return false;
+        }
+        if (!isSimilarityTransform(rig->matrixWorld.elements.data())) {
+            return false;
+        }
+        if (!rig->matrixAutoUpdate || !rig->matrixWorldAutoUpdate || !rig->material ||
+            rig->material->transparent || rig->material->nodeMaterial || rig->material->positionNode ||
+            !rig->geometry->morphPositions.empty()) { return false; }
+        for (const auto* node : rig->material->nodes.pointers()) if (node) {
+            return false;
+        }
+        for (auto* ancestor = static_cast<Object3D*>(rig.get()); ancestor; ancestor = ancestor->parent) {
+            ++Object3D::gpuValidationVisits_;
+            if (!gpuJointAncestorEligible(*ancestor, *rig)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool Renderer::bindGpuJoints(const std::shared_ptr<GpuJointScene>& plan) {
+    auto& output = storages_["boneMatrices"];
+    const uint64_t required = plan->parents.size() * 64;
+    if (output.capacity < required) {
+        gpu_.destroy(output.buffer);
+        output.capacity = required;
+        output.buffer = gpu_.createBuffer(required, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+        if (uniformCapacity_) rebuildGroups();
+    }
+    if (gpuJoints_ != plan) {
+        gpuJointPass_.reset();
+        if (gpu_.buffer(gpuJointLocals_)) gpu_.destroy(gpuJointLocals_);
+        gpuJointLocals_ = gpu_.createBuffer(plan->locals->size() * sizeof(float), WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    }
+    gpuJointPass_ = std::make_unique<JointComputePass>(device_, gpu_, plan->topology, plan->parents,
+        plan->fixed, gpuJointLocals_, output.buffer);
+    if (!gpuJointPass_->error().empty()) {
+        plan->revoke(); gpuJointPass_.reset(); return false;
+    }
+    gpuJoints_ = plan;
+    return true;
+}
+
+std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::shared_ptr<GpuJointScene> shared) {
+    if (shared && shared->current()) {
+        if (gpuJoints_ == shared && gpuJointPass_) return shared;
+        return bindGpuJoints(shared) ? shared : nullptr;
+    }
+    if (gpuJoints_ && gpuJointScene_ == &scene && gpuJoints_->current()) return gpuJoints_;
+    if (gpuJoints_) { gpuJoints_->revoke(); gpuJoints_.reset(); gpuJointPass_.reset(); }
+    const auto epoch = Object3D::hierarchyVersion();
+    if (gpuJointScene_ == &scene && gpuJointScan_ == epoch) return nullptr;
+    gpuJointScene_ = &scene; gpuJointScan_ = epoch;
+    auto plan = std::make_shared<GpuJointScene>();
+    plan->hierarchy = epoch;
+    std::vector<SkinnedMesh*> candidates;
+    scene.traverse([](Object3D& node, void* data) {
+        ++Object3D::gpuMaintenanceVisits_;
+        if (auto* rig = dynamic_cast<SkinnedMesh*>(&node)) static_cast<std::vector<SkinnedMesh*>*>(data)->push_back(rig);
+    }, &candidates);
+    std::unordered_map<const Skeleton*, size_t> skeletons;
+    for (const auto* rig : candidates) { ++Object3D::gpuMaintenanceVisits_; ++skeletons[rig->skeleton.get()]; }
+    for (auto* rig : candidates) {
+        ++Object3D::gpuMaintenanceVisits_;
+        auto* skeleton = rig->skeleton.get();
+        if (!skeleton || skeleton->bones.empty() || skeleton->bones.size() != skeleton->boneInverses.size() ||
+            rig->weak_from_this().expired() || rig->gpuBindExposed || !rig->attached || !rig->geometry ||
+            !rig->geometry->morphPositions.empty() || !rig->material || rig->material->transparent ||
+            rig->material->nodeMaterial || rig->material->positionNode || rig->onBeforeRender ||
+            skeletons[skeleton] != 1) continue;
+        bool eligible = true;
+        for (const auto* node : rig->material->nodes.pointers()) if (node) eligible = false;
+        for (auto* ancestor = static_cast<Object3D*>(rig); eligible && ancestor; ancestor = ancestor->parent) {
+            ++Object3D::gpuMaintenanceVisits_;
+            if (!gpuJointAncestorEligible(*ancestor, *rig)) {
+                eligible = false;
+            }
+        }
+        if (!eligible) continue;
+        auto* placement = rig->parent;
+        if (placement) ++Object3D::gpuMaintenanceVisits_;
+        if (!placement || placement->type() == "Bone" || placement->type() == "Scene" ||
+            placement->children.size() != 2 || placement->pivot)
+            continue;
+        std::unordered_map<const Bone*, uint32_t> indices;
+        for (uint32_t i = 0; i < skeleton->bones.size(); ++i) {
+            ++Object3D::gpuMaintenanceVisits_;
+            auto* bone = skeleton->bone(i);
+            if (!bone || !indices.emplace(bone, i).second) { eligible = false; break; }
+        }
+        std::vector<uint32_t> parents;
+        uint32_t roots = 0;
+        for (uint32_t i = 0; eligible && i < skeleton->bones.size(); ++i) {
+            ++Object3D::gpuMaintenanceVisits_;
+            auto* bone = skeleton->bone(i);
+            const auto* flags = bone->ownTransformTracking();
+            if (!flags || !flags[0] || flags[2] || !bone->matrixAutoUpdate || !bone->matrixWorldAutoUpdate || bone->pivot || bone->onBeforeRender)
+                { eligible = false; break; }
+            if (bone->parent == placement) { parents.push_back(UINT32_MAX); ++roots; }
+            else {
+                const auto parent = indices.find(dynamic_cast<Bone*>(bone->parent));
+                if (parent == indices.end() || parent->second >= i) { eligible = false; break; }
+                parents.push_back(parent->second);
+            }
+            for (auto* child : bone->children) {
+                ++Object3D::gpuMaintenanceVisits_;
+                if (!indices.count(dynamic_cast<Bone*>(child))) eligible = false;
+            }
+        }
+        if (!eligible || roots != 1) continue;
+        const uint32_t base = uint32_t(plan->parents.size());
+        GpuJointScene::Rig saved;
+        saved.mesh = std::static_pointer_cast<SkinnedMesh>(rig->shared_from_this());
+        saved.placement = placement->weak_from_this(); saved.skeleton = skeleton;
+        saved.geometry = rig->geometry.get(); saved.material = rig->material.get();
+        saved.bind = rig->bindMatrix.elements; saved.outputBase = base;
+        saved.instances = std::make_shared<BufferStore>(Scalar::F32, 16);
+        plan->byMesh.emplace(rig, uint32_t(plan->rigs.size()));
+        plan->rigs.push_back(std::move(saved));
+        plan->topology.push_back({uint32_t(skeleton->bones.size()), base, base, base, base});
+        plan->parents.insert(plan->parents.end(), parents.begin(), parents.end());
+        for (uint32_t i = 0; i < skeleton->bones.size(); ++i) {
+            ++Object3D::gpuMaintenanceVisits_;
+            plan->bones.push_back(skeleton->bones[i]);
+            Matrix4 folded; folded.multiplyMatrices(skeleton->boneInverses[i], rig->bindMatrix);
+            std::array<float, 16> identity{}, inverseBind{};
+            for (int k = 0; k < 16; ++k) { identity[k] = k % 5 == 0 ? 1 : 0; inverseBind[k] = float(folded.elements[k]); }
+            plan->fixed.push_back(identity); plan->fixed.push_back(inverseBind);
+        }
+    }
+    if (plan->rigs.empty()) return nullptr;
+    plan->locals->resize(plan->parents.size() * 12);
+    if (!plan->current() || !bindGpuJoints(plan)) return nullptr;
+    // The successfully compiled GPU consumer exists before any hierarchy boundary is skipped.
+    for (uint32_t i = 0; i < plan->bones.size(); ++i) {
+        ++Object3D::gpuMaintenanceVisits_;
+        auto bone = plan->bones[i].lock();
+        if (!bone || !bone->enableDeferredTransform(plan->locals, i * 12, plan->valid)) { plan->revoke(); return nullptr; }
+        bone->gpuJointBoundary = plan->valid; bone->gpuJointHierarchy = epoch;
+    }
+    for (const auto& saved : plan->rigs) if (auto rig = saved.mesh.lock()) {
+        ++Object3D::gpuMaintenanceVisits_;
+        rig->gpuSkinValidity = plan->valid; rig->skeleton->gpuSkinValidity = plan->valid;
+    }
+    return plan;
+}
+
 Renderer::~Renderer() {
+    if (gpuJoints_) gpuJoints_->revoke();
+    gpuJointPass_.reset();
     if (mipEncoder_) wgpuCommandEncoderRelease(mipEncoder_);
     for (WGPUBindGroup group : mipGroups_) wgpuBindGroupRelease(group);
     for (WGPUTextureView view : mipViews_) wgpuTextureViewRelease(view);
@@ -761,6 +996,7 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     width = std::max(width, 1u);
     height = std::max(height, 1u);
     if (width == width_ && height == height_) return;
+    gpu_.sync();  // a posted blit still reads the targets released here
     releaseTargets();
     width_ = width;
     height_ = height;
@@ -940,6 +1176,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         layout.bytesPerRow = texture.width * texture.bytesPerTexel();
         layout.rowsPerImage = texture.height;
         const WGPUExtent3D extent = {texture.width, texture.height, texture.depth};
+        gpu_.sync();  // ordered after any submit still on the GPU thread
         wgpuQueueWriteTexture(queue_, &destination, texture.data.data(), texture.data.size(), &layout, &extent);
         textures_->uploadBytes += texture.data.size();
         WGPUTextureViewDescriptor view = {};
@@ -984,6 +1221,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         layout.bytesPerRow = texture.width * texture.bytesPerTexel();
         layout.rowsPerImage = texture.height;
         const WGPUExtent3D extent = {texture.width, texture.height, 1};
+        gpu_.sync();  // both uploads are queue work: ordered after any submit still on the GPU thread
         if (texture.external) {
             if (!textures_->copyExternal(texture.external->id, record.texture, texture.flipY))
                 throw std::runtime_error("TN_NATIVE_TEXTURE_UPLOAD_FAILED: the host could not copy its image");
@@ -1065,8 +1303,9 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
     Handle uniforms[6];
     auto encoder = wgpuDeviceCreateCommandEncoder(device_, nullptr);
     for (uint32_t face = 0; face < 6; ++face) {
-        PerspectiveCamera camera(-90, 1, 1, 10); camera.up = ups[face]; camera.lookAt(directions[face]); camera.updateMatrixWorld();
-        std::vector<uint8_t> block(fs.uniformBlockSize, 0); put(block, fs, "cubeRotation", camera.matrixWorld.elements);
+        Matrix4 rotation;
+        rotation.lookAt(Vector3{}, directions[face], ups[face]); // detached camera destruction would invalidate live joint plans
+        std::vector<uint8_t> block(fs.uniformBlockSize, 0); put(block, fs, "cubeRotation", rotation.elements);
         uniforms[face] = gpu_.createBuffer(block.size(), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
         gpu_.writeBuffer(uniforms[face], 0, block.data(), block.size());
         const auto group = bindGroup(layout, fs, uniforms[face], nullptr, nullptr, source->view, source->sampler);
@@ -1650,6 +1889,21 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm);
 }
 
+uint64_t Renderer::renderDeferred(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
+                                  std::array<double, 4> clear) {
+    return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm, true);
+}
+
+void Renderer::encodePending() {
+    if (!pendingEncode_ || !job_) throw std::logic_error("TN_RENDER_THREAD_BATON: encodePending without a deferred render");
+    encoding_ = true;
+    struct Done {
+        Renderer& r;
+        ~Done() { r.pendingEncode_ = false; r.encoding_ = false; }
+    } done{*this};
+    encodeFrame(*job_);
+}
+
 std::vector<std::shared_ptr<PipelineCompilation>> Renderer::compileAsync(std::span<const DrawItem> items,
     const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat) {
     std::vector<std::shared_ptr<PipelineCompilation>> compilation;
@@ -1659,7 +1913,10 @@ std::vector<std::shared_ptr<PipelineCompilation>> Renderer::compileAsync(std::sp
 
 uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraState& unjitteredCamera,
     const LightState& lights, std::array<double, 4> clear,
-    std::vector<std::shared_ptr<PipelineCompilation>>* compilation, WGPUTextureFormat outputFormat) {
+    std::vector<std::shared_ptr<PipelineCompilation>>* compilation, WGPUTextureFormat outputFormat, bool defer) {
+    // One frame in flight per renderer: the game thread may not plan while the encode half is pending or running.
+    if (!compilation && (pendingEncode_ || encoding_))
+        throw std::logic_error("TN_RENDER_THREAD_BATON: a frame was planned before the previous one was encoded");
     const uint64_t id = compilation ? renderId_ : ++renderId_;
     // Taken at once: a frame that throws must not leave a borrowed view armed for the next one.
     const WGPUTextureView presentTarget = compilation ? nullptr : std::exchange(presentTarget_, nullptr);
@@ -1864,6 +2121,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (auto& [name, storage] : storages_)
         if (name.rfind("probe_", 0) != 0 && name != "instances") storage.data.clear();
     for (const auto& [i, shadow] : virtualShadows_) storages_["vsmTable" + std::to_string(i)].data = shadow.atlas.table();
+    const uint64_t jointPrefix = gpuJoints_ && gpuJoints_->current() ? gpuJoints_->parents.size() * 64 : 0;
     std::vector<float>& bones = storages_["boneMatrices"].data;
     std::vector<float>& morphData = storages_["morphData"].data;
     std::vector<float>& morphInfluences = storages_["morphInfluences"].data;
@@ -1895,12 +2153,27 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
     };
     std::unordered_map<const DrawItem*, Deform> deforms;
+    std::vector<uint32_t> jointOutputs(jointPrefix ? gpuJoints_->rigs.size() : 0, UINT32_MAX);
+    uint32_t jointWritten = 0;
     for (const auto& [depthKey, drawn] : opaque) {
         if (!drawn->boneMatrices && !drawn->morphGeometry) continue;
         Deform& d = deforms[drawn];
         if (drawn->boneMatrices) {
-            d.boneBase = double(bones.size() / 16);
-            bones.insert(bones.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
+            if (drawn->gpuJoints) {
+                if (drawn->gpuJoints != gpuJoints_ || !jointPrefix) throw std::runtime_error("TN_GPU_JOINTS: invalidated before submission");
+                d.boneBase = jointWritten;
+                auto place = [&](uint32_t rig) {
+                    if (rig >= jointOutputs.size() || jointOutputs[rig] != UINT32_MAX)
+                        throw std::runtime_error("TN_GPU_JOINTS: duplicate or invalid batch rig");
+                    jointOutputs[rig] = jointWritten;
+                    jointWritten += gpuJoints_->topology[rig].count;
+                };
+                if (drawn->gpuJointRigs.empty()) place(drawn->gpuJointRig);
+                else for (uint32_t rig : drawn->gpuJointRigs) place(rig);
+            } else {
+                d.boneBase = double(jointPrefix / 64 + bones.size() / 16);
+                bones.insert(bones.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
+            }
         }
         if (const BufferGeometry* g = drawn->morphGeometry) {
             const bool normals = !g->morphNormals.empty();
@@ -2019,15 +2292,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     };
 
     // Plan: each draw's program, pipeline and uniform slices, all uniforms into one CPU block.
-    struct Planned {
-        const DrawItem* item;
-        Program* program;
-        WGPURenderPipeline pipeline;
-        uint32_t vertexOffset, fragmentOffset;
-        WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
-        WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
-    };
-    std::vector<Planned> plan, velocityPlan;
+    FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
+    if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
+    FrameJob& job = compilation ? compileJob : *job_;
+    job.plan.clear(); job.velocityPlan.clear(); job.normalPlan.clear(); job.shadowPasses.clear();
+    std::vector<Planned>& plan = job.plan;
+    std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
     frameUniforms_.clear();
     for (const auto& [depthKey, drawn] : opaque) {
@@ -2202,12 +2472,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     // Each shadow-casting light's depth pass: every caster through the shadow camera, back faces for
     // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
-    struct ShadowPass {
-        WGPUTextureView target;
-        int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
-        std::vector<Planned> draws;
-    };
-    std::vector<ShadowPass> shadowPasses;
+    std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         if (!lights.direct[i].shadow) continue;
         const DirectLight::Shadow& shadow = *lights.direct[i].shadow;
@@ -2333,7 +2598,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // pass over the same draws: each draw's own vertex stage (skinning, morphs, instancing, position
     // nodes included, so the depth matches the main pass exactly) with a fragment that writes the
     // interpolated view-space normal, depth-tested Equal against the main pass's depth.
-    std::vector<Planned> normalPlan;
+    std::vector<Planned>& normalPlan = job.normalPlan;
     const bool normalPass = postEffects_ && postEffects_->reads("normal");
     const auto planNormals = [&] {
         if (normalPass) {
@@ -2439,14 +2704,32 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     shadowMapsChanged_ = false;
     if (!frameUniforms_.empty()) gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), frameUniforms_.size());
+    bool jointBufferMoved = false;
     for (auto& [name, storage] : storages_) {
-        if (storage.data.size() * 4 > storage.capacity) {
+        const uint64_t prefix = name == "boneMatrices" ? jointPrefix : 0;
+        if (prefix + storage.data.size() * 4 > storage.capacity) {
             gpu_.destroy(storage.buffer);
-            storage.capacity = std::max<uint64_t>(storage.data.size() * 4 * 2, 64 * 1024);
+            storage.capacity = std::max<uint64_t>((prefix + storage.data.size() * 4) * 2, 64 * 1024);
+            jointBufferMoved = jointBufferMoved || (name == "boneMatrices" && jointPrefix);
             storage.buffer = gpu_.createBuffer(storage.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
             rebuildGroups();
         }
-        if (!storage.data.empty()) gpu_.writeBuffer(storage.buffer, 0, storage.data.data(), storage.data.size() * 4);
+        if (!storage.data.empty()) gpu_.writeBuffer(storage.buffer, prefix, storage.data.data(), storage.data.size() * 4);
+    }
+
+    if (jointPrefix && !compilation) {
+        if (jointBufferMoved && !bindGpuJoints(gpuJoints_)) throw std::runtime_error("TN_GPU_JOINTS: output resize refused");
+        // Culled rigs keep disjoint trailing slots; no Bone data is inspected or repacked.
+        for (uint32_t rig = 0; rig < jointOutputs.size(); ++rig) if (jointOutputs[rig] == UINT32_MAX) {
+            jointOutputs[rig] = jointWritten;
+            jointWritten += gpuJoints_->topology[rig].count;
+        }
+        if (!gpuJointPass_ || !gpuJointPass_->remapOutputs(jointOutputs) ||
+            gpu_.writeBuffer(gpuJointLocals_, 0, gpuJoints_->locals->data(), gpuJoints_->locals->size() * 4) != GpuStatus::Ok ||
+            !gpuJointPass_->dispatch(encoder)) {
+            gpuJoints_->revoke();
+            throw std::runtime_error("TN_GPU_JOINTS: dispatch refused before submission");
+        }
     }
 
     // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per
@@ -2572,6 +2855,106 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     planNormals();
 
+    if (!compilation && gpuJoints_ && (!gpuJoints_->drawUse.empty() || Object3D::poseObserver)) {
+        const auto mark = [](const Planned& p) {
+            const auto& item = *p.item;
+            if (!item.gpuJoints || !item.instanceCount) return;
+            auto& use = item.gpuJoints->drawUse;
+            const auto markRig = [&](uint32_t rig) {
+                if (!use.empty()) use.at(rig) = 1;
+                if (Object3D::poseObserver) {
+                    const auto& topology = item.gpuJoints->topology.at(rig);
+                    for (uint32_t i = 0; i < topology.count; ++i)
+                        if (const auto bone = item.gpuJoints->bones.at(topology.inputBase + i).lock()) Object3D::poseObserver(*bone, 2);
+                }
+            };
+            if (item.gpuJointRigs.empty()) markRig(item.gpuJointRig);
+            else for (const auto rig : item.gpuJointRigs) markRig(rig);
+        };
+        for (const auto& p : plan) mark(p);
+        for (const auto& pass : shadowPasses) for (const auto& p : pass.draws) mark(p);
+    }
+
+    // The draws' stores are synced here, with the game thread's view of them: encodeFrame resolves
+    // handles from the cache and never reads a store, which JavaScript may write meanwhile (PRD-613).
+    // The main plan's six stores sync below, with the bundle key; the shadow draws' sync here, and any
+    // store beyond the six only when the draw's program names it, so nothing unused is uploaded.
+    const auto syncSix = [&](const DrawItem& item) {
+        for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights})
+            if (store) geometry_->cache.sync(*store, store == item.indices ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex);
+    };
+    const auto syncNamed = [&](const Planned& p) {
+        const DrawItem& item = *p.item;
+        if (!item.colors && !item.instanceMatrices && !item.instanceColors && item.attributes.empty()) return;
+        for (const shader::VertexAttribute& a : p.program->vertex.attributes)
+            if (BufferStore* source = vertexSourceOf(item, a)) geometry_->cache.sync(*source, WGPUBufferUsage_Vertex);
+    };
+    for (const Planned& p : plan) syncNamed(p);
+    for (const ShadowPass& pass : shadowPasses)
+        for (const Planned& p : pass.draws) {
+            syncSix(*p.item);
+            syncNamed(p);
+        }
+    // A bundle references buffers and offsets, not their contents. Matrix, colour, camera and
+    // light writes therefore leave it valid; changed draw order, resources or counts rebuild it.
+    job.bundleKey.clear();
+    for (const Planned& p : plan) {
+        const DrawItem& item = *p.item;
+        job.bundleKey.insert(job.bundleKey.end(), {reinterpret_cast<uintptr_t>(p.pipeline),
+            reinterpret_cast<uintptr_t>(p.vertexGroup ? p.vertexGroup : p.program->groups[0]),
+            reinterpret_cast<uintptr_t>(p.mapGroup ? p.mapGroup : p.program->groups[1]),
+            p.vertexOffset, p.fragmentOffset, item.instanceCount});
+        for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights}) {
+            const Handle handle = store ? geometry_->cache.sync(*store,
+                store == item.indices ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex) : Handle{};
+            job.bundleKey.insert(job.bundleKey.end(), {handle.type, handle.context, handle.index, handle.generation,
+                store ? store->byteLength() : 0, store ? static_cast<uintptr_t>(store->scalar()) : 0});
+        }
+    }
+    job.bundleKey.push_back(static_cast<std::size_t>(
+        std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
+        plan.begin()));
+    // A post pass's resolution scale and uniform nodes are the game's to write: read them now, encode uses the copy.
+    if (postEffects_ && postEffects_->syncScales()) releaseOutputGroup();
+    if (postEffects_) postEffects_->captureUniforms();
+    if (post_)
+        for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
+    job.encoder = encoder;
+    job.color = color;
+    job.depth = depth;
+    job.sceneTimes = sceneTimes;
+    job.timed = timed;
+    job.normalPass = normalPass;
+    job.camera = camera;
+    job.pageClear = pageClear;
+    job.presentTarget = presentTarget;
+    job.presentFormat = presentFormat;
+    pendingEncode_ = true;
+    if (defer) return id;
+    encodePending();
+    return id;
+}
+
+void Renderer::encodeFrame(FrameJob& job) {
+    // The encode half (PRD-613): records and submits what renderPrepared planned. It reads the job,
+    // the renderer's own GPU state and the geometry cache's resolved handles, and nothing the game writes.
+    std::vector<Planned>& plan = job.plan;
+    std::vector<Planned>& velocityPlan = job.velocityPlan;
+    std::vector<Planned>& normalPlan = job.normalPlan;
+    std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
+    WGPUCommandEncoder encoder = job.encoder;
+    WGPURenderPassColorAttachment& color = job.color;
+    WGPURenderPassDepthStencilAttachment& depth = job.depth;
+    const bool timed = job.timed, normalPass = job.normalPass;
+    const CameraState& camera = job.camera;
+    WGPURenderPipeline pageClear = job.pageClear;
+    const WGPUTextureView presentTarget = job.presentTarget;
+    const WGPUTextureFormat presentFormat = job.presentFormat;
+    WGPURenderPassDescriptor passDesc = {};
+    passDesc.colorAttachmentCount = 1;
+    passDesc.colorAttachments = &color;
+    passDesc.depthStencilAttachment = &depth;
+    if (timed) passDesc.timestampWrites = &job.sceneTimes;
     // Encode: state changes only where they change; per draw, its dynamic offsets and the draw. The
     // shadow passes first, so the main pass samples this frame's maps.
     WGPURenderPipeline bound = nullptr;
@@ -2593,23 +2976,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         for (const shader::VertexAttribute& a : p.program->vertex.attributes) {
             // instanceMatrix0..3 are the columns of one buffer of mat4s, bound at 16-byte steps.
             const bool column = a.name.rfind("instanceMatrix", 0) == 0;
-            BufferStore* source = a.name == "position"        ? item.positions
-                                  : a.name == "normal"        ? item.normals
-                                  : a.name == "uv"            ? item.uvs
-                                  : a.name == "color"         ? item.colors
-                                  : a.name == "instanceColor" ? item.instanceColors
-                                  : a.name == "skinIndex"     ? item.skinIndices
-                                  : a.name == "skinWeight"    ? item.skinWeights
-                                  : column                   ? item.instanceMatrices : nullptr;
-            // Any other name is one of the geometry's own attributes (TSL attribute(name)).
-            for (const DrawItem::CustomAttribute& custom : item.attributes)
-                if (!source && custom.name == a.name) source = custom.store;
+            BufferStore* source = vertexSourceOf(item, a);
             if (!source) throw std::runtime_error("TN_NATIVE_ATTRIBUTE_MISSING: " + a.name);
-            BufferStore& store = *source;
+            const BufferStore& store = *source;
             const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
-            const Handle buffer = geometry_->cache.sync(store, WGPUBufferUsage_Vertex);
             if (a.location < std::size(boundVertex) && boundVertex[a.location] == &store) continue;
-            TN_ENCODE(SetVertexBuffer, a.location, geometry_->gpu.buffer(buffer), offset, store.byteLength() - offset);
+            const auto resolved = geometry_->cache.resolved(store);
+            TN_ENCODE(SetVertexBuffer, a.location, geometry_->gpu.buffer(resolved.buffer), offset, resolved.bytes - offset);
             if (a.location < std::size(boundVertex)) boundVertex[a.location] = &store;
         }
         TN_ENCODE(SetBindGroup, 0, p.vertexGroup ? p.vertexGroup : p.program->groups[0], 1, &p.vertexOffset);
@@ -2618,19 +2991,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         TN_ENCODE(SetBindGroup, 1, p.mapGroup ? p.mapGroup : p.program->groups[1],
                   fragmentBlock ? 1 : 0, &p.fragmentOffset);
         if (item.indices) {
-            const Handle indices = geometry_->cache.sync(*item.indices, WGPUBufferUsage_Index);
-            const bool wide = item.indices->scalar() == Scalar::U32;
+            const auto indices = geometry_->cache.resolved(*item.indices);
+            const bool wide = indices.scalar == Scalar::U32;
             if (boundIndex != item.indices) {
-                TN_ENCODE(SetIndexBuffer, geometry_->gpu.buffer(indices),
+                TN_ENCODE(SetIndexBuffer, geometry_->gpu.buffer(indices.buffer),
                           wide ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16, 0,
-                          (item.indices->byteLength() + 3) & ~uint64_t{3});
+                          (indices.bytes + 3) & ~uint64_t{3});
                 boundIndex = item.indices;
             }
-            const uint32_t count = static_cast<uint32_t>(item.indices->byteLength() / (wide ? 4 : 2));
+            const uint32_t count = static_cast<uint32_t>(indices.bytes / (wide ? 4 : 2));
             TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
             (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
         } else {
-            const uint32_t count = static_cast<uint32_t>(item.positions->byteLength() / 12);
+            const uint32_t count = static_cast<uint32_t>(geometry_->cache.resolved(*item.positions).bytes / 12);
             TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
             (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);
         }
@@ -2699,28 +3072,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
     bound = nullptr;
     boundIndex = nullptr;
-    // A bundle references buffers and offsets, not their contents. Matrix, colour, camera and
-    // light writes therefore leave it valid; changed draw order, resources or counts rebuild it.
-    std::vector<uint64_t> bundleKey;
-    for (const Planned& p : plan) {
-        const DrawItem& item = *p.item;
-        bundleKey.insert(bundleKey.end(), {reinterpret_cast<uintptr_t>(p.pipeline),
-            reinterpret_cast<uintptr_t>(p.vertexGroup ? p.vertexGroup : p.program->groups[0]),
-            reinterpret_cast<uintptr_t>(p.mapGroup ? p.mapGroup : p.program->groups[1]),
-            p.vertexOffset, p.fragmentOffset, item.instanceCount});
-        for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights}) {
-            const Handle handle = store ? geometry_->cache.sync(*store,
-                store == item.indices ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex) : Handle{};
-            bundleKey.insert(bundleKey.end(), {handle.type, handle.context, handle.index, handle.generation,
-                store ? store->byteLength() : 0, store ? static_cast<uintptr_t>(store->scalar()) : 0});
-        }
-    }
     // three's viewport textures copy the frame at the first draw that reads one: the main pass splits
     // there, the scene colour and depth are copied, and the rest draws in a second pass that loads them.
     const std::size_t viewportSplit = static_cast<std::size_t>(
         std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
         plan.begin());
-    bundleKey.push_back(viewportSplit);
+    const std::vector<uint64_t>& bundleKey = job.bundleKey;
     if (!mainBundle_ || bundleKey != mainBundleKey_) {
         if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
         if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
@@ -2750,7 +3107,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         lastFrame_.shadowSkinned = shadowStats;
         lastFrame_.shadowDraws = shadowDraws;
         lastFrame_.shadowTriangles = shadowTriangles;
-        mainBundleKey_ = std::move(bundleKey);
+        mainBundleKey_ = std::move(job.bundleKey);
     } else {
         lastFrame_.draws = mainBundleStats_.draws;
         lastFrame_.triangles = mainBundleStats_.triangles;
@@ -2817,7 +3174,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
         traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
-    if (postEffects_ && postEffects_->syncScales()) releaseOutputGroup();
     if (postEffects_) {
         // three's Info counts each fullscreen effect pass as one draw of one triangle, like the output pass below.
         const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_);
@@ -2847,7 +3203,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             ++t->samples;
         });
     }
-    return id;
+    {
+        std::lock_guard lock(frameMailMutex_);
+        frameMail_ = lastFrame_;
+    }
 }
 
 void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureView present, WGPUTextureFormat presentFormat) {
@@ -2856,8 +3215,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureVie
     WGPURenderPipeline pipeline = pipelines_.get(outputVertex_, &outputFragment_, outputTarget);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
-    if (post_)
-        for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
+    // post_->live was copied into postUniforms_ while the frame was planned: the game writes those nodes.
     postUniforms_["time"] = {frameTime_};
     for (const auto& field : outputFragment_.uniforms) {
         const auto value = postUniforms_.find(field.name);
@@ -3040,21 +3398,43 @@ void Renderer::submit(WGPUCommandBuffer commands) {
     gpu_.submit(commands);
 }
 
-bool Renderer::blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat format) {
-    if (!target || !colorView_)
-        return false;
-    // The finished frame is already tone mapped and encoded: the blit copies it, never re-encodes it.
-    WGPURenderPipeline pipeline = copyPipeline(format, 0);
-    if (!pipeline)
-        return false;
-    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
-    WGPUBindGroup group = bindGroup(layout, blitFragment_, outputUniforms_, colorView_, outputSampler_);
-    wgpuBindGroupLayoutRelease(layout);
-    if (!group)
-        return false;
+bool Renderer::blitTo(WGPUQueue, WGPUTextureView target, WGPUTextureFormat format) {
+    if (!target) return false;
+    auto plan = prepareBlit(format);
+    if (!plan) return false;
+    submit(encodeBlit(*plan, target));
+    return true;
+}
 
+std::optional<Renderer::BlitPlan> Renderer::prepareBlit(WGPUTextureFormat format) {
+    if (!colorView_) return std::nullopt;
+    // The finished frame is already tone mapped and encoded: the blit copies it, never re-encodes it.
+    BlitPlan plan;
+    plan.device = device_;
+    plan.pipeline = copyPipeline(format, 0);
+    if (!plan.pipeline) return std::nullopt;
+    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(plan.pipeline, 0);
+    plan.group = bindGroup(layout, blitFragment_, outputUniforms_, colorView_, outputSampler_);
+    wgpuBindGroupLayoutRelease(layout);
+    if (!plan.group) return std::nullopt;
+    plan.triangle = gpu_.buffer(outputTriangle_);
+    plan.location = blitVertex_.attributes.at(0).location;
+    // The UI overlay's frame over the world, in the same pass: the same copy program samples it, and
+    // premultiplied "over" blending keeps whatever the page left transparent.
+    if (overlayView_) {
+        plan.over = copyPipeline(format, 3);
+        if (plan.over) {
+            WGPUBindGroupLayout overLayout = wgpuRenderPipelineGetBindGroupLayout(plan.over, 0);
+            plan.overGroup = bindGroup(overLayout, blitFragment_, outputUniforms_, overlayView_, outputSampler_);
+            wgpuBindGroupLayoutRelease(overLayout);
+        }
+    }
+    return plan;
+}
+
+WGPUCommandBuffer Renderer::encodeBlit(BlitPlan& plan, WGPUTextureView target) {
     WGPUCommandEncoderDescriptor encoderDesc = {};
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(plan.device, &encoderDesc);
     WGPURenderPassColorAttachment color = {};
     color.view = target;
     color.loadOp = WGPULoadOp_Clear;
@@ -3067,35 +3447,24 @@ bool Renderer::blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
-    wgpuRenderPassEncoderSetPipeline(pass, pipeline);
-    wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
-    wgpuRenderPassEncoderSetVertexBuffer(pass, blitVertex_.attributes.at(0).location,
-                                         gpu_.buffer(outputTriangle_), 0, 24);
+    wgpuRenderPassEncoderSetPipeline(pass, plan.pipeline);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, plan.group, 0, nullptr);
+    wgpuRenderPassEncoderSetVertexBuffer(pass, plan.location, plan.triangle, 0, 24);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-    // The UI overlay's frame over the world, in the same pass: the same copy program samples it, and
-    // premultiplied "over" blending keeps whatever the page left transparent.
-    WGPUBindGroup overlayGroup = nullptr;
-    if (overlayView_) {
-        WGPURenderPipeline over = copyPipeline(format, 3);
-        if (over) {
-            WGPUBindGroupLayout overLayout = wgpuRenderPipelineGetBindGroupLayout(over, 0);
-            overlayGroup = bindGroup(overLayout, blitFragment_, outputUniforms_, overlayView_, outputSampler_);
-            wgpuBindGroupLayoutRelease(overLayout);
-        }
-        if (overlayGroup) {
-            wgpuRenderPassEncoderSetPipeline(pass, over);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, overlayGroup, 0, nullptr);
-            wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-        }
+    if (plan.overGroup) {
+        wgpuRenderPassEncoderSetPipeline(pass, plan.over);
+        wgpuRenderPassEncoderSetBindGroup(pass, 0, plan.overGroup, 0, nullptr);
+        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
     }
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
     WGPUCommandBufferDescriptor commandDesc = {};
-    submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, &commandDesc);
     wgpuCommandEncoderRelease(encoder);
-    wgpuBindGroupRelease(group);
-    if (overlayGroup) wgpuBindGroupRelease(overlayGroup);
-    return true;
+    wgpuBindGroupRelease(plan.group);
+    if (plan.overGroup) wgpuBindGroupRelease(plan.overGroup);
+    plan.group = plan.overGroup = nullptr;
+    return commands;
 }
 
 void Renderer::setOverlay(const uint8_t* pixels, uint32_t width, uint32_t height, uint64_t version, uint32_t stride,
@@ -3133,7 +3502,7 @@ void Renderer::setOverlay(const uint8_t* pixels, uint32_t width, uint32_t height
         for (uint32_t y = 0; y < height; ++y) std::memcpy(overlayRows_.data() + size_t(y) * row, pixels + size_t(y) * stride, row);
         pixels = overlayRows_.data();
     }
-    gpu_.writeTexture(overlay_, pixels, uint64_t(row) * height);
+    gpu_.writeTexture(overlay_, pixels, uint64_t(row) * height, true);  // a full-screen copy per HUD change was 4% of Midway
     overlayVersion_ = version;
     ++overlayUploads_;
 }

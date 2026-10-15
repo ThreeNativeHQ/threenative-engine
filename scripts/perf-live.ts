@@ -8,6 +8,7 @@ import path from "node:path";
 import { softwareAdapterName } from "../packages/playtest/src/runner/browser.js";
 import { type IPairRow, frameRates, pairRows } from "./engine-load-test/pair.js";
 import { type IRunReport, parseRunReport, summarize } from "./engine-load-test/report.js";
+import { midwayState } from "./midway-bench/kpis.js";
 
 export interface IRow {
   arm: string;
@@ -501,7 +502,7 @@ export function webOf(rows: readonly IRow[]): {
 }
 
 /** The KPI target: native costs at most half the legacy CPU per frame. */
-export const TARGET = 2;
+export const TARGET = 3; // owner, 2026-10-13: aim past the v1 KPI (2x) at 3x native desktop
 /** The hero turns yellow when the newest R5 KPI point is older than this. */
 export const STALE_MS = 6 * 3_600_000;
 /** An R2/R3 point counts as "newer" only when it lands more than this after R5 (one measuring session). */
@@ -564,6 +565,9 @@ export function phaseGapOf(legacy: Record<string, number>, native: Record<string
   return best;
 }
 
+/** The lane a point was measured on: a `gpu-` set ran on the real display, everything else on Xvfb. */
+const laneOf = (label: string): string => (/(^|\/)gpu-/u.test(label) ? "real GPU" : "Xvfb");
+
 /** Everything the hero needs, decided here so the page only draws it. */
 export function heroOf(points: readonly IPoint[], now: number) {
   const series = r5Points(points);
@@ -589,7 +593,11 @@ export function heroOf(points: readonly IPoint[], now: number) {
       ...(phases ? { phases } : {}),
     };
   const ratio = latest.ratioNoPresent;
-  const previous = series.at(-2);
+  const lane = laneOf(latest.label);
+  const previous = series
+    .slice(0, -1)
+    .reverse()
+    .find((p) => laneOf(p.label) === lane);
   const reason = staleReason(points, now);
   return {
     status: (reason === undefined ? valueColor(ratio) : "yellow") as Status,
@@ -597,6 +605,7 @@ export function heroOf(points: readonly IPoint[], now: number) {
     ratio,
     sentence: sentenceOf(ratio),
     label: latest.label,
+    lane,
     t: latest.t,
     now,
     invalid: latest.invalid,
@@ -634,6 +643,15 @@ export async function loadRuns(rootPaths: readonly string[] = roots): Promise<IL
     }
   }
   return runs;
+}
+
+/** One shared midwayState() at a time: the first call parses ~570 MB of run logs (20-45 s), and overlapping polls must not each repeat it. */
+let midwayInFlight: ReturnType<typeof midwayState> | undefined;
+function midwayOnce() {
+  midwayInFlight ??= midwayState().finally(() => {
+    midwayInFlight = undefined;
+  });
+  return midwayInFlight;
 }
 
 async function allRows(): Promise<IRow[]> {
@@ -776,6 +794,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     } else if (req.url?.startsWith("/api/web")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(webOf(await allRows())));
+    } else if (req.url?.startsWith("/api/midway")) {
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify(await midwayOnce()));
+    } else if (req.url?.startsWith("/midway")) {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(await readFile(new URL("./midway-bench/dashboard.html", import.meta.url), "utf8"));
     } else if (req.url?.startsWith("/api/points")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(pointsOf(await allRows())));
@@ -783,7 +807,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(await readFile(new URL("./perf-live.html", import.meta.url), "utf8"));
     }
-  }).listen(port, "127.0.0.1", () =>
-    process.stdout.write(`perf live: http://127.0.0.1:${port}  (watching ${roots.join(", ")})\n`),
-  );
+  }).listen(port, "127.0.0.1", () => {
+    process.stdout.write(`perf live: http://127.0.0.1:${port}  (watching ${roots.join(", ")})\n`);
+    void midwayOnce().catch(() => undefined); // warm the per-run parse cache before the first page load
+  });
 }

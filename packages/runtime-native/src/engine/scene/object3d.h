@@ -235,6 +235,7 @@ private:
     static TransformSlot acquireTransform();
     void releaseTransform();
     TransformSlot transform_;
+    uint64_t lastWorldEvaluation_ = 0;
 public:
     /**
      * Where the transform columns sit in a storage page, in bytes: what a language that views the
@@ -247,6 +248,38 @@ public:
         uint32_t vectorStride, eulerStride, quaternionStride, matrixStride;
     };
     [[nodiscard]] static TransformLayout transformLayout();
+    // Internal V8 admission only; public C++/Wasm objects remain eager. No cache consumes this yet.
+    void enableTrackedTransform();
+    void markLocalTransformDirty();
+    [[nodiscard]] uint8_t* ownTransformTracking() const;
+    virtual void materializeLocalTransform() {}
+    virtual void prepareLocalTransformWrite() { materializeLocalTransform(); }
+    virtual void exposeLocalTransform() {}
+    // Owning-thread, default-OFF diagnostic hooks; bits: CPU read=1, skin draw=2, unknown=4.
+    static thread_local bool poseObservationEnabled;
+    inline static thread_local void (*poseObserver)(const Object3D&, uint8_t) = nullptr;
+    inline static thread_local void (*poseObservationReport)() = nullptr;
+    [[nodiscard]] virtual bool hasDeferredTransformPublication() const { return false; }
+    void joinDeferredWorldTransform();
+    // Renderer-owned Bone boundaries only; explicit world queries always use the eager chain.
+    std::weak_ptr<bool> gpuJointBoundary;
+    uint64_t gpuJointHierarchy = 0;
+    bool skipsGpuJointSubtree() const {
+        const auto valid = gpuJointBoundary.lock();
+        return valid && *valid && gpuJointHierarchy == hierarchyVersion();
+    }
+    inline static uint64_t matrixEvaluations_ = 0, joinDependencyVisits_ = 0, gpuBoundaryVisits_ = 0;
+    // Executed GPU-lazy projection, validation, and admission/revocation node inspections.
+    inline static uint64_t gpuProjectionVisits_ = 0, gpuValidationVisits_ = 0, gpuMaintenanceVisits_ = 0;
+    [[nodiscard]] static uint64_t joinDependencyVisits() { return joinDependencyVisits_; }
+    [[nodiscard]] static uint64_t gpuBoundaryVisits() { return gpuBoundaryVisits_; }
+    [[nodiscard]] static uint64_t matrixEvaluations() { return matrixEvaluations_; }
+    [[nodiscard]] uint64_t lastWorldEvaluation() const { return lastWorldEvaluation_; }
+
+    static void prepareTransformView(const void* address);
+    // Stable bytes: tracked, TRS dirty, irreversibly escaped. Shares the transform slot's lifetime.
+    [[nodiscard]] static uint8_t* transformTrackingAddress(const void* address);
+
     /**
      * A language view of a transform column holds a lease on its slot: an object that dies meanwhile
      * keeps the slot out of reuse (and its page alive) until every lease is returned, so a view never
@@ -313,6 +346,9 @@ public:
     bool matrixAutoUpdate = true;
     bool matrixWorldAutoUpdate = true;
     bool matrixWorldNeedsUpdate = false;
+    /** three's `static`. core's markStatic sets it on every object of a frozen subtree, and turns off the frozen
+     *  root's matrixWorldAutoUpdate: that pair is where updateMatrixWorldVisible stops (static-transform.ts). */
+    bool isStatic = false;
     bool frustumCulled = true;
     /** core's alwaysRender() marker, mirrored for the engine's projected-size cull (projected_cull.h). */
     bool alwaysRender = false;
@@ -414,6 +450,16 @@ public:
     /** Renderer traversal can consume a flat child immediately after updating it. */
     bool updateMatrixWorldSelf(bool force = false, bool identityParent = false, bool plain = false);
     virtual void updateWorldMatrix(bool updateParents, bool updateChildren, bool force = false);
+    /**
+     * core's per-frame MatrixWorldPass (packages/core/src/matrix-world.ts), natively: three's walk, except that
+     * with `prune` a hidden node composes only itself and its subtree waits for the first frame it shows
+     * (forced then if it was skipped dirty). A hidden node with a Bone under it is walked whole, since a visible
+     * SkinnedMesh draws with those matrices. A frozen root (`isStatic` with matrixWorldAutoUpdate off) is a leaf in
+     * either mode: markStatic composed its subtree and a re-arm composes it again. Answers the nodes visited.
+     */
+    uint32_t updateMatrixWorldVisible(bool force, bool prune);
+    /** What a subclass derives from its world matrix (a camera's view, a skinned mesh's bind inverse), after a walk. */
+    virtual void afterMatrixWorld() {}
 
     /** three's `copy` without its `recursive` branch: fields only, because `clone` is not ported. */
     Object3D& copy(const Object3D& source);
@@ -425,9 +471,11 @@ private:
     static void onRotationChange(void* context);
     static void onQuaternionChange(void* context);
 
-    bool visible_ = true;
+    bool visible_ = true;  // visible_, castShadow_, receiveShadow_: one block the ABI reads by offset (flags())
     bool castShadow_ = false;
     bool receiveShadow_ = false;
+    bool worldStale_ = false;  // hidden and skipped while its world matrix changed: force its subtree when shown
+    int8_t holdsBones_ = -1;   // a Bone anywhere under this node: -1 not yet asked (a rig is built whole)
     int renderOrder_ = 0;
     Layers layers_;
     uint64_t id_ = 0;

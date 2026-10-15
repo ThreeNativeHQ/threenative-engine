@@ -2,9 +2,10 @@
 // packages/core/src/projection-skinned.ts, method for method, over the ported Skeleton and
 // SkinnedMesh. The multiply order is the TS one, -ffp-contract=off keeps it from being fused, and
 // every store rounds exactly where the TS store rounds: the palette is float32, the bind scratch
-// float64. Nothing here touches a material, a GPU buffer or a draw, and no path throws.
+// float64. No path owns a GPU buffer or a draw, and no path throws.
 
 #include "engine/animation/skinning/palette.h"
+#include "engine/scene/material.h"
 
 #include <algorithm>
 #include <cmath>
@@ -174,6 +175,65 @@ void SkinnedPalette::write(std::uint32_t slot, SkinnedMesh& rig, bool updateSkel
             multiplyAffine(prefix, 0, current_.data(), at, current_.data(), at);
         }
     }
+}
+
+const Object3D* SkinnedPalette::writeRelative(std::uint32_t slot, SkinnedMesh& rig) {
+    write(slot, rig, false); // The render database already updated the skeleton this frame.
+    if (velocity_ || !rig.attached || !rig.skeleton || rig.skeleton->bones.empty() ||
+        !isSimilarityTransform(rig.matrixWorld.elements.data()) || !rig.material || rig.material->nodeMaterial ||
+        rig.material->positionNode)
+        return nullptr;
+    for (const auto* node : rig.material->nodes.pointers())
+        if (node)
+            return nullptr;
+    const auto tracked = [](const Object3D* object) {
+        const auto* flags = Object3D::transformTrackingAddress(&object->position);
+        return flags && flags[0] && !flags[2] && !object->onBeforeRender;
+    };
+    // Attached skinning cancels meshWorld against bindMatrixInverse. Refuse stale/custom binds.
+    Matrix4 cancellation;
+    cancellation.multiplyMatrices(rig.matrixWorld, rig.bindMatrixInverse);
+    for (int k = 0; k < 16; ++k)
+        if (!std::isfinite(cancellation.elements[k]) ||
+            std::abs(cancellation.elements[k] - (k % 5 == 0 ? 1.0 : 0.0)) > 1e-8)
+            return nullptr;
+    for (const Object3D* ancestor = &rig; ancestor; ancestor = ancestor->parent)
+        if (!tracked(ancestor))
+            return nullptr;
+    // Find the lowest actual mesh/bone ancestor; the Scene is never a rig placement.
+    const Object3D* root = &rig;
+    for (; root && root->type() != "Scene"; root = root->parent) {
+        bool containsBones = root->type() != "Bone";
+        for (std::size_t i = 0; containsBones && i < rig.skeleton->bones.size(); ++i) {
+            const Object3D* bone = rig.skeleton->bone(i);
+            if (!bone) {
+                containsBones = false;
+                break;
+            }
+            for (; bone && bone != root; bone = bone->parent)
+                if (!tracked(bone))
+                    return nullptr;
+            containsBones = bone == root;
+        }
+        if (containsBones)
+            break;
+    }
+    if (!root || root->type() == "Scene" || !isSimilarityTransform(root->matrixWorld.elements.data()))
+        return nullptr;
+    for (double element : root->matrixWorld.elements)
+        if (!std::isfinite(element))
+            return nullptr;
+    if (root->matrixWorld.elements[15] != 1)
+        return nullptr;
+    Matrix4 inverse;
+    inverse.copy(root->matrixWorld).invert();
+    const std::size_t begin = static_cast<std::size_t>(slot) * bones_ * 16;
+    // W = boneWorld * inverseBind * bind. Store R^-1 * W; the instance supplies R.
+    for (std::uint32_t bone = 0; bone < bones_; ++bone) {
+        const std::size_t at = begin + static_cast<std::size_t>(bone) * 16;
+        multiplyAffine(inverse.elements.data(), 0, current_.data(), at, current_.data(), at);
+    }
+    return root;
 }
 
 void SkinnedPalette::begin() {

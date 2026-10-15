@@ -150,5 +150,42 @@ void lifetimeDeferredGpu() {
 
 }  // namespace
 
-TN_TEST_MAIN({"upload_readback", uploadReadback}, {"deferred_destroy", deferredDestroy}, {"async_only", asyncOnly},
+// PRD-610 AC-9: with a GPU thread, submits and maps run there in order, and a queue write from the
+// game thread never lands before a submit still waiting on it. The thread is held busy first, so a
+// write that skipped the wait would overwrite the bytes the first read copies.
+void gpuThreadOrdering() {
+    Device device;
+    CHECK(device.ok);
+    if (!device.ok) return;
+    GpuResources gpu(device.context.getInstance(), device.context.getDevice(), device.context.getQueue(),
+                     device.events, 1);
+    auto thread = std::make_shared<tn::engine::GpuThread>();
+    gpu.setThread(thread);
+    CHECK(gpu.thread() == thread.get());
+
+    const std::vector<uint8_t> first(256, 0x11), second(256, 0x22);
+    const Handle buffer = gpu.createBuffer(first.size(), WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+    CHECK(gpu.writeBuffer(buffer, 0, first.data(), first.size()) == GpuStatus::Ok);
+    gpu.post([] { std::this_thread::sleep_for(std::chrono::milliseconds(50)); });
+    std::vector<uint8_t> readFirst, readSecond;
+    bool firstDone = false, secondDone = false;
+    CHECK(gpu.readBuffer(buffer, 0, first.size(), [&](GpuStatus s, std::vector<uint8_t> out) {
+        CHECK(s == GpuStatus::Ok);
+        readFirst = std::move(out);
+        firstDone = true;
+    }) == GpuStatus::Ok);
+    CHECK(gpu.writeBuffer(buffer, 0, second.data(), second.size()) == GpuStatus::Ok);
+    CHECK(gpu.readBuffer(buffer, 0, second.size(), [&](GpuStatus s, std::vector<uint8_t> out) {
+        CHECK(s == GpuStatus::Ok);
+        readSecond = std::move(out);
+        secondDone = true;
+    }) == GpuStatus::Ok);
+    CHECK(pump(gpu, device.events, [&] { return firstDone && secondDone; }));
+    CHECK(readFirst == first);
+    CHECK(readSecond == second);
+    gpu.sync();
+    CHECK(thread->ran() >= 5);  // the busy job, two submits, two maps, and the polls
+}
+
+TN_TEST_MAIN({"upload_readback", uploadReadback}, {"deferred_destroy", deferredDestroy}, {"async_only", asyncOnly}, {"gpu_thread_ordering", gpuThreadOrdering},
              {"lifetime_deferred_gpu", lifetimeDeferredGpu})

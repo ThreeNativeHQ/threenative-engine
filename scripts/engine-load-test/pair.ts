@@ -24,6 +24,7 @@ import {
   rungKey,
   summarize,
 } from "./report.js";
+import { type IVisualParity, visualParity } from "./visual.js";
 
 /** Per-rung series a report carries beside `frameMs`; the arms must carry the same ones. */
 const SERIES = ["stepMs", "collapseMs"] as const;
@@ -76,6 +77,7 @@ export const HOST_PROJECTION_CROSSING_BUDGET = 256;
 export interface IPairVerdict {
   problem?: string;
   rows: IParityRow[];
+  visual: IVisualParity[];
 }
 
 /**
@@ -138,16 +140,25 @@ export function pairVerdict(
       right: [...new Set(right.flatMap(seriesFamilies))].join(","),
     });
   }
+  const visual = visualParity(left, right);
+  for (const item of visual)
+    shared.push({
+      facet: `${item.key} round ${item.round} repeat ${item.repeat} visual${item.error === undefined ? "" : ` ${item.error}`}${item.waived ? " (waived: TN_BENCH_WAIVE=visual)" : ""}`,
+      left: item.score === null ? "missing" : item.score.toFixed(4),
+      right: `<= ${item.threshold}`,
+      pass: item.waived || item.error === undefined,
+    });
   const rows = parityRows(left.map(reportFacets), right.map(reportFacets), {
     expected: { "adapter class": "hardware", "frame clock": "moving", vsync: "off" },
     required: ["adapter class", "frame clock", "surface", "vsync"],
     shared,
   });
   const problem = parityProblem(rows, labels);
-  return { ...(problem === undefined ? {} : { problem }), rows };
+  return { ...(problem === undefined ? {} : { problem }), rows, visual };
 }
 
 export interface IPairRow {
+  visual: { score: number | null; threshold: number; waived: boolean };
   key: string;
   left: IRungSummary & { fps: number; fpsLow1: number };
   /** Timing ratios are left over right; FPS is right over left. Above 1 means the right arm is faster. */
@@ -235,6 +246,13 @@ export function pairRows(
   labels: readonly [string, string],
 ): IPairRow[] {
   const verdict = pairVerdict(left, right, labels);
+  const failed = verdict.visual.find((item) => item.error !== undefined && !item.waived);
+  if (failed?.error !== undefined)
+    throw new BenchError(
+      failed.error,
+      `${failed.key} round ${failed.round} repeat ${failed.repeat}: visual ${failed.score ?? "missing"} > ${failed.threshold}`,
+      1,
+    );
   if (verdict.problem !== undefined) throw new BenchError("TN_BENCH_PARITY", verdict.problem, 1);
   const a = pooled(left);
   const b = pooled(right);
@@ -249,7 +267,15 @@ export function pairRows(
         const [from, to] = [l.phases?.[name]?.p50, r.phases?.[name]?.p50];
         if (from !== undefined && to !== undefined && from > 0) phaseRatio[name] = to / from;
       }
+      const visual = verdict.visual.filter((item) => item.key === key);
       return {
+        visual: {
+          score: visual.some((item) => item.score === null)
+            ? null
+            : Math.max(...visual.map((item) => item.score as number)),
+          threshold: (visual[0] as IVisualParity).threshold,
+          waived: (visual[0] as IVisualParity).waived,
+        },
         key,
         left: l,
         phaseRatio,
@@ -295,8 +321,11 @@ export function renderPairMarkdown(
     `- host load (1 min, \`!\` = invalid-absolute above half the cores): ${labels[0]} ${load(left)}; ${labels[1]} ${load(right)}`,
     `- ratio is ${labels[0]} over ${labels[1]}: above 1 means ${labels[1]} is cheaper`,
     "",
-    "| rung | arm | p50 ms | p95 ms | p99 ms | fps | 1% low fps | hitches | draws | compiles | cpu ms/frame (inclusive) | thread cpu p50 (no present) | present cpu p50 | crossings p50 | ratio p50 | ratio cpu | ratio thread cpu |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ...((process.env.TN_BENCH_WAIVE ?? "").split(",").includes("visual")
+      ? ["- WAIVED: TN_BENCH_WAIVE=visual"]
+      : []),
+    "| rung | arm | p50 ms | p95 ms | p99 ms | fps | 1% low fps | hitches | draws | compiles | cpu ms/frame (inclusive) | thread cpu p50 (no present) | present cpu p50 | crossings p50 | ratio p50 | ratio cpu | ratio thread cpu | visual |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   for (const row of rows) {
     for (const [label, summary] of [
@@ -304,7 +333,7 @@ export function renderPairMarkdown(
       [labels[1], row.right],
     ] as const)
       lines.push(
-        `| ${row.key} | ${label} | ${f(summary.p50)} | ${f(summary.p95)} | ${f(summary.p99)} | ${f(summary.fps)} | ${f(summary.fpsLow1)} | ${summary.hitches} | ${summary.drawCalls} | ${summary.pipelineCompiles ?? "n/a"} | ${f(summary.cpuMsPerFrame)} | ${f(summary.threadCpuP50)} | ${f(summary.presentCpuP50)} | ${summary.crossingsP50 ?? "n/a"} | ${label === labels[1] ? f(row.ratio.p50) : ""} | ${label === labels[1] ? f(row.ratio.cpu) : ""} | ${label === labels[1] ? f(row.ratio.threadCpu) : ""} |`,
+        `| ${row.key} | ${label} | ${f(summary.p50)} | ${f(summary.p95)} | ${f(summary.p99)} | ${f(summary.fps)} | ${f(summary.fpsLow1)} | ${summary.hitches} | ${summary.drawCalls} | ${summary.pipelineCompiles ?? "n/a"} | ${f(summary.cpuMsPerFrame)} | ${f(summary.threadCpuP50)} | ${f(summary.presentCpuP50)} | ${summary.crossingsP50 ?? "n/a"} | ${label === labels[1] ? f(row.ratio.p50) : ""} | ${label === labels[1] ? f(row.ratio.cpu) : ""} | ${label === labels[1] ? f(row.ratio.threadCpu) : ""} | ${row.visual.score === null ? "missing" : f(row.visual.score, 4)} / ${row.visual.threshold}${row.visual.waived ? " (waived: TN_BENCH_WAIVE=visual)" : ""} |`,
       );
   }
   lines.push(...renderPhaseBlock(rows, labels));

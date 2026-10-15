@@ -315,6 +315,7 @@ tn_native_engine_test(tn-native-engine-decoder-matrix-test tests/native-engine/d
 target_link_libraries(tn-native-engine-decoder-matrix-test PRIVATE tn_engine_assets)
 
 tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
+    native_engine_gpu_bind_escape=gpu_bind_escape
     native_engine_abi_version=version
     native_engine_abi_handles=handles
     native_engine_abi_generic=generic
@@ -341,7 +342,11 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_typed_bytes=typed_bytes
     native_engine_abi_data_texture_bytes=data_texture_bytes
     native_engine_abi_attribute_view_writes=attribute_view_writes
-    native_engine_abi_attribute_defer=attribute_defer)
+    native_engine_abi_attribute_defer=attribute_defer
+    native_engine_abi_material_uuid=material_uuid
+    native_engine_abi_matrix_walk_count=matrix_walk_count
+    native_engine_abi_projected_cull_list=projected_cull_list
+    native_engine_abi_projected_cull_held_restore=projected_cull_held_restore)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/render_graph_test.cpp

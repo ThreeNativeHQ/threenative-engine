@@ -64,6 +64,12 @@ struct Game {
     std::function<bool(const char* type, float x, float y, int buttons)> uiPointer;
     std::function<void(int width, int height)> uiResize;
     std::function<void()> uiDetach;
+    /**
+     * PRD-613: with the render thread on, the loop hands the game a function that waits for the frame in
+     * flight. A game calls it before anything it does to the renderer from outside the loop's own
+     * handoff (a render target, a read-back, a compile, a post graph). Absent without a render thread.
+     */
+    std::function<void(std::function<void()> barrier)> setRenderBarrier;
     /** Releases game-owned GPU resources before the loop destroys its renderer. */
     std::function<void()> shutdown;
     /** One fixed tick; `dt` is the step in seconds. The loop calls it once per `advance` tick. */

@@ -4,9 +4,13 @@
 // path, against the browser's golden frame. `invalidation` checks that records follow revisions only.
 
 #include "check.h"
+#include "engine/animation/property_binding.h"
+#include "engine/animation/mixer.h"
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
+#include "engine/renderer/reflector.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/shader/graph/graph.h"
 #include "engine/renderer/projection/plan.h"
 #include "engine/shader/package.h"
 #include "engine/shader/graph/post_effects.h"
@@ -35,7 +39,175 @@ using namespace tn::engine;
 
 namespace {
 
+// CPU-only proof of the exact palette/instance records used by all render passes.
+void rigRelativePreparation() {
+    Scene scene;
+    scene.enableTrackedTransform();
+    DirectionalLight sun;
+    sun.position.set(10, 20, 20);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    auto geometry = makeBoxGeometry();
+    const auto vertices = geometry->attributes.at("position")->count();
+    geometry->setAttribute("skinIndex",
+                           BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 0), 4));
+    std::vector<double> weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i)
+        weights[i * 4] = 1;
+    geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Object3D>> roots;
+    std::vector<std::shared_ptr<SkinnedMesh>> rigs;
+    std::vector<std::shared_ptr<Bone>> bones, tips;
+    for (int i = 0; i < 8; ++i) {
+        auto root = std::make_shared<Object3D>();
+        auto rig = std::make_shared<SkinnedMesh>(geometry, material);
+        auto bone = std::make_shared<Bone>();
+        auto tip = std::make_shared<Bone>();
+        tip->enableTrackedTransform();
+        bone->add(*tip);
+        tip->position.y = 0.4;
+        root->enableTrackedTransform();
+        rig->enableTrackedTransform();
+        bone->enableTrackedTransform();
+        rig->frustumCulled = false;
+        rig->setCastShadow(true);
+        rig->position.set(0.2, -0.1, 0.3);
+        root->add(*rig);
+        root->add(*bone);
+        scene.add(*root);
+        root->updateMatrixWorld(true);
+        rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone, tip}));
+        root->position.set(i * 3 + 2, i * 0.2, -i);
+        root->rotation.set(0.2, i * 0.1 + 0.3, -0.15);
+        root->scale.setScalar(1.4);
+        bone->position.set(0.3, 0.8, -0.2);
+        bone->rotation.set(0.1, 0.2, 0.4);
+        roots.push_back(root);
+        rigs.push_back(rig);
+        bones.push_back(bone);
+        tips.push_back(tip);
+    }
+    PerspectiveCamera mainCamera, reflectedCamera;
+    mainCamera.position.set(10, 8, 40);
+    mainCamera.lookAt(10, 0, 0);
+    reflectedCamera.position.set(10, -8, 40);
+    reflectedCamera.lookAt(10, 0, 0);
+    RenderDatabase mainDatabase, reflectedDatabase;
+    mainDatabase.shadowMapEnabled = reflectedDatabase.shadowMapEnabled = true;
+    LightState lights;
+    for (int frame = 0; frame < 3; ++frame) {
+        // A legacy slot can share the same draw with relative slots without applying placement twice.
+        if (frame == 2)
+            Object3D::transformTrackingAddress(&bones[0]->position)[2] = 1;
+        bones[0]->rotation.z = double(bones[0]->rotation.z) + 0.17;
+        roots[0]->position.x += 0.7;
+        for (int pass = 0; pass < 2; ++pass) {
+            auto& database = pass ? reflectedDatabase : mainDatabase;
+            auto& camera = pass ? reflectedCamera : mainCamera;
+            const auto& draws = database.prepare(scene, camera, lights);
+            CHECK(draws.size() == 1);
+            if (draws.size() != 1)
+                continue;
+            const DrawItem& draw = draws.front();
+            CHECK(draw.instanceCount == rigs.size() && draw.boneStride == 2);
+            CHECK(draw.castShadow && draw.mainPass);
+            for (int k = 0; k < 16; ++k) {
+                const double identity = k % 5 == 0 ? 1 : 0;
+                CHECK(draw.matrixWorld[k] == identity);
+                CHECK(draw.bindMatrix[k] == identity && draw.bindMatrixInverse[k] == identity);
+            }
+            if (!draw.instanceMatrices || !draw.boneMatrices)
+                continue;
+            const auto* instances = reinterpret_cast<const float*>(draw.instanceMatrices->data());
+            std::vector<bool> seen(rigs.size(), false);
+            for (std::size_t slot = 0; slot < rigs.size(); ++slot) {
+                Matrix4 placement;
+                for (int k = 0; k < 16; ++k)
+                    placement.elements[k] = instances[slot * 16 + k];
+                std::size_t rigIndex = rigs.size();
+                for (std::size_t i = 0; i < roots.size(); ++i)
+                    if (std::abs(placement.elements[12] - roots[i]->matrixWorld.elements[12]) < 1e-5)
+                        rigIndex = i;
+                if (frame == 2 && placement.elements[12] == 0)
+                    rigIndex = 0;
+                CHECK(rigIndex < rigs.size());
+                if (rigIndex == rigs.size())
+                    continue;
+                CHECK(!seen[rigIndex]);
+                seen[rigIndex] = true;
+                SkinnedPalette eager(2, 1, false);
+                eager.write(*eager.claim(rigs[rigIndex].get()), *rigs[rigIndex], false);
+                for (std::size_t bone = 0; bone < 2; ++bone) {
+                    float world[16];
+                    multiplyAffine(placement.elements.data(), 0, draw.boneMatrices->data(), slot * 32 + bone * 16,
+                                   world, 0);
+                    for (int k = 0; k < 16; ++k)
+                        CHECK(std::abs(world[k] - eager.palette()[bone * 16 + k]) < 1e-5);
+                    // Skinning applies its linear matrix to normals; instances use inverse transpose.
+                    Matrix3 normalMatrix;
+                    normalMatrix.getNormalMatrix(placement);
+                    Vector3 normal(0.3, 0.7, -0.2), expected;
+                    const auto* p = draw.boneMatrices->data() + slot * 32 + bone * 16;
+                    expected
+                        .set(world[0] * normal.x + world[4] * normal.y + world[8] * normal.z,
+                             world[1] * normal.x + world[5] * normal.y + world[9] * normal.z,
+                             world[2] * normal.x + world[6] * normal.y + world[10] * normal.z)
+                        .normalize();
+                    normal
+                        .set(p[0] * 0.3 + p[4] * 0.7 - p[8] * 0.2, p[1] * 0.3 + p[5] * 0.7 - p[9] * 0.2,
+                             p[2] * 0.3 + p[6] * 0.7 - p[10] * 0.2)
+                        .applyMatrix3(normalMatrix)
+                        .normalize();
+                    CHECK(normal.distanceTo(expected) < 1e-6);
+                }
+            }
+            for (bool found : seen)
+                CHECK(found);
+        }
+    }
+    const auto fallback = [&](int index) {
+        scene.updateMatrixWorld(true);
+        auto& rig = *rigs[index];
+        rig.skeleton->update();
+        SkinnedPalette expected(2, 1, false), actual(2, 1, false);
+        expected.write(*expected.claim(&rig), rig, false);
+        CHECK(actual.writeRelative(*actual.claim(&rig), rig) == nullptr);
+        CHECK(actual.matrices() == expected.matrices());
+    };
+    fallback(0); // escaped bone
+    rigs[1]->attached = false;
+    fallback(1);
+    rigs[1]->attached = true;
+    Object3D::transformTrackingAddress(&bones[2]->position)[0] = 0;
+    fallback(2); // raw C++ transform
+    roots[3]->scale.set(1, 2, 1);
+    rigs[3]->scale.set(1, 0.5, 1);
+    fallback(3);
+    roots[4]->scale.set(-1, 1, 1);
+    rigs[4]->scale.set(-1, 1, 1);
+    fallback(4);
+    roots[5]->scale.setScalar(0);
+    fallback(5);
+    scene.add(*tips[6]);
+    fallback(6); // unrelated bones share only the Scene, never a rig root
+    roots[7]->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [](const RenderCallbackArgs&, std::string&) { return true; });
+    fallback(7);
+    roots[7]->onBeforeRender.reset();
+    material->nodeMaterial = true;
+    fallback(7);
+    material->nodeMaterial = false;
+    scene.updateMatrixWorld(true);
+    rigs[7]->bindMatrixInverse.identity();
+    SkinnedPalette staleBind(2, 1, false), original(2, 1, false);
+    original.write(*original.claim(rigs[7].get()), *rigs[7], false);
+    CHECK(staleBind.writeRelative(*staleBind.claim(rigs[7].get()), *rigs[7]) == nullptr);
+    CHECK(staleBind.matrices() == original.matrices());
+}
+
 void uniformBatchPreparation() {
+    rigRelativePreparation();
     Material a(MaterialType::Standard), b(MaterialType::Standard);
     const std::array<double*, 27> left{
         &a.opacity, &a.alphaTest, &a.emissive.r, &a.emissive.g,
@@ -722,6 +894,10 @@ void invalidation() {
     database.render(renderer, s.scene, s.camera);
     const uint64_t first = database.rebuilds();
     CHECK(first == 1);
+    auto& diagnostic = Material::diagnostics();
+    const auto savedDiagnostic = diagnostic;
+    diagnostic = {};
+
     for (int frame = 0; frame < 300; ++frame) database.render(renderer, s.scene, s.camera);
     CHECK(database.rebuilds() == first);  // an unchanged scene rebuilds nothing
     s.mesh.position.x = 0.5;  // a transform: the mesh's revision moves on the next updateMatrixWorld
@@ -738,6 +914,19 @@ void invalidation() {
     CHECK(database.rebuilds() == first + 2);
     for (int frame = 0; frame < 300; ++frame) database.render(renderer, s.scene, s.camera);
     CHECK(database.rebuilds() == first + 2);
+    CHECK(diagnostic.recordRebuilds == 0 && diagnostic.graphRebuilds == 0);
+    diagnostic.enabled = true;
+    Mesh shared(s.mesh.geometry, s.material);
+    s.scene.add(shared);
+    RenderDatabase observed;
+    observed.render(renderer, s.scene, s.camera);
+    CHECK(diagnostic.recordRebuilds == observed.rebuilds() && diagnostic.recordRebuilds == 2);
+    const auto rebuilt = diagnostic.recordRebuilds;
+    s.material->needsUpdate();
+    observed.render(renderer, s.scene, s.camera);
+    CHECK(diagnostic.recordRebuilds == rebuilt + 2);
+    CHECK(!diagnostic.threadCpuSupported || diagnostic.recordCpuNs > 0);
+    diagnostic = savedDiagnostic;
 }
 
 // The alpha-transparency fixture as a scene: an OrthographicCamera, so WebGL clip z would put every
@@ -2572,6 +2761,55 @@ void recordsSurviveSiblings() {
     CHECK(drawn() == 11 && database.rebuilds() == built + 1);
 }
 
+// PRD-610: a mesh under a group finds its record by object id, so a steady frame hashes it no more than a scene
+// child; a mesh that leaves is swept and found again when it returns.
+void nestedRecordCache() {
+    for (const bool batching : {false, true}) {
+        Scene scene; Group group; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+        database.batching = batching;
+        camera.position.set(0, 0, 10);
+        camera.lookAt(0, 0, 0);
+        auto mesh = std::make_shared<Mesh>(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
+        scene.add(group); group.add(*mesh);
+        const auto drawn = [&] { return database.prepare(scene, camera, lights).size(); };
+        CHECK(drawn() == 1); CHECK(drawn() == 1);
+        const uint64_t lookups = database.recordLookups(), sweeps = database.recordSweeps();
+        for (int frame = 0; frame < 3; ++frame) CHECK(drawn() == 1);
+        CHECK(database.recordLookups() == lookups);
+        CHECK(database.recordSweeps() == sweeps);
+        group.remove(*mesh);
+        CHECK(drawn() == 0 && database.recordSweeps() == sweeps + 1);
+        group.add(*mesh);
+        CHECK(drawn() == 1);
+        CHECK(drawn() == 1);
+        const uint64_t settled = database.recordLookups();
+        CHECK(drawn() == 1 && database.recordLookups() == settled);
+    }
+}
+
+// PRD-610: a mesh outside every frustum keeps its record and builds nothing until it is back in view.
+void frustumRecordRetention() {
+    Scene scene; Group group; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.batching = false;
+    camera.position.set(0, 0, 10);
+    camera.lookAt(0, 0, 0);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    Mesh mesh(makeBoxGeometry(), material);
+    scene.add(group); group.add(mesh);
+    const auto drawn = [&] { return database.prepare(scene, camera, lights).size(); };
+    CHECK(drawn() == 1);
+    const uint64_t sweeps = database.recordSweeps(), rebuilt = database.rebuilds();
+    mesh.position.z = 20;
+    // The early-out postpones changed material work until the mesh is in view again.
+    material->needsUpdate();
+    for (int frame = 0; frame < 3; ++frame) CHECK(drawn() == 0);
+    CHECK(database.recordSweeps() == sweeps);
+    CHECK(database.rebuilds() == rebuilt);
+    mesh.position.z = 0;
+    CHECK(drawn() == 1 && database.rebuilds() == rebuilt + 1);
+    CHECK(database.recordSweeps() == sweeps);
+}
+
 // The R5 render cut (PRD-573 v1.11): off the flat lane a steady frame finds every record by its scene slot and
 // sweeps nothing, so a frame of 4,096 cubes hashes no object. A mesh that leaves costs one sweep.
 void steadyFrameHashesNoRecord() {
@@ -2610,11 +2848,622 @@ void steadyFrameHashesNoRecord() {
     }
 }
 
-TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+// The R5 render cut (PRD-573 v1.11): a frustum-culled mesh's world sphere is measured once per frame and serves
+// both the camera and the shadow frustums.
+void worldSphereMeasuredOnce() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    database.batching = false;
+    camera.position.set(0, 0, 10);
+    camera.lookAt(0, 0, 0);
+    camera.near = 1; camera.far = 50;
+    camera.updateProjectionMatrix();
+    auto light = std::make_shared<DirectionalLight>(Color(1, 1, 1), 1.0);
+    light->setCastShadow(true);
+    light->position.set(0, 10, 0);
+    light->target->position.set(0, 0, 0);
+    auto& shadowCam = static_cast<OrthographicCamera&>(*light->shadow.camera);
+    shadowCam.left = -8; shadowCam.right = 8;
+    shadowCam.top = 8; shadowCam.bottom = -8;
+    shadowCam.near = 1; shadowCam.far = 20;
+    shadowCam.updateProjectionMatrix();
+    scene.add(*light);
+    const auto geometry = makeBoxGeometry();
+    const auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 4; ++i) {
+        meshes.push_back(std::make_shared<Mesh>(geometry, material));
+        meshes.back()->position.set(i - 1.5, 0, 0);
+        meshes.back()->setCastShadow(true);
+        scene.add(*meshes.back());
+    }
+    database.prepare(scene, camera, lights);  // warms the caches and the geometry bounds
+    const uint64_t measured = database.sphereMeasures();
+    const auto& items = database.prepare(scene, camera, lights);
+    std::size_t drawn = 0;
+    for (const auto& item : items) drawn += item.mainPass ? 1 : 0;
+    CHECK(drawn == meshes.size());  // each mesh reaches the camera test, then the shadow test
+    CHECK(database.sphereMeasures() - measured == meshes.size());
+}
+
+// PRD-610 AC-10: a water-like mirror over a grouped scene. Most boxes sit in the main view, a tower
+// stands above the main frustum that only the mirrored camera sees, and a sun casts shadows. The
+// reflector and its virtual camera are made by hand, as the `reflector` TSL call makes them.
+struct ReflectionScene {
+    Scene scene;
+    PerspectiveCamera camera;
+    std::shared_ptr<BufferGeometry> box = makeBoxGeometry(), plane = makePlaneGeometry(400, 400);
+    std::vector<std::shared_ptr<Material>> materials;
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    std::shared_ptr<Material> water = std::make_shared<Material>(MaterialType::Standard);
+    std::shared_ptr<Mesh> waterMesh, tower;
+    std::shared_ptr<Reflector> reflector = std::make_shared<Reflector>();
+    std::shared_ptr<DirectionalLight> sun = std::make_shared<DirectionalLight>(Color(1, 1, 1), 2.0);
+    std::shared_ptr<Object3D> target = std::make_shared<Object3D>();
+    explicit ReflectionScene(int groupCount = 12, int perGroup = 20, int uniqueDraws = 12) {
+        camera.fov = 50;
+        camera.aspect = 4.0 / 3;
+        camera.near = 0.5;
+        camera.far = 400;
+        camera.position.set(0, 6, 14);
+        camera.lookAt(0, 0, -10);
+        camera.updateProjectionMatrix();
+        for (int m = 0; m < 6; ++m) {
+            materials.push_back(std::make_shared<Material>(MaterialType::Standard));
+            materials.back()->color.setRGB(0.2 + 0.12 * m, 0.5, 0.9 - 0.12 * m);
+        }
+        for (int g = 0; g < groupCount; ++g) {
+            auto group = std::make_shared<Group>();
+            group->position.set((g % 12 - 6) * 12.0, 0, -(g / 12) * 14.0 + 4);
+            scene.add(*group);
+            for (int i = 0; i < perGroup; ++i) {
+                auto mesh = std::make_shared<Mesh>(box, materials[(g + i) % materials.size()]);
+                mesh->position.set((i % 8) * 1.4 - 5, 0.6 + 0.2 * (i / 8), (i / 8) * 1.4 - 3);
+                mesh->setCastShadow(true);
+                mesh->setReceiveShadow(true);
+                group->add(*mesh);
+                meshes.push_back(mesh);
+            }
+        }
+        // Single-member draws: each has its own geometry, so nothing batches (a game's props and hulls).
+        for (int i = 0; i < uniqueDraws; ++i) {
+            auto mesh = std::make_shared<Mesh>(makeBoxGeometry(1 + 0.01 * i, 1, 1), materials[i % materials.size()]);
+            mesh->position.set((i % 20) * 2.0 - 20, 1.5, -(i / 20) * 3.0 - 2);
+            mesh->setCastShadow(true);
+            mesh->setReceiveShadow(true);
+            scene.add(*mesh);
+            meshes.push_back(mesh);
+        }
+        tower = std::make_shared<Mesh>(makeBoxGeometry(1, 1, 1.5), materials[0]);  // its own draw, never batched
+        tower->position.set(0, 30, -50);
+        tower->scale.set(8, 8, 8);
+        scene.add(*tower);
+        water->color.setRGB(0.1, 0.3, 0.5);
+        waterMesh = std::make_shared<Mesh>(plane, water);
+        waterMesh->rotateX(-3.141592653589793 / 2);
+        scene.add(*waterMesh);
+        target->rotateX(-3.141592653589793 / 2);
+        scene.add(*target);
+        reflector->target = target;
+        reflector->camera = std::make_shared<PerspectiveCamera>();
+        namespace g = shader::graph;
+        const auto mirror = g::reflectorTexture(reflector, g::vec2({g::sub(g::float_(1), g::swizzle(g::screenUV(), "x")),
+                                                                    g::swizzle(g::screenUV(), "y")}));
+        water->nodes.colorNode = g::vec4({g::mul(g::swizzle(mirror, "xyz"), g::vec3({g::float_(0.75), g::float_(0.85), g::float_(1)})),
+                                          g::float_(1)});
+        water->needsUpdate();
+        sun->setCastShadow(true);
+        sun->position.set(30, 60, 20);
+        auto& sc = static_cast<OrthographicCamera&>(*sun->shadow.camera);
+        sc.left = -120; sc.right = 120; sc.top = 120; sc.bottom = -120; sc.near = 1; sc.far = 300;
+        sc.updateProjectionMatrix();
+        scene.add(*sun);
+        scene.updateMatrixWorld(true);
+    }
+};
+
+// What a pass drew, comparable across databases: one row per item, sorted.
+std::vector<std::array<double, 8>> drawRows(const std::vector<DrawItem>& items) {
+    std::vector<std::array<double, 8>> rows;
+    for (const DrawItem& item : items) {
+        const auto& at = item.sortOrigin ? *item.sortOrigin : std::array<double, 3>{item.matrixWorld[12], item.matrixWorld[13], item.matrixWorld[14]};
+        rows.push_back({double(item.mainPass), double(item.castShadow), double(item.instanceCount), double(item.kind), at[0], at[1], at[2], double(item.layers)});
+    }
+    std::sort(rows.begin(), rows.end());
+    return rows;
+}
+
+// PRD-610 AC-10: a reflection pass reuses the frame's work. It walks no matrices of its own (the
+// frame's walk is current), keeps the draws it always had, including ones outside the main view
+// that only the mirrored camera sees, and renders the same pixels.
+void reflectionReuse() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(160, 120);
+    ReflectionScene s;
+    auto& diagnostic = Material::diagnostics();
+    const auto savedDiagnostic = diagnostic;
+    diagnostic = {}; diagnostic.enabled = true;
+    s.tower->setCastShadow(false);
+    const auto tower = std::array<double, 3>{0, 30, -50};
+    const auto drawsTower = [&](const RenderDatabase& database) {
+        for (const DrawItem& item : database.drawn())
+            if (item.mainPass && item.matrixWorld[12] == tower[0] && item.matrixWorld[13] == tower[1] && item.matrixWorld[14] == tower[2]) return true;
+        return false;
+    };
+    constexpr int frames = 6;
+    for (const bool reuse : {false, true}) {
+        diagnostic = {}; diagnostic.enabled = true;
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        if (!reuse) database.reuseMainFrame = false;  // on is the default
+        for (int i = 0; i < frames; ++i) database.render(renderer, s.scene, s.camera);
+        const RenderDatabase* pass = database.reflectionDatabase(s.reflector.get());
+        CHECK(pass != nullptr);
+        if (!pass) continue;
+        CHECK(diagnostic.recordRebuilds == database.rebuilds() + pass->rebuilds());
+        CHECK(diagnostic.graphRebuilds > 0);
+        CHECK(!diagnostic.threadCpuSupported || diagnostic.graphCpuNs > 0);
+        std::printf("reuse=%d: matrix walks main %llu, reflection %llu over %d frames\n", reuse,
+                    (unsigned long long)database.matrixWalks(), (unsigned long long)pass->matrixWalks(), frames);
+        CHECK(database.matrixWalks() == frames);
+        CHECK(pass->matrixWalks() == (reuse ? 0u : frames));
+        CHECK(!drawsTower(database) && drawsTower(*pass));  // only the mirrored view sees the tower
+        // The pass draws what an independent database prepares for the posed mirror camera.
+        RenderDatabase alone;
+        alone.shadowMapEnabled = true;
+        s.water->visible = false;
+        LightState lights;
+        alone.prepare(s.scene, *s.reflector->camera, lights);
+        s.water->visible = true;
+        CHECK(drawRows(alone.drawn()) == drawRows(pass->drawn()));
+        CHECK(!pass->drawn().empty());
+    }
+    // The same frame, pixel for pixel, with and without reuse.
+    std::vector<uint8_t> frame[2];
+    for (const bool reuse : {false, true}) {
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        if (!reuse) database.reuseMainFrame = false;  // on is the default
+        for (int i = 0; i < 4; ++i) database.render(renderer, s.scene, s.camera, {0.1, 0.1, 0.15, 1});
+        frame[reuse] = read(renderer, events);
+    }
+    CHECK(frame[0].size() == 160 * 120 * 4 && frame[0] == frame[1]);
+    // A mirror on its own layer (WaterSurface3D's layered mirror) sees the hulls and not the sun, so no
+    // shadow it could draw has a caster; without the reuse its pass still gathers every one.
+    {
+        ReflectionScene layered;
+        layered.reflector->camera->setLayerMask(2);
+        layered.tower->enableLayer(1);
+        for (std::size_t i = 0; i < layered.meshes.size(); i += 7) layered.meshes[i]->enableLayer(1);
+        std::vector<uint8_t> shot[2];
+        for (const bool reuse : {false, true}) {
+            RenderDatabase database;
+            database.shadowMapEnabled = true;
+            if (!reuse) database.reuseMainFrame = false;  // on is the default
+            for (int i = 0; i < 4; ++i) database.render(renderer, layered.scene, layered.camera, {0.1, 0.1, 0.15, 1});
+            shot[reuse] = read(renderer, events);
+            const RenderDatabase* pass = database.reflectionDatabase(layered.reflector.get());
+            CHECK(pass != nullptr);
+            if (!pass) continue;
+            std::size_t casters = 0, drawnInMirror = 0;
+            for (const DrawItem& item : pass->drawn()) casters += item.castShadow, drawnInMirror += item.mainPass;
+            std::printf("reuse=%d: mirror pass %zu draws, %zu casters\n", reuse, drawnInMirror, casters);
+            CHECK(drawnInMirror > 0);
+            CHECK(reuse ? casters == 0 : casters > 0);
+        }
+        CHECK(shot[0].size() == 160 * 120 * 4 && shot[0] == shot[1]);
+    }
+    // A render hook may move things after the frame's walk: the pass walks again and sees them.
+    RenderDatabase hooked;
+    hooked.shadowMapEnabled = true;
+    s.meshes.back()->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [&](const RenderCallbackArgs&, std::string&) {
+            s.tower->position.x += 1;
+            return true;
+        });
+    for (int i = 0; i < 3; ++i) hooked.render(renderer, s.scene, s.camera);
+    const RenderDatabase* pass = hooked.reflectionDatabase(s.reflector.get());
+    CHECK(pass && pass->matrixWalks() == 3);
+    // Per frame the hook runs in the main prepare, then again in the pass's: the pass drew the first move.
+    bool moved = false;
+    for (const DrawItem& item : pass->drawn()) moved = moved || (item.mainPass && item.matrixWorld[12] == s.tower->position.x - 1 && item.matrixWorld[14] == -50);
+    CHECK(moved);
+    diagnostic = savedDiagnostic;
+}
+
+void gpuJointProduction() {
+    const auto* drawUseFlag = std::getenv("TN_GPU_JOINT_DRAW_USE");
+    const bool drawUse = drawUseFlag && std::strcmp(drawUseFlag, "1") == 0;
+    const Vector3 directions[6] = {{-1,0,0}, {1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
+    const Vector3 ups[6] = {{0,-1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}, {0,-1,0}, {0,-1,0}};
+    for (int face = 0; face < 6; ++face) {
+        PerspectiveCamera camera(-90, 1, 1, 10);
+        camera.up = ups[face]; camera.lookAt(directions[face]); camera.updateMatrixWorld();
+        Matrix4 rotation; rotation.lookAt(Vector3{}, directions[face], ups[face]);
+        for (int k = 0; k < 16; ++k) CHECK(std::abs(rotation.elements[k] - camera.matrixWorld.elements[k]) < 1e-12);
+    }
+    // Count executed updates, including a query's full parent chain, independently of walk returns.
+    auto countRoot = std::make_shared<Object3D>();
+    auto countMiddle = std::make_shared<Object3D>();
+    auto countLeaf = std::make_shared<Object3D>();
+    countRoot->add(*countMiddle); countMiddle->add(*countLeaf);
+    const auto countBefore = Object3D::matrixEvaluations();
+    CHECK(countRoot->updateMatrixWorldVisible(false, false) == 3);
+    Vector3 queried; countLeaf->getWorldPosition(queried);
+    CHECK(Object3D::matrixEvaluations() - countBefore == 6);
+
+    struct Fixture {
+        Scene scene;
+        Scene unrelatedCompileScene;
+        unsigned compileCallbacks = 0;
+        PerspectiveCamera camera;
+        std::vector<std::shared_ptr<Group>> movers;
+        std::vector<std::shared_ptr<SkinnedMesh>> meshes;
+        std::vector<std::shared_ptr<Bone>> tips;
+        double* escapedWorld = nullptr;
+        double* escapedAutoWorld = nullptr;
+        double* escapedLocal = nullptr;
+        std::shared_ptr<Reflector> reflector = std::make_shared<Reflector>();
+        Fixture(bool tracked) {
+            camera.aspect = 4.0 / 3; camera.position.set(0, 0, 8); camera.updateProjectionMatrix();
+            if (tracked) scene.enableTrackedTransform();
+            auto geometry = makeBoxGeometry(0.7, 0.7, 0.7);
+            const auto vertices = geometry->attributes.at("position")->count();
+            std::vector<double> indices(vertices * 4, 0), weights(vertices * 4, 0);
+            for (size_t i = 0; i < vertices; ++i) { indices[i * 4] = 2; weights[i * 4] = 1; }
+            geometry->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, indices, 4));
+            geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+            auto material = std::make_shared<Material>(MaterialType::Basic);
+            material->color.setRGB(0.8, 0.2, 0.1);
+            auto unrelated = std::make_shared<Mesh>(makeBoxGeometry(), material);
+            unrelated->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+                [this](const RenderCallbackArgs&, std::string&) { ++compileCallbacks; return true; });
+            unrelatedCompileScene.add(*unrelated);
+            auto sun = std::make_shared<DirectionalLight>();
+            sun->position.set(2, 5, 4); sun->setCastShadow(true);
+            sun->shadow.mapSize.set(128, 128);
+            scene.add(*sun);
+            for (int i = 0; i < 6; ++i) {
+                const int count = i == 4 ? 1100 : 3;
+                auto mover = std::make_shared<Group>(); mover->position.x = double(i - 2) * 1.2;
+                auto placement = std::make_shared<Group>();
+                auto mesh = std::make_shared<SkinnedMesh>(geometry, material);
+                mesh->setCastShadow(true); mesh->setReceiveShadow(true);
+                std::vector<std::shared_ptr<Bone>> bones;
+                for (int j = 0; j < count; ++j) {
+                    auto bone = std::make_shared<Bone>();
+                    if (tracked) bone->enableTrackedTransform();
+                    if (j) bones.back()->add(*bone);
+                    bones.push_back(bone);
+                }
+                bones[2]->rotation.z = i * 0.12;
+                bones[1]->position.y = 0.15; bones[2]->position.y = -0.15;
+                placement->add(*bones.front()); placement->add(*mesh);
+                mover->add(*placement); scene.add(*mover);
+                if (tracked) { mover->enableTrackedTransform(); placement->enableTrackedTransform(); mesh->enableTrackedTransform(); }
+                if (i == 0) {
+                    mover->updateMatrix(); mover->matrixAutoUpdate = false;
+                    escapedLocal = mover->matrix.elements.data();
+                    CHECK(Object3D::leaseTransform(&mover->matrixWorld) == 5);
+                    escapedAutoWorld = mover->matrixWorld.elements.data();
+                    escapedAutoWorld[12] = 100;
+                }
+                if (i == 5) {
+                    CHECK(Object3D::leaseTransform(&mover->matrixWorld) == 5);
+                    escapedWorld = mover->matrixWorld.elements.data();
+                    escapedWorld[12] = mover->position.x;
+                    mover->matrixWorldAutoUpdate = false;
+                }
+                auto skeleton = std::make_shared<Skeleton>(bones, std::vector<Matrix4>(bones.size()));
+                Matrix4 bind; mesh->bind(skeleton, &bind);
+                if (i == 1 || i == 4) {
+                    // A non-skinned attachment makes these rigs eager; no synthetic static hints.
+                    auto attachment = std::make_shared<Mesh>(makeBoxGeometry(0.1, 0.1, 0.1), material);
+                    bones.back()->add(*attachment);
+                }
+                if (i == 4) mover->setVisible(false);
+                movers.push_back(mover); meshes.push_back(mesh); tips.push_back(bones[2]);
+            }
+            auto water = std::make_shared<Material>(MaterialType::Standard);
+            auto plane = std::make_shared<Mesh>(makePlaneGeometry(12, 12), water);
+            plane->position.y = -1; plane->rotateX(-3.141592653589793 / 2); scene.add(*plane);
+            reflector->target = std::make_shared<Object3D>();
+            reflector->target->position.y = -1;
+            reflector->target->rotateX(-3.141592653589793 / 2); scene.add(*reflector->target);
+            reflector->camera = std::make_shared<PerspectiveCamera>();
+            namespace g = shader::graph;
+            water->nodes.colorNode = g::reflectorTexture(reflector, g::screenUV());
+            water->needsUpdate();
+            auto sky = std::make_shared<DataTexture>();
+            sky->mapping = 303; sky->width = 8; sky->height = 4;
+            sky->data.resize(8 * 4 * 4, 1); sky->needsUpdate(); // keep the sky below the rig coverage threshold
+            scene.backgroundTexture = sky;
+        }
+        ~Fixture() {
+            Object3D::unleaseTransform(&movers[0]->matrixWorld);
+            Object3D::unleaseTransform(&movers[5]->matrixWorld);
+        }
+    } accelerated(true), eager(false);
+    mystral::webgpu::Context context; CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer gpu(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    Renderer cpu(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    gpu.setSize(160, 120); cpu.setSize(160, 120);
+    RenderDatabase database, reference; reference.batching = false;
+    database.shadowMapEnabled = reference.shadowMapEnabled = true;
+    std::shared_ptr<GpuJointScene> admittedPlan;
+    for (int frame = 0; frame < 4; ++frame) {
+        if (frame) {
+            for (auto* fixture : {&accelerated, &eager}) {
+                animation::PropertyBinding position(fixture->tips[0], ".position");
+                const double p[3] = {0.3, -0.15, 0}; position.setValue(p, 0);
+                animation::PropertyBinding orientation(fixture->tips[0], ".quaternion");
+                const double q[4] = {0, 0, std::sin(0.25), std::cos(0.25)}; orientation.setValue(q, 0);
+                fixture->movers[0]->position.y = 0.5;
+                fixture->movers[0]->position.z = -frame * 0.2;
+                fixture->escapedLocal[13] = 0.5;
+                fixture->escapedLocal[14] = -frame * 0.2;
+                fixture->escapedAutoWorld[12] = 100; // auto-world ownership repairs the raw alias
+                fixture->movers[2]->position.z = frame * 0.2;
+                fixture->meshes[3]->setLayer(frame == 3 ? 0 : 1);
+                fixture->camera.enableLayer(1);
+                fixture->movers[0]->setVisible(frame != 2);
+                fixture->meshes[0]->parent->position.x = 0.2;
+                fixture->meshes[0]->parent->rotateY(0.15); // placement can move after admission
+                fixture->movers[4]->setVisible(true); // grows mixed GPU+CPU palette beyond 64 KiB
+                fixture->escapedWorld[13] = frame * 0.1;
+                fixture->movers[5]->matrixWorldNeedsUpdate = true;
+            }
+            CHECK(accelerated.tips[0]->hasDeferredTransform());
+            const auto before = Object3D::matrixEvaluations();
+            const auto visits = accelerated.scene.updateMatrixWorldVisible(false, false);
+            CHECK(Object3D::matrixEvaluations() - before + 3 == visits); // the unpruned walk inspects all three GPU boundaries
+            CHECK(accelerated.tips[0]->hasDeferredTransform());
+        }
+        if (frame == 2) {
+            database.shadowMapEnabled = reference.shadowMapEnabled = false;
+            for (auto* fixture : {&accelerated, &eager}) fixture->scene.add(*std::make_shared<Group>());
+        }
+        if (frame == 1) {
+            RenderDatabase compilation; compilation.shadowMapEnabled = database.shadowMapEnabled;
+            const auto pending = compilation.compileAsync(gpu, accelerated.scene, accelerated.camera);
+            CHECK(!pending.empty());
+            CHECK(admittedPlan && *admittedPlan->valid); // async warm-up must retain the live GPU palette owner
+            compilation.compileAsync(gpu, accelerated.unrelatedCompileScene, accelerated.camera);
+            CHECK(accelerated.compileCallbacks == 1);
+            CHECK(admittedPlan && *admittedPlan->valid); // unrelated compile callbacks do not own the live GPU plan
+        }
+        const auto projectionBefore = Object3D::gpuProjectionVisits_;
+        const auto maintenanceBefore = Object3D::gpuMaintenanceVisits_;
+        const auto hierarchyBefore = Object3D::hierarchyVersion();
+        database.render(gpu, accelerated.scene, accelerated.camera, {0, 0, 0, 1});
+        CHECK(Object3D::hierarchyVersion() == hierarchyBefore); // cold sky conversion owns no scene nodes
+        CHECK(Object3D::gpuProjectionVisits_ - projectionBefore >= (frame == 2 ? 4 : 6)); // visible main/reflection boundaries, plus verdict scans
+        if (!frame || frame == 2) CHECK(Object3D::gpuMaintenanceVisits_ > maintenanceBefore);
+        else CHECK(Object3D::gpuMaintenanceVisits_ == maintenanceBefore); // no per-frame Bone scan
+        eager.scene.updateMatrixWorld(true); // independent eager composition repairs every raw auto-world alias
+        reference.render(cpu, eager.scene, eager.camera, {0, 0, 0, 1});
+        CHECK(!accelerated.tips[5]->hasDeferredTransform() && !accelerated.tips[5]->skipsGpuJointSubtree());
+        CHECK(accelerated.movers[5]->ownTransformTracking()[2] == 1);
+        Vector3 escapedActual, escapedExpected;
+        accelerated.tips[5]->getWorldPosition(escapedActual);
+        eager.tips[5]->getWorldPosition(escapedExpected);
+        CHECK(escapedActual.distanceTo(escapedExpected) < 1e-10);
+        CHECK(std::abs(escapedActual.y - frame * 0.1) < 1e-10);
+        const auto actual = read(gpu, events), expected = read(cpu, events);
+        CHECK(actual.size() == 160 * 120 * 4 && expected.size() == actual.size());
+        size_t different = 0, covered = 0;
+        for (size_t i = 0; i + 3 < actual.size() && actual.size() == expected.size(); i += 4) {
+            int delta = 0; for (int k = 0; k < 3; ++k) delta = std::max(delta, std::abs(int(actual[i + k]) - int(expected[i + k])));
+            different += delta > 2; covered += actual[i] > 20;
+        }
+        std::printf("production GPU joints frame %d: %zu covered, %zu pixels differ >2\n", frame, covered, different);
+        CHECK(covered > 100 && different <= 4);
+        size_t admitted = 0, instances = 0;
+        for (const auto& draw : database.drawn()) if (draw.gpuJoints) { ++admitted; instances += draw.instanceCount; admittedPlan = draw.gpuJoints; }
+        CHECK(admitted == (frame == 1 || frame == 2 ? 2 : 1));
+        CHECK(instances == (frame == 2 ? 2 : 3));
+        CHECK(gpu.lastFrame().mainSkinned.batches == admitted);
+        if (frame < 2) CHECK(gpu.lastFrame().shadowSkinned.batches == admitted);
+        const auto validationBefore = Object3D::gpuValidationVisits_;
+        CHECK(admittedPlan != nullptr);
+        if (!admittedPlan) return;
+        CHECK(admittedPlan->drawUse.size() == (drawUse ? 3 : 0));
+        if (drawUse) CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == (frame == 2 ? 2 : 3));
+        CHECK(admittedPlan->current());
+        CHECK(Object3D::gpuValidationVisits_ - validationBefore == 18); // three rigs, placement and four ancestors each
+        accelerated.scene.matrixWorldAutoUpdate = false;
+        CHECK(admittedPlan->current()); // unescaped manual-world Scene remains eligible
+        accelerated.scene.matrixWorldAutoUpdate = true;
+        CHECK(accelerated.movers[0]->ownTransformTracking()[2] == 1);
+        CHECK(accelerated.movers[0]->matrixWorld.elements[12] == accelerated.movers[0]->position.x);
+        accelerated.movers[0]->matrixWorldAutoUpdate = false;
+        CHECK(!admittedPlan->current());
+        accelerated.movers[0]->matrixWorldAutoUpdate = true;
+        accelerated.movers[0]->matrixAutoUpdate = false;
+        CHECK(admittedPlan->current());
+        accelerated.movers[0]->matrixAutoUpdate = true;
+        CHECK(admittedPlan->current());
+        accelerated.movers[0]->matrixAutoUpdate = false;
+        accelerated.movers[0]->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+            [](const RenderCallbackArgs&, std::string&) { return true; });
+        CHECK(!admittedPlan->current());
+        accelerated.movers[0]->onBeforeRender.reset();
+        CHECK(admittedPlan->current());
+        if (frame == 0) {
+            CHECK(Object3D::leaseTransform(&accelerated.movers[2]->matrixWorld) == 5);
+            CHECK(admittedPlan->current()); // escape of another auto ancestor after admission is safe
+            Object3D::unleaseTransform(&accelerated.movers[2]->matrixWorld);
+        }
+        auto* placement = accelerated.meshes[0]->parent;
+        const auto placed = placement->matrixWorld;
+        placement->matrixWorld.elements[0] = 2;
+        CHECK(!admittedPlan->current()); // non-similarity remains refused
+        placement->matrixWorld.copy(placed);
+        const auto* reflection = database.reflectionDatabase(accelerated.reflector.get());
+        CHECK(reflection != nullptr);
+        size_t mirrorGpu = 0, mirrorInstances = 0;
+        if (reflection) for (const auto& draw : reflection->drawn()) if (draw.gpuJoints) {
+            ++mirrorGpu; mirrorInstances += draw.instanceCount;
+        }
+        CHECK(mirrorGpu == (frame == 1 ? 2 : 1));
+        CHECK(mirrorInstances == (frame == 2 ? 1 : 3));
+        std::printf("GPU batching frame %d: main %zu draws/%zu instances, reflection %zu draws/%zu instances, shadow %u batches\n",
+                    frame, admitted, instances, mirrorGpu, mirrorInstances, gpu.lastFrame().shadowSkinned.batches);
+        CHECK(accelerated.tips[0]->skipsGpuJointSubtree());
+    }
+    if (drawUse) {
+        std::vector<std::unique_ptr<animation::AnimationMixer>> observers;
+        if (animation::AnimationMixer::poseObservation.enabled) {
+            auto clip = std::make_shared<animation::AnimationClip>("observe", 1, std::vector<animation::KeyframeTrack>{
+                animation::KeyframeTrack(".scale", animation::TrackType::Vector, {0, 1}, {1, 1, 1, 1, 1, 1})});
+            for (const auto i : {0, 2, 3}) {
+                auto mixer = std::make_unique<animation::AnimationMixer>(accelerated.tips[i]);
+                mixer->clipAction(clip)->play(); observers.push_back(std::move(mixer));
+            }
+        }
+        const auto renderObserved = [&](uint64_t drawn) {
+            for (const auto& mixer : observers) mixer->update(0);
+            const auto before = animation::AnimationMixer::poseObservation;
+            database.render(gpu, accelerated.scene, accelerated.camera);
+            for (const auto& mixer : observers) mixer->update(0);
+            if (!observers.empty()) {
+                const auto& after = animation::AnimationMixer::poseObservation;
+                CHECK(after.intervals - before.intervals == 3 && after.tracks - before.tracks == 3);
+                CHECK(after.drawnTracks - before.drawnTracks == drawn);
+                CHECK(after.unusedTracks - before.unusedTracks == 3 - drawn);
+            }
+        };
+        for (const auto& mover : accelerated.movers) mover->setVisible(false);
+        renderObserved(0);
+        CHECK(admittedPlan->drawUse == std::vector<uint8_t>(3, 0)); // Reset removes last frame's use.
+        accelerated.movers[0]->setVisible(true);
+        accelerated.meshes[0]->setLayer(1);
+        accelerated.camera.disableLayer(1);
+        accelerated.reflector->camera->enableLayer(1);
+        renderObserved(1);
+        CHECK(gpu.lastFrame().mainSkinned.batches == 0);
+        CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == 1); // Reflection only.
+        accelerated.reflector->camera->disableLayer(1);
+        database.shadowMapEnabled = true;
+        for (auto* child : accelerated.scene.children) if (auto* sun = dynamic_cast<DirectionalLight*>(child)) sun->shadow.camera->enableLayer(1);
+        for (int repeat = 0; repeat < 2; ++repeat) {
+            renderObserved(1);
+            CHECK(gpu.lastFrame().mainSkinned.batches == 0);
+            CHECK(gpu.lastFrame().shadowSkinned.batches > 0);
+            CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == 1); // Shadow only, including steady replay.
+        }
+        accelerated.meshes[0]->setLayer(0);
+        database.shadowMapEnabled = false;
+        for (int repeat = 0; repeat < 2; ++repeat) {
+            renderObserved(1);
+            CHECK(gpu.lastFrame().mainSkinned.batches == 1);
+            CHECK(std::count(admittedPlan->drawUse.begin(), admittedPlan->drawUse.end(), uint8_t{1}) == 1); // Main bundle reuse.
+        }
+        for (const auto& mover : accelerated.movers) mover->setVisible(true);
+    }
+    const auto joins = Object3D::joinDependencyVisits(), updates = Object3D::matrixEvaluations();
+    accelerated.tips[0]->materializeWorldTransformIfPending();
+    CHECK(Object3D::joinDependencyVisits() - joins == 6);
+    CHECK(Object3D::matrixEvaluations() - updates == 6);
+    animation::PropertyBinding finalPosition(accelerated.tips[0], ".position");
+    const double finalPose[3] = {0.7, -0.15, 0}; finalPosition.setValue(finalPose, 0);
+    animation::PropertyBinding eagerPosition(eager.tips[0], ".position");
+    eagerPosition.setValue(finalPose, 0);
+    eager.scene.updateMatrixWorld(true); // independent eager expected worlds, never the accelerated scene
+    CHECK(accelerated.tips[0]->hasDeferredTransform());
+    const auto revokeBefore = Object3D::gpuMaintenanceVisits_;
+    admittedPlan->revoke(); // revoke the last admitted rig while its local pose is still pending
+    CHECK(Object3D::gpuMaintenanceVisits_ - revokeBefore == 9);
+    CHECK(!accelerated.tips[0]->skipsGpuJointSubtree());
+    CHECK(!accelerated.tips[0]->hasDeferredTransform());
+    accelerated.meshes[0]->skeleton->calculateInverses(); // first reader after full revocation
+    eager.meshes[0]->skeleton->calculateInverses();
+    for (size_t bone = 0; bone < 3; ++bone) for (int k = 0; k < 16; ++k) {
+        CHECK(std::abs(accelerated.meshes[0]->skeleton->bone(bone)->matrixWorld.elements[k] -
+                       eager.meshes[0]->skeleton->bone(bone)->matrixWorld.elements[k]) < 1e-10);
+        CHECK(std::abs(accelerated.meshes[0]->skeleton->boneInverses[bone].elements[k] -
+                       eager.meshes[0]->skeleton->boneInverses[bone].elements[k]) < 1e-10);
+    }
+    const double postRevokePose[3] = {0.9, -0.15, 0};
+    finalPosition.setValue(postRevokePose, 0); eagerPosition.setValue(postRevokePose, 0);
+    eager.scene.updateMatrixWorld(true);
+    Vector3 actualVertex, expectedVertex;
+    accelerated.meshes[0]->getVertexPosition(0, actualVertex); // immediate CPU skinning must join stale worlds
+    eager.meshes[0]->getVertexPosition(0, expectedVertex);
+    CHECK(std::abs(actualVertex.x - expectedVertex.x) < 1e-10);
+    CHECK(std::abs(actualVertex.y - expectedVertex.y) < 1e-10);
+    CHECK(std::abs(actualVertex.z - expectedVertex.z) < 1e-10);
+    accelerated.meshes[0]->skeleton->update(); eager.meshes[0]->skeleton->update();
+    for (size_t i = 0; i < 48; ++i)
+        CHECK(std::abs(accelerated.meshes[0]->skeleton->boneMatrices[i] - eager.meshes[0]->skeleton->boneMatrices[i]) < 1e-6);
+    accelerated.meshes[0]->exposeGpuBind();
+    const auto eagerRenderJoins = Object3D::joinDependencyVisits();
+    database.render(gpu, accelerated.scene, accelerated.camera);
+    CHECK(Object3D::joinDependencyVisits() == eagerRenderJoins); // a completed eager walk already joined these palettes
+    for (const auto& draw : database.drawn()) CHECK(!draw.gpuJoints);
+    CHECK(!accelerated.tips[0]->hasDeferredTransform());
+    for (size_t rig = 0; rig < accelerated.meshes.size(); ++rig) {
+        eager.meshes[rig]->skeleton->update();
+        const auto& actual = accelerated.meshes[rig]->skeleton->boneMatrices;
+        const auto& expected = eager.meshes[rig]->skeleton->boneMatrices;
+        CHECK(actual.size() == expected.size());
+        for (size_t i = 0; i < actual.size(); ++i) CHECK(std::abs(actual[i] - expected[i]) < 1e-6);
+    }
+    auto external = std::make_shared<Bone>(); external->enableTrackedTransform();
+    Skeleton externalSkeleton({external}, {Matrix4{}});
+    CHECK(external->enableDeferredTransform());
+    const double externalPose[3] = {2, 0, 0};
+    CHECK(external->deferTransformValue(0, externalPose));
+    const auto firstEvaluation = Object3D::matrixEvaluations() + 1;
+    accelerated.scene.updateMatrixWorld(true); // the external bone is deliberately outside this walk
+    const auto externalJoins = Object3D::joinDependencyVisits();
+    externalSkeleton.updateAfterWorldWalk(firstEvaluation);
+    CHECK(Object3D::joinDependencyVisits() == externalJoins + 1);
+    CHECK(std::abs(externalSkeleton.boneMatrices[12] - 2) < 1e-6);
+
+    struct CustomGroup : Group {};
+    for (int variant = 0; variant < 12; ++variant) {
+        Fixture fixture(true);
+        std::shared_ptr<Object3D> ancestor;
+        if (variant == 0) ancestor = std::make_shared<Object3D>();
+        else if (variant == 1) ancestor = std::make_shared<Mesh>();
+        else if (variant == 3) ancestor = std::make_shared<CustomGroup>();
+        else if (variant == 11) ancestor = std::make_shared<Bone>();
+        else ancestor = std::make_shared<Group>();
+        ancestor->enableTrackedTransform();
+        CHECK(Object3D::leaseTransform(&ancestor->matrixWorld) == 5);
+        ancestor->add(*fixture.movers[0]); fixture.scene.add(*ancestor);
+        if (variant == 4) ancestor->matrixWorldAutoUpdate = false;
+        if (variant == 5) ancestor->matrixAutoUpdate = false;
+        if (variant == 6) ancestor->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+            [](const RenderCallbackArgs&, std::string&) { return true; });
+        if (variant == 7) ancestor->scale.y = 2;
+        Object3D* strict = variant == 8 ? fixture.meshes[0]->parent : variant == 9 ? fixture.meshes[0].get() :
+            variant == 10 ? static_cast<Object3D*>(&fixture.scene) : nullptr;
+        if (strict) CHECK(Object3D::leaseTransform(&strict->matrixWorld) == 5);
+        fixture.scene.updateMatrixWorld(true);
+        const auto plan = gpu.prepareGpuJoints(fixture.scene);
+        CHECK(bool(plan && plan->byMesh.count(fixture.meshes[0].get())) == (variant < 3 || variant == 5));
+        CHECK(!plan || !plan->byMesh.count(fixture.meshes[1].get())); // attachment outside Bone set remains eager
+        if (plan && (variant < 3 || variant == 5)) {
+            CHECK(plan->current());
+            fixture.scene.add(*fixture.movers[0]);
+            CHECK(!plan->current()); // live reparent invalidates before a skipped Bone walk
+        }
+        if (strict) Object3D::unleaseTransform(&strict->matrixWorld);
+        Object3D::unleaseTransform(&ancestor->matrixWorld);
+    }
+}
+
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

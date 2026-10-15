@@ -4,6 +4,7 @@
 #include "engine/abi/bindings.h"
 #include "engine/abi/tsl_call.h"
 #include "engine/animation/mixer.h"
+#include "engine/animation/skinning/skeleton.h"
 #include "engine/foundation/ThreeConstants.h"
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/standard.h"
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <map>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
@@ -83,6 +85,9 @@ void fastPaths() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
     Adapter adapter(rt.isolate, rt.context);
+    // Scalar accessor functions currently allow construction; CFunction requires kThrow instead.
+    CHECK(run(rt, adapter, "const setter = Object.getOwnPropertyDescriptor(Vector3.prototype, 'x').set;"
+                           "new setter(1) instanceof setter") == "true");
     const char* setup = "const m = new Mesh(); const p = m.position; const r = m.rotation;";
     const uint64_t start = adapter.genericArguments();
     CHECK(run(rt, adapter, setup) == "undefined");
@@ -1464,6 +1469,31 @@ void materialSlots() {
     )JS");
     CHECK(got == "true,true");
     if (got != "true,true") std::fprintf(stderr, "material slots: %s\n", got.c_str());
+    // Diagnostic observation must never suppress a setter or its material version increment.
+    auto& stats = tn::engine::Material::diagnostics();
+    const auto saved = stats;
+    stats = {};
+    tn_handle_t handle{};
+    tn_diagnostic_t diagnostic{nullptr, 0};
+    CHECK(tn_construct(rt.context, "MeshStandardMaterial", nullptr, 0, &handle, &diagnostic) == TN_OK);
+    auto& material = *static_cast<tn::engine::Material*>(tn::abi::objectOf(handle)->ptr.get());
+    tn_value_t value{}; value.kind = TN_VALUE_NUMBER; value.number = 1;
+    const auto initial = material.version();
+    CHECK(tn_set(handle, "opacity", &value, &diagnostic) == TN_OK);
+    CHECK(stats.writes == 0 && material.version() == initial + 1);
+    stats.enabled = true;
+    const auto before = material.version();
+    for (double number : {1., .5, .5, 0., -0., std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()}) {
+        value.number = number;
+        CHECK(tn_set(handle, "opacity", &value, &diagnostic) == TN_OK);
+    }
+    CHECK(stats.writes == 7 && stats.unchanged == 2 && stats.changed == 2 && stats.signedZero == 1 && stats.nan == 2);
+    CHECK(material.version() == before + 7);
+    value.kind = TN_VALUE_BOOL; value.boolean = 1;
+    CHECK(tn_set(handle, "needsUpdate", &value, &diagnostic) == TN_OK);
+    CHECK(stats.writes == 7 && material.version() == before + 8);
+    stats = saved;
+
 }
 
 // PRD-573 v1.11 step 0: the per-name histogram counts every crossing by the name it crossed with, and its sum
@@ -1537,16 +1567,376 @@ void jsMath() {
 void jsMathViews() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
+    {
+        Adapter nativeAdapter(rt.isolate, rt.context);
+        v8::HandleScope nativeScope(rt.isolate);
+        auto nativeContext = v8::Context::New(rt.isolate);
+        v8::Context::Scope nativeContextScope(nativeContext);
+        nativeAdapter.install(nativeContext, nativeContext->Global());
+        auto script = v8::Script::Compile(nativeContext, v8::String::NewFromUtf8Literal(rt.isolate,
+            "const o = new Object3D(); o.position.x = 7; o.updateMatrix(); o")).ToLocalChecked();
+        tn_handle_t h{};
+        CHECK(nativeAdapter.unwrap(script->Run(nativeContext).ToLocalChecked(), h));
+        auto* object = static_cast<tn::engine::Object3D*>(tn::abi::objectOf(h)->ptr.get());
+        auto* flags = tn::engine::Object3D::transformTrackingAddress(&object->position);
+        CHECK(flags[0] == 0 && flags[2] == 1 && object->matrix.elements[12] == 7);
+    }
+
     Adapter adapter(rt.isolate, rt.context);
     adapter.setJsMath(true);
     v8::HandleScope scope(rt.isolate);
     v8::Local<v8::Context> ctx = v8::Context::New(rt.isolate);
     v8::Context::Scope contextScope(ctx);
     adapter.install(ctx, ctx->Global());
+    // AC-11: characterize observable conversion order before batching component reads.
+    {
+        const auto source = v8::String::NewFromUtf8Literal(rt.isolate, R"JS(
+            (() => {
+                const node = new Object3D();
+                node.position.set(10, 20, 30); node.updateMatrixWorld(true);
+                const cases = [];
+                for (const failure of ['get', 'coerce', 'none', 'reenter', 'reenter-vector']) {
+                    const log = [], target = new Vector3(), boom = new Error(failure);
+                    let written, answer, identity = false, caught = false, errorText;
+                    Object.defineProperty(target, '$tn', { get() { log.push('tag'); return 1; } });
+                    for (const [key, value] of [['x', 1], ['y', 2], ['z', 3]]) {
+                        Object.defineProperty(target, key, { configurable: true, get() {
+                            log.push('get:' + key);
+                            if (failure === 'get' && key === 'x') throw boom;
+                            if (failure === 'reenter' && key === 'y') {
+                                const inner = new Quaternion();
+                                log.push('inner:' + (node.getWorldQuaternion(inner) === inner) + ':' + inner.w);
+                            }
+                            if (failure === 'reenter-vector' && key === 'y') {
+                                const inner = new Vector3();
+                                log.push('inner:' + (node.getWorldPosition(inner) === inner) + ':' + inner.x);
+                            }
+                            return { valueOf() {
+                                log.push('coerce:' + key);
+                                if (failure === 'coerce' && key === 'x') throw boom;
+                                return value;
+                            } };
+                        } });
+                    }
+                    target.set = function (x, y, z) { log.push('set'); written = [x, y, z]; return this; };
+                    try { answer = node.localToWorld(target); identity = answer === target; }
+                    catch (error) { caught = error === boom; errorText = String(error); }
+                    // A fresh successful conversion checks that no pending exception leaks out.
+                    const recovery = new Vector3();
+                    const recovered = node.getWorldPosition(recovery) === recovery && recovery.x === 10;
+                    cases.push({ failure, log, written, identity, returned: answer === undefined ? 'undefined' : answer === node ? 'node' : 'other', caught, errorText, recovered });
+                }
+                return JSON.stringify(cases);
+            })()
+        )JS");
+        v8::TryCatch caught(rt.isolate);
+        v8::Local<v8::Value> result;
+        const bool ran = v8::Script::Compile(ctx, source).ToLocalChecked()->Run(ctx).ToLocal(&result);
+        CHECK(ran);
+        if (ran) {
+            v8::String::Utf8Value text(rt.isolate, result);
+            // Current ABI behavior swallows component read/coercion exceptions, continues in
+            // order, and publishes NaNs (JSON null). This characterizes compatibility, not a
+            // recommendation for exception policy. localToWorld returns its native receiver;
+            // getWorldPosition/getWorldQuaternion preserve their JS target's identity.
+            const char* expected =
+                "[{\"failure\":\"get\",\"log\":[\"tag\",\"get:x\",\"get:y\",\"coerce:y\",\"get:z\",\"coerce:z\",\"set\"],\"written\":[null,null,null],\"identity\":false,\"returned\":\"node\",\"caught\":false,\"recovered\":true},"
+                "{\"failure\":\"coerce\",\"log\":[\"tag\",\"get:x\",\"coerce:x\",\"get:y\",\"coerce:y\",\"get:z\",\"coerce:z\",\"set\"],\"written\":[null,null,null],\"identity\":false,\"returned\":\"node\",\"caught\":false,\"recovered\":true},"
+                "{\"failure\":\"none\",\"log\":[\"tag\",\"get:x\",\"coerce:x\",\"get:y\",\"coerce:y\",\"get:z\",\"coerce:z\",\"set\"],\"written\":[11,22,33],\"identity\":false,\"returned\":\"node\",\"caught\":false,\"recovered\":true},"
+                "{\"failure\":\"reenter\",\"log\":[\"tag\",\"get:x\",\"coerce:x\",\"get:y\",\"inner:true:1\",\"coerce:y\",\"get:z\",\"coerce:z\",\"set\"],\"written\":[11,22,33],\"identity\":false,\"returned\":\"node\",\"caught\":false,\"recovered\":true},"
+                "{\"failure\":\"reenter-vector\",\"log\":[\"tag\",\"get:x\",\"coerce:x\",\"get:y\",\"inner:true:10\",\"coerce:y\",\"get:z\",\"coerce:z\",\"set\"],\"written\":[11,22,33],\"identity\":false,\"returned\":\"node\",\"caught\":false,\"recovered\":true}]";
+            CHECK(std::string(*text) == expected);
+            if (std::string(*text) != expected)
+                std::fprintf(stderr, "AC11 conversion observations: %s\n", *text);
+        } else {
+            v8::String::Utf8Value error(rt.isolate, caught.Exception());
+            std::fprintf(stderr, "AC11 conversion exception: %s\n", *error);
+        }
+    }
+    {
+        const auto source = v8::String::NewFromUtf8Literal(rt.isolate, R"JS(
+            (() => {
+                const node = new Object3D(), q = new Quaternion(), log = [];
+                for (const key of ['x', 'y', 'z', 'w']) {
+                    Object.defineProperty(q, key, { get() {
+                        log.push(key);
+                        return { valueOf() { log.push('number:' + key); if (key === 'x') throw new Error('x'); return 0; } };
+                    } });
+                }
+                q.set = function (...values) { log.push('set:' + values.join()); return this; };
+                return (node.getWorldQuaternion(q) === q) + ':' + log.join('|');
+            })()
+        )JS");
+        const auto result = v8::Script::Compile(ctx, source).ToLocalChecked()->Run(ctx).ToLocalChecked();
+        v8::String::Utf8Value text(rt.isolate, result);
+        CHECK(std::string(*text) == "true:x|number:x|y|number:y|z|number:z|w|number:w|set:0,0,0,1");
+    }
     ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__crossings"),
         v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
             info.GetReturnValue().Set(static_cast<double>(tn::abi::crossings()));
         }).ToLocalChecked()).Check();
+    ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__tracking"),
+        v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            auto* a = static_cast<Adapter*>(info.Data().As<v8::External>()->Value());
+            tn_handle_t h{};
+            CHECK(a->unwrap(info[0], h));
+            auto* o = static_cast<tn::engine::Object3D*>(tn::abi::objectOf(h)->ptr.get());
+            auto* flags = tn::engine::Object3D::transformTrackingAddress(&o->position);
+            if (info.Length() > 1) flags[1] = 0;
+            info.GetReturnValue().Set(flags[0] * 100 + flags[1] * 10 + flags[2]);
+        }, v8::External::New(rt.isolate, &adapter)).ToLocalChecked()).Check();
+    ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__deferBone"),
+        v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            auto* a = static_cast<Adapter*>(info.Data().As<v8::External>()->Value());
+            tn_handle_t h{}; CHECK(a->unwrap(info[0], h));
+            auto* bone = static_cast<tn::engine::Bone*>(tn::abi::objectOf(h)->ptr.get());
+            const double values[] = {7, 8, 9};
+            const bool enabled = bone->enableDeferredTransform();
+            tn::engine::animation::PropertyBinding binding(bone->shared_from_this(), ".position");
+            binding.setValue(values, 0);
+            CHECK(enabled ? bone->hasDeferredTransform() : bone->position.x == 7);
+            info.GetReturnValue().Set(enabled);
+        }, v8::External::New(rt.isolate, &adapter)).ToLocalChecked()).Check();
+    {
+        const auto source = v8::String::NewFromUtf8Literal(rt.isolate, R"JS(
+            (() => {
+                const owner = new Group();
+                const before = __tracking(owner, true);
+                const scratch = new Matrix4();
+                const beforeCopy = __tracking(owner, true);
+                scratch.copy(owner.matrixWorld);
+                const afterCopy = __tracking(owner, true);
+                const y = scratch.elements[5];
+                const afterRead = __tracking(owner, true);
+                const getterOwner = new Group(), beforeGetter = __tracking(getterOwner, true);
+                void getterOwner.matrixWorld;
+                return `${before} ${beforeCopy} ${afterCopy} ${afterRead} ${y} ${beforeGetter} ${__tracking(getterOwner, true)}`;
+            })()
+        )JS");
+        const auto result = v8::Script::Compile(ctx, source).ToLocalChecked()->Run(ctx).ToLocalChecked();
+        v8::String::Utf8Value text(rt.isolate, result);
+        std::printf("fresh tracked Group scratch-copy probe: before/beforeCopy/afterCopy/afterRead/y/beforeGetter/afterGetter = %s\n", *text);
+        CHECK(std::string(*text) == "100 100 101 101 1 100 101");
+    }
+    const char* tracking = R"JS(
+        (() => {
+            const check = (ok) => { if (!ok) throw Error('tracking assertion'); };
+            const boundsRoot = new Group(), boundsMesh = new Mesh(new BoxGeometry(2, 4, 6), new MeshBasicMaterial());
+            boundsRoot.position.set(10, 0, 0); boundsMesh.position.set(2, 3, 4); boundsRoot.add(boundsMesh);
+            boundsRoot.updateMatrixWorld(true);
+            check(__tracking(boundsRoot, true) === 100 && __tracking(boundsMesh, true) === 100);
+            const observedBounds = new Box3().setFromObject(boundsRoot);
+            check(observedBounds.min.equals(new Vector3(11, 1, 1)) && observedBounds.max.equals(new Vector3(13, 5, 7)));
+            if (__tracking(boundsRoot, true) !== 100 || __tracking(boundsMesh, true) !== 100)
+                throw Error(`bounds escaped ${__tracking(boundsRoot)} ${__tracking(boundsMesh)} native=${boundsRoot instanceof Object3D}`);
+
+            boundsMesh.visible = false;
+            check(new Box3().setFromObject(boundsRoot, true).equals(observedBounds));
+            const expanded = new Box3(new Vector3(-20, -20, -20), new Vector3(-19, -19, -19));
+            const minIdentity = expanded.min, maxIdentity = expanded.max;
+            check(expanded.expandByObject(boundsRoot) === expanded && expanded.min === minIdentity && expanded.max === maxIdentity);
+            check(expanded.min.x === -20 && expanded.max.equals(observedBounds.max));
+            const instancedBounds = new InstancedMesh(new BoxGeometry(2, 4, 6), new MeshBasicMaterial(), 2);
+            instancedBounds.setMatrixAt(0, new Matrix4()); instancedBounds.setMatrixAt(1, new Matrix4().makeTranslation(3, 0, 0));
+            const instancesBox = new Box3().setFromObject(instancedBounds, true);
+            check(instancesBox.min.equals(new Vector3(-1, -2, -3)) && instancesBox.max.equals(new Vector3(4, 2, 3)));
+            check(__tracking(instancedBounds, true) === 100);
+            const skinGeometry = new BufferGeometry();
+            skinGeometry.setAttribute('position', new Float32BufferAttribute([1, 2, 3], 3));
+            skinGeometry.setAttribute('skinIndex', new Float32BufferAttribute([0, 0, 0, 0], 4));
+            skinGeometry.setAttribute('skinWeight', new Float32BufferAttribute([1, 0, 0, 0], 4));
+            const boundsBone = new Bone(); boundsBone.position.x = 4; boundsBone.updateMatrixWorld(true);
+            const boundsSkin = new SkinnedMesh(skinGeometry, new MeshBasicMaterial());
+            boundsSkin.bind(new Skeleton([boundsBone], [new Matrix4()]), new Matrix4());
+            const skinFlags = __tracking(boundsSkin, true), boneFlags = __tracking(boundsBone, true);
+            for (const precise of [false, true]) {
+                const box = new Box3().setFromObject(boundsSkin, precise);
+                check(box.min.equals(new Vector3(5, 2, 3)) && box.max.equals(box.min));
+            }
+            check(__tracking(boundsSkin, true) === skinFlags && __tracking(boundsBone, true) === boneFlags);
+            const morphGeometry = new BufferGeometry();
+            morphGeometry.setAttribute('position', new Float32BufferAttribute([1, 2, 3], 3));
+            morphGeometry.morphAttributes.position = [new Float32BufferAttribute([7, 8, 9], 3)];
+            const morphMesh = new Mesh(morphGeometry, new MeshBasicMaterial());
+            check(new Box3().setFromObject(morphMesh).max.equals(new Vector3(7, 8, 9)));
+            check(new Box3().setFromObject(morphMesh, true).max.equals(new Vector3(1, 2, 3)));
+            const portableObject = { geometry: boundsMesh.geometry, children: [], matrixWorld: new Matrix4().makeTranslation(2, 0, 0), updateWorldMatrix() {} };
+            const portableBox = new Box3().setFromObject(portableObject);
+            check(portableBox.min.equals(new Vector3(1, -2, -3)) && portableBox.max.equals(new Vector3(3, 2, 3)));
+            const snapshotParent = new Group(), snapshotOwner = new Group(), snapshot = new Matrix4();
+            snapshotParent.add(snapshotOwner);
+            check(__tracking(snapshotOwner, true) === 100);
+            snapshotOwner.__tnCopyMatrixWorld(snapshot);
+            check(__tracking(snapshotOwner, true) === 100 && snapshot.elements.every((v, i) => v === (i % 5 === 0 ? 1 : 0)));
+            for (let frame = 0; frame < 2; frame++) {
+                snapshotParent.position.set(2 + frame, -3, 4);
+                snapshotParent.scale.set(-2, 3, 4);
+                snapshotParent.rotation.set(.1, .2, -.3);
+                snapshotOwner.position.set(1, 2 + frame, -3);
+                snapshotOwner.rotation.set(.4, -.2, .3);
+                snapshotOwner.updateWorldMatrix(true, false);
+                snapshotOwner.__tnCopyMatrixWorld(snapshot);
+                const expected = new Matrix4().compose(snapshotParent.position, snapshotParent.quaternion, snapshotParent.scale)
+                    .multiply(new Matrix4().compose(snapshotOwner.position, snapshotOwner.quaternion, snapshotOwner.scale));
+                check(snapshot.elements.every((v, i) => Math.abs(v - expected.elements[i]) < 1e-12));
+                check(__tracking(snapshotOwner, true) === 100 && __tracking(snapshotParent, true) === 100);
+            }
+            for (const bad of [null, 1, {}, new Vector3()]) {
+                let refused = false;
+                try { snapshotOwner.__tnCopyMatrixWorld(bad); } catch { refused = true; }
+                check(refused && __tracking(snapshotOwner, true) === 100);
+            }
+            const liveTarget = snapshotParent.matrixWorld;
+            snapshotOwner.__tnCopyMatrixWorld(liveTarget);
+            check(liveTarget.elements.every((v, i) => v === snapshot.elements[i]));
+            check(__tracking(snapshotOwner, true) === 100);
+            const snapshotBone = new Bone(); check(__deferBone(snapshotBone));
+            snapshotBone.__tnCopyMatrixWorld(snapshot);
+            check(snapshot.elements[12] === 7 && snapshot.elements[13] === 8 && snapshot.elements[14] === 9);
+            check(__tracking(snapshotBone, true) === 100);
+            const live = snapshotOwner.matrixWorld;
+            check(__tracking(snapshotOwner, true) === 101);
+            live.elements[12] = 123;
+            snapshotOwner.__tnCopyMatrixWorld(snapshot);
+            check(snapshot.elements[12] === 123 && __tracking(snapshotOwner, true) === 101);
+            const deferred = new Bone(); check(__deferBone(deferred));
+            const keptBonePosition = deferred.position;
+            check(keptBonePosition.x === 7 && __tracking(deferred) === 111);
+            keptBonePosition.x = 100;
+            check(!__deferBone(deferred) && keptBonePosition.x === 7);
+            const retained = new Bone(), preexisting = retained.quaternion;
+            check(!__deferBone(retained) && retained.position.y === 8 && preexisting.w === 1);
+            const worldBone = new Bone(); check(__deferBone(worldBone));
+            check(worldBone.matrixWorld.elements[12] === 7 && !__deferBone(worldBone));
+            const ancestorBone = new Bone(), band = new Object3D();
+            band.position.set(1,0,0); ancestorBone.add(band); check(__deferBone(ancestorBone));
+            check(band.matrixWorld.elements[12] === 8);
+            const localBone = new Bone(); check(__deferBone(localBone));
+            void localBone.matrix; check(!__deferBone(localBone) && localBone.position.z === 9);
+            const tree = new Group(); tree.add(new Object3D());
+            for (const clone of [tree.clone(true), new SkeletonUtils().clone(tree)]) {
+                check(__tracking(clone, true) === 100 && __tracking(clone.children[0], true) === 100);
+                const child = clone.children[0]; child.position.x = 8;
+                check(__tracking(child) === 110);
+                const alias = child.position._a.buffer; check(__tracking(child, true) === 101);
+                check(new Float64Array(alias)[0] === 8);
+                void clone.matrixWorld; check(__tracking(clone, true) === 101);
+            }
+            const o = new Object3D(), p = o.position;
+            check(__tracking(o, true) === 100);
+            for (const write of [() => p.x = 2, () => p.set(3,4,5), () => p.fromArray([6,7,8]),
+                () => o.scale.multiplyScalar(2), () => o.rotation.y = .5,
+                () => o.rotation.order = 'ZYX', () => o.quaternion.w = .8,
+                () => o.translateX(1), () => o.rotateY(.2), () => o.lookAt(1,2,3),
+                () => o.applyMatrix4(new Matrix4()), () => o.copy(new Object3D())]) {
+                __tracking(o, true); write(); check(__tracking(o) === 110);
+            }
+            p.fromArray([6,7,8]);
+            check(p instanceof Vector3 && Object.keys(p).join() === '_a');
+            check(!p.hasOwnProperty('x') && !Object.getOwnPropertyDescriptor(Object.getPrototypeOf(p), 'x').enumerable);
+            const backingDescriptor = Object.getOwnPropertyDescriptor(p, '_a');
+            check(backingDescriptor.enumerable && !backingDescriptor.configurable && !!backingDescriptor.set);
+            check(Object.keys(o.rotation).join() === 'isEuler,_a,_o,_q');
+            check(Object.keys(o.quaternion).join() === 'isQuaternion,_a,_e');
+            check(!('_o' in p) && !('_o' in o.quaternion) && '_o' in o.rotation);
+            check(!Reflect.ownKeys(Object.getPrototypeOf(p)).includes('_o'));
+            check(!Reflect.ownKeys(Object.getPrototypeOf(o.quaternion)).includes('_o'));
+            check(Reflect.ownKeys(Object.getPrototypeOf(o.rotation)).includes('_o'));
+            const protectedOwner = new Object3D(); protectedOwner.position.x = 19;
+            for (const [view, key] of [[protectedOwner.position, '_a'], [protectedOwner.quaternion, '_a'],
+                [protectedOwner.rotation, '_a'], [protectedOwner.rotation, '_o']]) {
+                let refused = false;
+                try { Object.defineProperty(view, key, { value: [] }); } catch (error) { refused = error instanceof TypeError; }
+                check(refused && !Reflect.deleteProperty(view, key));
+                refused = false;
+                try { (function () { 'use strict'; delete view[key]; })(); } catch (error) { refused = error instanceof TypeError; }
+                check(refused);
+            }
+            check(__tracking(protectedOwner, true) === 100 && protectedOwner.position.x === 19);
+            protectedOwner.position.x = 20; protectedOwner.updateMatrix();
+            check(protectedOwner.matrix.elements[12] === 20);
+
+            check(p.clone() instanceof Vector3 && p.clone().x === 6);
+            p.copy(new Vector3(9,8,7)); check(p.x === 9);
+            const a = p._a; check(__tracking(o, true) === 101);
+            check(a === p._a && a.buffer === p._a.buffer);
+            a[0] = 42; check(p.x === 42 && __tracking(o) === 101);
+            p.y = 43; check(__tracking(o) === 111);
+            const replacement = new Object3D(), replacementP = replacement.position;
+            replacementP._a = new Float64Array([31,32,33]);
+            check(__tracking(replacement, true) === 101 && replacementP.x === 31);
+            const e = new Object3D(); const order = e.rotation._o;
+            check(__tracking(e, true) === 101 && order === e.rotation._o);
+            e.rotation._o = new Int32Array([0]); check(e.rotation.order === 'XYZ');
+            for (const key of ['matrix', 'matrixWorld']) {
+                const m = new Object3D(); check(__tracking(m, true) === 100);
+                void m[key]; check(__tracking(m) === 101);
+            }
+            let gone = new Object3D(); const kept = gone.position; kept.set(12,13,14);
+            gone = null; gc();
+            for (let i = 0; i < 600; i++) new Object3D();
+            gc(); check(kept.x === 12 && kept.y === 13 && kept.z === 14);
+            kept.set(15,16,17); check(kept.z === 17);
+            return 'tracked';
+        })()
+    )JS";
+    {
+        v8::TryCatch caught(rt.isolate);
+        v8::Local<v8::Value> result;
+        auto script = v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, tracking).ToLocalChecked()).ToLocalChecked();
+        const bool ok = script->Run(ctx).ToLocal(&result);
+        if (!ok) {
+            v8::String::Utf8Value error(rt.isolate, caught.Exception());
+            std::fprintf(stderr, "%s\n", *error);
+            v8::Local<v8::Value> stack;
+            if (caught.StackTrace(ctx).ToLocal(&stack)) {
+                v8::String::Utf8Value trace(rt.isolate, stack);
+                std::fprintf(stderr, "%s\n", *trace);
+            }
+        }
+        CHECK(ok);
+    }
+    tn_handle_t collected{};
+    {
+        v8::HandleScope ownerScope(rt.isolate);
+        auto source = v8::String::NewFromUtf8Literal(rt.isolate,
+            "globalThis.__owner = new Object3D(); globalThis.__kept = __owner.position; __kept.set(21,22,23); "
+            "globalThis.__rawOwner = new Object3D(); __rawOwner.position.set(41,42,43); "
+            "globalThis.__rawBuffer = __rawOwner.position._a.buffer; delete globalThis.__rawOwner; __owner");
+        auto owner = v8::Script::Compile(ctx, source).ToLocalChecked()->Run(ctx).ToLocalChecked();
+        CHECK(adapter.unwrap(owner, collected));
+        ctx->Global()->Delete(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "__owner")).Check();
+    }
+    for (int i = 0; i < 4; ++i) rt.isolate->LowMemoryNotification();
+    tn_value_t stale{};
+    tn_diagnostic_t diagnostic{nullptr, 0};
+    CHECK(tn_get(collected, "name", &stale, &diagnostic) == TN_ERROR_INVALID_HANDLE);
+    tn_diagnostic_release(&diagnostic);
+    auto retainedCheck = v8::String::NewFromUtf8Literal(rt.isolate,
+        "for (let i = 0; i < 600; i++) new Object3D(); "
+        "__kept.z === 23 && (__kept.x = 24) === 24 && new Float64Array(__rawBuffer)[0] === 41");
+    CHECK(v8::Script::Compile(ctx, retainedCheck).ToLocalChecked()->Run(ctx).ToLocalChecked()->IsTrue());
+    tn::engine::Object3D eager;
+    auto* flags = tn::engine::Object3D::transformTrackingAddress(&eager.position);
+    CHECK(flags[0] == 0 && flags[2] == 1);
+    std::string cloneError;
+    auto nativeClone = tn::engine::cloneObject(eager, true, cloneError);
+    CHECK(nativeClone && cloneError.empty());
+    CHECK(tn::engine::Object3D::transformTrackingAddress(&nativeClone->position)[0] == 0);
+    eager.enableTrackedTransform();
+    flags[2] = 1;
+    eager.enableTrackedTransform();
+    CHECK(flags[2] == 1);  // Admission cannot undo an earlier escape.
+    flags[1] = 0;
+    eager.rotation.x = .2;
+    CHECK(flags[1] == 1);
+    flags[1] = 0;
+    eager.quaternion.w = .9;
+    CHECK(flags[1] == 1);
+    eager.position.x = 5; eager.updateMatrix();
+    CHECK(eager.matrix.elements[12] == 5);
+    eager.position.x = 6; eager.updateMatrix();
+    CHECK(eager.matrix.elements[12] == 6);
     const char* source = R"JS(
         const make = () => new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         const meshes = []; for (let i = 0; i < 100; i++) meshes.push(make());

@@ -10,7 +10,19 @@
 #include <android/log.h>
 #endif
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <dirent.h>
+#include <dlfcn.h>
+#include <sched.h>
+#endif
+#if defined(__linux__)
+#include <linux/perf_event.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
 #include <chrono>
+#include <climits>
+#include <cmath>
 #include <ctime>
 #include <array>
 #include <cstring>
@@ -23,14 +35,33 @@
 #include <stdexcept>
 #include <vector>
 
+#include "engine/animation/mixer.h"
 #include "engine/inspect/endpoint.h"
 #include "engine/player/mailbox.h"
 #include "engine/renderer/presentation.h"
 #include "engine/renderer/render_database.h"
+#include "engine/scene/projected_cull.h"
 #include "engine/world/loop/fixed_step.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/presentation.h"
 #include "mystral/webgpu_compat.h"
+
+// The legacy host's SDL-to-DOM input translation (platform/input.cpp), which declares none of these.
+namespace mystral::platform {
+void processKeyboardEvent(const SDL_KeyboardEvent& event, bool isDown);
+void processMouseMotion(const SDL_MouseMotionEvent& event);
+void processMouseButton(const SDL_MouseButtonEvent& event, bool isDown);
+void processMouseWheel(const SDL_MouseWheelEvent& event);
+
+// input.cpp's touch path scales by the window; the player owns exactly one, and does not link platform/window.cpp.
+void getWindowSize(int* width, int* height) {
+    int count = 0;
+    SDL_Window** windows = SDL_GetWindows(&count);
+    *width = *height = 0;
+    if (windows != nullptr && count > 0) SDL_GetWindowSize(windows[0], width, height);
+    SDL_free(windows);
+}
+}  // namespace mystral::platform
 
 using namespace tn::engine;
 
@@ -183,11 +214,13 @@ constexpr bool kSurfaceVsync = true;
  * A measurement run states its surface: TN_PLAYER_WIDTH and TN_PLAYER_HEIGHT size the window (the
  * drawing buffer follows it), TN_PLAYER_VSYNC=0 presents uncapped as the legacy host's `--no-vsync`
  * does. Read once; an unreadable value stops the player by name rather than measuring a surface
- * nobody asked for. Unset, every default is unchanged.
+ * nobody asked for. Unset, every default is unchanged. TN_PLAYER_TITLE names the window (a packaged
+ * game passes its `window.title`).
  */
 struct SurfaceConfig {
     uint32_t width = kWidth, height = kHeight;
     bool vsync = kSurfaceVsync;
+    std::string title = "ThreeNative native engine";
     std::string problem;
 };
 
@@ -206,6 +239,7 @@ SurfaceConfig readSurfaceConfig() {
     };
     dimension("TN_PLAYER_WIDTH", config.width);
     dimension("TN_PLAYER_HEIGHT", config.height);
+    if (const char* text = std::getenv("TN_PLAYER_TITLE"); text != nullptr && text[0] != '\0') config.title = text;
     if (const char* text = std::getenv("TN_PLAYER_VSYNC"); text != nullptr && text[0] != '\0') {
         if (std::strcmp(text, "0") == 0 || std::strcmp(text, "off") == 0) config.vsync = false;
         else if (std::strcmp(text, "1") == 0 || std::strcmp(text, "on") == 0) config.vsync = true;
@@ -241,6 +275,31 @@ struct Window {
     uint32_t height = kHeight;
 };
 
+#if defined(__linux__) && !defined(__ANDROID__)
+/**
+ * A window manager shows `_NET_WM_NAME` (UTF-8). SDL's static X11 build leaves it unset and writes
+ * `WM_NAME` through the locale, so a title with a dash shows as "MIDWAY â Open Pacific" in the title
+ * bar. libX11 is already loaded by SDL (RTLD_NOLOAD finds it); the player sets the property itself.
+ */
+void publishUtf8Title(SDL_Window* window, const std::string& title) {
+    void* x11 = dlopen("libX11.so.6", RTLD_NOW | RTLD_NOLOAD);
+    if (x11 == nullptr) return;
+    using InternAtom = unsigned long (*)(void*, const char*, int);
+    using ChangeProperty = int (*)(void*, unsigned long, unsigned long, unsigned long, int, int, const unsigned char*, int);
+    using Flush = int (*)(void*);
+    const auto intern = reinterpret_cast<InternAtom>(dlsym(x11, "XInternAtom"));
+    const auto change = reinterpret_cast<ChangeProperty>(dlsym(x11, "XChangeProperty"));
+    const auto flush = reinterpret_cast<Flush>(dlsym(x11, "XFlush"));
+    const SDL_PropertiesID properties = SDL_GetWindowProperties(window);
+    void* display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+    const auto id = static_cast<unsigned long>(SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+    if (intern == nullptr || change == nullptr || flush == nullptr || display == nullptr || id == 0) return;
+    change(display, id, intern(display, "_NET_WM_NAME", 0), intern(display, "UTF8_STRING", 0), 8, 0 /* PropModeReplace */,
+           reinterpret_cast<const unsigned char*>(title.data()), static_cast<int>(title.size()));
+    flush(display);
+}
+#endif
+
 /** The legacy host's platform presentation flags, without web-view or UI branches. */
 bool openWindow(Window& window) {
 #if defined(__ANDROID__)
@@ -261,18 +320,22 @@ bool openWindow(Window& window) {
 #elif !defined(_WIN32)
     flags |= SDL_WINDOW_VULKAN;
 #endif
-    window.handle = SDL_CreateWindow("ThreeNative native engine", static_cast<int>(surfaceConfig().width),
+    window.handle = SDL_CreateWindow(surfaceConfig().title.c_str(), static_cast<int>(surfaceConfig().width),
                                      static_cast<int>(surfaceConfig().height), flags);
     if (!window.handle) {
         std::printf("[Playtest] SDL_CreateWindow failed: %s\n", SDL_GetError());
         return false;
     }
+#if defined(__linux__) && !defined(__ANDROID__)
+    publishUtf8Title(window.handle, surfaceConfig().title);
+#endif
     int width = 0, height = 0;
     SDL_GetWindowSize(window.handle, &width, &height);
     if (width <= 0 || height <= 0)
         return false;
     window.width = static_cast<uint32_t>(width);
     window.height = static_cast<uint32_t>(height);
+    std::printf("TN_PLAYER_WINDOW: title '%s', %dx%d\n", SDL_GetWindowTitle(window.handle), width, height);
     return true;
 }
 
@@ -325,17 +388,27 @@ bool pumpEvents(Window& window, const Game& game) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             return false;
         // The mouse reaches an attached UI first, as on the legacy host (PRD-554), in window-normalized
-        // coordinates.
-        if (game.uiPointer && window.width > 0 && window.height > 0 &&
-            (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
-             event.type == SDL_EVENT_MOUSE_MOTION)) {
+        // coordinates; what the UI declines is the game's.
+        const bool mouse = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+                           event.type == SDL_EVENT_MOUSE_MOTION;
+        if (game.uiPointer && window.width > 0 && window.height > 0 && mouse) {
             const bool motion = event.type == SDL_EVENT_MOUSE_MOTION;
             const float x = motion ? event.motion.x : event.button.x, y = motion ? event.motion.y : event.button.y;
             const SDL_MouseButtonFlags held = SDL_GetMouseState(nullptr, nullptr);
             int buttons = (held & SDL_BUTTON_LMASK ? 1 : 0) | (held & SDL_BUTTON_RMASK ? 2 : 0) | (held & SDL_BUTTON_MMASK ? 4 : 0);
             const char* type = motion ? "pointermove" : event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "pointerdown" : "pointerup";
-            game.uiPointer(type, x / float(window.width), y / float(window.height), buttons);
-            continue;
+            if (game.uiPointer(type, x / float(window.width), y / float(window.height), buttons)) continue;
+        }
+        // A person's keys, mouse and wheel become the DOM events the game's listeners read, through the
+        // legacy host's translation (platform/input.cpp); a game runtime installs the callbacks.
+        switch (event.type) {
+            case SDL_EVENT_KEY_DOWN: mystral::platform::processKeyboardEvent(event.key, true); continue;
+            case SDL_EVENT_KEY_UP: mystral::platform::processKeyboardEvent(event.key, false); continue;
+            case SDL_EVENT_MOUSE_MOTION: mystral::platform::processMouseMotion(event.motion); continue;
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: mystral::platform::processMouseButton(event.button, true); continue;
+            case SDL_EVENT_MOUSE_BUTTON_UP: mystral::platform::processMouseButton(event.button, false); continue;
+            case SDL_EVENT_MOUSE_WHEEL: mystral::platform::processMouseWheel(event.wheel); continue;
+            default: break;
         }
         if (event.type != SDL_EVENT_WINDOW_RESIZED && event.type != SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
             continue;
@@ -363,6 +436,43 @@ double threadCpuMs() {
     return -1;
 }
 
+// Instructions this thread retired in user space, from a counter opened on first use; -1 where the kernel
+// refuses one (perf_event_paranoid above 2, a VM without a PMU). On a shared host, load and clock speed move
+// thread CPU time by more than a small cut saves; this count barely moves, so an A/B can read it (PRD-610).
+double threadInstructions() {
+#if defined(__linux__)
+    thread_local const int counter = [] {
+        perf_event_attr attr{};
+        attr.type = PERF_TYPE_HARDWARE;
+        attr.size = sizeof(attr);
+        attr.config = PERF_COUNT_HW_INSTRUCTIONS;
+        attr.exclude_kernel = 1;
+        attr.exclude_hv = 1;
+        return int(syscall(SYS_perf_event_open, &attr, 0, -1, -1, 0));
+    }();
+    uint64_t count = 0;
+    if (counter >= 0 && read(counter, &count, sizeof(count)) == ssize_t(sizeof(count))) return double(count);
+#endif
+    return -1;
+}
+
+double threadCycles() {
+#if defined(__linux__)
+    thread_local const int counter = [] {
+        perf_event_attr attr{};
+        attr.type = PERF_TYPE_HARDWARE;
+        attr.size = sizeof(attr);
+        attr.config = PERF_COUNT_HW_CPU_CYCLES;
+        attr.exclude_kernel = 1;
+        attr.exclude_hv = 1;
+        return int(syscall(SYS_perf_event_open, &attr, 0, -1, -1, 0));
+    }();
+    uint64_t count = 0;
+    if (counter >= 0 && read(counter, &count, sizeof(count)) == ssize_t(sizeof(count))) return double(count);
+#endif
+    return -1;
+}
+
 json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double frameMs, uint64_t bridgeCalls,
                         uint64_t tick, uint64_t updates, double gameCpuMs, double cpuFrameCpuMs, double presentCpuMs,
                         double renderCpuMs) {
@@ -379,6 +489,127 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
     return V::makeObject(std::move(members));
 }
 
+#if defined(__linux__) && !defined(__ANDROID__)
+/**
+ * PRD-610: the game thread keeps its own cores. It takes one L3 domain (a Ryzen CCD), or one physical
+ * core where all cores share one L3. Every other thread of the player and its child processes (the GPU
+ * present worker, the render thread, shader compiles, V8 workers, the HUD overlay and its WebKit
+ * processes) runs on the remaining CPUs. On Xvfb the NVIDIA present waits in a busy loop, and sharing
+ * cores with it cost the game thread 15 to 30% of its IPC on Midway.
+ * TN_PLAYER_MAIN_CORE=off leaves placement to the OS; a CPU number names the core to start from.
+ * Auto starts from the core the firmware ranks last (ACPI CPPC) among the fastest by max frequency:
+ * the scheduler packs other busy work onto top-ranked cores first, and a game thread pinned there
+ * competed with it.
+ */
+struct ThreadPlacement {
+    cpu_set_t helpers{};
+    bool active = false;
+    std::chrono::steady_clock::time_point lastSweep{};
+
+    static long readNumber(const std::string& path) {
+        long value = -1;
+        if (std::FILE* file = std::fopen(path.c_str(), "r")) {
+            if (std::fscanf(file, "%ld", &value) != 1) value = -1;
+            std::fclose(file);
+        }
+        return value;
+    }
+    /** A sysfs CPU list ("11,23", "6-11,18-23") as a set; empty when unreadable. */
+    static cpu_set_t readList(const std::string& path) {
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        if (std::FILE* file = std::fopen(path.c_str(), "r")) {
+            int first = 0, last = 0;
+            char separator = 0;
+            while (std::fscanf(file, "%d", &first) == 1) {
+                last = first;
+                if (std::fscanf(file, "%c", &separator) == 1 && separator == '-' && std::fscanf(file, "%d", &last) == 1)
+                    std::fscanf(file, "%c", &separator);
+                for (int c = first; c <= last && c < CPU_SETSIZE; ++c) CPU_SET(c, &set);
+            }
+            std::fclose(file);
+        }
+        return set;
+    }
+    void start() {
+        const char* setting = std::getenv("TN_PLAYER_MAIN_CORE");
+        if (setting && std::strcmp(setting, "off") == 0) return;
+        cpu_set_t allowed;
+        if (sched_getaffinity(0, sizeof allowed, &allowed) != 0 || CPU_COUNT(&allowed) < 4) return;
+        int chosen = -1;
+        if (setting && *setting && std::strcmp(setting, "auto") != 0) {
+            chosen = std::atoi(setting);
+            if (chosen < 0 || chosen >= CPU_SETSIZE || !CPU_ISSET(chosen, &allowed)) {
+                std::fprintf(stderr, "TN_PLAYER_MAIN_CORE=%s is not an allowed CPU; placement is off.\n", setting);
+                return;
+            }
+        } else {
+            // The fastest cores by max frequency first (P-cores on a hybrid CPU), then the last CPPC rank among them.
+            const auto cpuFile = [](int c, const char* name) { return "/sys/devices/system/cpu/cpu" + std::to_string(c) + name; };
+            long fastest = -1, lowest = LONG_MAX;
+            for (int c = 0; c < CPU_SETSIZE; ++c)
+                if (CPU_ISSET(c, &allowed)) fastest = std::max(fastest, readNumber(cpuFile(c, "/cpufreq/cpuinfo_max_freq")));
+            for (int c = 0; c < CPU_SETSIZE; ++c) {
+                if (!CPU_ISSET(c, &allowed) || readNumber(cpuFile(c, "/cpufreq/cpuinfo_max_freq")) != fastest) continue;
+                const long rank = std::max(0L, readNumber(cpuFile(c, "/acpi_cppc/highest_perf")));
+                if (rank <= lowest) lowest = rank, chosen = c;
+            }
+        }
+        // Several L3 domains (a Ryzen CCD): the game thread takes the chosen core's domain and the helpers the
+        // others, so neither shares a core or an L3 with the other. One shared L3: the game thread takes the core.
+        const std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(chosen);
+        const cpu_set_t domain = readList(base + "/cache/index3/shared_cpu_list");
+        cpu_set_t main;
+        CPU_AND(&main, &domain, &allowed);
+        if (CPU_COUNT(&main) == 0 || CPU_EQUAL(&main, &allowed)) {
+            const cpu_set_t core = readList(base + "/topology/thread_siblings_list");
+            CPU_AND(&main, &core, &allowed);
+        }
+        if (CPU_COUNT(&main) == 0) CPU_SET(chosen, &main);
+        CPU_XOR(&helpers, &allowed, &main);
+        if (CPU_COUNT(&helpers) == 0 || sched_setaffinity(0, sizeof main, &main) != 0) return;
+        active = true;
+        sweep();
+        std::string cpus;
+        for (int c = 0; c < CPU_SETSIZE; ++c)
+            if (CPU_ISSET(c, &main)) cpus += (cpus.empty() ? "" : ",") + std::to_string(c);
+        std::printf("TN_THREAD_PLACEMENT main=%s helpers=%d\n", cpus.c_str(), CPU_COUNT(&helpers));
+    }
+    /** Moves every thread but the calling (game) one, and every descendant process, onto the helpers. */
+    void moveTasks(int pid, bool self) {
+        const std::string root = "/proc/" + std::to_string(pid) + "/task";
+        DIR* tasks = opendir(root.c_str());
+        if (!tasks) return;
+        const pid_t me = static_cast<pid_t>(syscall(SYS_gettid));
+        while (const dirent* entry = readdir(tasks)) {
+            const int tid = std::atoi(entry->d_name);
+            if (tid <= 0) continue;
+            if (!self || tid != me) sched_setaffinity(tid, sizeof helpers, &helpers);
+            // Children are listed per thread; WebKit's processes hang off the overlay's thread.
+            if (std::FILE* file = std::fopen((root + "/" + entry->d_name + "/children").c_str(), "r")) {
+                int child = 0;
+                while (std::fscanf(file, "%d", &child) == 1) moveTasks(child, false);
+                std::fclose(file);
+            }
+        }
+        closedir(tasks);
+    }
+    void sweep() {
+        lastSweep = std::chrono::steady_clock::now();
+        moveTasks(static_cast<int>(getpid()), true);
+    }
+    /** Threads started after `start` inherit the game thread's core; a sweep a second moves them. */
+    void sweepIfDue() {
+        if (active && std::chrono::steady_clock::now() - lastSweep >= std::chrono::seconds(1)) sweep();
+    }
+};
+#else
+struct ThreadPlacement {
+    void start() {}
+    void sweepIfDue() {}
+};
+#endif
+
 struct Session {
     Game game;
     Window window;
@@ -386,7 +617,37 @@ struct Session {
     std::unique_ptr<Presenter> presenter;
     EventQueue events;
     std::unique_ptr<Renderer> renderer;
+    // PRD-610 AC-9: submit, acquire, blit, present and the device poll run here, off the game thread,
+    // while the next frame's JS runs. TN_GPU_THREAD=0 keeps them on the game thread.
+    std::shared_ptr<GpuThread> gpuThread;
+    double gpuThreadCpuMs = -1;  // the GPU thread's CPU for the previous frame's present job
+    double gpuJobCpuMs = -1;     // written by that job; copied above only after a wait
+    // PRD-613: the encode half of the frame (every pass, main and reflections) runs here, off the game
+    // thread, while the next frame's JS runs. TN_RENDER_THREAD=1 enables it; it needs the GPU thread.
+    // The game thread touches the renderer only after waitRenderThread() and before it posts the next job.
+    std::shared_ptr<GpuThread> renderThread;
+    std::vector<std::function<void()>> encodeJobs;  // this frame's passes, in order; the job reads them, so they live here
+    double renderThreadCpuMs = -1;  // the render thread's CPU for the previous frame's job
+    double renderJobCpuMs = -1;     // written by that job; copied above only after a wait
+    std::exception_ptr renderError;  // an encode failure, rethrown on the game thread at the next handoff
+    bool renderJobPosted = false;
+    uint64_t renderFallbacks = 0;    // frames that took the inline path while the render thread was on
+    /** Waits for the frame in flight: the render thread first, then the GPU thread its job fed. */
+    void waitRenderThread(bool rethrow) {
+        if (renderThread) {
+            renderThread->wait();
+            if (renderJobPosted) renderThreadCpuMs = renderJobCpuMs;
+            renderJobPosted = false;
+        }
+        if (gpuThread) {
+            gpuThread->wait();
+            gpuThreadCpuMs = gpuJobCpuMs;
+        }
+        if (renderThread && renderer) renderer->collectFrame();
+        if (rethrow && renderError) std::rethrow_exception(std::exchange(renderError, nullptr));
+    }
     world::FixedStepClock clock{kTickStep, 5};
+    uint64_t drivenTicks = 0;
     double nowMs = 0;
     std::unique_ptr<inspect::Endpoint> endpoint;
     std::unique_ptr<Mailbox> mailbox;
@@ -400,33 +661,64 @@ struct Session {
     bool runner = false, initialized = false, readbackInFlight = false, firstFrame = true;
     bool viewFailed = false;
     bool metrics = std::getenv("TN_PLAYER_METRICS") != nullptr || gameSpan(-1, 0) == 1;
+    bool gpuTiming = metrics && std::getenv("TN_PLAYER_GPU_TIMING") && std::strcmp(std::getenv("TN_PLAYER_GPU_TIMING"), "1") == 0;
+    uint64_t previousGpuSamples = 0;
+    bool mainThreadCpuEnabled = [] {
+        const char* flag = std::getenv("TN_PLAYER_MAIN_THREAD_CPU");
+        const char* metricsFlag = std::getenv("TN_PLAYER_METRICS");
+        return metricsFlag && std::strcmp(metricsFlag, "1") == 0 && flag && std::strcmp(flag, "1") == 0;
+    }();
     bool spans = gameSpan(-1, 0) == 1;
     uint64_t measuredFrames = 0, previousCrossings = 0, updateTicks = 0;
-    double updateMs = 0, readyMs = 0, updateCpuMs = 0;
+    double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
+    double updateMixerCpuMs = 0;
+    uint64_t updateMixerCalls = 0;
+    double updateCullCpuMs = 0;
+    uint64_t updateCullCalls = 0;
     void update(double dt) {
         const auto begin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double cpuBegin = metrics ? threadCpuMs() : -1;
+        const auto cullBegin = metrics ? ProjectedCull::cpuTiming : ProjectedCull::CpuTiming{};
+        const auto mixerBegin = metrics ? animation::AnimationMixer::cpuTiming : animation::AnimationMixer::CpuTiming{};
+        const double instructionsBegin = metrics ? threadInstructions() : -1;
+        const double cyclesBegin = metrics ? threadCycles() : -1;
         if (spans) gameSpan(kHostUpdateSpan, 0);
         if (game.update) game.update(dt);
         if (spans) gameSpan(kHostUpdateSpan, 1);
         if (metrics) updateMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
         if (cpuBegin >= 0) updateCpuMs += threadCpuMs() - cpuBegin;
+        if (metrics) {
+            updateMixerCpuMs += animation::AnimationMixer::cpuTiming.ms - mixerBegin.ms;
+            updateMixerCalls += animation::AnimationMixer::cpuTiming.calls - mixerBegin.calls;
+            updateCullCpuMs += ProjectedCull::cpuTiming.ms - cullBegin.ms;
+            updateCullCalls += ProjectedCull::cpuTiming.calls - cullBegin.calls;
+        }
+        if (instructionsBegin >= 0) updateInstructions += threadInstructions() - instructionsBegin;
+        if (cyclesBegin >= 0) updateCycles += threadCycles() - cyclesBegin;
         if (metrics) ++updateTicks;
     }
 #if defined(__ANDROID__)
     bool watching = false;
 #endif
     explicit Session(const Game& source) : game(source), scene(game.scene), camera(game.camera) {
+        ProjectedCull::cpuTiming = {metrics ? &threadCpuMs : nullptr};
+        animation::AnimationMixer::cpuTiming = {metrics ? &threadCpuMs : nullptr};
         // Benchmarks need one rendered sample per driven simulation tick, not a batch of 600 updates.
         if (metrics) game.renderEachTick = true;
         if (spans) gameSpans = {};
     }
+    uint64_t tick() const { return runner ? drivenTicks : clock.tick(); }
+    ThreadPlacement placement;
     int initialize();
     int step();
     ~Session();
 };
 
 int Session::initialize() {
+    if (const char* rt = std::getenv("TN_RENDER_THREAD"); gpuTiming && rt && std::strcmp(rt, "1") == 0) {
+        std::fprintf(stderr, "TN_PLAYER_GPU_TIMING_UNSUPPORTED: TN_RENDER_THREAD=1 has no synchronized GPU timing snapshot.\n");
+        return 2;
+    }
     if (!game.view && (game.scene == nullptr || game.camera == nullptr)) {
         std::printf("TN_PLAYER_NO_SCENE: %s carries no scene or camera.\n", game.name.c_str());
         return 1;
@@ -478,25 +770,45 @@ int Session::initialize() {
     renderer = std::make_unique<Renderer>(context->getInstance(), context->getDevice(), context->getQueue(), events);
     const uint32_t width = presenter ? presenter->width() : surfaceConfig().width;
     const uint32_t height = presenter ? presenter->height() : surfaceConfig().height;
+    renderer->setGpuTimer(gpuTiming);
     renderer->setSize(width, height);
     renderer->setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+#if !defined(__ANDROID__)
+    if (const char* flag = std::getenv("TN_GPU_THREAD"); presenter && !(flag && std::strcmp(flag, "0") == 0)) {
+        gpuThread = std::make_shared<GpuThread>();
+        renderer->gpu().setThread(gpuThread);
+        // Only a game that fences its own renderer touches (setRenderBarrier) can share the renderer with a thread.
+        if (const char* rt = std::getenv("TN_RENDER_THREAD"); rt && std::strcmp(rt, "1") == 0 && game.setRenderBarrier) {
+            renderThread = std::make_shared<GpuThread>();
+            renderer->collectFrame();
+            game.setRenderBarrier([this] { waitRenderThread(false); });
+        }
+    }
+#endif
     startupStage("renderer-ready");
     initialized = true;
     startupStage("game-initialize-begin");
     if (game.initialize)
         game.initialize(*renderer);
     startupStage("game-initialize-ready");
+    placement.start();
 
     clock.start(0);
     inspect::Host host;
     host.scene = game.scene;
     host.gameRuntime = game.gameRuntime;
+    host.renderEachTick = game.renderEachTick;
     host.observe = game.observe;
-    host.tick = [this] { return clock.tick(); };
+    host.tick = [this] { return tick(); };
+    host.setLiveClock = [this](bool) {
+        waitRenderThread(true);
+        clock = world::FixedStepClock{kTickStep, 5};
+        clock.start(0);
+        freeRunStart = std::chrono::steady_clock::now();
+    };
     host.step = [this] {
-        // One fixed update per driven tick, so the reported clock is the engine's own.
-        nowMs += 1000.0 * kTickStep;
-        clock.advance(nowMs);
+        // A runner requests updates directly; the wall-time accumulator may bank zero or two.
+        ++drivenTicks;
         update(kTickStep);
         if (game.renderEachTick && renderFrame)
             renderFrame();
@@ -521,7 +833,7 @@ int Session::initialize() {
             const auto& stats = renderer->lastFrame();
             return json::Value::makeObject({{"main", pass(stats.mainSkinned)}, {"shadow", pass(stats.shadowSkinned)}});
         }
-        return game.resource ? game.resource(id, clock.tick()) : json::Value::makeNull();
+        return game.resource ? game.resource(id, tick()) : json::Value::makeNull();
     };
     endpoint = std::make_unique<inspect::Endpoint>(std::move(host));
     if (game.attach)
@@ -546,12 +858,23 @@ int Session::initialize() {
 
     freeRunStart = std::chrono::steady_clock::now();
     database.shadowMapEnabled = game.shadowMapEnabled;
+    // Diagnostic (PRD-613 stage 0): per-frame prepare split and upload bytes in TN_PLAYER_FRAME.
+    database.profiling = metrics && std::getenv("TN_RENDER_PREPARE_SPLIT") != nullptr;
     previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
-    renderFrame = [this] {
+    renderFrame = [this, lastWorldVisits = Object3D::matrixEvaluations(),
+                   lastJoinVisits = Object3D::joinDependencyVisits(),
+                   lastBoundaryVisits = Object3D::gpuBoundaryVisits(),
+                   lastProjectionVisits = Object3D::gpuProjectionVisits_,
+                   lastValidationVisits = Object3D::gpuValidationVisits_,
+                   lastMaintenanceVisits = Object3D::gpuMaintenanceVisits_]() mutable {
         const auto frameBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double cpuFrameBegin = metrics ? threadCpuMs() : -1;
+        const auto cullBegin = metrics ? ProjectedCull::cpuTiming : ProjectedCull::CpuTiming{};
+        const auto mixerBegin = metrics ? animation::AnimationMixer::cpuTiming : animation::AnimationMixer::CpuTiming{};
+        const double instructionsFrameBegin = metrics ? threadInstructions() : -1;
+        const double cyclesFrameBegin = metrics ? threadCycles() : -1;
         if (spans) gameSpan(kHostFrameSpan, 0);
-        double presentMs = 0, presentCpuMs = 0, gameCpuMs = -1;
+        double presentMs = 0, presentCpuMs = 0, gameCpuMs = -1, presentInstructions = 0, presentCycles = 0;
         double presentCpuStart = -1, presentCpuEnd = -1;
         bool presentTimed = false;
         std::optional<json::Value> frameSpans;
@@ -566,7 +889,10 @@ int Session::initialize() {
         const double cpuAfterRender = metrics ? threadCpuMs() : -1;
         if (!refreshView()) { if (spans) gameSpan(kHostFrameSpan, 1); return; }
 
+        bool resized = false;
         if (presenter && (presenter->width() != window.width || presenter->height() != window.height)) {
+            waitRenderThread(true);  // the previous present still uses the surface
+            resized = true;
             presenter->resize(window.width, window.height);
             renderer->setSize(presenter->width(), presenter->height());
             if (game.uiResize) game.uiResize(int(window.width), int(window.height));
@@ -579,6 +905,12 @@ int Session::initialize() {
             events.drain();
             return;
         }
+        // core restores its projected cull inside beforeRender, before this C++ draw: hold it until the
+        // frame ends so the draw sees the hides, as a browser draw inside render() does.
+        ProjectedCull::holdRestores(true);
+        struct ReleaseCull {
+            ~ReleaseCull() { ProjectedCull::holdRestores(false); ProjectedCull::releaseHeld(); }
+        } releaseCull;
         if (game.beforeRender) game.beforeRender(*renderer, database);
         // Frame callbacks can replace the published view and release its previous owners.
         if (!refreshView() || scene == nullptr || camera == nullptr) { if (spans) gameSpan(kHostFrameSpan, 1); return; }
@@ -592,9 +924,31 @@ int Session::initialize() {
             gameSpan(kHostFrameSpan, 1);
             frameSpans = gameSpanTiming(gameMs);
         }
+        // One frame in flight: the previous frame's present job ends before this frame touches the queue.
+        // The JS above ran while it was still going.
+        // With the render thread on, the render thread's job ends first: it posts the present.
+        waitRenderThread(true);
+        // The page's newest frame goes over the world in the blit (PRD-554); uploaded before the render
+        // so its queue write never waits for this frame's submit on the GPU thread.
+        if (presenter && game.uiDraw) game.uiDraw(*renderer);
         const auto renderBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double renderCpuBegin = metrics ? threadCpuMs() : -1;
-        database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1});
+        std::array<double, 2> renderSplitMs{-1, -1};  // wall ms: {prepare, encode+submit}
+        // The first frame, a resize and a surface-less run encode inline: they read the frame back at once.
+        const bool offThread = renderThread && presenter && !firstFrame && !resized;
+        if (renderThread && !offThread) ++renderFallbacks;
+        encodeJobs.clear();
+        database.encodeJobs = offThread ? &encodeJobs : nullptr;
+        try {
+            database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1},
+                            metrics ? &renderSplitMs : nullptr);
+        } catch (...) {
+            // A pass that planned before the failure still holds its frame: encode it, as the inline path would have.
+            for (auto& job : encodeJobs) job();
+            encodeJobs.clear();
+            throw;
+        }
+        if (renderThread && !offThread) renderer->collectFrame();
         const double renderMs = metrics ? elapsed(renderBegin) : 0;
         const double renderCpuMs = renderCpuBegin >= 0 ? threadCpuMs() - renderCpuBegin : -1;
         for (const std::string& diagnostic : database.diagnostics())
@@ -604,16 +958,75 @@ int Session::initialize() {
         if (presenter) {
             Presenter::Frame target;
             if (firstFrame) startupStage("first-acquire-begin");
-            // The page's newest frame goes over the world in the same blit (PRD-554).
-            if (game.uiDraw) game.uiDraw(*renderer);
             const auto presentBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-            if (presenter->begin(target)) {
+            const auto format = static_cast<WGPUTextureFormat>(context->getPreferredFormat());
+            const auto presentationEpoch = endpoint->liveClock() ? endpoint->presentationEpoch() : 0;
+            if (offThread) {
+                // Every pass's encode, then the present job for the GPU thread, in order on the render thread.
+                // The jobs hold renderers, never scene data, and the game thread does not touch them until
+                // its next waitRenderThread().
+                renderJobPosted = true;
+                renderThread->post([this, format, queue = context->getQueue(), presentationEpoch]() mutable {
+                    const double begin = threadCpuMs();
+                    try {
+                        for (auto& job : encodeJobs) job();
+                        if (auto plan = renderer->prepareBlit(format)) {
+                            gpuThread->post([plan = *plan, presenter = presenter.get(), queue,
+                                             stats = &gpuJobCpuMs, observation = endpoint.get(), presentationEpoch]() mutable {
+                                const double gpuBegin = threadCpuMs();
+                                Presenter::Frame frame;
+                                WGPUCommandBuffer commands = presenter->begin(frame) ? Renderer::encodeBlit(plan, frame.color) : nullptr;
+                                if (commands) {
+                                    wgpuQueueSubmit(queue, 1, &commands);
+                                    wgpuCommandBufferRelease(commands);
+                                    const bool presented = presenter->present();
+                                    if (observation->liveClock()) observation->recordPresentation(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(), presentationEpoch, presented);
+                                } else {
+                                    wgpuBindGroupRelease(plan.group);
+                                    if (plan.overGroup) wgpuBindGroupRelease(plan.overGroup);
+                                }
+                                *stats = threadCpuMs() - gpuBegin;
+                            });
+                        }
+                    } catch (...) {
+                        renderError = std::current_exception();
+                    }
+                    renderJobCpuMs = threadCpuMs() - begin;
+                });
+            } else if (gpuThread && !firstFrame) {
+                // Prepared here, recorded there: the job reads the plan and the presenter, never the renderer.
+                if (auto plan = renderer->prepareBlit(format)) {
+                    gpuThread->post([plan = *plan, presenter = presenter.get(), queue = context->getQueue(),
+                                     stats = &gpuJobCpuMs, observation = endpoint.get(), presentationEpoch]() mutable {
+                        const double begin = threadCpuMs();
+                        Presenter::Frame frame;
+                        WGPUCommandBuffer commands = presenter->begin(frame) ? Renderer::encodeBlit(plan, frame.color) : nullptr;
+                        if (commands) {
+                            wgpuQueueSubmit(queue, 1, &commands);
+                            wgpuCommandBufferRelease(commands);
+                            const bool presented = presenter->present();
+                            if (observation->liveClock()) observation->recordPresentation(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(), presentationEpoch, presented);
+                        } else {
+                            wgpuBindGroupRelease(plan.group);
+                            if (plan.overGroup) wgpuBindGroupRelease(plan.overGroup);
+                        }
+                        *stats = threadCpuMs() - begin;  // read by the game thread after its next wait
+                    });
+                }
+            } else if (presenter->begin(target)) {
                 // The window carries the very frame the render database just built.
-                renderer->blitTo(context->getQueue(), target.color,
-                                static_cast<WGPUTextureFormat>(context->getPreferredFormat()));
+                renderer->blitTo(context->getQueue(), target.color, format);
+                // blitTo's submit is posted to the GPU thread: it must reach the queue before the surface
+                // texture is presented (and destroyed), or Dawn rejects a submit of a destroyed texture.
+                if (gpuThread) gpuThread->wait();
                 // The swap call alone, on the clock the legacy host uses around wgpuSurfacePresent.
                 const double presentCpuBegin = metrics ? threadCpuMs() : -1;
-                presenter->present();
+                const double presentInstructionsBegin = metrics ? threadInstructions() : -1;
+                const double presentCyclesBegin = metrics ? threadCycles() : -1;
+                const bool presented = presenter->present();
+                if (endpoint->liveClock()) endpoint->recordPresentation(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(), presentationEpoch, presented);
+                if (presentInstructionsBegin >= 0) presentInstructions = threadInstructions() - presentInstructionsBegin;
+                if (presentCyclesBegin >= 0) presentCycles = threadCycles() - presentCyclesBegin;
                 if (presentCpuBegin >= 0) { presentCpuEnd = threadCpuMs(); presentCpuMs = presentCpuEnd - presentCpuBegin; presentCpuStart = presentCpuBegin; presentTimed = true; }
 #if defined(__ANDROID__)
                 mystral::webgpu::paceToPresentationCap();
@@ -636,6 +1049,7 @@ int Session::initialize() {
         // A screenshot answer is a real frame of this loop, so it is read back from the renderer the
         // moment the mailbox asks for one. The readback lands a few frames later.
         if (mailbox->screenshotRequested() && !readbackInFlight) {
+            waitRenderThread(true);  // the read-back takes this very frame, so its encode ends first
             // With a UI the answer is the presented frame, the page drawn over it, as a player sees it.
             const auto read = [this](ReadbackCallback done) {
                 return game.uiDraw ? renderer->readPresented(std::move(done)) : renderer->readPixels(std::move(done));
@@ -649,7 +1063,9 @@ int Session::initialize() {
         }
         // Bounded by iteration count, never by a wait: a readback completes on a later drain of
         // the event queue (GpuResources::readTexture), and the swapchain's present paces the loop.
-        for (int i = 0; i < 100000 && (readbackInFlight || events.pending()); ++i) {
+        // With a GPU thread the poll is one more posted job, after the present; what it delivers
+        // drains on a later frame.
+        for (int i = 0; !gpuThread && i < 100000 && (readbackInFlight || events.pending()); ++i) {
             renderer->poll();
             events.drain();
             if (!readbackInFlight && events.pending() == 0)
@@ -664,7 +1080,7 @@ int Session::initialize() {
             const double duration = updateMs + elapsed(frameBegin);
             auto sample = frameTiming(gameMs, renderMs, duration - presentMs, duration,
                                       (game.bridgeCalls ? game.bridgeCalls() : 0) - previousCrossings,
-                                      clock.tick(), updateTicks, gameCpuMs,
+                                      tick(), updateTicks, gameCpuMs,
                                       cpuFrameBegin >= 0 ? updateCpuMs + threadCpuMs() - cpuFrameBegin - presentCpuMs : -1,
                                       presentTimed ? presentCpuMs : -1, renderCpuMs);
             if (presentTimed && renderCpuMs >= 0) {
@@ -678,17 +1094,143 @@ int Session::initialize() {
                     {"update", V::makeNumber(updateCpuMs)}}));
                 sample = V::makeObject(std::move(members));
             }
+            if (renderSplitMs[0] >= 0) {
+                auto members = sample.members();
+                members.emplace_back("renderPrepareMs", json::Value::makeNumber(renderSplitMs[0]));
+                members.emplace_back("renderEncodeMs", json::Value::makeNumber(renderSplitMs[1]));
+                if (database.profiling) {
+                    static uint64_t lastGeometryBytes = 0, lastTextureBytes = 0;
+                    const auto& split = database.lastPrepareMs();
+                    const uint64_t geometryBytes = renderer->geometry().stats().bytesUploaded;
+                    const uint64_t textureBytes = renderer->textureUploadBytes();
+                    const auto [groups, batched] = database.lastBatches();
+                    const auto& phases = database.lastRenderPhaseMs();
+                    members.emplace_back("renderJointsMs", json::Value::makeNumber(phases[0]));
+                    members.emplace_back("renderScenePrepareMs", json::Value::makeNumber(phases[1]));
+                    members.emplace_back("renderReflectionsMs", json::Value::makeNumber(phases[2]));
+                    members.emplace_back("reflectionPrepareMs", json::Value::makeNumber(database.lastReflectionMs()[0]));
+                    members.emplace_back("reflectionEncodeMs", json::Value::makeNumber(database.lastReflectionMs()[1]));
+                    members.emplace_back("reflectionItems", json::Value::makeNumber(double(database.lastReflectionItems())));
+                    members.emplace_back("prepareMatrixMs", json::Value::makeNumber(split[0]));
+                    members.emplace_back("prepareProjectMs", json::Value::makeNumber(split[1]));
+                    members.emplace_back("prepareBatchMs", json::Value::makeNumber(split[2]));
+                    members.emplace_back("prepareOtherMs", json::Value::makeNumber(split[3]));
+                    members.emplace_back("drawItems", json::Value::makeNumber(double(database.drawn().size())));
+                    members.emplace_back("batchGroups", json::Value::makeNumber(double(groups)));
+                    members.emplace_back("batchMembers", json::Value::makeNumber(double(batched)));
+                    members.emplace_back("geometryUploadBytes", json::Value::makeNumber(double(geometryBytes - lastGeometryBytes)));
+                    members.emplace_back("textureUploadBytes", json::Value::makeNumber(double(textureBytes - lastTextureBytes)));
+                    lastGeometryBytes = geometryBytes;
+                    lastTextureBytes = textureBytes;
+                }
+                sample = json::Value::makeObject(std::move(members));
+            }
+            if (gpuTiming) {
+                // Resolved render-pass GPU time: excludes queue wait, final swapchain blit and present.
+                const uint64_t samples = renderer->gpuSamples();
+                const auto segments = renderer->lastGpuSegments();
+                auto members = sample.members();
+                members.emplace_back("gpuTiming", json::Value::makeObject({
+                    {"enabled", json::Value::makeBool(true)},
+                    {"supported", json::Value::makeBool(context->hasTimestampQuery())},
+                    {"samples", json::Value::makeNumber(double(samples))},
+                    {"fresh", json::Value::makeBool(samples > previousGpuSamples)},
+                    {"elapsedMs", samples ? json::Value::makeNumber(renderer->lastGpuMs()) : json::Value::makeNull()},
+                    {"segmentsMs", samples ? json::Value::makeArray({json::Value::makeNumber(segments[0]), json::Value::makeNumber(segments[1]),
+                        json::Value::makeNumber(segments[2]), json::Value::makeNumber(segments[3])}) : json::Value::makeNull()}}));
+                previousGpuSamples = samples;
+                sample = json::Value::makeObject(std::move(members));
+            }
+            if (instructionsFrameBegin >= 0) {
+                // The span cpuFrameCpuMs covers (ticks and frame, the swap call left out), in thousands.
+                auto members = sample.members();
+                members.emplace_back("cpuFrameKInstructions", json::Value::makeNumber(std::round(
+                    (updateInstructions + threadInstructions() - instructionsFrameBegin - presentInstructions) / 1e3)));
+                sample = json::Value::makeObject(std::move(members));
+            }
+            if (cyclesFrameBegin >= 0) {
+                auto members = sample.members();
+                members.emplace_back("cpuFrameKCycles", json::Value::makeNumber(std::round(
+                    (updateCycles + threadCycles() - cyclesFrameBegin - presentCycles) / 1e3)));
+                sample = json::Value::makeObject(std::move(members));
+            }
+            if (renderThread) {
+                auto members = sample.members();
+                if (renderThreadCpuMs >= 0)  // the previous frame's encode and submit, now off the game thread
+                    members.emplace_back("renderThreadCpuMs", json::Value::makeNumber(renderThreadCpuMs));
+                members.emplace_back("renderThreadFallbacks", json::Value::makeNumber(double(renderFallbacks)));
+                sample = json::Value::makeObject(std::move(members));
+            }
+            if (gpuThread && gpuThreadCpuMs >= 0) {
+                // The previous frame's submit, acquire, blit and present, now off the game thread.
+                auto members = sample.members();
+                members.emplace_back("gpuThreadCpuMs", json::Value::makeNumber(gpuThreadCpuMs));
+                sample = json::Value::makeObject(std::move(members));
+            }
             if (spans) {
                 auto members = sample.members();
                 members.emplace_back("gameSpans", std::move(*frameSpans));
                 sample = json::Value::makeObject(std::move(members));
             }
+            {
+                auto members = sample.members();
+                const auto& cull = ProjectedCull::cpuTiming;
+                members.emplace_back("projectedCullCalls", json::Value::makeNumber(updateCullCalls + cull.calls - cullBegin.calls));
+                members.emplace_back("projectedCullCpuMs", cpuFrameBegin >= 0 && cull.clock && cull.available
+                    ? json::Value::makeNumber(updateCullCpuMs + cull.ms - cullBegin.ms) : json::Value::makeNull());
+                sample = json::Value::makeObject(std::move(members));
+            }
+            {
+                // Same tick+frame CPU window as cpuFrameCpuMs; event-listener callbacks are excluded.
+                auto members = sample.members();
+                const auto& mixer = animation::AnimationMixer::cpuTiming;
+                members.emplace_back("animationMixerCalls", json::Value::makeNumber(updateMixerCalls + mixer.calls - mixerBegin.calls));
+                members.emplace_back("animationMixerCpuMs", cpuFrameBegin >= 0 && mixer.clock && mixer.available
+                    ? json::Value::makeNumber(updateMixerCpuMs + mixer.ms - mixerBegin.ms) : json::Value::makeNull());
+                sample = json::Value::makeObject(std::move(members));
+            }
+            {
+                const auto world = Object3D::matrixEvaluations();
+                const auto joins = Object3D::joinDependencyVisits();
+                const auto boundaries = Object3D::gpuBoundaryVisits();
+                const auto projections = Object3D::gpuProjectionVisits_;
+                const auto validations = Object3D::gpuValidationVisits_;
+                const auto maintenance = Object3D::gpuMaintenanceVisits_;
+                auto members = sample.members();
+                members.emplace_back("worldVisitCounterVersion", json::Value::makeNumber(2));
+                members.emplace_back("worldUpdateVisits", json::Value::makeNumber(double(world - lastWorldVisits)));
+                members.emplace_back("joinDependencyVisits", json::Value::makeNumber(double(joins - lastJoinVisits)));
+                members.emplace_back("gpuBoundaryVisits", json::Value::makeNumber(double(boundaries - lastBoundaryVisits)));
+                members.emplace_back("gpuProjectionBoundaryVisits", json::Value::makeNumber(double(projections - lastProjectionVisits)));
+                members.emplace_back("gpuPlanValidationVisits", json::Value::makeNumber(double(validations - lastValidationVisits)));
+                members.emplace_back("gpuPlanMaintenanceVisits", json::Value::makeNumber(double(maintenance - lastMaintenanceVisits)));
+                members.emplace_back("worldWorkVisitsTotal", json::Value::makeNumber(double(
+                    world - lastWorldVisits + joins - lastJoinVisits + boundaries - lastBoundaryVisits +
+                    projections - lastProjectionVisits + validations - lastValidationVisits + maintenance - lastMaintenanceVisits)));
+                sample = json::Value::makeObject(std::move(members));
+                lastWorldVisits = world; lastJoinVisits = joins; lastBoundaryVisits = boundaries;
+                lastProjectionVisits = projections; lastValidationVisits = validations; lastMaintenanceVisits = maintenance;
+            }
             ++measuredFrames;
+            if (mainThreadCpuEnabled) {
+                // Cumulative whole main-thread CPU at this completed render; UI/GPU helper threads are excluded.
+                const double cpuMs = threadCpuMs();
+                auto members = sample.members();
+                members.emplace_back("mainThreadCpuMs", std::isfinite(cpuMs) && cpuMs > 0 ? json::Value::makeNumber(cpuMs) : json::Value::makeNull());
+                members.emplace_back("measuredFrames", json::Value::makeNumber(double(measuredFrames)));
+                sample = json::Value::makeObject(std::move(members));
+            }
             std::printf("TN_PLAYER_FRAME:%s\n", json::stringify(sample).c_str());
             std::fflush(stdout);
             previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
             updateMs = 0;
             updateCpuMs = 0;
+            updateMixerCpuMs = 0;
+            updateMixerCalls = 0;
+            updateCullCpuMs = 0;
+            updateCullCalls = 0;
+            updateInstructions = 0;
+            updateCycles = 0;
             updateTicks = 0;
         }
     };
@@ -697,6 +1239,7 @@ int Session::initialize() {
 
 int Session::step() {
     if (!pumpEvents(window, game)) return 0;
+    placement.sweepIfDue();
 
 #if defined(__ANDROID__)
     if (window.resumeSurface) {
@@ -718,6 +1261,7 @@ int Session::step() {
     if (game.uiFrame) game.uiFrame();
     // An advance may render several streaming frames; each tick gets its own admission cap.
     mailbox->poll(*endpoint);
+    if (endpoint->automaticRenderHeld() && !endpoint->liveClock()) return viewFailed ? -1 : 1;
     // A launched runner holds the game's boot until its first request, and that request races this
     // loop: the host reaches its first step in milliseconds, the runner polls every 40 ms. A frame
     // presented before the request is a loader frame, so how many there were, which settings the
@@ -734,11 +1278,14 @@ int Session::step() {
     }
     // Without a runner nothing drives host.step, and the game would re-render one frozen tick:
     // the clock follows real time instead, as the web loop follows requestAnimationFrame.
-    if (!runner) {
+    if (!runner || endpoint->liveClock()) {
         nowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - freeRunStart).count();
-        for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps)
+        for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps) {
+            if (runner) ++drivenTicks;
             update(kTickStep);
+        }
     }
+    if (endpoint->automaticRenderHeld()) return viewFailed ? -1 : 1;
     if (!refreshView())
         return -1;
     renderFrame();
@@ -746,6 +1293,8 @@ int Session::step() {
 }
 
 Session::~Session() {
+    animation::AnimationMixer::cpuTiming = {};
+    ProjectedCull::cpuTiming = {};
 #if defined(__APPLE__)
     if (window.metalView)
         SDL_Metal_DestroyView(window.metalView);
@@ -755,10 +1304,13 @@ Session::~Session() {
     presenter.reset();
     if (context) context->releaseSurface();
 #endif
+    waitRenderThread(false);  // the frame in flight reads the renderer and the game's resources
+    renderThread.reset();
     if (initialized && game.shutdown) game.shutdown();
     renderer.reset();
     presenter.reset();
     context.reset();
+    if (gpuThread) gpuThread->wait();  // an overlay upload reads the UI frame that detaching frees
     if (game.uiDetach) game.uiDetach();
     if (window.handle)
         SDL_DestroyWindow(window.handle);

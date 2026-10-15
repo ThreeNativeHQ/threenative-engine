@@ -101,8 +101,18 @@ void materialBool(ClassBinding& b, const char* name, bool Material::*field) {
 void materialNumber(ClassBinding& b, const char* name, double Material::*field) {
     b.getters[name] = [field](void* self) { return Value::of(as<Material>(self)->*field); };
     b.setters[name] = [field](void* self, const Value& v) {
-        as<Material>(self)->*field = number(v);
-        as<Material>(self)->needsUpdate();
+        auto& material = *as<Material>(self);
+        const double next = number(v), previous = material.*field;
+        auto& diagnostic = Material::diagnostics();
+        if (diagnostic.enabled && field == &Material::opacity) {
+            ++diagnostic.writes;
+            if (std::isnan(previous) || std::isnan(next)) ++diagnostic.nan;
+            else if (previous == next && std::signbit(previous) != std::signbit(next)) ++diagnostic.signedZero;
+            else if (previous == next) ++diagnostic.unchanged;
+            else ++diagnostic.changed;
+        }
+        material.*field = next;
+        material.needsUpdate();
     };
 }
 
@@ -121,6 +131,7 @@ void registerMaterialBase(ClassBinding& b) {
     };
     b.getters["type"] = [](void* self) { return string(std::string(as<Material>(self)->typeName())); };
     b.getters["id"] = [](void* self) { return Value::of(double(as<Material>(self)->id)); };
+    b.getters["uuid"] = [](void* self) { return string(as<Material>(self)->uuid); };
     b.getters["name"] = [](void* self) { return string(as<Material>(self)->name); };
     b.setters["name"] = [](void* self, const Value& v) {
         if (v.kind != Value::Kind::String) throw Unsupported{"name must be a string"};

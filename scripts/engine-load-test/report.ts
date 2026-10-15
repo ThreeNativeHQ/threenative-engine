@@ -26,6 +26,23 @@ import {
 } from "../../examples/engine-load-test/src/workload.js";
 import { blankFrameReason } from "../capture-guard.js";
 
+function parseFrameRgba(value: unknown, label: string): NonNullable<IRunReportRung["frameRgba"]> {
+  const frame = requireObject(value, `${label}.frameRgba`);
+  const width = requireNumber(frame, "width", label);
+  const height = requireNumber(frame, "height", label);
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width < 1 ||
+    height < 1 ||
+    typeof frame.data !== "string" ||
+    frame.data.length !== width * height * 8 ||
+    /[^0-9a-f]/u.test(frame.data)
+  )
+    throw new BenchError("TN_BENCH_VISUAL_MISSING", `${label}: invalid RGBA capture`);
+  return { width, height, data: frame.data };
+}
+
 export const KNEE_THRESHOLD_MS = 20;
 export const ARMS = [
   "tn-web",
@@ -77,6 +94,12 @@ export interface IPerformancePromotionPolicy {
 }
 
 export interface IRunReportRung {
+  /** Last measured frame, captured outside the timed window and persisted beside the run JSON. */
+  framePath?: string;
+  /** Capture transport only; saveFrames removes these before writing the report. */
+  framePng?: string;
+  /** Hex RGBA avoids retaining millions of boxed numbers in the native process. */
+  frameRgba?: { width: number; height: number; data: string };
   collapseMs?: number[];
   /**
    * CPU milliseconds the host process spent per frame inside the timed window (every thread), read by the
@@ -859,6 +882,11 @@ export function parseRunReport(value: unknown): IRunReport {
         `${path}.pipelineCompiles must be a non-negative integer when present`,
       );
     return {
+      ...(rung.framePath === undefined
+        ? {}
+        : { framePath: requireString(rung, "framePath", path) }),
+      ...(rung.framePng === undefined ? {} : { framePng: requireString(rung, "framePng", path) }),
+      ...(rung.frameRgba === undefined ? {} : { frameRgba: parseFrameRgba(rung.frameRgba, path) }),
       ...parseCompletedWork(rung, path, frameMs.length),
       ...(cpuMsPerFrame === undefined ? {} : { cpuMsPerFrame }),
       ...(threadCpuMs === undefined ? {} : { threadCpuMs: threadCpuMs as number[] }),

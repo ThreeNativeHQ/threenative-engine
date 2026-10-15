@@ -84,6 +84,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_gpu_upload_readback=upload_readback
         native_engine_gpu_deferred_destroy=deferred_destroy
         native_engine_gpu_async_only=async_only
+        native_engine_gpu_thread_ordering=gpu_thread_ordering
         native_engine_lifetime_deferred_gpu=lifetime_deferred_gpu)
     target_link_libraries(tn-native-engine-gpu-resources-test PRIVATE tn_engine_renderer tn_host_services)
     # A real window, so the ctest runs it under the repository's private Xvfb with SDL's dummy audio.
@@ -197,6 +198,14 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         set_tests_properties(native_engine_post_normal_pass PROPERTIES LABELS "native-engine" TIMEOUT 180)
     endif()
 
+    # PRD-613: the render thread's frame order, run with the encode half on a second thread.
+    tn_native_engine_test(tn-native-engine-render-thread-order-test tests/native-engine/render_thread_order_test.cpp
+        native_engine_render_thread_order=order
+        native_engine_render_thread_uniform_order=uniform_node
+        native_engine_render_thread_reflection_order=reflection_order
+        native_engine_render_thread_baton=baton)
+    target_link_libraries(tn-native-engine-render-thread-order-test PRIVATE tn_engine_renderer tn_host_services)
+
     tn_native_engine_test(tn-native-engine-compute-test tests/native-engine/compute_test.cpp
         native_engine_compute_readback=readback)
     target_link_libraries(tn-native-engine-compute-test PRIVATE tn_engine_renderer tn_host_services)
@@ -211,6 +220,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     set_tests_properties(native_engine_update_scaling PROPERTIES LABELS "tn-perf" TIMEOUT 300)
 
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
+        native_engine_gpu_joint_production=gpu_joint_production
         native_engine_uniform_batch_preparation=uniform_batch_preparation
         native_engine_renderer_scene_lit=lit_scene
         native_engine_renderer_present_direct=present_direct
@@ -250,7 +260,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy
         native_engine_renderer_records_survive_siblings=records_survive_siblings
-        native_engine_renderer_steady_frame_hashes_no_record=steady_frame_hashes_no_record)
+        native_engine_renderer_steady_frame_hashes_no_record=steady_frame_hashes_no_record
+        native_engine_renderer_nested_record_cache=nested_record_cache
+        native_engine_renderer_frustum_record_retention=frustum_record_retention
+        native_engine_renderer_world_sphere_measured_once=world_sphere_measured_once
+        native_engine_renderer_reflection_reuse=reflection_reuse)
     # The skinned cases drive the player's SkinnedCrowd scene.
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
@@ -520,10 +534,17 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # links SDL, never a VM. Neither player is part of the default build (EXCLUDE_FROM_ALL).
     add_library(tn_engine_player STATIC src/engine/player/mailbox.cpp src/engine/player/demo.cpp
         src/engine/player/run.cpp src/engine/player/skinned_crowd.cpp src/engine/player/world_walk.cpp
-        src/platform/ui_overlay.cpp)
+        src/platform/ui_overlay.cpp src/platform/input.cpp)
     tn_native_engine_target(tn_engine_player)
-    # The UI seam is shared with the legacy host; the web view and CSS backends are not linked here.
-    target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=0)
+    # The UI seam is shared with the legacy host; the CSS backend is never linked here. The web view is
+    # opt-in (a game with ui.renderer "web" draws its HUD through it), so the default graph stays JS- and
+    # web-view-free.
+    option(TN_ENGINE_PLAYER_UI_OVERLAY "Link the desktop web-view UI overlay into the engine players (Linux; needs node scripts/build-native-ui-overlay.mjs and webkit2gtk-4.1)" OFF)
+    if(TN_ENGINE_PLAYER_UI_OVERLAY)
+        include(cmake/NativeEnginePlayerUiOverlay.cmake)
+    else()
+        target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=0)
+    endif()
     target_link_libraries(tn_engine_player PUBLIC tn_engine_inspect tn_engine_scene tn_engine_world
         tn_engine_renderer tn_host_services tn_engine_world_admission)
     target_include_directories(tn_engine_player PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src

@@ -189,6 +189,34 @@ test.each([
   }
 });
 
+test.skipIf(process.platform === "win32").each(["already-exited", "signal-stopped"])("desktop stop drains delayed child stdout after %s", async (mode) => {
+  const root = await makeTempDir("playtest-desktop-close-");
+  const driver = new DesktopPlaytestDriver({
+    executable: process.execPath,
+    mailboxRoot: root,
+    args: ["-e", `
+      const { spawn } = require("node:child_process");
+      const finish = () => {
+        spawn(process.execPath, ["-e", 'setTimeout(() => process.stdout.write("TN_JS_CPU_PROFILE_TOTAL:10"), 250)'],
+          { stdio: ["ignore", 1, 2] }).unref();
+        process.exit(0);
+      };
+      if (${JSON.stringify(mode)} === "already-exited") finish();
+      else { process.on("SIGTERM", finish); setInterval(() => {}, 1000); console.log("ready"); }
+    `],
+  });
+  try {
+    await driver.prepare("unused");
+    if (mode === "already-exited") await expect.poll(() => driver.isAlive()).toBe(false);
+    else await expect.poll(async () => (await driver.captureConsole()).some((entry) => entry.text === "ready")).toBe(true);
+    await driver.stop();
+    expect(await driver.captureConsole()).toContainEqual({ text: "TN_JS_CPU_PROFILE_TOTAL:10", type: "log" });
+  } finally {
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("a classified native warning is recorded but is not a runtime error", async () => {
   const warning = "libEGL warning: DRI3 error: Could not get DRI3 device";
   const fatal = "unclassified native failure";
@@ -578,6 +606,26 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout fails clos
   }
 });
 
+test("desktop console artifacts retain profiler output emitted during shutdown", async () => {
+  const projectPath = await makeTempDir("playtest-desktop-shutdown-console-");
+  const console = [{ text: "game ready", type: "log" }];
+  const profile = { text: "TN_JS_CPU_PROFILE_TOTAL:10", type: "log" };
+  try {
+    await runDesktopScenario(2, {
+      projectPath,
+      console,
+      onDriver(driver) {
+        const stop = driver.stop.bind(driver);
+        driver.stop = async () => { await stop(); console.push(profile); };
+      },
+    });
+    expect(JSON.parse(await readFile(join(projectPath, "artifacts", "console.json"), "utf8"))).toEqual([...console]);
+    expect(console).toContainEqual(profile);
+  } finally {
+    await rm(projectPath, { force: true, recursive: true });
+  }
+});
+
 test("a failed desktop screenshot still leaves the host console in the artifact directory", async () => {
   // A screenshot that never arrives reports its own tail, but the timing and error lines printed
   // before it were thrown away with the host — TN_FRAME_NOT_PRESENTED with nothing to explain it.
@@ -657,6 +705,7 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout can be rai
 interface IDesktopScenarioOptions {
   network?: JsonValue;
   assertNetwork?: boolean;
+  completion?: { valid: boolean; calls: { method: string; argument: unknown }[] };
   console?: { text: string; type: string }[];
   mailboxFile?: boolean;
   onDriver?: (driver: FakeDesktopDriver) => void;
@@ -690,9 +739,9 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
     steps: [{
       holdFrames: 3,
       press: "KeyW",
-      release: true,
+      release: options.completion === undefined,
       ...(options.screenshotError === undefined ? {} : { screenshot: "frame" }),
-    }],
+    }, ...(options.completion === undefined ? [] : [{ kind: "wait", label: "completion-pose", waitTicks: 1000, release: false }])],
     subject: "player",
     target: "desktop",
     viewport: { height: 360, width: 640 },
@@ -724,6 +773,18 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
       pointer: () => undefined,
     },
   };
+  const transport = new DeviceBridgeTransport(endpoint);
+  if (options.completion !== undefined) {
+    const original = transport.call.bind(transport);
+    transport.call = async <T>(method: string, argument?: unknown): Promise<T> => {
+      options.completion!.calls.push({ method, argument });
+      if (method === "_setClockMode") return { mode: argument, tick: 3, epoch: 1 } as T;
+      if (method === "_presentationCompletions") return { clock: { mode: "wall-clock" }, epoch: 1, valid: options.completion!.valid,
+        dropped: 0, source: "present-return", timebase: "steady-clock-ms",
+        samples: Array.from({ length: 351 }, (_, i) => ({ sequence: i + 1, completedAtMs: i * 20 })) } as T;
+      return original<T>(method, argument);
+    };
+  }
   try {
     if (options.signalBeforeStart) queueMicrotask(() => process.emit("SIGINT"));
     const report = await runDesktopPlaytest({
@@ -739,7 +800,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
       url: "http://127.0.0.1:5173",
     }, {
       driver,
-      transport: new DeviceBridgeTransport(endpoint),
+      transport,
       ...(mailboxRoot === undefined ? {} : { mailboxRoot }),
     });
     return { driver, report };
@@ -1021,3 +1082,28 @@ test.each([null, { requests: -1, entries: [] }, { requests: 1, entries: [{ url: 
     await expect(runDesktopScenario(2, { assertNetwork: true, network })).rejects.toThrow(/NETWORK.*UNOBSERVED/u);
   },
 );
+test("desktop completion opt-in follows deterministic prefix, restores controls and reports separate cadence", async () => {
+  const saved = { ...process.env };
+  process.env.TN_PLAYTEST_COMPLETION_WINDOW_LABEL = "completion-pose";
+  process.env.TN_PLAYER_VSYNC = "0";
+  process.env.TN_PLAYTEST_HOST_DISPLAY = "1";
+  process.env.DISPLAY = ":synthetic-driver";
+  const calls: { method: string; argument: unknown }[] = [];
+  try {
+    const { report, driver } = await runDesktopScenario(2, { completion: { valid: true, calls } });
+    expect(report.pass).toBe(true);
+    expect(report.clock).toBe("wall-clock");
+    expect(report.acquisition?.cpuWindows).toBeUndefined();
+    expect(report.acquisition?.completionWindow).toMatchObject({ intervalCount: 250, durationMs: 5000, completionIntervalP50Ms: 20,
+      provenance: { qualified: false, nativeVsync: "0", requestedDisplay: ":synthetic-driver" },
+      setupSnapshot: { clock: { mode: "fixed-step", tick: 3 } } });
+    expect(calls.filter(call => call.method === "advance").map(call => call.argument)).toEqual([3]);
+    expect(calls.filter(call => call.method === "_setClockMode").map(call => call.argument)).toEqual(["wall-clock", "fixed-step"]);
+    expect(calls).toContainEqual({ method: "input.keyUp", argument: { key: "KeyW" } });
+    expect(await driver.isAlive()).toBe(false);
+  } finally {
+    for (const key of ["TN_PLAYTEST_COMPLETION_WINDOW_LABEL", "TN_PLAYER_VSYNC", "TN_PLAYTEST_HOST_DISPLAY", "DISPLAY"]) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+  }
+});

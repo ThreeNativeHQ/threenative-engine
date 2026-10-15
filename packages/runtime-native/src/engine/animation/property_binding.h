@@ -10,6 +10,8 @@
 #include "engine/scene/material.h"
 #include "engine/scene/object3d.h"
 
+namespace tn::engine { class Bone; }
+
 namespace tn::engine::animation {
 
 /** three's `PropertyBinding.parseTrackName` result; an absent part is three's `undefined`. */
@@ -64,6 +66,7 @@ class PropertyBinding {
     // ponytail: safe while one thread owns the scene; PRD-574 swaps in a frame-scoped strong
     // reference if a second thread can release nodes.
     Object3D* raw_ = nullptr;
+    Bone* bone_ = nullptr;
     Target target_ = Target::Unavailable;
     bool bindAttempted_ = false; // three's `_getValue_unbound`: the first get or set binds
     int component_ = 0;
@@ -73,7 +76,9 @@ class PropertyBinding {
 
     void bind();
     void unbind();
+    void materializeValue();
     [[nodiscard]] bool bound() const { return target_ != Target::Unavailable; }
+    [[nodiscard]] bool unescapedBoneTransform() const;
     /** The object cached by bind(), for the animation audit's targetObject reflection. */
     [[nodiscard]] std::shared_ptr<Object3D> targetNode() const { return bound() ? node_.lock() : nullptr; }
     [[nodiscard]] std::shared_ptr<Material> targetMaterial() const { return bound() ? material_ : nullptr; }

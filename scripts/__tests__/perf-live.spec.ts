@@ -36,6 +36,7 @@ describe("perf-live", () => {
       rungs: [
         {
           mode,
+          framePath: path.resolve("scripts/__tests__/fixtures/engine-load-test/scene.png"),
           objectCount: 4096,
           repeat: 0,
           positionHash: "h",
@@ -424,7 +425,7 @@ describe("perf-live", () => {
   });
 
   it("colours a KPI value: green at the target, orange above parity, red below it", () => {
-    expect([0.79, 1, 1.04, 1.99, 2, 3].map(valueColor)).toEqual([
+    expect([0.79, 1, 1.04, 2.99, 3, 4].map(valueColor)).toEqual([
       "red",
       "orange",
       "orange",
@@ -443,8 +444,63 @@ describe("perf-live", () => {
   });
 
   it("says 'cheaper' at parity or better and 'costs' below it", () => {
-    expect(sentenceOf(1.04)).toBe("Native is 1.04× cheaper than legacy on R5. Target 2×.");
+    expect(sentenceOf(1.04)).toBe("Native is 1.04× cheaper than legacy on R5. Target 3×.");
     expect(sentenceOf(0.5)).toContain("Native costs 2.00× legacy");
+  });
+
+  it("headlines actual Midway diagnostics and pending arms while retaining R5 as the cheap tier", async () => {
+    const html = await readFile(new URL("../perf-live.html", import.meta.url), "utf8");
+    const script = (html.split("<script>")[1] as string)
+      .split("</script>")[0]
+      ?.replace("tick(); setInterval(tick, 2000);", "");
+    const elements = new Map<string, { innerHTML: string; addEventListener(): void }>();
+    const render = (data: unknown) =>
+      runInNewContext(`${script}\nmidway = data; hero = r5; renderHero(); renderCheapTier();`, {
+        data,
+        r5: {
+          status: "green",
+          ratio: 3.25,
+          sentence: "Existing R5 result",
+          now: 1,
+          t: 1,
+          label: "historical-r5",
+        },
+        document: {
+          getElementById: (id: string) => {
+            if (!elements.has(id)) elements.set(id, { innerHTML: "", addEventListener() {} });
+            return elements.get(id);
+          },
+        },
+      });
+    render({
+      candidate: {
+        gap: { legacyMs: 10.65, desktop: { ms: 7.04531175, build: "T <candidate>", runs: 2 } },
+      },
+    });
+    expect(html).toContain('get("/api/midway")');
+    expect(html.indexOf('id="hero"')).toBeLessThan(html.indexOf('id="cheapHero"'));
+    const output = elements.get("hero")?.innerHTML;
+    for (const text of [
+      "Midway · final tier",
+      "1.51×",
+      "PENDING",
+      "experimental · unqualified",
+      "thread CPU",
+      "active wall time",
+      "T &lt;candidate&gt;",
+    ])
+      expect(output).toContain(text);
+    for (const text of ["Cheap tier · R5", "3.25×", "Existing R5 result", "historical-r5"])
+      expect(elements.get("cheapHero")?.innerHTML).toContain(text);
+    render(undefined);
+    expect(elements.get("hero")?.innerHTML).toContain("PENDING");
+    expect(elements.get("hero")?.innerHTML).not.toContain("3.25×");
+    expect(elements.get("hero")?.innerHTML).not.toContain("0.00×");
+    render({ candidate: { gap: { legacyMs: 0, desktop: { ms: 0, build: "bad", runs: 1 } } } });
+    expect(elements.get("hero")?.innerHTML).not.toContain("Infinity");
+    render({ candidate: { gap: { legacyMs: 10, wasm: { ms: 5, build: "wasm", runs: 3 } } } });
+    expect(elements.get("hero")?.innerHTML).toContain("2.00×");
+    expect(elements.get("hero")?.innerHTML).toContain("experimental · unqualified");
   });
 
   const HOUR = 3_600_000;
@@ -471,7 +527,7 @@ describe("perf-live", () => {
     const r5 = point("v/r5", "R5", now - HOUR, 1.5);
     expect(staleReason([r5], now)).toBeUndefined();
     expect(heroOf([r5], now)).toMatchObject({ status: "orange", ratio: 1.5 });
-    expect(heroOf([point("v/old", "R5", now - 7 * HOUR, 2.5)], now)).toMatchObject({
+    expect(heroOf([point("v/old", "R5", now - 7 * HOUR, 3.5)], now)).toMatchObject({
       status: "yellow",
       valueColor: "green",
     });
@@ -495,6 +551,19 @@ describe("perf-live", () => {
     );
     expect(hero).toMatchObject({ label: "c", status: "orange", delta: { dir: "up", label: "a" } });
     expect(heroOf([point("b", "R2", now, 0.4)], now).status).toBe("none");
+  });
+
+  it("compares the hero only with the previous point on the same lane", () => {
+    const now = 10 * HOUR;
+    const hero = heroOf(
+      [
+        point("v111/head-R5-old", "R5", now - 4 * HOUR, 2.1),
+        point("v111/gpu-R5-cut2", "R5", now - 2 * HOUR, 2.97),
+        point("v111/head-R5", "R5", now - HOUR, 2.13),
+      ],
+      now,
+    );
+    expect(hero).toMatchObject({ lane: "Xvfb", delta: { label: "v111/head-R5-old", dir: "flat" } });
     expect(heroOf([], now).status).toBe("none");
   });
 

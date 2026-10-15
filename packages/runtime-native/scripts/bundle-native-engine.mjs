@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // PRD-531's VM artifact: the game bundle for the engine player on V8, explicitly selected.
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, realpathSync, readFileSync } from "node:fs";
 import { readFile, mkdir, writeFile, rename, unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -93,6 +94,15 @@ function unboundDiagnostic(specifier, name) {
 
 /** Bundle the portable entry against native imports; publish nothing when a binding is absent. */
 export async function bundleNativeEngine({ entry, outfile, boot = true, define = {}, host = boot }) {
+  let engineCommit;
+  try {
+    const git = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    // Installed packages can sit inside somebody else's repository, or have no git at all.
+    if (realpathSync(git(["rev-parse", "--show-toplevel"])) === realpathSync(repo)
+      && JSON.parse(readFileSync(resolve(repo, "package.json"), "utf8")).name === "threenative"
+      && !git(["status", "--porcelain", "--untracked-files=normal", "--", "packages", "scripts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ":(exclude,glob)packages/**/__tests__/**", ":(exclude,glob)packages/runtime-native/tests/**", ":(exclude,glob)scripts/__tests__/**"]))
+      engineCommit = git(["rev-parse", "HEAD"]);
+  } catch { /* Ordinary bundling does not require source provenance. */ }
   entry = resolve(entry);
   outfile = resolve(outfile);
   if (entry === outfile) throw new Error("TN_NATIVE_ENGINE_OUTPUT: entry and output must differ");
@@ -103,7 +113,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     target: "es2022", conditions: ["threenative-native"], define: { "import.meta.env": "{}", ...define },
     external: ["three", "three/*", "three-mesh-bvh", "three-mesh-bvh/*",
       "@threenative/core", "@threenative/core/*"],
-    logLevel: "silent", metafile: true,
+    logLevel: "silent", metafile: true, sourcemap: "inline", sourcesContent: true,
     // A script entry that imports core's loader by relative path (the load test's Fox) would inline the
     // browser loader and its GLTFLoader; it reads the cooked package like core's own imports do.
     plugins: [{ name: "native-assets", setup(builder) {
@@ -161,7 +171,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
       : `${host ? `import ${JSON.stringify(resolve(player, "core-host.mjs"))}; ` : ""}import "tn:game";`, resolveDir: repo },
     bundle: true, write: false, format: "iife", platform: "neutral", target: "es2022",
     conditions: ["threenative-native"], define: { "import.meta.env": "{}", ...define }, metafile: true,
-    logLevel: "silent",
+    logLevel: "silent", outfile, sourcemap: "external", sourcesContent: true,
     plugins: [{ name: "native-engine", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
         if (args.importer.startsWith(`${resolve(repo, "packages/core/src")}/`))
@@ -200,19 +210,24 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
       });
     } }],
   });
-  const output = bundled.outputFiles[0].text;
+  const output = bundled.outputFiles.find((file) => file.path === outfile).text;
+  const sourceMap = bundled.outputFiles.find((file) => file.path === `${outfile}.map`).text;
   const missing = [...new Set(output.match(/TN_NATIVE_ENGINE_UNBOUND: [^"\n]+/g) ?? [])].sort();
   if (missing.length) throw new Error(missing.join("\n"));
   rejectUpstream(bundled.metafile);
   await mkdir(dirname(outfile), { recursive: true });
   const temporary = `${outfile}.${randomUUID()}.tmp`;
+  const temporaryMap = `${temporary}.map`;
   try {
+    await writeFile(temporaryMap, sourceMap, { flag: "wx" });
     await writeFile(temporary, output, { flag: "wx" });
+    await rename(temporaryMap, `${outfile}.map`);
     await rename(temporary, outfile);
   } finally {
+    await unlink(temporaryMap).catch((error) => { if (error.code !== "ENOENT") throw error; });
     await unlink(temporary).catch((error) => { if (error.code !== "ENOENT") throw error; });
   }
-  return { outfile, bytes: Buffer.byteLength(output), profile: { engine: "native", gameRuntime: "v8" } };
+  return { outfile, engineCommit, bytes: Buffer.byteLength(output), profile: { engine: "native", gameRuntime: "v8" } };
 }
 
 /**

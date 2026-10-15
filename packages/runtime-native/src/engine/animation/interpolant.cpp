@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <limits>
 
 #include "engine/foundation/math/ieee754.h"
@@ -65,12 +66,22 @@ Interpolant::Interpolant(Interpolation kind, std::span<const double> times, std:
                          std::size_t valueSize)
     : kind_(kind), times_(times), values_(values), valueSize_(valueSize), own_(valueSize, 0.0), result_(own_.data()) {}
 
+// Between equal keyframes discrete and quaternion interpolation return that keyframe exactly (slerpFlat copies
+// equal inputs) and linear within one rounding of v * w0 + v * w1; cubic keeps the search.
+void Interpolant::detectConstant() {
+    constant_ = kind_ != Interpolation::Smooth && valueSize_ != 0 && values_.size() >= valueSize_;
+    for (std::size_t i = valueSize_; constant_ && i + valueSize_ <= values_.size(); i += valueSize_)
+        constant_ = std::memcmp(&values_[i], values_.data(), valueSize_ * sizeof(double)) == 0;
+}
+
 // three's Interpolant.evaluate, label for label: `goto` stands for its labelled breaks. Invariant:
 // t1 is pp[i1] and t0 is pp[i1 - 1], with an index outside the array reading as undefined.
 std::span<const double> Interpolant::evaluate(double t) {
     const auto n = static_cast<std::ptrdiff_t>(times_.size());
     if (n == 0)
         return {result_, valueSize_}; // a track refuses an empty time array before it creates one
+    if (constant_)
+        return copySampleValue(0);
     const auto pp = [&](std::ptrdiff_t i) { return i >= 0 && i < n ? times_[i] : kUndefined; };
     const auto undefinedAt = [&](std::ptrdiff_t i) { return i < 0 || i >= n; };
     auto i1 = static_cast<std::ptrdiff_t>(cachedIndex_);

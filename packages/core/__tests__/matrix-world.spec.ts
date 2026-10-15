@@ -251,29 +251,39 @@ describe("MatrixWorldPass on a native-engine root", () => {
   it("calls the root's native walk once and reads nothing, whatever the node count", () => {
     for (const count of [100, 1000]) {
       const { reads, scene } = countedScene(count);
-      const calls: boolean[] = [];
+      const calls: [boolean, boolean][] = [];
       (
-        scene as Scene & { __tnUpdateMatrixWorld: (force: boolean) => number }
-      ).__tnUpdateMatrixWorld = (force) => {
-        calls.push(force);
+        scene as Scene & { __tnUpdateMatrixWorld: (force: boolean, prune: boolean) => number }
+      ).__tnUpdateMatrixWorld = (force, prune) => {
+        calls.push([force, prune]);
         return count + 1;
       };
       const pass = new MatrixWorldPass();
       pass.beginFrame();
       expect(pass.apply(scene)).toBe(count + 1);
       expect(pass.apply(scene, true)).toBe(count + 1);
-      expect(calls).toEqual([false, true]);
+      expect(calls).toEqual([
+        [false, true],
+        [true, true],
+      ]);
       expect(reads()).toBe(0);
       expect(pass.report.visited).toBe(2 * (count + 1));
       pass.dispose();
     }
   });
 
-  it('uses the native walk in "all" mode too, since it walks every node', () => {
+  it('uses the native walk in "all" mode too, asking it not to prune', () => {
     const { reads, scene } = countedScene(10);
-    (scene as Scene & { __tnUpdateMatrixWorld: () => number }).__tnUpdateMatrixWorld = () => 11;
+    const prunes: boolean[] = [];
+    (
+      scene as Scene & { __tnUpdateMatrixWorld: (force: boolean, prune: boolean) => number }
+    ).__tnUpdateMatrixWorld = (_force, prune) => {
+      prunes.push(prune);
+      return 11;
+    };
     const pass = new MatrixWorldPass({ mode: "all" });
     expect(pass.apply(scene)).toBe(11);
+    expect(prunes).toEqual([false]);
     expect(reads()).toBe(0);
     pass.dispose();
   });

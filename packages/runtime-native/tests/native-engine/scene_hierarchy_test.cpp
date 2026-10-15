@@ -371,6 +371,69 @@ void revision() {
     const auto withNaN = fused.revision();
     for (int frame = 0; frame < 5; ++frame) CHECK(!fused.updateMatrixWorldSelf(false, true, true));
     CHECK(fused.revision() == withNaN);
+
+    // Escaped auto-world aliases stay eager: repair even an unchanged TRS on each world walk.
+    for (bool plain : {false, true}) {
+        Object3D escaped, eager;
+        auto descendant = node("escaped child");
+        auto eagerChild = node("eager child");
+        escaped.add(*descendant); eager.add(*eagerChild);
+        escaped.enableTrackedTransform();
+        CHECK(Object3D::leaseTransform(&escaped.matrixWorld) == 5);
+        double* world = escaped.matrixWorld.elements.data();
+        for (int frame = 0; frame < 3; ++frame) {
+            escaped.position.x = eager.position.x = frame == 2 ? 4 : 2;
+            escaped.updateMatrixWorldSelf(false, true, plain);
+            eager.updateMatrixWorld(true);
+            world[12] = 100; world[3] = 7;
+            const auto beforeRepair = escaped.revision();
+            const bool childForce = escaped.updateMatrixWorldSelf(false, true, plain);
+            CHECK(childForce);
+            CHECK(escaped.revision() == beforeRepair + 1);
+            CHECK(escaped.matrixWorld.elements == eager.matrixWorld.elements);
+            descendant->updateMatrixWorld(childForce);
+            CHECK(descendant->matrixWorld.elements == eagerChild->matrixWorld.elements);
+            const auto settledRevision = escaped.revision();
+            CHECK(!escaped.updateMatrixWorldSelf(false, true, plain));
+            CHECK(escaped.revision() == settledRevision);
+            CHECK(escaped.updateMatrixWorldSelf(true, true, plain));
+            escaped.matrixWorldNeedsUpdate = true;
+            CHECK(escaped.updateMatrixWorldSelf(false, true, plain));
+        }
+        escaped.matrixWorldAutoUpdate = false;
+        world[12] = 33;
+        escaped.updateMatrixWorld();
+        CHECK(world[12] == 33 && descendant->matrixWorld.elements[12] == 33);
+        Object3D::unleaseTransform(&escaped.matrixWorld);
+    }
+
+    Object3D manual, manualEager;
+    auto manualChild = node("manual local child"), manualEagerChild = node("manual eager child");
+    manual.add(*manualChild); manualEager.add(*manualEagerChild);
+    manual.matrixAutoUpdate = manualEager.matrixAutoUpdate = false;
+    manual.position.x = manualEager.position.x = 99; // manual local matrix owns the transform
+    manual.enableTrackedTransform();
+    CHECK(Object3D::leaseTransform(&manual.matrixWorld) == 5);
+    for (int frame = 0; frame < 3; ++frame) {
+        manual.matrix.elements[12] = manualEager.matrix.elements[12] = frame == 2 ? 4 : 2;
+        manual.updateMatrixWorld();
+        manualEager.updateMatrixWorld(true);
+        CHECK(manual.matrixWorld.elements == manualEager.matrixWorld.elements);
+        CHECK(manualChild->matrixWorld.elements == manualEagerChild->matrixWorld.elements);
+        CHECK(!manual.updateMatrixWorldSelf());
+        manual.matrixWorld.elements[12] = 100;
+        CHECK(manual.updateMatrixWorldSelf());
+        CHECK(manual.matrixWorld.elements == manualEager.matrixWorld.elements);
+        CHECK(!manual.updateMatrixWorldSelf());
+        CHECK(manual.updateMatrixWorldSelf(true));
+        manual.matrixWorldNeedsUpdate = true;
+        CHECK(manual.updateMatrixWorldSelf());
+    }
+    manual.matrixWorldAutoUpdate = false;
+    manual.matrixWorld.elements[12] = 33;
+    manual.updateMatrixWorld();
+    CHECK(manual.matrixWorld.elements[12] == 33 && manualChild->matrixWorld.elements[12] == 33);
+    Object3D::unleaseTransform(&manual.matrixWorld);
 }
 
 // Ported from three r185 test/unit/src/core/Object3D.tests.js. The source holds 37 QUnit.test

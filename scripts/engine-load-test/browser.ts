@@ -7,6 +7,8 @@ import { stat } from "node:fs/promises";
 import { type Server, createServer } from "node:http";
 import path from "node:path";
 import { chromium } from "@playwright/test";
+import { PNG } from "pngjs";
+import { downscaleFrame } from "../../examples/engine-load-test/src/frame-read.js";
 import {
   DEFAULT_AXES,
   canonicalPlacementBytes,
@@ -157,6 +159,13 @@ export async function driveBenchmarkPage(options: IDriveOptions): Promise<unknow
     page.on("response", (response) => {
       if (response.status() >= 400)
         options.onConsole?.(`http ${response.status()}: ${response.url()}`);
+    });
+    // The driver awaits this only after closing a rung's timed window, before changing the scene.
+    await page.exposeFunction("__TN_BENCH_CAPTURE__", async () => {
+      const image = PNG.sync.read(await page.locator("canvas").first().screenshot({ type: "png" }));
+      const small = new PNG({ width: 160, height: 90 });
+      small.data = Buffer.from(downscaleFrame(image.data, image.width, image.height));
+      return PNG.sync.write(small).toString("base64");
     });
     await page.goto(options.url, { timeout: 120_000, waitUntil: "load" });
     const deadline = Date.now() + options.timeoutMs;

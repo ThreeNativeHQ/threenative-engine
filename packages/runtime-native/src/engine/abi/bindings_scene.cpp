@@ -34,6 +34,7 @@
 #include "engine/scene/object3d.h"
 
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cstdint>
 #include <memory>
@@ -88,9 +89,11 @@ template <typename T, typename Field>
 void nestedVector(ClassBinding& b, const char* prefix, Field field) {
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string(prefix) + "." + "xyz"[i];
-        b.getters[path] = [field, i](void* self) { return Value::of(component3(std::invoke(field, *as<T>(self)), i)); };
+        b.getters[path] = [field, i](void* self) { as<T>(self)->materializeLocalTransform(); return Value::of(component3(std::invoke(field, *as<T>(self)), i)); };
         b.setters[path] = [field, i](void* self, const Value& v) {
+            as<T>(self)->prepareLocalTransformWrite();
             setComponent3(std::invoke(field, *as<T>(self)), i, number(v));
+            as<T>(self)->markLocalTransformDirty();
         };
     }
 }
@@ -101,8 +104,9 @@ void nestedQuaternion(ClassBinding& b, const char* prefix, Field field) {
     const char* const names[4] = {"x", "y", "z", "w"};
     for (int i = 0; i < 4; ++i) {
         const std::string path = std::string(prefix) + "." + names[i];
-        b.getters[path] = [field, i](void* self) { return Value::of(component4(std::invoke(field, *as<T>(self)), i)); };
+        b.getters[path] = [field, i](void* self) { as<T>(self)->materializeLocalTransform(); return Value::of(component4(std::invoke(field, *as<T>(self)), i)); };
         b.setters[path] = [field, i](void* self, const Value& v) {
+            as<T>(self)->prepareLocalTransformWrite();
             setComponent4(std::invoke(field, *as<T>(self)), i, number(v));  // Quaternion::set notifies
         };
     }
@@ -112,7 +116,9 @@ void nestedQuaternion(ClassBinding& b, const char* prefix, Field field) {
 template <typename T, typename Field>
 void nestedMatrix(ClassBinding& b, const char* prefix, Field field) {
     b.getters[std::string(prefix) + ".elements"] = [field](void* self) {
-        return numbers((std::invoke(field, *as<T>(self))).elements.data(), 16);
+        auto& matrix = std::invoke(field, *as<T>(self));
+        Object3D::prepareTransformView(&matrix);
+        return numbers(matrix.elements.data(), 16);
     };
 }
 
@@ -214,13 +220,6 @@ void registerObject3DEvents(ClassBinding& b) {
 // geometry, material, flags, render order and layer mask. It walks the way that proof walks, so a
 // light or LOD hides its children. A hash, so a match is a claim at 2^-53 and a mismatch only sends
 // the caller to its own exact walk.
-// The nodes at and under `root`: what a walk of its subtree covers.
-double subtreeSize(const Object3D& root) {
-    double count = 1;
-    for (const Object3D* child : root.children) count += subtreeSize(*child);
-    return count;
-}
-
 double structureStamp(Object3D& root) {
     uint64_t h = 0xcbf29ce484222325ULL;
     const auto mix = [&h](uint64_t v) {
@@ -342,7 +341,8 @@ void registerObject3D(ClassBinding& b) {
     // Engine-internal: core's projected-size cull in one call (scene/projected_cull.h), its state kept
     // per root. `__cullProjected(camera, cameraResolved, scale, minimumPixels, enabled)` hides this
     // frame's sub-threshold objects and returns core's counters in report order; `__restoreCull()`
-    // shows them again. `__alwaysRender` mirrors core's alwaysRender() marker.
+    // shows them again, after the host's draw when it holds restores.
+    // `__alwaysRender` mirrors core's alwaysRender() marker.
     b.methods["__cullProjected"] = [](void* self, const Args& a, Store& store) {
         auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
         if (camera == nullptr) throw Unsupported{"__cullProjected needs a camera"};
@@ -355,7 +355,7 @@ void registerObject3D(ClassBinding& b) {
         return Value::array(std::move(counts));
     };
     b.methods["__restoreCull"] = [](void* self, const Args&, Store&) {
-        projectedCullOf(*as<Object3D>(self)).restore();
+        projectedCullOf(*as<Object3D>(self)).restoreAfterDraw();
         return Value{};
     };
     b.getters["__alwaysRender"] = [](void* self) { return Value::of(as<Object3D>(self)->alwaysRender); };
@@ -390,7 +390,9 @@ void registerObject3D(ClassBinding& b) {
     // Every kept member's `__address` in one call: the Wasm back end asks once per object, not per member.
     b.getters["__addresses"] = [](void* self) {
         auto* o = as<Object3D>(self);
+        Object3D::transformTrackingAddress(&o->position)[2] = 1;
         const auto at = [](const void* member) { return Value::of(double(reinterpret_cast<uintptr_t>(member))); };
+        Object3D::prepareTransformView(&o->matrixWorld);
         return Value::record({{"__address", at(o->flags())}, {"position", at(&o->positionValue())}, {"rotation", at(&o->rotationValue())},
             {"quaternion", at(&o->quaternionValue())}, {"scale", at(&o->scaleValue())},
             {"up", at(&o->up)}, {"matrix", at(&o->matrixValue())}, {"matrixWorld", at(&o->matrixWorldValue())},
@@ -411,11 +413,25 @@ void registerObject3D(ClassBinding& b) {
         as<Object3D>(self)->setLayerMask(number(v));
     };
     b.getters["matrixAutoUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixAutoUpdate); };
-    b.setters["matrixAutoUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixAutoUpdate = flag(v); };
+    b.setters["matrixAutoUpdate"] = [](void* self, const Value& v) {
+        as<Object3D>(self)->prepareLocalTransformWrite();
+        as<Object3D>(self)->matrixAutoUpdate = flag(v);
+        as<Object3D>(self)->markLocalTransformDirty();
+    };
     b.getters["matrixWorldAutoUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldAutoUpdate); };
-    b.setters["matrixWorldAutoUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixWorldAutoUpdate = flag(v); };
+    b.setters["matrixWorldAutoUpdate"] = [](void* self, const Value& v) {
+        as<Object3D>(self)->prepareLocalTransformWrite();
+        as<Object3D>(self)->matrixWorldAutoUpdate = flag(v);
+        as<Object3D>(self)->markLocalTransformDirty();
+    };
+    b.getters["static"] = [](void* self) { return Value::of(as<Object3D>(self)->isStatic); };
+    b.setters["static"] = [](void* self, const Value& v) { as<Object3D>(self)->isStatic = flag(v); };
     b.getters["matrixWorldNeedsUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldNeedsUpdate); };
-    b.setters["matrixWorldNeedsUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixWorldNeedsUpdate = flag(v); };
+    b.setters["matrixWorldNeedsUpdate"] = [](void* self, const Value& v) {
+        as<Object3D>(self)->prepareLocalTransformWrite();
+        as<Object3D>(self)->matrixWorldNeedsUpdate = flag(v);
+        as<Object3D>(self)->markLocalTransformDirty();
+    };
     b.getters["id"] = [](void* self) { return Value::of(double(as<Object3D>(self)->id())); };
     b.getters["uuid"] = [](void* self) { return Value{Value::Kind::String, 0, as<Object3D>(self)->uuid}; };
     b.setters["uuid"] = [](void* self, const Value& v) {
@@ -437,9 +453,10 @@ void registerObject3D(ClassBinding& b) {
     nestedMatrix<Object3D>(b, "matrixWorld", &Object3D::matrixWorldValue);
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string("rotation.") + "xyz"[i];
-        b.getters[path] = [i](void* self) { return Value::of(as<Object3D>(self)->rotation.toArray()[i]); };
+        b.getters[path] = [i](void* self) { as<Object3D>(self)->materializeLocalTransform(); return Value::of(as<Object3D>(self)->rotation.toArray()[i]); };
         // As three's Euler setters: write the component, then sync the quaternion through notify().
         b.setters[path] = [i](void* self, const Value& v) {
+            as<Object3D>(self)->prepareLocalTransformWrite();
             Euler& rotation = as<Object3D>(self)->rotation;
             (i == 0 ? rotation.x : i == 1 ? rotation.y : rotation.z) = number(v);
             rotation.notify();
@@ -458,17 +475,21 @@ void registerObject3D(ClassBinding& b) {
         b.setters[path] = [i](void* self, const Value& v) {
             std::optional<Vector3>& pivot = as<Object3D>(self)->pivot;
             if (!pivot.has_value()) throw Unsupported{"this Object3D has no pivot"};
+            as<Object3D>(self)->prepareLocalTransformWrite();
             setComponent3(*pivot, i, number(v));
+            as<Object3D>(self)->markLocalTransformDirty();
         };
     }
     b.getters["rotation.order"] = [](void* self) {
         static const char* const kNames[] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
+        as<Object3D>(self)->materializeLocalTransform();
         const Euler& rotation = as<Object3D>(self)->rotation;
         return Value{Value::Kind::String, 0,
                      std::string(kNames[static_cast<int>(rotation.order)])};
     };
     b.setters["rotation.order"] = [](void* self, const Value& v) {
         static const char* const kNames[] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
+        as<Object3D>(self)->prepareLocalTransformWrite();
         Euler& rotation = as<Object3D>(self)->rotation;
         for (int i = 0; i < 6; ++i) {
             if (v.kind == Value::Kind::String && v.text == kNames[i]) {
@@ -541,12 +562,20 @@ void registerObject3D(ClassBinding& b) {
             if (!node->visible()) return Value::of(false);
         return Value::of(true);
     };
-    // core's MatrixWorldPass asks for this where it exists: three's updateMatrixWorld recursion in one call instead
-    // of a call per node. It answers how many nodes the walk covered (the root and everything under it).
+    // core's MatrixWorldPass asks for this where it exists: its walk in one call instead of a call per node.
+    // `__tnUpdateMatrixWorld(force, prune)` answers the nodes it visited; with `prune` (core's "visible" mode) a
+    // hidden subtree waits for the frame it shows (Object3D::updateMatrixWorldVisible).
     b.methods["__tnUpdateMatrixWorld"] = [](void* self, const Args& a, Store&) {
-        Object3D* root = as<Object3D>(self);
-        root->updateMatrixWorld(boolean(a, 0, false));
-        return Value::of(subtreeSize(*root));
+        return Value::of(double(as<Object3D>(self)->updateMatrixWorldVisible(boolean(a, 0, false), boolean(a, 1, false))));
+    };
+    // Read current world values without leasing the source's live transform view.
+    b.methods["__tnCopyMatrixWorld"] = [](void* self, const Args& a, Store& store) {
+        auto& target = store.ref<Matrix4>(a.at(0), "Matrix4");
+        auto& source = *as<Object3D>(self);
+        source.joinDeferredWorldTransform();
+        Object3D::prepareTransformView(&target);
+        target.copy(source.matrixWorld);
+        return Value{};
     };
     b.methods["updateMatrix"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->updateMatrix();
@@ -1107,6 +1136,7 @@ void registerSkeleton(ClassBinding& b) {
         return Value{};
     };
     b.getters["boneMatrices"] = [](void* self) {
+        as<Skeleton>(self)->update();
         const std::vector<float>& m = as<Skeleton>(self)->boneMatrices;
         return Value::list(std::vector<double>(m.begin(), m.end()));
     };
@@ -1163,24 +1193,36 @@ void registerSkinnedMesh(ClassBinding& b) {
     // three's `skeleton` and bind matrices are plain properties: core's projection stand-in is a fresh SkinnedMesh
     // handed the game's skeleton by assignment, and a dropped write draws the rig unskinned.
     b.setters["skeleton"] = [](void* self, const Value& value, Store& store) {
+        as<SkinnedMesh>(self)->revokeGpuSkinning();
         if (value.kind != Value::Kind::Ref && value.kind != Value::Kind::Null && value.kind != Value::Kind::Undefined)
             throw Unsupported{"SkinnedMesh.skeleton must be a Skeleton or null"};
         as<SkinnedMesh>(self)->skeleton = value.kind == Value::Kind::Ref ? store.shared<Skeleton>(value, "Skeleton") : nullptr;
     };
     b.setters["bindMatrix"] = [](void* self, const Value& value, Store& store) {
+        as<SkinnedMesh>(self)->revokeGpuSkinning();
         as<SkinnedMesh>(self)->bindMatrix.copy(store.ref<Matrix4>(value, "Matrix4"));
     };
     b.setters["bindMatrixInverse"] = [](void* self, const Value& value, Store& store) {
+        as<SkinnedMesh>(self)->revokeGpuSkinning();
         as<SkinnedMesh>(self)->bindMatrixInverse.copy(store.ref<Matrix4>(value, "Matrix4"));
     };
     b.getters["bindMode"] = [](void* self) { return Value{Value::Kind::String, 0, as<SkinnedMesh>(self)->attached ? "attached" : "detached"}; };
     b.setters["bindMode"] = [](void* self, const Value& value) {
+        as<SkinnedMesh>(self)->revokeGpuSkinning();
         if (value.kind != Value::Kind::String || (value.text != "attached" && value.text != "detached"))
             throw Unsupported{"SkinnedMesh.bindMode must be attached or detached"};
         as<SkinnedMesh>(self)->attached = value.text == "attached";
     };
-    fixedMember(b, "bindMatrix", memberAliasMethod(&SkinnedMesh::bindMatrix, "Matrix4"));
-    fixedMember(b, "bindMatrixInverse", memberAliasMethod(&SkinnedMesh::bindMatrixInverse, "Matrix4"));
+    fixedMember(b, "bindMatrix", [](void* self, const Args&, Store& store) {
+        auto& rig = *as<SkinnedMesh>(self);
+        rig.exposeGpuBind();
+        return memberAlias(store, self, rig.bindMatrix, "Matrix4");
+    });
+    fixedMember(b, "bindMatrixInverse", [](void* self, const Args&, Store& store) {
+        auto& rig = *as<SkinnedMesh>(self);
+        rig.exposeGpuBind();
+        return memberAlias(store, self, rig.bindMatrixInverse, "Matrix4");
+    });
     nestedMatrix<SkinnedMesh>(b, "bindMatrix", &SkinnedMesh::bindMatrix);
     nestedMatrix<SkinnedMesh>(b, "bindMatrixInverse", &SkinnedMesh::bindMatrixInverse);
 }

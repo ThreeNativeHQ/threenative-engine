@@ -1270,6 +1270,59 @@ async function assertArtifactBudget(
   }
 }
 
+/** Where a desktop `engine: "native"` build finds the engine player, absent an explicit path. */
+export function engineDesktopPlayer(
+  runtimeRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd(),
+): string {
+  const explicit = env.THREENATIVE_ENGINE_PLAYER;
+  return explicit === undefined
+    ? path.join(runtimeRoot, "build", "tn-engine-ui", "tn-native-engine-player-v8")
+    : path.resolve(cwd, explicit);
+}
+
+/** The desktop package of a game with `engine: "native"`: the engine player, the game on its own three, cooked assets and UI. */
+async function buildEngineDesktop(
+  cwd: string,
+  config: IResolvedThreeNativeConfig,
+  entry: string,
+): Promise<void> {
+  if (config.ui.renderer === "native-css") {
+    throw new Error(
+      'TN_ENGINE_NATIVE_UI_UNSUPPORTED: engine "native" on desktop draws a "web" UI through the engine player\'s overlay; set ui.renderer to "web" or "native".',
+    );
+  }
+  const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
+  const packager = path.join(runtimeRoot, "scripts", "package-engine-desktop.mjs");
+  const bundler = path.join(runtimeRoot, "scripts", "bundle-native-engine.mjs");
+  if (!existsSync(packager) || !existsSync(bundler)) {
+    throw new Error(
+      `TN_ENGINE_BUNDLER_MISSING: engine "native" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout.`,
+    );
+  }
+  const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
+  const output = path.join(cwd, "dist-native", await projectName(cwd));
+  await packageStaged(output, cwd, [
+    packager,
+    "--project",
+    cwd,
+    "--entry",
+    entry,
+    "--player",
+    engineDesktopPlayer(runtimeRoot, process.env, cwd),
+    ...(ui === undefined ? [] : ["--ui", ui]),
+    "--width",
+    String(config.window.width),
+    "--height",
+    String(config.window.height),
+    "--title",
+    config.window.title,
+    "--output",
+    output,
+  ]);
+}
+
 async function buildNative(
   target: NativeBuildTarget,
   cwd: string,
@@ -1282,6 +1335,12 @@ async function buildNative(
   announceProfile(config);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
   const entry = await nativeEntry(cwd, config);
+  // `engine: "native"` opts a desktop game into the C++ engine player, as it opts a web build into the Wasm
+  // engine: its own bundler, decoder-free cook and packager, never the legacy host's prebuilt.
+  if (target === "desktop" && config.engine === "native") {
+    await buildEngineDesktop(cwd, config, entry);
+    return;
+  }
   // Resolve the same desktop binary the packager will receive, before cooking. A default
   // prebuilt used to be selected only after the cook had guessed from the build machine.
   let selectedRuntime: string | undefined;

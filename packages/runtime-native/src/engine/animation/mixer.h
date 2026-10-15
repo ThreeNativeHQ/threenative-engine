@@ -196,6 +196,22 @@ class AnimationAction {
  */
 class AnimationMixer {
   public:
+    // Native mixer work only, excluding event-listener callbacks; owning-thread diagnostic, default off.
+    struct CpuTiming {
+        double (*clock)() = nullptr;
+        double ms = 0;
+        uint64_t calls = 0;
+        bool available = true;
+    };
+    static thread_local CpuTiming cpuTiming;
+    struct PoseObservation {
+        bool enabled = false;
+        uint64_t intervals = 0, unusedIntervals = 0, tracks = 0, bindings = 0;
+        uint64_t unusedTracks = 0, unusedBindings = 0, wholeUnusedTracks = 0;
+        uint64_t queriedTracks = 0, drawnTracks = 0, conservativeTracks = 0;
+    };
+    static thread_local PoseObservation poseObservation;
+
     explicit AnimationMixer(std::shared_ptr<Object3D> root);
     ~AnimationMixer();
     AnimationMixer(const AnimationMixer&) = delete;
@@ -235,6 +251,7 @@ class AnimationMixer {
 
   private:
     friend class AnimationAction;
+    void observeBinding(const PropertyMixer& binding, bool evaluated);
 
     struct ActionsForClip {
         const AnimationClip* clip;

@@ -11,10 +11,13 @@
 // rather than drop them.
 
 #include <cstdint>
+#include <cstdlib>
+#include <ctime>
 #include <string>
 #include <string_view>
 
 #include "engine/foundation/math/Color.h"
+#include "engine/foundation/uuid.h"
 #include "engine/foundation/math/Vector.h"
 #include "engine/scene/texture.h"
 #include "engine/shader/position_node.h"
@@ -30,6 +33,32 @@ class Material {
 private:
     uint32_t version_ = 0;
 public:
+    // Temporary internal measurement only; no setter/cache semantics change.
+    struct Diagnostic {
+        bool enabled = false, threadCpuSupported = false;
+        uint64_t writes = 0, unchanged = 0, changed = 0, signedZero = 0, nan = 0;
+        uint64_t recordRebuilds = 0, graphRebuilds = 0, recordCpuNs = 0, graphCpuNs = 0;
+    };
+    static Diagnostic& diagnostics() {
+        static Diagnostic state = [] { Diagnostic d; const char* flag = std::getenv("TN_MATERIAL_DIAGNOSTICS");
+            d.enabled = flag && flag[0] == '1' && flag[1] == '\0'; return d; }();
+        return state;
+    }
+    struct DiagnosticTimer {
+        bool enabled; uint64_t& total; int64_t begin = -1;
+        static int64_t now() {
+#if defined(__linux__)
+            timespec time{};
+            if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time) == 0) return int64_t(time.tv_sec) * 1000000000 + time.tv_nsec;
+#endif
+            return -1; // Unsupported is explicit, never process CPU or wall time.
+        }
+        DiagnosticTimer(bool active, uint64_t& destination) : enabled(active), total(destination) {
+            if (enabled) { begin = now(); diagnostics().threadCpuSupported = begin >= 0; }
+        }
+        ~DiagnosticTimer() { if (enabled) { const auto end = now();
+            if (begin >= 0 && end >= begin) total += end - begin; else diagnostics().threadCpuSupported = false; } }
+    };
     explicit Material(MaterialType type, bool nodeMaterial = false);
     [[nodiscard]] std::string_view typeName() const;  // "MeshStandardMaterial", ...
 
@@ -38,6 +67,7 @@ public:
     shader::MaterialNodes nodes;
     uint32_t id;  // three's material id counter; a clone takes the next one
     std::string name;
+    std::string uuid = generateUuid();  // three's: unique per material, new for a clone
 
     // Material
     bool spriteMaterial = false;
