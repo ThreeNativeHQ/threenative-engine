@@ -189,6 +189,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Three patch. Restoring the previous patch recovers every prior fingerprint.
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
+// Recomputed 2026-10-15 for the native engine default (PRD-573): every template AGENTS.md/CLAUDE.md pair gains
+// an Engine section. Measured from the committed branch head, with no sibling edits in the tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
@@ -253,20 +255,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
   // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
-  "action-rpg": "2ad57690b87fe80faa26931ea11d6ea210ac787bb58c7bb0f83e7b653426eeb7",
-  minimal: "6e9d255a6033e239e73dfabec172dfebb4a88849c01ca461d476ab8b17b91cbd",
-  platformer: "2ccf93236a0d6c1b8aa00bd3f86585427149f3788640dccb491f8d451c2c6894",
-  puzzle: "a25a9129f070b8a4cd25c1d3a174950b0367eba85d5a414b62325a571e2c40f3",
-  racing: "0fb3b6a6eacfc54acd74ae086cb5502789fdfe83e0466306202053843314f663",
-  rain: "9523312a5c0573b6ae886bd63ade36922a86f7a9b8e3730f7ead743609357bd7",
-  rts: "8a8d80b543d77717243274896b5b7a6a723b92e3a3f252fd470b2fb6dcfc12c8",
-  runner: "b14123d911dc3eb7d73e1ab3f91269b480a028938efff4a2bea4f56f2e570906",
+  "action-rpg": "3e1ec97cd76bafbf1f3801ee9491798df0f60f89eec8e88bbf8d971a621a5e37",
+  minimal: "35b572cc28d22787368316db2ff6c9d1b850a16fd58da094bf792c1779e5ad19",
+  platformer: "5d270466ed7cec9d6234fe0c0098efd4b3f715c47472fe8c8cfdaccf6318f76c",
+  puzzle: "74ad5ca8dfc6d48b38336b1bb64ff3704c0a85d6d95c2371e2401c1fea1d2522",
+  racing: "094bfb4d56c8d47c718c89414d3a21794c0b037e94c74a9bb7ed2d72e00ebe6f",
+  rain: "ad3c2785da41df7e69c88b7f57c30da6509eb36cab79e3cbb781028bfcdf69c4",
+  rts: "3454b6276908ff5d85b29de439349e2c625baea1114f065b044c269f0b6bb7b8",
+  runner: "0b8acdfc19a95c7b5d9db6345b749684fab0cb8269aaf26d5cadd48f21287010",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "73da167ba1fdc6360c58e61b51a2f3dba047fbe1c4e88648e9bce4abb64325da",
-  shooter: "ca09b0b25f3ba689af53772d82be0978d82cdaff8f997b04b160874428ec3e54",
-  snow: "482c1c7f1cd2f233d43cc3fd378c983b4ab8f13dca4bd6fca008e5b120cb0705",
-  starter: "74df32f5ea8f1aeeea4d2eaf9c423f2fca93fbb1fa392de7acdb6b8bd994db8c",
-  "tower-defense": "7d816e530aee8842027a1666782d96c51b2cbfde55c4c23a7cdd1b0fd6a267ac",
+  sailing: "ab4f8d93df104a41a0b02050dc54058e42b3e9dcd7fcb21d1843f5885c822146",
+  shooter: "40408a57c013f89ecec48c4dfe89db7a90da7bb60837a215ba989eb62934d182",
+  snow: "626ccdaf1d9944db1658424786f3260561b01ceb07e350b21604593fa9344d57",
+  starter: "51cc506589e7749915d13a6ddc6f759bc598af02a0c4b94537d7eafe45e5a326",
+  "tower-defense": "325675a3971ed84dc63d0a9df8666a1040ce0334bf359067f83aed899a837ff2",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -1082,6 +1084,15 @@ describe("create-threenative", () => {
       const result = await createProject(
         { install: false, target: "minimal-bundle", template: "minimal" },
         root,
+      );
+      // This build checks core's bundle, not an engine: it names the legacy engine so it needs no Wasm module.
+      const configPath = path.join(result.target, "threenative.config.ts");
+      await writeFile(
+        configPath,
+        (await readFile(configPath, "utf8")).replace(
+          "const config: IThreeNativeConfig = {",
+          'const config: IThreeNativeConfig = {\n  engine: "legacy",',
+        ),
       );
       const scope = path.join(result.target, "node_modules", "@threenative");
       await mkdir(scope, { recursive: true });
