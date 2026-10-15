@@ -125,7 +125,7 @@ function gapSide(g, name, color) {
 }
 
 function renderGap(d) {
-  $("gap").innerHTML = `<div class="scroll"><table><tr><th>Pose / arm</th><th>Legacy/native CPU ratio</th><th>CPU ms/frame (legacy / native)</th><th>Instructions/frame (legacy / native)</th><th>Process-tree CPU ms/frame (legacy / native)</th><th>Qualification</th></tr>${(d.matchedCpu ?? []).map((p) => `<tr><td>${esc(p.pose)} / ${esc(p.arm)}</td><td>${p.ratio === undefined ? "pending/unavailable" : `${p.ratio.toFixed(3)}x`}</td><td>${n(p.legacyCpuMs)} / ${n(p.nativeCpuMs)}</td><td>${n(p.legacyInstructions, 0)} / ${n(p.nativeInstructions, 0)}</td><td>${n(p.legacyTreeCpuMs)} / ${n(p.nativeTreeCpuMs)}</td><td>${esc(p.detail)}</td></tr>`).join("")}</table></div><p class="mute sm">Fixed-step OS counters only; engine commits must match. Three alternating pairs per pose and native parity PASS are required; root execution review remains mandatory. Native host completion records must reconcile against labelled window ticks; missing records leave independent reconciliation unavailable. Attribution/profiles pending.</p>`;
+  $("gap").innerHTML = `<div class="scroll"><table><tr><th>Pose / arm</th><th>Legacy/native CPU ratio</th><th>CPU ms/frame (legacy / native)</th><th>Instructions/frame (legacy / native)</th><th>Process-tree CPU ms/frame (legacy / native)</th><th>Qualification</th></tr>${(d.matchedCpu ?? []).map((p) => `<tr><td>${esc(p.pose)} / ${esc(p.arm)}</td><td>${p.ratio === undefined ? "pending/unavailable" : `${p.ratio.toFixed(3)}x`}</td><td>${n(p.legacyCpuMs ?? p.unpaired?.legacy?.cpuMs)} / ${p.unpaired?.nativeState === "failed" ? "failed" : n(p.nativeCpuMs ?? p.unpaired?.native?.cpuMs)}</td><td>${n(p.legacyInstructions ?? p.unpaired?.legacy?.instructions, 0)} / ${p.unpaired?.nativeState === "failed" ? "failed" : n(p.nativeInstructions ?? p.unpaired?.native?.instructions, 0)}</td><td>${n(p.legacyTreeCpuMs ?? p.unpaired?.legacy?.treeCpuMs)} / ${p.unpaired?.nativeState === "failed" ? "failed" : n(p.nativeTreeCpuMs ?? p.unpaired?.native?.treeCpuMs)}</td><td>${esc(p.detail)}</td></tr>`).join("")}</table></div><p class="mute sm">Fixed-step OS counters only; engine commits must match. Three alternating pairs per pose and native parity PASS are required; root execution review remains mandatory. Native host completion records must reconcile against labelled window ticks; missing records leave independent reconciliation unavailable. Attribution/profiles pending.</p>`;
 }
 
 function ring(prd) {
@@ -142,7 +142,9 @@ function side(d) {
   const ref = d.legacyMs;
   const cols = bars.map((b, i) => {
     const x = gap + i * (bw + gap), label = { desktop: "Native", native: "Web Wasm", legacy: "three.js" }[b.arm];
-    if (b.v === undefined) return `<g><rect x="${x}" y="${top}" width="${bw}" height="${base - top}" rx="6" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${x + bw / 2}" y="${(base + top) / 2}" text-anchor="middle">no samples</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${label}</text></g>`;
+    const provisional = (d.matchedCpu ?? []).filter((p) => p.unpaired && (b.arm === "legacy" || p.arm === b.arm && p.unpaired.nativeState !== "missing"));
+    const pending = provisional.length ? b.arm !== "legacy" && provisional.some((p) => p.unpaired.nativeState === "failed") ? "failed" : "provisional" : "no samples";
+    if (b.v === undefined) return `<g><rect x="${x}" y="${top}" width="${bw}" height="${base - top}" rx="6" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${x + bw / 2}" y="${(base + top) / 2}" text-anchor="middle">${pending}</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${label}</text></g>`;
     const v = b.v, h = (v / hi) * (base - top), chip = ref && b.arm !== "legacy" ? `${(ref / v).toFixed(2)}× three.js` : "reference";
     return `<g><rect x="${x}" y="${base - h}" width="${bw}" height="${h}" rx="6" fill="${COLOR[b.arm]}"><title>${esc(b.build)} · median of ${b.runs} run${b.runs === 1 ? "" : "s"}</title></rect><text class="val" x="${x + bw / 2}" y="${base - h - 6}" text-anchor="middle">${v.toFixed(1)} ms</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${b.arm === "legacy" ? "" : `${label} · `}${esc(b.build ?? label)}</text><text x="${x + bw / 2}" y="${H - 3}" text-anchor="middle" style="fill:${b.arm !== "legacy" && ref && ref / v < 1 ? "var(--red)" : "var(--mute)"}">${chip}</text></g>`;
   }).join("");
@@ -222,7 +224,10 @@ function render(d) {
   $("runs").innerHTML = `<table><tr><th>Run</th><th>Package</th><th>Updated</th><th>Active frames</th><th>Historical wall/budget or native CPU ms / frame</th><th>Instr / frame (M)</th><th>Frame p95</th><th>HUD p95</th><th>Matrix last (legacy projection)</th><th>World work (version; median / max; n)</th><th>Cull %</th><th>Parity</th><th>Skipped lines</th></tr>${[...d.runs].reverse().map((r) => `<tr><td>${esc(r.dir)}${r.rejection ? ` <span class="chip fail" title="${esc(r.rejection)}">rejected</span>` : ""}${r.profiled ? ' <span class="chip" title="Profiler or native diagnostic instrumentation was attached">instrumented, not scored</span>' : ""}${r.timingExclusion ? ` <span class="chip" title="${esc(r.timingExclusion)}">timing excluded</span>` : ""}</td><td>${esc(r.pkg ?? "—")}</td><td>${new Date(r.mtimeMs).toLocaleString()}</td><td title="used / eligible; ${r.desktop?.excluded ?? 0} inactive or incomplete frames excluded">${r.desktop ? `${r.desktop.n} / ${r.desktop.eligible}` : "—"}</td><td>${r.status === "ok" ? n(ms(r)) : "no samples"}</td><td>${n(r.desktop?.medians.cpuFrameKInstructions === undefined ? undefined : r.desktop.medians.cpuFrameKInstructions / 1000, 1)}</td><td>${n(r.desktop?.frameP95 ?? r.budget?.frameP95)}</td><td>${n(r.ui?.p95, 1)}</td><td>${n(r.matrix?.last, 0)}</td><td>${r.desktop?.worldWork ? `v${r.desktop.worldWork.version}; ${n(r.desktop.worldWork.median, 1)} / ${n(r.desktop.worldWork.max, 0)}; n=${r.desktop.worldWork.n}` : r.desktop?.worldWorkInvalid ? "invalid / mixed counters" : "—"}</td><td>${n(r.cullPct)}</td><td>${parity(r)}</td><td>${r.skipped}</td></tr>`).join("")}</table>`;
 }
 
+let busy = false;
 async function tick() {
+  if (busy) return; // the first load can take 20-45 s; never stack requests
+  busy = true;
   try {
     const d = await fetch("/api/midway", { cache: "no-store" }).then((x) => x.json());
     render(d);
@@ -232,7 +237,9 @@ async function tick() {
     $("status").textContent = `server not reachable or page error: ${e}`;
     $("dot").style.background = "var(--red)";
   }
+  busy = false;
 }
+$("status").textContent = "loading runs… the first load parses all run logs and can take up to a minute";
 tick(); setInterval(tick, 5000);
 </script>
 </body>

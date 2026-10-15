@@ -645,6 +645,15 @@ export async function loadRuns(rootPaths: readonly string[] = roots): Promise<IL
   return runs;
 }
 
+/** One shared midwayState() at a time: the first call parses ~570 MB of run logs (20-45 s), and overlapping polls must not each repeat it. */
+let midwayInFlight: ReturnType<typeof midwayState> | undefined;
+function midwayOnce() {
+  midwayInFlight ??= midwayState().finally(() => {
+    midwayInFlight = undefined;
+  });
+  return midwayInFlight;
+}
+
 async function allRows(): Promise<IRow[]> {
   return (await loadRuns())
     .flatMap((run) => run.rows)
@@ -787,7 +796,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       res.end(JSON.stringify(webOf(await allRows())));
     } else if (req.url?.startsWith("/api/midway")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-      res.end(JSON.stringify(await midwayState()));
+      res.end(JSON.stringify(await midwayOnce()));
     } else if (req.url?.startsWith("/midway")) {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(await readFile(new URL("./midway-bench/dashboard.html", import.meta.url), "utf8"));
@@ -798,7 +807,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(await readFile(new URL("./perf-live.html", import.meta.url), "utf8"));
     }
-  }).listen(port, "127.0.0.1", () =>
-    process.stdout.write(`perf live: http://127.0.0.1:${port}  (watching ${roots.join(", ")})\n`),
-  );
+  }).listen(port, "127.0.0.1", () => {
+    process.stdout.write(`perf live: http://127.0.0.1:${port}  (watching ${roots.join(", ")})\n`);
+    void midwayOnce().catch(() => undefined); // warm the per-run parse cache before the first page load
+  });
 }
