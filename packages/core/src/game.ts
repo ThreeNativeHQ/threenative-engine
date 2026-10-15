@@ -65,7 +65,6 @@ import {
   unlitFoliageWarning,
 } from "./profiling/unlit-foliage-warning.js";
 import { formatProjectionWindow } from "./projection-marker.js";
-import type { IPoseLookupLimits } from "./projection-skinned.js";
 import { type IRandom, createRandom } from "./random.js";
 import { RenderCameraCull } from "./render-camera-cull.js";
 import { RenderPassBudget } from "./render-pass-budget.js";
@@ -1078,25 +1077,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     threeScene.matrixWorldAutoUpdate = false;
     // Built before the context because `ctx.startup` reads it: a game asks what the framework's
     // startup is doing, and the answer is this pass.
-    const projection = new SceneRenderProjection(
-      threeScene,
-      {
-        // The game's `renderer.projection` value verbatim: `false` declines the mirror, an object
-        // names the material check beside accepting it, and the projection owns both readings.
-        projection: this.#config.render?.projection,
-        velocity: () => renderer.renderChainUsesPerObjectVelocity?.() ?? false,
-        matrixWorld: matrixWorldPass,
-      },
-      (
-        renderer.raw as {
-          backend?: {
-            device?: {
-              limits?: IPoseLookupLimits;
-            };
-          };
-        }
-      ).backend?.device?.limits,
-    );
+    const projection = new SceneRenderProjection(threeScene, {
+      // The game's `renderer.projection` value verbatim: `false` declines the mirror, an object
+      // names the material check beside accepting it, and the projection owns both readings.
+      projection: this.#config.render?.projection,
+      velocity: () => renderer.renderChainUsesPerObjectVelocity?.() ?? false,
+      matrixWorld: matrixWorldPass,
+    });
     this.#projection = projection;
     // Do not submit what the render camera cannot resolve. On by default at a conservative 0.5 px,
     // and measured whether or not the game narrows or declines it. Its decision is per camera, so

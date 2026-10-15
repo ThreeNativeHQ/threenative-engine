@@ -1,30 +1,18 @@
 import {
   type AnimationAction,
-  type AnimationBlendMode,
   type AnimationClip,
   AnimationMixer,
   type AnimationMixerEventMap,
-  type AnimationObjectGroup,
   type EventListener,
   LoopOnce,
   LoopRepeat,
-  NormalAnimationBlendMode,
   type Object3D,
   Vector3,
   type VectorKeyframeTrack,
 } from "three";
-import { captureEvaluatedPose, preservePublicPoseEdits } from "./animation-pose-table.js";
 import { clipTrackBindings } from "./clip-audit.js";
-import {
-  type IAnimationPoseSample,
-  type IAnimationRateState,
-  animationRateStates,
-} from "./render-camera-cull.js";
+import { type IAnimationRateState, animationRateStates } from "./render-camera-cull.js";
 import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
-
-type AnimationPlayerRateState = Omit<IAnimationRateState, "prepareDraw"> & {
-  prepareDraw: () => (() => void) | undefined;
-};
 
 export interface IAnimationPlayerOptions {
   readonly clips: readonly AnimationClip[];
@@ -262,43 +250,10 @@ type FinishedListener = EventListener<
 >;
 type BeforeFirstLoopListener = (duringUpdate: boolean) => void;
 
-interface IClipTrackSnapshot {
-  readonly track: AnimationClip["tracks"][number];
-  readonly name: string;
-  readonly factory: unknown;
-  readonly timesRef: ArrayLike<number>;
-  readonly valuesRef: ArrayLike<number>;
-  readonly times: number[];
-  readonly values: number[];
-}
-
-interface IClipSnapshot {
-  readonly duration: number;
-  readonly blendMode: AnimationClip["blendMode"];
-  readonly tracks: readonly IClipTrackSnapshot[];
-}
-
-function snapshotClip(clip: AnimationClip): IClipSnapshot {
-  return {
-    duration: clip.duration,
-    blendMode: clip.blendMode,
-    tracks: clip.tracks.map((track) => ({
-      track,
-      name: track.name,
-      factory: Reflect.get(track, "createInterpolant"),
-      timesRef: track.times,
-      valuesRef: track.values,
-      times: Array.from(track.times),
-      values: Array.from(track.values),
-    })),
-  };
-}
-
 class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
   readonly #loopListeners = new Set<LoopListener>();
   readonly #finishedListeners = new Set<FinishedListener>();
   readonly #beforeFirstLoopListener: BeforeFirstLoopListener;
-  readonly #observedActions = new WeakSet<AnimationAction>();
   #updateDepth = 0;
 
   constructor(
@@ -313,31 +268,6 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
 
   get hasPublicListeners(): boolean {
     return this.#loopListeners.size > 0 || this.#finishedListeners.size > 0;
-  }
-
-  override clipAction(
-    clip: AnimationClip,
-    root?: Object3D | AnimationObjectGroup,
-    blendMode?: AnimationBlendMode,
-  ): AnimationAction;
-  override clipAction(
-    clip: AnimationClip | string,
-    root?: Object3D | AnimationObjectGroup,
-    blendMode?: AnimationBlendMode,
-  ): AnimationAction | null;
-  override clipAction(...args: Parameters<AnimationMixer["clipAction"]>): AnimationAction | null {
-    const action = super.clipAction(...args);
-    if (action === null) return null;
-    if (!this.#observedActions.has(action)) {
-      this.#observedActions.add(action);
-      const play = action.play.bind(action);
-      action.play = () => {
-        // An action started through the public mixer must not inherit pre-activation pending time.
-        if (!action.isScheduled()) this.#beforeFirstLoopListener(this.#updateDepth > 0);
-        return play();
-      };
-    }
-    return action;
   }
 
   override addEventListener(type: "loop", listener: LoopListener): void;
@@ -397,42 +327,13 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
 export class AnimationPlayer {
   readonly mixer: AnimationMixer;
   readonly root: Object3D;
-  readonly #rateState: AnimationPlayerRateState = {
+  readonly #rateState: IAnimationRateState = {
     rate: 1,
     frame: 0,
     source: undefined,
     evaluated: true,
     evaluation: 0,
-    pose: new WeakMap(),
-    prepareDraw: () => this.#prepareDraw(),
-    readPose: () => this.#readPose(),
-    setPoseLookup: (eligible) => {
-      if (this.#current === undefined) {
-        this.#lookupExact = false;
-        return;
-      }
-      this.#lookupExact = !eligible;
-      if (!eligible && (this.#pendingDt !== 0 || this.#effectiveUpdateRate(true) !== 1)) {
-        this.#evaluate(this.#pendingDt);
-        this.#evaluated = true;
-        this.root.updateMatrixWorld(true);
-        this.#lookupBlockedTime = this.mixer.time;
-      }
-    },
   };
-  #lookupExact = false;
-  #lookupBlockedTime = Number.NaN;
-  #poseActionState:
-    | { action: AnimationAction; evaluation: number; time: number; scale: number }
-    | undefined;
-  #drawClip: AnimationClip | undefined;
-  #clipSnapshots = new WeakMap<AnimationClip, IClipSnapshot>();
-  readonly #lookupInvalidClips = new WeakSet<AnimationClip>();
-  #drawRevision = 0;
-  #firstStep = 0;
-  #poseSample:
-    | { root: Object3D; clip: AnimationClip; time: number; step: number; revision: number }
-    | undefined;
   readonly #staggerOffset = nextAnimationOffset++;
   #updateRate: "auto" | number = "auto";
   #updateFrame = 0;
@@ -442,7 +343,6 @@ export class AnimationPlayer {
   readonly #evaluationScales = new Map<AnimationAction, number>();
   readonly #evaluationPaused = new Set<AnimationAction>();
   readonly #timeScaleInterpolations = new Set<AnimationAction>();
-  readonly #weightInterpolations = new Set<AnimationAction>();
   #evaluating = false;
   #evaluated = false;
   #actions = new Map<string, AnimationAction>();
@@ -506,7 +406,6 @@ export class AnimationPlayer {
       this.#observeTimeScaleInterpolation(action);
       this.#actions.set(clip.name, action);
       this.#clips.set(clip.name, clip);
-      this.#clipSnapshots.set(clip, snapshotClip(clip));
     }
     for (const name of requiredClipNames(options.requiredClips)) {
       const clip = this.#clips.get(name);
@@ -546,8 +445,7 @@ export class AnimationPlayer {
     };
   }
 
-  #effectiveUpdateRate(lookup = false): number {
-    if (!lookup && this.#lookupExact) return 1;
+  #effectiveUpdateRate(): number {
     // Public mixer speed overrides and observed events retain ordinary Three.js tick semantics.
     if (this.mixer.timeScale !== 1) return 1;
     // Event deadlines and changing blend weights remain exactly on the gameplay tick.
@@ -558,7 +456,7 @@ export class AnimationPlayer {
     )
       return 1;
     if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners) return 1;
-    if (this.#timeScaleInterpolations.size > 0 || this.#weightInterpolations.size > 0) return 1;
+    if (this.#timeScaleInterpolations.size > 0) return 1;
     if (this.#updateRate !== "auto") return this.#updateRate;
     const state = this.#rateState;
     if (state.source === undefined) return 1;
@@ -569,24 +467,6 @@ export class AnimationPlayer {
     const warp = action.warp.bind(action);
     const stopWarping = action.stopWarping.bind(action);
     const crossFadeFrom = action.crossFadeFrom.bind(action);
-    const fadeIn = action.fadeIn.bind(action);
-    const fadeOut = action.fadeOut.bind(action);
-    const stopFading = action.stopFading.bind(action);
-    action.fadeIn = (duration) => {
-      if (!this.#evaluating) this.#flushPending();
-      this.#weightInterpolations.add(action);
-      return fadeIn(duration);
-    };
-    action.fadeOut = (duration) => {
-      if (!this.#evaluating) this.#flushPending();
-      this.#weightInterpolations.add(action);
-      return fadeOut(duration);
-    };
-    action.stopFading = () => {
-      const result = stopFading();
-      this.#weightInterpolations.delete(action);
-      return result;
-    };
     action.warp = (startTimeScale, endTimeScale, duration) => {
       if (!this.#evaluating) this.#flushPending();
       this.#timeScaleInterpolations.add(action);
@@ -1045,13 +925,6 @@ export class AnimationPlayer {
   update(dt: number, force = false): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
-    if (
-      this.#effectiveUpdateRate(true) > 1 &&
-      this.#rateState.pose !== undefined &&
-      !this.#rateState.pose.has(this.root)
-    )
-      captureEvaluatedPose(this.root, this.#rateState.pose);
-    if (dt > 0 && this.#firstStep === 0) this.#firstStep = dt;
     if (this.mixer.timeScale !== 1) this.#flushPending();
     const elapsed = dt * this.mixer.timeScale;
     this.#pendingDt += elapsed;
@@ -1075,112 +948,6 @@ export class AnimationPlayer {
 
   #flushPending(): void {
     if (this.#pendingDt !== 0) this.#evaluate(this.#pendingDt);
-  }
-
-  #readPose(): IAnimationPoseSample | undefined {
-    if (this.#lookupExact && this.mixer.time === this.#lookupBlockedTime) return undefined;
-    if (this.#effectiveUpdateRate(true) === 1 || this.#firstStep === 0) return undefined;
-    const action = this.#actions.get(this.#current ?? "");
-    if (
-      action === undefined ||
-      !action.isRunning() ||
-      action.loop !== LoopRepeat ||
-      action.repetitions !== Number.POSITIVE_INFINITY ||
-      action.blendMode !== NormalAnimationBlendMode ||
-      action.getEffectiveWeight() !== 1 ||
-      action.weight !== 1 ||
-      !Number.isFinite(action.timeScale) ||
-      action.timeScale <= 0 ||
-      action.getEffectiveTimeScale() !== action.timeScale
-    )
-      return undefined;
-    for (const other of this.#actions.values()) {
-      if (other !== action && other.isScheduled()) return undefined;
-    }
-    const clip = action.getClip();
-    if (this.#lookupInvalidClips.has(clip)) return undefined;
-    if (this.mixer.stats.actions.inUse !== 1) return undefined;
-    const previous = this.#poseActionState;
-    const mutated =
-      previous?.action === action &&
-      previous.evaluation === this.#rateState.evaluation &&
-      (previous.time !== action.time || previous.scale !== action.timeScale);
-    this.#poseActionState = {
-      action,
-      evaluation: this.#rateState.evaluation,
-      time: action.time,
-      scale: action.timeScale,
-    };
-    if (mutated) return undefined;
-    const duration = clip.duration;
-    if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(action.time))
-      return undefined;
-    let time = action.time;
-    const pending = this.#pendingActionTimes.get(action) ?? 0;
-    if (pending !== 0) {
-      time += pending;
-      const seam = Math.round(time / duration) * duration;
-      // Match grouped evaluation at loop seams, preserving the public clock when nothing is pending.
-      if (Math.abs(time - seam) <= Number.EPSILON * 16 * Math.max(duration, Math.abs(time)))
-        time = seam;
-      if (time >= duration || time < 0) time -= duration * Math.floor(time / duration);
-    }
-    this.#poseSample ??= {
-      root: this.root,
-      clip,
-      time,
-      step: this.#firstStep,
-      revision: this.#drawRevision,
-    };
-    const sample = this.#poseSample;
-    sample.clip = clip;
-    sample.time = time;
-    sample.revision = this.#drawRevision;
-    return sample;
-  }
-
-  #prepareDraw(): (() => void) | undefined {
-    const clip = this.#clips.get(this.#current ?? "");
-    if (clip === undefined) {
-      this.#drawClip = undefined;
-      return;
-    }
-    // Three exposes mutable track arrays without a revision; identity alone misses in-place edits.
-    const previous = this.#clipSnapshots.get(clip);
-    const changed =
-      previous === undefined ||
-      previous.duration !== clip.duration ||
-      previous.blendMode !== clip.blendMode ||
-      previous.tracks.length !== clip.tracks.length ||
-      clip.tracks.some((track, index) => {
-        const snapshot = previous?.tracks[index];
-        return (
-          snapshot === undefined ||
-          snapshot.track !== track ||
-          snapshot.name !== track.name ||
-          snapshot.factory !== Reflect.get(track, "createInterpolant") ||
-          snapshot.timesRef !== track.times ||
-          snapshot.valuesRef !== track.values ||
-          snapshot.times.length !== track.times.length ||
-          snapshot.values.length !== track.values.length ||
-          track.times.some((value, at) => value !== snapshot.times[at]) ||
-          track.values.some((value, at) => value !== snapshot.values[at])
-        );
-      });
-    if (this.#drawClip !== clip || changed) {
-      this.#drawRevision += 1;
-      if (changed) this.#lookupInvalidClips.add(clip);
-      this.#drawClip = clip;
-      this.#clipSnapshots.set(clip, snapshotClip(clip));
-    }
-    if (changed && (this.#pendingDt !== 0 || this.#effectiveUpdateRate(true) !== 1)) {
-      const restore = preservePublicPoseEdits(this.root, this.#rateState.pose);
-      this.#evaluate(this.#pendingDt);
-      this.#evaluated = true;
-      this.root.updateMatrixWorld(true);
-      return restore;
-    }
-    return undefined;
   }
 
   #evaluate(dt: number): void {
@@ -1266,8 +1033,6 @@ export class AnimationPlayer {
     if (this.#current !== undefined && !wasFinished && this.mixer.time !== before)
       this.#advancedFrames += 1;
     this.#advanceBlend(dt);
-    if (this.#effectiveUpdateRate(true) > 1 && this.#rateState.pose !== undefined)
-      captureEvaluatedPose(this.root, this.#rateState.pose);
     this.#rateState.evaluation += 1;
     this.#rateState.evaluated = true;
   }
@@ -1289,7 +1054,6 @@ export class AnimationPlayer {
     this.#blendElapsed = 0;
     this.#blendStarts.clear();
     this.#timeScaleInterpolations.clear();
-    this.#weightInterpolations.clear();
     this.#resetStride();
   }
 
@@ -1308,9 +1072,7 @@ export class AnimationPlayer {
     this.mixer.removeEventListener("finished", this.#onFinished);
     this.#actions.clear();
     this.#clips.clear();
-    this.#clipSnapshots = new WeakMap<AnimationClip, IClipSnapshot>();
     this.#clipGroundSpeed.clear();
-    this.#drawClip = undefined;
     this.#preparation = undefined;
     if (animationRateStates.get(this.root) === this.#rateState)
       animationRateStates.delete(this.root);
