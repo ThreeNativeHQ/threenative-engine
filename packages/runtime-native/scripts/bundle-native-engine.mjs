@@ -19,7 +19,7 @@ const threeNative = dirname(require.resolve("@threenative/three-native/package.j
 const assetsEntry = resolve(dirname(require.resolve("@threenative/assets/package.json")), "dist/index.js");
 
 function rejectUpstream(metafile) {
-  const upstream = Object.keys(metafile.inputs).filter((file) => /(?:^|\/)node_modules\/(?:.*\/)?three\//.test(file));
+  const upstream = Object.keys(metafile.inputs).filter((file) => /(?:^|\/)node_modules\/three\//.test(file));
   if (upstream.length) throw new Error(`TN_NATIVE_ENGINE_UPSTREAM: ${upstream.join(", ")}`);
 }
 

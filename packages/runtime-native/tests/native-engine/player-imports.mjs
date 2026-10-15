@@ -460,6 +460,11 @@ for (const [env, want] of [[{ TN_PLAYER_WIDTH: "640", TN_PLAYER_HEIGHT: "360" },
   const surface = spawnSync(resolve(executable), ["--check-game", surfaceOut], { encoding: "utf8", env: { ...process.env, ...env } });
   assert.equal(surface.status, 0, `${want}: ${surface.stdout}\n${surface.stderr}`);
 }
+// An installed package may keep its own `dist/three/` folder (@threenative/playtest does); only the `three` package is upstream.
+await mkdir(resolve(work, "node_modules/@acme/viz/dist/three"), { recursive: true });
+await writeFile(resolve(work, "node_modules/@acme/viz/dist/three/index.js"), "export const mark = () => {};");
+await writeFile(resolve(work, "viz.ts"), 'import { Scene } from "three"; import { mark } from "./node_modules/@acme/viz/dist/three/index.js"; globalThis.tn.scene = new Scene(); mark();');
+await bundleNativeEngine({ entry: resolve(work, "viz.ts"), outfile: resolve(work, "viz.js"), boot: false });
 if (process.argv.includes("--imports-only")) {
   console.log("PASS native imports, identity, picking, clone, TSL and audio");
   process.exit(0);
