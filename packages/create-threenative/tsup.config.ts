@@ -34,6 +34,7 @@ export default defineConfig([
       "web-engine-mesh-bvh": "../three-native/src/addons/mesh-bvh.ts",
       "web-engine-mesh-bvh-webgpu": "../three-native/src/addons/mesh-bvh-webgpu.ts",
       "web-engine-buffer-geometry-utils": "../three-native/src/addons/buffer-geometry-utils.ts",
+      "web-engine-lut-cube-loader": "../three-native/src/addons/lut-cube-loader-web.ts",
       "web-engine-hdr-loader": "../three-native/src/addons/hdr-loader.ts",
       "web-engine-gltf-loader": "../three-native/src/addons/gltf-loader-web.ts",
       "web-engine-post-effects": "../three-native/src/addons/post-effects-web.ts",

@@ -8,4 +8,6 @@
 import { __tnTsl } from "three/tsl";
 import { type IEffectTsl, definePostEffects } from "./post-effects.js";
 
-export const { ao, denoise, smaa, bloom } = definePostEffects(__tnTsl as IEffectTsl);
+export const { ao, denoise, smaa, bloom, traa, film, lut3D } = definePostEffects(
+  __tnTsl as IEffectTsl,
+);

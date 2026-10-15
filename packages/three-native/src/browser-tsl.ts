@@ -1,3 +1,4 @@
+import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
 /**
  * TSL on the Wasm engine (PRD-540): three's `three/tsl` authoring functions and node methods as JS
  * wrappers over node ids, built by the engine's one TSL name table (`tn_tsl_call`, shared with the
@@ -7,7 +8,7 @@
  * the engine's `scope:open` and `scope:close`, so their statements land in the engine's open body
  * (tn::abi::TslScopes, shared with the V8 back end).
  */
-import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
+import { defineStruct } from "./tsl-struct.js";
 import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
 
 /** One argument as `tn_tsl_call` takes it. */
@@ -99,6 +100,14 @@ const FUNCTIONS = [
   "denoise",
   "smaa",
   "bloom",
+  "traa",
+  "film",
+  "lut3D",
+  "struct",
+  "luminance",
+  "viewZToOrthographicDepth",
+  "viewZToPerspectiveDepth",
+  "logarithmicDepthToViewZ",
   "oneMinus",
   "mx_noise_float",
   "mx_worley_noise_vec2",
@@ -123,6 +132,7 @@ const CONSTANTS = [
   "normalViewGeometry",
   "cameraViewMatrix",
   "instanceIndex",
+  "vertexIndex",
   "screenUV",
   "materialColor",
   "materialEmissive",
@@ -180,6 +190,8 @@ const METHODS = [
   "sample",
   "oneMinus",
   "dispose",
+  "newStruct",
+  "get",
   "flipX",
   "flipY",
   "flipZ",
@@ -242,7 +254,11 @@ export function defineTsl(
     // An omitted optional input (denoise's normal node) has no TSL meaning of its own, and ao's and
     // denoise's camera is the render camera, whose matrices the engine's effect reads each frame.
     if (value === null || value === undefined) return { kind: "other" };
-    if ((name === "ao" && index === 2) || (name === "denoise" && index === 3))
+    if (
+      (name === "traa" && index === 3) ||
+      (name === "ao" && index === 2) ||
+      (name === "denoise" && index === 3)
+    )
       return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
@@ -352,6 +368,7 @@ export function defineTsl(
   const exports: Record<string, unknown> = {};
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
+  exports.struct = defineStruct(exports.struct as Parameters<typeof defineStruct>[0]);
   // Fn builds once at definition; calling the returned function returns that graph, as on V8.
   exports.Fn = (callback: unknown) => {
     const graph = wrap(capture("Fn", callback));

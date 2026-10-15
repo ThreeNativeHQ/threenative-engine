@@ -25,6 +25,7 @@ public:
     TraaPass(WGPUDevice device, WGPUQueue queue, TraaOptions options);
     ~TraaPass();
     void resize(uint32_t width, uint32_t height);
+    void setOptions(const TraaOptions& options) { options_ = options; }
     void cameraCut() { history_.cameraCut(0); }
     Matrix begin(const Matrix& projection, const Matrix& world, const Matrix& view);
     Matrix previousModel(uint64_t object, const Matrix& world);

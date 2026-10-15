@@ -733,7 +733,10 @@ private:
     std::vector<std::string> diagnostics_;
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
+    GraphTextures postTextures_;
+    std::vector<uint32_t> postTextureVersions_;
     std::unique_ptr<TraaPass> traa_;
+    std::shared_ptr<const shader::graph::PostEffect> liveTraa_;
     std::unique_ptr<PostEffects> postEffects_;
     std::map<std::string, std::vector<float>> postUniforms_;
     /** three's `time` (its NodeFrame clock): seconds since this renderer was made, read once a frame. */

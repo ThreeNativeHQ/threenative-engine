@@ -83,10 +83,20 @@ function unboundDiagnostic(specifier, name) {
     reason = "the selected native engine asset path has no bound decoder/transcoder for this loader";
   else if (specifier === "three-mesh-bvh")
     reason = "the native MeshBVH answers raycastObject3D only; serialization, build strategies and GPU BVH are not bound";
+  else if (name === "DepthTexture")
+    reason = "native render targets do not expose a game-owned, sampleable depth attachment";
   else if (specifier === "three/webgpu" || name === "RenderTarget")
     reason = "native render targets, fullscreen draws and game-authored node lifecycle lack the required V8 renderer bindings";
   else if (specifier === "three/tsl")
-    reason = "the native graph lacks this material/pass/history/storage context binding";
+    reason = ({
+      atomicAdd: "native IR supports atomics, but live storage nodes do not carry atomic element types or statement scheduling",
+      atomicStore: "native IR supports atomics, but live storage nodes do not carry atomic element types or statement scheduling",
+      lightShadowMatrix: "the live graph cannot bind an authored light's shadow matrix to its render light index",
+      reference: "the live graph cannot refresh an arbitrary object property as a typed uniform",
+      renderOutput: "renderer tone mapping and output color space are not available at an authored graph position",
+      rtt: "live RTT targets do not expose the requested filtering, renderTarget extent or update lifecycle",
+      wgslFn: "the live graph cannot compile and link an authored WGSL function with its typed arguments",
+    })[name] ?? "the native graph lacks this material/pass/history/storage context binding";
   else if (name === "PropertyBinding" || name.endsWith("ConsoleFunction"))
     reason = "native PropertyBinding exists, but its V8 object/static reflection and diagnostic console hook are unbound";
   return `TN_NATIVE_ENGINE_UNBOUND: ${specifier}:${name} [${reason}]`;
@@ -148,12 +158,16 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     "three/addons/tsl/display/GTAONode.js": resolve(player, "core-addons.mjs"),
     "three/addons/tsl/display/DenoiseNode.js": resolve(player, "core-addons.mjs"),
     "three/addons/tsl/display/SMAANode.js": resolve(player, "core-addons.mjs"),
+    "three/addons/tsl/display/FilmNode.js": resolve(player, "core-addons.mjs"),
+    "three/addons/tsl/display/Lut3DNode.js": resolve(player, "core-addons.mjs"),
+    "three/addons/tsl/display/TRAANode.js": resolve(player, "core-addons.mjs"),
     "three/addons/tsl/display/BloomNode.js": resolve(player, "core-addons.mjs"),
     "three/addons/tsl/display/FXAANode.js": resolve(player, "core-addons.mjs"),
     "three/addons/tsl/display/GodraysNode.js": resolve(player, "core-addons.mjs"),
     "three/addons/tsl/display/SSGINode.js": resolve(player, "core-addons.mjs"),
     "three/addons/tsl/display/SSRNode.js": resolve(player, "core-addons.mjs"),
     "three/addons/tsl/display/SharpenNode.js": resolve(player, "core-addons.mjs"),
+    "three/addons/loaders/LUTCubeLoader.js": resolve(player, "core-lut.mjs"),
     "three/addons/loaders/HDRLoader.js": resolve(player, "core-hdr.mjs"),
     "three-mesh-bvh": resolve(repo, "packages/three-native/src/addons/mesh-bvh.ts"),
     "three/addons/utils/BufferGeometryUtils.js": resolve(repo, "packages/three-native/src/addons/buffer-geometry-utils.ts"),

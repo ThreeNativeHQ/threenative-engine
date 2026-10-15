@@ -62,4 +62,6 @@ Node bloom(Node input, double strength, double radius, double threshold);
 double mulberry32(uint32_t& state);
 /** Ordered native passes, including materialization of the authored SMAA colour input. */
 std::vector<PostPass> postPasses(Node root);
+/** The scene TRAA pass requested by this graph; two distinct resolves fail. */
+std::shared_ptr<const PostEffect> traaEffect(Node root);
 } // namespace tn::engine::shader::graph

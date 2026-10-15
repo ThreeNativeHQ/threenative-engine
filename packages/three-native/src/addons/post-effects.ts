@@ -1,3 +1,5 @@
+import { refused } from "../refused.js";
+
 /**
  * three/addons/tsl/display's GTAO, Denoise, SMAA and Bloom as the engine's live effects, for both
  * back ends (PRD-540; moved from the V8 player's core-addons.mjs). Each returns the effect's node; its
@@ -18,6 +20,9 @@ export interface IEffectTsl {
   readonly denoise: Effect;
   readonly smaa: Effect;
   readonly bloom: Effect;
+  readonly traa: Effect;
+  readonly film: Effect;
+  readonly lut3D: Effect;
 }
 
 function uniforms(node: IEffectNode, names: readonly string[]): IEffectNode {
@@ -38,6 +43,32 @@ function uniforms(node: IEffectNode, names: readonly string[]): IEffectNode {
 
 export function definePostEffects(tsl: IEffectTsl) {
   return {
+    film: (input: unknown, intensity?: unknown, uv?: unknown): IEffectNode =>
+      tsl.film(input, intensity, uv),
+    lut3D: (input: unknown, lut: unknown, size: number, intensity: unknown): IEffectNode =>
+      uniforms(tsl.lut3D(input, lut, size, intensity), ["size"]),
+    traa(input: unknown, depth: unknown, velocity: unknown, camera: unknown): IEffectNode {
+      const node = tsl.traa(input, depth, velocity, camera);
+      // shortcut: custom TRAANode lifecycle needs authored resolve-graph lowering before use.
+      for (const name of ["setViewOffset", "clearViewOffset", "setup"])
+        Object.defineProperty(node, name, {
+          configurable: true,
+          value: refused(`TRAANode.${name}`, "TN_NATIVE_TRAA_LIFECYCLE_UNBOUND"),
+        });
+      for (const name of [
+        "depthThreshold",
+        "edgeDepthDiff",
+        "maxVelocityLength",
+        "useSubpixelCorrection",
+      ])
+        Object.defineProperty(node, name, {
+          configurable: true,
+          get: () =>
+            name === "useSubpixelCorrection" ? node.__effect(name) !== 0 : node.__effect(name),
+          set: (value: number | boolean) => node.__effect(name, Number(value)),
+        });
+      return node;
+    },
     ao(depthNode: unknown, normalNode: unknown, camera: unknown): IEffectNode {
       const node = uniforms(tsl.ao(depthNode, normalNode ?? null, camera), [
         "radius",

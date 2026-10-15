@@ -3,6 +3,7 @@ import { liveUniforms, withConstValues } from "../../../../three-native/src/tsl-
 import { defineReflector } from "../../../../three-native/src/reflector.ts";
 import { definePass, markNormalTarget } from "../../../../three-native/src/pass-node.ts";
 import { Color, Object3D, PerspectiveCamera, Vector2, Vector3, Vector4 } from "./core-three.mjs";
+import { defineStruct } from "../../../../three-native/src/tsl-struct.ts";
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 
 // r185's ConstNode.value on float(), vec3(), color() and the other constants (shared with the Wasm back end).
@@ -19,7 +20,7 @@ export const syncUniforms = live.sync;
 export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const {
-  attribute, uv, texture, Fn, If, Loop,
+  attribute, uv, texture, Fn, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
   instancedArray, add, sub, mul, div, negate, lessThan, greaterThan, equal, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
@@ -67,3 +68,5 @@ export const fog = (color, factor) => Object.freeze({ isFogNode: true, color, fa
 // provision, which the native renderer does not provide), so they refuse at use, by name.
 export const context = unsupportedExport("context");
 export const velocity = unsupportedExport("velocity");
+
+export const struct = defineStruct(globalThis.tsl.struct);

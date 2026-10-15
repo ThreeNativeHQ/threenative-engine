@@ -66,6 +66,7 @@ export function defineTextureSources(
   runtime: IBrowserRuntime,
 ): Record<string, unknown> {
   const BaseTexture = classes.Texture as EngineClass;
+  const BaseVolume = classes.Data3DTexture as EngineClass | undefined;
   const BaseData = classes.DataTexture as EngineClass;
   const BaseCanvas = classes.CanvasTexture as EngineClass | undefined;
   if (BaseCanvas === undefined) throw new TypeError("TN_BROWSER_UNBOUND: CanvasTexture");
@@ -101,6 +102,7 @@ export function defineTextureSources(
     });
   };
   followSource(prototype, "DataTexture");
+  if (BaseVolume !== undefined) followSource(BaseVolume.prototype as object, "Data3DTexture");
   followSource(BaseCanvas.prototype as object, "CanvasTexture");
 
   /** An engine DataTexture holding `pixels`, re-read from `image` on every needsUpdate. */
@@ -129,6 +131,24 @@ export function defineTextureSources(
     return texture;
   }
   DataTexture.prototype = prototype;
+
+  function Data3DTexture(
+    this: unknown,
+    data?: ArrayLike<number> | null,
+    width = 1,
+    height = 1,
+    depth = 1,
+  ) {
+    if (BaseVolume === undefined) throw new TypeError("TN_BROWSER_UNBOUND: Data3DTexture");
+    const texture = Reflect.construct(
+      BaseVolume,
+      [data ?? undefined, width, height, depth],
+      new.target ?? Data3DTexture,
+    );
+    sources.set(texture, { data: data ?? null, width, height, depth });
+    return texture;
+  }
+  if (BaseVolume !== undefined) Data3DTexture.prototype = BaseVolume.prototype;
 
   /** three's CanvasTexture: the engine's own class over the canvas's pixels, with a full mip chain. */
   function CanvasTexture(this: unknown, canvas: unknown, ...rest: unknown[]) {
@@ -221,5 +241,12 @@ export function defineTextureSources(
     }
   }
 
-  return { CanvasTexture, DataTexture, ImageBitmapLoader, Texture, TextureLoader };
+  return {
+    CanvasTexture,
+    DataTexture,
+    ...(BaseVolume === undefined ? {} : { Data3DTexture }),
+    ImageBitmapLoader,
+    Texture,
+    TextureLoader,
+  };
 }

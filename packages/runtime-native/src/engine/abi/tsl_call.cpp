@@ -87,7 +87,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         }
         return schema;
     }
-    if (method && name == "struct:new") {
+    if (method && (name == "struct:new" || name == "newStruct")) {
         const auto& schema = receiver->node;
         if (!schema || schema->kind != g::Kind::StructType)
             throw std::runtime_error("struct:new needs a struct type");
@@ -104,11 +104,11 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         }
         return value;
     }
-    if (method && name == "struct:get") {
+    if (method && (name == "struct:get" || name == "get")) {
         arity(1);
         const auto& value = receiver->node;
         if (!value || value->kind != g::Kind::Struct)
-            throw std::runtime_error("struct:get needs a struct value");
+            throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: struct member selection needs a direct struct value; function-return aggregates need statement-preserving lowering");
         for (size_t i = 0; i < value->members.size(); ++i)
             if (value->members[i].first == text(args[0])) return value->args.at(i);
         throw std::runtime_error("struct:get: unknown member " + text(args[0]));
@@ -197,6 +197,65 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const auto optional = [&](size_t i) { return args[i].kind == TslArg::Kind::Node ? arg(i) : g::Node{}; };
         const auto effect = denoise ? g::denoiseEffect(arg(0), arg(1), optional(2), static_cast<uint32_t>(++serial))
                                     : g::gtaoEffect(arg(0), optional(1));
+        return g::effectNode(effect);
+    }
+    if (name == "luminance") {
+        if (args.empty() || args.size() > 2) throw std::runtime_error("luminance takes color and optional coefficients");
+        const auto coefficients = args.size() == 2 ? arg(1) : g::vec3({g::float_(0.2126), g::float_(0.7152), g::float_(0.0722)});
+        return g::dot(arg(0), coefficients);
+    }
+    if (name == "viewZToOrthographicDepth" || name == "viewZToPerspectiveDepth" || name == "logarithmicDepthToViewZ") {
+        arity(3);
+        const auto value = arg(0), near = arg(1), far = arg(2);
+        if (name == "viewZToOrthographicDepth") return g::div(g::add(value, near), g::sub(near, far));
+        if (name == "viewZToPerspectiveDepth") return g::div(g::mul(g::add(near, value), far), g::mul(g::sub(far, near), value));
+        const auto exponent = g::mul(value, g::div(g::log2(g::div(far, near)), g::float_(std::log2(std::exp(1.0)))));
+        return g::negate(g::mul(g::pow(g::float_(std::exp(1.0)), exponent), near));
+    }
+    if (name == "film") {
+        if (args.empty() || args.size() > 3) throw std::runtime_error("film takes input, optional intensity and uv");
+        const auto input = arg(0), base = g::swizzle(input, "rgb");
+        const auto uv = args.size() > 2 && args[2].kind != TslArg::Kind::Other ? arg(2) : g::uv();
+        const auto animated = g::fract(g::add(uv, g::uniform("time", Type::f32())));
+        const auto angle = g::mod(g::dot(animated, g::vec2({g::float_(12.9898), g::float_(78.233)})),
+                                  g::float_(3.141592653589793));
+        const auto noise = g::fract(g::mul(g::sin(angle), g::float_(43758.5453)));
+        auto color = g::add(base, g::mul(base, g::clamp(g::add(noise, g::float_(0.1)), g::float_(0), g::float_(1))));
+        if (args.size() > 1 && args[1].kind != TslArg::Kind::Other) color = g::mix(base, color, arg(1));
+        return g::vec4({color, g::swizzle(input, "a")});
+    }
+    if (name == "lut3D") {
+        arity(4);
+        const auto input = arg(0), lut = arg(1);
+        if (lut->kind != g::Kind::Texture || !lut->object)
+            throw std::runtime_error("lut3D requires texture3D(engineTexture)");
+        const double size = number(args[2]);
+        if (size < 2 || size != std::floor(size)) throw std::runtime_error("lut3D size must be an integer >= 2");
+        const auto label = "native_lut_" + std::to_string(++serial);
+        const auto sizeNode = g::uniform(label + "_size", Type::f32(), {static_cast<float>(size)});
+        const auto half = g::div(g::float_(0.5), sizeNode);
+        const auto coordinate = g::add(g::vec3({half}), g::mul(g::swizzle(input, "rgb"),
+                                      g::sub(g::float_(1), g::div(g::float_(1), sizeNode))));
+        auto sample = std::make_shared<g::NodeData>(*lut);
+        sample->args[0] = coordinate;
+        const auto graded = g::vec4({g::swizzle(sample, "rgb"), g::swizzle(input, "a")});
+        auto result = std::make_shared<g::NodeData>(*g::vec4({g::mix(input, graded, arg(3))}));
+        result->name = label;
+        return result;
+    }
+    if (name == "traa") {
+        arity(4);
+        // The existing pass runs before post effects and reads the scene attachments.
+        if (arg(0)->kind != g::Kind::Texture || arg(0)->name != "scene" ||
+            arg(1)->kind != g::Kind::Texture || arg(1)->name != "depth" ||
+            arg(2)->kind != g::Kind::Texture || arg(2)->name != "velocity")
+            throw std::runtime_error("TN_NATIVE_TRAA_INPUT: traa requires the scene color, depth and velocity attachments; authored pre-resolve inputs are unbound");
+        auto effect = std::make_shared<g::PostEffect>();
+        effect->kind = "TRAANode";
+        effect->output = "scene";
+        effect->inputs = {arg(0), arg(1), arg(2)};
+        effect->parameters = {{"depthThreshold", {0.0005f}}, {"edgeDepthDiff", {0.001f}},
+                              {"maxVelocityLength", {128}}, {"useSubpixelCorrection", {1}}};
         return g::effectNode(effect);
     }
     if (name == "smaa") {
@@ -683,9 +742,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
 }
 
 double tslEffectParameter(const g::Node& node, const std::string& name, const double* value) {
-    if (const g::Node uniform = g::bloomParameter(node, name)) {
+    g::Node parameter = g::bloomParameter(node, name);
+    if (!parameter && node && node->name.starts_with("native_lut_") && name == "size")
+        for (const auto& uniform : g::uniformNodes(node))
+            if (uniform->name == node->name + "_size") parameter = uniform;
+    if (const g::Node uniform = parameter) {
         if (value) {
             if (!std::isfinite(*value)) throw std::runtime_error("expected a finite number");
+            if (name == "size" && (*value < 2 || *value != std::floor(*value)))
+                throw std::runtime_error("lut3D size must be an integer >= 2");
             g::setUniformValues(uniform, {static_cast<float>(*value)});
         }
         return uniform->values.at(0);
@@ -715,6 +780,7 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"normalViewGeometry", g::varying("normalViewGeometry", Type::vec(3))},
             {"cameraViewMatrix", g::uniform("viewMatrix", Type::mat(4, 4))},
             {"instanceIndex", g::instanceIndex()},
+            {"vertexIndex", g::builtin("vertexIndex")},
             {"screenUV", g::screenUV()},
             // three's materialColor is the material's colour, a vec3 (MaterialNode COLOR, type 'color').
             // ponytail: the colour uniform only; three also multiplies in `map` when the material has one.

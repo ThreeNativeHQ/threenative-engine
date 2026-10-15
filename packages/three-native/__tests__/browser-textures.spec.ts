@@ -75,6 +75,36 @@ describe("browser texture sources", () => {
     ]);
   });
 
+  it("keeps a volume's source array while the starter converts it to half floats", () => {
+    const { bound, constructed, writes } = recording();
+    const pixels = new Float32Array(2 * 2 * 2 * 4).fill(0.5);
+    const texture = new (bound.Data3DTexture as Ctor)(pixels, 2, 2, 2);
+    expect(constructed.at(-1)).toEqual(["Data3DTexture", [Array.from(pixels), 2, 2, 2]]);
+    const image = texture.image as { data: Float32Array | Uint16Array };
+    expect(image.data).toBe(pixels);
+    image.data = Uint16Array.from(pixels, SharedDataUtils.toHalfFloat);
+    texture.type = 1016;
+    texture.needsUpdate = true;
+    expect(writes.slice(-3).map(([, field, value]) => [field, value])).toEqual([
+      ["type", 1016],
+      ["image.data", Array(32).fill(0x3800)],
+      ["needsUpdate", true],
+    ]);
+  });
+
+  it("keeps an empty volume's image record available for later source assignment", () => {
+    const { bound, writes } = recording();
+    const texture = new (bound.Data3DTexture as Ctor)();
+    const image = texture.image as { data: Uint8Array | null };
+    expect(image.data).toBeNull();
+    image.data = new Uint8Array([1, 2, 3, 255]);
+    texture.needsUpdate = true;
+    expect(writes.slice(-2).map(([, field, value]) => [field, value])).toEqual([
+      ["image.data", [1, 2, 3, 255]],
+      ["needsUpdate", true],
+    ]);
+  });
+
   it("reads a canvas through its 2D context when built and again on needsUpdate", () => {
     const { bound, constructed, writes } = recording();
     let reads = 0;

@@ -6,6 +6,11 @@
 #include "engine/shader/tsl/tsl.h"
 #include "engine/abi/pooled_shared.h"
 #include "engine/abi/bindings.h"
+#include "engine/abi/tsl_call.h"
+#include "engine/shader/graph/post_effects.h"
+#include "engine/shader/graph/serialized.h"
+#include "engine/shader/output.h"
+#include "engine/shader/package.h"
 #include "engine/animation/mixer.h"
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/scene/object3d.h"
@@ -1215,6 +1220,16 @@ void data_texture_bytes() {
     CHECK(tn_set(texture, "image.data", &short_, &d.value) != TN_OK);
     const tn_value_t deferred = bytes("Float32Array", nullptr, 4);
     CHECK(tn_set(texture, "image.data", &deferred, &d.value) != TN_OK);
+    const tn_value_t cubeArgs[4] = {bytes("Float32Array", zeros, 4), num(1), num(1), num(1)};
+    tn_handle_t cube{};
+    CHECK(tn_construct(ctx, "Data3DTexture", cubeArgs, 4, &cube, &d.value) == TN_OK);
+    const auto halfType = num(1016);
+    CHECK(tn_set(cube, "type", &halfType, &d.value) == TN_OK);
+    const auto halfData = bytes("Uint16Array", halves, 4);
+    CHECK(tn_set(cube, "image.data", &halfData, &d.value) == TN_OK);
+    const auto* cubeData = engineObject<tn::engine::DataTexture>(cube);
+    CHECK(cubeData && cubeData->type == 1016 && same(cubeData->data, halves, sizeof(halves)));
+
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -1562,7 +1577,94 @@ void gpu_bind_escape() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
-TN_TEST_MAIN({"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+
+void starter_post_bindings() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto call = [&](const char* name, std::vector<TslArg> args) {
+        const auto result = tn::abi::tslCall(name, nullptr, args, serial);
+        CHECK(result != nullptr);
+        return result;
+    };
+    const auto scene = g::texture("scene", g::uv());
+    const auto temporal = call("traa", {TslArg::of(scene), TslArg::of(g::texture("depth", g::uv())),
+                                      TslArg::of(g::texture("velocity", g::uv())), TslArg::other()});
+    if (!temporal) return;
+    CHECK(g::postPasses(temporal).empty());
+    CHECK(g::traaEffect(temporal) == temporal->post);
+    const double threshold = 0.002;
+    CHECK(tn::abi::tslEffectParameter(temporal, "depthThreshold", &threshold) == float(threshold));
+    CHECK(tn::abi::tslEffectParameter(temporal, "depthThreshold", nullptr) == float(threshold));
+    bool refused = false;
+    try { call("traa", {TslArg::of(g::mul(scene, g::float_(0.5))), TslArg::of(scene), TslArg::of(scene), TslArg::other()}); }
+    catch (const std::exception& error) { refused = std::string(error.what()).find("TN_NATIVE_TRAA_INPUT") != std::string::npos; }
+    CHECK(refused);
+    const auto compile = [&](g::Node root) {
+        const auto post = g::serializedPost(root);
+        auto programs = tn::engine::shader::buildOutput(std::nullopt, false, &post, false);
+        const auto fragment = tn::engine::shader::buildStage(programs.fragment);
+        CHECK(fragment.wgsl.ok());
+        CHECK(programs.fragment.diagnostics().empty());
+        return fragment;
+    };
+    const auto intensity = g::uniform("grainIntensity", tn::engine::shader::Type::f32(), {0.2f});
+    const auto film = call("film", {TslArg::of(scene), TslArg::of(intensity), TslArg::other()});
+    if (!film) return;
+    const auto grain = compile(film);
+    bool hasClock = false, hasIntensity = false;
+    for (const auto& field : grain.uniforms) {
+        hasClock |= field.name == "time";
+        hasIntensity |= field.name == "grainIntensity";
+    }
+    CHECK(hasClock && hasIntensity);
+    const auto key = g::key(film);
+    g::setUniformValues(intensity, {0.7f});
+    CHECK(g::key(film) == key);
+    CHECK(g::uniforms(film).at("grainIntensity").at(0) == 0.7f);
+    const auto volume = std::make_shared<tn::engine::DataTexture>();
+    volume->volume = true;
+    volume->setImage(std::vector<double>(32, 0.5), "Float32Array", 2, 2, 1023, 1015);
+    volume->depth = 2;
+    const auto lut = call("texture3D", {TslArg::objectOf("Data3DTexture", volume)});
+    if (!lut) return;
+    const auto graded = call("lut3D", {TslArg::of(scene), TslArg::of(lut), TslArg::of(2.0), TslArg::of(intensity)});
+    if (!graded) return;
+    const auto grade = compile(graded);
+    bool hasVolume = false;
+    for (const auto& binding : grade.bindings) hasVolume |= binding.volume;
+    CHECK(hasVolume);
+    const double size = 4;
+    CHECK(tn::abi::tslEffectParameter(graded, "size", &size) == 4);
+    CHECK(tn::abi::tslEffectParameter(graded, "size", nullptr) == 4);
+    for (const char* name : {"viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ"}) {
+        const auto value = call(name, {TslArg::of(-1.0), TslArg::of(0.1), TslArg::of(100.0)});
+        if (value) compile(g::vec4({value, value, value, g::float_(1)}));
+    }
+    const auto luma = call("luminance", {TslArg::of(g::vec3({g::float_(0.5)}))});
+    if (luma) compile(g::vec4({luma, luma, luma, g::float_(1)}));
+    const auto vertex = call("constant:vertexIndex", {});
+    CHECK(vertex && vertex->kind == g::Kind::Builtin && vertex->name == "vertexIndex");
+    const auto schema = call("struct", {TslArg::of(std::string("Sample")), TslArg::of(std::string("color")), TslArg::of(std::string("vec4"))});
+    if (schema) {
+        const auto receiver = TslArg::of(schema);
+        const auto value = tn::abi::tslCall("newStruct", &receiver, {TslArg::of(scene)}, serial);
+        const auto instance = TslArg::of(value);
+        const auto member = tn::abi::tslCall("get", &instance, {TslArg::of(std::string("color"))}, serial);
+        CHECK(member != nullptr);
+        if (member) compile(member);
+        const auto aggregate = TslArg::of(g::float_(1));
+        bool aggregateRefused = false;
+        try { tn::abi::tslCall("get", &aggregate, {TslArg::of(std::string("color"))}, serial); }
+        catch (const std::exception& error) {
+            aggregateRefused = std::string(error.what()).find("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND") != std::string::npos;
+        }
+        CHECK(aggregateRefused);
+    }
+
+}
+
+TN_TEST_MAIN({"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count},

@@ -327,6 +327,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_callbacks=callbacks
     native_engine_abi_color_set=color_set
     native_engine_abi_children=children
+    native_engine_starter_post_bindings=starter_post_bindings
     native_engine_abi_tsl_call=tsl_call
     native_engine_abi_tsl_uniform_value=tsl_uniform_value
     native_engine_abi_tsl_statements=tsl_statements

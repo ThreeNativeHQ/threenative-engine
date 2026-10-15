@@ -8,6 +8,7 @@ export const HalfFloatType = 1016;
 
 const NativeTexture = globalThis.Texture;
 const NativeDataTexture = globalThis.DataTexture;
+const NativeVolumeTexture = globalThis.Data3DTexture;
 const NativeCanvasTexture = globalThis.CanvasTexture;
 const sources = new WeakMap();
 const bitmaps = new WeakMap();
@@ -29,7 +30,7 @@ function canvasPixels(canvas) {
 }
 
 // `image` is the JS source; `needsUpdate` re-sends its texels, as three re-reads `texture.image`.
-for (const Native of [NativeDataTexture, NativeCanvasTexture]) {
+for (const Native of [NativeDataTexture, NativeCanvasTexture, NativeVolumeTexture]) {
   const nativeImage = Object.getOwnPropertyDescriptor(Native.prototype, "image").get;
   const nativeNeedsUpdate = Object.getOwnPropertyDescriptor(Native.prototype, "needsUpdate").set;
   Object.defineProperties(Native.prototype, {
@@ -57,6 +58,14 @@ export function DataTexture(data = null, width = 1, height = 1, ...rest) {
 DataTexture.prototype = NativeDataTexture.prototype;
 // The adapter finds the engine class a subclass constructs by walking new.target's prototype chain.
 Object.setPrototypeOf(DataTexture, NativeDataTexture);
+
+export function Data3DTexture(data = null, width = 1, height = 1, depth = 1) {
+  const texture = Reflect.construct(NativeVolumeTexture, [data ?? undefined, width, height, depth], new.target ?? Data3DTexture);
+  if (data) sources.set(texture, { data, width, height, depth });
+  return texture;
+}
+Data3DTexture.prototype = NativeVolumeTexture.prototype;
+Object.setPrototypeOf(Data3DTexture, NativeVolumeTexture);
 
 // three's CanvasTexture: the engine's own class over the canvas's pixels, with a full mip chain.
 export function CanvasTexture(canvas, ...rest) {

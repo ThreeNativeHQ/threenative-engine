@@ -858,7 +858,7 @@ void Renderer::setOutput(const OutputState& output) {
             e.buffer.minBindingSize = outputFragment_.uniformBlockSize;
         } else if (b.kind == shader::BindingKind::Texture) {
             e.texture.sampleType = WGPUTextureSampleType_Float;
-            e.texture.viewDimension = WGPUTextureViewDimension_2D;
+            e.texture.viewDimension = b.volume ? WGPUTextureViewDimension_3D : WGPUTextureViewDimension_2D;
         } else {
             e.sampler.type = WGPUSamplerBindingType_Filtering;
         }
@@ -879,6 +879,8 @@ void Renderer::setOutput(const OutputState& output) {
 void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
     auto effects = post && !post->passes.empty() ? std::make_unique<PostEffects>(device_,queue_,post->passes) : nullptr;
     postEffects_.reset();
+    postTextures_.clear();
+    postTextureVersions_.clear();
     postUniforms_ = post ? post->uniforms : std::map<std::string,std::vector<float>>{};
     post_ = std::move(post);
     outputVertex_ = {};  // rebuild the output program with (or without) the post graph
@@ -889,7 +891,20 @@ void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
 }
 
 void Renderer::setPostGraph(shader::graph::Node root) {
+    const auto temporal = shader::graph::traaEffect(root);
     setPostNode(root ? std::make_shared<shader::PostNode>(shader::graph::serializedPost(root)) : nullptr);
+    if (temporal && temporal != liveTraa_) setTraa(TraaOptions{});
+    if (!temporal && liveTraa_) { traa_.reset(); releaseOutputGroup(); }
+    liveTraa_ = temporal;
+    std::unordered_set<const shader::graph::NodeData*> seen;
+    const std::function<void(shader::graph::Node)> collect = [&](shader::graph::Node node) {
+        if (!node || !seen.insert(node.get()).second) return;
+        if (node->kind == shader::graph::Kind::Texture && node->object)
+            postTextures_.emplace_back(node->name, static_cast<const Texture*>(node->object.get()));
+        for (const auto* list : {&node->args, &node->body, &node->otherwise})
+            for (const auto& child : *list) collect(child);
+    };
+    collect(root);
 }
 
 void Renderer::setPostInput(const std::string& name, WGPUTextureView view) {
@@ -1922,6 +1937,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const WGPUTextureView presentTarget = compilation ? nullptr : std::exchange(presentTarget_, nullptr);
     const WGPUTextureFormat presentFormat = presentFormat_;
     CameraState camera = unjitteredCamera;
+    if (liveTraa_ && traa_ && !compilation) {
+        const auto parameter = [&](const char* name) { return liveTraa_->parameters.at(name).at(0); };
+        traa_->setOptions({parameter("depthThreshold"), parameter("edgeDepthDiff"),
+                           parameter("maxVelocityLength"), parameter("useSubpixelCorrection") != 0});
+    }
     if (traa_ && !compilation) camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse);
     const Matrix& view = camera.matrixWorldInverse;
     geometry_->cache.sweep();  // GPU copies of attributes released since the last frame
@@ -2917,8 +2937,23 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // A post pass's resolution scale and uniform nodes are the game's to write: read them now, encode uses the copy.
     if (postEffects_ && postEffects_->syncScales()) releaseOutputGroup();
     if (postEffects_) postEffects_->captureUniforms();
+    // Upload authored LUT textures while the game thread is idle, as for live uniforms.
+    const bool newTextures = postTextureVersions_.size() != postTextures_.size();
+    postTextureVersions_.resize(postTextures_.size());
+    for (size_t i = 0; i < postTextures_.size(); ++i) {
+        const auto& [name, source] = postTextures_[i];
+        const auto* texture = materialTexture(*source);
+        if (newTextures || postTextureVersions_[i] != source->version()) releaseOutputGroup();
+        postTextureVersions_[i] = source->version();
+        if (postEffects_) postEffects_->input(name, texture->view, texture->sampler);
+    }
+    if (!postTextures_.empty() && !outputGroup_)
+        outputGroup_ = bindGroup(outputLayout_, outputFragment_, outputUniforms_, traa_ ? traa_->resultView() : sceneView_, outputSampler_,
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
     if (post_)
         for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
+    postUniforms_["cameraNear"] = {static_cast<float>(camera.near)};
+    postUniforms_["cameraFar"] = {static_cast<float>(camera.far)};
     job.encoder = encoder;
     job.color = color;
     job.depth = depth;
@@ -3176,7 +3211,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
     if (postEffects_) {
         // three's Info counts each fullscreen effect pass as one draw of one triangle, like the output pass below.
-        const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_);
+        const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_, frameTime_);
         lastFrame_.draws += effectPasses;
         lastFrame_.triangles += effectPasses;
     }
@@ -3231,7 +3266,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureVie
     // group serves both and needs no rebuild when the present format changes.
     WGPUBindGroup& group = outputGroup_;
     if (!group) {
-        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, traa_ ? traa_->resultView() : sceneView_, outputSampler_);
+        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, traa_ ? traa_->resultView() : sceneView_, outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
     }
     WGPURenderPassColorAttachment color = {};
     color.view = present ? present : colorView_;

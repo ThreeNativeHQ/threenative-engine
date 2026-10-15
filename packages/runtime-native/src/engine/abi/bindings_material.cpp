@@ -722,12 +722,19 @@ void registerTextureBindings(Registry& classes) {
         return std::static_pointer_cast<void>(texture);
     };
     textureNumber<Texture>(volume, "wrapR", &Texture::wrapR);
+    volume.setters["type"] = [](void* self, const Value& v) {
+        const auto type = number(v);
+        if (type != kTextureFloatType && type != kTextureHalfFloatType && type != kTextureUnsignedByteType)
+            throw Unsupported{"Data3DTexture type must be UnsignedByteType, FloatType or HalfFloatType"};
+        as<Texture>(self)->type = static_cast<uint16_t>(type);
+    };
     // three's `texture.image.data = array` for a volume: width * height * depth texels.
     volume.setters["image.data"] = [](void* self, const Value& v) {
         auto* texture = as<DataTexture>(self);
         const std::size_t texels = std::size_t(texture->width) * texture->height * texture->depth;
         if (v.kind != Value::Kind::Numbers || texels == 0 || v.numbers.size() != texels * 4)
             throw Unsupported{"image.data must be a typed array of width * height * depth * 4 values"};
+        if (texture->isHalfFloat()) checkHalfFloatBits(v.numbers);
         const uint32_t depth = texture->depth;
         texture->setImage(v.numbers, v.text, texture->width, texture->height, texture->format, texture->type, false);
         texture->depth = depth;

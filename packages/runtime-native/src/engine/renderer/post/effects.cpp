@@ -62,7 +62,7 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
                     entry.buffer.minBindingSize = stages[1].uniformBlockSize;
                 } else if (binding.kind == shader::BindingKind::Texture) {
                     entry.texture.sampleType = binding.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
-                    entry.texture.viewDimension = WGPUTextureViewDimension_2D;
+                    entry.texture.viewDimension = binding.volume ? WGPUTextureViewDimension_3D : WGPUTextureViewDimension_2D;
                 } else {
                     entry.sampler.type = WGPUSamplerBindingType_Filtering;
                 }
@@ -196,9 +196,10 @@ bool PostEffects::syncScales() {
     resize(width, height);
     return true;
 }
-void PostEffects::input(const std::string& name, WGPUTextureView view) {
+void PostEffects::input(const std::string& name, WGPUTextureView view, WGPUSampler sampler) {
     if (name == "scene" || name == "depth" || targets_.contains(name) || images_.contains(name))
         throw std::runtime_error("TN_POST_INPUT_RESERVED: " + name);
+    if (sampler) inputSamplers_[name] = sampler; else inputSamplers_.erase(name);
     if (view)
         inputs_[name] = view;
     else
@@ -220,6 +221,7 @@ WGPUTextureView PostEffects::view(const std::string& name) const {
     return nullptr;
 }
 WGPUSampler PostEffects::sampler(const std::string& name) const {
+    if (const auto it = inputSamplers_.find(name); it != inputSamplers_.end()) return it->second;
     if (const auto it = images_.find(name); it != images_.end())
         return it->second.sampler;
     return linear_;
@@ -236,7 +238,7 @@ void PostEffects::captureUniforms() {
     captured_ = true;
 }
 uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
-                         const CameraState& camera, uint64_t frame) {
+                         const CameraState& camera, uint64_t frame, float time) {
     if (!captured_) captureUniforms();
     captured_ = false;
     graph::RenderGraph graph;
@@ -277,6 +279,9 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
         const auto& fragment = stages[1];
         auto values = pass.source.uniforms;
         for (const auto& [name, value] : pass.captured) values[name] = value;
+        values["time"] = {time};
+        values["cameraNear"] = {static_cast<float>(camera.near)};
+        values["cameraFar"] = {static_cast<float>(camera.far)};
         values["resolution"] = {float(target.width), float(target.height)};
         values["postTargetSize"] = {float(target.width), float(target.height)};
         values["_cameraProjectionMatrix"] = {camera.projectionMatrix.begin(), camera.projectionMatrix.end()};

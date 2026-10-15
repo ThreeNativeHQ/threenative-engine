@@ -124,6 +124,7 @@ import { DataTexture, Texture } from "./core-textures.mjs";
 export {
   CanvasTexture,
   DataTexture,
+  Data3DTexture,
   DataUtils,
   HalfFloatType,
   ImageBitmapLoader,

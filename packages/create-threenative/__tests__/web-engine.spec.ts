@@ -159,6 +159,7 @@ describe("createWebEnginePlugin", () => {
       "web-engine-mesh-bvh-webgpu",
       "web-engine-buffer-geometry-utils",
       "web-engine-hdr-loader",
+      "web-engine-lut-cube-loader",
       "web-engine-gltf-loader",
       "web-engine-post-effects",
     ])
@@ -280,9 +281,27 @@ describe("createWebEnginePlugin", () => {
     );
   });
 
+  it("resolves three's LUTCubeLoader to the shared engine loader", () => {
+    expect(
+      createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+        "three/addons/loaders/LUTCubeLoader.js",
+      ),
+    ).toMatch(
+      /(?:three-native\/src\/addons\/lut-cube-loader-web\.ts|web-engine-lut-cube-loader\.js)$/u,
+    );
+  });
+
   it("resolves three's GTAO, Denoise, SMAA and Bloom addons to the engine's live effects", () => {
     const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
-    for (const node of ["GTAONode", "DenoiseNode", "SMAANode", "BloomNode"])
+    for (const node of [
+      "GTAONode",
+      "DenoiseNode",
+      "SMAANode",
+      "BloomNode",
+      "FilmNode",
+      "Lut3DNode",
+      "TRAANode",
+    ])
       expect(plugin.resolveId(`three/addons/tsl/display/${node}.js`)).toMatch(
         /(?:three-native\/src\/addons\/post-effects-web\.ts|web-engine-post-effects\.js)$/u,
       );

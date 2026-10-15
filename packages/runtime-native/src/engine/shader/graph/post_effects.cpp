@@ -453,6 +453,23 @@ Node importPostEffect(const json::Value& record, const std::vector<Node>& args, 
     return n;
 }
 
+std::shared_ptr<const PostEffect> traaEffect(Node root) {
+    std::shared_ptr<const PostEffect> result;
+    std::unordered_set<const NodeData*> seen;
+    const std::function<void(Node)> visit = [&](Node node) {
+        if (!node || !seen.insert(node.get()).second) return;
+        if (node->post && node->post->kind == "TRAANode") {
+            if (result && result != node->post)
+                throw std::runtime_error("TN_NATIVE_TRAA_MULTIPLE: one scene resolve is supported");
+            result = node->post;
+        }
+        for (const auto* list : {&node->args, &node->body, &node->otherwise})
+            for (const auto& child : *list) visit(child);
+    };
+    visit(root);
+    return result;
+}
+
 std::vector<PostPass> postPasses(Node root) {
     std::vector<PostPass> passes;
     std::unordered_set<const NodeData*> seen;
@@ -470,6 +487,7 @@ std::vector<PostPass> postPasses(Node root) {
         if (!n->post)
             return;
         const auto& effect = *n->post;
+        if (effect.kind == "TRAANode") return;
         if (effect.kind == "SMAANode") {
             const std::string input = effect.output + "_input", edges = effect.output + "_edges",
                               weights = effect.output + "_weights";

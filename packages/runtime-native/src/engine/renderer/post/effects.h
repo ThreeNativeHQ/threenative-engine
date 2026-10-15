@@ -24,12 +24,12 @@ class PostEffects {
      * thread calls it with the render thread idle, then `render` runs on the copy while the game writes on.
      */
     void captureUniforms();
-    void input(const std::string& name, WGPUTextureView view);
+    void input(const std::string& name, WGPUTextureView view, WGPUSampler sampler = nullptr);
     /** True when any pass reads the named resource ("normal" asks the renderer for a normal target). */
     bool reads(const std::string& name) const;
     /** The fullscreen passes it drew, which three's renderer.info counts as one draw and one triangle each. */
     uint32_t render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
-                const CameraState& camera, uint64_t frame);
+                const CameraState& camera, uint64_t frame, float time = 0);
     WGPUTextureView view(const std::string& name) const;
     WGPUSampler sampler(const std::string& name) const;
 
@@ -64,6 +64,7 @@ class PostEffects {
     std::vector<Pass> passes_;
     std::map<std::string, Image> targets_, images_;
     std::map<std::string, WGPUTextureView> inputs_;
+    std::map<std::string, WGPUSampler> inputSamplers_;
     WGPUSampler linear_ = nullptr;
     uint32_t width_ = 0, height_ = 0;
     bool captured_ = false;

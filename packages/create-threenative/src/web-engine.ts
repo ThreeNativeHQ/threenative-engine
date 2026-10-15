@@ -11,6 +11,9 @@ const POST_EFFECT_ADDONS: readonly string[] = [
   "DenoiseNode",
   "SMAANode",
   "BloomNode",
+  "TRAANode",
+  "FilmNode",
+  "Lut3DNode",
 ].map((node) => `three/addons/tsl/display/${node}.js`);
 /**
  * Addons the engine binds as its own classes (as the V8 bundler maps them): the addon path becomes a
@@ -139,6 +142,8 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       // Models load through the engine's own glTF loader; upstream GLTFLoader never settles over it.
       if (source === "three/addons/loaders/GLTFLoader.js")
         return browserModule("web-engine-gltf-loader.js", "addons/gltf-loader-web.ts");
+      if (source === "three/addons/loaders/LUTCubeLoader.js")
+        return browserModule("web-engine-lut-cube-loader.js", "addons/lut-cube-loader-web.ts");
       if (POST_EFFECT_ADDONS.includes(source))
         return browserModule("web-engine-post-effects.js", "addons/post-effects-web.ts");
       if (/^three\/(?:src|build)\//u.test(source))

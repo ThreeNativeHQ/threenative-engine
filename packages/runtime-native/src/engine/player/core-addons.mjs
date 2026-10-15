@@ -4,7 +4,7 @@
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import { definePostEffects } from "../../../../three-native/src/addons/post-effects.ts";
 
-export const { ao, denoise, smaa, bloom } = definePostEffects(globalThis.tsl);
+export const { ao, denoise, smaa, bloom, traa, film, lut3D } = definePostEffects(globalThis.tsl);
 
 // The other display nodes need live addon-node construction and update scheduling, which the native
 // renderer lacks (it consumes cooked post graphs). They stay importable and refuse at use, by name.
