@@ -66,7 +66,7 @@ describe("application completion windows", () => {
     expect(() => completionWindowLabel({ steps: [...scenario.steps, { kind: "wait", label: "later", release: false }] }, "desktop", false, "pose")).toThrow();
   });
   it("retains only complete post-warm intervals over authoritative five-second endpoints", async () => {
-    const mode = vi.fn(async (mode: string) => ({ mode, tick: 42 }));
+    const mode = vi.fn(async (mode: string) => ({ mode, tick: 42, epoch: 1 }));
     const release = vi.fn(async () => undefined);
     const report = await measureCompletionWindow("pose", mode, async () => completionSnapshot(), release);
     expect(report).toMatchObject({ startTick: 42, startMs: 2000, endMs: 7000, durationMs: 5000,
@@ -83,15 +83,29 @@ describe("application completion windows", () => {
     if (fault === "timestamp") value.samples[1]!.completedAtMs = Number.NaN;
     if (fault === "gap") value.samples[1]!.sequence = 10;
     if (fault === "insufficient-count") value.samples = Array.from({ length: 9 }, (_, i) => ({ sequence: i + 1, completedAtMs: i * 1000 }));
-    const mode = vi.fn(async (mode: string) => ({ mode, tick: 42 }));
+    const mode = vi.fn(async (mode: string) => ({ mode, tick: 42, epoch: 1 }));
     const release = vi.fn(async () => undefined);
     await expect(measureCompletionWindow("pose", mode, async () => fault === "missing" ? {} : value, release)).rejects.toThrow("TN_PLAYTEST_COMPLETION_WINDOW_FAILED");
     expect(mode).toHaveBeenLastCalledWith("fixed-step");
     expect(release).toHaveBeenCalledOnce();
   });
+  it.each([undefined, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])("rejects invalid negotiated epoch %s", async (epoch) => {
+    const poll = vi.fn(async () => completionSnapshot());
+    const release = vi.fn(async () => undefined);
+    await expect(measureCompletionWindow("pose", async mode => ({ mode, tick: 42, epoch }), poll, release)).rejects.toThrow("clock negotiation unavailable");
+    expect(poll).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledOnce();
+  });
+  it("rejects a reset after negotiation before the first poll", async () => {
+    const release = vi.fn(async () => undefined);
+    const mode = vi.fn(async (mode: string) => ({ mode, tick: 42, epoch: 1 }));
+    await expect(measureCompletionWindow("pose", mode, async () => ({ ...completionSnapshot(), epoch: 2 }), release)).rejects.toThrow("epoch/source changed");
+    expect(mode).toHaveBeenLastCalledWith("fixed-step");
+    expect(release).toHaveBeenCalledOnce();
+  });
   it("rejects an epoch change between polls", async () => {
     let poll = 0;
-    await expect(measureCompletionWindow("pose", async mode => ({ mode, tick: 0 }), async () => ({
+    await expect(measureCompletionWindow("pose", async mode => ({ mode, tick: 0, epoch: 1 }), async () => ({
       ...completionSnapshot(), epoch: ++poll, samples: [{ sequence: poll, completedAtMs: poll * 20 }],
     }), async () => undefined)).rejects.toThrow("epoch/source changed");
   });
@@ -101,7 +115,7 @@ describe("application completion windows", () => {
       const release = vi.fn(async () => undefined);
       const mode = vi.fn(async (mode: string) => {
         if (mode === "fixed-step") throw new Error("restore failed");
-        return { mode, tick: 0 };
+        return { mode, tick: 0, epoch: 1 };
       });
       const result = expect(measureCompletionWindow("pose", mode, async () => ({ ...completionSnapshot(), samples: [] }), release)).rejects.toThrow("cleanup failed");
       await vi.advanceTimersByTimeAsync(10100);
@@ -115,7 +129,7 @@ it("bounds a stalled producer poll and preserves its failure through cleanup", a
   vi.useFakeTimers();
   try {
     const release = vi.fn(async () => undefined);
-    const result = expect(measureCompletionWindow("pose", async mode => ({ mode, tick: 0 }),
+    const result = expect(measureCompletionWindow("pose", async mode => ({ mode, tick: 0, epoch: 1 }),
       () => new Promise(() => undefined), release)).rejects.toThrow("operation timeout");
     await vi.advanceTimersByTimeAsync(10050);
     await result;
@@ -141,7 +155,7 @@ it("requires explicit display/uncapped admission settings without claiming quali
 
 it("accepts ring eviction when every completion has already been ingested", async () => {
   let count = 0;
-  const report = await measureCompletionWindow("fast-pose", async mode => ({ mode, tick: 0 }), async () => {
+  const report = await measureCompletionWindow("fast-pose", async mode => ({ mode, tick: 0, epoch: 1 }), async () => {
     count += 1000;
     return { ...completionSnapshot(), dropped: Math.max(0, count - 2048),
       samples: Array.from({ length: Math.min(count, 2048) }, (_, index) => {
@@ -156,7 +170,7 @@ it("accepts ring eviction when every completion has already been ingested", asyn
 
 it("rejects a missed-poll gap despite valid ring eviction metadata", async () => {
   let poll = 0;
-  await expect(measureCompletionWindow("gap", async mode => ({ mode, tick: 0 }), async () => ({
+  await expect(measureCompletionWindow("gap", async mode => ({ mode, tick: 0, epoch: 1 }), async () => ({
     ...completionSnapshot(), dropped: poll++ === 0 ? 0 : 10,
     samples: [{ sequence: poll === 1 ? 1 : 12, completedAtMs: poll * 20 }],
   }), async () => undefined)).rejects.toThrow("completion gap");
@@ -172,7 +186,7 @@ it("consumes the installed Three bridge series shape and retains full camera obs
   try {
     const setupSnapshot = await installation.bridge.sample({ entities: [], include: ["scene", "resources"], resources: ["state"] });
     expect(setupSnapshot.scene?.camera?.position).toEqual([1, 2, 3]);
-    const report = await measureCompletionWindow("bridge", async mode => { options.clockMode = mode; return { mode, tick: 42 }; }, async () => {
+    const report = await measureCompletionWindow("bridge", async mode => { options.clockMode = mode; return { mode, tick: 42, epoch: 1 }; }, async () => {
       const snapshot = await installation.bridge.sample({ entities: [], include: ["runtimeDiagnosticsSeries"] });
       return { ...completionSnapshot(), clock: snapshot.clock, source: "render-callback-return", timebase: "performance-now-ms", samples: snapshot.runtimeDiagnosticsSeries };
     }, async () => undefined);

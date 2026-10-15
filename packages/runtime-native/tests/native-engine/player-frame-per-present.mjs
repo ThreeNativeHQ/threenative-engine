@@ -104,6 +104,7 @@ if (drivenClock || liveClock) {
       const initial = await call("setup", "advance", 10);
       assert.equal(initial.result.clock.tick, 10);
       const mode = await call("live", "_setClockMode", "wall-clock");
+      assert(Number.isSafeInteger(mode.result.epoch) && mode.result.epoch >= 0, "negotiation reports the current epoch");
       assert.equal(mode.error, undefined, "host must negotiate autonomous simulation");
       const forbidden = await call("forbidden", "advance", 1);
       assert.match(forbidden.error?.message ?? "", /TN_INSPECT_UNSUPPORTED/);
@@ -115,6 +116,7 @@ if (drivenClock || liveClock) {
       await call("renderhold", "_holdAutomaticRender", true);
       await new Promise((done) => setTimeout(done, 100));
       const whileHeld = await call("whileheld", "_setClockMode", "wall-clock");
+      assert.equal(whileHeld.result.epoch, (await call("heldepoch", "_presentationCompletions")).result.epoch, "same-mode reply retains the held epoch");
       assert(whileHeld.result.tick > running.result.clock.tick, "render hold must not hold live simulation");
       const heldSample = await call("heldsample", "sample", { resources: ["state"] });
       assert.equal(heldSample.result.clock.tick, heldSample.result.resources.state.playerX);

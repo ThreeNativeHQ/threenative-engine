@@ -97,7 +97,10 @@ bool Endpoint::dispatch(const std::string& method, const Value* argument, Value&
             presentations_.clear(); droppedPresentations_ = 0; presentationsValid_ = true; ++presentationEpoch_;
             liveClock_ = live;
         }
-        result = clock();
+        std::lock_guard lock(presentationMutex_);
+        auto members = clock().members();
+        members.emplace_back("epoch", num(double(presentationEpoch_)));
+        result = obj(std::move(members));
         return true;
     }
     if (method == "_presentationCompletions") {

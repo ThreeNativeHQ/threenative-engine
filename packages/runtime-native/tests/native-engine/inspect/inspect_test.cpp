@@ -198,7 +198,8 @@ void liveClockProtocol() {
     CHECK(samples.back().find("completedAtMs")->number() - samples.front().find("completedAtMs")->number() == 25);
     CHECK(samples.back().find("sequence")->number() == 2);
     const double epoch = cadence.find("result")->find("epoch")->number();
-    reply(endpoint, request("pollmode", "_setClockMode", "\"wall-clock\""));
+    auto negotiated = reply(endpoint, request("pollmode", "_setClockMode", "\"wall-clock\""));
+    CHECK(negotiated.find("result")->find("epoch") && negotiated.find("result")->find("epoch")->number() == epoch);
     auto unchanged = reply(endpoint, request("unchanged", "_presentationCompletions", ""));
     CHECK(transitions == 1 && unchanged.find("result")->find("epoch")->number() == epoch);
     CHECK(unchanged.find("result")->find("samples")->items().size() == 2);

@@ -762,8 +762,10 @@ export async function measureCompletionWindow(label: string,
   let minimumDropped: number | undefined;
   let maximumDropped = 0;
   try {
-    const negotiated = await bounded(() => mode("wall-clock")) as { mode?: string; tick?: number };
-    if (negotiated?.mode !== "wall-clock" || !Number.isSafeInteger(negotiated.tick)) fail("clock negotiation unavailable");
+    const negotiated = await bounded(() => mode("wall-clock")) as { mode?: string; tick?: number; epoch?: number };
+    if (negotiated?.mode !== "wall-clock" || !Number.isSafeInteger(negotiated.tick)
+      || !Number.isSafeInteger(negotiated.epoch) || negotiated.epoch! < 0) fail("clock negotiation unavailable");
+    epoch = negotiated.epoch;
     const deadline = Date.now() + 10000;
     measurement: while (Date.now() <= deadline) {
       const value = await bounded(poll, Math.max(1, deadline - Date.now())) as { clock?: { mode?: string }; epoch?: number; valid?: boolean; dropped?: number;
@@ -776,7 +778,7 @@ export async function measureCompletionWindow(label: string,
       if ((previous === undefined && value.dropped !== 0) || value.dropped! < maximumDropped) fail("missing initial completions or decreasing eviction count");
       minimumDropped ??= value.dropped;
       maximumDropped = value.dropped!;
-      if (epoch !== undefined && (value.epoch !== epoch || value.source !== source || value.timebase !== timebase)) fail("observation epoch/source changed");
+      if (value.epoch !== epoch || (source !== undefined && (value.source !== source || value.timebase !== timebase))) fail("observation epoch/source changed");
       epoch = value.epoch; source = value.source; timebase = value.timebase;
       let inSnapshot: number | undefined;
       let snapshotTime: number | undefined;
