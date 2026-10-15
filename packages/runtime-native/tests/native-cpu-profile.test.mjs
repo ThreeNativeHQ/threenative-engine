@@ -91,6 +91,15 @@ requestAnimationFrame(frame);
     const profile = JSON.parse(readFileSync(out, "utf8"));
     assert(profile.nodes.length > 0 && profile.samples.length > 0);
     assert.equal(profile.samples.length, profile.timeDeltas.length);
+    if (process.platform === "linux") {
+      assert.equal(profile.clockBounds?.clock, "CLOCK_MONOTONIC");
+      const [startBefore, startAfter] = profile.clockBounds.start;
+      const [endBefore, endAfter] = profile.clockBounds.end;
+      assert.ok(startBefore <= startAfter && startAfter <= endBefore && endBefore <= endAfter);
+      const low = Math.max(startBefore - profile.startTime, endBefore - profile.endTime);
+      const high = Math.min(startAfter - profile.startTime, endAfter - profile.endTime);
+      assert.ok(low <= high, `profile clocks contradict recorded bounds: [${low}, ${high}]`);
+    }
   }
   const result = spawnSync(enginePlayer, [script, "--check-game", `--cpu-prof=${join(dir, "missing", "out.cpuprofile")}`],
     { encoding: "utf8", timeout: 10_000 });
@@ -149,7 +158,7 @@ test("--cpu-prof writes the DevTools .cpuprofile itself, escaping every string",
   // profile API and escapes instead.
   assert.doesNotMatch(v8Engine, /profile->Serialize\(/u);
   assert.match(v8Engine, /static void writeJsonString\(std::ostream& out, const char\* text\)/u);
-  assert.match(v8Engine, /writeCpuProfile\(isolate_, profile, temporaryPath\)/u);
+  assert.match(v8Engine, /writeCpuProfile\(isolate_, profile, temporaryPath,/u);
   assert.match(engineHeader, /inline std::string g_cpuProfilePath;/u);
   assert.match(engineHeader, /inline bool g_cpuProfileFailed = false;/u);
 });
@@ -168,6 +177,14 @@ test.skipIf(!existsSync(host))("a profile whose script URL holds a quote and a b
   execFileSync(host, ["run", script, "--no-sdl", "--cpu-prof", out], { stdio: "ignore", timeout: 60_000 });
   const profile = JSON.parse(readFileSync(out, "utf8"));
   assert.equal(profile.samples.length, profile.timeDeltas.length);
+  assert.equal(profile.clockBounds?.clock, "CLOCK_MONOTONIC");
+  const [startBefore, startAfter] = profile.clockBounds.start;
+  const [endBefore, endAfter] = profile.clockBounds.end;
+  assert.ok(startBefore <= startAfter && startAfter <= endBefore && endBefore <= endAfter, "clockBounds out of order");
+  // Each profile time was taken inside its bounds, so one constant offset must place both.
+  const offsetLow = Math.max(profile.startTime - startAfter, profile.endTime - endAfter);
+  const offsetHigh = Math.min(profile.startTime - startBefore, profile.endTime - endBefore);
+  assert.ok(offsetLow <= offsetHigh, `no single offset places the profile inside clockBounds: [${offsetLow}, ${offsetHigh}]`);
   const hot = profile.nodes.find((node) => node.callFrame.functionName === "hot");
   assert.equal(hot?.callFrame.url, 'we"ird\\path.js');
 }, 90_000);

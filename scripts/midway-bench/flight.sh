@@ -19,6 +19,11 @@
 set -u
 ARM=${1:?usage: flight.sh <legacy|native|desktop> <tag>}
 TAG=${2:?usage: flight.sh <legacy|native> <tag>}
+case ${MIDWAY_CPU_PROFILE:-0} in
+  0|1) PROFILE=${MIDWAY_CPU_PROFILE:-0} ;;
+  *) echo "MIDWAY_CPU_PROFILE must be 0 or 1" >&2; exit 2 ;;
+esac
+[ "$PROFILE" = 1 ] && MIDWAY_MATCHED_CPU=1
 case ${MIDWAY_MATCHED_CPU:-0} in
   0|1) MATCHED_CPU=${MIDWAY_MATCHED_CPU:-0} ;;
   *) echo "MIDWAY_MATCHED_CPU must be 0 or 1" >&2; exit 2 ;;
@@ -47,6 +52,8 @@ if [ "$ARM" != legacy ] && [ "$(echo "${MIDWAY_PARITY_REFS:-}" | wc -w)" -lt 2 ]
 fi
 RUNS=${MIDWAY_RUNS:-${XDG_CACHE_HOME:-$HOME/.cache}/midway-runs}
 OUT=$RUNS/$TAG-$ARM
+# Profile overhead is diagnostic: keep these runs outside the dashboard's top-level timing inputs.
+[ "$PROFILE" = 1 ] && OUT=$RUNS/profiles/$TAG-$ARM
 SCENARIO=${MIDWAY_SCENARIO:-$HERE/flight-bench.playtest.json}
 [ "$ARM" = desktop ] && SCENARIO=${MIDWAY_SCENARIO:-$HERE/flight-bench-desktop.playtest.json}
 mkdir -p "$OUT"
@@ -67,6 +74,7 @@ JS
   SCENARIO=$OUT/matched-cpu.playtest.json
 fi
 : > "$OUT/run.log"
+[ "$PROFILE" = 1 ] && rm -f "$OUT/flight.cpuprofile" "$OUT/profile-owners.json"
 # The host's load around the run: the dashboard leaves a run flown on a loaded host out of its ms trends.
 loadnow() { echo "load $(cut -d' ' -f1 /proc/loadavg)" >> "$OUT/host-load.txt"; }
 echo "cores $(nproc)" > "$OUT/host-load.txt"
@@ -79,9 +87,15 @@ BUILD_MODE=production
 echo "arm=$ARM buildMode=$BUILD_MODE engineCommit=$COMMIT" > "$OUT/run.log"
 cd "$GAME" || exit 2
 if [ "$ARM" != desktop ]; then
-  pnpm run build:web >> "$OUT/run.log" 2>&1 || { tail -30 "$OUT/run.log" >&2; exit 2; }
+  if [ "$PROFILE" = 1 ]; then
+    pnpm run build:web --sourcemap >> "$OUT/run.log" 2>&1 || { tail -30 "$OUT/run.log" >&2; exit 2; }
+  else
+    pnpm run build:web >> "$OUT/run.log" 2>&1 || { tail -30 "$OUT/run.log" >&2; exit 2; }
+  fi
   sh "$HERE/install.sh" "$GAME" --verify-web "${MIDWAY_PLAYER_DIR:-}" >> "$OUT/run.log" 2>&1 || { tail -30 "$OUT/run.log" >&2; exit 2; }
 fi
+PROFILE_PATH=
+[ "$PROFILE" = 1 ] && PROFILE_PATH=$OUT/flight.cpuprofile
 LOCK=${TN_HEAVY_LOCK:+flock $TN_HEAVY_LOCK}
 GPU_ENV=${TN_VK_ICD:+VK_ICD_FILENAMES=$TN_VK_ICD}
 # The runner paints on a private Xvfb unless TN_PLAYTEST_HOST_DISPLAY asks for the session's display.
@@ -95,14 +109,14 @@ if [ "$ARM" = desktop ]; then
     ${CPU_LABELS:+TN_PLAYTEST_CPU_WINDOW_LABELS=$CPU_LABELS} \
     node "$REPO/packages/playtest/dist/runner/cli.js" "$SCENARIO" --target desktop \
     --executable "$GAME/tn-native-engine-player-v8" --host-arg "$GAME/game.js" \
-    --headed --timeout 240000 --artifacts "$OUT" >> "$OUT/run.log" 2>&1
+    --headed --timeout 240000 --artifacts "$OUT" ${PROFILE_PATH:+--cpu-prof "$PROFILE_PATH"} >> "$OUT/run.log" 2>&1
 else
 # shellcheck disable=SC2086
 $LOCK env -u TN_PLAYTEST_CPU_WINDOW_LABELS $NO_DISPLAY $GPU_ENV ${TN_VK_LIB:+LD_LIBRARY_PATH=$TN_VK_LIB} \
     ${CPU_LABELS:+TN_PLAYTEST_CPU_WINDOW_LABELS=$CPU_LABELS} \
   node_modules/.bin/threenative-playtest --scenario "$SCENARIO" \
   --browser-recipe webgpu --timeout 180000 --headed --artifacts "$OUT" \
-  $BROWSER_CLOCK_ARG \
+  $BROWSER_CLOCK_ARG ${PROFILE_PATH:+--cpu-prof "$PROFILE_PATH"} \
   --server-command 'pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort' >> "$OUT/run.log" 2>&1
 fi
 STATUS=$?
@@ -138,4 +152,12 @@ const log = readFileSync(process.argv[2], "utf8");
 const arm = /^arm=(\w+)/m.exec(log)?.[1];
 if (terminalReport(log)?.runtime !== (arm === "desktop" ? "native" : "web") || !matchedCpuWindows(log)) throw new Error("matched CPU acquisition unavailable/invalid: require three fixed-step windows with 1000 frames/updates/renders and positive OS counters");
 JS
+fi
+
+if [ "$PROFILE" = 1 ]; then
+  SOURCE=$GAME
+  ARTIFACT=$GAME/dist
+  if [ "$ARM" = desktop ]; then SOURCE=$NATIVE; ARTIFACT=$GAME; fi
+  node --import "$REPO/node_modules/tsx/dist/loader.mjs" "$HERE/profile-owners.ts" \
+    "$OUT" "$SOURCE" "$ARTIFACT" "$REPO" "$ARM" || exit 2
 fi

@@ -130,7 +130,7 @@ process-tree CPU per frame separately for takeoff, cockpit and rear gun. Engine 
 native parity PASS and at least three alternating legacy/candidate pairs per pose are required for
 the collection gate. A single pair remains provisional. The root execution gate must still review
 isolation, workload and environment before a speed verdict. Historical wall/budget and player CPU
-rows are diagnostics and cannot qualify the headline. Attribution and profiles remain pending.
+rows are diagnostics and cannot qualify the headline. Real attribution acquisition remains pending until the profile flights below succeed.
 
 Sampler frame/update/render counts establish the observed game work; they do not independently
 attest native host completion. Unlabelled historical player frame tails cannot be assigned to poses.
@@ -139,6 +139,27 @@ completed ticks with one update each between the preceding step and each labelle
 `observations.signalSeries`. Missing/ambiguous boundaries, incomplete renders and mismatched counts
 reject acquisition; it never estimates the boundary from the last frame tail. Without host records,
 independent native host reconciliation remains unavailable.
+
+## Separate V8 profile flights
+
+`MIDWAY_CPU_PROFILE=1 sh scripts/midway-bench/flight.sh <legacy|native|desktop> <tag>` forces the
+same three fixed-step 1,000-frame CPU windows and passes the shipped `--cpu-prof` option. Run it
+separately from unprofiled timing pairs: profiler overhead cannot qualify a speed headline. Output
+lives under `MIDWAY_RUNS/profiles/<tag>-<arm>/`, outside the dashboard's top-level run inputs.
+Parity references must still match this trajectory; native arms require two legacy references.
+
+Browser production builds explicitly request Vite `--sourcemap`. Attribution requires a local map
+for each sampled, requested production JavaScript file; missing maps fail. Desktop uses the shipped
+external `game.js.map`, which must appear with a matching SHA-256 in packaged build provenance.
+`profile-owners.json` retains profile/script/map hashes and per-pose engine/game/HUD/harness,
+unknown, idle and GC sampled wall durations. These are sampled wall intervals, not OS CPU totals.
+Three.js and framework UI/assets/terrain belong to engine; game HUD sources and React belong to HUD.
+Desktop attribution covers the V8 game isolate; a separate WebView's HUD JavaScript is not sampled.
+
+Both runtimes must provide Linux `clockBounds` around profiler start/stop. The mapper intersects
+those measured monotonic/V8 offset brackets and requires every pose and its uncertainty margin to
+be fully sampled. Missing clocks, inconsistent calibration, missing pose windows or stale native
+maps reject attribution. No real profile, browser or native runtime proof is implied by fixture tests.
 
 ## What the check grades
 

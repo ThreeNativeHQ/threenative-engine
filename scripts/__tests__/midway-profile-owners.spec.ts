@@ -1,8 +1,24 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { type IProfileOwnerOptions, profileOwners } from "../midway-bench/profile-owners.js";
+import {
+  type IProfileOwnerOptions,
+  profileClockCalibration,
+  profileFlightOwners,
+  profileOwners,
+} from "../midway-bench/profile-owners.js";
 
 const root = mkdtempSync(join(tmpdir(), "tn-profile-owners-"));
 const repo = join(root, "repo");
@@ -284,5 +300,258 @@ describe("bounded profile owners", () => {
     expect(() =>
       profileOwners(fixture(), { ...options(), sourceMaps: { bundle: join(root, "missing.map") } }),
     ).toThrow();
+  });
+});
+
+describe("profile flight integration", () => {
+  it("derives a bounded offset from both measured profile endpoints", () => {
+    expect(
+      profileClockCalibration({
+        startTime: 1000,
+        endTime: 1800,
+        clockBounds: { clock: "CLOCK_MONOTONIC", start: [10990, 11010], end: [11795, 11805] },
+      }),
+    ).toMatchObject({ offsetUs: 10000, maxErrorUs: 5, validFromUs: 11000, validToUs: 11800 });
+  });
+  it.each([
+    undefined,
+    { startTime: 1000, endTime: 1800 },
+    {
+      startTime: 1000,
+      endTime: 1800,
+      clockBounds: { clock: "CLOCK_MONOTONIC", start: [11000, 11010], end: [12000, 12010] },
+    },
+    {
+      startTime: 1000,
+      endTime: 1800,
+      clockBounds: { clock: "CLOCK_MONOTONIC", start: [11010, 11000], end: [11800, 11810] },
+    },
+  ])("rejects absent or inconsistent calibration %j", (raw) => {
+    expect(() => profileClockCalibration(raw)).toThrow(/clockBounds|calibration/);
+  });
+  it.each([false, true])("writes map-hashed diagnostic-only ownership on desktop=%s", (desktop) => {
+    const dir = mkdtempSync(join(root, "flight-"));
+    const source = join(dir, "game");
+    const artifact = join(source, "dist");
+    mkdirSync(source);
+    mkdirSync(artifact);
+    const script = join(artifact, "game.js");
+    const map = `${script}.map`;
+    writeFileSync(script, desktop ? "work();" : "work();\n//# sourceMappingURL=game.js.map");
+    writeFileSync(
+      map,
+      JSON.stringify({
+        version: 3,
+        sources: [relative(artifact, join(source, "src/game.ts"))],
+        sourcesContent: ["work();"],
+        names: [],
+        mappings: "AAAA",
+      }),
+    );
+    const sha = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
+    writeFileSync(
+      join(artifact, "midway-provenance.json"),
+      JSON.stringify({
+        buildProtocol: "midway-clean-build-v1",
+        engineCommit: "a".repeat(40),
+        artifacts: { "game.js.map": sha(map) },
+      }),
+    );
+    const url = desktop ? script : "http://127.0.0.1:5173/game.js";
+    const profile = {
+      ...fixture(),
+      nodes: [
+        { id: 1, callFrame: frame("", -1, "(root)", -1), children: [2] },
+        { id: 2, callFrame: frame(url) },
+      ],
+      samples: Array<number>(8).fill(2),
+      clockBounds: { clock: "CLOCK_MONOTONIC", start: [10995, 11005], end: [11795, 11805] },
+    };
+    writeFileSync(join(dir, "flight.cpuprofile"), JSON.stringify(profile));
+    const windows = ["released-stick-climb", "canopy-and-instruments", "gun-view"].map(
+      (label, i) => ({
+        label,
+        frames: 1000,
+        updates: 1000,
+        renders: 1000,
+        startTick: i * 1000,
+        endTick: (i + 1) * 1000,
+        startUs: 11100 + i * 200,
+        endUs: 11200 + i * 200,
+        mainThread: {
+          pid: 1,
+          tid: 1,
+          starttime: "1",
+          cpuNs: 1000000,
+          cpuMs: 1,
+          cpuMsPerFrame: 0.001,
+          instructions: 1000,
+          instructionsPerFrame: 1,
+          cycles: 1000,
+          cyclesPerFrame: 1,
+        },
+        processTree: { cpuMs: 1, pids: [1] },
+        host: { load: [0, 0, 0], governors: {} },
+      }),
+    );
+    const report = {
+      pass: true,
+      scenario: "fixture",
+      url: "http://127.0.0.1:5173",
+      assertionResults: [{ pass: true }],
+      target: desktop ? "desktop" : "browser",
+      clock: "fixed-step",
+      runtime: desktop ? "native" : "web",
+      acquisition: { requestUrls: [url], cpuWindows: windows },
+      observations: {
+        console: desktop
+          ? Array.from({ length: 3000 }, (_, i) => ({
+              text: `TN_PLAYER_FRAME:${JSON.stringify({ tick: i + 1, updates: 1 })}`,
+            }))
+          : [],
+      },
+    };
+    writeFileSync(join(dir, "run.log"), `arm=test\n${JSON.stringify(report, null, 2)}\n`);
+    const output = profileFlightOwners(dir, source, artifact, repo, desktop);
+    expect(output.kind).toBe("profile-diagnostic-only");
+    expect(output.artifacts["game.js.map"]).toBe(sha(map));
+    expect(output.poses.map((pose) => pose.owners.game.durationUs)).toEqual([100, 100, 100]);
+    expect(JSON.parse(readFileSync(join(dir, "profile-owners.json"), "utf8"))).toEqual(output);
+    // Exercise the real shell caller with fixture runner/build processes; no GPU/build is launched.
+    const bin = join(source, "node_modules/.bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(source, "engine.bin"), "engine");
+    writeFileSync(
+      join(source, "midway-provenance.json"),
+      JSON.stringify({
+        buildProtocol: "midway-clean-build-v1",
+        engineCommit: "a".repeat(40),
+        artifacts: { "engine.bin": sha(join(source, "engine.bin")) },
+      }),
+    );
+    const artifactHash = createHash("sha256")
+      .update(
+        ["game.js", "game.js.map"].map((file) => `${file} ${sha(join(artifact, file))}`).join("\n"),
+      )
+      .digest("hex");
+    writeFileSync(
+      join(source, "dist.build-report.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        target: "web",
+        artifact: { kind: "directory", sha256: artifactHash },
+      }),
+    );
+    const provenance = JSON.parse(readFileSync(join(artifact, "midway-provenance.json"), "utf8"));
+    provenance.engineCommit = "a".repeat(40);
+    writeFileSync(join(artifact, "midway-provenance.json"), JSON.stringify(provenance));
+    writeFileSync(join(dir, "report.json"), JSON.stringify(report, null, 2));
+    const mockRunner = `while [ "$#" -gt 0 ]; do
+  if [ "$1" = --cpu-prof ]; then shift; cp "$FIXTURE_PROFILE" "$1"; fi
+  shift
+done
+cat "$FIXTURE_REPORT"
+`;
+    writeFileSync(join(bin, "threenative-playtest"), `#!/bin/sh\n${mockRunner}`);
+    writeFileSync(
+      join(bin, "node"),
+      `#!/bin/sh
+case "$1" in
+  */packages/playtest/dist/runner/cli.js) ${mockRunner} ;;
+  *) exec "$REAL_NODE" "$@" ;;
+esac
+`,
+    );
+    writeFileSync(
+      join(bin, "pnpm"),
+      '#!/bin/sh\nprintf "%s\n" "$*" >> "$BUILD_ARGS"\n[ "$2" != tsx ] || echo "PARITY PASS"\n',
+    );
+    for (const name of ["node", "pnpm", "threenative-playtest"]) chmodSync(join(bin, name), 0o755);
+    const flight = spawnSync(
+      "sh",
+      [resolve("scripts/midway-bench/flight.sh"), desktop ? "desktop" : "legacy", "profile-smoke"],
+      {
+        encoding: "utf8",
+        timeout: 10000,
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          REAL_NODE: process.execPath,
+          FIXTURE_PROFILE: join(dir, "flight.cpuprofile"),
+          FIXTURE_REPORT: join(dir, "report.json"),
+          BUILD_ARGS: join(dir, "build-args"),
+          MIDWAY_CPU_PROFILE: "1",
+          MIDWAY_MATCHED_CPU: "0",
+          MIDWAY_BROWSER_CLOCK: "fixed-step",
+          MIDWAY_LEGACY_DIR: source,
+          MIDWAY_NATIVE_DIR: source,
+          MIDWAY_PLAYER_DIR: artifact,
+          MIDWAY_RUNS: join(dir, "runs"),
+          MIDWAY_SCENARIO: resolve(
+            `scripts/midway-bench/flight-bench${desktop ? "-desktop" : ""}.playtest.json`,
+          ),
+          MIDWAY_PARITY_REFS: "ref-a ref-b",
+          TN_HEAVY_LOCK: "",
+          TN_VK_ICD: "",
+          TN_VK_LIB: "",
+          TN_PLAYTEST_HOST_DISPLAY: "",
+        },
+      },
+    );
+    expect(flight.status, flight.stdout + flight.stderr).toBe(0);
+    const written = JSON.parse(
+      readFileSync(
+        join(
+          dir,
+          `runs/profiles/profile-smoke-${desktop ? "desktop" : "legacy"}/profile-owners.json`,
+        ),
+        "utf8",
+      ),
+    );
+    expect(written.poses.map((pose: { sampledUs: number }) => pose.sampledUs)).toEqual([
+      100, 100, 100,
+    ]);
+    if (!desktop)
+      expect(readFileSync(join(dir, "build-args"), "utf8")).toContain("run build:web --sourcemap");
+    if (desktop) {
+      writeFileSync(
+        join(artifact, "midway-provenance.json"),
+        JSON.stringify({ buildProtocol: "midway-clean-build-v1", artifacts: {} }),
+      );
+      expect(() => profileFlightOwners(dir, source, artifact, repo, desktop)).toThrow(/provenance/);
+    } else {
+      writeFileSync(script, "work();");
+      expect(() => profileFlightOwners(dir, source, artifact, repo, desktop)).toThrow(
+        /sourceMappingURL/,
+      );
+    }
+    rmSync(map);
+    expect(() => profileFlightOwners(dir, source, artifact, repo, desktop)).toThrow();
+  });
+  it.each([
+    "packages/ui/src/index.ts",
+    "packages/assets/src/index.ts",
+    "packages/terrain/src/index.ts",
+    "node_modules/.pnpm/three@0.1/node_modules/three/src/Three.js",
+    "node_modules/.pnpm/ui@0.1/node_modules/@threenative/ui/dist/index.js",
+    "node_modules/.pnpm/terrain@0.1/node_modules/@threenative/terrain/dist/index.js",
+    "node_modules/.pnpm/assets@0.1/node_modules/@threenative/assets/dist/index.js",
+  ])("attributes shipped engine source %s", (source) => {
+    const path = join(root, "engine-source.map");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 3,
+        sources: [pathToFileURL(resolve(repo, source)).href],
+        sourcesContent: ["work();"],
+        names: [],
+        mappings: "AAAA",
+      }),
+    );
+    const result = profileOwners(
+      { ...fixture(), samples: Array<number>(8).fill(2) },
+      { ...options(), sourceMaps: { bundle: path } },
+    );
+    expect(result.owners.engine.durationUs).toBe(700);
   });
 });

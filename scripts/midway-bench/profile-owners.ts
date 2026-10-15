@@ -1,8 +1,11 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import type { Profiler } from "node:inspector";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { matchedCpuWindows, terminalReport } from "./dashboard.js";
 
 import type * as TraceMapping from "../../packages/create-threenative/node_modules/@jridgewell/trace-mapping/types/trace-mapping.d.cts";
 
@@ -153,9 +156,27 @@ export function profileOwners(raw: unknown, options: IProfileOwnerOptions) {
   const classify = (source: string): Owner => {
     if (!source.startsWith("file:")) return "unknown";
     const path = canonical(fileURLToPath(source));
-    for (const name of ["core", "physics", "three-native", "runtime-native"])
+    for (const name of [
+      "core",
+      "physics",
+      "three-native",
+      "runtime-native",
+      "ui",
+      "assets",
+      "terrain",
+    ])
       if (inside(resolve(repo, "packages", name), path)) return "engine";
     if (inside(resolve(repo, "packages/playtest"), path)) return "harness";
+    const dependency = path.split(sep).join("/");
+    if (inside(game, path) || inside(repo, path)) {
+      if (/(?:^|\/)node_modules\/@threenative\/playtest\//u.test(dependency)) return "harness";
+      if (
+        /(?:^|\/)node_modules\/(?:three|@threenative\/(?:core|physics|three-native|runtime-native|ui|assets|terrain))\//u.test(
+          dependency,
+        )
+      )
+        return "engine";
+    }
     if (
       (inside(game, path) || inside(repo, path)) &&
       /(?:^|\/)node_modules\/(?:react|react-dom)\//u.test(path.split(sep).join("/"))
@@ -241,4 +262,149 @@ export function profileOwners(raw: unknown, options: IProfileOwnerOptions) {
       ]),
     ) as Record<Owner, { durationUs: number; percent: number }>,
   };
+}
+
+/** Intersect two observed monotonic/V8 clock brackets; never infer an offset from a pose boundary. */
+export function profileClockCalibration(raw: unknown): IProfileOwnerOptions["calibration"] {
+  const p = raw as {
+    startTime?: number;
+    endTime?: number;
+    clockBounds?: { clock?: string; start?: number[]; end?: number[] };
+  };
+  const b = p?.clockBounds;
+  if (
+    b?.clock !== "CLOCK_MONOTONIC" ||
+    !Array.isArray(b.start) ||
+    !Array.isArray(b.end) ||
+    b.start.length !== 2 ||
+    b.end.length !== 2 ||
+    ![p.startTime, p.endTime, ...b.start, ...b.end].every(
+      (n) => Number.isSafeInteger(n) && Number(n) >= 0,
+    )
+  )
+    fail("missing/malformed measured clockBounds");
+  const [s0, s1] = b.start as [number, number];
+  const [e0, e1] = b.end as [number, number];
+  const start = p.startTime as number;
+  const end = p.endTime as number;
+  if (s1 < s0 || e1 < e0 || e0 <= s1 || end <= start) fail("unordered clockBounds");
+  const lower = Math.max(s0 - start, e0 - end);
+  const upper = Math.min(s1 - start, e1 - end);
+  if (lower > upper) fail("inconsistent clock calibration");
+  const offsetUs = (lower + upper) / 2;
+  return {
+    proof: `CLOCK_MONOTONIC start=[${s0},${s1}] end=[${e0},${e1}]`,
+    offsetUs,
+    maxErrorUs: (upper - lower) / 2,
+    validFromUs: start + offsetUs,
+    validToUs: end + offsetUs,
+  };
+}
+
+/** Reduce a separate profile flight using the exact same mapper and pose boundaries on both runtimes. */
+export function profileFlightOwners(
+  runDir: string,
+  gameRoot: string,
+  artifactRoot: string,
+  repoRoot: string,
+  desktop: boolean,
+) {
+  const profilePath = resolve(runDir, "flight.cpuprofile");
+  const raw = JSON.parse(readFileSync(profilePath, "utf8"));
+  const calibration = profileClockCalibration(raw);
+  const log = readFileSync(resolve(runDir, "run.log"), "utf8");
+  const report = terminalReport(log);
+  const windows = matchedCpuWindows(log);
+  if (!report || !windows || report.runtime !== (desktop ? "native" : "web"))
+    fail("invalid profile flight report/CPU acquisition");
+  const sourceMaps: Record<string, string> = {};
+  const hashes: Record<string, string> = {};
+  const sha = (path: string): string =>
+    createHash("sha256").update(readFileSync(path)).digest("hex");
+  const artifact = realpathSync(artifactRoot);
+  const mapFor = (script: string, url: string): void => {
+    if (!inside(artifact, realpathSync(script))) fail("script escapes artifact root");
+    const ref = [...readFileSync(script, "utf8").matchAll(/[#@] sourceMappingURL=([^\s]+)/gu)].at(
+      -1,
+    )?.[1];
+    // The shipped desktop esbuild bundle uses an external map without a sourceMappingURL comment.
+    const map = desktop
+      ? `${script}.map`
+      : ref
+        ? resolve(dirname(script), ref)
+        : fail("production script has no sourceMappingURL");
+    if (!inside(artifact, realpathSync(map))) fail("map escapes artifact root");
+    if (desktop) {
+      const provenance = JSON.parse(
+        readFileSync(resolve(artifact, "midway-provenance.json"), "utf8"),
+      );
+      if (
+        provenance.buildProtocol !== "midway-clean-build-v1" ||
+        provenance.artifacts?.["game.js.map"] !== sha(map)
+      )
+        fail("native game.js.map missing/stale in build provenance");
+    }
+    sourceMaps[url] = map;
+    hashes[relative(artifact, script)] = sha(script);
+    hashes[relative(artifact, map)] = sha(map);
+  };
+  const urls = [...new Set<string>(raw.nodes.map((node: INode) => node.callFrame.url))];
+  if (desktop) {
+    const bundle = resolve(artifact, "game.js");
+    for (const url of urls)
+      if (url === bundle || url === pathToFileURL(bundle).href) mapFor(bundle, url);
+  } else {
+    const requested = report.acquisition?.requestUrls;
+    if (
+      !Array.isArray(requested) ||
+      !requested.length ||
+      requested.some((url) => typeof url !== "string")
+    )
+      fail("missing production request URLs");
+    for (const url of urls) {
+      if (!/^https?:/u.test(url) || !requested.includes(url)) continue;
+      const path = decodeURIComponent(new URL(url).pathname);
+      if (!path.endsWith(".js")) continue;
+      mapFor(resolve(artifact, `.${path}`), url);
+    }
+  }
+  if (!Object.keys(sourceMaps).length) fail("no profiled production script has a verified map");
+  const poses = windows.map((window) => ({
+    label: window.label,
+    ...profileOwners(raw, {
+      sourceMaps,
+      gameRoot,
+      repoRoot,
+      startUs: window.startUs,
+      endUs: window.endUs,
+      calibration,
+    }),
+  }));
+  const output = {
+    kind: "profile-diagnostic-only",
+    profileSha256: sha(profilePath),
+    artifacts: hashes,
+    poses,
+  };
+  writeFileSync(resolve(runDir, "profile-owners.json"), `${JSON.stringify(output, null, 2)}\n`);
+  return output;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const [runDir, gameRoot, artifactRoot, repoRoot, arm] = process.argv.slice(2);
+  if (
+    !runDir ||
+    !gameRoot ||
+    !artifactRoot ||
+    !repoRoot ||
+    !["legacy", "native", "desktop"].includes(arm ?? "")
+  )
+    fail("usage: profile-owners.ts <run-dir> <game-root> <artifact-root> <repo-root> <arm>");
+  profileFlightOwners(
+    resolve(runDir),
+    resolve(gameRoot),
+    resolve(artifactRoot),
+    resolve(repoRoot),
+    arm === "desktop",
+  );
 }
