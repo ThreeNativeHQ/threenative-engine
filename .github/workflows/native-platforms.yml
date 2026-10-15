@@ -326,7 +326,10 @@ jobs:
         if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 ninja-build build-essential python3 git pkg-config
+          sudo apt-get install -y clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 ninja-build build-essential python3 git pkg-config libglib2.0-dev
+          pkg-config --modversion glib-2.0 gmodule-2.0 gobject-2.0 gthread-2.0
+          # The adjacent Linux runtime config links libatomic when using the system C++ library.
+          printf 'int main() { return 0; }\n' | /usr/lib/llvm-18/bin/clang++ -x c++ - -latomic -o "$RUNNER_TEMP/v8-linux-link-preflight"
       - name: Build the Linux arm64 V8 payload
         id: build
         if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'

@@ -39,6 +39,8 @@ export const LINUX_ARM64_V8_BUILD = Object.freeze({
   }),
 });
 const RECEIPT = "build-receipt.json";
+const LINUX_PACKAGES = ["libglib2.0-dev", "pkg-config"];
+const GLIB_MODULES = ["glib-2.0", "gmodule-2.0", "gobject-2.0", "gthread-2.0"];
 const sha256 = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
 
 // Keep this producer independent: changing Android's script invalidates its expensive cache.
@@ -157,6 +159,19 @@ export function assertArm64V8Archive(bytes) {
   return objects;
 }
 
+function validateLinuxPrerequisites(linux) {
+  for (const name of LINUX_PACKAGES) {
+    const [actual, version, architecture, status] = (linux?.packages?.[name] ?? "").split("\t");
+    if (actual !== name || !/^\d[\w.+:~_-]*$/u.test(version ?? "") ||
+      architecture !== "arm64" || status !== "install ok installed")
+      throw new Error(`V8 Linux prerequisite requires installed native ${name} with exact version identity`);
+  }
+  for (const name of GLIB_MODULES) {
+    if (!/^\d+\.\d+\.\d+$/u.test(linux?.modules?.[name] ?? ""))
+      throw new Error(`V8 Linux prerequisite pkg-config module missing or malformed: ${name}`);
+  }
+}
+
 export function inspectLinuxArm64V8Toolchain({
   run = (program, args) => execFileSync(program, args, { encoding: "utf8" }),
   hash = sha256,
@@ -183,10 +198,20 @@ export function inspectLinuxArm64V8Toolchain({
       throw new Error(`V8 toolchain ${name} must be ${pin.version}`);
     binaries[name] = { sha256: hash(path), version };
   }
-  return { packages, binaries };
+  const linux = { packages: {}, modules: {} };
+  for (const name of LINUX_PACKAGES) {
+    linux.packages[name] = run("dpkg-query", ["-W", "-f=${Package}\t${Version}\t${Architecture}\t${Status}", name]).trim();
+    if (run("dpkg", ["--verify", name]).trim())
+      throw new Error(`V8 Linux prerequisite ${name} failed installed-file integrity`);
+  }
+  for (const name of GLIB_MODULES)
+    linux.modules[name] = run("/usr/bin/pkg-config", ["--modversion", name]).trim();
+  validateLinuxPrerequisites(linux);
+  return { packages, binaries, linux };
 }
 
 function validateToolchain(receipt) {
+  validateLinuxPrerequisites(receipt?.linux);
   const pin = LINUX_ARM64_V8_BUILD.toolchain;
   if (
     !receipt ||

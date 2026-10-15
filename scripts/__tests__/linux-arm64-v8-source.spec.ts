@@ -50,7 +50,9 @@ function toolchain() {
           ? `${args.at(-1)}\t1:18.1.3-1ubuntu1\tarm64\tinstall ok installed`
           : program === "dpkg"
             ? ""
-            : `LLVM version ${version}`,
+            : program === "/usr/bin/pkg-config"
+              ? "2.80.0"
+              : `LLVM version ${version}`,
       hash: () => "a".repeat(64),
     }),
     gn: {
@@ -114,6 +116,24 @@ describe("Linux arm64 V8 receipt", () => {
         receipt.toolchain.gn[field] = "wrong";
       });
       expect(() => verifyLinuxArm64V8Installation(root)).toThrow("GN receipt");
+    }
+  });
+  it("rejects missing Linux development package identities and GLib modules", () => {
+    for (const corrupt of [
+      (receipt: ReturnType<typeof createLinuxArm64V8Receipt>) => {
+        receipt.toolchain.linux.packages["libglib2.0-dev"] =
+          "libglib2.0-dev\t2.80.0-6ubuntu3\tamd64\tinstall ok installed";
+      },
+      (receipt: ReturnType<typeof createLinuxArm64V8Receipt>) => {
+        Reflect.deleteProperty(receipt.toolchain.linux.packages, "pkg-config");
+      },
+      (receipt: ReturnType<typeof createLinuxArm64V8Receipt>) => {
+        receipt.toolchain.linux.modules["gobject-2.0"] = "";
+      },
+    ]) {
+      const root = fixture();
+      editReceipt(root, corrupt);
+      expect(() => verifyLinuxArm64V8Installation(root)).toThrow("Linux prerequisite");
     }
   });
   it.each(["tamper", "extra", "empty", "symlink"])("rejects %s payloads", (kind) => {
