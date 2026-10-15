@@ -136,9 +136,14 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   const restore = objects.map((object) => ({
     object,
     position: object.position.clone(),
-    rotation: object.rotation.clone(),
+    quaternion: object.quaternion.clone(),
     scale: object.scale.clone(),
   }));
+  // The root belongs to the game, which turns it with `rotation.y +=`. `quaternion.copy` rewrites
+  // `rotation` as the equivalent Euler, so a yaw of PI comes back as (PI, 0, PI) and the next
+  // increment turns the figure the mirrored way. Bones keep the exact quaternion: a round trip
+  // through Euler would lose precision on every joint.
+  const rootRotation = root.rotation.clone();
 
   const mixer = new AnimationMixer(root);
   const action = mixer.clipAction(clip);
@@ -163,9 +168,10 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
     mixer.uncacheClip(clip);
     for (const entry of restore) {
       entry.object.position.copy(entry.position);
-      entry.object.rotation.copy(entry.rotation);
+      entry.object.quaternion.copy(entry.quaternion);
       entry.object.scale.copy(entry.scale);
     }
+    root.rotation.copy(rootRotation);
     root.updateMatrixWorld(true);
   }
 
