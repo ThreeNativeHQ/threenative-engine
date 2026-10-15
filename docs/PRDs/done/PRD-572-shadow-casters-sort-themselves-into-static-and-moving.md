@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — was open until this PRD: a caster that moves without a `trackCaster` call keeps a stale shadow in the cached levels until the camera moves a level window.
 **Complexity:** 3 (LOW) — 1–5 engine files (1): `render/virtual-shadow.ts`; complex state (+2): a per-caster classification that changes over frames. Risk override: none.
 **Owner:** João
-**Depends on:** None. Sits beside [PRD-457](../Unreal/rendering/PRD-457-virtual-shadows-scale-by-measurement.md) (which names this gap and leaves it out of scope) and [PRD-538](../Unreal/rendering/PRD-538-shadow-maps-redraw-only-what-streamed-in.md) (region redraws, which this PRD uses for its transitions).
+**Depends on:** None. Sits beside [PRD-457](../Unreal/rendering/PRD-457-virtual-shadows-scale-by-measurement.md) (which names this gap and leaves it out of scope) and [PRD-538](PRD-538-shadow-maps-redraw-only-what-streamed-in.md) (region redraws, which this PRD uses for its transitions).
 
 ## Context
 

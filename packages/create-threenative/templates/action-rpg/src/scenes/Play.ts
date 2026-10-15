@@ -32,7 +32,12 @@ import {
 } from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
-import { createArcaneSurge, createAttackArc, createHitBurst } from "../render/vfx.js";
+import {
+  type IActionRpgVfxOptions,
+  createArcaneSurge,
+  createAttackArc,
+  createHitBurst,
+} from "../render/vfx.js";
 import type { GameState } from "../state.js";
 import { StatBlock } from "../stats/StatBlock.js";
 
@@ -210,23 +215,20 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     player.equippedItem = inventory.equipped?.itemId ?? "";
     ctx.entities.add("player", player);
 
-    const attackVfx = ctx.add(new GPUParticles3D(createAttackArc()));
-    const hitVfx = ctx.add(new GPUParticles3D(createHitBurst()));
-    const surgeVfx = ctx.add(new GPUParticles3D(createArcaneSurge()));
-    attackVfx.visible = false;
-    hitVfx.visible = false;
-    surgeVfx.visible = false;
+    const emitter = (options: IActionRpgVfxOptions) => ({
+      count: options.burstCount,
+      particles: ctx.add(new GPUParticles3D(options)),
+    });
+    const attackVfx = emitter(createAttackArc());
+    const hitVfx = emitter(createHitBurst());
+    const surgeVfx = emitter(createArcaneSurge());
+    // A burst is a request: the engine gives it its own slots, so an older burst keeps flying where it began.
     const burst = (
-      particles: GPUParticles3D,
+      vfx: ReturnType<typeof emitter>,
       position: { readonly x: number; readonly y: number; readonly z: number },
       name: string,
     ): void => {
-      particles.position.copy(position);
-      particles.visible = true;
-      particles.restart();
-      ctx.after(0.45, () => {
-        particles.visible = false;
-      });
+      vfx.particles.emitParticle({ count: vfx.count, origin: position });
       emitPlaytestEvent({ entity: "player", name });
     };
 

@@ -109,7 +109,7 @@ export const PLAYTEST_FLAGS = {
   "--endpoint": { default: "http://127.0.0.1:41777/playtest", summary: "device bridge endpoint", takesValue: true },
   "--headed": { default: "false", summary: "show the browser window", takesValue: false },
   "--judge-marker-url": { default: "none", summary: "judge-owned loopback marker URL whose POST failures are not network errors", takesValue: true },
-  "--live-clock": { default: "false", summary: "measure the game on its own frame clock (browser target only); a standing scene is unmeasurable on counted ticks", takesValue: false },
+  "--live-clock": { default: "false", summary: "measure the game on its own frame clock (browser and desktop targets); a standing scene is unmeasurable on counted ticks", takesValue: false },
   // `allowDashValue` so a host flag can be passed as one: `--host-arg --ui` is the UI root the
   // overlay serves, and the parser would otherwise read `--ui` as a playtest flag and reject it.
   "--host-arg": { allowDashValue: true, default: "none", repeatable: true, summary: "argument passed to the native desktop host, repeatable", takesValue: true },
@@ -299,11 +299,12 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     }
   }
   const liveClock = argv.includes("--live-clock");
-  // Fail closed rather than silently measuring on the clock nobody asked for: the native lanes take
+  // Fail closed rather than silently measuring on the clock nobody asked for: the device lanes take
   // this switch from the production profile's injected instrumentation, not from this runner, so a
-  // flag here would report a wall-clock run that never happened.
-  if (liveClock && target !== "browser") {
-    throw new PlaytestCliUsageError(`--live-clock runs on the browser target only; '${target}' is driven by its own host instrumentation.`);
+  // flag here would report a wall-clock run that never happened. The native desktop host reads the
+  // same request from TN_PLAYTEST_CLOCK, which the desktop runner hands it, so it is accepted here.
+  if (liveClock && target !== "browser" && target !== "desktop") {
+    throw new PlaytestCliUsageError(`--live-clock runs on the browser and desktop targets only; '${target}' is driven by its own host instrumentation.`);
   }
   const rawTouchRotation = flags.get("--touch-rotation")?.[0];
   // Fail closed rather than defaulting: a mistyped rotation that quietly became 0 would put every
