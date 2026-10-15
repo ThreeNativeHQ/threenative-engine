@@ -1,6 +1,7 @@
 import { RenderTarget } from "three";
 import type { BufferGeometry, Camera, DepthTexture, Object3D, Texture } from "three";
 import {
+  NodeUpdateType,
   type PassNode,
   ReadbackBuffer,
   RenderPipeline,
@@ -565,6 +566,7 @@ function wrapRenderer(
   // Keep caller identity separately: RenderPipeline may wrap its public output node.
   let outputInput: unknown;
   let outputPass: PassNode | undefined;
+  let pendingWorldPassRefresh = false;
   let warmOutputTarget: RenderTarget | undefined;
   const renderChains = new Set<RenderChain>();
   let renderChainUsesPerObjectVelocity = false;
@@ -643,6 +645,9 @@ function wrapRenderer(
   let renderingFrame = 0;
   const renderFrame = (scene: Object3D, camera: Camera): void => {
     pipelineCensus?.beginWorldFrame(scene);
+    const refreshPass = pendingWorldPassRefresh ? outputPass : undefined;
+    const previousUpdateBeforeType = refreshPass?.updateBeforeType;
+    if (refreshPass !== undefined) refreshPass.updateBeforeType = NodeUpdateType.RENDER;
     let completed = false;
     try {
       bindSurface();
@@ -654,9 +659,12 @@ function wrapRenderer(
         setOutputPipelineRoot(outputPass, scene, camera);
         outputPipeline.render();
       }
+      if (refreshPass !== undefined) pendingWorldPassRefresh = false;
       pipelineCensus?.firstPresent();
       completed = true;
     } finally {
+      if (refreshPass !== undefined && previousUpdateBeforeType !== undefined)
+        refreshPass.updateBeforeType = previousUpdateBeforeType;
       pipelineCensus?.endWorldFrame(scene, completed);
     }
   };
@@ -724,6 +732,7 @@ function wrapRenderer(
         const scoped = targetScene !== undefined && targetScene !== scene;
         const previousPassScene = outputPass?.scene;
         const previousPassCamera = outputPass?.camera;
+        const previousUpdateBeforeType = outputPass?.updateBeforeType;
         const warmRenderer = raw as RendererInstance &
           ThreeRenderer & {
             contextNode?: unknown;
@@ -794,6 +803,10 @@ function wrapRenderer(
         if (attached) outputRoot.add(scene);
         renderingFrame += 1;
         try {
+          if (scoped && outputPass !== undefined) {
+            outputPass.updateBeforeType = NodeUpdateType.RENDER;
+            pendingWorldPassRefresh = true;
+          }
           if (scoped) {
             if (raw.setRenderTarget === undefined)
               throw new Error(
@@ -809,6 +822,8 @@ function wrapRenderer(
           if (outputPass !== undefined) {
             outputPass.scene = previousPassScene as Object3D;
             outputPass.camera = previousPassCamera as Camera;
+            if (previousUpdateBeforeType !== undefined)
+              outputPass.updateBeforeType = previousUpdateBeforeType;
           }
           RendererUtils.restoreRendererState(warmRenderer, rendererState);
           restoreField(raw, "transparent", hadOwnTransparent, previousTransparent);
@@ -1247,6 +1262,7 @@ function wrapRenderer(
       renderChains.clear();
       renderChainUsesPerObjectVelocity = false;
       outputPipeline?.dispose();
+      pendingWorldPassRefresh = false;
       outputPipeline = undefined;
       warmOutputTarget?.dispose();
       warmOutputTarget = undefined;
@@ -1291,6 +1307,7 @@ function wrapRenderer(
         nextPipeline.outputColorTransform = options.outputColorTransform;
       }
       outputPipeline?.dispose();
+      pendingWorldPassRefresh = false;
       outputPass = nextOutputPass;
       outputPipeline = nextPipeline;
       outputInput = node;
@@ -1298,6 +1315,7 @@ function wrapRenderer(
         isCurrent: () => outputPipeline === nextPipeline,
         dispose: () => {
           if (outputPipeline !== nextPipeline) return;
+          pendingWorldPassRefresh = false;
           outputPipeline = undefined;
           outputInput = undefined;
           outputPass = undefined;
@@ -1308,6 +1326,7 @@ function wrapRenderer(
     clearOutputNode: (expectedNode) => {
       if (expectedNode !== undefined && expectedNode !== outputInput) return;
       outputPipeline?.dispose();
+      pendingWorldPassRefresh = false;
       outputPipeline = undefined;
       outputInput = undefined;
       outputPass = undefined;

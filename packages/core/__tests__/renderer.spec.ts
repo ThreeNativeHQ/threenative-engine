@@ -1,6 +1,6 @@
 import { Color, Object3D, PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
-import { RenderPipeline } from "three/webgpu";
+import { NodeFrame, NodeUpdateType, RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { createRenderer, prewarm } from "../src/renderer.js";
 
@@ -1289,6 +1289,134 @@ describe("createRenderer", () => {
       else Object.defineProperty(globalThis, "navigator", descriptor);
     }
   });
+
+  it.each([false, true])(
+    "refreshes a scoped world warm-up and its following main render in one node frame after %s failure",
+    async (throws) => {
+      const canvas = testCanvas();
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: { gpu: {} },
+      });
+      const nodeFrame = new NodeFrame();
+      nodeFrame.frameId = 1;
+      const draws: {
+        scene: Object3D;
+        visibleObjects: string[];
+        target: unknown;
+        warm: boolean;
+      }[] = [];
+      const canvasSubmissions: Object3D[] = [];
+      let boundTarget: unknown = null;
+      let boundMrt: unknown = null;
+      let warm = false;
+      let targetScene: Scene | undefined;
+      let worldPass: ReturnType<typeof pass> | undefined;
+      const renderPipeline = vi.spyOn(RenderPipeline.prototype, "render").mockImplementation(() => {
+        nodeFrame.renderId += 1;
+        if (worldPass === undefined) throw new Error("Missing world pass");
+        nodeFrame.updateBeforeNode(worldPass);
+        if (!warm) canvasSubmissions.push(worldPass.scene as Object3D);
+      });
+      const rawRender = (scene: Object3D): void => {
+        draws.push({
+          scene,
+          visibleObjects: scene.children
+            .filter((child) => child.visible)
+            .map((child) => child.name),
+          target: boundTarget,
+          warm,
+        });
+        if (throws && warm && scene === targetScene) throw new Error("scoped warm failed");
+      };
+      const raw = {
+        _renderTarget: boundTarget,
+        autoClear: true,
+        contextNode: null,
+        dispose: () => undefined,
+        domElement: canvas,
+        getActiveCubeFace: () => 0,
+        getActiveMipmapLevel: () => 0,
+        getClearAlpha: () => 1,
+        getClearColor: (target: Color) => target.set(0),
+        getDrawingBufferSize: (size: { set: (width: number, height: number) => unknown }) =>
+          size.set(320, 180),
+        getMRT: () => boundMrt,
+        getOutputRenderTarget: () => null,
+        getPixelRatio: () => 1,
+        getRenderObjectFunction: () => null,
+        getRenderTarget: () => boundTarget,
+        getScissorTest: () => false,
+        init: async () => undefined,
+        opaque: false,
+        outputColorSpace: "srgb",
+        render: rawRender,
+        setClearColor: () => undefined,
+        setMRT: (value: unknown) => {
+          boundMrt = value;
+        },
+        setPixelRatio: () => undefined,
+        setRenderObjectFunction: () => undefined,
+        setRenderTarget: (value: unknown) => {
+          boundTarget = value;
+          raw._renderTarget = value;
+        },
+        setScissorTest: () => undefined,
+        setSize: () => undefined,
+        toneMapping: 0,
+        toneMappingExposure: 1,
+        transparent: false,
+        xr: { enabled: false },
+      };
+      nodeFrame.renderer = raw as never;
+
+      try {
+        const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+        const authoredScene = new Scene();
+        const authoredCamera = new PerspectiveCamera();
+        worldPass = pass(authoredScene, authoredCamera);
+        const outputNode = worldPass.add(pass(new Scene(), new PerspectiveCamera()));
+        renderer.setOutputNode(outputNode, worldPass);
+        const authoredUpdateBeforeType = worldPass.updateBeforeType;
+        expect(authoredUpdateBeforeType).toBe(NodeUpdateType.FRAME);
+        targetScene = new Scene();
+        const chunk = new Object3D();
+        chunk.name = "requested-chunk";
+
+        renderer.render(authoredScene, authoredCamera);
+        const warmStart = canvasSubmissions.length;
+        warm = true;
+        const warmUp = () =>
+          renderer.warmUpWorldPass?.(chunk, new PerspectiveCamera(), targetScene);
+        if (throws) expect(warmUp).toThrow("scoped warm failed");
+        else warmUp();
+        warm = false;
+
+        expect(worldPass.updateBeforeType).toBe(authoredUpdateBeforeType);
+        expect(canvasSubmissions).toHaveLength(warmStart);
+        expect(draws[1]?.scene).toBe(targetScene);
+        expect(draws[1]?.visibleObjects).toEqual(["requested-chunk"]);
+        expect(draws[1]?.target).not.toBeNull();
+        expect(draws[1]?.warm).toBe(true);
+
+        renderer.render(authoredScene, authoredCamera);
+        expect(draws.map((draw) => draw.scene)).toEqual([
+          authoredScene,
+          targetScene,
+          authoredScene,
+        ]);
+        expect(draws[2]?.visibleObjects).toEqual([]);
+        expect(canvasSubmissions).toEqual([authoredScene, authoredScene]);
+        expect(worldPass.updateBeforeType).toBe(authoredUpdateBeforeType);
+        renderer.dispose();
+      } finally {
+        renderPipeline.mockRestore();
+        if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+        else Object.defineProperty(globalThis, "navigator", descriptor);
+      }
+    },
+  );
 
   it.each([false, true])(
     "warms a scoped output pass offscreen and restores state after %s failure",

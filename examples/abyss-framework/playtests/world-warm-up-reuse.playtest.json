@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "name": "authored-world-pass-streamed-chunk-warm-up-reuse",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "steps": [
+    {
+      "label": "settled-world",
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "id": "state",
+        "path": "loadsInFlight",
+        "equals": 0
+      }
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "world",
+        "component": "residentCells",
+        "gte": 1,
+        "allowTrivial": "The settled world must retain a resident cell that the real world pass can draw."
+      }
+    ],
+    "pipelineCensus": {
+      "warmUpScope": "chunk:0:2:0",
+      "maxNodeBuildsAfterWarmUpScope": 0,
+      "maxRenderPipelineCreationsAfterWarmUpScope": 0
+    },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    }
+  }
+}

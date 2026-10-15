@@ -1,16 +1,12 @@
 import { type ICtx, Scene, type SceneFrame, addInSlices, loadAll } from "@threenative/core";
-import { type IWorldCellsStats, WorldCells } from "@threenative/core/world";
 import {
   BoxGeometry,
   Color,
-  DirectionalLight,
-  HemisphereLight,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
   type PerspectiveCamera,
 } from "three";
-import { terrainMaterial } from "../render/terrain.js";
 
 /**
  * The two load-time mechanisms, driven by a real loop against a real event loop.
@@ -38,7 +34,6 @@ const OBJECTS = 640;
 
 const initialState = {
   attached: 0,
-  worldReady: false,
   streamingDone: false,
 };
 
@@ -79,7 +74,6 @@ export class StreamingProbe extends Scene<StreamingState> {
 
   #frames = 0;
   #framesAtAttachStart = -1;
-  #world: WorldCells | undefined;
   #measure = {
     attachSlices: 0,
     attachSliceSize: 0,
@@ -97,16 +91,7 @@ export class StreamingProbe extends Scene<StreamingState> {
     streamingDone: false,
   };
 
-  override async load(ctx: StreamingCtx): Promise<void> {
-    this.#world = await WorldCells.load({
-      assets: ctx.assets,
-      budgets: { bytes: 8_000_000, instances: 20_000, residentCells: 25 },
-      follow: ctx.camera,
-      ring: 0,
-      surface: terrainMaterial(),
-      terrain: { tileResolution: 65 },
-      url: "world/world.json",
-    });
+  override async load(): Promise<void> {
     const species = Array.from({ length: SPECIES }, (_unused, index) => ({
       index,
       name: `species-${String(index)}`,
@@ -138,17 +123,10 @@ export class StreamingProbe extends Scene<StreamingState> {
   }
 
   override enter(ctx: StreamingCtx): SceneFrame<StreamingState> {
-    const world = this.#world;
-    if (world === undefined) throw new Error("StreamingProbe.enter ran before load() resolved.");
     const camera = ctx.camera as PerspectiveCamera;
-    camera.position.set(-120, 24, 0);
-    camera.lookAt(-80, 0, 0);
+    camera.position.set(0, 0, 18);
+    camera.lookAt(0, 0, 0);
     ctx.scene.background = new Color(0x0b1a2a);
-    ctx.add(new HemisphereLight(0xbfd8ff, 0x2a2f22, 2.2));
-    const sun = new DirectionalLight(0xffffff, 2.6);
-    sun.position.set(-80, 120, 60);
-    ctx.add(sun);
-    ctx.add(world);
 
     // The appearance is the probe's own, as any game's would be: one shared box, and a small
     // palette so the attached wall is not a single flat colour a capture cannot tell from a blank
@@ -167,16 +145,6 @@ export class StreamingProbe extends Scene<StreamingState> {
     });
 
     ctx.entities.add("streaming", { debug: () => ({ ...this.#measure }) });
-    ctx.entities.add("world", {
-      debug: (): Pick<IWorldCellsStats, "loadedCells" | "loadsInFlight" | "pendingPrewarm"> => {
-        const stats = world.stats();
-        return {
-          loadedCells: stats.loadedCells,
-          loadsInFlight: stats.loadsInFlight,
-          pendingPrewarm: stats.pendingPrewarm,
-        };
-      },
-    });
 
     // Driven from an input, not from startup readiness, so the scenario watches the world go from
     // nothing attached to everything attached. Started at readiness the whole attach would be over
@@ -223,14 +191,6 @@ export class StreamingProbe extends Scene<StreamingState> {
     let begun = false;
     return (frameCtx) => {
       this.#frames += 1;
-      const worldStats = world.stats();
-      if (
-        worldStats.loadedCells > 0 &&
-        worldStats.loadsInFlight === 0 &&
-        worldStats.pendingPrewarm === 0 &&
-        !frameCtx.state.getState().worldReady
-      )
-        frameCtx.state.set({ worldReady: true });
       if (!begun && frameCtx.input.justPressed("start")) {
         begun = true;
         void beginAttach();
