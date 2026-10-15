@@ -489,6 +489,16 @@
           "bootstrap": "two-run-fetch-2026-09-11"
         },
         {
+          "id": "quiche-linux-aarch64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-4/quiche-linux-arm64.zip",
+          "sha256": "5e316678246fdf7390845bdd81ea815a8018f3ad5a22d0fe7d42361835f3e843",
+          "bytes": 19682417,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "github-release-digest-2026-10-14"
+        },
+        {
           "id": "quiche-mac-arm64",
           "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-mac-arm64.zip",
           "sha256": "bfb75867965a3f13a740bd3ce886b424023a778abda4462779953bd7da24ff4b",
@@ -677,6 +687,16 @@
           "bootstrap": "two-run-fetch-2026-09-11"
         },
         {
+          "id": "webp-linux-aarch64",
+          "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0-linux-aarch64.tar.gz",
+          "sha256": "ec874dd2e52097f11dd4999176ae6b6fb0ecb165bc1e05d3ecc9b29014fb003e",
+          "bytes": 10138687,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "download-sha256-2026-10-14"
+        },
+        {
           "id": "webp-mac-arm64",
           "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0-mac-arm64.tar.gz",
           "sha256": "0fa3d7fb64a2b2849115c2f1052b7068b3fbadcb7263e3f1840fcd8c798ea9c2",
@@ -760,6 +780,16 @@
             "desktop-linux"
           ],
           "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "skia-linux-aarch64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/chrome%2Fm145/skia-build-linux-arm64-gpu-release.zip",
+          "sha256": "1cd646e55a6abd4a97935939bb419c11ea7a1bb6f8ccd6cf324da305cf2d982a",
+          "bytes": 41600223,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "github-release-digest-2026-10-14"
         },
         {
           "id": "skia-mac-arm64",
@@ -878,6 +908,16 @@
             "desktop"
           ],
           "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "swc-linux-aarch64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/swc-41/swc-linux-arm64.zip",
+          "sha256": "63ce88b0d943709c3c80cc07afe9a37455d4724fd2e50bba605bd74219f8b69d",
+          "bytes": 12933800,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "github-release-digest-2026-10-14"
         },
         {
           "id": "swc-mac-arm64",
