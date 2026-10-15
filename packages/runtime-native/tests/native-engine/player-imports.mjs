@@ -24,7 +24,7 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NoBlending", "NormalBlending", "AdditiveBlending", "PCFShadowMap"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
-  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
+  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "Euler", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "AudioListener", "PositionalAudio", "Audio", "Shape", "Path", "ShapeGeometry",
   "ExtrudeGeometry", "SpriteMaterial", "Line", "LineSegments", "LineBasicMaterial", ...constants];
 const panel = (T) => {
@@ -48,7 +48,9 @@ import { screenCoordinate, positionGeometry, normalGeometry, tangentGeometry, po
 import { atan, mod, fwidth, saturation, mat2, hash, time } from "three/tsl";
 import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
+import { clone as cloneByExamplesPath } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 import { Material } from "three";
 import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV, storage, instanceIndex, normalLocal } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
@@ -281,6 +283,19 @@ check(slotted.material === flat || (!Array.isArray(slotted.material) && slotted.
 slotted.material = [flat, lit];
 check(Array.isArray(slotted.material) && slotted.material[0].color.g === 1, "an array replaces a single material");
 check(Array.isArray(slotted.clone().material) && slotted.clone().material.length === 2, "clone keeps the material array");
+check(cloneByExamplesPath === clone, "SkeletonUtils answers under three/examples/jsm as under three/addons");
+// three's DecalGeometry: the faces of a mesh clipped to the projector's box, uvs across it.
+const wall = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), lit);
+wall.updateMatrixWorld(true);
+const decal = new DecalGeometry(wall, new THREE.Vector3(0.25, 0, 0), new Euler(), new THREE.Vector3(1, 1, 1));
+const decalPosition = decal.getAttribute("position");
+const decalUv = decal.getAttribute("uv");
+let decalInside = decalPosition.count >= 3 && decalPosition.count % 3 === 0 && decalUv.count === decalPosition.count;
+for (let i = 0; i < decalPosition.count; i += 1) {
+  decalInside &&= decalPosition.getX(i) >= -0.25 - 1e-6 && decalPosition.getX(i) <= 0.75 + 1e-6 && Math.abs(decalPosition.getY(i)) <= 0.5 + 1e-6;
+  decalInside &&= decalUv.getX(i) >= -1e-6 && decalUv.getX(i) <= 1 + 1e-6;
+}
+check(decalInside && decal instanceof THREE.BufferGeometry && decal.getAttribute("normal").count === decalPosition.count, "DecalGeometry clips a mesh to the projector box");
 check(lit instanceof Material && lit.onBeforeCompile === Material.prototype.onBeforeCompile && lit.isMaterial, "Material base");
 const vertex = new THREE.Vector3();
 check(new THREE.Mesh(rounded, lit).getVertexPosition(0, vertex) === vertex && vertex.equals(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 0)), "getVertexPosition");
@@ -393,6 +408,35 @@ globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(
   await bundleNativeEngine({ entry, outfile, boot: false });
   const merged = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
   assert.equal(merged.status, 0, `${merged.stdout}\n${merged.stderr}`);
+}
+// BufferGeometry.setFromPoints equals three's: Vector3 and Vector2 points fill a new `position`
+// (z reads 0), and a shorter list overwrites the front of an attribute already there.
+{
+  const fromNative = createRequire(resolve(native, "package.json"));
+  const T = await import(pathToFileURL(fromNative.resolve("three/webgpu")).href);
+  const probe = (K) => {
+    const out = [];
+    const line = new K.BufferGeometry().setFromPoints([new K.Vector3(1, 2, 3), new K.Vector3(-4, 5, 6.5)]);
+    out.push(Array.from(line.getAttribute("position").array));
+    out.push(Array.from(new K.BufferGeometry().setFromPoints([new K.Vector2(7, 8)]).getAttribute("position").array));
+    const filled = new K.BoxGeometry(1, 1, 1);
+    const before = filled.getAttribute("position").count;
+    filled.setFromPoints([new K.Vector3(9, 9, 9)]);
+    const position = filled.getAttribute("position");
+    out.push([position.count === before, position.getX(0), position.getY(0), position.getZ(0)]);
+    return JSON.stringify(out);
+  };
+  await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { BufferGeometry, BoxGeometry, Vector2, Vector3, Scene, PerspectiveCamera } from "three";
+function check(value, name) { if (!value) throw Error("POINTS_CHECK: " + name); }
+const probe = ${probe.toString()};
+check(probe({ BufferGeometry, BoxGeometry, Vector2, Vector3 }) === ${JSON.stringify(probe(T))}, "setFromPoints equals three's");
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+  await bundleNativeEngine({ entry, outfile, boot: false });
+  const points = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
+  assert.equal(points.status, 0, `${points.stdout}\n${points.stderr}`);
 }
 const { build } = createRequire(resolve(native, "package.json"))("esbuild");
 const writer = resolve(work, "package-writer.mjs");

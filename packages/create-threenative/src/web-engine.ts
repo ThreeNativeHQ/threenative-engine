@@ -115,8 +115,10 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
     configResolved(config) {
       root ??= config.root;
     },
-    resolveId(source) {
+    resolveId(specifier) {
       if (!native) return null;
+      // three ships each addon under `addons/` and under its older `examples/jsm/` path.
+      const source = specifier.replace(/^three\/examples\/jsm\//u, "three/addons/");
       if ((UPSTREAM as readonly string[]).includes(source)) return WEB_ENGINE_ID;
       const engineClass = ENGINE_ADDON_CLASSES[source];
       if (engineClass !== undefined) return ENGINE_ADDON_PREFIX + engineClass;
@@ -134,6 +136,9 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
           "web-engine-buffer-geometry-utils.js",
           "addons/buffer-geometry-utils.ts",
         );
+      // three's DecalGeometry clipping, ported over the engine's geometry classes.
+      if (source === "three/addons/geometries/DecalGeometry.js")
+        return browserModule("web-engine-decal-geometry.js", "addons/decal-geometry.ts");
       // Upstream's HDRLoader extends DataTextureLoader, which the engine does not bind; this one
       // decodes with the same RGBE parser into an engine DataTexture.
       if (source === "three/addons/loaders/HDRLoader.js")

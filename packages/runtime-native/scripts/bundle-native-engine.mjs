@@ -172,6 +172,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     "three/addons/loaders/HDRLoader.js": resolve(player, "core-hdr.mjs"),
     "three-mesh-bvh": resolve(threeNative, "src/addons/mesh-bvh.ts"),
     "three/addons/utils/BufferGeometryUtils.js": resolve(threeNative, "src/addons/buffer-geometry-utils.ts"),
+    "three/addons/geometries/DecalGeometry.js": resolve(threeNative, "src/addons/decal-geometry.ts"),
   };
   const exports = new Map(await Promise.all(Object.values(modules).map(async (facade) => {
     // A facade's own exports; `three` inside one (an addon over the engine) is the facade above.
@@ -208,7 +209,8 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
       });
       builder.onLoad({ filter: /.*/, namespace: "native-import" }, async (args) => {
         const { specifier, names } = unresolved.get(args.path);
-        const facade = modules[specifier];
+        // three ships each addon under `addons/` and under its older `examples/jsm/` path.
+        const facade = modules[specifier.replace(/^three\/examples\/jsm\//, "three/addons/")];
         // Missing symbols are temporary compiler inputs only. Their unique diagnostics survive
         // precisely when a live import uses them; the artifact is refused below, never emitted.
         const known = exports.get(facade) ?? [];
