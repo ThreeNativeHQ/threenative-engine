@@ -64,7 +64,7 @@ default X11 run is proved again. The frame-op stream encodes `writeBuffer` in JS
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: A native desktop game run with `SDL_VIDEODRIVER=wayland` under a headless Wayland compositor presents 300 non-blank frames. proof: `weston --backend=headless` + `SDL_VIDEODRIVER=wayland pnpm native:verify:desktop` — Evidence: pending.
-- [ ] AC-2 [local]: The default X11 run still presents 300 non-blank frames. proof: `pnpm native:verify:desktop` — Evidence: pending.
+- [x] AC-2 [local]: The default X11 run still presents 300 non-blank frames. proof: `pnpm native:verify:desktop` — PASS 2026-10-15 on the rebuilt candidate, observed SDL driver `x11`, 300 nonblank frames; complete audio/stability/physics/native-contract/loading/UI/bundle command exits 0.
 - [ ] AC-3 [local]: `device.queue.writeBuffer(buffer, 0, new Uint8Array(0))` returns without an exception on native, as on web. proof: new case in `pnpm parity` (`packages/runtime-native/conformance/registry.json`), RED then GREEN on both the direct binding and frame-op stream paths — Evidence: pending.
 - [ ] AC-4 [shared]: The dispatched `native-platforms.yml` linux-arm64 leg is GREEN with Canvas 2D enabled, arm64 Skia, quiche `0.24.6-4`, SWC `swc-41` and libwebp aarch64. proof: `gh workflow run native-platforms.yml --ref <candidate-branch>` followed by `gh run view <run-id>` confirming the linux-arm64 job and dependency/build logs on the candidate SHA — Evidence: pending.
 
@@ -95,14 +95,14 @@ default X11 run is proved again. The frame-op stream encodes `writeBuffer` in JS
 ## Execution Phases
 
 #### Phase 1: Wayland surface
-**Status:** PARTIAL — candidate CLI compiles and two default-X11 core captures pass; actual Wayland selects the correct driver but the current Dawn library rejects its descriptor. Full candidate commands and Wayland presentation remain unproved.
+**Status:** PARTIAL — the normal candidate build and complete default-X11 verification pass; actual Wayland selects the correct driver but the current Dawn library rejects its descriptor. Wayland presentation and the visual judge remain pending.
 **Files:** `include/mystral/webgpu/context.h`, `src/webgpu/context.cpp`, `include/mystral/webgpu_compat.h`, `src/runtime.cpp`, `src/platform/window.cpp`, `src/cli/main.cpp`, `scripts/verify-desktop-core.mjs`, `scripts/xvfb.sh`, `__tests__/linux-video-driver-routing.spec.ts` (all under `packages/runtime-native/`)
-**Implementation:** Port `6eeb33b` and `4e01a6e` onto the fork's versions of these files. Delete `createSurfaceWithDisplay`. Keep the X11 default hints.
-- [ ] Native desktop build compiles with the Wayland descriptor. proof: `pnpm native:build`
-- [ ] AC-2 default X11 run. proof: `pnpm native:verify:desktop`
+**Implementation:** Port the surface behavior from `6eeb33b` and `4e01a6e` through the existing `createSurfaceWithDisplay` platform discriminator. Keep X11 as the default and preserve Dawn as the Linux x64 backend.
+- [x] Native desktop build compiles with the Wayland descriptor. proof: `pnpm native:build` — PASS 2026-10-15, 384 targets, actual CLI and tools linked.
+- [x] AC-2 default X11 run. proof: `pnpm native:verify:desktop` — PASS 2026-10-15, complete command exits 0; two preceding same-pose core captures also pass 300/nonblank.
 - [ ] AC-1 Wayland run. proof: `weston --backend=headless` + `SDL_VIDEODRIVER=wayland pnpm native:verify:desktop`
 
-Candidate evidence (2026-10-14): `cmake --build packages/runtime-native/build/tn-linux --target mystral -j2` exits 0. Two `verify-desktop-core.mjs` runs report observed driver `x11`, 300 frames and non-blank 1280×720 captures (`artifacts/prd614-x11-after-{1,2}.png`). First explicit legacy-env Wayland run logs `SDL video driver: wayland` and `Creating Wayland surface`, then fails before frames: Dawn reports `Unsupported sType (SurfaceSourceWaylandSurface)` and zero surface formats (`artifacts/prd614-wayland-first-failure-runtime.log`). No unchanged retry or passing Wayland claim. The signed user-space Weston compositor passed socket/shm/EGL smoke; its owned process was stopped after this run. The existing wgpu profile and compatible Dawn artifacts are being inspected before another presentation attempt.
+Candidate evidence (2026-10-15): the normal build and complete X11 command pass on the rebuilt CLI. Two same-pose core captures report observed driver `x11`, 300 frames and nonblank 1280×720 images (`artifacts/prd614-x11-after-{1,2}.png`). First explicit legacy-env Wayland run reaches driver `wayland`, then Dawn rejects `SurfaceSourceWaylandSurface` with zero formats (`artifacts/prd614-wayland-first-failure-runtime.log`); no unchanged retry. The signed user-space Weston passed socket/shm/EGL smoke and its owned process was stopped. The pinned Dawn archive lacks the Wayland Vulkan loader entry. Its [exact-commit replacement build](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/38695725341) enables Wayland and X11 in an isolated, digest-pinned upstream-compatible container, preserving the backend. Actual replacement-library presentation remains unverified.
 
 #### Phase 2: Zero-length `writeBuffer`
 **Status:** PARTIAL — direct binding fixed and focused native RED→GREEN proved; decoder already correct; required parity RED→GREEN remains incomplete.
