@@ -1567,6 +1567,32 @@ void jsMath() {
 
 // A transform member is a view over the object's own memory (PRD-573 v1.11 step 4b): component writes
 // cross nothing, the next updateMatrix sees them, and the matrix it writes is the one three composes.
+// three's Object3D.raycast(raycaster, intersects): core's picking calls it for every object it has no
+// tree for (a Group, a skinned mesh). A Mesh pushes its own hits, a Group none, and nothing recurses.
+void objectRaycast() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string result = run(rt, adapter, R"JS(
+      (() => {
+        let checks = 0; const assert = (v) => { checks++; if (!v) throw Error('Object3D.raycast differs at check ' + checks); };
+        const m = new MeshBasicMaterial(); m.side = 2;
+        const mesh = new Mesh(new BoxGeometry(), m);
+        const root = new Group(); root.add(mesh);
+        root.updateMatrixWorld(true);
+        const r = new Raycaster(new Vector3(0.2, -0.3, 5), new Vector3(0, 0, -1));
+        const into = [];
+        mesh.raycast(r, into);
+        assert(into.length === 2 && into[0].object === mesh);
+        const none = [];
+        root.raycast(r, none);
+        assert(none.length === 0);
+        return 'PASS Object3D.raycast';
+      })()
+    )JS");
+    CHECK(result == "PASS Object3D.raycast");
+}
+
 void jsMathViews() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
@@ -2043,7 +2069,7 @@ void templateRanges() {
 TN_TEST_MAIN({"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
-             {"scene", scene}, {"raycaster_lod", raycasterLOD},
+             {"scene", scene}, {"raycaster_lod", raycasterLOD}, {"object_raycast", objectRaycast},
              {"catalog_coverage", catalogCoverage},
              {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
              {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle},
