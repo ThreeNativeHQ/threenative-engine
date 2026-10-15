@@ -1,9 +1,17 @@
+import { readFileSync } from "node:fs";
 import type { ICtx } from "@threenative/core";
-import type { IWorldCellsLoadOptions, IWorldPackage } from "@threenative/core/world";
+import type {
+  ILoadTerrainSplatOptions,
+  ITerrainSplatTable,
+  IWorldCellsLoadOptions,
+  IWorldPackage,
+} from "@threenative/core/world";
 import { type IPhysicsContext, rapier } from "@threenative/physics";
 import { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, Texture } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PropColliders, addForest } from "../starter/forest/world.js";
+
+vi.mock("@threenative/terrain/starter", () => import("../src/starter.js"));
 
 const loads = vi.hoisted(() => ({ surface: vi.fn(), sky: vi.fn(), world: vi.fn() }));
 vi.mock("@threenative/core/world", async (original) => {
@@ -121,6 +129,57 @@ afterEach(() => {
 });
 
 describe("forest runtime", () => {
+  it("passes its own source table to the ground instead of baked appearance", async () => {
+    const { ctx } = await context();
+    const source = JSON.parse(
+      readFileSync(new URL(`../starter/${"forest"}/surface.json`, import.meta.url), "utf8"),
+    ) as ITerrainSplatTable;
+    const baked = {
+      ...source,
+      base: { ...source.base, tint: [0.01, 0.02, 0.03] },
+      splat: {
+        size: 1,
+        planes: 1,
+        masks: Object.fromEntries(source.layers.map((layer) => [layer.mask, [0, "r"]])),
+      },
+    };
+    const fetchOriginal = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: string) => {
+      if (input.endsWith("world.json"))
+        return new Response(
+          JSON.stringify({
+            ...manifest,
+            terrain: {
+              ...manifest.terrain,
+              layers: { table: "terrain-table.json", splat: "splat.rgba8" },
+            },
+          }),
+        );
+      if (input.endsWith("terrain-table.json")) return new Response(JSON.stringify(baked));
+      if (input.endsWith("splat.rgba8")) return new Response(new Uint8Array(4));
+      return fetchOriginal(input);
+    });
+    ctx.assets.texture = async () => new Texture();
+    const actual =
+      await vi.importActual<typeof import("@threenative/core/world")>("@threenative/core/world");
+    const seen: Array<readonly [number, number, number]> = [];
+    loads.surface.mockImplementationOnce((options: ILoadTerrainSplatOptions) =>
+      actual.loadTerrainSplat({
+        ...options,
+        layerSample: ({ layer }) => {
+          seen.push(layer.tint);
+          return { color: vec3(0.5) };
+        },
+      }),
+    );
+    const result = await addForest(ctx, new Object3D());
+    expect(loads.surface.mock.calls[0]?.[0].table).toEqual(source);
+    expect(seen[0]).toEqual(source.base.tint);
+    expect(seen[0]).not.toEqual(baked.base.tint);
+    expect(loads.world.mock.calls[0]?.[0].surface).toBe(await loads.surface.mock.results[0]?.value);
+    result.water.dispose();
+  });
+
   it("streams prop colliders when only the follow object's parent moves", async () => {
     const { ctx, plugin } = await context();
     const parent = new Object3D();
@@ -210,6 +269,8 @@ describe("forest runtime", () => {
     expect(data.manifest).toEqual(manifest);
     expect(new Float32Array(data.placements)).toEqual(records);
     expect(data.heightmap).toEqual(heightmap);
+    expect(forest.placementIds).toBeUndefined();
+    expect(requests.some((path) => path.includes("placement-ids"))).toBe(false);
     expect(forest.ground.shape.descriptor.kind).toBe("heightfield");
     expect(forest.ground.shape.descriptor.heights).toHaveLength(9);
     expect(forest.ground.shape.descriptor.heights?.[4]).toBeCloseTo((8000 / 65535) * 10);

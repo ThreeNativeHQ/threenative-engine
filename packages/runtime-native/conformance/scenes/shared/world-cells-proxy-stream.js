@@ -19,7 +19,42 @@ export function assertWorldCellsProxyProof(observations, validationError) {
   assertCondition(validationError === null, "GPU validation observation missing or failed");
 }
 
-export async function startScene(canvas, dimensions) {
+export function createWorldCellsProxyData() {
+  const cells = [0, 2].map((x, index) => ({
+    x,
+    z: 0,
+    runs: [{ asset: "box", offset: index, count: 1 }],
+    proxy: {
+      glb: `proxy-${x}.glb`,
+      scope: "cell",
+      triangles: 2,
+      materialGroups: 1,
+      error: 0.1,
+      bounds: { min: [x * 32 + 7, 0, 8], max: [x * 32 + 9, 2, 8] },
+    },
+  }));
+  return {
+    manifest: {
+      version: 1,
+      extent: { minX: 0, minZ: 0, sizeX: 96, sizeZ: 32 },
+      cellSize: 32,
+      terrain: {
+        heightmap: "height.u16",
+        columns: 4,
+        rows: 2,
+        spacing: 32,
+        heightMin: 0,
+        heightMax: 2,
+      },
+      placements: "placements.bin",
+      assets: { box: { glb: "box.glb", lods: [], bounds: { min: [-1, -1, -1], max: [1, 1, 1] } } },
+      cells,
+    },
+    placements: new Float32Array([8, 1, 8, 0, 0, 0, 1, 1, 72, 1, 8, 0, 0, 0, 1, 1]).buffer,
+  };
+}
+
+export async function startScene(canvas, dimensions, editedData) {
   const renderer = await createRenderer({
     canvas, antialias: false, preferWebGPU: true, pixelRatio: 1, pipelineCensus: false,
   });
@@ -33,31 +68,13 @@ export async function startScene(canvas, dimensions) {
   scene.background = new THREE.Color(0x18202f);
   const camera = new THREE.PerspectiveCamera(60, dimensions.width / dimensions.height, 0.1, 1000);
   const follow = { position: { x: 8, z: 8 } };
-  const cells = [0, 2].map((x, index) => ({
-    x, z: 0, runs: [{ asset: "box", offset: index, count: 1 }],
-    proxy: {
-      glb: `proxy-${x}.glb`, scope: "cell", triangles: 2, materialGroups: 1, error: 0.1,
-      bounds: { min: [x * 32 + 7, 0, 8], max: [x * 32 + 9, 2, 8] },
-    },
-  }));
   const world = await WorldCells.load({
     url: "/world/world.json", follow, ring: 0,
     surface: new THREE.MeshBasicMaterial(),
     // HLOD reserves up to 8 MiB for decoded source and fixed proxy copies before IO.
     budgets: { bytes: 10000000, instances: 10, residentCells: 2 },
     terrain: false, gpuScene: false, bundles: false, adaptiveLod: false,
-    data: {
-      manifest: {
-        version: 1, extent: { minX: 0, minZ: 0, sizeX: 96, sizeZ: 32 }, cellSize: 32,
-        terrain: {
-          heightmap: "height.u16", columns: 4, rows: 2, spacing: 32, heightMin: 0, heightMax: 2,
-        },
-        placements: "placements.bin",
-        assets: { box: { glb: "box.glb", lods: [], bounds: { min: [-1, -1, -1], max: [1, 1, 1] } } },
-        cells,
-      },
-      placements: new Float32Array([8, 1, 8, 0, 0, 0, 1, 1, 72, 1, 8, 0, 0, 0, 1, 1]).buffer,
-    },
+    data: editedData ?? createWorldCellsProxyData(),
     loadModel: async (url) => {
       const proxy = /proxy-(0|2)\.glb$/u.exec(url);
       const root = new THREE.Group();
@@ -71,7 +88,7 @@ export async function startScene(canvas, dimensions) {
   });
   scene.add(world);
   const observations = [];
-  for (const x of [8, 72]) {
+  for (const [visit, x] of (editedData ? [8, 72, 8] : [8, 72]).entries()) {
     follow.position.x = x;
     camera.position.set(x, 2, 308);
     camera.lookAt(x, 1, 8);
@@ -83,13 +100,14 @@ export async function startScene(canvas, dimensions) {
       assertSubmittedWorkPromise(completion, "world-cell-render");
       await completion;
       const stats = world.stats();
-      if (stats.residentKeys.includes(`${(x - 8) / 32}:0`) && stats.hlod.active > 0) {
+      if (stats.residentKeys.includes(`${(x - 8) / 32}:0`) && stats.instances > 0 &&
+        (editedData && x === 8 ? stats.loadedCells > 0 : stats.hlod.active > 0)) {
         observations.push(stats);
         break;
       }
       await new Promise(requestAnimationFrame);
     }
-    assertCondition(observations.length === (x === 8 ? 1 : 2), "proxy stream timed out");
+    assertCondition(observations.length === visit + 1, "proxy stream timed out");
     camera.position.set(x, 2, 15);
     camera.lookAt(x, 1, 8);
     camera.updateMatrixWorld(true);
@@ -99,17 +117,31 @@ export async function startScene(canvas, dimensions) {
     const completion = device.queue.onSubmittedWorkDone();
     assertSubmittedWorkPromise(completion, "near-detail-render");
     await completion;
+    if (editedData) {
+      const positions = [];
+      world.updateMatrixWorld(true);
+      world.traverseVisible((object) => {
+        if (!object.isInstancedMesh || !object.layers.test(camera.layers)) return;
+        const matrix = new THREE.Matrix4();
+        for (let index = 0; index < object.count; index++) {
+          object.getMatrixAt(index, matrix);
+          matrix.premultiply(object.matrixWorld);
+          positions.push(new THREE.Vector3().setFromMatrixPosition(matrix).toArray());
+        }
+      });
+      observations[visit].positions = positions;
+    }
   }
   const validationError = await device.popErrorScope();
-  assertWorldCellsProxyProof(observations, validationError);
+  if (!editedData) assertWorldCellsProxyProof(observations, validationError);
   function frame() {
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
-  globalThis.__TN_CONFORMANCE = {
+  if (!editedData) globalThis.__TN_CONFORMANCE = {
     ok: true, type: "world-cells-proxy-stream",
     detail: { streamedCells: 2, proxySwaps: 2, nearRestores: 2, validationErrors: 0 },
   };
-  return { renderer, scene, camera, subject: { world } };
+  return { renderer, scene, camera, subject: { world }, observations, validationError };
 }

@@ -19,6 +19,16 @@ import {
 } from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 
+import {
+  type IRemovedPlacement,
+  type IWorldPlacementEdits,
+  editWorldPlacements,
+  validatePlacementIds,
+} from "./core/placement-edits.js";
+
+export { editWorldPlacements } from "./core/placement-edits.js";
+export type { IRemovedPlacement, IWorldPlacementEdits } from "./core/placement-edits.js";
+
 export type StarterContext = ICtx<Record<string, unknown>, IPhysicsContext>;
 export type StarterColliders = Readonly<
   Record<string, { sphere: number } | { capsule: readonly [number, number] } | null>
@@ -29,6 +39,12 @@ export interface IStarterWorld {
   readonly colliders: PropColliders;
   readonly field: Heightfield;
   readonly placements: Float32Array;
+  readonly manifest: IWorldPackage;
+  readonly placementIds?: readonly string[];
+  readonly editReport: {
+    readonly unmatched: readonly string[];
+    readonly removed: readonly IRemovedPlacement[];
+  };
   readonly extent: IWorldPackage["extent"];
 }
 export interface IStarterWorldSpec<Extra extends { dispose(): void }> {
@@ -36,6 +52,13 @@ export interface IStarterWorldSpec<Extra extends { dispose(): void }> {
   readonly url: string;
   readonly colliders: StarterColliders;
   readonly colliderReach: number;
+  /**
+   * Apply startup placement edits before streaming, lighting and collision consume the data.
+   * @situation move, remove or add generated props from game source without rebaking
+   * @example edits: { remove: ["scree:candidate:7:41"] }
+   * @override grounding defaults on; `grounding: false` keeps the authored Y coordinate
+   */
+  readonly edits?: IWorldPlacementEdits;
   readonly loadSurface: (ctx: StarterContext, url: string) => Promise<Material>;
   readonly lighting: {
     readonly sky: string;
@@ -100,21 +123,42 @@ export async function addStarterWorld<Extra extends { dispose(): void } = { disp
   };
   try {
     assertCurrent();
-    const manifest = (await (
+    let manifest = (await (
       await fetchAsset(ctx, url, assertCurrent, spec.name)
     ).json()) as IWorldPackage;
     assertCurrent();
     const base = url.slice(0, url.lastIndexOf("/") + 1);
-    const records = await (
+    let records = await (
       await fetchAsset(ctx, base + manifest.placements, assertCurrent, spec.name)
     ).arrayBuffer();
     assertCurrent();
+    let placementIds: readonly string[] | undefined;
+    if (manifest.placementIds !== undefined) {
+      const ids: unknown = await (
+        await fetchAsset(ctx, base + manifest.placementIds, assertCurrent, spec.name)
+      ).json();
+      assertCurrent();
+      placementIds = validatePlacementIds(ids, records.byteLength / 32);
+    }
     const [heightmapUrl] = await ctx.assets.resolve(base + manifest.terrain.heightmap);
     assertCurrent();
     if (heightmapUrl === undefined)
       throw new Error(`${spec.name} world: its heightmap is not served.`);
     const heightmap = await loadWorldHeightmap(heightmapUrl);
     assertCurrent();
+    const field = starterField(manifest, heightmap);
+    let editReport: IStarterWorld["editReport"] = { unmatched: [], removed: [] };
+    if (spec.edits !== undefined) {
+      const edited = editWorldPlacements(
+        { manifest, placements: records, ids: placementIds },
+        spec.edits,
+        (x, z) => field.heightAt(x, z),
+      );
+      manifest = edited.manifest;
+      records = edited.placements;
+      placementIds = edited.ids;
+      editReport = { unmatched: edited.unmatched, removed: edited.removed };
+    }
     surface = await spec.loadSurface(ctx, url);
     assertCurrent();
     releaseLighting = await lightProps(ctx, url, manifest, assertCurrent, spec);
@@ -129,7 +173,6 @@ export async function addStarterWorld<Extra extends { dispose(): void } = { disp
     };
     world = await WorldCells.load(options);
     assertCurrent();
-    const field = starterField(manifest, heightmap);
     ground = groundCollider(ctx, manifest, field);
     if (spec.water) {
       const file = await (
@@ -153,7 +196,18 @@ export async function addStarterWorld<Extra extends { dispose(): void } = { disp
     if (ground.object !== undefined) ctx.add(ground.object);
     ctx.add(colliders);
     ctx.entities.add(`${spec.name.toLowerCase()}-world.${world.uuid}`, { dispose });
-    return { world, ground, colliders, field, placements: props, extent: manifest.extent, extra };
+    return {
+      world,
+      ground,
+      colliders,
+      field,
+      placements: props,
+      placementIds,
+      manifest,
+      editReport,
+      extent: manifest.extent,
+      extra,
+    };
   } catch (error) {
     dispose();
     throw error;

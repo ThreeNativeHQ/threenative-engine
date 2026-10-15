@@ -1,12 +1,16 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import {
   type CanvasTexture,
-  type Mesh,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
   type MeshBasicMaterial,
   Object3D,
   OrthographicCamera,
   PerspectiveCamera,
+  PointLight,
   Scene,
   Vector3,
 } from "three";
@@ -30,7 +34,7 @@ const GATE_NAMES = [
 ] as const;
 
 /** Pull named declarations straight out of the production `enter()` so the tests drive real code. */
-function gameDeclarations(names: readonly string[]): string {
+function gameDeclarations(names: readonly string[], assignments = false): string {
   const source = ts.createSourceFile(
     "game.ts",
     readFileSync(GAME_URL, "utf8"),
@@ -43,6 +47,14 @@ function gameDeclarations(names: readonly string[]): string {
     if (ts.isVariableDeclaration(node)) {
       const name = node.name.getText(source);
       if (wanted.has(name)) found.set(name, node.parent.parent.getText(source));
+    } else if (
+      assignments &&
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left) &&
+      wanted.has(node.left.text)
+    ) {
+      found.set(node.left.text, `let ${node.getText(source)};`);
     } else if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
       const name = node.name.getText(source);
       if (wanted.has(name)) found.set(name, node.getText(source));
@@ -126,7 +138,7 @@ function host(ready: Promise<void>) {
 it.each(["attached", "cancelled", "released"] as const)(
   "defers hidden world draws until prepared streams attach: %s",
   async (outcome) => {
-    const declarations = gameDeclarations(["buildProps"]);
+    const declarations = gameDeclarations(["buildProps"], true);
     const controllerHost = host(new Promise<void>(() => undefined));
     controllerHost.canvasLayer.opaque = true;
     controllerHost.canvasLayer.renderWorldDuringStartup = false;
@@ -649,4 +661,367 @@ it.each(KIT_GATES)("%s keeps an empty spawn failure latched through late success
     loadingError: `${kit} spawn failed`,
     worldReady: 0,
   });
+});
+
+it("the edited alpine stand anchors on the moved ID rather than the nearest original boulder", () => {
+  const source = readFileSync(
+    new URL("../scripts/fixtures/kit-game/KitScene.ts", import.meta.url),
+    "utf8",
+  );
+  const declarations = source.slice(
+    source.indexOf("/** A 1.8"),
+    source.indexOf("function forestViews"),
+  );
+  const scope = {
+    exports: {},
+    Vector3,
+    KIT: "Alpine",
+    COLLIDERS: { boulder: { sphere: 0.9 } },
+    forestStand: undefined,
+    proofFarTarget: null,
+    composition: {
+      anchorId: "moved",
+      referencePlacements: [0, 0, 0, 0, 0, 0, 1, 1, 18, 0, 0, 0, 0, 0, 1, 1],
+    },
+    result: undefined as { anchor: { x: number } } | undefined,
+    kit: {
+      field: { heightAt: () => 0 },
+      extent: { minX: -100, minZ: -100, sizeX: 200, sizeZ: 200 },
+      placementIds: ["original", "moved"],
+      placements: new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 20, 0, 0, 0, 0, 0, 1, 1]),
+    },
+  };
+  const script = ts.transpile(`${declarations}\nglobalThis.result = chooseStand(globalThis.kit);`, {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.CommonJS,
+  });
+  runInNewContext(script, scope);
+  expect(scope.result?.anchor.x).toBe(20);
+  scope.kit.placementIds = ["original", "missing"];
+  expect(() => runInNewContext(script, { ...scope })).toThrow(/moved/);
+});
+
+it("alpine composition uses actual sidecar IDs and leaves every package byte unchanged", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url).href;
+  const { alpineComposition, packageHashes, compositionSource } = await import(verifierUrl);
+  const directory = mkdtempSync(join(tmpdir(), "prd614-arm-test-"));
+  try {
+    const x = -200.389511;
+    const z = -17.621393;
+    const records = new Float32Array([
+      x,
+      20,
+      z,
+      0,
+      0,
+      0,
+      1,
+      1,
+      x + 8,
+      20,
+      z,
+      0,
+      0,
+      0,
+      1,
+      1,
+      x + 40,
+      20,
+      z,
+      0,
+      0,
+      0,
+      1,
+      1,
+    ]);
+    writeFileSync(
+      join(directory, "world.json"),
+      JSON.stringify({ placements: "placements.bin", placementIds: "placement-ids.json" }),
+    );
+    writeFileSync(join(directory, "placements.bin"), new Uint8Array(records.buffer));
+    writeFileSync(
+      join(directory, "placement-ids.json"),
+      JSON.stringify(["scree:actual:31", "scree:actual:92", "scree:actual:105"]),
+    );
+    mkdirSync(join(directory, "models"));
+    writeFileSync(join(directory, "models/boulder.glb"), "model bytes also count");
+    const before = packageHashes(directory);
+    const arm = alpineComposition(directory);
+    expect(arm.anchorId).toBe("scree:actual:31");
+    expect(arm.promotedId).toBe("scree:actual:92");
+    expect(arm.proofFarTarget).toEqual(Array.from(records.subarray(8, 11)));
+    expect(arm.proofFarTarget.filter((_: number, i: number) => i !== 1)).not.toEqual(
+      arm.promotedAt,
+    );
+    // Typecheck both generated modules against the installed terrain types without writing a game.
+    for (const composition of [undefined, arm]) {
+      const filename = new URL("../scripts/virtual-composition.ts", import.meta.url).pathname;
+      const generated = compositionSource(composition, arm.proofFarTarget);
+      const options = {
+        strict: true,
+        noEmit: true,
+        skipLibCheck: true,
+        types: [],
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.NodeNext,
+        moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      };
+      const host = ts.createCompilerHost(options);
+      const getSourceFile = host.getSourceFile.bind(host);
+      host.getSourceFile = (path, version, onError, fresh) =>
+        path === filename
+          ? ts.createSourceFile(path, generated, version, true)
+          : getSourceFile(path, version, onError, fresh);
+      const program = ts.createProgram([filename], options, host);
+      expect(
+        ts
+          .getPreEmitDiagnostics(program)
+          .map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")),
+      ).toEqual([]);
+    }
+    expect(arm.clearedIds).toEqual(["scree:actual:105"]);
+    expect(arm.edits.overrides[arm.anchorId].position[0]).toBeCloseTo(x + 2);
+    expect(arm.edits.add[0].id).toBe("game:alpine-added-boulder");
+    expect(packageHashes(directory)).toEqual(before);
+    writeFileSync(join(directory, "models/boulder.glb"), "changed nested bytes");
+    expect(packageHashes(directory)).not.toEqual(before);
+    writeFileSync(join(directory, "world.json"), JSON.stringify({ placements: "placements.bin" }));
+    expect(() => alpineComposition(directory)).toThrow(/sidecar/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+it("alpine composition observes live meshes, light, portable body IDs and far instance absence", () => {
+  const source = ts.createSourceFile(
+    "KitScene.ts",
+    readFileSync(new URL("../scripts/fixtures/kit-game/KitScene.ts", import.meta.url), "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  let method = "";
+  function visit(node: ts.Node): void {
+    if (ts.isMethodDeclaration(node) && node.name.getText(source) === "#observeComposition")
+      method = node.getText(source);
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  expect(method).not.toBe("");
+  const scene = new Scene();
+  const object = new Object3D();
+  const light = new PointLight(0xff9b47, 90, 12, 2);
+  object.add(new Mesh(), light);
+  object.position.set(5, 0, -1);
+  scene.add(object);
+  const moved = { position: [2, 0, 2], quaternion: [0, 0, 0, 1], scale: [0.9, 0.9, 0.9] };
+  const added = { position: [-5, 0, -1], quaternion: [0, 0, 0, 1], scale: [1.4, 1.4, 1.4] };
+  const state: Record<string, number> = {};
+  let colliderPresent = true;
+  const ctx = {
+    scene,
+    state: { set: (patch: Record<string, number>) => Object.assign(state, patch) },
+    physics: {
+      directSpaceState: { intersectRay: () => (colliderPresent ? { body: { id: 7 } } : undefined) },
+    },
+  };
+  const kit = {
+    field: { heightAt: () => 0 },
+    placementIds: ["moved", "game:alpine-added-boulder"],
+    placements: new Float32Array([2, 0, 2, 0, 0, 0, 1, 0.9, -5, 0, -1, 0, 0, 0, 1, 1.4]),
+    editReport: { removed: [{ id: "promoted", position: [30, 0, 0] }] },
+  };
+  const scope = {
+    exports: {},
+    Matrix4,
+    Vector3,
+    kit,
+    object,
+    light,
+    composition: {
+      anchorId: "moved",
+      promotedId: "promoted",
+      clearedIds: ["cleared"],
+      clear: { center: [0, 0], radius: 60 },
+      edits: { overrides: { moved }, add: [added] },
+    },
+    probe: undefined as { observe(ctx: unknown): void } | undefined,
+  };
+  const probe = `class Probe { #kit = globalThis.kit; #promoted = globalThis.object; #promotedLight = globalThis.light; #fixedRigidBody = {body:{id:7}}; #view = "overview"; ${method} observe(ctx) { this.#observeComposition(ctx); } } globalThis.probe = new Probe();`;
+  runInNewContext(
+    ts.transpile(probe, { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS }),
+    scope,
+  );
+  scope.probe?.observe(ctx);
+  expect(state).toEqual({
+    movedBoulder: 1,
+    clearedCircle: 1,
+    addedBoulder: 1,
+    promotedObject: 1,
+    promotedLight: 1,
+    promotedCollider: 1,
+    removedFar: 1,
+  });
+  colliderPresent = false;
+  light.removeFromParent();
+  const ghost = new InstancedMesh(new Mesh().geometry, new Mesh().material, 1);
+  ghost.setMatrixAt(0, new Matrix4().makeTranslation(30, 0, 0));
+  scene.add(ghost);
+  scene.updateMatrixWorld(true);
+  scope.probe?.observe(ctx);
+  expect(state.promotedCollider).toBe(0);
+  expect(state.promotedLight).toBe(0);
+  expect(state.removedFar).toBe(0);
+  kit.placementIds.push("cleared");
+  scope.probe?.observe(ctx);
+  expect(state.clearedCircle).toBe(0);
+});
+
+it.each(["missing", "malformed", "wrong path", "wrong kit", "valid"])(
+  "starter-kit CLI requires retained scaffold ownership: %s",
+  async (marker) => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, existsSync } =
+      await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url);
+    const { packageHashes } = await import(verifierUrl.href);
+    const directory = mkdtempSync(join(tmpdir(), "prd614-ownership-test-"));
+    try {
+      for (const path of ["src/entities", "playtests", "src/terrain", "assets/terrain/alpine"])
+        mkdirSync(join(directory, path), { recursive: true });
+      for (const path of ["src/entities/keep.ts", "playtests/keep.json", "src/game.ts"])
+        writeFileSync(join(directory, path), `sentinel: ${path}`);
+      if (marker !== "missing")
+        writeFileSync(
+          join(directory, ".threenative-kit-verifier.json"),
+          marker === "malformed"
+            ? "{"
+            : JSON.stringify({
+                game: marker === "wrong path" ? join(directory, "other") : realpathSync(directory),
+                kit: marker === "wrong kit" ? "forest" : "alpine",
+              }),
+        );
+      const before = packageHashes(directory);
+      const result = spawnSync(process.execPath, [fileURLToPath(verifierUrl)], {
+        encoding: "utf8",
+        timeout: 10_000,
+        env: {
+          ...process.env,
+          KIT: "alpine",
+          KIT_ARM: "default",
+          KIT_GAME: directory,
+          KIT_BEFORE: "0",
+        },
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status).not.toBe(0);
+      if (marker === "valid") {
+        // Acceptance reaches source replacement, then stops at the intentionally absent world source.
+        expect(result.stderr).toContain("world.ts");
+        expect(result.stderr).not.toContain("KIT_GAME ownership refused");
+        expect(existsSync(join(directory, "src/entities"))).toBe(false);
+        expect(readFileSync(join(directory, "src/game.ts"), "utf8")).not.toBe(
+          "sentinel: src/game.ts",
+        );
+      } else {
+        expect(result.stderr).toContain("KIT_GAME ownership refused");
+        expect(packageHashes(directory)).toEqual(before);
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+it("composition far proof shares the original target without default composition effects", async () => {
+  const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url).href;
+  const { compositionSource } = await import(verifierUrl);
+  const target = [31, 22, -47];
+  for (const composition of [
+    undefined,
+    { proofFarTarget: target, promotedAt: [5, -1], edits: {} },
+  ]) {
+    const scope = { exports: {} as Record<string, unknown> };
+    runInNewContext(
+      ts.transpile(compositionSource(composition, target), {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.CommonJS,
+      }),
+      scope,
+    );
+    expect(scope.exports.proofFarTarget).toEqual(target);
+    expect(scope.exports.composition).toEqual(composition ?? null);
+    expect(scope.exports.edits).toEqual(composition?.edits);
+  }
+  expect(compositionSource(undefined)).toContain("= null");
+});
+
+it("composition far pose centers the original record at 90 metres without changing fixed views", () => {
+  const source = ts.createSourceFile(
+    "KitScene.ts",
+    readFileSync(new URL("../scripts/fixtures/kit-game/KitScene.ts", import.meta.url), "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const declaration = source.statements.find(
+    (node) => ts.isFunctionDeclaration(node) && node.name?.text === "compositionFarView",
+  );
+  expect(declaration).toBeDefined();
+  const scope = {
+    exports: {} as { compositionFarView(target: number[]): { at: Vector3; look: Vector3 } },
+    Vector3,
+  };
+  runInNewContext(
+    ts.transpile(declaration?.getText(source) ?? "", {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.CommonJS,
+    }),
+    scope,
+  );
+  const view = scope.exports.compositionFarView([31, 22, -47]);
+  expect(view.look.toArray()).toEqual([31, 23, -47]);
+  expect(view.at.distanceTo(view.look)).toBeCloseTo(90);
+  expect(view.at.y - view.look.y).toBe(54);
+});
+
+it("composition far scenario appends Digit5 and all view metrics while retaining existing gates", async () => {
+  const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url).href;
+  const { appendCompositionFarScenario } = await import(verifierUrl);
+  const original = JSON.parse(
+    readFileSync(
+      new URL("../scripts/fixtures/kit-game/playtests/alpine.playtest.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const scenario = structuredClone(original);
+  appendCompositionFarScenario(scenario);
+  expect(scenario.steps.slice(0, original.steps.length)).toEqual(original.steps);
+  expect(scenario.steps.slice(original.steps.length)).toEqual([
+    { kind: "input", label: "composition-far-view", press: "Digit5", holdTicks: 2, release: true },
+    {
+      kind: "wait",
+      label: "composition-far",
+      waitTicks: 150,
+      release: true,
+      screenshot: "composition-far",
+    },
+  ]);
+  expect(scenario.assert.resources.slice(0, original.assert.resources.length)).toEqual(
+    original.assert.resources,
+  );
+  expect(
+    scenario.assert.resources
+      .slice(original.assert.resources.length)
+      .map((row: { path: string; gte: number }) => [row.path, row.gte]),
+  ).toEqual([
+    ["viewGpuP50.composition-far", 0],
+    ["viewGpuP95.composition-far", 0],
+    ["viewFrameP95.composition-far", 0],
+  ]);
+  expect(scenario.assert.performance).toEqual(original.assert.performance);
+  expect(scenario.assert.performance.maxPhaseMsP95.render).toBe(40);
 });

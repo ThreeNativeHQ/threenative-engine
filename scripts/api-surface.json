@@ -453,6 +453,7 @@
         "@threenative/terrain/kit#bakeKit": "export async function bakeKit( url: string, { … }",
         "@threenative/terrain/kit#starterAssetsDir": "export async function starterAssetsDir(): Promise<string> { … }",
         "@threenative/terrain/starter#addStarterWorld": "export async function addStarterWorld<Extra extends { … }",
+        "@threenative/terrain/starter#editWorldPlacements": "export function editWorldPlacements( data: { … }",
         "@threenative/terrain/starter#PropColliders": "export class PropColliders extends Object3D implements IComputeDriven { … }",
         "@threenative/terrain/three#toGeometry": "export function toGeometry(mesh: IBakedMesh): BufferGeometry { … }",
         "@threenative/terrain#applyPlacementOverrides": "export function applyPlacementOverrides(state: ITerrainState, value: unknown): ITerrainState { … }",

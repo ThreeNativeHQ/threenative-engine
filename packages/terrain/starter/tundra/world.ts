@@ -1,5 +1,9 @@
 import type { ICtx } from "@threenative/core";
-import { type IWorldPackage, loadTerrainSplat } from "@threenative/core/world";
+import {
+  type ILoadTerrainSplatOptions,
+  type IWorldPackage,
+  loadTerrainSplat,
+} from "@threenative/core/world";
 import type { IPhysicsContext } from "@threenative/physics";
 import {
   type IStarterWorld,
@@ -14,6 +18,7 @@ import {
   type Object3D,
   type Texture,
 } from "three";
+import surface from "./surface.json" with { type: "json" };
 import { type ITundraWater, type ITundraWaterFile, addTundraWater } from "./water.js";
 /** Where the game's asset source holds the baked `world/` folder. */
 export const TUNDRA_URL = "terrain/tundra/world.json";
@@ -51,7 +56,12 @@ const spec: IStarterWorldSpec<{
   url: TUNDRA_URL,
   colliders: COLLIDERS,
   colliderReach: PROP_COLLIDER_REACH,
-  loadSurface: (ctx, url) => loadTerrainSplat({ assets: ctx.assets, url }),
+  loadSurface: (ctx, url) =>
+    loadTerrainSplat({
+      assets: ctx.assets,
+      url,
+      table: surface as unknown as ILoadTerrainSplatOptions["table"],
+    }),
   lighting: { sky: "sky.hdr", lods: false, dress: dressProp },
   streaming: {
     ring: 5,

@@ -104,6 +104,16 @@ function layersTable() {
   };
 }
 
+/** Game source intentionally changes the baked appearance while leaving its descriptors absent. */
+function gameTable(baked) {
+  return {
+    base: baked.base,
+    breakup: { ...baked.breakup, push: 0 },
+    macro: { ...baked.macro, min: 1, max: 1 },
+    layers: baked.layers,
+  };
+}
+
 /** world.json, the table and the mask bytes, served the way a game's own package is. */
 function packageAssets(table = layersTable()) {
   const files = new Map([
@@ -174,13 +184,12 @@ export function assertCallbackPixels(pixels) {
 }
 
 async function verifyCallbacks(renderer) {
-  const table = layersTable();
-  table.layers = table.layers.slice(0, 2);
-  table.breakup.push = 0;
-  table.macro.min = table.macro.max = 1;
+  const baked = layersTable();
+  baked.layers = baked.layers.slice(0, 2);
   const material = await loadTerrainSplat({
-    assets: packageAssets(table),
+    assets: packageAssets(baked),
     renderer: { raw: renderer },
+    table: gameTable(baked),
     url: "world.json",
     layerSample: ({ diffuse, normal, orm, index }) => {
       const uv = positionWorld.xz.div(2).add(0.0625);
@@ -242,10 +251,12 @@ export async function startScene(canvas, dimensions) {
     "terrain-splat-array",
     async ({ renderer, scene }) => {
       await verifyCallbacks(renderer);
+      const baked = layersTable();
       const material = await loadTerrainSplat({
-        assets: packageAssets(),
+        assets: packageAssets(baked),
         layerWeight: heightBlend,
         renderer: { raw: renderer },
+        table: gameTable(baked),
         url: "world.json",
       });
       const marker = String(material.userData.TN_TERRAIN_SPLAT);

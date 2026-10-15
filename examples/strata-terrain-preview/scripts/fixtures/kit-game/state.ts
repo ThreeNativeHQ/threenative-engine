@@ -1,5 +1,12 @@
 /** What the playtest reads out of the forest scene. Every number is measured, none is a default. */
 export type GameState = {
+  movedBoulder: number;
+  clearedCircle: number;
+  addedBoulder: number;
+  promotedObject: number;
+  promotedLight: number;
+  promotedCollider: number;
+  removedFar: number;
   loadingError: string;
   spawnCellsLoaded: number;
   spawnCellsRequired: number;
@@ -41,6 +48,13 @@ export type GameState = {
 
 /** -1 everywhere a number has not been measured yet, so a bound cannot pass on a default. */
 export const initialState: GameState = {
+  movedBoulder: -1,
+  clearedCircle: -1,
+  addedBoulder: -1,
+  promotedObject: -1,
+  promotedLight: -1,
+  promotedCollider: -1,
+  removedFar: -1,
   loadingError: "",
   spawnCellsLoaded: 0,
   spawnCellsRequired: 0,

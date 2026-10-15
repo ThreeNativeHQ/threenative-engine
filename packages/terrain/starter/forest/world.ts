@@ -1,5 +1,9 @@
 import type { ICtx } from "@threenative/core";
-import { type IWorldPackage, loadTerrainSplat } from "@threenative/core/world";
+import {
+  type ILoadTerrainSplatOptions,
+  type IWorldPackage,
+  loadTerrainSplat,
+} from "@threenative/core/world";
 import type { IPhysicsContext } from "@threenative/physics";
 import {
   type IStarterWorld,
@@ -18,6 +22,7 @@ import {
   type Texture,
   Vector3,
 } from "three";
+import surface from "./surface.json" with { type: "json" };
 import { type IForestWater, type IForestWaterFile, addForestWater } from "./water.js";
 /** Where the game's asset source holds the baked `world/` folder. */
 export const FOREST_URL = "terrain/forest/world.json";
@@ -53,7 +58,12 @@ const spec: IStarterWorldSpec<IForestWater> = {
   url: FOREST_URL,
   colliders: COLLIDERS,
   colliderReach: PROP_COLLIDER_REACH,
-  loadSurface: (ctx, url) => loadTerrainSplat({ assets: ctx.assets, url }),
+  loadSurface: (ctx, url) =>
+    loadTerrainSplat({
+      assets: ctx.assets,
+      url,
+      table: surface as unknown as ILoadTerrainSplatOptions["table"],
+    }),
   lighting: { sky: "sky.hdr", lods: true, dress: dressProp },
   streaming: {
     ring: 5,

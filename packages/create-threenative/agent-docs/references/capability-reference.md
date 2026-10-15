@@ -2990,7 +2990,7 @@ export async function applyTerrainSurface( root: Object3D, options: ILoadTerrain
 
 - **Use when:** apply the authored layered terrain surface after loading a cooked world GLB
 - **Constraints:** url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON
-- **Overrides:** every appearance input comes from the package table or loadTerrainSplat options
+- **Overrides:** `table` may replace `base`, `breakup`, `macro` and `layers`; baked `splat` and `textures` stay package-owned
 
 ```ts
 await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "world/world.glb" });
@@ -3068,7 +3068,7 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
 
 - **Use when:** terrain textured by splat masks exported from Blender with the world package · the game's terrain should match the DCC's terrain material without a second copy
 - **Constraints:** the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by `export_terrain_layers` in the `export_world.py` recipe · WebGPU allows 16 sampled textures per stage: same-size layers stack into one array texture per set, and `TN_TERRAIN_SPLAT samplers=<n>` reports what is left
-- **Overrides:** every value comes from the package's table; the returned material is the game's to adjust
+- **Overrides:** `table` may replace `base`, `breakup`, `macro` and `layers` from game source; baked `splat` and `textures` stay package-owned
 
 ```ts
 const surface = await loadTerrainSplat({ assets: ctx.assets, renderer: ctx.renderer, url: "world/world.json" });
@@ -5738,7 +5738,7 @@ const baked = bakeTerrain(new Terrain({ resolution: 129 }).evaluate(), { chunkCe
 
 ### `bakeWorldPackage`
 
-`function` — Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.
+`function` — Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, a placement ID sidecar and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.
 
 ```ts
 export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPackageOptions, ): IBakedWorldPackage { … }
@@ -6584,6 +6584,22 @@ export async function addStarterWorld<Extra extends { … }
 
 ```ts
 await addStarterWorld(ctx, follow, spec);
+```
+
+### `editWorldPlacements`
+
+`function` — Apply deterministic startup edits to the decoded placement data before a world is loaded.
+
+```ts
+export function editWorldPlacements( data: { … }
+```
+
+- **Use when:** change generated terrain composition from game source without rebaking the world
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** grounding defaults on, while `grounding: false` preserves the authored Y coordinate
+
+```ts
+const edited = editWorldPlacements(data, { remove: ["scree:candidate:7:41"] }, (x, z) => field.heightAt(x, z));
 ```
 
 ### `PropColliders`

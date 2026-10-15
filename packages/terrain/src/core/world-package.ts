@@ -41,6 +41,8 @@ export interface IWorldPackageManifest {
   };
   readonly assets: Readonly<Record<string, IWorldPackageAsset>>;
   readonly placements: string;
+  /** Optional package-relative JSON array of placement IDs in binary record order. */
+  readonly placementIds?: string;
   readonly cells: readonly {
     readonly x: number;
     readonly z: number;
@@ -65,6 +67,7 @@ export interface IBakeWorldPackageOptions {
   readonly names?: {
     readonly heightmap?: string;
     readonly placements?: string;
+    readonly placementIds?: string;
     readonly splat?: string;
   };
 }
@@ -72,7 +75,7 @@ export interface IBakeWorldPackageOptions {
 export interface IBakedWorldPackage {
   readonly manifest: IWorldPackageManifest;
   readonly splat: IWorldPackageSplat;
-  /** The three binary files, keyed by the manifest names that point at them. */
+  /** The baked package files, keyed by the manifest names that point at them. */
   readonly files: Readonly<Record<string, Uint8Array>>;
 }
 
@@ -133,7 +136,7 @@ function uniformScale(asset: string, id: string, scale: readonly [number, number
   return mean;
 }
 
-function writePlacementRecord(
+export function writePlacementRecord(
   out: Float32Array,
   offset: number,
   item: IPlacement,
@@ -179,23 +182,25 @@ function writePlacementRecord(
  * first seen would overlap them. Instances are therefore bucketed per cell and asset first, then
  * written cell by cell and asset by asset, which is the layout the Blender recipe emits too.
  */
-function placementCells(
-  state: ITerrainState,
+export function placementCells(
+  state: Pick<ITerrainState, "instances">,
   assets: Readonly<Record<string, IWorldPackageAsset>>,
   cellSize: number,
   extent: IWorldPackageManifest["extent"],
-): { bytes: Uint8Array; cells: ICell[] } {
+): { bytes: Uint8Array; cells: ICell[]; ids: string[] } {
   const cells = new Map<string, ICellAcc>();
-  const across = Math.max(1, Math.ceil(extent.sizeX / cellSize));
-  const cellOf = (value: number, min: number): number =>
-    Math.min(across - 1, Math.max(0, Math.floor((value - min) / cellSize)));
+  const cellOf = (value: number, min: number, size: number): number =>
+    Math.min(
+      Math.max(1, Math.ceil(size / cellSize)) - 1,
+      Math.max(0, Math.floor((value - min) / cellSize)),
+    );
   for (const item of state.instances) {
     if (assets[item.asset] === undefined)
       throw Error(
         `World package: placement '${item.id}' names asset '${item.asset}', which options.assets does not.`,
       );
-    const x = cellOf(item.position[0], extent.minX);
-    const z = cellOf(item.position[2], extent.minZ);
+    const x = cellOf(item.position[0], extent.minX, extent.sizeX);
+    const z = cellOf(item.position[2], extent.minZ, extent.sizeZ);
     const key = `${String(x)},${String(z)}`;
     let cell = cells.get(key);
     if (cell === undefined) {
@@ -210,6 +215,7 @@ function placementCells(
   const buffer = new ArrayBuffer(state.instances.length * RECORD_VALUES * 4);
   const records = new Float32Array(buffer);
   const ordered: ICell[] = [];
+  const ids: string[] = [];
   let written = 0;
   const byId = (left: [string, IPlacement[]], right: [string, IPlacement[]]): number =>
     left[0] < right[0] ? -1 : 1;
@@ -219,18 +225,19 @@ function placementCells(
       runs.push({ asset, count: items.length, offset: written });
       for (const item of items) {
         writePlacementRecord(records, written * RECORD_VALUES, item, extent);
+        ids.push(item.id);
         written += 1;
       }
     }
     ordered.push({ runs, x: cell.x, z: cell.z });
   }
-  return { bytes: new Uint8Array(buffer), cells: ordered };
+  return { bytes: new Uint8Array(buffer), cells: ordered, ids };
 }
 
 /**
  * Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16
- * heightmap, a splat mask array, a placement buffer of eight float32 per instance, and the square
- * cells that stream them. The encodings and row orders are the ones the Blender recipe
+ * heightmap, a splat mask array, a placement buffer of eight float32 per instance, a placement ID
+ * sidecar and the square cells that stream them. The encodings and row orders are the ones the Blender recipe
  * `export_world.py` writes, so one runtime streams both without a second reader.
  *
  * @requires npm i -D @threenative/terrain
@@ -252,6 +259,7 @@ export function bakeWorldPackage(
   const { assets, layers, names } = options;
   const heightmapName = names?.heightmap ?? "heightmap.u16";
   const placementsName = names?.placements ?? "placements.bin";
+  const placementIdsName = names?.placementIds ?? "placement-ids.json";
   const splatName = names?.splat ?? "splat.rgba";
   const extent = { minX: -size / 2, minZ: -size / 2, sizeX: size, sizeZ: size };
 
@@ -283,6 +291,7 @@ export function bakeWorldPackage(
     files: {
       [heightmapName]: heightmap,
       [placementsName]: placements.bytes,
+      [placementIdsName]: new TextEncoder().encode(`${JSON.stringify(placements.ids)}\n`),
       [splatName]: splatBytes(state, resolution),
     },
     manifest: {
@@ -291,6 +300,7 @@ export function bakeWorldPackage(
       cells: placements.cells,
       extent,
       placements: placementsName,
+      placementIds: placementIdsName,
       terrain: {
         columns: resolution,
         heightMax,

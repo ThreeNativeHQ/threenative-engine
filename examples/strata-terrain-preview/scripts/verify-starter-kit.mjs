@@ -9,6 +9,7 @@
 // playtest scenario walks a player into a prop in a real WebGPU browser.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   cpSync,
   existsSync,
@@ -16,20 +17,31 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Packed with the rest, installed by the agent step below rather than by the scaffolder. */
 const TERRAIN = "@threenative/terrain";
 const PORT = 5187;
 const REPO = join(import.meta.dirname, "../../..");
-const ARTIFACTS = join(import.meta.dirname, "../artifacts/playtest/starter-kit");
+const ARM = process.env.KIT_ARM ?? "default";
+assert(
+  ["default", "edited", "tint", "compare"].includes(ARM),
+  "KIT_ARM must be default, edited, tint or compare",
+);
+const ARTIFACTS =
+  process.env.KIT_ARTIFACTS ??
+  join(
+    import.meta.dirname,
+    `../artifacts/playtest/starter-kit${ARM === "default" ? "" : `-${ARM}`}`,
+  );
 const FIXTURES = join(import.meta.dirname, "fixtures/kit-game");
 
 /**
@@ -91,6 +103,12 @@ assert(
   `KIT must be one of ${Object.keys(KITS).join(", ")}; got '${KIT}'`,
 );
 const CONFIG = KITS[KIT];
+const COMPOSITION_FAR = process.env.KIT_COMPOSITION_FAR === "1";
+if (COMPOSITION_FAR) {
+  assert.equal(KIT, "alpine", "KIT_COMPOSITION_FAR requires the alpine kit");
+  CONFIG.views.push("composition-far");
+  CONFIG.captures.push("composition-far");
+}
 
 const say = (line) => process.stderr.write(`${line}\n`);
 
@@ -107,24 +125,6 @@ const run = (command, args, options = {}) => {
     );
   return result.stdout ?? "";
 };
-
-const minimal = JSON.parse(
-  readFileSync(join(REPO, "packages/create-threenative/templates/minimal/package.json"), "utf8"),
-);
-const dependencies = new Set(
-  Object.keys({
-    ...minimal.dependencies,
-    ...minimal.devDependencies,
-    ...minimal.optionalDependencies,
-  }),
-);
-const WORKSPACE_PACKAGES = JSON.parse(
-  run("pnpm", ["exec", "tsx", "scripts/workspace-packages.ts", "--json"]),
-);
-const GAME_PACKAGES = WORKSPACE_PACKAGES.filter(({ name }) => dependencies.has(name));
-const TERRAIN_PACKAGE = WORKSPACE_PACKAGES.find(({ name }) => name === TERRAIN);
-assert(GAME_PACKAGES.length > 0, "minimal template has no workspace packages to pack");
-assert(TERRAIN_PACKAGE, `workspace package is missing: ${TERRAIN}`);
 
 /** Total bytes of every file under a directory, or 0 when it does not exist. */
 function bytesUnder(directory) {
@@ -307,64 +307,230 @@ function edgeCandidates(fir, dry) {
   return candidates;
 }
 
-async function main() {
-  const temporary = mkdtempSync(join(tmpdir(), "threenative-kit-"));
-  say(`kit proof (${KIT}) in ${temporary}`);
-
-  // --- pack every package the game needs from this checkout's built output ------------------------
-  const packs = join(temporary, "packs");
-  mkdirSync(packs);
-  const archives = {};
-  for (const { name, directory } of [...GAME_PACKAGES, TERRAIN_PACKAGE]) {
-    const before = new Set(readdirSync(packs));
-    run("pnpm", ["pack", "--pack-destination", packs], { cwd: join(REPO, directory) });
-    archives[name] = join(
-      packs,
-      [...readdirSync(packs)].find((file) => !before.has(file)),
-    );
-  }
-  const { createProject } = await import(
-    pathToFileURL(join(REPO, "packages/create-threenative/dist/index.js")).href
+/** Hash every package file, including models, textures and sidecars. */
+export function packageHashes(directory) {
+  return Object.fromEntries(
+    readdirSync(directory, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .flatMap((entry) => {
+        const path = join(directory, entry.name);
+        return entry.isDirectory()
+          ? Object.entries(packageHashes(path)).map(([name, hash]) => [
+              `${entry.name}/${name}`,
+              hash,
+            ])
+          : [[entry.name, createHash("sha256").update(readFileSync(path)).digest("hex")]];
+      }),
   );
-  const game = (
-    await createProject(
-      {
-        install: true,
-        // The terrain tarball is a source here too, not only the later `pnpm add -D`: the minimal
-        // template's `@threenative/assets` dev dependency now depends on `@threenative/terrain`,
-        // and the override this writes is what resolves that transitive edge to the local tarball
-        // instead of the registry (which 404s). The kit's own `pnpm add -D` then moves it to the
-        // devDependency the README names.
-        packageSources: Object.fromEntries(
-          [...GAME_PACKAGES, TERRAIN_PACKAGE].map(({ name }) => [name, archives[name]]),
-        ),
-        target: "kit-game",
-        template: "minimal",
-      },
-      temporary,
-    )
-  ).target;
-  say(`scaffolded ${game}`);
+}
 
-  // --- the agent's own three steps, from the kit's README --------------------------------------------
-  run("pnpm", ["add", "-D", archives[TERRAIN]], { cwd: game });
-  cpSync(
-    join(game, "node_modules", ...TERRAIN.split("/"), "starter", KIT),
-    join(game, "src/terrain", KIT),
+/** Pick real sidecar IDs from the alpine fixture, never invented generator identities. */
+export function alpineComposition(world) {
+  const manifest = JSON.parse(readFileSync(join(world, "world.json"), "utf8"));
+  assert(
+    manifest.placementIds,
+    "edited alpine needs a placement ID sidecar; use a fresh AFTER scaffold",
+  );
+  const ids = JSON.parse(readFileSync(join(world, manifest.placementIds), "utf8"));
+  const bytes = readFileSync(join(world, manifest.placements));
+  const records = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+  assert.equal(ids.length, records.length / 8);
+  // This is the unedited alpine's first walkable anchor, measured against its actual heightfield.
+  const index = ids.findIndex(
+    (_, i) => Math.hypot(records[i * 8] + 200.389511, records[i * 8 + 2] + 17.621393) < 0.01,
+  );
+  assert(
+    index >= 0,
+    "alpine anchor changed; reselect a walkable stand before recording comparisons",
+  );
+  const [x, , z] = records.subarray(index * 8, index * 8 + 3);
+  const promotedIndex = ids.findIndex(
+    (_, i) => i !== index && Math.hypot(records[i * 8] - x, records[i * 8 + 2] - z) < 60,
+  );
+  assert(promotedIndex >= 0, "alpine has no second boulder to promote near its stand");
+  const move = {
+    position: [x + 2, 0, z + 2],
+    quaternion: [0, Math.sin(Math.PI / 6), 0, Math.cos(Math.PI / 6)],
+    scale: [0.9, 0.9, 0.9],
+  };
+  const promotedId = ids[promotedIndex];
+  const clearIndex = ids.findIndex(
+    (id, i) =>
+      id !== ids[index] &&
+      id !== promotedId &&
+      Math.hypot(records[i * 8] - x, records[i * 8 + 2] - z) >= 20 &&
+      Math.hypot(records[i * 8] - x, records[i * 8 + 2] - z) < 60,
+  );
+  assert(clearIndex >= 0, "alpine needs an occupied clearing separate from the composed boulders");
+  const clear = { center: [records[clearIndex * 8], records[clearIndex * 8 + 2]], radius: 12 };
+  const clearedIds = ids.filter(
+    (id, i) =>
+      id !== ids[index] &&
+      id !== promotedId &&
+      Math.hypot(records[i * 8] - clear.center[0], records[i * 8 + 2] - clear.center[1]) <=
+        clear.radius,
+  );
+  assert(clearedIds.length > 0, "alpine clear circle must remove an original boulder");
+  return {
+    referencePlacements: Array.from(records),
+    anchorId: ids[index],
+    promotedId,
+    proofFarTarget: Array.from(records.subarray(promotedIndex * 8, promotedIndex * 8 + 3)),
+    clearedIds,
+    clear,
+    promotedAt: [x + 5, z - 1],
+    edits: {
+      overrides: { [ids[index]]: move },
+      remove: [promotedId],
+      clear: [clear],
+      add: [
+        {
+          id: "game:alpine-added-boulder",
+          asset: "boulder",
+          position: [x - 5, 0, z - 1],
+          quaternion: [0, 0, 0, 1],
+          scale: [1.4, 1.4, 1.4],
+        },
+      ],
+    },
+  };
+}
+
+export function compositionSource(composition, proofFarTarget = null) {
+  return `import type { IWorldPlacementEdits } from "@threenative/terrain/starter";\nexport const composition: { referencePlacements: readonly number[]; anchorId: string; promotedId: string; proofFarTarget: readonly [number, number, number]; clearedIds: readonly string[]; clear: { center: readonly [number, number]; radius: number }; promotedAt: readonly [number, number]; edits: IWorldPlacementEdits } | null = ${JSON.stringify(composition ?? null)};\nexport const proofFarTarget: readonly [number, number, number] | null = ${JSON.stringify(proofFarTarget)};\nexport const edits: IWorldPlacementEdits | undefined = ${composition ? "composition.edits" : "undefined"};\n`;
+}
+
+/** Append proof framing without replacing any original view, gate or frame budget. */
+export function appendCompositionFarScenario(scenario) {
+  scenario.steps.push(
+    { kind: "input", label: "composition-far-view", press: "Digit5", holdTicks: 2, release: true },
     {
-      recursive: true,
+      kind: "wait",
+      label: "composition-far",
+      waitTicks: 150,
+      release: true,
+      screenshot: "composition-far",
     },
   );
-  // A baseline run (KIT_BEFORE=1) bakes the kit as it stood before the lake and river were restored.
-  if (process.env.KIT_BEFORE === "1") {
-    assert(CONFIG.water, "KIT_BEFORE strips the water layers, and only the forest kit has water");
-    stripWaterLayers(join(game, "src/terrain", KIT, "recipe.json"));
+  for (const metric of ["viewGpuP50", "viewGpuP95", "viewFrameP95"])
+    scenario.assert.resources.push({
+      id: "GameState",
+      path: `${metric}.composition-far`,
+      gte: 0,
+      allowTrivial: "Presence row: an unmeasured view reads -1 and fails.",
+    });
+}
+
+async function main() {
+  const keptGame = process.env.KIT_GAME ? realpathSync(process.env.KIT_GAME) : undefined;
+  if (keptGame) {
+    try {
+      const marker = JSON.parse(
+        readFileSync(join(keptGame, ".threenative-kit-verifier.json"), "utf8"),
+      );
+      assert(marker?.game === keptGame && marker?.kit === KIT);
+    } catch {
+      throw new Error(
+        `KIT_GAME ownership refused: ${keptGame} needs a valid .threenative-kit-verifier.json matching its canonical path and kit '${KIT}'; only fresh verifier scaffolds are marked automatically`,
+      );
+    }
+  }
+  assert(
+    ARM === "default" || keptGame,
+    "edited/tint arms require KIT_GAME pointing to a kept AFTER scaffold",
+  );
+  assert(KIT === "alpine" || ARM === "default", "edited and tint arms require KIT=alpine");
+  const temporary = keptGame
+    ? join(keptGame, "..")
+    : mkdtempSync(join(tmpdir(), "threenative-kit-"));
+  let game = keptGame;
+  if (!game) {
+    const minimal = JSON.parse(
+      readFileSync(
+        join(REPO, "packages/create-threenative/templates/minimal/package.json"),
+        "utf8",
+      ),
+    );
+    const dependencies = new Set(
+      Object.keys({
+        ...minimal.dependencies,
+        ...minimal.devDependencies,
+        ...minimal.optionalDependencies,
+      }),
+    );
+    const workspacePackages = JSON.parse(
+      run("pnpm", ["exec", "tsx", "scripts/workspace-packages.ts", "--json"]),
+    );
+    const gamePackages = workspacePackages.filter(({ name }) => dependencies.has(name));
+    const terrainPackage = workspacePackages.find(({ name }) => name === TERRAIN);
+    assert(gamePackages.length > 0, "minimal template has no workspace packages to pack");
+    assert(terrainPackage, `workspace package is missing: ${TERRAIN}`);
+
+    say(`kit proof (${KIT}) in ${temporary}`);
+
+    // --- pack every package the game needs from this checkout's built output ------------------------
+    const packs = join(temporary, "packs");
+    mkdirSync(packs);
+    const archives = {};
+    for (const { name, directory } of [...gamePackages, terrainPackage]) {
+      const before = new Set(readdirSync(packs));
+      run("pnpm", ["pack", "--pack-destination", packs], { cwd: join(REPO, directory) });
+      archives[name] = join(
+        packs,
+        [...readdirSync(packs)].find((file) => !before.has(file)),
+      );
+    }
+    const { createProject } = await import(
+      pathToFileURL(join(REPO, "packages/create-threenative/dist/index.js")).href
+    );
+    game = (
+      await createProject(
+        {
+          install: true,
+          // The terrain tarball is a source here too, not only the later `pnpm add -D`: the minimal
+          // template's `@threenative/assets` dev dependency now depends on `@threenative/terrain`,
+          // and the override this writes is what resolves that transitive edge to the local tarball
+          // instead of the registry (which 404s). The kit's own `pnpm add -D` then moves it to the
+          // devDependency the README names.
+          packageSources: Object.fromEntries(
+            [...gamePackages, terrainPackage].map(({ name }) => [name, archives[name]]),
+          ),
+          target: "kit-game",
+          template: "minimal",
+        },
+        temporary,
+      )
+    ).target;
+    writeFileSync(
+      join(game, ".threenative-kit-verifier.json"),
+      `${JSON.stringify({ game: realpathSync(game), kit: KIT })}\n`,
+      { flag: "wx" },
+    );
+    say(`scaffolded ${game}`);
+
+    // --- the agent's own three steps, from the kit's README --------------------------------------------
+    run("pnpm", ["add", "-D", archives[TERRAIN]], { cwd: game });
+    cpSync(
+      join(game, "node_modules", ...TERRAIN.split("/"), "starter", KIT),
+      join(game, "src/terrain", KIT),
+      {
+        recursive: true,
+      },
+    );
+    // A baseline run (KIT_BEFORE=1) bakes the kit as it stood before the lake and river were restored.
+    if (process.env.KIT_BEFORE === "1") {
+      assert(CONFIG.water, "KIT_BEFORE strips the water layers, and only the forest kit has water");
+      stripWaterLayers(join(game, "src/terrain", KIT, "recipe.json"));
+    }
+    const world = join(game, "assets/terrain", KIT);
+    say(
+      `bake: ${run("node", [`src/terrain/${KIT}/bake.mjs`, "--out", `assets/terrain/${KIT}`], { cwd: game }).trim()}`,
+    );
   }
   const world = join(game, "assets/terrain", KIT);
-  say(
-    `bake: ${run("node", [`src/terrain/${KIT}/bake.mjs`, "--out", `assets/terrain/${KIT}`], { cwd: game }).trim()}`,
-  );
-
+  const sourceHashes = packageHashes(world);
+  const publicWorld = join(game, "public/terrain", KIT);
+  const publicHashes = existsSync(publicWorld) ? packageHashes(publicWorld) : undefined;
   // The forest scene is written around a stand the proof reads from its bake. The alpine scene picks
   // its own spawn and views from the loaded heightfield, so the alpine kit has no generated stand.
   if (CONFIG.generatedStand) {
@@ -398,6 +564,63 @@ export const stand = {
   if (process.env.KIT_BEFORE === "1") stripWaterRows(join(game, "playtests/kit.playtest.json"));
   mkdirSync(join(game, "src/scenes"), { recursive: true });
   cpSync(join(FIXTURES, "KitScene.ts"), join(game, "src/scenes/KitScene.ts"));
+  const alpine =
+    KIT === "alpine" && (ARM === "edited" || COMPOSITION_FAR)
+      ? alpineComposition(world)
+      : undefined;
+  const composition = ARM === "edited" ? alpine : undefined;
+  writeFileSync(
+    join(game, "src/terrain/composition.ts"),
+    compositionSource(composition, COMPOSITION_FAR ? alpine.proofFarTarget : null),
+  );
+  if (COMPOSITION_FAR) {
+    const gameSource = join(game, "src/game.ts");
+    writeFileSync(
+      gameSource,
+      readFileSync(gameSource, "utf8").replace(
+        "input: {",
+        'input: {\n    "composition-far": { keys: ["Digit5"] },',
+      ),
+    );
+    const scenarioPath = join(game, "playtests/kit.playtest.json");
+    const scenario = JSON.parse(readFileSync(scenarioPath, "utf8"));
+    appendCompositionFarScenario(scenario);
+    writeFileSync(scenarioPath, `${JSON.stringify(scenario, null, 2)}\n`);
+  }
+  if (KIT === "alpine") {
+    const worldSource = join(game, "src/terrain/alpine/world.ts");
+    let source = readFileSync(worldSource, "utf8");
+    if (!source.includes("import { edits }"))
+      source = `import { edits } from "../composition.js";\n${source.replace('  name: "Alpine",', '  name: "Alpine",\n  edits,')}`;
+    writeFileSync(worldSource, source);
+    const surfacePath = join(game, "src/terrain/alpine/surface.json");
+    const originalPath = join(game, "src/terrain/alpine/surface.original.json");
+    if (!existsSync(originalPath)) cpSync(surfacePath, originalPath);
+    const surface = JSON.parse(readFileSync(originalPath, "utf8"));
+    if (ARM === "tint") surface.layers.find((layer) => layer.id === "snow").tint = [0.55, 0.75, 1];
+    writeFileSync(surfacePath, `${JSON.stringify(surface, null, 2)}\n`);
+  }
+  if (composition) {
+    const scenarioPath = join(game, "playtests/kit.playtest.json");
+    const scenario = JSON.parse(readFileSync(scenarioPath, "utf8"));
+    for (const path of [
+      "movedBoulder",
+      "clearedCircle",
+      "addedBoulder",
+      "promotedObject",
+      "promotedLight",
+      "promotedCollider",
+      "removedFar",
+    ])
+      scenario.assert.resources.push({
+        id: "GameState",
+        path,
+        equals: 1,
+        allowTrivial:
+          "Startup edited data and live ordinary-object/physics observations; the unchanged drive and view assertions also run.",
+      });
+    writeFileSync(scenarioPath, `${JSON.stringify(scenario, null, 2)}\n`);
+  }
   const title = KIT[0].toUpperCase() + KIT.slice(1);
   writeFileSync(
     join(game, "src/terrain/kit.ts"),
@@ -432,7 +655,14 @@ export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWo
   // --- it has to typecheck and build, and ship no authoring package ----------------------------------
   run("pnpm", ["typecheck"], { cwd: game });
   say("typecheck ok");
-  run("pnpm", ["build:web"], { cwd: game });
+  run("pnpm", process.env.KIT_GAME ? ["exec", "vite", "build"] : ["build:web"], { cwd: game });
+  assert.deepEqual(packageHashes(world), sourceHashes, "source package changed during arm");
+  if (publicHashes)
+    assert.deepEqual(
+      packageHashes(publicWorld),
+      publicHashes,
+      "published package changed during arm",
+    );
   const bundle = join(game, "dist/assets");
   const shipped = readdirSync(bundle)
     .filter((file) => file.endsWith(".js"))
@@ -446,7 +676,18 @@ export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWo
 
   // --- the game's own playtest, against the built bundle, in a real WebGPU browser -------------------
   await assertPortFree(PORT);
-  rmSync(ARTIFACTS, { force: true, recursive: true });
+  const output = existsSync(ARTIFACTS) ? realpathSync(ARTIFACTS) : resolve(ARTIFACTS);
+  for (const protectedPath of [REPO, game])
+    assert(
+      output !== protectedPath && !protectedPath.startsWith(`${output}/`),
+      "artifact output would remove a source checkout",
+    );
+  assert(!output.startsWith(`${game}/`), "artifact output must stay outside the kept game");
+  assert(
+    !output.startsWith(`${REPO}/`) ||
+      output.startsWith(`${join(REPO, "examples/strata-terrain-preview/artifacts")}/`),
+    "repository artifacts must stay in the preview's artifacts directory",
+  );
   mkdirSync(ARTIFACTS, { recursive: true });
   const playtest = run(
     "pnpm",
@@ -508,7 +749,25 @@ export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWo
     ]),
   );
   const summary = {
-    captures: CONFIG.captures.map((file) => join("artifacts/playtest/starter-kit", `${file}.png`)),
+    arm: ARM,
+    game,
+    packageSha256: sourceHashes,
+    ...(composition
+      ? {
+          composition: Object.fromEntries(
+            [
+              "movedBoulder",
+              "clearedCircle",
+              "addedBoulder",
+              "promotedObject",
+              "promotedLight",
+              "promotedCollider",
+              "removedFar",
+            ].map((path) => [path, value(path)]),
+          ),
+        }
+      : {}),
+    captures: CONFIG.captures.map((file) => join(ARTIFACTS, `${file}.png`)),
     [CONFIG.cooked]: cooked,
     driveMetres: value("driveMetres"),
     frames: value("frames"),
@@ -519,9 +778,37 @@ export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWo
     propColliders: value("propColliders"),
     views,
   };
+  assert.deepEqual(packageHashes(world), sourceHashes, "source package changed during playtest");
+  if (publicHashes)
+    assert.deepEqual(
+      packageHashes(publicWorld),
+      publicHashes,
+      "published package changed during playtest",
+    );
   console.log(JSON.stringify(summary));
   // /tmp is RAM here and the scaffold is ~700 MB; a failed run keeps it for inspection.
-  if (process.env.KEEP_KIT_GAME === undefined) rmSync(temporary, { force: true, recursive: true });
+  if (!process.env.KIT_GAME && process.env.KEEP_KIT_GAME === undefined)
+    rmSync(temporary, { force: true, recursive: true });
 }
 
-await main();
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  if (ARM === "compare") {
+    assert.equal(KIT, "alpine", "compare requires KIT=alpine");
+    const captureArm = (arm, game) => {
+      const env = { ...process.env };
+      env.KIT_ARM = arm;
+      env.KEEP_KIT_GAME = "1";
+      if (game) env.KIT_GAME = game;
+      if (process.env.KIT_ARTIFACTS) env.KIT_ARTIFACTS = join(process.env.KIT_ARTIFACTS, arm);
+      return JSON.parse(run(process.execPath, [fileURLToPath(import.meta.url)], { env }));
+    };
+    const baseline = captureArm("default", process.env.KIT_GAME);
+    const edited = captureArm("edited", baseline.game);
+    assert.deepEqual(
+      edited.packageSha256,
+      baseline.packageSha256,
+      "comparison changed the package",
+    );
+    console.log(JSON.stringify({ default: baseline, edited }));
+  } else await main();
+}

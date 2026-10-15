@@ -82,6 +82,30 @@ describe("validateWorldPackage", () => {
     expect(validateWorldPackage(minimal, options).errors).toEqual([]);
   });
 
+  it("accepts an optional package-relative placement ID sidecar", () => {
+    expect(
+      validateWorldPackage(
+        { ...validPackage(), placementIds: "metadata/placement-ids.json" },
+        options,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    "",
+    "/ids.json",
+    "//host/ids.json",
+    "../ids.json",
+    "data:[]",
+    "https://host/ids.json",
+    "folder\\ids.json",
+    7,
+  ])("rejects invalid placement ID sidecar paths: %s", (placementIds) => {
+    const result = validateWorldPackage({ ...validPackage(), placementIds }, options);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((error) => error.path === "placementIds")).toBe(true);
+  });
+
   it("fails closed on a non-object manifest", () => {
     const result = validateWorldPackage("not a package", options);
     expect(result.ok).toBe(false);

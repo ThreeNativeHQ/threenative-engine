@@ -70,6 +70,7 @@ function harness() {
     },
     "state.js": { initialState },
     "loading.js": loading,
+    "../terrain/composition.js": { composition: null, edits: undefined },
   };
   runInNewContext(code, {
     exports,

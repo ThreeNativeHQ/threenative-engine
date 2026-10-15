@@ -732,6 +732,7 @@ describe("cookTerrainWorld", () => {
       "world.json",
       "heightmap.u16",
       "placements.bin",
+      "placement-ids.json",
       "splat.rgba",
       "models/fir.glb",
     ]) {
@@ -753,6 +754,11 @@ describe("cookTerrainWorld", () => {
     expect(splat).toEqual(baked.files["splat.rgba"]);
     expect(new Uint8Array(await readFile(path.join(dir, "placements.bin")))).toEqual(
       baked.files["placements.bin"],
+    );
+    const placementIds = new Uint8Array(await readFile(path.join(dir, "placement-ids.json")));
+    expect(placementIds).toEqual(baked.files["placement-ids.json"]);
+    console.log(
+      `cooker placement sidecar ${String(placementIds.byteLength)} B; placements.bin ${String((baked.files["placements.bin"] as Uint8Array).byteLength)} B`,
     );
   });
 
@@ -1252,6 +1258,7 @@ describe("cookTerrainWorld", () => {
       await readFile(path.join(dir, "world.json"), "utf8"),
     ) as IWorldPackage;
     const placements = new Uint8Array(await readFile(path.join(dir, "placements.bin")));
+    const placementIds = new Uint8Array(await readFile(path.join(dir, "placement-ids.json")));
     const heightmap = new Uint8Array(await readFile(path.join(dir, "heightmap.u16")));
     const validation = validateWorldPackage(manifest, {
       placementsByteLength: placements.byteLength,
@@ -1260,6 +1267,7 @@ describe("cookTerrainWorld", () => {
     expect(result.worldPackage?.manifest).toBe(result.manifest);
     expect(result.worldPackage?.files["heightmap.u16"]).toEqual(heightmap);
     expect(result.worldPackage?.files["placements.bin"]).toEqual(placements);
+    expect(result.worldPackage?.files["placement-ids.json"]).toEqual(placementIds);
     expect(validation.errors).toEqual([]);
     expect(validation.ok).toBe(true);
 

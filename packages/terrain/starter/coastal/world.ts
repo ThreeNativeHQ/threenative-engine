@@ -1,5 +1,9 @@
 import type { ICtx } from "@threenative/core";
-import { type IWorldPackage, loadTerrainSplat } from "@threenative/core/world";
+import {
+  type ILoadTerrainSplatOptions,
+  type IWorldPackage,
+  loadTerrainSplat,
+} from "@threenative/core/world";
 import type { IPhysicsContext } from "@threenative/physics";
 import {
   type IStarterWorld,
@@ -15,6 +19,7 @@ import {
   type Texture,
 } from "three";
 import { type ICoastalSea, type ICoastalSeaData, addCoastalSea } from "./sea.js";
+import surface from "./surface.json" with { type: "json" };
 /** Where the game's asset source holds the baked `world/` folder. */
 export const COASTAL_URL = "terrain/coastal/world.json";
 
@@ -51,7 +56,12 @@ const spec: IStarterWorldSpec<{ dispose(): void; sea: ICoastalSea; seaLevel: num
   url: COASTAL_URL,
   colliders: COLLIDERS,
   colliderReach: PROP_COLLIDER_REACH,
-  loadSurface: (ctx, url) => loadTerrainSplat({ assets: ctx.assets, url }),
+  loadSurface: (ctx, url) =>
+    loadTerrainSplat({
+      assets: ctx.assets,
+      url,
+      table: surface as unknown as ILoadTerrainSplatOptions["table"],
+    }),
   lighting: { sky: "sky.hdr", lods: false, dress: dressProp },
   streaming: {
     ring: 5,

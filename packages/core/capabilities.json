@@ -3840,7 +3840,7 @@
       "importPath": "@threenative/core/world",
       "kind": "function",
       "overrides": [
-        "every appearance input comes from the package table or loadTerrainSplat options"
+        "`table` may replace `base`, `breakup`, `macro` and `layers`; baked `splat` and `textures` stay package-owned"
       ],
       "package": "@threenative/core",
       "signature": "export async function applyTerrainSurface( root: Object3D, options: ILoadTerrainSplatOptions, ): Promise<void> { … }",
@@ -3941,7 +3941,7 @@
       "importPath": "@threenative/core/world",
       "kind": "function",
       "overrides": [
-        "every value comes from the package's table; the returned material is the game's to adjust"
+        "`table` may replace `base`, `breakup`, `macro` and `layers` from game source; baked `splat` and `textures` stay package-owned"
       ],
       "package": "@threenative/core",
       "signature": "export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }",
@@ -7004,7 +7004,7 @@
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPackageOptions, ): IBakedWorldPackage { … }",
       "situations": ["hand an evaluated Strata terrain to a game without a Blender round trip"],
-      "summary": "Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.",
+      "summary": "Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, a placement ID sidecar and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.",
       "supersedes": [],
       "symbol": "bakeWorldPackage"
     },
@@ -7871,6 +7871,25 @@
       "summary": "Load caller-authored starter data with one scene lifetime; all appearance comes from spec.",
       "supersedes": [],
       "symbol": "addStarterWorld"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const edited = editWorldPlacements(data, { remove: [\"scree:candidate:7:41\"] }, (x, z) => field.heightAt(x, z));",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [
+        "grounding defaults on, while `grounding: false` preserves the authored Y coordinate"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function editWorldPlacements( data: { … }",
+      "situations": [
+        "change generated terrain composition from game source without rebaking the world"
+      ],
+      "summary": "Apply deterministic startup edits to the decoded placement data before a world is loaded.",
+      "supersedes": [],
+      "symbol": "editWorldPlacements"
     },
     {
       "aliases": [],

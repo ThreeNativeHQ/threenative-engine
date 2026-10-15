@@ -71,7 +71,14 @@ const table = {
   macro: { max: 1.12, min: 0.8, scale: 0.05 },
   splat: { masks: { a: [0, "rgb"], b: [1, "rgb"], litter: [0, "a"] }, planes: 2, size: 4 },
   textures: "terrain/tex",
-};
+} as const;
+
+const sourceAppearance = {
+  base: { ...table.base, tint: [0.12, 0.23, 0.34] },
+  breakup: { ...table.breakup, push: 0 },
+  macro: { ...table.macro, min: 1, max: 1 },
+  layers: table.layers,
+} as const;
 
 /**
  * A package exported before the `orm` column existed: Machinefall's own `terrain/layers.json`,
@@ -270,6 +277,25 @@ describe("applyTerrainSurface", () => {
     );
     expect(root.material).toBe(material);
   });
+
+  it("forwards the game appearance table to marked terrain", async () => {
+    const { assets } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": table,
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    const root = new Mesh();
+    root.userData.tnTerrainSurface = "world.json";
+    await applyTerrainSurface(root, {
+      assets,
+      url: "world/world.glb",
+      table: { ...sourceAppearance, layers: [] },
+    });
+    expect(root.material).toBeInstanceOf(MeshStandardNodeMaterial);
+    expect((root.material as MeshStandardNodeMaterial).userData.TN_TERRAIN_SPLAT).toContain(
+      "layers=1",
+    );
+  });
 });
 
 describe("loadTerrainSplat", () => {
@@ -331,6 +357,60 @@ describe("loadTerrainSplat", () => {
         "world/terrain/tex/rock_diff.jpg",
       ].sort(),
     );
+  });
+
+  it("uses runtime appearance B over the package appearance A", async () => {
+    const seen: Array<readonly [number, number, number]> = [];
+    const { assets } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": table,
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    await loadTerrainSplat({
+      assets,
+      url: "world/world.json",
+      table: sourceAppearance,
+      layerSample: ({ layer }) => {
+        seen.push(layer.tint);
+        return { color: vec3(0.5) };
+      },
+      materialFactory: () => new MeshStandardNodeMaterial(),
+    });
+    expect(seen[0]).toEqual(sourceAppearance.base.tint);
+    expect(seen[0]).not.toEqual(table.base.tint);
+  });
+
+  it("keeps baked splat and texture descriptors authoritative", async () => {
+    const { assets, requested } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": { ...table, textures: "baked-textures" },
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    await loadTerrainSplat({
+      assets,
+      url: "world/world.json",
+      table: Object.assign({}, sourceAppearance, { textures: "game-textures" }),
+    });
+    expect(requested).toContain("world/baked-textures/moss_diff.jpg");
+  });
+
+  it("rejects a game layer whose baked mask is absent and names both", async () => {
+    const { assets } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": table,
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    const appearance = {
+      ...sourceAppearance,
+      layers: sourceAppearance.layers.slice(0, 1).map((layer) => ({
+        ...layer,
+        id: "game-layer",
+        mask: "missing-mask",
+      })),
+    };
+    await expect(
+      loadTerrainSplat({ assets, url: "world/world.json", table: appearance }),
+    ).rejects.toThrow(/layer 'game-layer'.*mask 'missing-mask'/u);
   });
 
   it.each(["", "/absolute.jpg", "https://example.test/map.jpg", 42, null])(
@@ -794,7 +874,7 @@ describe("loadTerrainSplat", () => {
       "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
     });
     await expect(loadTerrainSplat({ assets, url: "world/world.json" })).rejects.toThrow(
-      /unknown mask 'ghost'/u,
+      /layer 'litter'.*mask 'ghost'/u,
     );
   });
 });

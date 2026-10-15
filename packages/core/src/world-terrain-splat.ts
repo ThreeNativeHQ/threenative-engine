@@ -155,6 +155,8 @@ export interface ITerrainSplatMaterialContext {
 
 export interface ILoadTerrainSplatOptions {
   readonly assets: IAssetLoader;
+  /** Game-authored appearance. The baked splat mask descriptor and texture folder remain in the package. */
+  readonly table?: Pick<ITerrainSplatTable, "base" | "breakup" | "macro" | "layers">;
   /**
    * The live renderer. Uncompressed layers stack into one array texture per set through GPU copies,
    * which need one; without it every layer keeps its own sampler and the marker says so.
@@ -392,7 +394,7 @@ export function stackLayers(
  * @situation the game's terrain should match the DCC's terrain material without a second copy
  * @constraint the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by `export_terrain_layers` in the `export_world.py` recipe
  * @constraint WebGPU allows 16 sampled textures per stage: same-size layers stack into one array texture per set, and `TN_TERRAIN_SPLAT samplers=<n>` reports what is left
- * @override every value comes from the package's table; the returned material is the game's to adjust
+ * @override `table` may replace `base`, `breakup`, `macro` and `layers` from game source; baked `splat` and `textures` stay package-owned
  * @example
  * const surface = await loadTerrainSplat({ assets: ctx.assets, renderer: ctx.renderer, url: "world/world.json" });
  * const world = await WorldCells.load({ assets: ctx.assets, url: "world/world.json", surface, follow, ring: 2 });
@@ -406,9 +408,13 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
       "loadTerrainSplat: world.json has no terrain.layers.table/splat; export them with the export_world.py recipe.",
     );
   const dir = packageDir(url);
-  const table = (await (
+  const bakedTable = (await (
     await fetchResolved(assets, dir + layerPaths.table)
   ).json()) as ITerrainSplatTable;
+  const table: ITerrainSplatTable =
+    options.table === undefined
+      ? bakedTable
+      : { ...options.table, splat: bakedTable.splat, textures: bakedTable.textures };
   const bytes = new Uint8Array(
     await (await fetchResolved(assets, dir + layerPaths.splat)).arrayBuffer(),
   );
@@ -533,7 +539,10 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     const ground = vec2(positionWorld.x, positionWorld.z.negate());
     const maskOf = (layer: ITerrainSplatMaskedLayer): Node<"float"> => {
       const where = table.splat.masks[layer.mask];
-      if (where === undefined) throw new Error(`loadTerrainSplat: unknown mask '${layer.mask}'.`);
+      if (where === undefined)
+        throw new Error(
+          `loadTerrainSplat: layer '${layer.id}' names missing mask '${layer.mask}'.`,
+        );
       const source = planes[where[0]];
       if (source === undefined)
         throw new Error(`loadTerrainSplat: mask '${layer.mask}' names a missing plane.`);
@@ -685,7 +694,7 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
  * path as loadTerrainSplat on web and native. The caller owns the assigned materials' lifetime.
  * @situation apply the authored layered terrain surface after loading a cooked world GLB
  * @constraint url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON
- * @override every appearance input comes from the package table or loadTerrainSplat options
+ * @override `table` may replace `base`, `breakup`, `macro` and `layers`; baked `splat` and `textures` stay package-owned
  * @example
  * await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "world/world.glb" });
  */

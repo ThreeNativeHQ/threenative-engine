@@ -1,6 +1,19 @@
 import { type ICtx, type IFrameBudgetWindow, Scene } from "@threenative/core";
-import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { type InstancedMesh, Object3D, type PerspectiveCamera, Vector3 } from "three";
+import {
+  CharacterBody3D,
+  CollisionShape3D,
+  type IPhysicsContext,
+  RigidBody3D,
+} from "@threenative/physics";
+import {
+  type InstancedMesh,
+  Matrix4,
+  type Mesh,
+  Object3D,
+  type PerspectiveCamera,
+  PointLight,
+  Vector3,
+} from "three";
 import { createLoadingScreen } from "../render/loading.js";
 import { type GameState, initialState } from "../state.js";
 import {
@@ -11,6 +24,8 @@ import {
   forestStand,
   kitDaylight,
 } from "../terrain/kit.js";
+
+import { composition, proofFarTarget } from "../terrain/composition.js";
 
 type Ctx = ICtx<GameState, IPhysicsContext>;
 type Field = IKitWorld["field"];
@@ -34,6 +49,7 @@ const VIEW_NAMES =
   KIT === "Forest"
     ? ["ground", "edge", "overview", "lake"]
     : ["boulders", "edge", "ground", "overview"];
+if (proofFarTarget) VIEW_NAMES.push("composition-far");
 type ViewName = string;
 
 interface IPoint {
@@ -50,6 +66,12 @@ interface IProp extends IPoint {
 interface IView {
   readonly at: Vector3;
   readonly look: Vector3;
+}
+
+/** Same original package position in both arms; 90 m away with a clear elevated sightline. */
+export function compositionFarView(target: readonly [number, number, number]): IView {
+  const look = new Vector3(...target).add(new Vector3(0, 1, 0));
+  return { at: look.clone().add(new Vector3(72, 54, 0)), look };
 }
 
 /** Where the scene stands, looks and drives, all read from the loaded world. */
@@ -283,7 +305,8 @@ function viewsFor(
 }
 
 /** The stand the scene is written around: the nearest boulder to the centre with a walkable spawn. */
-function chooseStand(kit: IKitWorld): IStand {
+function chooseStand(kit: IKitWorld, useEdits = Boolean(composition)): IStand {
+  const arm = useEdits ? composition : null;
   if (forestStand) return forestViews();
   const wet = (point: IPoint, margin: number): boolean => {
     if (kit.seaLevel !== undefined) {
@@ -298,7 +321,11 @@ function chooseStand(kit: IKitWorld): IStand {
   const props = readProps(kit.placements);
   const centre = { x: extent.minX + extent.sizeX / 2, z: extent.minZ + extent.sizeZ / 2 };
   // Every boulder may anchor the stand. The nearest one to the centre with a walkable spawn wins.
-  const candidates = props.sort((a, b) => distance(a, centre) - distance(b, centre));
+  const moved = arm ? kit.placementIds?.indexOf(arm.anchorId) : undefined;
+  if (arm && (moved === undefined || moved < 0)) throw new Error("Alpine moved boulder is missing");
+  const candidates = arm
+    ? [props[moved as number] as IProp]
+    : [...props].sort((a, b) => distance(a, centre) - distance(b, centre));
   for (const anchor of candidates) {
     if (wet(anchor, 3)) continue;
     const spawn = spawnFor(field, extent, props, anchor, wet);
@@ -308,7 +335,10 @@ function chooseStand(kit: IKitWorld): IStand {
       anchor,
       spawn,
       groundY: field.heightAt(spawn.x, spawn.z),
-      views: viewsFor(field, props, extent, centre, anchor, spawn, away, wet),
+      views: arm
+        ? chooseStand({ ...kit, placements: new Float32Array(arm.referencePlacements) }, false)
+            .views
+        : viewsFor(field, props, extent, centre, anchor, spawn, away, wet),
     };
   }
   throw new Error(`${KIT} kit: no boulder in the world has a walkable spawn.`);
@@ -380,6 +410,9 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
   #stand: IStand | undefined;
   #released = false;
   #ready = false;
+  #promoted: Object3D | undefined;
+  #promotedLight: PointLight | undefined;
+  #fixedRigidBody: RigidBody3D | undefined;
   #error = "";
   #settle: ((error?: Error) => void) | undefined;
   #timer: ReturnType<typeof setTimeout> | undefined;
@@ -448,9 +481,46 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
     let stand: IStand;
     try {
       stand = chooseStand(kit);
+      if (proofFarTarget)
+        stand = {
+          ...stand,
+          views: { ...stand.views, "composition-far": compositionFarView(proofFarTarget) },
+        };
     } catch (error) {
       this.#fail(ctx, error instanceof Error ? error.message : String(error));
       return;
+    }
+    const arm = composition;
+    if (arm) {
+      const removed = kit.editReport.removed.find((item) => item.id === arm.promotedId);
+      if (!removed) throw new Error("Alpine promoted placement was not removed");
+      const asset = kit.manifest.assets[removed.asset];
+      if (!asset) throw new Error("Alpine promoted asset is missing");
+      const model = await ctx.assets.model<{ scene: Object3D }>(`terrain/alpine/${asset.glb}`);
+      if (this.#released) return;
+      const object = model.scene.clone(true);
+      object.name = "game-promoted-boulder";
+      object.position.set(
+        arm.promotedAt[0],
+        kit.field.heightAt(...arm.promotedAt),
+        arm.promotedAt[1],
+      );
+      object.quaternion.fromArray(removed.quaternion);
+      object.scale.setScalar(removed.scale);
+      object.traverse((child) => {
+        const mesh = child as Mesh;
+        if (!mesh.isMesh) return;
+        mesh.material = Array.isArray(mesh.material)
+          ? mesh.material.map((material) => material.clone())
+          : mesh.material.clone();
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      });
+      const light = new PointLight(0xff9b47, 90, 12, 2);
+      light.position.set(0, 2, 1.5);
+      object.add(light);
+      this.#promoted = object;
+      this.#promotedLight = light;
     }
     this.#stand = stand;
     spawnView.at = stand.views.ground.at;
@@ -486,6 +556,17 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
     if (!this.#kit || !this.#stand) {
       ctx.beforeRender(() => this.#loading?.update());
       return;
+    }
+    if (this.#promoted) {
+      ctx.add(this.#promoted);
+      this.#fixedRigidBody = new RigidBody3D({
+        object: this.#promoted,
+        physics: ctx.physics,
+        type: "fixed",
+        entity: "game-promoted-boulder",
+        collisionLayer: 2,
+        shape: CollisionShape3D.sphere(0.9 * this.#promoted.scale.x),
+      });
     }
     ctx.add(this.#player as Object3D);
     // The body joins the world once its object is in the scene, as the template player does.
@@ -534,6 +615,12 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
     this.#settle?.(new Error(`${KIT} spawn cancelled`));
     this.#loading?.finish();
     this.#body?.dispose();
+    this.#fixedRigidBody?.dispose();
+    this.#promoted?.traverse((child) => {
+      const mesh = child as Mesh;
+      if (mesh.isMesh) for (const material of [mesh.material].flat()) material.dispose();
+    });
+    this.#promoted?.removeFromParent();
     if (this.#kit) disposeKit(this.#kit);
   }
 
@@ -557,6 +644,7 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
 
     for (const view of VIEW_NAMES) if (ctx.input.justPressed(view)) this.#setView(ctx, view);
     this.#placeCamera();
+    this.#observeComposition(ctx);
     if (this.#frames % 60 === 0)
       ctx.state.set({
         [KIT === "Forest"
@@ -573,6 +661,89 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
       viewFrameP95: this.#costs("frameP95"),
       viewGpuP50: this.#costs("gpuP50"),
       viewGpuP95: this.#costs("gpuP95"),
+    });
+  }
+
+  #observeComposition(ctx: Ctx): void {
+    const arm = composition;
+    const kit = this.#kit;
+    if (!arm || !kit) return;
+    const ids = kit.placementIds ?? [];
+    const moved = ids.indexOf(arm.anchorId) * 8;
+    const added = ids.indexOf("game:alpine-added-boulder") * 8;
+    const transform = arm.edits.overrides?.[arm.anchorId];
+    const addition = arm.edits.add?.[0];
+    const matches = (offset: number, edit: typeof transform): boolean =>
+      offset >= 0 &&
+      edit !== undefined &&
+      Math.abs((kit.placements[offset] as number) - edit.position[0]) < 0.001 &&
+      Math.abs((kit.placements[offset + 2] as number) - edit.position[2]) < 0.001 &&
+      Math.abs(
+        (kit.placements[offset + 1] as number) -
+          kit.field.heightAt(edit.position[0], edit.position[2]),
+      ) < 0.001 &&
+      edit.quaternion.every(
+        (value, i) => Math.abs((kit.placements[offset + 3 + i] as number) - value) < 0.001,
+      ) &&
+      Math.abs((kit.placements[offset + 7] as number) - edit.scale[0]) < 0.001;
+    let uncleared = 0;
+    for (let i = 0; i < ids.length; i += 1) {
+      if (ids[i] === arm.anchorId || ids[i] === "game:alpine-added-boulder") continue;
+      if (
+        Math.hypot(
+          (kit.placements[i * 8] as number) - arm.clear.center[0],
+          (kit.placements[i * 8 + 2] as number) - arm.clear.center[1],
+        ) <= arm.clear.radius
+      )
+        uncleared += 1;
+    }
+    const object = this.#promoted;
+    const hit =
+      object &&
+      ctx.physics.directSpaceState.intersectRay({
+        from: { x: object.position.x, y: object.position.y + 5, z: object.position.z },
+        to: { x: object.position.x, y: object.position.y - 2, z: object.position.z },
+        collisionMask: 2,
+      });
+    const removed =
+      !ids.includes(arm.promotedId) &&
+      kit.editReport.removed.some((item) => item.id === arm.promotedId);
+    let ordinaryMeshes = 0;
+    object?.traverse((node) => {
+      if ((node as Mesh).isMesh && !(node as InstancedMesh).isInstancedMesh) ordinaryMeshes += 1;
+    });
+    let removedDrawn = false;
+    const original = kit.editReport.removed.find((item) => item.id === arm.promotedId);
+    if ((this.#view === "overview" || this.#view === "composition-far") && original) {
+      const matrix = new Matrix4();
+      const position = new Vector3();
+      const originalPosition = new Vector3(...original.position);
+      ctx.scene.traverse((node) => {
+        const mesh = node as InstancedMesh;
+        if (!mesh.isInstancedMesh || !mesh.visible) return;
+        for (let i = 0; i < mesh.count; i += 1) {
+          mesh.getMatrixAt(i, matrix);
+          position.setFromMatrixPosition(matrix).applyMatrix4(mesh.matrixWorld);
+          if (position.distanceTo(originalPosition) < 0.01) removedDrawn = true;
+        }
+      });
+    }
+    ctx.state.set({
+      movedBoulder: Number(matches(moved, transform)),
+      clearedCircle: Number(
+        uncleared === 0 &&
+          arm.clearedIds.length > 0 &&
+          arm.clearedIds.every((id) => !ids.includes(id)),
+      ),
+      addedBoulder: Number(matches(added, addition)),
+      promotedObject: Number(object?.parent === ctx.scene && ordinaryMeshes > 0),
+      promotedLight: Number(
+        this.#promotedLight?.parent === object && (this.#promotedLight?.intensity ?? 0) > 0,
+      ),
+      promotedCollider: Number(hit !== undefined && hit.body.id === this.#fixedRigidBody?.body.id),
+      ...(this.#view === "overview" || this.#view === "composition-far"
+        ? { removedFar: Number(removed && !removedDrawn) }
+        : {}),
     });
   }
 

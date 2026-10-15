@@ -11,37 +11,38 @@ import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const starterAssets = join(packageRoot, "starter-assets");
 
+// Manifest hashes include placementIds; terrain and prop payload hashes stay pinned.
 const GOLDEN_HASHES: Record<string, Record<string, string>> = {
   forest: {
     "world.glb": "0ccea412a03f6e48231835480889063ca3491a59b5a5d5a4b4b73134047edfa2",
     "heightmap.u16": "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
     "placements.bin": "36ab2fd57e76b4b0bd998c5398f983e5f030968b83d5326c0cb98df1b67e4019",
     "splat.rgba": "f5e45e3740eea9e751e94570abe785854670d060fda6fe4b5518ccd4a562c7ec",
-    "world.json": "3ffa8c08ede40639373e4bff8bf3c707c65df72da6f28f98794fb17119051010",
+    "world.json": "33430aa497ecaed19e27c9bae39dd3cbc6a9e3e0e88d2f3d6d7e7595078f11b5",
   },
   alpine: {
     "heightmap.u16": "bd84cb6c52a1142303dfb0f304190a981f29d77d118d3880e3eb246549838ae1",
     "placements.bin": "5c47dd59619843bc056fbc8391ca7bccdef86c9950cd192c53a6928676865c26",
     "splat.rgba": "fde8bf22c6841847f58ab523682f29e77a774a364cdd0e34c0025b6ad06c6f42",
-    "world.json": "5af1fc81a424792ac440b9907b2b7e3d36a239936e7921f93a94f7fccdda021c",
+    "world.json": "48a504fb9764b279fb83646e723542e65efdf0fe5b0429113a3932029afc3b6d",
   },
   coastal: {
     "heightmap.u16": "313539bae3010b949b65e55307736f6140a55255d81fbb8ab5dbae782bdc8482",
     "placements.bin": "e10721cc99dfe96345a6b090eeb834ec87890927d8272ec8a8307b31a989b098",
     "splat.rgba": "b3dcb6967095049a05fa113968b3cd8d74914c7b906f2c522ff109f6dbfe2b40",
-    "world.json": "dfd2dc68bab5fd95f5a0284f9df8656580f4544c92989e5f31363faefbe730fd",
+    "world.json": "c8a8400859b8b704c1d6772df3552d8518d9ba119f4532ca2ecfb595648d701f",
   },
   desert: {
     "heightmap.u16": "a17965c4dd706f2732cc64af64dba086e006b405086d41a36f2ca37c45ee3add",
     "placements.bin": "8dace58d5c91d50f8492149a826575edbff53d3ee78e5d892bbb12d8f809f3fe",
     "splat.rgba": "a77791af98c157f371dfa1fdc053c712ea3bdb8a9f3f71de33a69b8f06c88d04",
-    "world.json": "755ae7887abfce8837256190cab8930639d8802343c10603202cfa7fe413e481",
+    "world.json": "e9836d3a9920f14c8b94a7294657b588d20465a3c3309b33bc25d595713c2d9a",
   },
   tundra: {
     "heightmap.u16": "2fcf74db51407bcd4e65b7ae92e31da6ff1b0c7152301952fecedeea36c80710",
     "placements.bin": "05aa8931ff15b96d21999947ca2c5fdb89fe2b0e17228d8f072021767b55a9ff",
     "splat.rgba": "981bd12869273d4f959fcaed53b27b325b5748b7ec558ac25c4258b4fd5c9f07",
-    "world.json": "6986a3d5cc54f2f0690fc40ec4482c6f2a88cb7c5b773976d19dc513643adc47",
+    "world.json": "4c0a82d265a73d7f0af9dc67b3cd58229ba0c587edd9c66ddd01c2a2828fb8dc",
   },
 };
 
@@ -153,7 +154,7 @@ describe("forest starter kit", () => {
       "f5e45e3740eea9e751e94570abe785854670d060fda6fe4b5518ccd4a562c7ec",
     );
     expect(files.get("world.json")).toBe(
-      "3ffa8c08ede40639373e4bff8bf3c707c65df72da6f28f98794fb17119051010",
+      "33430aa497ecaed19e27c9bae39dd3cbc6a9e3e0e88d2f3d6d7e7595078f11b5",
     );
 
     // One recipe and seed, one package: a second bake is byte-identical.
