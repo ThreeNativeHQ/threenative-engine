@@ -1344,6 +1344,26 @@ void geometry_index_null() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// three's localToWorld(v) and worldToLocal(v) answer the vector they converted, so a call chains
+// (`mesh.worldToLocal(point).multiplyScalar(2)`); the binding answered the object, which broke the
+// racing template on the web native engine.
+void world_space_conversions() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t group{}, point{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Vector3", nullptr, 0, &point, &d.value) == TN_OK);
+    const tn_value_t pointArg = ref(point);
+    for (const char* method : {"localToWorld", "worldToLocal"}) {
+        tn_value_t out{};
+        CHECK(tn_invoke(group, method, &pointArg, 1, &out, &d.value) == TN_OK);
+        CHECK(out.kind == TN_VALUE_HANDLE && same(out.handle, point));
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-610: core's per-frame `__tnUpdateMatrixWorld(force, prune)` answers the nodes its own walk visited, so no
 // second walk counts the tree. With `prune` a hidden subtree composes only its root, as core's JS pass does
 // (9,903 nodes a Midway frame against 779): its world matrices catch up, forced, on the first frame it shows.
@@ -1589,5 +1609,5 @@ void gpu_bind_escape() {
 TN_TEST_MAIN({"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
-             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null},
+             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})
