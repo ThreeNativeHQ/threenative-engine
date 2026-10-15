@@ -289,6 +289,95 @@ afterEach(() => {
 });
 
 describe("WorldCells admission budget", () => {
+  it("flushes each covered publication to shadows while uncovered notifications remain throttled", async () => {
+    const notifications = async (covered: boolean): Promise<number[]> => {
+      stubFixtureFetch();
+      let clock = 0;
+      const tells: number[] = [];
+      const at = cellCenter(1, 1);
+      const world = await WorldCells.load({
+        url: "/world/world.json",
+        surface,
+        follow: followAt(at.x, at.z),
+        terrain: false,
+        ring: 1,
+        budgets,
+        gpuScene: false,
+        admissionBudgetMs: 1,
+        coveredAdmissionBudgetMs: 1,
+        admissionNow: () => ++clock,
+        shadows: {
+          cast: true,
+          invalidate: (region) => {
+            // Prewarm also requests blanket invalidations; measure publication notifications only.
+            if (region?.admission) tells.push(clock);
+          },
+        },
+        loadModel: async () => model(),
+      });
+      world.process(undefined, undefined, covered);
+      await flush();
+      drain(world, 4000, covered);
+      world.dispose();
+      return tells;
+    };
+    const uncovered = await notifications(false);
+    const covered = await notifications(true);
+    const gaps = (times: number[]) =>
+      [...new Set(times)]
+        .slice(1)
+        .map((time, index) => time - ([...new Set(times)][index] as number));
+    expect(gaps(uncovered).every((gap) => gap >= 1000)).toBe(true);
+    expect(gaps(covered).some((gap) => gap < 1000)).toBe(true);
+  });
+
+  it("requires visible distant placements within their draw reach, while preserving circle queries", async () => {
+    stubFixtureFetch();
+    const at = cellCenter(1, 1);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 500);
+    camera.position.set(at.x, 20, at.z + 200);
+    camera.lookAt(at.x, 0, at.z);
+    camera.updateMatrixWorld();
+    const world = await WorldCells.load({
+      url: "/world/world.json",
+      surface,
+      follow: camera,
+      terrain: false,
+      ring: 4,
+      budgets,
+      gpuScene: false,
+      loadModel: async () => model(),
+    });
+    const visible = world.readinessAt(camera);
+    expect(visible.requiredCells).toBeGreaterThan(1);
+    expect(visible.ready).toBe(false);
+    expect(world.readinessAt(at, 0).requiredCells).toBe(1);
+    camera.lookAt(at.x, 20, at.z + 400);
+    camera.updateMatrixWorld();
+    expect(world.readinessAt(camera).requiredCells).toBe(0);
+    world.dispose();
+
+    const reached = await WorldCells.load({
+      url: "/world/world.json",
+      surface,
+      follow: camera,
+      terrain: false,
+      ring: 4,
+      budgets,
+      gpuScene: false,
+      loadModel: async () => model(),
+      placementReach: new Float32Array(
+        readFileSync(path.join(fixture, "placements.bin")).byteLength / 32,
+      ).fill(1),
+    });
+    camera.lookAt(at.x, 0, at.z);
+    camera.updateMatrixWorld();
+    // Two fixture cells also contain chunks: placement reach must not hide those draws.
+    expect(reached.readinessAt(camera).requiredCells).toBe(2);
+    expect(reached.readinessAt(camera).requiredCells).toBeLessThan(visible.requiredCells);
+    reached.dispose();
+  });
+
   it("observes drawable runs before cell readiness, but excludes outside-view publications", async () => {
     stubFixtureFetch();
     const at = cellCenter(1, 1);

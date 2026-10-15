@@ -1,5 +1,7 @@
+import { DirectionalLight } from "three";
 import { describe, expect, it } from "vitest";
 import { defineGame } from "../src/game.js";
+import { VirtualShadowNode } from "../src/render/virtual-shadow.js";
 import type { ICtx, IStartupTimeline } from "../src/scene.js";
 import { Scene } from "../src/scene.js";
 
@@ -157,6 +159,11 @@ describe("startup timeline", () => {
       expect(capturedCtx?.startup.progress).toBeLessThan(1);
 
       landDetail();
+      // Warm-up and final quiet polls advance on rendered frames, even with simulation held.
+      for (let index = 13; index <= 40 && capturedCtx?.startup.phase !== "ready"; index++) {
+        await Promise.resolve();
+        frame(index * 16.7);
+      }
       await capturedCtx?.startup.whenReady();
       const ready = capturedCtx?.startup.timeline;
       expect(ready?.readyMs).toBeTypeOf("number");
@@ -171,4 +178,87 @@ describe("startup timeline", () => {
       });
     }
   });
+});
+
+it("keeps virtual shadows covered until two rendered quiet polls after late work", async () => {
+  const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
+  Object.defineProperties(canvas, {
+    clientHeight: { value: 90 },
+    clientWidth: { value: 160 },
+    parentElement: { value: null },
+  });
+  let ctx!: ICtx;
+  let shadow!: VirtualShadowNode;
+  let settled = false;
+  let sawCoveredDraw = false;
+  class Covered extends Scene {
+    static override readonly initialState = {};
+    override enter(context: ICtx): void {
+      ctx = context;
+      ctx.canvasLayer.opaque = true;
+      ctx.canvasLayer.keepWorldRendering = true;
+      const light = new DirectionalLight();
+      light.castShadow = true;
+      shadow = new VirtualShadowNode(light, { marker: false });
+      Object.defineProperty(shadow, "settled", { get: () => settled });
+      light.shadow.shadowNode = shadow;
+      ctx.add(light);
+    }
+  }
+  let frame!: (time: number) => void;
+  const previous = globalThis.requestAnimationFrame;
+  Object.defineProperty(globalThis, "requestAnimationFrame", {
+    configurable: true,
+    value: (callback: (time: number) => void) => {
+      frame = callback;
+      return 1;
+    },
+  });
+  const game = defineGame({
+    renderer: {
+      canvas: canvas as never,
+      preferWebGPU: false,
+      webgl2Factory: () =>
+        ({
+          domElement: canvas,
+          render: () => {
+            sawCoveredDraw ||= shadow?.startupCovered === true;
+          },
+          setSize: () => undefined,
+        }) as never,
+    },
+    scenes: { covered: Covered },
+    start: "covered",
+  });
+  const pump = async (index: number) => {
+    frame(index * 16.7);
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+  };
+  try {
+    await game.start();
+    for (let i = 1; i <= 12; i++) await pump(i);
+    expect(sawCoveredDraw).toBe(true);
+    expect(ctx.startup.phase).toBe("collapsing");
+    settled = true;
+    await pump(13);
+    expect(ctx.startup.phase).toBe("collapsing");
+    const remove = ctx.beforeRender(() => {
+      settled = false;
+    });
+    await pump(14);
+    remove();
+    settled = true;
+    await pump(15);
+    expect(ctx.startup.phase).toBe("collapsing");
+    await pump(16);
+    expect(ctx.startup.phase).toBe("ready");
+    expect(shadow.startupCovered).toBe(false);
+  } finally {
+    await game.stop();
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: previous,
+    });
+    shadow?.dispose();
+  }
 });

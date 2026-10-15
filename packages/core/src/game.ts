@@ -1,5 +1,6 @@
 import {
   type Camera,
+  DirectionalLight,
   type Object3D,
   OrthographicCamera,
   PerspectiveCamera,
@@ -68,6 +69,7 @@ import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
 import { RenderCameraCull } from "./render-camera-cull.js";
 import { RenderPassBudget } from "./render-pass-budget.js";
+import { VirtualShadowNode } from "./render/virtual-shadow.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import {
   resolveMatrixWorldMode,
@@ -1129,7 +1131,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const projectionReady = new Promise<void>((resolve) => {
       markProjectionSettled = resolve;
     });
+    const startupShadows = new Set<VirtualShadowNode>();
     const startupReadiness = new StartupReadiness({
+      settled: () => worldRendered && [...startupShadows].every((node) => node.settled),
       /**
        * The second warm-up: everything a game attached while it held startup.
        *
@@ -1203,6 +1207,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       timeline.frameworkReadyMs ??= now();
       timeline.readyMs ??= now();
       projectionSettled = true;
+      for (const node of startupShadows) node.startupCovered = false;
+      startupShadows.clear();
       markProjectionSettled();
       // A host capturing a frame has no other way to know the world is on screen. Counting frames
       // cannot express it: on a software rasteriser the gate resolves on its bounded window rather
@@ -1638,6 +1644,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       },
       onRender: () => {
         observeCompilation();
+        if (!projectionSettled) {
+          for (const node of startupShadows) node.startupCovered = false;
+          startupShadows.clear();
+          threeScene.traverseVisible((object) => {
+            if (!(object instanceof DirectionalLight) || !object.castShadow || !object.visible)
+              return;
+            const node = object.shadow.shadowNode;
+            if (node instanceof VirtualShadowNode) {
+              startupShadows.add(node);
+              node.startupCovered = startupCoverActive();
+            }
+          });
+        }
         renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately

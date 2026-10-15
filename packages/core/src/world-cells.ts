@@ -5112,7 +5112,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // far mesh without the camera ever traversing its cell. Bounded to one asset per idle frame.
     this.#pumpFarAcquisition();
     // After the drain, so the levels are told about this update's records and not the last one's.
-    this.#tellShadows();
+    this.#tellShadows(this.#covered);
     // After the drain too, so a record admitted this update is in the window the camera draws and
     // not one frame behind it.
     for (const state of this.#cellProxies) this.#restoreCellProxySource(state);
@@ -5954,35 +5954,79 @@ export class WorldCells extends Group implements IComputeDriven {
     return cell.chunksLoaded && cell.completedRuns.size === cell.cell.runs.length;
   }
 
-  /** Completed content intersecting a square around a fixed spawn, in world metres. */
+  /** Completed content in a camera view/draw reach, or the existing spawn square in metres. */
   readinessAt(
-    position: { readonly x: number; readonly z: number },
+    position: Camera | { readonly x: number; readonly z: number },
     radius = 0,
   ): IWorldRegionReadiness {
+    const camera = "isCamera" in position && position.isCamera ? (position as Camera) : undefined;
+    camera?.updateMatrixWorld(true);
+    const point =
+      camera === undefined
+        ? (position as { readonly x: number; readonly z: number })
+        : camera.getWorldPosition(new Vector3());
+    if (camera !== undefined) {
+      if (
+        ![...camera.projectionMatrix.elements, ...camera.matrixWorldInverse.elements].every(
+          Number.isFinite,
+        )
+      )
+        throw new Error("WorldCells readiness requires a finite camera projection and transform.");
+      _cullFrustum.setFromProjectionMatrix(
+        _cullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+        camera.coordinateSystem,
+      );
+    }
     if (
-      !Number.isFinite(position.x) ||
-      !Number.isFinite(position.z) ||
+      !Number.isFinite(point.x) ||
+      !Number.isFinite(point.z) ||
       !Number.isFinite(radius) ||
       radius < 0
     )
       throw new Error("WorldCells readiness requires finite coordinates and a nonnegative radius.");
-    const lowX = Math.floor((position.x - radius - this.#minX) / this.#cellSize);
-    const highX = Math.floor((position.x + radius - this.#minX) / this.#cellSize);
-    const lowZ = Math.floor((position.z - radius - this.#minZ) / this.#cellSize);
-    const highZ = Math.floor((position.z + radius - this.#minZ) / this.#cellSize);
+    const lowX = Math.floor((point.x - radius - this.#minX) / this.#cellSize);
+    const highX = Math.floor((point.x + radius - this.#minX) / this.#cellSize);
+    const lowZ = Math.floor((point.z - radius - this.#minZ) / this.#cellSize);
+    const highZ = Math.floor((point.z + radius - this.#minZ) / this.#cellSize);
     let requiredCells = 0;
     let loadedCells = 0;
     let failures = 0;
+    let terrainRequired = 0;
+    let terrainLoaded = 0;
     for (const cell of this.#cells) {
-      if (cell.x < lowX || cell.x > highX || cell.z < lowZ || cell.z > highZ) continue;
+      if (
+        camera === undefined
+          ? cell.x < lowX || cell.x > highX || cell.z < lowZ || cell.z > highZ
+          : !this.#cellInView(cell, point as Vector3)
+      )
+        continue;
       requiredCells++;
+      if (camera !== undefined && this.#terrain !== undefined) {
+        const coverage = this.#terrain.readinessAt(
+          {
+            x: this.#minX + (cell.x + 0.5) * this.#cellSize,
+            z: this.#minZ + (cell.z + 0.5) * this.#cellSize,
+          },
+          this.#cellSize / 2,
+        );
+        terrainRequired += coverage.required;
+        terrainLoaded += coverage.loaded;
+      }
       const resident = this.#resident.get(cellKey(cell.x, cell.z));
-      if (resident && this.#cellLoaded(resident)) loadedCells++;
+      if (
+        resident &&
+        this.#cellLoaded(resident) &&
+        (camera === undefined || !this.#jobs.some((job) => job.cell === resident))
+      )
+        loadedCells++;
       if (resident?.chunkFailed) failures++;
       for (const run of cell.runs)
         if (this.#assets.get(this.#canonical(run.asset))?.failed) failures++;
     }
-    const terrain = this.#terrain?.readinessAt(position, radius) ?? { required: 0, loaded: 0 };
+    const terrain =
+      camera === undefined
+        ? (this.#terrain?.readinessAt(point, radius) ?? { required: 0, loaded: 0 })
+        : { required: terrainRequired, loaded: terrainLoaded };
     return {
       requiredCells,
       loadedCells,
@@ -5994,8 +6038,54 @@ export class WorldCells extends Group implements IComputeDriven {
         !this.#released &&
         failures === 0 &&
         loadedCells === requiredCells &&
-        terrain.loaded === terrain.required,
+        terrain.loaded === terrain.required &&
+        (camera === undefined || (!this.#shadowMoved && !this.#refilterOwed)),
     };
+  }
+
+  /** Use the same authored placement bounds and distance test as admission, even before residency. */
+  #cellInView(cell: IWorldCell, eye: Vector3): boolean {
+    if (this.#terrain !== undefined || (cell.chunks?.length ?? 0) > 0) {
+      const box = this.#recordBounds;
+      box.min.set(
+        this.#minX + cell.x * this.#cellSize,
+        this.#extentBounds.min.y,
+        this.#minZ + cell.z * this.#cellSize,
+      );
+      box.max.set(
+        this.#minX + (cell.x + 1) * this.#cellSize,
+        this.#extentBounds.max.y,
+        this.#minZ + (cell.z + 1) * this.#cellSize,
+      );
+      if (_cullFrustum.intersectsBox(box)) return true;
+    }
+    for (const run of cell.runs) {
+      const asset = this.#manifest.assets[this.#canonical(run.asset)];
+      if (asset === undefined) continue;
+      const records = cellPlacements(this.#placements, run);
+      for (let index = 0; index < run.count; index++) {
+        const at = index * PLACEMENT_RECORD_FLOATS;
+        this.#position.fromArray(records, at);
+        const distance =
+          this.#placementReach === undefined
+            ? Math.hypot(this.#position.x - eye.x, this.#position.z - eye.z)
+            : this.#position.distanceTo(eye);
+        const reach = this.#placementReach?.[run.offset + index];
+        if (reach !== undefined && distance > reach) continue;
+        this.#rotation.fromArray(records, at + 3);
+        this.#scale.setScalar(records[at + 7] as number);
+        this.#matrix.compose(this.#position, this.#rotation, this.#scale);
+        const box = this.#boundsAt(asset.bounds, this.#matrix);
+        const inner = cullDistance(asset.maxDistance);
+        const centre = box.getCenter(this.#sourceCentre);
+        const drawDistance = this.#gpuScene.on
+          ? Math.hypot(centre.x - eye.x, centre.z - eye.z)
+          : distance;
+        if (inner !== undefined && drawDistance > inner) continue;
+        if (_cullFrustum.intersectsBox(box)) return true;
+      }
+    }
+    return false;
   }
 
   dispose(): void {
@@ -6603,7 +6693,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * what the changed records' own bounds add: a hook that forwards it redraws the levels whose
    * window covers them, which for a streaming world is usually the finest one alone.
    */
-  #tellShadows(): void {
+  #tellShadows(covered = false): void {
     if (!this.#shadowMoved) return;
     // No hook means there is no level to tell, so the flag is discharged here. Leaving it set made
     // `#residencyStale` true forever, and every update ran a full residency pass on a world that had
@@ -6616,7 +6706,7 @@ export class WorldCells extends Group implements IComputeDriven {
       return;
     }
     const now = this.#now();
-    if (now - this.#shadowToldAt < 1e3) return;
+    if (!covered && now - this.#shadowToldAt < 1e3) return;
     this.#shadowToldAt = now;
     this.#shadowMoved = false;
     const region = this.#shadowRegion;

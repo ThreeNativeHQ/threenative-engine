@@ -1,6 +1,8 @@
 export type StartupCompile = () => Promise<void> | void;
 
 export interface IStartupReadinessOptions {
+  /** Final render-owned work (such as shadow maps), checked after warm-up for two quiet frames. */
+  readonly settled?: () => boolean;
   /** Maximum wall-clock time spent waiting for first-use compilation. */
   readonly compileBudgetMs?: number;
   /** Maximum measured callback duration for a stable startup frame. */
@@ -94,6 +96,10 @@ export class StartupReadiness {
   #stableFrameCount = 0;
   #started = false;
   #ready = false;
+  readonly #settled: (() => boolean) | undefined;
+  #quietFrames = 0;
+  #finishing = false;
+  #afterHoldsDone = false;
   #frameWindowDone = false;
   readonly #holds = new Map<string, IHold>();
   #holdBudgetMs: number;
@@ -127,6 +133,7 @@ export class StartupReadiness {
       "holdBudgetMs",
     );
     this.#afterHolds = options.afterHolds;
+    this.#settled = options.settled;
     this.#readyPromise = new Promise<void>((resolve) => {
       this.#resolveReady = resolve;
     });
@@ -309,6 +316,18 @@ export class StartupReadiness {
   observe(frameMs: number): void {
     if (!this.#ready) this.#pollHolds();
     if (!this.#started || this.#ready) return;
+    if (this.#afterHoldsDone && this.#settled !== undefined) {
+      const quiet =
+        this.#settled() &&
+        [...this.#holds.values()].every(
+          (hold) => hold.settled && (hold.ready === undefined || hold.ready()),
+        );
+      this.#quietFrames = quiet ? this.#quietFrames + 1 : 0;
+      if (this.#quietFrames >= 2) {
+        this.#ready = true;
+        this.#resolveReady();
+      }
+    }
     if (
       this.#compileSettled &&
       Number.isFinite(frameMs) &&
@@ -348,26 +367,27 @@ export class StartupReadiness {
   }
 
   #resolveIfComplete(): void {
-    if (this.#ready || !this.#frameWindowDone) return;
+    if (this.#ready || this.#finishing || !this.#frameWindowDone) return;
     for (const hold of this.#holds.values()) if (!hold.settled) return;
-    // Claim readiness before awaiting, so a hold that settles during `afterHolds` cannot re-enter
-    // and run it twice.
-    this.#ready = true;
+    this.#finishing = true;
+    // Legacy users keep their bounded startup contract; render-owned settlement is opt-in here.
+    if (this.#settled === undefined) this.#ready = true;
+    const finish = (): void => {
+      this.#afterHoldsDone = true;
+      if (this.#settled === undefined) this.#resolveReady();
+    };
     const afterHolds = this.#afterHolds;
-    // No holds means no second tier, which means the framework's own pass already saw the whole
-    // scene. Resolving synchronously there keeps every game that does not stream exactly as it was.
     if (afterHolds === undefined || this.#holds.size === 0) {
-      this.#resolveReady();
+      finish();
       return;
     }
     void (async () => {
       try {
         await afterHolds();
-      } catch {
-        // Swallowed on purpose: a warm-up that fails costs hitches, not a game that never starts.
+      } finally {
+        finish();
       }
-      this.#resolveReady();
-    })();
+    })().catch(() => undefined);
   }
 }
 

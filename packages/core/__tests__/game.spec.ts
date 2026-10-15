@@ -867,12 +867,19 @@ describe("IGame", () => {
       }
       frame(112);
       await Promise.resolve();
+      expect(ready).toBe(false);
+      // The sustained frame window is followed by two quiet rendered readiness polls.
+      frame(128);
+      await Promise.resolve();
+      expect(ready).toBe(false);
+      frame(144);
+      await Promise.resolve();
       await Promise.resolve();
       expect(ready).toBe(true);
       expect(ctx.startup.phase).toBe("ready");
       expect(ctx.startup.progress).toBe(1);
       expect(events.filter((event) => event === "world").length).toBe(
-        worldRendersBeforeStabilityWindow + 4,
+        worldRendersBeforeStabilityWindow + 6,
       );
       expect(events.slice(0, 5)).toEqual(["overlay", "compile", "overlay", "world", "scene"]);
     } finally {

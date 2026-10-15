@@ -312,7 +312,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         elapsedMs: 0,
         complete: false,
         samples: 0,
-        publishedBatchesInView: 0,
+        publishedBatchesInView: -1,
         shadowInvalidated: -1,
         impostorPendingPeak: -1,
         pipelinesCreated: -1,
@@ -338,6 +338,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         const creations = census?.counts.deviceCreations;
         if (reveal.startedMs < 0) {
           reveal.startedMs = performance.now();
+          reveal.publishedBatchesInView = 0;
           shadowAtReveal = shadows.stats.byInvalidation;
           pipelinesAtReveal = creations;
           ctx.camera.updateMatrixWorld(true);
@@ -386,7 +387,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
               stage: propsStage,
               propsSettled,
               ...(preparation === undefined ? {} : { preparation }),
-              coverage: props?.readinessAt(spawn),
+              coverage: props?.readinessAt(ctx.camera),
               assets: ctx.assets.progress,
               startup: ctx.startup,
             }),
@@ -403,9 +404,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           // Core polls this once per rendered frame, so the gate settles under a playtest's
           // deterministic clock, which advances no fixed step while startup is held.
           () => {
-            const region = props?.readinessAt(spawn);
+            const region =
+              !admission.ready || ctx.startup.phase !== "ready"
+                ? props?.readinessAt(ctx.camera)
+                : undefined;
             admission.observe(region?.ready === true, region?.failures ?? 0);
-            return admission.ready || admission.error !== "";
+            return (region?.ready === true && admission.ready) || admission.error !== "";
           },
           120_000,
           () =>
@@ -1029,7 +1033,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           };
         }
         const streaming = props?.stats();
-        const region = props?.readinessAt(spawn);
+        const region =
+          !admission.ready || ctx.startup.phase !== "ready"
+            ? props?.readinessAt(ctx.camera)
+            : undefined;
         admission.observe(region?.ready === true, region?.failures ?? 0);
         const worldReady = admission.ready;
         if (region)

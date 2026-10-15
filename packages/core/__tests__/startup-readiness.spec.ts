@@ -2,6 +2,42 @@ import { describe, expect, it, vi } from "vitest";
 import { StartupReadiness } from "../src/startup-readiness.js";
 
 describe("StartupReadiness", () => {
+  it("requires two quiet rendered polls after warm-up and resets for late work", async () => {
+    let shadowSettled = false;
+    let resident = true;
+    let finishWarmup!: () => void;
+    const readiness = new StartupReadiness({
+      stableFrames: 1,
+      settled: () => shadowSettled,
+      afterHolds: () =>
+        new Promise<void>((resolve) => {
+          finishWarmup = resolve;
+        }),
+    });
+    readiness.hold("view", () => resident);
+    readiness.start();
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    finishWarmup();
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    shadowSettled = true;
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    resident = false;
+    readiness.observe(1);
+    resident = true;
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    shadowSettled = false;
+    readiness.observe(1);
+    shadowSettled = true;
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    readiness.observe(1);
+    expect(readiness.ready).toBe(true);
+    await readiness.whenReady();
+  });
+
   it("waits for compile work and consecutive in-budget frames", async () => {
     let resolveCompile: () => void = () => undefined;
     const readiness = new StartupReadiness({

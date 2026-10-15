@@ -8,7 +8,7 @@ import {
   WorldCells,
 } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
-import { Box3, Group, InstancedMesh, Mesh, Quaternion, Vector3 } from "three";
+import { Box3, type Camera, Group, InstancedMesh, Mesh, Quaternion, Vector3 } from "three";
 import type { IPropPreparationProgress } from "./propProgress.js";
 import {
   DRAW_REACH,
@@ -391,8 +391,8 @@ export async function createStreamedProps(options: IStreamOptions) {
     byId,
     stats,
     compileSlices,
-    readinessAt(position: { readonly x: number; readonly z: number }, radius = 60) {
-      const regions = worlds.map((world) => world.readinessAt(position, radius));
+    readinessAt(camera: Camera) {
+      const regions = worlds.map((world) => world.readinessAt(camera));
       const required = regions.reduce((n, r) => n + r.requiredCells, 0);
       const loaded = regions.reduce((n, r) => n + r.loadedCells, 0);
       return {
