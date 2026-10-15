@@ -1517,6 +1517,9 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
 }
 
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear, std::array<double, 2>* cpuMs) {
+    // Planning rewrites the draws a pending encode reads, so a second frame in flight is refused first.
+    if (renderer.framePending())
+        throw std::logic_error("TN_RENDER_THREAD_BATON: a frame was planned before the previous one was encoded");
     using Clock = std::chrono::steady_clock;
     const auto start = (cpuMs || profiling) ? Clock::now() : Clock::time_point{};
     const auto previousJoints = gpuJoints_;
@@ -1543,7 +1546,13 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     if (const auto* world = dynamic_cast<const Scene*>(&scene); world && world->background)
         clear = {world->background->r, world->background->g, world->background->b, 1};
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};
-    const auto result = renderer.render(items_, cameraState_, lights_, clear);
+    uint64_t result;
+    if (encodeJobs) {
+        result = renderer.renderDeferred(items_, cameraState_, lights_, clear);
+        encodeJobs->push_back([&renderer] { renderer.encodePending(); });
+    } else {
+        result = renderer.render(items_, cameraState_, lights_, clear);
+    }
     if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();
     if (drawUse && !reflecting_) {
         const auto eligible = gpuJoints_ ? gpuJoints_->rigs.size() : 0;
@@ -1606,6 +1615,7 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
             pass.database->gpuJoints_ = gpuJoints_;
             std::array<double, 2> split{0, 0};
             pass.database->profiling = profiling;
+            pass.database->encodeJobs = encodeJobs;
             pass.database->render(*pass.renderer, scene, virtualCamera, clear, profiling ? &split : nullptr);
             if (profiling) {
                 reflectionMs_[0] += split[0];
@@ -1614,7 +1624,10 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
             }
             pass.database->skeletonsFresh_ = nullptr;
         }
-        else
+        else if (encodeJobs) {
+            pass.renderer->renderDeferred({}, CameraState{}, LightState{}, {0, 0, 0, 0});
+            encodeJobs->push_back([renderer = pass.renderer.get()] { renderer->encodePending(); });
+        } else
             pass.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
         for (const auto& message : pass.database->diagnostics()) diagnostics_.push_back(message);
     }

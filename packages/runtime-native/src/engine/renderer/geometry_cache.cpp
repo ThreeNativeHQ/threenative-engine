@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 namespace tn::engine {
@@ -26,6 +27,8 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
     const uint64_t byteLength = (store.byteLength() + 3) & ~uint64_t{3};
     auto [it, isNew] = entries_.try_emplace(&store);
     Entry& e = it->second;
+    e.bytes = store.byteLength();
+    e.scalar = store.scalar();
     // A released store's copy at this address belongs to the dead store, never to this one.
     if (!isNew && e.tracked && e.owner.expired()) {
         gpu_.destroy(e.buffer);
@@ -65,6 +68,12 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
     store.clearUpdateRanges();
     e.version = store.version();
     return e.buffer;
+}
+
+GeometryCache::Resolved GeometryCache::resolved(const BufferStore& store) const {
+    const auto it = entries_.find(&store);
+    if (it == entries_.end()) throw std::runtime_error("TN_RENDER_THREAD_UNSYNCED: a drawn store reached encode without a sync");
+    return {it->second.buffer, it->second.bytes, it->second.scalar};
 }
 
 void GeometryCache::forget(const BufferStore& store) {

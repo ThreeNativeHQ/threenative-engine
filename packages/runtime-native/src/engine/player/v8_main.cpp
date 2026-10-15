@@ -257,8 +257,11 @@ class V8Game {
     void uiFrame();
     /** A frame with nothing to draw yet: the game's frame callbacks still run (run.h frameWithoutView). */
     void frameWithoutView() { presentFrame(); profileFrame(false); }
+    /** PRD-613: the loop's wait for the frame its render thread has in flight; absent without that thread. */
+    void setRenderBarrier(std::function<void()> barrier) { renderBarrier_ = std::move(barrier); }
     void beforeRender(Renderer& renderer, RenderDatabase& database) {
         presentFrame();  // the game's frame callbacks may change the renderer state applied below
+        idleRenderer();  // the settings below are the renderer's own, so the frame in flight ends first
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
         renderer.setSampleCount(samples_);
@@ -266,6 +269,9 @@ class V8Game {
         database.shadowMapType = shadowMapType_;
     }
   private:
+    // Everything this game does to the renderer outside the loop's own handoff calls this first.
+    void idleRenderer() { if (renderBarrier_) renderBarrier_(); }
+    std::function<void()> renderBarrier_;
     void presentFrame();
     void profileFrame(bool drawn = true);
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
@@ -644,6 +650,7 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto* camera = info.Length() == 3 ? game.engineObject(info[2], "Camera") : nullptr;
     if (target == nullptr || root == nullptr || camera == nullptr)
         return refuse("TN_NATIVE_RENDER_TARGET: expected a RenderTarget, an Object3D and a camera");
+    game.idleRenderer();
     // three's WebGPURenderer clears a target to its clear colour (setClearColor), black and opaque by default.
     const auto refused = renderToTarget(*game.renderer_, *static_cast<RenderTarget*>(target->ptr.get()),
                                         *static_cast<Object3D*>(root->ptr.get()), *static_cast<Camera*>(camera->ptr.get()),
@@ -683,6 +690,7 @@ void V8Game::readFrame(const v8::FunctionCallbackInfo<v8::Value>& info) {
         return;
     }
     auto pending = std::make_shared<v8::Global<v8::Promise::Resolver>>(isolate, resolver);
+    game.idleRenderer();
     const GpuStatus started = game.renderer_->readPixels([&game, pending](GpuStatus status, std::vector<uint8_t> bytes) {
         game.settleRead(*pending, status, bytes);
     });
@@ -710,6 +718,7 @@ void V8Game::readTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
         region[i] = static_cast<uint32_t>(value);
     }
     auto pending = std::make_shared<v8::Global<v8::Promise::Resolver>>(isolate, resolver);
+    game.idleRenderer();
     const GpuStatus started = readRenderTarget(*static_cast<RenderTarget*>(target->ptr.get()), region[0], region[1],
         region[2], region[3], [&game, pending](GpuStatus status, std::vector<uint8_t> bytes) {
             game.settleRead(*pending, status, bytes);
@@ -746,6 +755,7 @@ void V8Game::compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
 void V8Game::pollCompilations() {
     if (!renderer_ || compilations_.empty()) return;  // boot can call before the device is initialized
+    idleRenderer();
     v8::Isolate::Scope isolateScope(isolate_);
     v8::HandleScope scope(isolate_);
     auto ctx = js_.Get(isolate_);
@@ -795,6 +805,7 @@ void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
     shader::graph::Node graph;
     const auto apply = [&](shader::graph::Node value) {
         if (value == game.post_) return;  // RenderPipeline.render() hands the same graph every frame
+        game.idleRenderer();
         if (game.renderer_) game.renderer_->setPostGraph(value);
         game.post_ = std::move(value);
     };
@@ -1428,6 +1439,7 @@ int main(int argc, char** argv) {
     configured.bridgeCalls = [] { return tn::abi::crossings(); };
     configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.frameWithoutView = [&game] { game.frameWithoutView(); };
+    configured.setRenderBarrier = [&game](std::function<void()> barrier) { game.setRenderBarrier(std::move(barrier)); };
     // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside
     // the executable for the legacy host), through the legacy host's overlay seam; TN_UI_RENDERER=
     // native-css picks the CSS backend. The loop reaches it only through these hooks.

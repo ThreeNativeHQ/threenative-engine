@@ -3,6 +3,8 @@
 #include <chrono>
 #include <functional>
 #include <array>
+#include <atomic>
+#include <mutex>
 #include <map>
 #include <cstdint>
 #include <optional>
@@ -349,6 +351,18 @@ public:
      */
     uint64_t render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                     std::array<double, 4> clear = {0, 0, 0, 0});
+    /**
+     * render() in two halves for the render thread (PRD-613). `renderDeferred` does everything that reads
+     * scene-owned data (syncs, texture and geometry uploads, uniform packing, program lookup) and returns;
+     * `encodePending` then records and submits the frame from what that half froze, on any one thread,
+     * and reads nothing the game can write. The game thread touches this renderer only before the first
+     * call and after the second; a call that breaks the order throws TN_RENDER_THREAD_BATON.
+     */
+    uint64_t renderDeferred(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
+                            std::array<double, 4> clear = {0, 0, 0, 0});
+    void encodePending();
+    /** True from `renderDeferred` until `encodePending` returns: the game thread plans nothing meanwhile. */
+    bool framePending() const { return pendingEncode_ || encoding_; }
     /** Pipeline preparation only: shares render's planning, submits no frame. */
     std::vector<std::shared_ptr<PipelineCompilation>> compileAsync(std::span<const DrawItem> items,
         const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm);
@@ -442,7 +456,14 @@ public:
         };
         SkinnedPass mainSkinned, shadowSkinned;
     };
-    const FrameStats& lastFrame() const { return lastFrame_; }
+    /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
+    const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
+    /** Game thread, with the render thread idle: publishes the stats of the frame `encodePending` last finished. */
+    void collectFrame() {
+        std::lock_guard lock(frameMailMutex_);
+        published_ = frameMail_;
+        publishes_ = true;
+    }
     /**
      * GPU time of the most recent frame whose timestamps came back, first shadow pass (else scene
      * pass) start to output pass end, in milliseconds; negative until one has, and always on a device without timestamp-query.
@@ -504,7 +525,18 @@ private:
                                 kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightFieldCount };
     uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
         std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
-        WGPUTextureFormat outputFormat);
+        WGPUTextureFormat outputFormat, bool defer = false);
+    // renderPrepared's plan, frozen for encodePending: the draws with their programs, pipelines and uniform slices.
+    struct Planned;
+    struct ShadowPass;
+    struct FrameJob;
+    void encodeFrame(FrameJob& job);
+    std::unique_ptr<FrameJob> job_;
+    bool pendingEncode_ = false;
+    std::atomic<bool> encoding_{false};
+    mutable std::mutex frameMailMutex_;
+    FrameStats frameMail_, published_;
+    bool publishes_ = false;
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
@@ -733,7 +765,7 @@ private:
     // Shared with the readback callback by weak reference: a backend may deliver it after this
     // renderer is gone (wgpu does at teardown), and it must then find nothing to write into.
     struct Timing {
-        bool pending = false;  // a resolve is being read back; the next frames are not timed
+        std::atomic<bool> pending{false};  // a resolve is being read back; the next frames are not timed
         double lastMs = -1;
         std::array<double, 4> segments{};  // shadow passes, scene pass, post (between), output pass, in ms
         uint64_t samples = 0;

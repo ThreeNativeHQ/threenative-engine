@@ -224,8 +224,21 @@ WGPUSampler PostEffects::sampler(const std::string& name) const {
         return it->second.sampler;
     return linear_;
 }
+void PostEffects::captureUniforms() {
+    for (auto& pass : passes_) {
+        pass.captured.clear();
+        for (const auto& node : pass.source.live)
+            pass.captured[node->name] = node->values;
+        if (pass.source.effect)
+            for (const auto& [name, value] : pass.source.effect->parameters)
+                if (name != "sampleVectors") pass.captured[name] = value;
+    }
+    captured_ = true;
+}
 uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
                          const CameraState& camera, uint64_t frame) {
+    if (!captured_) captureUniforms();
+    captured_ = false;
     graph::RenderGraph graph;
     std::map<std::string, graph::ResourceId> resources;
     const graph::TextureDesc desc{width_, height_, uint32_t(WGPUTextureFormat_RGBA16Float),
@@ -263,11 +276,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
         const auto& stages = pass.source.package.variants.at(0).stages;
         const auto& fragment = stages[1];
         auto values = pass.source.uniforms;
-        for (const auto& node : pass.source.live)
-            values[node->name] = node->values;
-        if (pass.source.effect)
-            for (const auto& [name, value] : pass.source.effect->parameters)
-                if (name != "sampleVectors") values[name] = value;
+        for (const auto& [name, value] : pass.captured) values[name] = value;
         values["resolution"] = {float(target.width), float(target.height)};
         values["postTargetSize"] = {float(target.width), float(target.height)};
         values["_cameraProjectionMatrix"] = {camera.projectionMatrix.begin(), camera.projectionMatrix.end()};

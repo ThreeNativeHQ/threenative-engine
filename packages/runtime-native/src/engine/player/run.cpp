@@ -498,6 +498,30 @@ struct Session {
     std::shared_ptr<GpuThread> gpuThread;
     double gpuThreadCpuMs = -1;  // the GPU thread's CPU for the previous frame's present job
     double gpuJobCpuMs = -1;     // written by that job; copied above only after a wait
+    // PRD-613: the encode half of the frame (every pass, main and reflections) runs here, off the game
+    // thread, while the next frame's JS runs. TN_RENDER_THREAD=1 enables it; it needs the GPU thread.
+    // The game thread touches the renderer only after waitRenderThread() and before it posts the next job.
+    std::shared_ptr<GpuThread> renderThread;
+    std::vector<std::function<void()>> encodeJobs;  // this frame's passes, in order; the job reads them, so they live here
+    double renderThreadCpuMs = -1;  // the render thread's CPU for the previous frame's job
+    double renderJobCpuMs = -1;     // written by that job; copied above only after a wait
+    std::exception_ptr renderError;  // an encode failure, rethrown on the game thread at the next handoff
+    bool renderJobPosted = false;
+    uint64_t renderFallbacks = 0;    // frames that took the inline path while the render thread was on
+    /** Waits for the frame in flight: the render thread first, then the GPU thread its job fed. */
+    void waitRenderThread(bool rethrow) {
+        if (renderThread) {
+            renderThread->wait();
+            if (renderJobPosted) renderThreadCpuMs = renderJobCpuMs;
+            renderJobPosted = false;
+        }
+        if (gpuThread) {
+            gpuThread->wait();
+            gpuThreadCpuMs = gpuJobCpuMs;
+        }
+        if (renderThread && renderer) renderer->collectFrame();
+        if (rethrow && renderError) std::rethrow_exception(std::exchange(renderError, nullptr));
+    }
     world::FixedStepClock clock{kTickStep, 5};
     uint64_t drivenTicks = 0;
     double nowMs = 0;
@@ -621,6 +645,12 @@ int Session::initialize() {
     if (const char* flag = std::getenv("TN_GPU_THREAD"); presenter && !(flag && std::strcmp(flag, "0") == 0)) {
         gpuThread = std::make_shared<GpuThread>();
         renderer->gpu().setThread(gpuThread);
+        // Only a game that fences its own renderer touches (setRenderBarrier) can share the renderer with a thread.
+        if (const char* rt = std::getenv("TN_RENDER_THREAD"); rt && std::strcmp(rt, "1") == 0 && game.setRenderBarrier) {
+            renderThread = std::make_shared<GpuThread>();
+            renderer->collectFrame();
+            game.setRenderBarrier([this] { waitRenderThread(false); });
+        }
     }
 #endif
     startupStage("renderer-ready");
@@ -720,8 +750,10 @@ int Session::initialize() {
         const double cpuAfterRender = metrics ? threadCpuMs() : -1;
         if (!refreshView()) { if (spans) gameSpan(kHostFrameSpan, 1); return; }
 
+        bool resized = false;
         if (presenter && (presenter->width() != window.width || presenter->height() != window.height)) {
-            if (gpuThread) gpuThread->wait();  // the previous present still uses the surface
+            waitRenderThread(true);  // the previous present still uses the surface
+            resized = true;
             presenter->resize(window.width, window.height);
             renderer->setSize(presenter->width(), presenter->height());
             if (game.uiResize) game.uiResize(int(window.width), int(window.height));
@@ -755,18 +787,29 @@ int Session::initialize() {
         }
         // One frame in flight: the previous frame's present job ends before this frame touches the queue.
         // The JS above ran while it was still going.
-        if (gpuThread) {
-            gpuThread->wait();
-            gpuThreadCpuMs = gpuJobCpuMs;
-        }
+        // With the render thread on, the render thread's job ends first: it posts the present.
+        waitRenderThread(true);
         // The page's newest frame goes over the world in the blit (PRD-554); uploaded before the render
         // so its queue write never waits for this frame's submit on the GPU thread.
         if (presenter && game.uiDraw) game.uiDraw(*renderer);
         const auto renderBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double renderCpuBegin = metrics ? threadCpuMs() : -1;
         std::array<double, 2> renderSplitMs{-1, -1};  // wall ms: {prepare, encode+submit}
-        database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1},
-                        metrics ? &renderSplitMs : nullptr);
+        // The first frame, a resize and a surface-less run encode inline: they read the frame back at once.
+        const bool offThread = renderThread && presenter && !firstFrame && !resized;
+        if (renderThread && !offThread) ++renderFallbacks;
+        encodeJobs.clear();
+        database.encodeJobs = offThread ? &encodeJobs : nullptr;
+        try {
+            database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1},
+                            metrics ? &renderSplitMs : nullptr);
+        } catch (...) {
+            // A pass that planned before the failure still holds its frame: encode it, as the inline path would have.
+            for (auto& job : encodeJobs) job();
+            encodeJobs.clear();
+            throw;
+        }
+        if (renderThread && !offThread) renderer->collectFrame();
         const double renderMs = metrics ? elapsed(renderBegin) : 0;
         const double renderCpuMs = renderCpuBegin >= 0 ? threadCpuMs() - renderCpuBegin : -1;
         for (const std::string& diagnostic : database.diagnostics())
@@ -778,7 +821,38 @@ int Session::initialize() {
             if (firstFrame) startupStage("first-acquire-begin");
             const auto presentBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
             const auto format = static_cast<WGPUTextureFormat>(context->getPreferredFormat());
-            if (gpuThread && !firstFrame) {
+            if (offThread) {
+                // Every pass's encode, then the present job for the GPU thread, in order on the render thread.
+                // The jobs hold renderers, never scene data, and the game thread does not touch them until
+                // its next waitRenderThread().
+                renderJobPosted = true;
+                renderThread->post([this, format, queue = context->getQueue()]() mutable {
+                    const double begin = threadCpuMs();
+                    try {
+                        for (auto& job : encodeJobs) job();
+                        if (auto plan = renderer->prepareBlit(format)) {
+                            gpuThread->post([plan = *plan, presenter = presenter.get(), queue,
+                                             stats = &gpuJobCpuMs]() mutable {
+                                const double gpuBegin = threadCpuMs();
+                                Presenter::Frame frame;
+                                WGPUCommandBuffer commands = presenter->begin(frame) ? Renderer::encodeBlit(plan, frame.color) : nullptr;
+                                if (commands) {
+                                    wgpuQueueSubmit(queue, 1, &commands);
+                                    wgpuCommandBufferRelease(commands);
+                                    presenter->present();
+                                } else {
+                                    wgpuBindGroupRelease(plan.group);
+                                    if (plan.overGroup) wgpuBindGroupRelease(plan.overGroup);
+                                }
+                                *stats = threadCpuMs() - gpuBegin;
+                            });
+                        }
+                    } catch (...) {
+                        renderError = std::current_exception();
+                    }
+                    renderJobCpuMs = threadCpuMs() - begin;
+                });
+            } else if (gpuThread && !firstFrame) {
                 // Prepared here, recorded there: the job reads the plan and the presenter, never the renderer.
                 if (auto plan = renderer->prepareBlit(format)) {
                     gpuThread->post([plan = *plan, presenter = presenter.get(), queue = context->getQueue(),
@@ -832,6 +906,7 @@ int Session::initialize() {
         // A screenshot answer is a real frame of this loop, so it is read back from the renderer the
         // moment the mailbox asks for one. The readback lands a few frames later.
         if (mailbox->screenshotRequested() && !readbackInFlight) {
+            waitRenderThread(true);  // the read-back takes this very frame, so its encode ends first
             // With a UI the answer is the presented frame, the page drawn over it, as a player sees it.
             const auto read = [this](ReadbackCallback done) {
                 return game.uiDraw ? renderer->readPresented(std::move(done)) : renderer->readPixels(std::move(done));
@@ -918,6 +993,13 @@ int Session::initialize() {
                 auto members = sample.members();
                 members.emplace_back("cpuFrameKCycles", json::Value::makeNumber(std::round(
                     (updateCycles + threadCycles() - cyclesFrameBegin - presentCycles) / 1e3)));
+                sample = json::Value::makeObject(std::move(members));
+            }
+            if (renderThread) {
+                auto members = sample.members();
+                if (renderThreadCpuMs >= 0)  // the previous frame's encode and submit, now off the game thread
+                    members.emplace_back("renderThreadCpuMs", json::Value::makeNumber(renderThreadCpuMs));
+                members.emplace_back("renderThreadFallbacks", json::Value::makeNumber(double(renderFallbacks)));
                 sample = json::Value::makeObject(std::move(members));
             }
             if (gpuThread && gpuThreadCpuMs >= 0) {
@@ -1059,6 +1141,8 @@ Session::~Session() {
     presenter.reset();
     if (context) context->releaseSurface();
 #endif
+    waitRenderThread(false);  // the frame in flight reads the renderer and the game's resources
+    renderThread.reset();
     if (initialized && game.shutdown) game.shutdown();
     renderer.reset();
     presenter.reset();

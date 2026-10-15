@@ -198,6 +198,14 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         set_tests_properties(native_engine_post_normal_pass PROPERTIES LABELS "native-engine" TIMEOUT 180)
     endif()
 
+    # PRD-613: the render thread's frame order, run with the encode half on a second thread.
+    tn_native_engine_test(tn-native-engine-render-thread-order-test tests/native-engine/render_thread_order_test.cpp
+        native_engine_render_thread_order=order
+        native_engine_render_thread_uniform_order=uniform_node
+        native_engine_render_thread_reflection_order=reflection_order
+        native_engine_render_thread_baton=baton)
+    target_link_libraries(tn-native-engine-render-thread-order-test PRIVATE tn_engine_renderer tn_host_services)
+
     tn_native_engine_test(tn-native-engine-compute-test tests/native-engine/compute_test.cpp
         native_engine_compute_readback=readback)
     target_link_libraries(tn-native-engine-compute-test PRIVATE tn_engine_renderer tn_host_services)

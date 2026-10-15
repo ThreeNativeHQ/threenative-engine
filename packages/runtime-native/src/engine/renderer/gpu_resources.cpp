@@ -373,9 +373,12 @@ GpuStatus GpuResources::destroy(Handle resource) {
     if (!target) return status;
     handles_.release(resource);
     // Any submission so far may read it; it is freed once the last of them has completed.
-    shared_->pending.push_back(PendingDestroy{shared_->submitted, *target});
-    *target = Record{};
-    shared_->collect();
+    {
+        std::lock_guard lock(shared_->mutex);
+        shared_->pending.push_back(PendingDestroy{shared_->submitted, *target});
+        *target = Record{};
+        shared_->collect();
+    }
     return GpuStatus::Ok;
 }
 
@@ -388,7 +391,11 @@ WGPUTexture GpuResources::texture(Handle handle) const {
 }
 
 uint64_t GpuResources::submit(WGPUCommandBuffer commands) {
-    const uint64_t serial = ++shared_->submitted;
+    uint64_t serial;
+    {
+        std::lock_guard lock(shared_->mutex);
+        serial = ++shared_->submitted;
+    }
     post([queue = queue_, commands, owner = std::weak_ptr<Shared>(shared_), events = &events_, serial] {
         wgpuQueueSubmit(queue, 1, &commands);
         wgpuCommandBufferRelease(commands);
@@ -412,6 +419,7 @@ uint64_t GpuResources::submit(WGPUCommandBuffer commands) {
             if (done->owner.expired()) return;
             done->events->post([owner = done->owner, serial = done->serial]() {
                 if (auto shared = owner.lock()) {
+                    std::lock_guard lock(shared->mutex);
                     shared->completed = std::max(shared->completed, serial);
                     shared->collect();
                 }

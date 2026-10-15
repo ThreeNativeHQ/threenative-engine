@@ -23,6 +23,17 @@ public:
      * it consumed are cleared, as three's renderer does. Usage is a WGPUBufferUsage.
      */
     Handle sync(BufferStore& store, uint32_t usage);
+    /**
+     * What encode needs of a synced store, read from the cache and never from the store: the
+     * render thread (PRD-613) encodes while JavaScript may still write the store. Throws for a
+     * store this frame's sync pass did not reach.
+     */
+    struct Resolved {
+        Handle buffer;
+        uint64_t bytes = 0;  // the store's byteLength at its last sync
+        Scalar scalar = Scalar::F32;
+    };
+    Resolved resolved(const BufferStore& store) const;
     /** Drops a store's GPU copy (deferred until the GPU is done with it). */
     void forget(const BufferStore& store);
     /**
@@ -54,6 +65,8 @@ private:
         std::weak_ptr<const BufferStore> owner;
         bool tracked = false;
         uint32_t releases = 0;  // the store's gpuReleases() when this copy was made
+        uint64_t bytes = 0;     // the store's byteLength() at its last sync (unpadded)
+        Scalar scalar = Scalar::F32;
     };
     GpuResources& gpu_;
     uint64_t sweptAt_ = ~uint64_t{0};  // BufferStore::released() at the last sweep

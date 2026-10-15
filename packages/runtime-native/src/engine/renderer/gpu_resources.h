@@ -133,9 +133,9 @@ public:
     /** Non-blocking: lets the backend deliver finished callbacks into the event queue. */
     void poll();
 
-    uint64_t submittedSerial() const { return shared_->submitted; }
-    uint64_t completedSerial() const { return shared_->completed; }
-    size_t pendingDestroyCount() const { return shared_->pending.size(); }
+    uint64_t submittedSerial() const { std::lock_guard lock(shared_->mutex); return shared_->submitted; }
+    uint64_t completedSerial() const { std::lock_guard lock(shared_->mutex); return shared_->completed; }
+    size_t pendingDestroyCount() const { std::lock_guard lock(shared_->mutex); return shared_->pending.size(); }
     uint32_t liveCount() const { return handles_.liveCount(); }
 
     GpuStatus status(Handle handle, uint16_t type) const;
@@ -155,8 +155,11 @@ private:
     };
     // Outlived by nothing that captures it: callbacks hold a weak reference, so a callback that
     // arrives after this object is gone finds it expired and does nothing.
+    // The render thread submits and destroys while the game thread drains completions (PRD-613):
+    // `mutex` guards the serials and the pending list; collect() runs with it held.
     struct Shared {
         std::shared_ptr<GpuThread> thread;
+        mutable std::mutex mutex;
         uint64_t submitted = 0;
         uint64_t completed = 0;
         std::vector<PendingDestroy> pending;

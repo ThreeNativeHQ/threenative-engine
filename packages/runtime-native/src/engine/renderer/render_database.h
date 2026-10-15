@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -75,6 +76,12 @@ class RenderDatabase {
      * On by default; off draws every mesh on its own, subject to the measured pixel-edge budget.
      */
     bool batching = true;
+    /**
+     * With a sink (PRD-613), render() plans every pass here and leaves each pass's encode half in it, in the
+     * order the passes must run, instead of encoding: the caller runs the jobs on its render thread, one frame
+     * in flight, and touches no renderer until they finish. Null encodes inline, as before.
+     */
+    std::vector<std::function<void()>>* encodeJobs = nullptr;
     /**
      * A reflection pass reuses the frame's work instead of redoing it (PRD-610 AC-10): it does not walk
      * the scene's matrices again after this render's own walk, unless a render callback may have moved
