@@ -78,6 +78,8 @@ export interface IPipelineCensusEvent {
   readonly beforeFirstPresent?: boolean;
   /** Whether this event settled before the explicit warm-up completion boundary. */
   readonly beforeWarmUpSettled?: boolean;
+  /** The most recent streamed warm-up scope that preceded this event. */
+  readonly afterWarmUpScope?: string;
 }
 
 export interface IPipelineCensusCounts {
@@ -130,6 +132,13 @@ export interface IPipelineCensus {
     readonly nodeBuilds: number;
     readonly renderPipelineCreations: number;
   };
+  readonly warmUpScopes?: readonly {
+    readonly label: string;
+    readonly boundaryMs: number;
+    readonly eventsSettled: number;
+    readonly nodeBuilds: number;
+    readonly renderPipelineCreations: number;
+  }[];
   readonly counts: IPipelineCensusCounts;
   readonly events: readonly IPipelineCensusEvent[];
   readonly incompleteReasons: readonly string[];
@@ -223,6 +232,7 @@ interface IMutableCensusEvent {
   nodeBuilds?: number;
   beforeFirstPresent?: boolean;
   beforeWarmUpSettled?: boolean;
+  afterWarmUpScope?: string;
   /** Three's logical pipeline object, retained privately for backend data lookup. */
   backendPipeline?: unknown;
   /** Observed at the device rather than through a backend method, so it carries its own handle. */
@@ -306,6 +316,14 @@ export class PipelineCensus {
   #eventsSettledAtWarmUpSettled = 0;
   #nodeBuildsAtWarmUpSettled = 0;
   #renderPipelineCreationsAtWarmUpSettled = 0;
+  readonly #warmUpScopes: {
+    label: string;
+    boundaryMs: number;
+    eventsSettled: number;
+    nodeBuilds: number;
+    renderPipelineCreations: number;
+  }[] = [];
+  #activeWarmUpScope: { label: string; boundaryMs: number } | undefined;
   #nodeBuilderObservationUnavailable = false;
   #cleanup: (() => void) | undefined;
 
@@ -590,6 +608,28 @@ export class PipelineCensus {
     }
   }
 
+  /** Mark one repeatable streamed warm-up boundary; later events carry its label. */
+  warmUpScopeSettled(label: string): void {
+    if (label.trim() === "") throw new Error("TN_PIPELINE_CENSUS_SCOPE_INVALID: empty label");
+    const boundaryMs = this.#clock();
+    this.#warmUpScopes.push({
+      label,
+      boundaryMs,
+      eventsSettled: this.#events.filter(
+        (event) => event.settledMs !== undefined && event.settledMs <= boundaryMs,
+      ).length,
+      nodeBuilds: this.#nodeBuilds,
+      renderPipelineCreations: this.#events.filter(
+        (event) =>
+          event.kind === "render" &&
+          event.status === "created" &&
+          event.settledMs !== undefined &&
+          event.settledMs <= boundaryMs,
+      ).length,
+    });
+    this.#activeWarmUpScope = { label, boundaryMs };
+  }
+
   snapshot(): IPipelineCensus {
     const incompleteReasons: string[] = [];
     if (this.#unsupported) incompleteReasons.push("backend creation observation unavailable");
@@ -645,6 +685,9 @@ export class PipelineCensus {
               renderPipelineCreations: this.#renderPipelineCreationsAtWarmUpSettled,
             },
           }),
+      ...(this.#warmUpScopes.length === 0
+        ? {}
+        : { warmUpScopes: this.#warmUpScopes.map((scope) => ({ ...scope })) }),
       counts: {
         lookups: this.#lookups,
         creations: this.#creations,
@@ -959,6 +1002,8 @@ export class PipelineCensus {
       this.#firstPresentMs === undefined || settledAt <= this.#firstPresentMs;
     if (this.#warmUpSettledMs !== undefined)
       event.beforeWarmUpSettled = settledAt <= this.#warmUpSettledMs;
+    if (this.#activeWarmUpScope !== undefined && settledAt > this.#activeWarmUpScope.boundaryMs)
+      event.afterWarmUpScope = this.#activeWarmUpScope.label;
     if (event.pending === true) {
       event.pending = false;
       this.#pending = Math.max(0, this.#pending - 1);
@@ -1278,5 +1323,6 @@ function freezeEvent(event: IMutableCensusEvent): IPipelineCensusEvent {
     ...(event.beforeWarmUpSettled === undefined
       ? {}
       : { beforeWarmUpSettled: event.beforeWarmUpSettled }),
+    ...(event.afterWarmUpScope === undefined ? {} : { afterWarmUpScope: event.afterWarmUpScope }),
   };
 }

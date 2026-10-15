@@ -170,6 +170,14 @@ export interface IRendererLike {
   readonly compileCount?: number;
   /** The bounded, fail-closed pipeline observation for this renderer, when enabled. */
   readonly pipelineCensus?: () => IPipelineCensus;
+  /** Marks the completion of the renderer's current scene warm-up attempt. */
+  warmUpSettled?(): void;
+  /** Marks a repeatable streamed warm-up boundary for the next first draw. */
+  warmUpScopeSettled?(label: string): void;
+  /** Compiles against the authored output pass target, when one is installed. */
+  compileWorldPassAsync?(scene: Object3D, camera: Camera, targetScene?: Object3D): Promise<boolean>;
+  /** Performs one covered output-pipeline render without marking first present. */
+  warmUpWorldPass?(scene: Object3D, camera: Camera): void;
   /**
    * What alpha antialiasing did with the multisampled surface, and why, when it did nothing.
    *
@@ -486,6 +494,8 @@ type RendererInstance = IStorageBufferSource & {
   needsFrameBufferTarget?: boolean;
   getRenderTarget?: () => unknown;
   setRenderTarget?: (target: unknown) => void;
+  getMRT?: () => unknown;
+  setMRT?: (mrt: unknown) => void;
   _getFrameBufferTarget?: () => unknown;
   /** What `getRenderTarget()` answers, and the only honest read while that answer is overridden. */
   _renderTarget?: unknown;
@@ -689,6 +699,54 @@ function wrapRenderer(
       return activeCompiles > 0;
     },
     ...(pipelineCensus === undefined ? {} : { pipelineCensus: () => pipelineCensus.snapshot() }),
+    ...(pipelineCensus === undefined
+      ? {}
+      : { warmUpSettled: () => pipelineCensus.warmUpSettled() }),
+    ...(pipelineCensus === undefined
+      ? {}
+      : { warmUpScopeSettled: (label: string) => pipelineCensus.warmUpScopeSettled(label) }),
+    compileWorldPassAsync: async (scene, camera, targetScene) => {
+      if (outputPass === undefined) return false;
+      const compilePass = outputPass.compileAsync;
+      if (typeof compilePass !== "function") return false;
+      const previousScene = outputPass.scene;
+      const previousCamera = outputPass.camera;
+      const previousTarget = raw.getRenderTarget?.();
+      const previousMrt = raw.getMRT?.();
+      setOutputPipelineRoot(outputPass, targetScene ?? scene, camera);
+      try {
+        if (targetScene !== undefined && targetScene !== scene) {
+          if (typeof raw.setRenderTarget !== "function" || typeof raw.setMRT !== "function")
+            return false;
+          raw.setRenderTarget(outputPass.renderTarget);
+          raw.setMRT(outputPass.getMRT());
+          if (typeof raw.compileAsync !== "function") return false;
+          await raw.compileAsync(scene, camera, targetScene);
+        } else {
+          await compilePass.call(outputPass, raw as unknown as Parameters<typeof compilePass>[0]);
+        }
+        return true;
+      } finally {
+        outputPass.scene = previousScene;
+        outputPass.camera = previousCamera;
+        if (previousTarget !== undefined && typeof raw.setRenderTarget === "function")
+          raw.setRenderTarget(previousTarget);
+        if (previousMrt !== undefined && typeof raw.setMRT === "function") raw.setMRT(previousMrt);
+      }
+    },
+    get warmUpWorldPass() {
+      if (outputPipeline === undefined) return undefined;
+      return (scene: Object3D, camera: Camera): void => {
+        bindSurface();
+        setOutputPipelineRoot(outputPass, scene, camera);
+        renderingFrame += 1;
+        try {
+          outputPipeline?.render();
+        } finally {
+          renderingFrame -= 1;
+        }
+      };
+    },
     gpuFrameMs: () => gpuFrameSample()?.ms,
     gpuFrameAge: () => {
       const sample = gpuFrameSample();

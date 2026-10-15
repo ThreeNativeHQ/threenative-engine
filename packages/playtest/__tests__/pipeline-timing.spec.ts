@@ -459,6 +459,7 @@ describe("pipeline timing capture", () => {
       browserEvent({
         beforeFirstPresent: false,
         beforeWarmUpSettled: false,
+        provenance: { material: { name: "bloom" }, unknown: false },
         pipelineIdentity: "backend-pipeline-3",
         sequence: 3,
         settledMs: 6,
@@ -490,7 +491,41 @@ describe("pipeline timing capture", () => {
       afterWarmUpSettled: 2,
       nodeBuildsAfterWarmUpSettled: 1,
       renderPipelineCreationsAfterWarmUpSettled: 2,
+      warmedNodeBuildsAfterWarmUpSettled: 1,
+      warmedRenderPipelineCreationsAfterWarmUpSettled: 1,
     });
+  });
+
+  it("summarizes repeatable streamed warm-up scopes", () => {
+    const capture = parsePipelineCapture(browserCapture([
+      browserEvent({ nodeBuilds: 1, beforeWarmUpSettled: true }),
+      browserEvent({
+        beforeFirstPresent: false,
+        beforeWarmUpSettled: false,
+        afterWarmUpScope: "chunk:0",
+        sequence: 2,
+        settledMs: 5,
+        nodeBuilds: 0,
+      }),
+    ], {
+      counts: {
+        lookups: 2,
+        creations: 2,
+        failures: 0,
+        pending: 0,
+        uniquePrograms: 1,
+        uniquePipelines: 2,
+        recordedEvents: 2,
+        droppedEvents: 0,
+        nodeBuilds: 1,
+      },
+      firstPresent: { boundaryMs: 4, eventsSettled: 1 },
+      warmUpSettled: { boundaryMs: 1, eventsSettled: 1, nodeBuilds: 1, renderPipelineCreations: 1 },
+      warmUpScopes: [{ label: "chunk:0", boundaryMs: 4, eventsSettled: 1, nodeBuilds: 1, renderPipelineCreations: 1 }],
+    }));
+    expect(summarizePipelineCapture(capture).warmup.scopes).toEqual([
+      { label: "chunk:0", nodeBuilds: 0, renderPipelineCreations: 1 },
+    ]);
   });
 
   it("requires a version before treating an events object as a browser capture", () => {

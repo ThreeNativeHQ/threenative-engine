@@ -46,6 +46,7 @@ describe("evaluator semantics (characterization)", () => {
       serviceMs: 1,
       beforeFirstPresent: sequence === 1,
       beforeWarmUpSettled,
+      ...(sequence === 2 ? { afterWarmUpScope: "chunk:0" } : {}),
       nodeBuilds,
     });
     const result = evaluate(
@@ -53,6 +54,8 @@ describe("evaluator semantics (characterization)", () => {
         pipelineCensus: {
           maxNodeBuildsAfterWarmUpSettled: 0,
           maxRenderPipelineCreationsAfterWarmUpSettled: 0,
+          warmUpScope: "chunk:0",
+          maxRenderPipelineCreationsAfterWarmUpScope: 0,
         },
       } as never,
       {
@@ -68,6 +71,7 @@ describe("evaluator semantics (characterization)", () => {
             adapter: { identity: "adapter:test", thermal: "unavailable" },
             firstPresent: { boundaryMs: 1, eventsSettled: 1 },
             warmUpSettled: { boundaryMs: 1, eventsSettled: 1, nodeBuilds: 1, renderPipelineCreations: 1 },
+            warmUpScopes: [{ label: "chunk:0", boundaryMs: 1.5, eventsSettled: 1, nodeBuilds: 1, renderPipelineCreations: 1 }],
             counts: {
               lookups: 2,
               creations: 2,
@@ -87,11 +91,13 @@ describe("evaluator semantics (characterization)", () => {
     );
 
     expect(result.assertions.map(({ id, pass }) => ({ id, pass }))).toEqual([
+      { id: "pipelineCensus.maxRenderPipelineCreationsAfterWarmUpScope", pass: false },
       { id: "pipelineCensus.maxNodeBuildsAfterWarmUpSettled", pass: false },
       { id: "pipelineCensus.maxRenderPipelineCreationsAfterWarmUpSettled", pass: false },
       { id: "diagnostics", pass: true },
     ]);
     expect(result.diagnostics.map(({ code }) => code)).toEqual([
+      "TN_PLAYTEST_PIPELINE_CENSUS_CEILING_EXCEEDED",
       "TN_PLAYTEST_PIPELINE_CENSUS_CEILING_EXCEEDED",
       "TN_PLAYTEST_PIPELINE_CENSUS_CEILING_EXCEEDED",
     ]);

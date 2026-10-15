@@ -124,6 +124,8 @@ export interface IWarmUpOptions {
    * `visibilityForced`, so a game can see how much of its scene the render had to un-hide.
    */
   readonly includeHidden?: boolean;
+  /** The scene that supplies lights and environment when `scene` is an unattached object. */
+  readonly targetScene?: Object3D;
 }
 
 /** What the warm-up did, so a caller can report it rather than assume it. */
@@ -211,8 +213,16 @@ export interface IWarmUpReport {
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
 export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
+  /** Compiles through an authored output pass target when one is installed. */
+  compileWorldPassAsync?: (
+    scene: Object3D,
+    camera: Camera,
+    targetScene?: Object3D,
+  ) => Promise<boolean>;
   computeAsync?: (node: unknown) => Promise<void>;
   pipelineCensus?: () => IPipelineCensus;
+  /** Performs one covered output-pipeline render without marking first present. */
+  warmUpWorldPass?: (scene: Object3D, camera: Camera) => void;
   /** The renderer's own render path, used to build every pass's pipelines once. */
   render?: (scene: Object3D, camera: Camera) => void;
   raw?: unknown;
@@ -721,7 +731,7 @@ function renderWarmPasses(
   enabled: boolean,
   includeHidden: boolean,
 ): IWarmPassRender | undefined {
-  const render = renderer.render;
+  const render = renderer.warmUpWorldPass ?? renderer.render;
   if (typeof render !== "function") return undefined;
   const skipped: IWarmPassRender = {
     passes: [],
@@ -742,7 +752,7 @@ function renderWarmPasses(
   // `compileAsync` already built the main pass. A scene with neither a shadow map nor a reflection
   // has no second pass to build, so rendering it again would only draw a frame the cover hides for
   // nothing. Skip the draw and report the one pass that was compiled.
-  if (passes.length === 1) return { ...skipped, passes };
+  if (passes.length === 1 && renderer.warmUpWorldPass === undefined) return { ...skipped, passes };
 
   const censusBefore = readPipelineCensus(renderer);
   const sceneVisible = (scene as IWarmVisibilityHost).visible;
@@ -927,6 +937,17 @@ export async function warmUpScene(
       return Promise.reject(error);
     }
   };
+  const invokeSceneCompile = (): Promise<void> => {
+    if (renderer.compileWorldPassAsync === undefined)
+      return invokeCompile(scene, options.targetScene);
+    return renderer.compileWorldPassAsync(scene, camera, options.targetScene).then((used) => {
+      if (used) {
+        attempted += 1;
+        return;
+      }
+      return invokeCompile(scene, options.targetScene);
+    });
+  };
 
   const finish = (report: IWarmUpReport): IWarmUpReport => {
     const complete =
@@ -1001,7 +1022,7 @@ export async function warmUpScene(
       const deadline = startedAt + budgetMs;
       const finished =
         now() < deadline
-          ? await withinDeadline(deadline, invokeCompile(scene), yieldFrame, now)
+          ? await withinDeadline(deadline, invokeSceneCompile(), yieldFrame, now)
           : false;
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
       renderWarmPassesOnce();
@@ -1024,7 +1045,7 @@ export async function warmUpScene(
     const remaining = Math.max(0, startedAt + budgetMs - now());
     const finished =
       remaining > 0
-        ? await withinDeadline(startedAt + budgetMs, invokeCompile(scene), yieldFrame, now)
+        ? await withinDeadline(startedAt + budgetMs, invokeSceneCompile(), yieldFrame, now)
         : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
     renderWarmPassesOnce();
@@ -1089,7 +1110,7 @@ export async function warmUpScene(
     // Bounded, because an unbounded await here is what held a real launch open forever.
     const finished = await withinDeadline(
       Math.min(deadline, now() + compileTimeoutMs),
-      invokeCompile(renderables[index] as Object3D, scene),
+      invokeCompile(renderables[index] as Object3D, options.targetScene ?? scene),
       yieldFrame,
       now,
     );

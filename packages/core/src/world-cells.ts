@@ -63,7 +63,7 @@ import type { IRendererLike } from "./renderer.js";
 import { isStatic, markStatic } from "./static-transform.js";
 import { addInSlices, loadAll } from "./streaming.js";
 import { DEFAULT_TARGET_FPS } from "./target-fps.js";
-import { within, yieldToHost } from "./warmup.js";
+import { warmUpScene, yieldToHost } from "./warmup.js";
 import {
   CellProxySelection,
   type IPreparedCellProxy,
@@ -141,8 +141,6 @@ const CHUNK_MERGE_MAX_TRIANGLES = Math.floor(
  * compile that is not coming back — which is a slow frame rather than a chunk that never appears.
  */
 const CHUNK_WARM_TIMEOUT_MS = 2000;
-/** The engine frame clock, for the warm-up's bound. */
-const warmClock = (): number => globalThis.performance?.now() ?? Date.now();
 /** Milliseconds one `update` may spend admitting streamed content, unless the game says otherwise. */
 const DEFAULT_ADMISSION_BUDGET_MS = 2;
 /**
@@ -9712,9 +9710,18 @@ export class WorldCells extends Group implements IComputeDriven {
     // No timeout counts as cancellation. This original promise owns every staged resource until it
     // settles, even if the cell/world has already left. Refusal keeps source and releases afterward.
     void Promise.resolve()
-      .then(() => renderer.compileAsync(prepared.root, camera, scene))
+      .then(() =>
+        warmUpScene(renderer, prepared.root, camera, {
+          budgetMs: CHUNK_WARM_TIMEOUT_MS,
+          renderPasses: false,
+          targetScene: scene,
+        }),
+      )
       .then(
-        () => {
+        (report) => {
+          if (report.unsupported || report.timedOut || report.abandoned > 0)
+            throw new Error("cell proxy warm-up incomplete");
+          renderer.warmUpScopeSettled?.(`cell:${state.cell.key}:${String(state.cell.generation)}`);
           state.compiling = false;
           if (state.cancelled || !this.#cellLive(state.cell, state.cell.generation)) {
             state.cancelled = true;
@@ -10078,17 +10085,23 @@ export class WorldCells extends Group implements IComputeDriven {
    * in no scene is skipped outright — nothing projects it, so a compile would build nothing, which is
    * the same answer `load()` gets, where the loading screen is about to draw it anyway.
    */
-  async #warmChunk(chunk: Object3D): Promise<boolean> {
+  async #warmChunk(chunk: Object3D, scopeLabel: string): Promise<boolean> {
     const renderer = this.#renderer;
     const camera = this.#camera;
     if (renderer === undefined || camera === undefined || this.parent === null) return false;
     // The rejected compile is a pipeline this warm-up could not build, not a reason to fail the
     // admission: the frame that needs it will try again and fail there, where the error belongs.
-    return within(
-      renderer.compileAsync(chunk, camera, this),
-      CHUNK_WARM_TIMEOUT_MS,
-      yieldToHost,
-      warmClock,
+    return warmUpScene(renderer, chunk, camera, {
+      budgetMs: CHUNK_WARM_TIMEOUT_MS,
+      renderPasses: false,
+      targetScene: this,
+      yieldFrame: yieldToHost,
+    }).then(
+      (report) => {
+        renderer.warmUpScopeSettled?.(scopeLabel);
+        return !report.unsupported && !report.timedOut && report.abandoned === 0;
+      },
+      () => false,
     );
   }
 
@@ -10170,7 +10183,8 @@ export class WorldCells extends Group implements IComputeDriven {
         // merge and the attach. Everything the world does not own is released when the cell that
         // asked for the chunk is gone, so a chunk that arrives after its cell left is torn down here
         // rather than compiled and thrown at a world that is not looking.
-        if (live()) await this.#warmChunk(object);
+        if (live())
+          await this.#warmChunk(object, `chunk:${cell.key}:${String(cell.chunks.length)}`);
         if (!live()) {
           this.#failures += this.#disposeLoaded(object);
           continue;

@@ -38,6 +38,7 @@ const game = defineGame<AbyssState>({
   scenes: { play: viewportProbe ? ViewportProbe : Abyss },
   seed: 90210,
   start: "play",
+  warmUp: {},
 });
 
 if (import.meta.env.DEV) {

@@ -607,6 +607,8 @@ describe("pipeline census", () => {
       getNodeBuilderState: () => secondState,
     };
     raw.renderObject(second, null);
+    census.warmUpScopeSettled("chunk:0");
+    now += 1;
     raw.renderObject({ ...second, getNodeBuilderState: () => secondState }, null);
 
     const report = census.snapshot();
@@ -616,15 +618,19 @@ describe("pipeline census", () => {
       nodeBuilds: 1,
       renderPipelineCreations: 1,
     });
+    expect(report.warmUpScopes).toMatchObject([
+      { label: "chunk:0", eventsSettled: 2, nodeBuilds: 2, renderPipelineCreations: 2 },
+    ]);
     expect(
-      report.events.map(({ nodeBuilds, beforeWarmUpSettled }) => ({
+      report.events.map(({ nodeBuilds, beforeWarmUpSettled, afterWarmUpScope }) => ({
         nodeBuilds,
         beforeWarmUpSettled,
+        ...(afterWarmUpScope === undefined ? {} : { afterWarmUpScope }),
       })),
     ).toEqual([
       { nodeBuilds: 1, beforeWarmUpSettled: true },
       { nodeBuilds: 1, beforeWarmUpSettled: false },
-      { nodeBuilds: 0, beforeWarmUpSettled: false },
+      { nodeBuilds: 0, beforeWarmUpSettled: false, afterWarmUpScope: "chunk:0" },
     ]);
   });
 

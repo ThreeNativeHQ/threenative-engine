@@ -245,6 +245,23 @@ describe("scene warm-up", () => {
     });
   });
 
+  test("should prefer the authored output pass and cover its render pipeline", async () => {
+    const compileWorldPassAsync = vi.fn(async () => true);
+    const compileAsync = vi.fn(async () => undefined);
+    const warmUpWorldPass = vi.fn();
+    const report = await warmUpScene(
+      { compileAsync, compileWorldPassAsync, warmUpWorldPass },
+      sceneOf(1) as never,
+      {} as never,
+      { yieldFrame: () => Promise.resolve() },
+    );
+
+    expect(compileWorldPassAsync).toHaveBeenCalledOnce();
+    expect(compileAsync).not.toHaveBeenCalled();
+    expect(warmUpWorldPass).toHaveBeenCalledOnce();
+    expect(report).toMatchObject({ attempted: 1, compiled: 1, passes: ["main"] });
+  });
+
   test("should not call abandoned work complete when the census itself is complete", async () => {
     const snapshot = {
       version: 1 as const,

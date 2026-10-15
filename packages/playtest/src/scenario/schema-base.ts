@@ -479,6 +479,9 @@ export interface IPlaytestStartupAssertion {
 export interface IPlaytestPipelineCensusAssertion {
   maxNodeBuildsAfterWarmUpSettled?: number;
   maxRenderPipelineCreationsAfterWarmUpSettled?: number;
+  warmUpScope?: string;
+  maxNodeBuildsAfterWarmUpScope?: number;
+  maxRenderPipelineCreationsAfterWarmUpScope?: number;
 }
 
 export interface IPlaytestFramebufferCoverageAssertion {

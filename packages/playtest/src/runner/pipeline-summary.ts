@@ -47,6 +47,7 @@ export interface IPipelineCaptureEvent {
   readonly nodeBuilds?: number;
   readonly beforeFirstPresent?: boolean;
   readonly beforeWarmUpSettled?: boolean;
+  readonly afterWarmUpScope?: string;
 }
 
 export interface IPipelineCaptureCounts {
@@ -93,6 +94,13 @@ export interface IPipelineCapture {
     readonly nodeBuilds: number;
     readonly renderPipelineCreations: number;
   };
+  readonly warmUpScopes?: readonly {
+    readonly label: string;
+    readonly boundaryMs: number;
+    readonly eventsSettled: number;
+    readonly nodeBuilds: number;
+    readonly renderPipelineCreations: number;
+  }[];
   readonly counts: IPipelineCaptureCounts;
   readonly events: readonly IPipelineCaptureEvent[];
   readonly incompleteReasons: readonly string[];
@@ -147,8 +155,16 @@ export interface IPipelineWarmupSummary {
   readonly eventsSettledAtWarmUpSettled?: number;
   readonly nodeBuildsAfterWarmUpSettled?: number;
   readonly renderPipelineCreationsAfterWarmUpSettled?: number;
+  /** Post-boundary work attributed to material contributors already observed during warm-up. */
+  readonly warmedNodeBuildsAfterWarmUpSettled?: number;
+  readonly warmedRenderPipelineCreationsAfterWarmUpSettled?: number;
   readonly total: number;
   readonly unreported: number;
+  readonly scopes: readonly {
+    readonly label: string;
+    readonly nodeBuilds: number;
+    readonly renderPipelineCreations: number;
+  }[];
 }
 
 export interface IPipelineSummary {
@@ -471,8 +487,19 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
   let afterFirstPresent = 0;
   let afterWarmUpSettled = 0;
   let renderPipelineCreationsAfterWarmUpSettled = 0;
+  let warmedNodeBuildsAfterWarmUpSettled = 0;
+  let warmedRenderPipelineCreationsAfterWarmUpSettled = 0;
+  const scopeMap = new Map<string, { nodeBuilds: number; renderPipelineCreations: number }>();
   let unreported = 0;
   let sizeSamples = 0;
+  const warmedMaterialLabels =
+    capture.warmUpSettled === undefined
+      ? undefined
+      : new Set(
+          capture.events
+            .filter(({ beforeWarmUpSettled, provenance }) => beforeWarmUpSettled === true && provenance.material !== undefined)
+            .map(contributorLabel),
+        );
   for (const event of capture.events) {
     const serviceMs = event.serviceMs;
     const previousPass = passMap.get(event.pass);
@@ -526,6 +553,20 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
       afterWarmUpSettled += 1;
       if (event.kind === "render" && event.status === "created")
         renderPipelineCreationsAfterWarmUpSettled += 1;
+      if (warmedMaterialLabels?.has(label) === true) {
+        warmedNodeBuildsAfterWarmUpSettled += event.nodeBuilds ?? 0;
+        if (event.kind === "render" && event.status === "created")
+          warmedRenderPipelineCreationsAfterWarmUpSettled += 1;
+      }
+    }
+    if (event.afterWarmUpScope !== undefined) {
+      const scope = scopeMap.get(event.afterWarmUpScope) ?? {
+        nodeBuilds: 0,
+        renderPipelineCreations: 0,
+      };
+      scope.nodeBuilds += event.nodeBuilds ?? 0;
+      if (event.kind === "render" && event.status === "created") scope.renderPipelineCreations += 1;
+      scopeMap.set(event.afterWarmUpScope, scope);
     }
   }
   const source = capture.source;
@@ -581,6 +622,15 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
             renderPipelineCreationsAfterWarmUpSettled,
           }),
       ...(nodeBuildsAfterWarmUpSettled === undefined ? {} : { nodeBuildsAfterWarmUpSettled }),
+      ...(warmedMaterialLabels === undefined || warmedMaterialLabels.size === 0
+        ? {}
+        : {
+            warmedNodeBuildsAfterWarmUpSettled,
+            warmedRenderPipelineCreationsAfterWarmUpSettled,
+          }),
+      scopes: [...scopeMap.entries()]
+        .map(([label, value]) => ({ label, ...value }))
+        .sort((left, right) => left.label.localeCompare(right.label)),
     },
   };
 }
@@ -633,6 +683,11 @@ export function formatPipelineSummary(summary: IPipelineSummary): string {
         `${summary.warmup.nodeBuildsAfterWarmUpSettled ?? "unreported"} node build(s), ` +
         `${summary.warmup.renderPipelineCreationsAfterWarmUpSettled} render pipeline creation(s)`,
     );
+    if (summary.warmup.warmedNodeBuildsAfterWarmUpSettled !== undefined)
+      lines.push(
+        `warmed materials after warm-up: ${summary.warmup.warmedNodeBuildsAfterWarmUpSettled} node build(s), ` +
+          `${summary.warmup.warmedRenderPipelineCreationsAfterWarmUpSettled} render pipeline creation(s)`,
+      );
   }
   if (summary.sizeTime.byPass.length > 0) {
     lines.push("shader size/time by pass:");
@@ -712,6 +767,7 @@ function parseBrowserCapture(value: JsonRecord): IPipelineCapture {
     }
   }
   const warmUpSettled = parseWarmUpSettled(value.warmUpSettled);
+  const warmUpScopes = parseWarmUpScopes(value.warmUpScopes);
   if (warmUpSettled !== undefined) {
     const settledAtWarmUp = events.filter(
       ({ settledMs }) => settledMs !== undefined && settledMs <= warmUpSettled.boundaryMs,
@@ -740,6 +796,26 @@ function parseBrowserCapture(value: JsonRecord): IPipelineCapture {
     if (declaredCounts.nodeBuilds !== undefined && declaredCounts.nodeBuilds < warmUpSettled.nodeBuilds)
       reasons.push("warm-up settled node-build count exceeds the total node-build count");
   }
+  if (warmUpScopes !== undefined) {
+    const labels = new Set(warmUpScopes.map(({ label }) => label));
+    for (const event of events) {
+      if (event.afterWarmUpScope !== undefined && !labels.has(event.afterWarmUpScope))
+        reasons.push(`event ${event.sequence} names an unknown warm-up scope`);
+    }
+    for (const scope of warmUpScopes) {
+      const settled = events.filter(
+        ({ settledMs }) => settledMs !== undefined && settledMs <= scope.boundaryMs,
+      ).length;
+      if (settled !== scope.eventsSettled)
+        reasons.push(`warm-up scope '${scope.label}' event count does not match event timings`);
+      const creations = events.filter(
+        ({ kind, status, settledMs }) =>
+          kind === "render" && status === "created" && settledMs !== undefined && settledMs <= scope.boundaryMs,
+      ).length;
+      if (creations !== scope.renderPipelineCreations)
+        reasons.push(`warm-up scope '${scope.label}' render creation count does not match event timings`);
+    }
+  }
   return {
     version: PIPELINE_CAPTURE_VERSION,
     source: "browser",
@@ -751,6 +827,7 @@ function parseBrowserCapture(value: JsonRecord): IPipelineCapture {
     ...(adapter === undefined ? {} : { adapter }),
     ...(firstPresent === undefined ? {} : { firstPresent }),
     ...(warmUpSettled === undefined ? {} : { warmUpSettled }),
+    ...(warmUpScopes === undefined ? {} : { warmUpScopes }),
     counts: declaredCounts,
     events,
     incompleteReasons: reasons,
@@ -1007,6 +1084,7 @@ function normaliseBrowserEvent(value: unknown, index: number): IPipelineCaptureE
     ...(event.nodeBuilds === undefined ? {} : { nodeBuilds: nonNegativeInteger(event.nodeBuilds, `event ${index + 1} nodeBuilds`) }),
     ...(event.beforeFirstPresent === undefined ? {} : { beforeFirstPresent: booleanValue(event.beforeFirstPresent, `event ${index + 1} beforeFirstPresent`) }),
     ...(event.beforeWarmUpSettled === undefined ? {} : { beforeWarmUpSettled: booleanValue(event.beforeWarmUpSettled, `event ${index + 1} beforeWarmUpSettled`) }),
+    ...(event.afterWarmUpScope === undefined ? {} : { afterWarmUpScope: stringValue(event.afterWarmUpScope, `event ${index + 1} afterWarmUpScope`) }),
   };
   validateEventTiming(result, `event ${index + 1}`);
   if (status === "failed" && result.error === undefined)
@@ -1150,6 +1228,27 @@ function parseWarmUpSettled(value: unknown): IPipelineCapture["warmUpSettled"] {
       "warmUpSettled renderPipelineCreations",
     ),
   };
+}
+
+function parseWarmUpScopes(value: unknown): IPipelineCapture["warmUpScopes"] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw malformed("warmUpScopes is not an array");
+  return value.map((entry, index) => {
+    const source = asRecord(entry);
+    if (source === undefined) throw malformed(`warmUpScopes[${index}] is not an object`);
+    const label = stringValue(source.label, `warmUpScopes[${index}] label`);
+    if (label.trim() === "") throw malformed(`warmUpScopes[${index}] label is empty`);
+    return {
+      label,
+      boundaryMs: nonNegativeNumber(source.boundaryMs, `warmUpScopes[${index}] boundaryMs`),
+      eventsSettled: nonNegativeInteger(source.eventsSettled, `warmUpScopes[${index}] eventsSettled`),
+      nodeBuilds: nonNegativeInteger(source.nodeBuilds, `warmUpScopes[${index}] nodeBuilds`),
+      renderPipelineCreations: nonNegativeInteger(
+        source.renderPipelineCreations,
+        `warmUpScopes[${index}] renderPipelineCreations`,
+      ),
+    };
+  });
 }
 
 function validateCaptureVersion(value: unknown, label: string): void {

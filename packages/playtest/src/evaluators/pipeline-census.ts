@@ -19,10 +19,14 @@ export function emitPipelineCensus(ctx: IEvaluationContext): void {
   }
 
   const boundary = capture?.warmUpSettled;
-  const nodeBuilds = summary?.warmup.nodeBuildsAfterWarmUpSettled;
-  const renderPipelineCreations = summary?.warmup.renderPipelineCreationsAfterWarmUpSettled;
-  const usable = capture?.complete === true
-    && boundary !== undefined
+  const nodeBuilds = summary?.warmup.warmedNodeBuildsAfterWarmUpSettled;
+  const renderPipelineCreations = summary?.warmup.warmedRenderPipelineCreationsAfterWarmUpSettled;
+  const scopeLabel = assertion.warmUpScope;
+  const scope = scopeLabel === undefined
+    ? undefined
+    : summary?.warmup.scopes.find(({ label }) => label === scopeLabel);
+  const boundaryUsable = capture?.complete === true && boundary !== undefined;
+  const usable = boundaryUsable
     && nodeBuilds !== undefined
     && renderPipelineCreations !== undefined;
   const unobservable = parseError
@@ -31,13 +35,37 @@ export function emitPipelineCensus(ctx: IEvaluationContext): void {
       : capture?.complete !== true
         ? `the capture is incomplete: ${capture?.incompleteReasons.join("; ") ?? "unknown reason"}`
         : nodeBuilds === undefined
-          ? "the capture has no total node-build count"
-          : "the capture has no post-warm-up render-pipeline count");
+          ? "the capture has no per-material warm-up node-build count"
+          : "the capture has no per-material post-warm-up render-pipeline count");
 
   const checks = [
     ["maxNodeBuildsAfterWarmUpSettled", nodeBuilds, "node builds"] as const,
     ["maxRenderPipelineCreationsAfterWarmUpSettled", renderPipelineCreations, "render-pipeline creations"] as const,
   ];
+  if (assertion.maxNodeBuildsAfterWarmUpScope !== undefined || assertion.maxRenderPipelineCreationsAfterWarmUpScope !== undefined) {
+    const scopedUsable = capture?.complete === true && scope !== undefined;
+    const scopedChecks = [
+      ["maxNodeBuildsAfterWarmUpScope", scope?.nodeBuilds, "node builds"] as const,
+      ["maxRenderPipelineCreationsAfterWarmUpScope", scope?.renderPipelineCreations, "render-pipeline creations"] as const,
+    ];
+    for (const [key, observed, label] of scopedChecks) {
+      const expected = assertion[key];
+      if (expected === undefined) continue;
+      const pass = scopedUsable && observed !== undefined && observed <= expected;
+      const id = `pipelineCensus.${key}`;
+      ctx.assertions.push({ details: { boundary, complete: capture?.complete, expected, incompleteReasons: capture?.incompleteReasons, observed, scope: scopeLabel }, id, pass });
+      if (!pass)
+        ctx.diagnostics.push({
+          code: scopedUsable ? "TN_PLAYTEST_PIPELINE_CENSUS_CEILING_EXCEEDED" : "TN_PLAYTEST_PIPELINE_CENSUS_UNOBSERVABLE",
+          message: scopedUsable
+            ? `The pipeline census observed ${observed} ${label} after warm-up scope '${scopeLabel}', above the asserted ceiling of ${expected}.`
+            : `The pipeline census cannot evaluate '${id}': ${scopeLabel === undefined ? "the assertion has no warm-up scope label" : `scope '${scopeLabel}' is absent or incomplete`}.`,
+          observedRuntimePath: "observations.json/pipelineCensus",
+          severity: "error",
+          suggestion: scopedUsable ? "Move the affected first-use pipeline work into the streamed warm-up and verify the scoped census again." : "Run with runtime.pipelineCensus enabled and keep the named warm-up scope in the report.",
+        });
+    }
+  }
   for (const [key, observed, label] of checks) {
     const expected = assertion[key];
     if (expected === undefined) continue;

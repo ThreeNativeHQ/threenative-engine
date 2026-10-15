@@ -1,9 +1,9 @@
 # PRD-616 — The startup warm-up builds what the first frame draws
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P1 — AC-1 to AC-3 are open: a measured warm-up rebuilt 3 of 3 warmed node graphs and created their 3 render pipelines again in the first visible frame, a startup cost on every supported platform.
 **Complexity:** 2 (LOW) — 6–10 implementation files (`warmup.ts`, `renderer.ts`, `game.ts`, `world-cells.ts`, `pipeline-census.ts`, the playtest census evaluator) (+2); risk override: none
-**Owner:** unassigned
+**Owner:** Codex — draft PR [#509](https://github.com/ThreeNativeHQ/threenative-engine/pull/509)
 **Depends on:** None. [PRD-611](../Unreal/vfx/PRD-611-a-gpu-effect-that-starts-hidden-draws-its-first-frame-with-its-pipeline-built.md) depends on this PRD: its warm render of a hidden emitter has the same call-depth miss.
 
 ## Context
@@ -70,21 +70,21 @@ Risk: a covered render through the real pipeline can advance temporal history (T
 
 #### Phase 1: The census sees the rebuild (red)
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/core/src/pipeline-census.ts` (warm-up-settled boundary on each event), `packages/playtest/src/runner/pipeline-summary.ts` and its scenario schema/evaluator (assertion on builds and creations after warm-up), `examples/abyss-framework/playtests/warm-up-reuse.playtest.json`.
 **Implementation:** Today's census flags only `beforeFirstPresent`, and frame-1 rebuilds land before the first present. Add a warm-up-settled boundary and count node builds and pipeline creations after it, per material. The assertion fails closed when the census is absent or incomplete.
 
-- [ ] The new scenario runs red on develop and reports 3 rebuilt graphs and 3 new pipelines. proof: the AC-1 command, plus `pnpm exec vitest run packages/playtest/__tests__/pipeline-timing.spec.ts packages/core/__tests__/pipeline-census.spec.ts`
+- [ ] The new scenario runs red on develop and reports 3 rebuilt graphs and 3 new pipelines. proof: the AC-1 command, plus `pnpm exec vitest run packages/playtest/__tests__/pipeline-timing.spec.ts packages/core/__tests__/pipeline-census.spec.ts` — Focused census, schema, evaluator and warm-up tests passed locally on 2026-10-14: 5 files, 141 tests; valid headed red reproduction remains pending because the shared capture lock is occupied (attempts exited 75 with `LOCK TIMEOUT`).
 
 #### Phase 2: The warm-up compiles against the world pass (green)
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/core/src/warmup.ts`, `packages/core/src/renderer.ts` (expose the world-pass compile entry point beside `renderFrame`), `packages/core/src/game.ts`, `packages/core/src/world-cells.ts`, `packages/core/__tests__/warmup.spec.ts`.
 **Implementation:** Measure option 1 against option 2 from Solution on the AC-1 scenario and record the choice under `## Decisions`. Route all three warm-up callers through it. Keep the no-output-pipeline path unchanged.
 
 - [ ] AC-1 and AC-2 are green. proof: the AC-1 command, three runs
 - [ ] AC-3 is green. proof: the streaming scenario
-- [ ] A renderer without an output pipeline warms exactly as before. proof: `pnpm exec vitest run packages/core/__tests__/warmup.spec.ts`
+- [x] A renderer without an output pipeline warms exactly as before. proof: `pnpm exec vitest run packages/core/__tests__/warmup.spec.ts` — 34 tests passed locally on 2026-10-14.
 
 #### Phase 3: Prove the look and the native host
 
@@ -93,3 +93,8 @@ Risk: a covered render through the real pipeline can advance temporal history (T
 
 - [ ] AC-4 judge verdict is recorded, with the images on the PR. proof: visual judge subagent
 - [ ] AC-5 is green on the desktop host. proof: the AC-1 command with `--target desktop`
+
+## Decisions
+
+- API precheck (read-only, not runtime proof): stock Three r185 `PassNode.compileAsync` sets its target/MRT, but `Renderer.compileAsync` chooses a render context without a call-depth argument (default 0). `RenderPipeline.render` also temporarily sets output color space/tone mapping around the quad draw. These facts suggest the preferred compile-only path may still miss real-frame reuse; Phase 2 must measure it against the covered real-render fallback before choosing. No Three.js patch change is authorized.
+- Implementation checkpoint 2026-10-14: the shared warm-up entry point now attempts the stock output-pass compile and covers the output pipeline render; startup, chunk, and cell callers use it, while no-output renderers retain the existing compile path. The real-WebGPU comparison and final choice remain pending until the capture lock clears.

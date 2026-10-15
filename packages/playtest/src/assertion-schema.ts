@@ -617,6 +617,9 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     fields: [
       { description: "Ceiling on distinct node-builder states first observed after warm-up settled.", name: "maxNodeBuildsAfterWarmUpSettled", type: "non-negative integer" },
       { description: "Ceiling on render-pipeline creations observed after warm-up settled.", name: "maxRenderPipelineCreationsAfterWarmUpSettled", type: "non-negative integer" },
+      { description: "Label of a repeatable streamed warm-up scope.", name: "warmUpScope", type: "string" },
+      { description: "Ceiling on node-builder state builds after the named warm-up scope.", name: "maxNodeBuildsAfterWarmUpScope", type: "non-negative integer" },
+      { description: "Ceiling on render-pipeline creations after the named warm-up scope.", name: "maxRenderPipelineCreationsAfterWarmUpScope", type: "non-negative integer" },
     ],
     cardinality: "object",
     kind: "pipelineCensus",

@@ -534,6 +534,8 @@ export function validateStartupAssertion(
 const PIPELINE_CENSUS_CEILINGS = [
   "maxNodeBuildsAfterWarmUpSettled",
   "maxRenderPipelineCreationsAfterWarmUpSettled",
+  "maxNodeBuildsAfterWarmUpScope",
+  "maxRenderPipelineCreationsAfterWarmUpScope",
 ] as const;
 
 export function validatePipelineCensusAssertion(
@@ -542,13 +544,23 @@ export function validatePipelineCensusAssertion(
   objectPath: string,
 ): IPlaytestPipelineCensusAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, [...PIPELINE_CENSUS_CEILINGS], scenarioPath, objectPath);
-  const result: { -readonly [K in keyof IPlaytestPipelineCensusAssertion]: number } = {};
+  rejectUnknownKeys(record, [...PIPELINE_CENSUS_CEILINGS, "warmUpScope"], scenarioPath, objectPath);
+  const result: Partial<IPlaytestPipelineCensusAssertion> = {};
+  if (record.warmUpScope !== undefined) {
+    if (typeof record.warmUpScope !== "string" || record.warmUpScope.trim() === "")
+      throw invalidScenario(scenarioPath, `'${objectPath}.warmUpScope' must be a non-empty string`);
+    result.warmUpScope = record.warmUpScope;
+  }
   for (const key of PIPELINE_CENSUS_CEILINGS) {
     const ceiling = optionalNonNegativeInteger(record, key, scenarioPath, objectPath);
     if (ceiling !== undefined) result[key] = ceiling;
   }
-  if (Object.keys(result).length === 0) {
+  const hasScopeCeiling =
+    result.maxNodeBuildsAfterWarmUpScope !== undefined ||
+    result.maxRenderPipelineCreationsAfterWarmUpScope !== undefined;
+  if (hasScopeCeiling && result.warmUpScope === undefined)
+    throw invalidScenario(scenarioPath, `'${objectPath}.warmUpScope' is required for a scoped pipeline census ceiling`);
+  if (!PIPELINE_CENSUS_CEILINGS.some((key) => result[key] !== undefined)) {
     throw invalidScenario(
       scenarioPath,
       `'${objectPath}' must set at least one of ${PIPELINE_CENSUS_CEILINGS.join(", ")}; an empty pipeline census assertion observes nothing.`,
