@@ -101,8 +101,18 @@ void materialBool(ClassBinding& b, const char* name, bool Material::*field) {
 void materialNumber(ClassBinding& b, const char* name, double Material::*field) {
     b.getters[name] = [field](void* self) { return Value::of(as<Material>(self)->*field); };
     b.setters[name] = [field](void* self, const Value& v) {
-        as<Material>(self)->*field = number(v);
-        as<Material>(self)->needsUpdate();
+        auto& material = *as<Material>(self);
+        const double next = number(v), previous = material.*field;
+        auto& diagnostic = Material::diagnostics();
+        if (diagnostic.enabled && field == &Material::opacity) {
+            ++diagnostic.writes;
+            if (std::isnan(previous) || std::isnan(next)) ++diagnostic.nan;
+            else if (previous == next && std::signbit(previous) != std::signbit(next)) ++diagnostic.signedZero;
+            else if (previous == next) ++diagnostic.unchanged;
+            else ++diagnostic.changed;
+        }
+        material.*field = next;
+        material.needsUpdate();
     };
 }
 

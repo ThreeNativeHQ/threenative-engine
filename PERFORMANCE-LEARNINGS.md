@@ -10,6 +10,8 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 
 ## Method lessons
 
+- **Count redundant setters before guarding them.** `TN_MATERIAL_DIAGNOSTICS=1` now adds cumulative opacity-write buckets and record/graph rebuild counts plus thread CPU to existing `TN_PLAYER_RENDER_HOLD` boundaries. Default off; setter/version semantics remain unchanged. Four focused ctests pass after missing-member compiler RED. Difference the host-tick markers around the exact 1,000-tick window; rebuild CPU is an upper bound, not opacity-only attribution. No game acquisition or performance gain is claimed yet.
+
 - **Size a lever before you code it.** Measure its ceiling with a counter or a phase timer inside the measured pose
   windows (`TN_PLAYER_CROSSINGS=1`, `TN_RENDER_PREPARE_SPLIT=1`, a temporary env counter). Then project calls per
   frame times cost per call. On 2026-10-14, two levers chosen from profile shares were flat in A/B.
@@ -100,3 +102,9 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 - Result: on the browser main thread, Wasm engine code 44 to 48%, engine JS glue 23 to 26%, game JS 12 to 15%,
   V8 `(program)` 8%, WebGPU natives 7 to 8%. Animation, the matrix walk and `RenderDatabase::project` are the same
   top owners as on native.
+
+### 2026-10-15 — Visible setter preserves material cache — INCONCLUSIVE
+- Where: PRD-612, candidate `8c5f5ff4d`; result `0b4b321ba`.
+- Result: instructions decrease in both pairs at all poses; CPU fails every-candidate-below-every-baseline. Four PASS reports with exact windows; dashboard 179 runs.
+- Insight: capture serialization does not establish low CPU load. Higher load and lower IPC confound pair 2 CPU attribution; no causal explanation or qualified win. No third retry or integration.
+- Artifact: `screens/visible-queue-{base,on}-{1,2}/`; recovery cycle terminal 2026-10-15T06:49:37.800Z.

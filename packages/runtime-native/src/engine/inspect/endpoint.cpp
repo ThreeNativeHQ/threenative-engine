@@ -1,4 +1,5 @@
 #include "engine/inspect/endpoint.h"
+#include "engine/scene/material.h"
 
 #include <cmath>
 #include <cstdio>
@@ -94,8 +95,19 @@ bool Endpoint::dispatch(const std::string& method, const Value* argument, Value&
         automaticRenderHeld_ = argument->boolean();
         // Brackets a matched CPU window in the host's own ticks, so a checker reconciles the frames in
         // it without trusting the game clock the runner samples (it can lead the driven tick).
-        std::printf("TN_PLAYER_RENDER_HOLD:{\"held\":%s,\"tick\":%llu}\n", automaticRenderHeld_ ? "true" : "false",
-                    static_cast<unsigned long long>(tick()));
+        const auto& d = Material::diagnostics();
+        if (!d.enabled) {
+            std::printf("TN_PLAYER_RENDER_HOLD:{\"held\":%s,\"tick\":%llu}\n", automaticRenderHeld_ ? "true" : "false",
+                        static_cast<unsigned long long>(tick()));
+        } else {
+            const auto diagnostic = obj({{"writes", num(d.writes)}, {"unchanged", num(d.unchanged)},
+                {"changed", num(d.changed)}, {"signedZero", num(d.signedZero)}, {"nan", num(d.nan)},
+                {"recordRebuilds", num(d.recordRebuilds)}, {"graphRebuilds", num(d.graphRebuilds)},
+                {"recordCpuNs", num(d.recordCpuNs)}, {"graphCpuNs", num(d.graphCpuNs)},
+                {"threadCpuSupported", Value::makeBool(d.threadCpuSupported)}});
+            std::printf("TN_PLAYER_RENDER_HOLD:{\"held\":%s,\"tick\":%llu,\"materialDiagnostic\":%s}\n",
+                automaticRenderHeld_ ? "true" : "false", static_cast<unsigned long long>(tick()), json::stringify(diagnostic).c_str());
+        }
         std::fflush(stdout);
         return result = Value::makeBool(automaticRenderHeld_), true;
     }

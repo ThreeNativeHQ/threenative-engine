@@ -383,7 +383,10 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     const bool cached = r.drawable && r.meshId == mesh.id() && r.geometry == mesh.geometry &&
                         r.geometryRevision == geometryRevision && r.material.get() == material &&
                         r.materialVersion == materialVersion;
+    auto& diagnostic = Material::diagnostics();
     if (!cached) {
+        Material::DiagnosticTimer rebuildTimer(diagnostic.enabled, diagnostic.recordCpuNs);
+        if (diagnostic.enabled) ++diagnostic.recordRebuilds;
         ++rebuilds_;
         const uint64_t cacheId = r.cacheId;
         r = Record{};
@@ -523,6 +526,9 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
     if (std::all_of(roots.begin(), roots.end(), [](const void* root) { return root == nullptr; })) return none;
     GraphSources& cached = graphSources_[&material];
     if (cached.roots != roots || cached.version != material.version()) {
+        auto& diagnostic = Material::diagnostics();
+        Material::DiagnosticTimer rebuildTimer(diagnostic.enabled, diagnostic.graphCpuNs);
+        if (diagnostic.enabled) ++diagnostic.graphRebuilds;
         GraphFind found = findGraphSources(material);
         cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
                               std::move(found.textures), std::move(found.storages)};

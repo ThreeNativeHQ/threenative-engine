@@ -6,6 +6,10 @@
 // `input_tick`: input injected before tick N is what tick N's game code reads, not tick N+1's.
 #include "check.h"
 #include "engine/inspect/endpoint.h"
+#include "engine/scene/material.h"
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #include "engine/world/loop/fixed_step.h"
 
 #include <cstdint>
@@ -72,13 +76,32 @@ std::string request(const std::string& id, const std::string& method, const std:
 }
 
 void automaticRenderHold() {
+#ifndef _WIN32
+    auto& stats = Material::diagnostics();
+    const auto savedStats = stats;
+    stats = {};
+    std::fflush(stdout);
+    FILE* captured = std::tmpfile();
+    CHECK(captured != nullptr);
+    if (!captured) { stats = savedStats; return; }
+    const int savedStdout = dup(fileno(stdout));
+    CHECK(savedStdout >= 0);
+    if (savedStdout < 0) { std::fclose(captured); stats = savedStats; return; }
+    const int redirected = dup2(fileno(captured), fileno(stdout));
+    CHECK(redirected >= 0);
+    if (redirected < 0) { close(savedStdout); std::fclose(captured); stats = savedStats; return; }
+#endif
     Host host;
     Endpoint unsupported(host);
     CHECK(reply(unsupported, request("h", "_holdAutomaticRender", "true")).find("error") != nullptr);
     CHECK(!unsupported.automaticRenderHeld());
     uint64_t updates = 0;
-    host.tick = [&] { return updates; };
-    host.step = [&] { ++updates; };
+    host.tick = [&] { return updates + 9007199254740993ULL; };
+    host.step = [&] { ++updates;
+#ifndef _WIN32
+        if (stats.enabled) ++stats.writes;
+#endif
+    };
     host.renderEachTick = true;
     Endpoint endpoint(host);
     CHECK(!endpoint.automaticRenderHeld());
@@ -89,6 +112,10 @@ void automaticRenderHold() {
     }
     CHECK(reply(endpoint, request("h", "_holdAutomaticRender", "true")).find("error") == nullptr);
     CHECK(endpoint.automaticRenderHeld());
+#ifndef _WIN32
+    stats.enabled = true;
+    CHECK(reply(endpoint, request("h", "_holdAutomaticRender", "true")).find("error") == nullptr);
+#endif
     CHECK(reply(endpoint, request("s", "sample", "{}")).find("error") == nullptr);
     CHECK(updates == 0);
     CHECK(reply(endpoint, request("a", "advance", "1000")).find("error") == nullptr);
@@ -98,6 +125,35 @@ void automaticRenderHold() {
     CHECK(updates == 1000);
     CHECK(reply(endpoint, request("h", "_holdAutomaticRender", "false")).find("error") == nullptr);
     CHECK(!endpoint.automaticRenderHeld());
+#ifndef _WIN32
+    std::fflush(stdout);
+    CHECK(dup2(savedStdout, fileno(stdout)) >= 0); close(savedStdout);
+    std::rewind(captured);
+    std::vector<json::Value> markers;
+    char line[4096]; std::string raw;
+    while (std::fgets(line, sizeof(line), captured)) {
+        const std::string text(line), prefix = "TN_PLAYER_RENDER_HOLD:"; raw += text;
+        if (text.rfind(prefix, 0) != 0) continue;
+        json::Value value; json::Error error;
+        CHECK(json::parse(text.substr(prefix.size()), value, error)); markers.push_back(std::move(value));
+    }
+    std::fclose(captured);
+    CHECK(raw.find("TN_PLAYER_RENDER_HOLD:{\"held\":true,\"tick\":9007199254740993}\n") != std::string::npos);
+    CHECK(markers.size() == 3);
+    if (markers.size() == 3) {
+        CHECK(markers[0].find("materialDiagnostic") == nullptr);
+        const auto* beforeTick = markers[1].find("tick"); const auto* afterTick = markers[2].find("tick");
+        const auto* before = markers[1].find("materialDiagnostic"); const auto* after = markers[2].find("materialDiagnostic");
+        CHECK(beforeTick && afterTick && before && after);
+        if (beforeTick && afterTick && before && after) {
+            const auto* beforeWrites = before->find("writes"); const auto* afterWrites = after->find("writes");
+            CHECK(beforeWrites && afterWrites);
+            CHECK(beforeTick->number() - afterTick->number() == -1000);
+            if (beforeWrites && afterWrites) CHECK(afterWrites->number() - beforeWrites->number() == 1000);
+        }
+    }
+    stats = savedStats;
+#endif
 }
 
 void protocol() {

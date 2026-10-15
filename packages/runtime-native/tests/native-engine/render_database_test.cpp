@@ -894,6 +894,10 @@ void invalidation() {
     database.render(renderer, s.scene, s.camera);
     const uint64_t first = database.rebuilds();
     CHECK(first == 1);
+    auto& diagnostic = Material::diagnostics();
+    const auto savedDiagnostic = diagnostic;
+    diagnostic = {};
+
     for (int frame = 0; frame < 300; ++frame) database.render(renderer, s.scene, s.camera);
     CHECK(database.rebuilds() == first);  // an unchanged scene rebuilds nothing
     s.mesh.position.x = 0.5;  // a transform: the mesh's revision moves on the next updateMatrixWorld
@@ -910,6 +914,19 @@ void invalidation() {
     CHECK(database.rebuilds() == first + 2);
     for (int frame = 0; frame < 300; ++frame) database.render(renderer, s.scene, s.camera);
     CHECK(database.rebuilds() == first + 2);
+    CHECK(diagnostic.recordRebuilds == 0 && diagnostic.graphRebuilds == 0);
+    diagnostic.enabled = true;
+    Mesh shared(s.mesh.geometry, s.material);
+    s.scene.add(shared);
+    RenderDatabase observed;
+    observed.render(renderer, s.scene, s.camera);
+    CHECK(diagnostic.recordRebuilds == observed.rebuilds() && diagnostic.recordRebuilds == 2);
+    const auto rebuilt = diagnostic.recordRebuilds;
+    s.material->needsUpdate();
+    observed.render(renderer, s.scene, s.camera);
+    CHECK(diagnostic.recordRebuilds == rebuilt + 2);
+    CHECK(!diagnostic.threadCpuSupported || diagnostic.recordCpuNs > 0);
+    diagnostic = savedDiagnostic;
 }
 
 // The alpha-transparency fixture as a scene: an OrthographicCamera, so WebGL clip z would put every
@@ -2966,6 +2983,9 @@ void reflectionReuse() {
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
     renderer.setSize(160, 120);
     ReflectionScene s;
+    auto& diagnostic = Material::diagnostics();
+    const auto savedDiagnostic = diagnostic;
+    diagnostic = {}; diagnostic.enabled = true;
     s.tower->setCastShadow(false);
     const auto tower = std::array<double, 3>{0, 30, -50};
     const auto drawsTower = [&](const RenderDatabase& database) {
@@ -2975,6 +2995,7 @@ void reflectionReuse() {
     };
     constexpr int frames = 6;
     for (const bool reuse : {false, true}) {
+        diagnostic = {}; diagnostic.enabled = true;
         RenderDatabase database;
         database.shadowMapEnabled = true;
         if (!reuse) database.reuseMainFrame = false;  // on is the default
@@ -2982,6 +3003,9 @@ void reflectionReuse() {
         const RenderDatabase* pass = database.reflectionDatabase(s.reflector.get());
         CHECK(pass != nullptr);
         if (!pass) continue;
+        CHECK(diagnostic.recordRebuilds == database.rebuilds() + pass->rebuilds());
+        CHECK(diagnostic.graphRebuilds > 0);
+        CHECK(!diagnostic.threadCpuSupported || diagnostic.graphCpuNs > 0);
         std::printf("reuse=%d: matrix walks main %llu, reflection %llu over %d frames\n", reuse,
                     (unsigned long long)database.matrixWalks(), (unsigned long long)pass->matrixWalks(), frames);
         CHECK(database.matrixWalks() == frames);
@@ -3047,6 +3071,7 @@ void reflectionReuse() {
     bool moved = false;
     for (const DrawItem& item : pass->drawn()) moved = moved || (item.mainPass && item.matrixWorld[12] == s.tower->position.x - 1 && item.matrixWorld[14] == -50);
     CHECK(moved);
+    diagnostic = savedDiagnostic;
 }
 
 void gpuJointProduction() {

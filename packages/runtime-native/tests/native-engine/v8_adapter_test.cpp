@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <map>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
@@ -1465,6 +1466,31 @@ void materialSlots() {
     )JS");
     CHECK(got == "true,true");
     if (got != "true,true") std::fprintf(stderr, "material slots: %s\n", got.c_str());
+    // Diagnostic observation must never suppress a setter or its material version increment.
+    auto& stats = tn::engine::Material::diagnostics();
+    const auto saved = stats;
+    stats = {};
+    tn_handle_t handle{};
+    tn_diagnostic_t diagnostic{nullptr, 0};
+    CHECK(tn_construct(rt.context, "MeshStandardMaterial", nullptr, 0, &handle, &diagnostic) == TN_OK);
+    auto& material = *static_cast<tn::engine::Material*>(tn::abi::objectOf(handle)->ptr.get());
+    tn_value_t value{}; value.kind = TN_VALUE_NUMBER; value.number = 1;
+    const auto initial = material.version();
+    CHECK(tn_set(handle, "opacity", &value, &diagnostic) == TN_OK);
+    CHECK(stats.writes == 0 && material.version() == initial + 1);
+    stats.enabled = true;
+    const auto before = material.version();
+    for (double number : {1., .5, .5, 0., -0., std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()}) {
+        value.number = number;
+        CHECK(tn_set(handle, "opacity", &value, &diagnostic) == TN_OK);
+    }
+    CHECK(stats.writes == 7 && stats.unchanged == 2 && stats.changed == 2 && stats.signedZero == 1 && stats.nan == 2);
+    CHECK(material.version() == before + 7);
+    value.kind = TN_VALUE_BOOL; value.boolean = 1;
+    CHECK(tn_set(handle, "needsUpdate", &value, &diagnostic) == TN_OK);
+    CHECK(stats.writes == 7 && material.version() == before + 8);
+    stats = saved;
+
 }
 
 // PRD-573 v1.11 step 0: the per-name histogram counts every crossing by the name it crossed with, and its sum
