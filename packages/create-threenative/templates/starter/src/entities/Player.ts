@@ -1,6 +1,14 @@
 import { type ICtx, SkeletalMesh3D } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { type AnimationClip, Group, MathUtils, type Mesh, type Object3D, Vector3 } from "three";
+import {
+  type AnimationClip,
+  Group,
+  MathUtils,
+  type Mesh,
+  type Object3D,
+  Quaternion,
+  Vector3,
+} from "three";
 import { type IStarterConventions, preparePlayerConventions } from "../conventions.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
@@ -98,6 +106,8 @@ export class Player {
       autostep: { maxHeight: 0.4, minWidth: 0.2 },
       object: this.mesh,
       physics: ctx.physics,
+      // Walking into dynamic props transfers the character's motion to them.
+      pushesDynamicBodies: true,
       shape: CollisionShape3D.capsule(HALF_HEIGHT, RADIUS),
     });
   }
@@ -158,7 +168,10 @@ export class Player {
   }
 
   debug(): {
+    clip: string | undefined;
     coyoteJumps: number;
+    facing: number;
+    facingAxis: "+x" | "-x" | "+z" | "-z";
     grounded: boolean;
     groundClearance: number | null;
     groundCorrectionEnabled: boolean;
@@ -167,12 +180,26 @@ export class Player {
     normaliseFactor: number;
     odometer: number;
     position: number[];
+    strideSynced: boolean;
     visualAttached: boolean;
     visualAttachmentDrift: number;
   } {
     const visualAttachmentDrift = this.#visualAttachmentDrift();
+    const forward = new Vector3(0, 0, 1).applyQuaternion(
+      this.character.root.getWorldQuaternion(new Quaternion()),
+    );
     return {
+      clip: this.character.current,
       coyoteJumps: this.#coyoteJumps,
+      facing: Math.atan2(forward.x, forward.z),
+      facingAxis:
+        Math.abs(forward.x) > Math.abs(forward.z)
+          ? forward.x >= 0
+            ? "+x"
+            : "-x"
+          : forward.z >= 0
+            ? "+z"
+            : "-z",
       grounded: this.body.grounded,
       groundClearance: this.#conventions.groundSnap.clearance,
       groundCorrectionEnabled: this.#conventions.groundSnap.enabled,
@@ -181,6 +208,7 @@ export class Player {
       normaliseFactor: this.#conventions.normaliseFactor,
       odometer: this.#odometer,
       position: this.mesh.position.toArray(),
+      strideSynced: this.character.stride.synced,
       visualAttached: visualAttachmentDrift <= VISUAL_ATTACHMENT_TOLERANCE,
       visualAttachmentDrift,
     };

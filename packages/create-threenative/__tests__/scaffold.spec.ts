@@ -265,7 +265,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "73da167ba1fdc6360c58e61b51a2f3dba047fbe1c4e88648e9bce4abb64325da",
   shooter: "ca09b0b25f3ba689af53772d82be0978d82cdaff8f997b04b160874428ec3e54",
   snow: "482c1c7f1cd2f233d43cc3fd378c983b4ab8f13dca4bd6fca008e5b120cb0705",
-  starter: "f24a4f8ec2bc11742812e4d86ccc3e941e7a90ed0f82502f9cc38e734eedd0a7",
+  starter: "c35dace2e6b9bb24f420f048906fb71f25f40902c5f4e4734f6bb38df05c3076",
   "tower-defense": "7d816e530aee8842027a1666782d96c51b2cbfde55c4c23a7cdd1b0fd6a267ac",
 };
 
@@ -401,10 +401,10 @@ const STARTER_PATHS = [
   "src/ui/main.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
-  // PRD-449: three, and only the three that prove a new game works. The other 21 are engine
-  // guards in `packages/create-threenative/template-playtests/starter/`, which `pnpm test:templates`
-  // copies into the scaffold; the "exactly three" assertion below is what keeps them out.
+  // Ship the starter smoke, outcome, readiness and movement scenarios. Engine guards stay in
+  // `packages/create-threenative/template-playtests/starter/`, copied by `pnpm test:templates`.
   "playtests/survives.playtest.json",
+  "playtests/movement.playtest.json",
   "playtests/play.playtest.json",
   "native-playtests/react-hud.playtest.json",
   "playtests/production-readiness.playtest.json",
@@ -938,7 +938,7 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
-      // The whole point of the cut (PRD-449): a new game proves itself with three scenarios, and
+      // The whole point of the cut (PRD-449): a new game proves itself with four scenarios, and
       // the engine's own guards live outside the template. `readdir` rather than the STARTER_PATHS
       // membership, so a file nobody added to the list still fails here.
       expect(
@@ -946,6 +946,7 @@ describe("create-threenative", () => {
           name.endsWith(".playtest.json"),
         ),
       ).toEqual([
+        "movement.playtest.json",
         "play.playtest.json",
         "production-readiness.playtest.json",
         "survives.playtest.json",
