@@ -51,13 +51,15 @@ function draw(batch: SkinnedBatch, f: ReturnType<typeof playback>) {
 function expectDisplayed(batch: SkinnedBatch, f: ReturnType<typeof playback>, slot = 0) {
   f.root.updateMatrixWorld(true);
   f.mesh.skeleton.update();
+  const bones = f.mesh.skeleton.boneMatrices;
+  assert(bones);
   const stride = f.mesh.skeleton.bones.length * 16;
   const actual = batch.palette.subarray(slot * stride, (slot + 1) * stride);
   for (let bone = 0; bone < f.mesh.skeleton.bones.length; bone += 1) {
     const expected = f.mesh.matrixWorld
       .clone()
       .multiply(f.mesh.bindMatrixInverse)
-      .multiply(new Matrix4().fromArray(f.mesh.skeleton.boneMatrices, bone * 16))
+      .multiply(new Matrix4().fromArray(bones, bone * 16))
       .multiply(f.mesh.bindMatrix);
     for (let at = 0; at < 16; at += 1)
       expect(actual[bone * 16 + at]).toBeCloseTo(expected.elements[at] as number, 5);
@@ -321,7 +323,11 @@ describe("current-time batch lookup", () => {
       first.begin();
       first.end();
       expect(
-        dispose.mock.contexts.filter((attribute) => attribute.array.byteLength === 121 * 2 * 64),
+        dispose.mock.contexts.filter(
+          (attribute) =>
+            attribute instanceof StorageBufferAttribute &&
+            attribute.array.byteLength === 121 * 2 * 64,
+        ),
       ).toHaveLength(0);
       b.player.update(1 / 60);
       draw(second, b);
@@ -329,7 +335,11 @@ describe("current-time batch lookup", () => {
       second.begin();
       second.end();
       expect(
-        dispose.mock.contexts.filter((attribute) => attribute.array.byteLength === 121 * 2 * 64),
+        dispose.mock.contexts.filter(
+          (attribute) =>
+            attribute instanceof StorageBufferAttribute &&
+            attribute.array.byteLength === 121 * 2 * 64,
+        ),
       ).toHaveLength(1);
     } finally {
       for (const batch of batches) batch.dispose();
@@ -445,6 +455,7 @@ describe("internal clip pose table", () => {
       reference.root.updateMatrixWorld(true);
       reference.mesh.skeleton.update();
       const actual = table.data.slice(frame * 32, (frame + 1) * 32);
+      assert(reference.mesh.skeleton.boneMatrices);
       expect([...actual]).toEqual([...reference.mesh.skeleton.boneMatrices]);
     }
   });

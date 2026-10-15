@@ -386,7 +386,13 @@ describe("SkinnedBatch palette", () => {
       batch.begin();
       batch.write(batch.claim(mesh) as number, mesh);
       batch.end();
-      const builder = new WGSLNodeBuilder(batch.mesh, { backend: {} } as never);
+      const builder = new WGSLNodeBuilder(batch.mesh, {
+        backend: {},
+      } as never) as WGSLNodeBuilder & {
+        setShaderStage(stage: "vertex"): void;
+        flowStagesNode(node: unknown, output: "vec3"): { code: string };
+        uniforms: { vertex: { type: string }[] };
+      };
       builder.setShaderStage("vertex");
       const node = batch.mesh.material.positionNode;
       assert(node);
