@@ -2448,3 +2448,148 @@ it("keeps AC19 pending even when matched CPU reaches 2x", () => {
     verdict: "pending",
   });
 });
+
+describe("Midway hero", () => {
+  const A = "a".repeat(40);
+  const B = "b".repeat(40);
+  const NOW = 10_000_000;
+  const stamp = (r: IMidwayRun, mtimeMs: number) => {
+    r.mtimeMs = mtimeMs;
+    return r;
+  };
+  const arms = (list: IMidwayRun[], prd?: string) => midwayOf(list, prd, undefined, NOW).hero;
+  const draw = async (state: ReturnType<typeof midwayOf>, call: string) => {
+    const html = await readFile(new URL("../midway-bench/dashboard.html", import.meta.url), "utf8");
+    const script = (html.split("<script>")[1] as string)
+      .split("</script>")[0]
+      ?.replace("tick(); setInterval(tick, 5000);", "");
+    const els: Record<string, { innerHTML: string; hidden?: boolean }> = {};
+    const out = runInNewContext(`${script}\n${call}`, {
+      data: JSON.parse(JSON.stringify(state)),
+      document: {
+        getElementById: (id: string) => {
+          els[id] ??= { innerHTML: "" };
+          return els[id];
+        },
+      },
+    });
+    return { els, out };
+  };
+  const pair = (commit: string, desktopMs: number, t: number, wasm = false) => [
+    stamp(run(`h-a${t}-legacy`, cpuLog(120, "legacy", commit)), t),
+    stamp(run(`h-b${t}-desktop`, cpuLog(desktopMs, "desktop", commit), parityText(true)), t + 1),
+    ...(wasm
+      ? [stamp(run(`h-c${t}-native`, cpuLog(80, "native", commit), parityText(true)), t + 2)]
+      : []),
+  ];
+  const wasmFailure = (commit?: string) =>
+    `${commit ? `arm=native buildMode=production engineCommit=${commit}\n` : ""}${JSON.stringify({
+      diagnostics: [
+        {
+          code: "TN_PLAYTEST_RUNNER_FAILED",
+          message: "page.evaluate: TN_ABI_6: get uuid unsupported",
+          severity: "error",
+        },
+      ],
+      pass: false,
+    })}\n`;
+
+  it("renders the native desktop and web Wasm panels with their own targets", async () => {
+    const state = midwayOf([...pair(A, 80, 10, true)], undefined, undefined, NOW);
+    const [desktop, wasm] = state.hero.arms;
+    expect([desktop?.target, desktop?.stretch, wasm?.target, wasm?.stretch]).toEqual([
+      2,
+      3,
+      1.5,
+      undefined,
+    ]);
+    expect([desktop?.state, desktop?.pairs, wasm?.state, wasm?.pairs]).toEqual([
+      "provisional",
+      1,
+      "provisional",
+      1,
+    ]);
+    // 120 / 80 on the desktop: needs 0.5x more and 80 - 120 / 2 = 20 ms less on the engine main thread.
+    expect(desktop?.poses[0]).toMatchObject({ ratio: 1.5, needRatio: 0.5, nativeIpc: 0.5 });
+    expect(desktop?.poses[0]?.needMs).toBeCloseTo(0.08 - 0.12 / 2);
+    const { els } = await draw(state, "renderHero(data);");
+    const html = els.hero?.innerHTML ?? "";
+    for (const text of [
+      'data-arm="desktop"',
+      'data-arm="native"',
+      "Native desktop vs three.js",
+      "Web Wasm vs three.js",
+      "PROVISIONAL",
+      "1 of 3 pairs",
+      "1.50x",
+      "stretch <b>3x</b>",
+      "target <b>1.5x</b>",
+      "first measurement",
+      "IPC",
+    ])
+      expect(html).toContain(text);
+    expect(html).toContain("target met");
+  });
+
+  it("never shows an old failed web Wasm run from another or unknown commit", async () => {
+    for (const failed of [wasmFailure(B), wasmFailure()]) {
+      const list = [stamp(run("old-c1-native", failed), 1), ...pair(A, 80, 10)];
+      const wasm = arms(list).arms[1];
+      expect(wasm).toMatchObject({ state: "nodata", pairs: 0, running: false });
+      expect(wasm?.reason).toBeUndefined();
+      expect(wasm?.poses.every((p) => p.ratio === undefined)).toBe(true);
+      const { els } = await draw(midwayOf(list, undefined, undefined, NOW), "renderHero(data);");
+      expect(els.hero?.innerHTML).toContain(`no matched run at engine ${A.slice(0, 7)}`);
+      expect(els.hero?.innerHTML).not.toContain("get uuid");
+    }
+    // The same failure at the current commit is shown, with its short reason.
+    const current = [stamp(run("c1-native", wasmFailure(A)), 20), ...pair(A, 80, 10)];
+    expect(arms(current).arms[1]).toMatchObject({
+      state: "failed",
+      reason: expect.stringContaining("get uuid"),
+    });
+  });
+
+  it("reads RUNNING while the matched run has no terminal report, and NO DATA once it goes quiet", async () => {
+    const live = `arm=native buildMode=production engineCommit=${A}\n> build:web\nvite building`;
+    const list = [stamp(run("h-c10-native", live), NOW - 60_000), ...pair(A, 80, 10)];
+    expect(arms(list).arms[1]).toMatchObject({ state: "running", running: true, pairs: 0 });
+    const { els } = await draw(midwayOf(list, undefined, undefined, NOW), "renderHero(data);");
+    expect(els.hero?.innerHTML).toContain("RUNNING");
+    expect(els.hero?.innerHTML).toContain("matched flight in progress");
+    // Desktop keeps its pair and is not marked running.
+    expect(arms(list).arms[0]).toMatchObject({ state: "provisional", running: false });
+    const stale = [stamp(run("h-c10-native", live), 5), ...pair(A, 80, 10)];
+    expect(arms(stale).arms[1]).toMatchObject({ state: "nodata", running: false });
+  });
+
+  it("shows the move against the previous engine commit and charts two commits", async () => {
+    const list = [...pair(B, 100, 10), ...pair(A, 80, 20)];
+    const desktop = arms(list).arms[0];
+    expect(desktop?.previousCommit).toBe(B);
+    expect(desktop?.poses[0]?.deltaRatio).toBeCloseTo(1.5 - 1.2);
+    const state = midwayOf(list, undefined, undefined, NOW);
+    const { els, out } = await draw(state, "renderHero(data); progress(data);");
+    expect(els.hero?.innerHTML).toContain("▲ better +0.30x vs bbbbbbb");
+    expect(out).toContain("<svg");
+    expect(out).toContain("Matched ratio per pose by engine commit");
+    // One commit has no line to draw.
+    const single = await draw(
+      midwayOf(pair(A, 80, 10), undefined, undefined, NOW),
+      "progress(data);",
+    );
+    expect(single.out).toBe("");
+    // A slower engine reads red and worse.
+    const worse = midwayOf([...pair(B, 80, 10), ...pair(A, 100, 20)], undefined, undefined, NOW);
+    const html = (await draw(worse, "renderHero(data);")).els.hero?.innerHTML;
+    expect(html).toContain("▼ worse −0.30x vs bbbbbbb");
+  });
+
+  it("keeps AC-20 in the acceptance strip", async () => {
+    const prd = "- [x] AC-1 [local]: done\n- [ ] AC-20 [local]: ipc\n- [ ] AC-15 [local]: ratio\n";
+    const state = midwayOf(pair(A, 80, 10), prd, undefined, NOW);
+    expect(state.prd?.open).toContain("AC-20");
+    const { els } = await draw(state, "$('ring').innerHTML = ring(data.prd);");
+    expect(els.ring?.innerHTML).toContain("AC-20");
+  });
+});

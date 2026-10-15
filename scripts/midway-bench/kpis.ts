@@ -18,7 +18,15 @@ import {
 
 export const POSES = ["takeoff", "cockpit", "reargun"] as const;
 /** PRD-610 targets. */
-export const TARGETS = { cullPct: 2, hudP95Ms: 16.7, matrixVisited: 1500, ratio: 2 } as const;
+export const TARGETS = {
+  cullPct: 2,
+  hudP95Ms: 16.7,
+  matrixVisited: 1500,
+  ratio: 2,
+  /** Native desktop stretch goal; web Wasm has its own, lower target. */
+  stretchRatio: 3,
+  wasmRatio: 1.5,
+} as const;
 const PRD = new URL(
   "../../docs/PRDs/performance/PRD-610-native-engine-wins-on-real-games.md",
   import.meta.url,
@@ -99,13 +107,18 @@ export function matchedOf(runs: readonly IMidwayRun[], arm: Arm = "desktop") {
               nativeCpuMs: y.mainThread.cpuMs / 1000,
               legacyInstructions: x.mainThread.instructions / 1000,
               nativeInstructions: y.mainThread.instructions / 1000,
+              legacyCycles: x.mainThread.cycles / 1000,
+              nativeCycles: y.mainThread.cycles / 1000,
+              legacyIpc: x.mainThread.instructions / x.mainThread.cycles,
+              nativeIpc: y.mainThread.instructions / y.mainThread.cycles,
               legacyTreeCpuMs: x.processTree.cpuMs / 1000,
               nativeTreeCpuMs: y.processTree.cpuMs / 1000,
             }
           : undefined;
       })
       .filter((r) => r !== undefined);
-    const parity = pairs.length > 0 && pairs.every(([, r]) => !parityNote([r]));
+    const parityIssue = pairs.map(([, r]) => parityNote([r])).find((note) => note);
+    const parity = pairs.length > 0 && !parityIssue;
     const qualified = readings.length >= 3 && alternating && parity;
     const observed = (r: IMidwayRun) =>
       r.engineCommit && r.clock === "fixed-step" && !r.failure
@@ -148,11 +161,17 @@ export function matchedOf(runs: readonly IMidwayRun[], arm: Arm = "desktop") {
       build: latest && buildOf(latest),
       pairs: readings.length,
       qualified,
+      parity,
+      parityIssue,
       ratio: median(readings.map((r) => r.ratio)),
       legacyCpuMs: median(readings.map((r) => r.legacyCpuMs)),
       nativeCpuMs: median(readings.map((r) => r.nativeCpuMs)),
       legacyInstructions: median(readings.map((r) => r.legacyInstructions)),
       nativeInstructions: median(readings.map((r) => r.nativeInstructions)),
+      legacyCycles: median(readings.map((r) => r.legacyCycles)),
+      nativeCycles: median(readings.map((r) => r.nativeCycles)),
+      legacyIpc: median(readings.map((r) => r.legacyIpc)),
+      nativeIpc: median(readings.map((r) => r.nativeIpc)),
       legacyTreeCpuMs: median(readings.map((r) => r.legacyTreeCpuMs)),
       nativeTreeCpuMs: median(readings.map((r) => r.nativeTreeCpuMs)),
       unpaired,
@@ -161,6 +180,127 @@ export function matchedOf(runs: readonly IMidwayRun[], arm: Arm = "desktop") {
         : `${readings.length} paired windows; ${parity ? "parity PASS" : "native parity missing/FAIL"}; ${qualified ? "three-pair collection gate met; root execution review still required" : "pending qualification: need three alternating pairs per pose"}. Native host completion ${pairs.every(([, r]) => r.nativeCompletion === "reconciled") ? "reconciled" : "unavailable"}; attribution/profiles pending.`,
     };
   });
+}
+
+/** A run with a provenance line but no terminal report, written to in the last 20 minutes. */
+const RUNNING_WINDOW_MS = 20 * 60 * 1000;
+const isRunning = (r: IMidwayRun, now: number) =>
+  !!r.engineCommit &&
+  !r.clock &&
+  !r.failure &&
+  !r.cpuWindows &&
+  now - r.mtimeMs < RUNNING_WINDOW_MS;
+
+export type HeroState =
+  | "qualified"
+  | "provisional"
+  | "unverified"
+  | "failed"
+  | "running"
+  | "nodata";
+
+/** Every engine commit with a paired, parity-clean ratio for the arm, in run order. */
+function ratioHistory(runs: readonly IMidwayRun[], arm: Arm) {
+  const commits = new Map<string, number>();
+  for (const r of runs)
+    if (r.arm === arm && r.cpuWindows && r.engineCommit)
+      commits.set(r.engineCommit, Math.max(commits.get(r.engineCommit) ?? 0, r.mtimeMs));
+  return [...commits]
+    .map(([commit, at]) => ({
+      commit,
+      at,
+      rows: matchedOf(
+        runs.filter((r) => r.engineCommit === commit),
+        arm,
+      ),
+    }))
+    .filter(({ rows }) => rows.every((p) => p.ratio !== undefined && p.parity))
+    .map(({ commit, at, rows }) => ({
+      commit,
+      at,
+      ratios: Object.fromEntries(rows.map((p) => [p.pose, p.ratio as number])),
+    }))
+    .sort((a, b) => a.at - b.at);
+}
+
+/**
+ * The top of the Midway tab: per arm, the matched ratio at the current engine commit (the newest
+ * legacy run with OS windows). A run from another commit never stands in for a missing one.
+ */
+export function heroOf(runs: readonly IMidwayRun[], now = Date.now()) {
+  const usable = runs.filter((r) => !r.profiled && !r.timingExclusion && !r.rejection);
+  const commit = [...usable]
+    .filter((r) => r.arm === "legacy" && r.cpuWindows && r.engineCommit)
+    .sort((a, b) => a.mtimeMs - b.mtimeMs)
+    .at(-1)?.engineCommit;
+  const arm = (id: "desktop" | "native") => {
+    const target = id === "desktop" ? TARGETS.ratio : TARGETS.wasmRatio;
+    const stretch = id === "desktop" ? TARGETS.stretchRatio : undefined;
+    const atCommit = commit ? usable.filter((r) => r.engineCommit === commit) : [];
+    const mine = atCommit.filter((r) => r.arm === id).sort((a, b) => a.mtimeMs - b.mtimeMs);
+    const rows = commit ? matchedOf(atCommit, id) : [];
+    const history = ratioHistory(usable, id);
+    const previous = history
+      .filter((h) => h.commit !== commit && h.at < (mine.at(-1)?.mtimeMs ?? now))
+      .at(-1);
+    const pairs = rows.length ? Math.min(...rows.map((p) => p.pairs)) : 0;
+    const running = mine.some((r) => isRunning(r, now));
+    const parityIssue = rows.find((p) => p.parityIssue)?.parityIssue;
+    const failure = mine.at(-1)?.failure;
+    let state: HeroState;
+    let reason: string | undefined;
+    if (pairs > 0) {
+      state = rows.every((p) => p.qualified)
+        ? "qualified"
+        : !parityIssue
+          ? "provisional"
+          : parityIssue === "parity FAIL"
+            ? "failed"
+            : "unverified";
+      reason = parityIssue ? `${parityIssue}; ratios are measured, not qualified` : undefined;
+    } else if (running) state = "running";
+    else if (failure) {
+      state = "failed";
+      reason = `${(failure.split("\n")[0] as string).slice(0, 140)}`;
+    } else state = "nodata";
+    return {
+      arm: id,
+      target,
+      ...(stretch === undefined ? {} : { stretch }),
+      state,
+      ...(reason ? { reason } : {}),
+      running,
+      pairs,
+      pairsNeeded: 3,
+      commit,
+      poses: rows.map((p) => {
+        const ratio = pairs > 0 ? p.ratio : undefined;
+        const prior = previous?.ratios[p.pose];
+        return {
+          pose: p.pose,
+          pairs: p.pairs,
+          ratio,
+          legacyCpuMs: p.legacyCpuMs,
+          nativeCpuMs: p.nativeCpuMs,
+          legacyInstructions: p.legacyInstructions,
+          nativeInstructions: p.nativeInstructions,
+          legacyIpc: p.legacyIpc,
+          nativeIpc: p.nativeIpc,
+          legacyTreeCpuMs: p.legacyTreeCpuMs,
+          nativeTreeCpuMs: p.nativeTreeCpuMs,
+          needRatio: ratio === undefined ? undefined : target - ratio,
+          needMs:
+            ratio === undefined || p.nativeCpuMs === undefined || p.legacyCpuMs === undefined
+              ? undefined
+              : p.nativeCpuMs - p.legacyCpuMs / target,
+          deltaRatio: ratio === undefined || prior === undefined ? undefined : ratio - prior,
+        };
+      }),
+      previousCommit: previous?.commit,
+      history,
+    };
+  };
+  return { commit, arms: [arm("desktop"), arm("native")] };
 }
 
 /** `- [x] AC-n` against `- [ ] AC-n` in the PRD. No AC boxes at all means no progress, not 0 of 0. */
@@ -299,7 +439,7 @@ export function kpisOf(
       detail: detail(last),
     };
   };
-  const ratioKpi = (id: string, title: string, arm: Arm) => {
+  const ratioKpi = (id: string, title: string, arm: Arm, target: number) => {
     const poses = matchedOf(currentRuns, arm);
     const provisional = matchedOf(runs, arm);
     const complete = poses.every((p) => p.qualified && p.ratio !== undefined);
@@ -311,11 +451,11 @@ export function kpisOf(
       title,
       better: "higher" as const,
       unit: "x",
-      target: TARGETS.ratio,
+      target,
       ticked: prd?.ticked.includes(id) ?? false,
       verdict: !complete
         ? ("pending" as const)
-        : poses.every((p) => (p.ratio as number) >= TARGETS.ratio)
+        : poses.every((p) => (p.ratio as number) >= target)
           ? ("pending" as const)
           : ("fail" as const),
       ...(current === undefined ? {} : { current }),
@@ -354,8 +494,8 @@ export function kpisOf(
       (l) => `p50 ${medOf(l.runs, (r) => r.ui?.p50)?.toFixed(1)} ms, p95 ${l.value.toFixed(1)} ms`,
       (l) => l.value < TARGETS.hudP95Ms,
     ),
-    ratioKpi("AC-19", "Desktop speed vs three.js", "desktop"),
-    ratioKpi("AC-7", "Web Wasm vs three.js", "native"),
+    ratioKpi("AC-19", "Desktop speed vs three.js", "desktop", TARGETS.ratio),
+    ratioKpi("AC-7", "Web Wasm vs three.js", "native", TARGETS.wasmRatio),
   ];
 }
 
@@ -788,7 +928,12 @@ export function winnerOf(runs: readonly IMidwayRun[], text?: string) {
 }
 
 /** Timing scores exclude diagnostic runs; experimental structural progress can use timing-excluded runs. */
-export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?: string) {
+export function midwayOf(
+  all: readonly IMidwayRun[],
+  prdText?: string,
+  lockText?: string,
+  now = Date.now(),
+) {
   const runs = all.filter((r) => !r.profiled && !r.timingExclusion && !r.rejection);
   const prd = prdText === undefined ? undefined : prdProgress(prdText);
   const { runs: accepted, ...winner } = winnerOf(runs, lockText);
@@ -853,6 +998,7 @@ export function midwayOf(all: readonly IMidwayRun[], prdText?: string, lockText?
       ).find((k) => k.id === "AC-4")
     : undefined;
   return {
+    hero: heroOf(runs, now),
     matchedCpu: [...matchedOf(runs), ...matchedOf(runs, "native")],
     winner,
     selection: {

@@ -7,17 +7,17 @@
 <style>
   :root {
     --bg:#FAF9F5; --card:#F0EEE6; --ink:#141413; --mute:#5E5D59; --line:#E3E0D3; --track:#E3E0D3; --accent:#D97757; --soft:#B0AEA5;
-    --green:#15803d; --green-bg:#e3f3e9; --red:#c8261b; --red-bg:#fbe6e3; --grey-bg:#E8E6DC;
+    --green:#15803d; --green-bg:#e3f3e9; --red:#c8261b; --red-bg:#fbe6e3; --grey-bg:#E8E6DC; --amber:#9a5b00; --amber-bg:#f8ecd2;
     --desktop:#D97757; --wasm:#6A9BCC; --legacy:#87867F;
   }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
     --bg:#262624; --card:#30302E; --ink:#F0EEE6; --mute:#B0AEA5; --line:#454441; --track:#454441; --accent:#D97757; --soft:#B0AEA5;
-    --green:#4ade80; --green-bg:#16301f; --red:#ff7b70; --red-bg:#3a1a17; --grey-bg:#3A3936;
+    --green:#4ade80; --green-bg:#16301f; --red:#ff7b70; --red-bg:#3a1a17; --grey-bg:#3A3936; --amber:#f0b45a; --amber-bg:#3d2f14;
     --desktop:#E08A6D; --wasm:#7FAAD6; --legacy:#A9A79D;
   } }
   :root[data-theme="dark"] {
     --bg:#262624; --card:#30302E; --ink:#F0EEE6; --mute:#B0AEA5; --line:#454441; --track:#454441; --accent:#D97757; --soft:#B0AEA5;
-    --green:#4ade80; --green-bg:#16301f; --red:#ff7b70; --red-bg:#3a1a17; --grey-bg:#3A3936;
+    --green:#4ade80; --green-bg:#16301f; --red:#ff7b70; --red-bg:#3a1a17; --grey-bg:#3A3936; --amber:#f0b45a; --amber-bg:#3d2f14;
     --desktop:#E08A6D; --wasm:#7FAAD6; --legacy:#A9A79D;
   }
   * { box-sizing:border-box; }
@@ -30,7 +30,27 @@
   nav.tabs a[aria-current] { background:var(--accent); border-color:var(--accent); color:#fff; }
   .mute { color:var(--mute); } .sm { font-size:12px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
-  .hero { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:14px; align-items:start; }
+  .hero { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start; }
+  .panel { display:grid; gap:10px; } .panel h3 { margin:0; font-size:17px; font-weight:700; }
+  .panel .head { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; }
+  .panel .sub { font-size:12px; color:var(--mute); display:flex; flex-wrap:wrap; gap:2px 12px; }
+  .panel .why { font-size:12px; border-radius:8px; padding:5px 9px; background:var(--grey-bg); }
+  .poses { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+  .pose { display:grid; gap:3px; align-content:start; min-width:0; } .pose .nm { font-size:12px; font-weight:650; color:var(--mute); text-transform:uppercase; letter-spacing:.05em; }
+  .ratio { font-size:44px; font-weight:780; line-height:1; letter-spacing:-.025em; } .ratio.ok { color:var(--green); } .ratio.bad { color:var(--red); } .ratio.none { color:var(--soft); }
+  .ok { color:var(--green); font-weight:650; } .bad { color:var(--red); font-weight:650; }
+  .pose .dl { font-size:12px; min-height:16px; } .pose .gp { font-size:12px; color:var(--mute); min-height:32px; }
+  .prog { position:relative; height:12px; margin-top:14px; border-radius:6px; background:var(--track); }
+  .prog i { position:absolute; inset:0 auto 0 0; border-radius:6px; background:var(--accent); } .prog.met i { background:var(--green); } .prog.slow i { background:var(--red); }
+  .prog u { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--green); }
+  .prog b { position:absolute; top:-9px; width:0; height:0; margin-left:-5px; border:5px solid transparent; border-top:7px solid var(--ink); border-bottom:0; }
+  .prog.slow b { border-top-color:var(--red); }
+  .scale { position:relative; height:14px; font-size:10.5px; color:var(--mute); } .scale span { position:absolute; top:2px; transform:translateX(-50%); white-space:nowrap; }
+  .scale span:first-child { transform:none; } .scale span:last-child { transform:translateX(-100%); }
+  .panel table th, .panel table td { padding:2px 6px; } .panel table td { text-align:right; } .panel tr.sec td, .panel tr.sec th { color:var(--mute); }
+  .chip.warn { background:var(--amber-bg); color:var(--amber); } .chip.run { background:var(--wasm); color:#fff; }
+  .two { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:14px; align-items:start; }
+  .count { font-size:20px; font-weight:750; margin-right:6px; }
   .stack { display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
   .kpi { display:grid; gap:5px; padding:9px 0 11px; border-top:1px solid var(--line); } .kpi:first-of-type { border-top:0; padding-top:0; }
   .kpi .top { display:flex; align-items:baseline; gap:10px; }
@@ -62,7 +82,7 @@
   th, td { text-align:right; padding:3px 8px; border-top:1px solid var(--line); white-space:nowrap; } th:first-child, td:first-child { text-align:left; } th { color:var(--mute); font-weight:500; }
   details summary { cursor:pointer; font-weight:650; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); }
   #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px; }
-  @media (max-width:1100px) { .hero { grid-template-columns:minmax(0,1fr); } }
+  @media (max-width:1100px) { .hero { grid-template-columns:minmax(0,1fr); } .two { grid-template-columns:minmax(0,1fr); } .poses { gap:8px; } .ratio { font-size:34px; } }
 </style>
 </head>
 <body>
@@ -73,15 +93,20 @@
   <span class="grow"></span>
   <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
 </header>
-<section class="card"><h2>Now: Phase 2 · AC14 done · AC15 matched counter baseline pending</h2><p id="focus"></p><h2>Best measured experimental · not accepted</h2><div id="candidate"></div><h2>Pinned measurement and qualification</h2><div id="winner"></div></section>
-<section class="hero">
-  <div class="card"><h2>Historical diagnostics and current speed target <span class="mute" style="text-transform:none;letter-spacing:0">· AC-3 uses best measured experimental when no winner is accepted; other measurements use the pinned reference; historical baselines retained; qualification separate</span></h2><div id="kpis"></div></div>
-  <div class="stack">
-    <div class="card"><h2>Matched main-thread CPU · legacy/native per pose</h2><div id="gap"></div></div>
-    <div class="card"><h2>PRD-610 acceptance boxes</h2><div class="ring" id="ring"></div></div>
-    <div class="card"><h2>Matched CPU overview · historical native split below</h2><div class="twin" id="side"></div><div class="legend" id="sideLegend"></div></div>
-  </div>
+<section class="hero" id="hero"></section>
+<section class="two">
+  <div class="card"><h2>PRD-610 acceptance boxes</h2><div class="ring" id="ring"></div></div>
+  <div class="card"><h2>HUD round trip · AC-5</h2><div id="hud"></div></div>
 </section>
+<section class="card" id="progressCard" hidden><h2>Progress over engine commits · matched ratio per pose</h2><div id="progress"></div></section>
+<section class="card"><details><summary>Matched CPU detail per pose</summary><div id="gap" style="margin-top:8px"></div></details></section>
+<section class="card"><details id="hist"><summary>Historical diagnostics · retired AC-3 and AC-4, best measured experimental, native split</summary>
+  <h2 style="margin-top:12px">Now: Phase 2 · AC14 done · AC15 matched counter baseline pending</h2><p id="focus"></p>
+  <h2>Best measured experimental · not accepted</h2><div id="candidate"></div>
+  <h2>Pinned measurement and qualification</h2><div id="winner"></div>
+  <h2 style="margin-top:12px">Targets and retired measurements</h2><div id="kpis"></div>
+  <h2 style="margin-top:12px">Matched CPU overview · historical native split</h2><div class="twin" id="side"></div><div class="legend" id="sideLegend"></div>
+</details></section>
 <p class="mute sm">CPU and instructions use the last 1,000 complete active player frames. Qualification requires all 1,000. HUD uses all snapshots; matrix visits use the last legacy projection observation. Versioned world work uses the same active tail; v3 adds dirty propagation and subtree checks to v2. Versions and legacy Matrix last have different scopes and are not directly comparable. Headline targets retain the original metric.</p>
 <section class="card"><h2>Trend per build (median of its runs) · dashed line is the target</h2><div class="row3" id="trend"></div><div class="legend" id="trendLegend" style="margin-top:6px"></div></section>
 <section class="card"><h2>A/B groups · keep rule: every run of the next arm beats every run of the previous arm</h2><div class="row3" id="ab"></div></section>
@@ -130,10 +155,74 @@ function renderGap(d) {
 
 function ring(prd) {
   if (!prd) return '<span class="mute">no AC boxes found in the PRD file</span>';
-  const R = 54, C = 2 * Math.PI * R, f = prd.done / prd.total;
   const all = [...prd.ticked.map((id) => [id, 1]), ...prd.open.map((id) => [id, 0])].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
-  return `<svg viewBox="0 0 140 140" style="width:140px;flex:none" role="img" aria-label="${prd.done} of ${prd.total} acceptance boxes ticked"><circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--track)" stroke-width="14"/><circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--accent)" stroke-width="14" stroke-linecap="round" stroke-dasharray="${f * C} ${C}" transform="rotate(-90 70 70)"/><text x="70" y="72" text-anchor="middle" class="val" style="font-size:30px;font-weight:750">${prd.done}/${prd.total}</text><text x="70" y="92" text-anchor="middle">${Math.round(f * 100)}% ticked</text></svg>
-  <div><div class="acs">${all.map(([id, t]) => `<span class="chip ${t ? "pass" : ""}">${id}${t ? " ✓" : ""}</span>`).join("")}</div><p class="mute sm" style="margin:8px 0 0">A box is ticked only when its proof ran. The bars on the left show how far the measurements got.</p></div>`;
+  return `<div><span class="count">${prd.done}/${prd.total}</span><span class="mute">ticked · a box is ticked only when its proof ran</span><div class="acs" style="margin-top:6px">${all.map(([id, t]) => `<span class="chip ${t ? "pass" : ""}">${id}${t ? " ✓" : ""}</span>`).join("")}</div></div>`;
+}
+
+
+const POSE_IDS = ["takeoff", "cockpit", "reargun"];
+const POSE_NAME = { takeoff: "Takeoff", cockpit: "Cockpit", reargun: "Rear gunner" };
+const HERO_TITLE = { desktop: "Native desktop vs three.js", native: "Web Wasm vs three.js" };
+const STATE_CHIP = { qualified: ["pass", "QUALIFIED"], provisional: ["warn", "PROVISIONAL"], unverified: ["warn", "NO PARITY"], failed: ["fail", "FAILED"], running: ["run", "RUNNING"], nodata: ["", "NO DATA"] };
+const sc = (c) => (c ? c.slice(0, 7) : "unknown");
+const dash = '<span class="mute">—</span>';
+const f = (v, d) => (v === undefined || v === null ? dash : v.toFixed(d));
+
+function heroBar(r, a) {
+  const hi = a.stretch ?? a.target, pos = (v) => Math.max(0, Math.min(1, (v - 1) / (hi - 1))) * 100;
+  const cls = r === undefined ? "" : r < 1 ? "slow" : r >= a.target ? "met" : "";
+  const labels = `<span style="left:0">1.0x parity</span>${a.stretch ? `<span style="left:${pos(a.target)}%">${a.target}x target</span>` : ""}<span style="left:100%">${hi}x ${a.stretch ? "stretch" : "target"}</span>`;
+  return `<div class="prog ${cls}" role="img" aria-label="ratio ${r === undefined ? "unavailable" : r.toFixed(2) + "x"} on a scale from 1.0x to ${hi}x">${r === undefined ? "" : `<i style="width:${pos(r)}%"></i><b style="left:${pos(r)}%"></b>`}${a.stretch ? `<u style="left:${pos(a.target)}%"></u>` : ""}</div><div class="scale">${labels}</div>`;
+}
+
+function heroGap(p, a) {
+  if (p.ratio === undefined) return "no ratio yet";
+  if (p.ratio >= a.target) return `<span class="ok">target met</span>${a.stretch && p.ratio < a.stretch ? ` · stretch needs ${(a.stretch - p.ratio).toFixed(2)}x more` : ""}`;
+  return `needs ${p.needRatio.toFixed(2)}x more${p.needMs > 0 ? ` · −${p.needMs.toFixed(2)} ms/frame on the engine main thread` : ""}`;
+}
+
+function heroDelta(p, a) {
+  if (p.ratio === undefined) return "";
+  if (p.deltaRatio === undefined) return '<span class="mute">— first measurement</span>';
+  const d = p.deltaRatio;
+  if (Math.abs(d) < 0.005) return `<span class="mute">= no change vs ${sc(a.previousCommit)}</span>`;
+  return `<span class="${d > 0 ? "ok" : "bad"}">${d > 0 ? "▲ better +" : "▼ worse −"}${Math.abs(d).toFixed(2)}x vs ${sc(a.previousCommit)}</span>`;
+}
+
+function heroPanel(a) {
+  const [cls, word] = STATE_CHIP[a.state] ?? ["", String(a.state).toUpperCase()];
+  const poses = POSE_IDS.map((id) => a.poses.find((p) => p.pose === id) ?? { pose: id });
+  const message = { running: `matched flight in progress at engine ${sc(a.commit)}; nothing to compare yet`, nodata: a.commit ? `no matched run at engine ${sc(a.commit)}` : "no matched legacy run yet" }[a.state];
+  const why = a.reason ?? message;
+  const cols = poses.map((p) => `<div class="pose"><span class="nm">${POSE_NAME[p.pose]}</span><span class="ratio ${p.ratio === undefined ? "none" : p.ratio < 1 ? "bad" : p.ratio >= a.target ? "ok" : ""}">${p.ratio === undefined ? "—" : p.ratio.toFixed(2) + "x"}</span><span class="dl">${heroDelta(p, a)}</span>${heroBar(p.ratio, a)}<span class="gp">${heroGap(p, a)}</span></div>`).join("");
+  const cell = (get) => poses.map((p) => `<td>${get(p)}</td>`).join("");
+  const pair = (x, y, d, k = 1) => (x === undefined || y === undefined ? dash : `${(x / k).toFixed(d)} / ${(y / k).toFixed(d)}`);
+  const table = `<table><tr><th></th>${poses.map((p) => `<td class="mute">${POSE_NAME[p.pose]}</td>`).join("")}</tr>
+    <tr><th>CPU ms/frame · three.js / engine</th>${cell((p) => pair(p.legacyCpuMs, p.nativeCpuMs, 2))}</tr>
+    <tr><th>Instructions/frame (M) · three.js / engine</th>${cell((p) => pair(p.legacyInstructions, p.nativeInstructions, 1, 1e6))}</tr>
+    <tr><th>IPC · three.js / engine</th>${cell((p) => pair(p.legacyIpc, p.nativeIpc, 2))}</tr>
+    <tr class="sec"><th>Process-tree CPU ms/frame · three.js / engine</th>${cell((p) => pair(p.legacyTreeCpuMs, p.nativeTreeCpuMs, 1))}</tr></table>`;
+  return `<div class="card panel" data-arm="${a.arm}" data-state="${a.state}"><div class="head"><h3 style="color:${a.arm === "desktop" ? "var(--desktop)" : "var(--wasm)"}">${HERO_TITLE[a.arm]}</h3><span class="grow"></span>${a.running && a.state !== "running" ? '<span class="chip run">RUN IN PROGRESS</span>' : ""}<span class="chip ${cls === "run" ? "run" : cls}">${word}</span><span class="chip">${a.pairs} of ${a.pairsNeeded} pairs</span></div>
+    <div class="sub"><span>engine ${sc(a.commit)}</span><span>target <b>${a.target}x</b> (pass line)${a.stretch ? ` · stretch <b>${a.stretch}x</b>` : ""}</span><span>matched main-thread CPU, three.js ÷ engine</span></div>${why ? `<div class="why">${esc(why)}</div>` : ""}
+    <div class="poses">${cols}</div><div class="scroll">${table}</div></div>`;
+}
+
+function renderHero(d) {
+  $("hero").innerHTML = d.hero ? d.hero.arms.map(heroPanel).join("") : "";
+}
+
+/** Matched ratio per pose for every arm, x = engine commit in run order. Omitted with fewer than two commits. */
+function progress(d) {
+  const arms = d.hero?.arms ?? [], commits = [...new Map(arms.flatMap((a) => a.history).sort((x, y) => x.at - y.at).map((h) => [h.commit, h.at])).keys()];
+  if (commits.length < 2) return "";
+  const W = 860, H = 220, L = 38, R = 70, T = 12, B = 26, all = arms.flatMap((a) => a.history.flatMap((h) => Object.values(h.ratios)));
+  const hi = Math.max(...all, ...arms.map((a) => a.target), 1.2) * 1.1, lo = Math.min(...all, 1) * 0.9;
+  const x = (c) => L + (commits.indexOf(c) / (commits.length - 1)) * (W - L - R), y = (v) => H - B - ((v - lo) / (hi - lo)) * (H - B - T);
+  const dashes = { takeoff: "", cockpit: "7 4", reargun: "2 3" };
+  const refs = [[1, "three.js 1.0x", "var(--legacy)"], ...arms.map((a) => [a.target, `${HERO_TITLE[a.arm].split(" vs")[0]} target ${a.target}x`, "var(--green)"])].map(([v, t, c]) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${c}" stroke-dasharray="5 4"/><text x="${W - R + 4}" y="${y(v) + 3}">${t}</text>`).join("");
+  const lines = arms.flatMap((a) => POSE_IDS.map((pose) => { const pts = a.history.filter((h) => h.ratios[pose] !== undefined).map((h) => [x(h.commit), y(h.ratios[pose]), h.ratios[pose]]); const col = a.arm === "desktop" ? "var(--desktop)" : "var(--wasm)"; return `<polyline fill="none" stroke="${col}" stroke-width="2.4" stroke-dasharray="${dashes[pose]}" points="${pts.map((q) => q[0] + "," + q[1]).join(" ")}"/>${pts.map((q) => `<circle cx="${q[0]}" cy="${q[1]}" r="3.6" fill="${col}"><title>${HERO_TITLE[a.arm]} · ${POSE_NAME[pose]}: ${q[2].toFixed(2)}x</title></circle>`).join("")}`; })).join("");
+  const ticks = commits.map((c) => `<text x="${x(c)}" y="${H - 8}" text-anchor="middle" style="font-size:9px">${sc(c)}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Matched ratio per pose by engine commit">${refs}${lines}${ticks}</svg><div class="legend"><span style="--c:var(--desktop)">Native desktop</span><span style="--c:var(--wasm)">Web Wasm</span><span>solid takeoff · dashed cockpit · dotted rear gunner</span></div>`;
 }
 
 function side(d) {
@@ -213,7 +302,13 @@ function render(d) {
   const structural = d.candidate.structural;
   $("focus").textContent = "Phase 2: AC14 done; AC15 matched counter baseline pending (three alternating pairs). Next: AC16/17/18/5/19. AC19 speed target: 2x; free-run/display/visual proof pending. CPU measurement alone cannot pass AC19. Historical diagnostics retained.";
   $("candidate").innerHTML = structural ? `<div class="kpi pending"><div class="top"><span class="name"><small>AC-3 · EXPERIMENTAL</small>Matrix world-walk visits · best package median</span><span class="grow"></span><span class="big">${num(structural.projection, 0)}<small> visits</small></span><span class="chip">Not accepted</span></div><div class="foot"><span>${esc(structural.build)} · median of ${structural.runs} complete run(s): ${structural.projections.map((v) => num(v, 0)).join(" / ")}</span><span class="grow"></span><span>target <b>≤ ${num(structural.target, 0)} visits</b></span></div><div class="foot"><span>${structural.projectionReductionPct === undefined ? "" : `${Math.abs(structural.projectionReductionPct).toFixed(1)}% ${structural.projectionReductionPct >= 0 ? "fewer" : "more"} visits vs pinned ${num(structural.pinnedProjection, 0)} · `}1,000 complete active frames per run · parity PASS${structural.timingExclusion ? " · includes timing-excluded measurements; structural metric only" : ""}. Acceptance and timing qualification remain separate.</span></div></div>` : candidate ? `<p>Latest experimental candidate: ${esc(candidate.build)} · ${candidate.ms.toFixed(2)} ms · ${Math.abs(candidate.pct).toFixed(1)}% ${candidate.direction} than matched three.js · ${candidate.runs} run(s). Not accepted.</p>` : "No experimental candidate measurements.";
-  $("kpis").innerHTML = d.kpis.map(kpi).join("");
+  $("kpis").innerHTML = d.kpis.filter((k) => k.id !== "AC-5").map(kpi).join("");
+  const hud = d.kpis.find((k) => k.id === "AC-5");
+  $("hud").innerHTML = hud ? kpi(hud) : '<span class="mute">no HUD samples</span>';
+  renderHero(d);
+  const chart = progress(d);
+  $("progress").innerHTML = chart;
+  $("progressCard").hidden = !chart;
   renderGap(d);
   $("ring").innerHTML = ring(d.prd);
   side(d);
