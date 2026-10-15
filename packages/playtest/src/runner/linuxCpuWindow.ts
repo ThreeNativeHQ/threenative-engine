@@ -20,6 +20,8 @@ export interface ICpuWindow {
   frames: number;
   startTick: number;
   endTick: number;
+  startUs: number;
+  endUs: number;
   updates: number;
   renders: number;
   mainThread: {
@@ -202,22 +204,80 @@ export async function browserCpuProcess(
     const { processInfo } = await session.send("SystemInfo.getProcessInfo");
     const renderers = processInfo.filter((info) => info.type === "renderer");
     const roots = processInfo.filter((info) => info.type === "browser");
-    if (renderers.length !== 1 || roots.length !== 1)
+    if (renderers.length === 0 || roots.length !== 1)
       return fail("ambiguous Chromium renderer/browser processes");
-    const pid = renderers[0]?.id;
+    let pid = renderers[0]?.id;
+    if (renderers.length > 1) {
+      const context = browser.contexts()[0];
+      const page = context?.pages()[0];
+      if (context === undefined || page === undefined) return fail("missing isolated page");
+      const pageSession = await context.newCDPSession(page);
+      let tracing = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const matches = new Set<number>();
+      let rootFrame = "";
+      const collected = ({ value }: { value: Record<string, unknown>[] }): void => {
+        for (const event of value) {
+          if (event.name !== "TracingStartedInBrowser") continue;
+          const frames = (event.args as { data?: { frames?: unknown } } | undefined)?.data?.frames;
+          if (!Array.isArray(frames)) continue;
+          for (const frame of frames) {
+            if (frame?.frame === rootFrame) matches.add(frame.processId);
+          }
+        }
+      };
+      let complete!: () => void;
+      const stopped = new Promise<void>((resolve) => { complete = resolve; });
+      const finished = (): void => { tracing = false; complete(); };
+      pageSession.on("Tracing.dataCollected", collected);
+      pageSession.on("Tracing.tracingComplete", finished);
+      const bounded = async <T>(work: Promise<T>): Promise<T> => {
+        try {
+          return await Promise.race([
+            work,
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: renderer identity CDP timeout")), 3000);
+            }),
+          ]);
+        } finally { clearTimeout(timer); }
+      };
+      try {
+        const { frameTree } = await bounded(pageSession.send("Page.getFrameTree"));
+        rootFrame = frameTree.frame.id;
+        if (typeof rootFrame !== "string" || rootFrame.length === 0) return fail("missing page root frame identity");
+        await bounded(pageSession.send("Tracing.start", {
+          categories: "disabled-by-default-devtools.timeline",
+          transferMode: "ReportEvents",
+        }).then(() => { tracing = true; }));
+        await bounded(pageSession.send("Tracing.end"));
+        await bounded(stopped);
+        const mapped = [...matches];
+        pid = mapped[0];
+        if (mapped.length !== 1 || !renderers.some((info) => info.id === pid))
+          return fail("missing or ambiguous page-root renderer mapping");
+      } finally {
+        try {
+          if (tracing) {
+            await bounded(pageSession.send("Tracing.end"));
+            await bounded(stopped);
+          }
+        } finally {
+          pageSession.off("Tracing.dataCollected", collected);
+          pageSession.off("Tracing.tracingComplete", finished);
+          await pageSession.detach();
+        }
+      }
+    }
     const rootPid = roots[0]?.id;
     if (pid === undefined || rootPid === undefined)
       return fail("missing Chromium process identity");
-    const tids = await readdir(join(procRoot, `${pid}/task`));
-    const main = [];
-    for (const tid of tids) {
-      const comm = (await readFile(join(procRoot, `${pid}/task/${tid}/comm`), "utf8")).trim();
-      if (comm === "CrRendererMain".slice(0, 15)) main.push(Number(tid));
-    }
-    const tid = main[0];
-    if (main.length !== 1 || tid === undefined)
-      return fail("renderer has no unambiguous CrRendererMain TID");
-    return { rootPid, pid, tid, renderer: true };
+    if (![pid, rootPid].every((id) => Number.isSafeInteger(id) && id > 0))
+      return fail("invalid Chromium process identity");
+    if (!(await readTree(rootPid, procRoot)).has(pid))
+      return fail("renderer is outside owned browser tree");
+    // Chromium leaves Linux leader comm unchanged; RendererMain runs on the process leader.
+    await readFile(join(procRoot, `${pid}/task/${pid}/stat`), "utf8");
+    return { rootPid, pid, tid: pid, renderer: true };
   } finally {
     await session.detach();
   }
@@ -250,12 +310,7 @@ async function readThread(
 ): Promise<{ starttime: string; cpuNs: number }> {
   const path = join(procRoot, `${owner.pid}/task/${owner.tid}`);
   const stat = procStat(await readFile(join(path, "stat"), "utf8"), owner.tid);
-  if (
-    owner.renderer &&
-    (await readFile(join(path, "comm"), "utf8")).trim() !== "CrRendererMain".slice(0, 15)
-  )
-    fail("renderer thread identity changed");
-  if (!owner.renderer && owner.tid !== owner.pid) fail("native main TID must equal child PID");
+  if (owner.tid !== owner.pid) fail("main TID must equal process PID");
   const schedstat = (await readFile(join(path, "schedstat"), "utf8")).trim();
   if (!/^\d+\s+\d+\s+\d+$/u.test(schedstat)) fail("malformed schedstat runtime");
   const cpuNs = Number(schedstat.split(/\s+/u)[0]);
@@ -389,11 +444,17 @@ export async function measureCpuWindow(
     if (!beforeTree.has(owner.pid)) fail("measured process is outside owned tree");
     const before = await readThread(owner, procRoot);
     await command("enable");
+    let startUs: number;
+    let endUs: number;
     try {
+      startUs = Number(process.hrtime.bigint() / 1000n);
       await advance();
+      endUs = Number(process.hrtime.bigint() / 1000n);
     } finally {
       await command("disable");
     }
+    if (![startUs, endUs].every((us) => Number.isSafeInteger(us) && us > 0) || endUs <= startUs)
+      return fail("invalid monotonic CPU window boundaries");
     const after = await readThread(owner, procRoot);
     const afterTree = await readTree(owner.rootPid, procRoot);
     const afterFrames = await bridge.sample(request);
@@ -437,6 +498,8 @@ export async function measureCpuWindow(
       frames: FRAMES,
       startTick,
       endTick,
+      startUs,
+      endUs,
       ...actual,
       mainThread: {
         pid: owner.pid,

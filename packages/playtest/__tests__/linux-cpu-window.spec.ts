@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   cpuWindowLabels,
   frameCountDelta,
@@ -158,6 +158,7 @@ async function fixture() {
     await writeFile(join(procRoot, "101/task/101/stat"), stat(101, cpu, identity));
     await writeFile(join(procRoot, "101/task/101/schedstat"), `${cpu * 1000000} 0 0\n`);
     await writeFile(join(procRoot, "102/stat"), stat(102, cpu, "11"));
+    await writeFile(join(procRoot, "102/task/102/stat"), stat(102, cpu, "11"));
   };
   await update(10);
   const perfExecutable = join(root, "perf.cjs");
@@ -212,6 +213,62 @@ process.on('SIGINT', () => process.exit(0));
   return { root, bridge, owner, options, advance, cleaned };
 }
 
+type Listener = (event: never) => void;
+
+function rendererSessions(mode: string) {
+  const events: string[] = [];
+  const cdp = (name: string, respond: (method: string, listeners: Map<string, Listener>) => unknown) => {
+    const listeners = new Map<string, Listener>();
+    return {
+      listeners,
+      on: (event: string, listener: Listener) => { listeners.set(event, listener); },
+      off: (event: string) => { listeners.delete(event); },
+      detach: async () => { events.push(`${name} detach`); },
+      send: async (method: string) => {
+        events.push(`${name} ${method}`);
+        return respond(method, listeners);
+      },
+    };
+  };
+  const browserSession = cdp("browser", (method, listeners) => {
+    if (method === "SystemInfo.getProcessInfo") return { processInfo: [
+      { type: "browser", id: mode === "outside" ? 102 : 101 },
+      { type: "renderer", id: mode === "outside" ? 101 : 102 },
+      { type: "renderer", id: 103 },
+    ] };
+    if (method === "Tracing.end") {
+      listeners.get("Tracing.dataCollected")?.({ value: [{ name: "TracingStartedInBrowser", args: {} }] } as never);
+      listeners.get("Tracing.tracingComplete")?.({} as never);
+    }
+    return {};
+  });
+  const pageSession = cdp("page", (method, listeners) => {
+    if (method === "Page.getFrameTree") {
+      if (mode === "frameFailure") throw new Error("frame unavailable");
+      return { frameTree: { frame: { id: "root" } } };
+    }
+    if (method === "Tracing.start" && mode === "conflict") throw new Error("Tracing already started");
+    if (method === "Tracing.end") {
+      const frames = mode === "missing" ? [] : [
+        { frame: "root", processId: mode === "unknown" ? 999 : mode === "outside" ? 101 : 102 },
+        { frame: "spare", processId: 103 },
+        ...(mode === "ambiguous" ? [{ frame: "root", processId: 103 }] : []),
+      ];
+      listeners.get("Tracing.dataCollected")?.({ value: [
+        { name: "TracingStartedInBrowser", args: { data: { frames } } },
+      ] } as never);
+      if (mode !== "timeout") listeners.get("Tracing.tracingComplete")?.({} as never);
+    }
+    return {};
+  });
+  const context = { pages: () => [{}], newCDPSession: async () => pageSession };
+  const browser = {
+    contexts: () => [context],
+    newBrowserCDPSession: async () => browserSession,
+  } as unknown as Browser;
+  return { browser, browserSession, pageSession, events };
+}
+
 describe("fake proc/perf acquisition (no benchmark claims)", () => {
   it("ACKs enable/disable around the advance, accounts for the owned child and removes FIFOs", async () => {
     const f = await fixture();
@@ -228,6 +285,8 @@ describe("fake proc/perf acquisition (no benchmark claims)", () => {
         frames: 1000,
         startTick: 0,
         endTick: 1000,
+        startUs: expect.any(Number),
+        endUs: expect.any(Number),
         updates: 1000,
         renders: 1000,
         mainThread: {
@@ -245,6 +304,11 @@ describe("fake proc/perf acquisition (no benchmark claims)", () => {
         processTree: { cpuMs: 200, pids: [101, 102] },
         host: { load: [0.1, 0.2, 0.3], governors: { policy0: "performance" } },
       });
+      expect(Number.isSafeInteger(result.startUs)).toBe(true);
+      expect(Number.isSafeInteger(result.endUs)).toBe(true);
+      expect(result.startUs).toBeGreaterThan(0);
+      expect(result.endUs).toBeGreaterThan(result.startUs);
+      expect(JSON.parse(JSON.stringify(result)).startUs).toBe(result.startUs);
       expect(await readFile(join(f.root, "commands"), "utf8")).toBe("enable\ndisable\n");
       await f.cleaned();
     } finally {
@@ -281,11 +345,25 @@ describe("fake proc/perf acquisition (no benchmark claims)", () => {
       }
     });
   }
-  it("resolves only one CDP renderer and verifies its Linux main-thread comm", async () => {
+  it("rejects invalid monotonic boundaries after disabling perf", async () => {
     const f = await fixture();
-    let info = [
-      { type: "browser", id: 102 },
-      { type: "renderer", id: 101 },
+    try {
+      await expect(measureCpuWindow("pose", f.owner, f.bridge, async () => {
+        await f.advance();
+        vi.spyOn(process.hrtime, "bigint").mockReturnValueOnce(0n);
+      }, f.options)).rejects.toThrow("invalid monotonic CPU window boundaries");
+      expect(await readFile(join(f.root, "commands"), "utf8")).toBe("enable\ndisable\n");
+      await f.cleaned();
+    } finally {
+      vi.restoreAllMocks();
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+  it("resolves the renderer leader even when Linux preserves the chrome comm", async () => {
+    const f = await fixture();
+    const info = [
+      { type: "browser", id: 101 },
+      { type: "renderer", id: 102 },
     ];
     const browser = {
       contexts: () => [{ pages: () => [{}] }],
@@ -295,20 +373,62 @@ describe("fake proc/perf acquisition (no benchmark claims)", () => {
       }),
     } as unknown as Browser;
     try {
+      await writeFile(join(f.options.procRoot, "102/task/102/comm"), "chrome\n");
       expect(await browserCpuProcess(browser, f.options.procRoot)).toEqual({
-        rootPid: 102,
-        pid: 101,
-        tid: 101,
+        rootPid: 101,
+        pid: 102,
+        tid: 102,
         renderer: true,
       });
-      info.push({ type: "renderer", id: 103 });
-      await expect(browserCpuProcess(browser, f.options.procRoot)).rejects.toThrow("ambiguous");
-      info = info.slice(0, 2);
-      await writeFile(join(f.options.procRoot, "101/task/101/comm"), "other\n");
+      await rm(join(f.options.procRoot, "102/task/102/stat"));
       await expect(browserCpuProcess(browser, f.options.procRoot)).rejects.toThrow(
-        "CrRendererMain",
+        "ENOENT",
       );
     } finally {
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+  it("maps the page root when browser-target trace metadata is empty", async () => {
+    const f = await fixture();
+    const { browser, events } = rendererSessions("target");
+    try {
+      await writeFile(join(f.options.procRoot, "102/task/102/comm"), "CrRendererMain\n");
+      expect(await browserCpuProcess(browser, f.options.procRoot)).toEqual({
+        rootPid: 101,
+        pid: 102,
+        tid: 102,
+        renderer: true,
+      });
+      expect(events.filter((event) => event.startsWith("browser Tracing."))).toEqual([]);
+    } finally {
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+  it.each([
+    ["ambiguous", "missing or ambiguous page-root renderer mapping"],
+    ["missing", "missing or ambiguous page-root renderer mapping"],
+    ["unknown", "missing or ambiguous page-root renderer mapping"],
+    ["outside", "renderer is outside owned browser tree"],
+    ["conflict", "Tracing already started"],
+    ["frameFailure", "frame unavailable"],
+    ["timeout", "renderer identity CDP timeout"],
+  ])("fails closed on a spare-renderer problem: %s", async (mode, reason) => {
+    const f = await fixture();
+    const { browser, browserSession, pageSession, events } = rendererSessions(mode);
+    try {
+      await writeFile(join(f.options.procRoot, "102/task/102/comm"), mode === "comm" ? "other" : "CrRendererMain");
+      if (mode === "timeout") vi.useFakeTimers();
+      const rejected = expect(browserCpuProcess(browser, f.options.procRoot)).rejects.toThrow(reason);
+      if (mode === "timeout") await vi.runAllTimersAsync();
+      await rejected;
+      expect(events.filter((event) => event.startsWith("browser Tracing."))).toEqual([]);
+      expect(events.slice(-2)).toEqual(["page detach", "browser detach"]);
+      expect(events.filter((event) => event === "page Tracing.end")).toHaveLength(
+        mode === "conflict" || mode === "frameFailure" ? 0 : mode === "timeout" ? 2 : 1,
+      );
+      expect(browserSession.listeners.size + pageSession.listeners.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
       await rm(f.root, { recursive: true, force: true });
     }
   });
