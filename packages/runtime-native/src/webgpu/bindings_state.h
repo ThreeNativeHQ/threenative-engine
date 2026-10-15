@@ -61,6 +61,8 @@ struct TextureInfo {
     uint32_t mipLevelCount = 1;
     WGPUTextureDimension dimension = WGPUTextureDimension_2D;
     uint32_t sampleCount = 1;
+    bool transientAttachment = false;
+    uint64_t transientNominalBytes = 0;
     bool ownsTexture = true;
     bool accounted = false;
 };

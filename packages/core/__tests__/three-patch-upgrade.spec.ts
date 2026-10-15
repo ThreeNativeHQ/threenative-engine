@@ -178,6 +178,27 @@ const CURRENT_RECONSTRUCTION_BLOBS = {
   "src/renderers/webgpu/utils/WebGPUBindingUtils.js": "a5da7ca09f746c0b2859ef173df663ccdc851ebc",
 };
 
+// Exact PR486 candidate before the separate-encoder ordering correction.
+// Exact source/bundle blobs at PR486 matrix-guard predecessor 4a7224834.
+const ABORT_PREDECESSOR_BLOBS = {
+  "build/three.webgpu.js": "7e34d05be672a7fa2e38b19c035f744a8b486446",
+  "build/three.webgpu.nodes.js": "4b7a3baea4fc2a99f9453211d2807131f8a86dd4",
+  "src/renderers/common/Renderer.js": "769c909b0a63708dea7d22efc5379c39bdf57d92",
+  "src/renderers/webgpu/WebGPUBackend.js": "0fbcc307d39cbf6d74d9dbc5f199f2b0e4f58b33",
+};
+
+const MATRIX_GUARD_BLOBS = {
+  "build/three.webgpu.js": "2a70eb319b4235c958c7b5b1ede148c808d0b4b2",
+  "build/three.webgpu.nodes.js": "bfa242835dfef49019dd368e3593a62a221dda3d",
+  "src/renderers/webgpu/WebGPUBackend.js": "5dbb9bf2ed43fa055c0f7dd2859c146485825817",
+};
+
+const QUEUE_ORDER_BLOBS = {
+  "build/three.webgpu.js": "ee394e98d798be749776cce1fa3e043fb9951769",
+  "build/three.webgpu.nodes.js": "a0fab1c7c37cfaf270d9ce36dd3d91453ae6a44c",
+  "src/renderers/webgpu/WebGPUBackend.js": "94b48d64ed8f2e57f00cb5fd5bd0112da085aeae",
+};
+
 function blobHash(contents: string): string {
   return createHash("sha1")
     .update(`blob ${Buffer.byteLength(contents)}\0`)
@@ -197,16 +218,24 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
     join(packageRoot, "patches/three@0.185.1-prd269-upgrade.patch"),
     "utf8",
   );
-  const selected = migration
-    .split(/(?=^diff --git )/mu)
-    .filter((block) => {
-      const file = /^diff --git a\/(\S+) /mu.exec(block)?.[1];
-      const hash = /^index ([a-f0-9]{40})\.\./mu.exec(block)?.[1];
-      return file !== undefined && hash !== undefined && priorBlobs[file] === hash;
-    })
-    .join("");
+  const blocks = migration.split(/(?=^diff --git )/mu);
+  const selected: string[] = [];
+  for (const [file, initialHash] of Object.entries(priorBlobs)) {
+    let hash = initialHash;
+    const chain: string[] = [];
+    for (;;) {
+      const block = blocks.find(
+        (candidate) =>
+          candidate.startsWith(`diff --git a/${file} `) && candidate.includes(`index ${hash}..`),
+      );
+      if (!block) break;
+      chain.unshift(block);
+      hash = /^index [a-f0-9]{40}\.\.([a-f0-9]{40}) /mu.exec(block)?.[1] ?? "";
+    }
+    selected.push(...chain);
+  }
   const inverse = join(root, "prior.patch");
-  await writeFile(inverse, selected);
+  await writeFile(inverse, selected.join(""));
   await promisify(execFile)(
     "patch",
     ["--reverse", "--batch", "--fuzz=0", "--silent", "-p1", "-i", inverse],
@@ -221,6 +250,9 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
 }
 
 describe.each([
+  ["PR486 matrix-guard predecessor", MATRIX_GUARD_BLOBS],
+  ["PR486 abort predecessor", ABORT_PREDECESSOR_BLOBS],
+  ["PR486 queue-order predecessor", QUEUE_ORDER_BLOBS],
   ["develop dcbc5131", PRIOR_BLOBS],
   ["published PR393 455ed1dd", PUBLISHED_BLOBS],
   ["published PR393 daef254c", RECOMPILE_BLOBS],
@@ -257,4 +289,39 @@ describe.each([
     );
     expect(after).toEqual(before);
   });
+});
+
+it("follows exact predecessor hashes and rejects a cyclic migration without writing", async () => {
+  const { packageRoot, threeRoot, target } = await fixture(STOCK);
+  const transition = (before: readonly string[], after: readonly string[]) =>
+    `diff --git a/src/thing.js b/src/thing.js
+index ${blobHash(before.join("\n"))}..${blobHash(after.join("\n"))} 100644
+--- a/src/thing.js
++++ b/src/thing.js
+@@ -1,5 +1,5 @@
+${before
+  .slice(0, 5)
+  .map((line) => `-${line}`)
+  .join("\n")}
+${after
+  .slice(0, 5)
+  .map((line) => `+${line}`)
+  .join("\n")}
+`;
+  const migration = join(packageRoot, "patches/three@0.185.1-prd269-upgrade.patch");
+  await writeFile(
+    migration,
+    transition(STOCK, PATCHED_BY_THE_PREVIOUS_RELEASE) +
+      transition(PATCHED_BY_THE_PREVIOUS_RELEASE, FULLY_PATCHED),
+  );
+  await expect(applyThreePatch({ packageRoot, threeRoot })).resolves.toBe("patched");
+  expect(await readFile(target, "utf8")).toBe(FULLY_PATCHED.join("\n"));
+  await writeFile(target, STOCK.join("\n"));
+  await writeFile(
+    migration,
+    transition(STOCK, PATCHED_BY_THE_PREVIOUS_RELEASE) +
+      transition(PATCHED_BY_THE_PREVIOUS_RELEASE, STOCK),
+  );
+  await expect(applyThreePatch({ packageRoot, threeRoot })).rejects.toThrow("cyclic known upgrade");
+  expect(await readFile(target, "utf8")).toBe(STOCK.join("\n"));
 });
