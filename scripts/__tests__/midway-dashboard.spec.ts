@@ -102,13 +102,19 @@ const cpuReport = (cpuMs: number, runtime = "web") => ({
     })),
   },
 });
-const cpuRecords = (windows: readonly { startTick: number }[]) =>
-  windows.flatMap((w) =>
-    Array.from(
+const hold = (held: boolean, tick: number) =>
+  `TN_PLAYER_RENDER_HOLD:${JSON.stringify({ held, tick })}`;
+/** Host frames bracketed by hold markers; `lead` is how far the runner's game clock is ahead of the host tick. */
+const cpuRecords = (windows: readonly { startTick: number }[], lead = 0) =>
+  windows.flatMap((w) => [
+    hold(true, w.startTick - lead),
+    ...Array.from(
       { length: 1000 },
-      (_, i) => `TN_PLAYER_FRAME:${JSON.stringify({ tick: w.startTick + i + 1, updates: 1 })}`,
+      (_, i) =>
+        `TN_PLAYER_FRAME:${JSON.stringify({ tick: w.startTick - lead + i + 1, updates: 1 })}`,
     ),
-  );
+    hold(false, w.startTick - lead + 1000),
+  ]);
 const cpuLog = (cpuMs: number, arm: string, commit = "a".repeat(40)) => {
   const r = cpuReport(cpuMs, arm === "desktop" ? "native" : "web");
   return `arm=${arm} buildMode=${arm === "desktop" ? "desktop-bundle" : "production"} engineCommit=${commit}\n${arm === "desktop" ? cpuRecords(r.acquisition.cpuWindows).join("\n") : ""}\n${JSON.stringify(r, null, 2)}`;
@@ -2385,15 +2391,23 @@ it("reconciles exact CPU boundaries rather than release/sample ticks", () => {
   const log = (records: string[], report = r) => `${records.join("\n")}\n${JSON.stringify(report)}`;
   expect(nativeWindowCompletion(log(frames))).toBe("reconciled");
   expect(matchedCpuWindows(log(frames))).toHaveLength(3);
+  // The runner's game-clock window ticks and the host's driven ticks differ by a constant (the game
+  // led by 60 on Midway); frames outside a bracket (unheld draws between windows) do not count.
+  const led = cpuRecords(r.acquisition.cpuWindows, -60);
+  const between = 'TN_PLAYER_FRAME:{"tick":1,"updates":0}';
+  expect(nativeWindowCompletion(log([between, ...led, between]))).toBe("reconciled");
   expect(matchedCpuWindows(log(frames, { ...r, observations: { signalSeries: [] } }))).toHaveLength(
     3,
   );
   for (const records of [
-    frames.slice(1),
-    [...frames, ...frames.slice(0, 1)],
+    frames.filter((_, i) => i !== 1),
+    [...frames.slice(0, 2), frames[1] as string, ...frames.slice(2)],
     [...frames, "TN_PLAYER_FRAME:{bad}"],
-    frames.map((f, i) => (i === 0 ? 'TN_PLAYER_FRAME:{"tick":2,"updates":0}' : f)),
-    frames.map((f, i) => (i === 0 ? 'TN_PLAYER_FRAME:{"tick":2.5,"updates":1}' : f)),
+    frames.map((f, i) => (i === 1 ? f.replace('"updates":1', '"updates":0') : f)),
+    frames.map((f, i) => (i === 1 ? f.replace(/"tick":\d+/, '"tick":2.5') : f)),
+    frames.slice(0, -1),
+    [frames[0] as string, ...frames],
+    frames.filter((f) => !f.startsWith("TN_PLAYER_RENDER_HOLD:")),
   ]) {
     expect(nativeWindowCompletion(log(records))).toBe("invalid");
     expect(matchedCpuWindows(log(records))).toBeUndefined();

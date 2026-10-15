@@ -762,7 +762,9 @@ int Session::initialize() {
         if (presenter && game.uiDraw) game.uiDraw(*renderer);
         const auto renderBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const double renderCpuBegin = metrics ? threadCpuMs() : -1;
-        database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1});
+        std::array<double, 2> renderSplitMs{-1, -1};  // wall ms: {prepare, encode+submit}
+        database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1},
+                        metrics ? &renderSplitMs : nullptr);
         const double renderMs = metrics ? elapsed(renderBegin) : 0;
         const double renderCpuMs = renderCpuBegin >= 0 ? threadCpuMs() - renderCpuBegin : -1;
         for (const std::string& diagnostic : database.diagnostics())
@@ -871,6 +873,12 @@ int Session::initialize() {
                     {"postPresent", V::makeNumber(threadCpuMs() - presentCpuEnd)},
                     {"update", V::makeNumber(updateCpuMs)}}));
                 sample = V::makeObject(std::move(members));
+            }
+            if (renderSplitMs[0] >= 0) {
+                auto members = sample.members();
+                members.emplace_back("renderPrepareMs", json::Value::makeNumber(renderSplitMs[0]));
+                members.emplace_back("renderEncodeMs", json::Value::makeNumber(renderSplitMs[1]));
+                sample = json::Value::makeObject(std::move(members));
             }
             if (instructionsFrameBegin >= 0) {
                 // The span cpuFrameCpuMs covers (ticks and frame, the swap call left out), in thousands.

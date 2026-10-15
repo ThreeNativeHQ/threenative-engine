@@ -341,33 +341,57 @@ export function nativeWindowCompletion(log: string): "unavailable" | "reconciled
   const source = Array.isArray(console)
     ? console.map((entry) => entry?.text ?? "").join("\n")
     : log;
-  const frames = scanJson<{ tick: number; updates: number }>(
-    source.includes("TN_PLAYER_FRAME:") ? source : log,
-    "TN_PLAYER_FRAME:",
-  );
+  const text = source.includes("TN_PLAYER_FRAME:") ? source : log;
+  const frames = scanJson<{ tick: number; updates: number }>(text, "TN_PLAYER_FRAME:");
   if (!frames.values.length && !frames.skipped) return "unavailable";
   if (frames.skipped) return "invalid";
   const windows = report?.acquisition?.cpuWindows;
-  if (
-    !Array.isArray(windows) ||
-    windows.length !== 3 ||
-    frames.values.some((frame) => !frame || !Number.isSafeInteger(frame.tick) || frame.tick < 0)
-  )
-    return "invalid";
-  for (const label of Object.values(CPU_POSES)) {
-    const matches = windows.filter((window) => window?.label === label);
-    if (matches.length !== 1) return "invalid";
-    const { startTick: start, endTick: end } = matches[0];
+  if (!Array.isArray(windows) || windows.length !== 3) return "invalid";
+  // The host brackets each window in its own ticks (TN_PLAYER_RENDER_HOLD); the runner's window ticks
+  // come from the game clock, which can lead the driven tick, so frames are reconciled per bracket.
+  const flat = text.includes('\\"') ? text.replaceAll('\\"', '"') : text;
+  const events: { at: number; held?: unknown; tick: unknown; updates?: unknown }[] = [];
+  for (const marker of ["TN_PLAYER_FRAME:", "TN_PLAYER_RENDER_HOLD:"]) {
+    for (let at = flat.indexOf(marker); at !== -1; at = flat.indexOf(marker, at + marker.length)) {
+      const begin = at + marker.length;
+      const end = objectEnd(flat, begin);
+      if (flat[begin] !== "{" || end === -1) return "invalid";
+      try {
+        events.push({ at, ...JSON.parse(flat.slice(begin, end)) });
+      } catch {
+        return "invalid";
+      }
+    }
+  }
+  events.sort((a, b) => a.at - b.at);
+  const brackets: { start: number; end: number; ticks: unknown[]; updates: unknown[] }[] = [];
+  let open: { start: number; ticks: unknown[]; updates: unknown[] } | undefined;
+  for (const event of events) {
+    if (event.held === undefined) {
+      open?.ticks.push(event.tick);
+      open?.updates.push(event.updates);
+      continue;
+    }
     if (
-      ![start, end].every((n) => Number.isSafeInteger(n) && n >= 0) ||
-      end - start !== PLAYER_FRAME_WINDOW
+      typeof event.held !== "boolean" ||
+      !Number.isSafeInteger(event.tick) ||
+      (event.tick as number) < 0
     )
       return "invalid";
-    const completed = frames.values.filter((frame) => frame.tick > start && frame.tick <= end);
+    if (event.held === (open !== undefined)) return "invalid";
+    if (event.held) open = { start: event.tick as number, ticks: [], updates: [] };
+    else if (open) {
+      brackets.push({ ...open, end: event.tick as number });
+      open = undefined;
+    }
+  }
+  if (open || brackets.length !== windows.length) return "invalid";
+  for (const { start, end, ticks, updates } of brackets) {
     if (
-      completed.length !== PLAYER_FRAME_WINDOW ||
-      new Set(completed.map((frame) => frame.tick)).size !== PLAYER_FRAME_WINDOW ||
-      completed.some((frame) => !Number.isSafeInteger(frame.tick) || frame.updates !== 1)
+      end - start !== PLAYER_FRAME_WINDOW ||
+      ticks.length !== PLAYER_FRAME_WINDOW ||
+      ticks.some((tick, i) => tick !== start + i + 1) ||
+      updates.some((n) => n !== 1)
     )
       return "invalid";
   }

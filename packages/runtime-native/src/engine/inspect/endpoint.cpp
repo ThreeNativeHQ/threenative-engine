@@ -1,6 +1,7 @@
 #include "engine/inspect/endpoint.h"
 
 #include <cmath>
+#include <cstdio>
 #include <regex>
 
 namespace tn::engine::inspect {
@@ -91,6 +92,11 @@ bool Endpoint::dispatch(const std::string& method, const Value* argument, Value&
         if (argument->boolean() && !host_.renderEachTick)
             return fail(error, "TN_INSPECT_UNSUPPORTED: holding automatic render requires rendering each driven tick.");
         automaticRenderHeld_ = argument->boolean();
+        // Brackets a matched CPU window in the host's own ticks, so a checker reconciles the frames in
+        // it without trusting the game clock the runner samples (it can lead the driven tick).
+        std::printf("TN_PLAYER_RENDER_HOLD:{\"held\":%s,\"tick\":%llu}\n", automaticRenderHeld_ ? "true" : "false",
+                    static_cast<unsigned long long>(tick()));
+        std::fflush(stdout);
         return result = Value::makeBool(automaticRenderHeld_), true;
     }
     if (method.rfind("input.", 0) == 0) {
