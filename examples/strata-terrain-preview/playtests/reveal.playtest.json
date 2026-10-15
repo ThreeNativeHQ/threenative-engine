@@ -76,7 +76,7 @@
       {
         "entity": "props",
         "component": "reveal",
-        "path": "completedCellsInView",
+        "path": "publishedBatchesInView",
         "equals": 0
       },
       {
@@ -90,12 +90,6 @@
         "component": "reveal",
         "path": "impostorPendingPeak",
         "equals": 0
-      },
-      {
-        "entity": "props",
-        "component": "reveal",
-        "path": "cellSamples",
-        "gte": 1
       }
     ]
   }

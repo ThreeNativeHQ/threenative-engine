@@ -312,8 +312,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         elapsedMs: 0,
         complete: false,
         samples: 0,
-        completedCellsInView: 0,
-        cellSamples: 0,
+        publishedBatchesInView: 0,
         shadowInvalidated: -1,
         impostorPendingPeak: -1,
         pipelinesCreated: -1,
@@ -818,12 +817,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
             completedPropsWork += Math.max(0, progress.added - previous);
             preparation = progress;
           },
-          onCellAdmissions: (bounds) => {
+          onPublication: (bounds) => {
             if (reveal.startedMs < 0 || reveal.complete) return;
-            reveal.cellSamples++;
-            reveal.completedCellsInView += bounds.filter((box) =>
-              revealFrustum.intersectsBox(box),
-            ).length;
+            if (revealFrustum.intersectsBox(bounds)) reveal.publishedBatchesInView++;
           },
           invalidateShadows: (region) => {
             const shadows = sky.sun.shadow.shadowNode;

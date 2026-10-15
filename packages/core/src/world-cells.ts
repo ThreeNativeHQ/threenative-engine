@@ -568,6 +568,10 @@ export interface IWorldCellsLoadOptions {
    * test can prove the ceiling instead of hoping a machine is slow enough to show it.
    */
   readonly admissionNow?: () => number;
+  /** Called synchronously when a nonempty source batch becomes drawable, including runs in
+   * unfinished cells and replacements. Bounds use the admitted placements' authored draw bounds;
+   * staging alone never calls this observer. Copy bounds if retaining them. */
+  readonly onPublication?: (bounds: Box3) => void;
   /**
    * The screen-space projection the extra levels of a baked AutoLOD chain are switched at, for an
    * asset whose `world.json` entry names no nonempty authored `lods` of its own. An explicit empty
@@ -4159,6 +4163,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #cells: readonly IWorldCell[];
   readonly #cellSize: number;
   readonly #follow: IWorldCellsFollow;
+  readonly #onPublication: IWorldCellsInit["onPublication"];
   readonly #loader: IAssetLoader;
   /**
    * Whether {@link #loader} was created here rather than supplied by the game. Only an internally
@@ -4612,6 +4617,7 @@ export class WorldCells extends Group implements IComputeDriven {
         : admissionBudgetMs(init.coveredAdmissionBudgetMs);
     this.#now = init.admissionNow ?? ((): number => globalThis.performance?.now() ?? Date.now());
     this.#follow = init.follow;
+    this.#onPublication = init.onPublication;
     this.#manifest = init.manifest;
     // Before the first `#canonical` read, which is the run loop below.
     this.#aliases = init.aliases;
@@ -6440,6 +6446,10 @@ export class WorldCells extends Group implements IComputeDriven {
     // The source meshes and records are now published together. Until this point a queued impostor
     // replacement may have already changed the GPU slot table while the old mesh still draws.
     this.#publishGpuGates(job.asset);
+    for (const entry of job.fresh) {
+      if (entry.batch.count > 0 && entry.shadowBounds !== undefined)
+        this.#onPublication?.(entry.shadowBounds);
+    }
     // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
     // that drew the old ones are stale. One flag, told at most once a second.
     if (job.fresh.some((entry) => entry.batch.count > 0))

@@ -1,7 +1,17 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BoxGeometry, Group, InstancedMesh, Mesh, MeshBasicMaterial, type Object3D } from "three";
+import {
+  BoxGeometry,
+  Frustum,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  type Object3D,
+  PerspectiveCamera,
+} from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
 
@@ -279,6 +289,56 @@ afterEach(() => {
 });
 
 describe("WorldCells admission budget", () => {
+  it("observes drawable runs before cell readiness, but excludes outside-view publications", async () => {
+    stubFixtureFetch();
+    const at = cellCenter(1, 1);
+    const camera = new PerspectiveCamera(45, 1, 0.1, 300);
+    camera.position.set(at.x, 15, at.z + 40);
+    camera.lookAt(at.x, 0, at.z);
+    camera.updateMatrixWorld();
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
+    let published = 0;
+    let inView = 0;
+    let partial = false;
+    let world: WorldCells;
+    let elapsed = 0;
+    world = await WorldCells.load({
+      url: "/world/world.json",
+      surface,
+      follow: followAt(at.x, at.z),
+      terrain: false,
+      ring: 1,
+      budgets,
+      gpuScene: false,
+      admissionBudgetMs: 1,
+      admissionNow: () => ++elapsed,
+      shadows: { cast: false },
+      loadModel: async () => model(),
+      onPublication: (bounds) => {
+        // An allocated/staged mesh is insufficient: its instance records must be live.
+        expect([...drawn(world).values()].some((count) => count > 0)).toBe(true);
+        published++;
+        if (frustum.intersectsBox(bounds)) inView++;
+      },
+    });
+    world.update();
+    await flush();
+    // Placement slices and staged parts cannot yet draw or notify.
+    world.update();
+    expect(published).toBe(0);
+    for (let frame = 0; frame < 4000; frame++) {
+      world.update();
+      if (inView > 0 && !world.readinessAt(at, 0).ready) partial = true;
+      if (world.stats().admission.deferred === 0) break;
+    }
+    expect(partial).toBe(true);
+    expect(inView).toBeGreaterThan(0);
+    expect(published).toBeGreaterThan(inView);
+    world.dispose();
+  });
+
   it("spends at most the budget plus one unit per update, however long the backlog", async () => {
     const BUDGET_MS = 2;
     const { world: cells } = await makeWorld({ admissionBudgetMs: BUDGET_MS, priced: true });
