@@ -768,6 +768,45 @@ describe("IGame", () => {
     }
   });
 
+  it.each([0, 10_000, 20_000])(
+    "does not report startup failure after stop at %ims",
+    async (stopAt) => {
+      vi.useFakeTimers();
+      const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const requestFrame = globalThis.requestAnimationFrame;
+      let frame!: (time: number) => void;
+      vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      });
+      resetLaunchFailures();
+      const failure = vi.fn();
+      const off = onLaunchFailure(failure);
+      const game = defineGame({
+        renderer: renderer(testCanvas()),
+        scenes: { test: EmptyScene },
+        start: "test",
+      });
+      try {
+        await game.start();
+        frame(16);
+        // Stop before queued rejection handlers run, including an already-expired settlement.
+        vi.advanceTimersByTime(stopAt);
+        game.stop();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(failure).not.toHaveBeenCalled();
+      } finally {
+        game.stop();
+        off();
+        resetLaunchFailures();
+        if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+        else vi.stubGlobal("requestAnimationFrame", requestFrame);
+        errorLog.mockRestore();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("propagates final settlement failure without publishing readiness or lifting the cover", async () => {
     let fail!: (error: Error) => void;
     const pending = new Promise<void>((_resolve, reject) => {

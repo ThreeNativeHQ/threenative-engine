@@ -2,6 +2,42 @@ import { describe, expect, it, vi } from "vitest";
 import { StartupReadiness } from "../src/startup-readiness.js";
 
 describe("StartupReadiness", () => {
+  it.each(["compile", "hold", "warmup"])("cancels timers and late %s completion", async (phase) => {
+    vi.useFakeTimers();
+    try {
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const readiness = new StartupReadiness({
+        stableFrames: 1,
+        settled: () => false,
+        afterHolds: () => pending,
+      });
+      const ready = vi.fn();
+      const failed = vi.fn();
+      void readiness.whenReady().then(ready, failed);
+      if (phase !== "compile")
+        readiness.hold("view", phase === "hold" ? pending : Promise.resolve());
+      readiness.start(phase === "compile" ? () => pending : undefined);
+      await Promise.resolve();
+      readiness.observe(1);
+      readiness.cancel();
+      readiness.cancel();
+      expect(vi.getTimerCount()).toBe(0);
+      finish();
+      await vi.advanceTimersByTimeAsync(60_000);
+      readiness.observe(1);
+      readiness.observe(1);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(ready).not.toHaveBeenCalled();
+      expect(failed).not.toHaveBeenCalled();
+      expect(readiness.ready).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each(["world", "hold"])(
     "rejects when required %s settlement never arrives",
     async (missing) => {

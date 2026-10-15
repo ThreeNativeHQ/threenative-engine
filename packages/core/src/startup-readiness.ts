@@ -100,6 +100,7 @@ export class StartupReadiness {
   #started = false;
   #ready = false;
   #failed = false;
+  #cancelled = false;
   readonly #settled: (() => boolean) | undefined;
   #quietFrames = 0;
   #finishing = false;
@@ -146,6 +147,19 @@ export class StartupReadiness {
     this.#frameworkReadyPromise = new Promise<void>((resolve) => {
       this.#resolveFrameworkReady = resolve;
     });
+  }
+
+  /** Stop observing a discarded launch without publishing readiness or failure. */
+  cancel(): void {
+    this.#cancelled = true;
+    if (this.#compileTimer !== undefined) clearTimeout(this.#compileTimer);
+    if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
+    this.#compileTimer = undefined;
+    this.#windowTimer = undefined;
+    for (const hold of this.#holds.values()) {
+      if (hold.timer !== undefined) clearTimeout(hold.timer);
+      hold.timer = undefined;
+    }
   }
 
   whenReady(): Promise<void> {
@@ -231,6 +245,7 @@ export class StartupReadiness {
     budgetMs: number = this.#holdBudgetMs,
     progress?: () => number,
   ): void {
+    if (this.#cancelled) return;
     if (typeof label !== "string" || label.trim() === "")
       throw new Error("TN_STARTUP_HOLD_LABEL_INVALID: a hold needs a non-empty label.");
     if (this.#holds.has(label))
@@ -251,7 +266,7 @@ export class StartupReadiness {
     };
     this.#holds.set(label, hold);
     const release = (expired: boolean): void => {
-      if (hold.settled) return;
+      if (this.#cancelled || hold.settled) return;
       this.#sampleHold(hold);
       hold.progress = undefined;
       hold.settled = true;
@@ -300,7 +315,7 @@ export class StartupReadiness {
 
   /** Begin the one-time first-use gate after the entered scene has been built. */
   start(compile?: StartupCompile): void {
-    if (this.#started) return;
+    if (this.#cancelled || this.#started) return;
     this.#started = true;
     if (compile === undefined) {
       this.#finishCompile();
@@ -311,7 +326,9 @@ export class StartupReadiness {
     // Defer the call one microtask so the already-visible loading layer gets a present before a
     // renderer that performs synchronous first-use work starts compiling.
     void Promise.resolve()
-      .then(() => compile())
+      .then(() => {
+        if (!this.#cancelled) return compile();
+      })
       .then(
         () => this.#finishCompile(),
         () => this.#finishCompile(),
@@ -320,7 +337,7 @@ export class StartupReadiness {
 
   /** Feed actual callback wall time, not requestAnimationFrame timestamp spacing. */
   observe(frameMs: number): void {
-    if (this.#failed) return;
+    if (this.#cancelled || this.#failed) return;
     if (!this.#ready) this.#pollHolds();
     if (!this.#started || this.#ready) return;
     if (this.#afterHoldsDone && this.#settled !== undefined) {
@@ -353,7 +370,7 @@ export class StartupReadiness {
   }
 
   #finishCompile(): void {
-    if (this.#compileSettled) return;
+    if (this.#cancelled || this.#compileSettled) return;
     this.#compileSettled = true;
     if (this.#compileTimer !== undefined) clearTimeout(this.#compileTimer);
     this.#compileTimer = undefined;
@@ -367,7 +384,7 @@ export class StartupReadiness {
 
   /** The framework's own work is done. Whether the *world* is ready also depends on the holds. */
   #finishFrameWindow(): void {
-    if (this.#frameWindowDone) return;
+    if (this.#cancelled || this.#frameWindowDone) return;
     this.#frameWindowDone = true;
     if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
     this.#windowTimer = undefined;
@@ -376,12 +393,13 @@ export class StartupReadiness {
   }
 
   #resolveIfComplete(): void {
-    if (this.#ready || this.#finishing || !this.#frameWindowDone) return;
+    if (this.#cancelled || this.#ready || this.#finishing || !this.#frameWindowDone) return;
     for (const hold of this.#holds.values()) if (!hold.settled) return;
     this.#finishing = true;
     // Legacy users keep their bounded startup contract; render-owned settlement is opt-in here.
     if (this.#settled === undefined) this.#ready = true;
     const finish = (): void => {
+      if (this.#cancelled) return;
       this.#afterHoldsDone = true;
       if (this.#settled === undefined) this.#resolveReady();
       else {

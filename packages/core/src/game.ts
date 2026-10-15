@@ -1157,6 +1157,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         await warmUp("TN_STARTUP_WARMUP_HELD", Math.round(STARTUP_COMPILE_BUDGET_MS / 3), false);
       },
     });
+    this.#cleanup.push(() => startupReadiness.cancel());
     // Startup readiness does not wait on `ui-ready`, and cannot. The intent proves the page's
     // script ran, not that a pixel reached the screen, so waiting on it never closed the race it
     // was added for — it only made the losing side lose later, after up to 45 s of held frames.
@@ -1188,6 +1189,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       workProgress: () => assets.progress.settled + startupReadiness.workProgress,
       stallMs: STARTUP_STALL_MS,
     });
+    this.#cleanup.push(stopStallWatch);
     watchDeviceLoss(
       (
         renderer.raw as {
@@ -1200,11 +1202,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // framework cost" and "what the player waited for", and collapsing them is how a valley that
     // took 8.8 s to appear reported 1.5 s.
     void startupReadiness.whenFrameworkReady().then(() => {
+      if (this.#aborted) return;
       timeline.compileSettledMs ??= now();
       timeline.frameworkReadyMs ??= now();
     });
     void startupReadiness.whenReady().then(
       () => {
+        if (this.#aborted) return;
         stopStallWatch();
         // A renderer without first-use compilation settles without running the compile closure
         // below, so the settle stamp is guaranteed here at the latest.
@@ -1226,6 +1230,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
       },
       (error: unknown) => {
+        if (this.#aborted) return;
         stopStallWatch();
         rejectProjection(error);
         reportLaunchFailure({ kind: "stalled", message: String(error) });
