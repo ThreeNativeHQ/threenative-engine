@@ -81,6 +81,11 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
+    "pipelineCensus": {
+      "warmUpScope": "chunk:0:2:1",
+      "maxNodeBuildsAfterWarmUpScope": 0,
+      "maxRenderPipelineCreationsAfterWarmUpScope": 0
+    },
     "components": [
       {
         "component": "residentCells",
