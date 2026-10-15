@@ -1,0 +1,72 @@
+[
+  {
+    "source": "browser-console",
+    "text": "[vite] connecting...",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "[vite] connected.",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_WORLD_ASSET_ALIAS assets=3 canonical=3",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "[WorldWarmUpProbe] installed world output pass",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_WORLD_GPU_SCENE on reason=on instances=0 keys=0 dressed=0/0",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_TERRAIN_TILES tiles=0 blocks=0 draws=0 blending=0 rebuilds=0 blockBytes=0",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.WebGPURenderer: Timestamp tracking is disabled.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_WORLD_CHUNK_MERGE meshes=1 draws=1 bytes=840 uploaded=4 instancedExpanded=0 keptInstanced=0 shadowDraws=0",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"renderHook\",\"reason\":\"an object carries its own onBeforeRender/onAfterRender\",\"sourceRenderables\":3,\"resultDrawCandidates\":3,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "Compilation log for [ShaderModule \"compute_worldGpuSceneClear\"]:\n\n1 warning(s) generated while compiling the shader:\n:68:3 warning: code is unreachable\n    return;\n    ^^^^^^\n",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "Compilation log for [ShaderModule \"compute_worldGpuSceneCull\"]:\n\n10 warning(s) generated while compiling the shader:\n:116:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:125:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:134:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:143:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:152:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:161:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:170:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:179:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:188:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:198:3 warning: code is unreachable\n    return;\n    ^^^^^^\n",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_WORLD_PREWARM minted=3 shadowPrewarmed=0 castersUnbuilt=0",
+    "type": "info"
+  }
+]

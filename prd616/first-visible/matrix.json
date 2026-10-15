@@ -1,0 +1,1396 @@
+{
+  "baseline": {
+    "commit": "1d056cec3d84ad0a6aebd89a97d3bd66b8d04de9",
+    "projectPath": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616-before"
+  },
+  "browserRecipe": "webgpu",
+  "candidate": {
+    "commit": "acc3affd3d3141aa123d0e80ee4794177aa484ea",
+    "projectPath": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616"
+  },
+  "selection": "full",
+  "afterFirstWorldMedianMs": 3.2,
+  "matrix": [
+    {
+      "arm": "before",
+      "run": "run1",
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "samples": {
+        "firstWorld": {
+          "adapter": {
+            "architecture": "turing",
+            "vendor": "nvidia",
+            "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "16384",
+            "limit.maxStorageBufferBindingSize": "2147483644"
+          },
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 107.19999999552965,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "readiness": false,
+          "renderMs": 21.3,
+          "tick": 60,
+          "timing": "first game-loop world draw after warmUpSettled; runtimeDiagnosticsSeries phases.render"
+        },
+        "firstVisible": {
+          "adapter": {
+            "architecture": "turing",
+            "vendor": "nvidia",
+            "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "16384",
+            "limit.maxStorageBufferBindingSize": "2147483644"
+          },
+          "readiness": true,
+          "renderMs": 2.1,
+          "tick": 60,
+          "timing": "first post-readiness visible world frame; frameBudget phases.render"
+        }
+      },
+      "frames": [
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 107.19999999552965,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "frame": 1,
+          "frameBudget": {
+            "phases": {
+              "render": 2.1
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 107.19999999552965,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "frame": 2,
+          "frameBudget": {
+            "phases": {
+              "render": 2.3
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 107.19999999552965,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "frame": 3,
+          "frameBudget": {
+            "phases": {
+              "render": 3
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 107.19999999552965,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "frame": 4,
+          "frameBudget": {
+            "phases": {
+              "render": 2.5
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 107.19999999552965,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "frame": 5,
+          "frameBudget": {
+            "phases": {
+              "render": 1.9
+            }
+          }
+        }
+      ]
+    },
+    {
+      "arm": "before",
+      "run": "run2",
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "samples": {
+        "firstWorld": {
+          "adapter": {
+            "architecture": "turing",
+            "vendor": "nvidia",
+            "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "16384",
+            "limit.maxStorageBufferBindingSize": "2147483644"
+          },
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 102.40000000596046,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "readiness": false,
+          "renderMs": 22.3,
+          "tick": 60,
+          "timing": "first game-loop world draw after warmUpSettled; runtimeDiagnosticsSeries phases.render"
+        },
+        "firstVisible": {
+          "adapter": {
+            "architecture": "turing",
+            "vendor": "nvidia",
+            "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "16384",
+            "limit.maxStorageBufferBindingSize": "2147483644"
+          },
+          "readiness": true,
+          "renderMs": 2.5,
+          "tick": 60,
+          "timing": "first post-readiness visible world frame; frameBudget phases.render"
+        }
+      },
+      "frames": [
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 102.40000000596046,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "frame": 1,
+          "frameBudget": {
+            "phases": {
+              "render": 2.5
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 102.40000000596046,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "frame": 2,
+          "frameBudget": {
+            "phases": {
+              "render": 2.2
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 102.40000000596046,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "frame": 3,
+          "frameBudget": {
+            "phases": {
+              "render": 2.6
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 102.40000000596046,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "frame": 4,
+          "frameBudget": {
+            "phases": {
+              "render": 2.5
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 18,
+              "creations": 18,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 18,
+              "recordedEvents": 18,
+              "droppedEvents": 0,
+              "nodeBuilds": 15,
+              "deviceCreations": 18,
+              "directCreations": 0
+            },
+            "postEvents": 11,
+            "postProcessing": {
+              "graphs": 8,
+              "pipelines": 8
+            },
+            "warmBoundary": {
+              "boundaryMs": 102.40000000596046,
+              "eventsSettled": 7,
+              "nodeBuilds": 4,
+              "renderPipelineCreations": 4
+            },
+            "warmedWorld": {
+              "graphs": 3,
+              "nodeBuilds": 3,
+              "pipelines": 3,
+              "positiveNodeBuilds": true
+            }
+          },
+          "frame": 5,
+          "frameBudget": {
+            "phases": {
+              "render": 2.2
+            }
+          }
+        }
+      ]
+    },
+    {
+      "arm": "after",
+      "run": "run1",
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "samples": {
+        "firstWorld": {
+          "adapter": {
+            "architecture": "turing",
+            "vendor": "nvidia",
+            "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "16384",
+            "limit.maxStorageBufferBindingSize": "2147483644"
+          },
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 131.30000000447035,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "readiness": false,
+          "renderMs": 3,
+          "tick": 60,
+          "timing": "first game-loop world draw after warmUpSettled; runtimeDiagnosticsSeries phases.render"
+        },
+        "firstVisible": {
+          "adapter": {
+            "architecture": "turing",
+            "vendor": "nvidia",
+            "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "16384",
+            "limit.maxStorageBufferBindingSize": "2147483644"
+          },
+          "readiness": true,
+          "renderMs": 1.6,
+          "tick": 60,
+          "timing": "first post-readiness visible world frame; frameBudget phases.render"
+        }
+      },
+      "frames": [
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 131.30000000447035,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 1,
+          "frameBudget": {
+            "phases": {
+              "render": 1.6
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 131.30000000447035,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 2,
+          "frameBudget": {
+            "phases": {
+              "render": 2.1
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 131.30000000447035,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 3,
+          "frameBudget": {
+            "phases": {
+              "render": 2.7
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 131.30000000447035,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 4,
+          "frameBudget": {
+            "phases": {
+              "render": 2.5
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 131.30000000447035,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 5,
+          "frameBudget": {
+            "phases": {
+              "render": 2.2
+            }
+          }
+        }
+      ]
+    },
+    {
+      "arm": "after",
+      "run": "run2",
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "samples": {
+        "firstWorld": {
+          "adapter": {
+            "architecture": "turing",
+            "vendor": "nvidia",
+            "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "16384",
+            "limit.maxStorageBufferBindingSize": "2147483644"
+          },
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 123.69999999552965,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "readiness": false,
+          "renderMs": 3.2,
+          "tick": 60,
+          "timing": "first game-loop world draw after warmUpSettled; runtimeDiagnosticsSeries phases.render"
+        },
+        "firstVisible": {
+          "adapter": {
+            "architecture": "turing",
+            "vendor": "nvidia",
+            "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "16384",
+            "limit.maxStorageBufferBindingSize": "2147483644"
+          },
+          "readiness": true,
+          "renderMs": 2.1,
+          "tick": 60,
+          "timing": "first post-readiness visible world frame; frameBudget phases.render"
+        }
+      },
+      "frames": [
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 123.69999999552965,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 1,
+          "frameBudget": {
+            "phases": {
+              "render": 2.1
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 123.69999999552965,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 2,
+          "frameBudget": {
+            "phases": {
+              "render": 2.2
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 123.69999999552965,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 3,
+          "frameBudget": {
+            "phases": {
+              "render": 2.8
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 123.69999999552965,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 4,
+          "frameBudget": {
+            "phases": {
+              "render": 2.4
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 123.69999999552965,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 5,
+          "frameBudget": {
+            "phases": {
+              "render": 2
+            }
+          }
+        }
+      ]
+    },
+    {
+      "arm": "after",
+      "run": "run3-cpu",
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "samples": {
+        "firstWorld": {
+          "adapter": {
+            "architecture": "turing",
+            "vendor": "nvidia",
+            "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "16384",
+            "limit.maxStorageBufferBindingSize": "2147483644"
+          },
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 133.79999999701977,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "readiness": false,
+          "renderMs": 3.8,
+          "tick": 60,
+          "timing": "first game-loop world draw after warmUpSettled; runtimeDiagnosticsSeries phases.render"
+        },
+        "firstVisible": {
+          "adapter": {
+            "architecture": "turing",
+            "vendor": "nvidia",
+            "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "16384",
+            "limit.maxStorageBufferBindingSize": "2147483644"
+          },
+          "readiness": true,
+          "renderMs": 1.8,
+          "tick": 60,
+          "timing": "first post-readiness visible world frame; frameBudget phases.render"
+        }
+      },
+      "frames": [
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 133.79999999701977,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 1,
+          "frameBudget": {
+            "phases": {
+              "render": 1.8
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 133.79999999701977,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 2,
+          "frameBudget": {
+            "phases": {
+              "render": 2.2
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 133.79999999701977,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 3,
+          "frameBudget": {
+            "phases": {
+              "render": 2.5
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 133.79999999701977,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 4,
+          "frameBudget": {
+            "phases": {
+              "render": 2.4
+            }
+          }
+        },
+        {
+          "censusMetadata": {
+            "globalCounts": {
+              "lookups": 15,
+              "creations": 15,
+              "failures": 0,
+              "pending": 0,
+              "uniquePrograms": 15,
+              "uniquePipelines": 15,
+              "recordedEvents": 15,
+              "droppedEvents": 0,
+              "nodeBuilds": 12,
+              "deviceCreations": 15,
+              "directCreations": 0
+            },
+            "postEvents": 0,
+            "postProcessing": {
+              "graphs": 0,
+              "pipelines": 0
+            },
+            "warmBoundary": {
+              "boundaryMs": 133.79999999701977,
+              "eventsSettled": 15,
+              "nodeBuilds": 12,
+              "renderPipelineCreations": 12
+            },
+            "warmedWorld": {
+              "graphs": 0,
+              "nodeBuilds": 0,
+              "pipelines": 0,
+              "positiveNodeBuilds": false
+            }
+          },
+          "frame": 5,
+          "frameBudget": {
+            "phases": {
+              "render": 2.1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "timing": "firstWorldRenderMs is the first game-loop world draw after warmUpSettled; firstVisibleRenderMs is separate; no FPS or screenshot duration"
+}

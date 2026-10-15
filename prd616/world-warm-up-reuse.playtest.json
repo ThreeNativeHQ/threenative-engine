@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "name": "authored-world-pass-streamed-chunk-warm-up-reuse",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "steps": [
+    {
+      "label": "settled-loads",
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "id": "state",
+        "path": "stats.loadsInFlight",
+        "equals": 0
+      }
+    },
+    {
+      "label": "no-queued-loads",
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "id": "state",
+        "path": "stats.loadsQueued",
+        "equals": 0
+      }
+    },
+    {
+      "label": "settled-prewarm",
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "id": "state",
+        "path": "stats.pendingPrewarm",
+        "equals": 0
+      }
+    },
+    {
+      "label": "complete-terrain-ring",
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "id": "state",
+        "path": "stats.residentTiles",
+        "equals": 9
+      }
+    },
+    {
+      "label": "admitted-world",
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "id": "state",
+        "path": "stats.admission.backlog",
+        "equals": 0
+      }
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "world",
+        "component": "residentCells",
+        "gte": 3,
+        "allowTrivial": "All three authored cells must be resident before comparing the fixed-camera world."
+      }
+    ],
+    "pipelineCensus": {
+      "warmUpScope": "chunk:0:2:0",
+      "maxNodeBuildsAfterWarmUpScope": 0,
+      "maxRenderPipelineCreationsAfterWarmUpScope": 0
+    },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    }
+  }
+}

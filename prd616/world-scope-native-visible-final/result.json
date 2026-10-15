@@ -1,0 +1,5265 @@
+{
+  "capture": {
+    "adapter": {
+      "architecture": "turing",
+      "description": "NVIDIA: 615.78.08 615.78.8.0",
+      "device": "NVIDIA GeForce RTX 2080",
+      "vendor": "nvidia"
+    },
+    "browserArgs": [],
+    "captureMethod": "device.screenshot",
+    "rendererKind": "webgpu",
+    "target": "desktop",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  "diagnostics": [],
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 5,
+  "trivialityOptOuts": [
+    {
+      "id": "component.world.residentCells.value",
+      "reason": "All three authored cells must be resident before comparing the fixed-camera world."
+    }
+  ],
+  "target": "desktop",
+  "observations": {
+    "components": {
+      "world": {
+        "cameraPosition": {
+          "before": [
+            -160,
+            24,
+            0
+          ],
+          "after": [
+            -160,
+            24,
+            0
+          ]
+        },
+        "cameraTarget": {
+          "before": [
+            -120,
+            10,
+            0
+          ],
+          "after": [
+            -120,
+            10,
+            0
+          ]
+        },
+        "flyTimeMs": {
+          "before": 0,
+          "after": 0
+        },
+        "landmarks": {
+          "before": [
+            {
+              "id": "yard_crate_a",
+              "position": [
+                -100,
+                1,
+                0
+              ]
+            },
+            {
+              "id": "yard_crate_b",
+              "position": [
+                -30,
+                1,
+                -20
+              ]
+            }
+          ],
+          "after": [
+            {
+              "id": "yard_crate_a",
+              "position": [
+                -100,
+                1,
+                0
+              ]
+            },
+            {
+              "id": "yard_crate_b",
+              "position": [
+                -30,
+                1,
+                -20
+              ]
+            }
+          ]
+        },
+        "admissionBacklog": {
+          "before": 0,
+          "after": 0
+        },
+        "admissionDeferred": {
+          "before": 0,
+          "after": 0
+        },
+        "admissionSpentMs": {
+          "before": 2.0168059999973593,
+          "after": 0
+        },
+        "bundleChildren": {
+          "before": 6,
+          "after": 6
+        },
+        "bundleOn": {
+          "before": true,
+          "after": true
+        },
+        "gpuSceneOn": {
+          "before": true,
+          "after": true
+        },
+        "gpuSceneReason": {
+          "before": "on",
+          "after": "on"
+        },
+        "gpuSceneDispatches": {
+          "before": 24,
+          "after": 44
+        },
+        "loadsQueued": {
+          "before": 0,
+          "after": 0
+        },
+        "pendingPrewarm": {
+          "before": 0,
+          "after": 0
+        },
+        "maxAdmissionSpentMs": {
+          "before": 2.8305109999995466,
+          "after": 6.522285000000238
+        },
+        "maxInstances": {
+          "before": 533,
+          "after": 533
+        },
+        "evictions": {
+          "before": 0,
+          "after": 0
+        },
+        "failures": {
+          "before": 0,
+          "after": 0
+        },
+        "instances": {
+          "before": 533,
+          "after": 533
+        },
+        "loadsInFlight": {
+          "before": 0,
+          "after": 0
+        },
+        "maxResidentCells": {
+          "before": 3,
+          "after": 3
+        },
+        "residentTiles": {
+          "before": 7,
+          "after": 9
+        },
+        "residentColliders": {
+          "before": 0,
+          "after": 0
+        },
+        "bodies": {
+          "before": 0,
+          "after": 0
+        },
+        "bodyReachTiles": {
+          "before": 0,
+          "after": 0
+        },
+        "residenceChanges": {
+          "before": 2,
+          "after": 2
+        },
+        "residentCells": {
+          "before": 3,
+          "after": 3
+        },
+        "shadowDeferrals": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowFrame": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowLevels": {
+          "before": 3,
+          "after": 3
+        },
+        "shadowRendered": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowAutoMovers": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowPeakAutoMovers": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowAutoTransitions": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowAutoScanMs": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowRendersSinceMover": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowMoverRenders": {
+          "before": 0,
+          "after": 0
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "settled-loads",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 6.522285000000238,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 27,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 6.522285000000238,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "no-queued-loads",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 0,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 30,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 6.522285000000238,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "settled-prewarm",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 0,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 34,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 6.522285000000238,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "complete-terrain-ring",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 0,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 39,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 6.522285000000238,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "admitted-world",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 0,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 43,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 6.522285000000238,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 64
+      }
+    ],
+    "console": [
+      {
+        "text": "TN_COLD_START:{\"segment\":\"process\",\"atMs\":0.000}",
+        "type": "log"
+      },
+      {
+        "text": "=== ThreeNative Native Runtime ===",
+        "type": "log"
+      },
+      {
+        "text": "Version: 0.3.4",
+        "type": "log"
+      },
+      {
+        "text": "Script: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/examples/abyss-framework/dist/world-warm-up-native.js",
+        "type": "log"
+      },
+      {
+        "text": "Window: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Initializing runtime...",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Window: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Presentation cap: 60 fps",
+        "type": "log"
+      },
+      {
+        "text": "[Window] Creating window: ThreeNative (1280x720)",
+        "type": "log"
+      },
+      {
+        "text": "[Window] SDL initialized",
+        "type": "log"
+      },
+      {
+        "text": "[Window] Running in hidden mode (MYSTRAL_HEADLESS=1)",
+        "type": "log"
+      },
+      {
+        "text": "[Window] Brand icon unavailable in embedded bundle; using compositor default",
+        "type": "log"
+      },
+      {
+        "text": "[Window] Actual window size: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[Window] Window created successfully",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Lifecycle watch installed; backgroundMode=pause",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Actual window size: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Initializing...",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Instance created",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Using X11 display: 0x558c17e719b0 window: 4194350",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Creating surface for platform type 4 with display pointer",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Creating X11 surface with display: 0x558c17e719b0 window: 0x40002e",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Surface created",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Adapter acquired successfully",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Adapter: NVIDIA GeForce RTX 2080",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Vendor: nvidia",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Backend: Vulkan",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe indirect-first-instance: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Requesting IndirectFirstInstance feature (supported)",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe texture-compression-bc: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe texture-compression-etc2: no",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe texture-compression-astc: no",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe timestamp-query: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe rg11b10ufloat-renderable: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe float32-filterable: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe transient-attachments: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe core-features-and-limits: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Device acquired successfully",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] TN_WEBGPU_FEATURES:{\"timestamp-query\":true,\"texture-compression-bc\":true,\"texture-compression-etc2\":false,\"texture-compression-astc\":false,\"indirect-first-instance\":true,\"rg11b10ufloat-renderable\":true,\"transient-attachments\":true,\"core-features-and-limits\":true}",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Queue acquired",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] configureSurface called: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] surface_=0x558c17f42690, device_=0x558c182aaad0, adapter_=0x558c17f50ab0",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Getting surface capabilities...",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Got capabilities: formatCount=2",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Available surface formats:",
+        "type": "log"
+      },
+      {
+        "text": "  [0] = 27",
+        "type": "log"
+      },
+      {
+        "text": "  [1] = 28",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Using surface format: 27",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Surface configured: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Present mode: fifo (vsync=true)",
+        "type": "log"
+      },
+      {
+        "text": "[JS] Creating V8 engine (platform default)",
+        "type": "log"
+      },
+      {
+        "text": "[V8] Creating engine...",
+        "type": "log"
+      },
+      {
+        "text": "[V8] Initializing V8 JavaScript engine...",
+        "type": "log"
+      },
+      {
+        "text": "[V8] V8 initialized successfully",
+        "type": "log"
+      },
+      {
+        "text": "[V8] Version: 13.1.201.22",
+        "type": "log"
+      },
+      {
+        "text": "[V8] Engine created successfully",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Using JS engine: V8",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":371.554}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":376.468}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":376.473}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":376.540}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Fetch API initialized (file://, http://, https://)",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":376.563}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":376.908}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":376.912}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":376.939}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Web Streams API initialized (ReadableStream/WritableStream/TransformStream)",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":376.991}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":377.472}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":377.476}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":377.499}",
+        "type": "log"
+      },
+      {
+        "text": "[WorkerRegistry] Initialized",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":377.535}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":377.786}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":377.790}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":377.807}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] URL and native Worker facade initialized",
+        "type": "log"
+      },
+      {
+        "text": "[DOM] Canvas element created with addEventListener, style, etc.",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":377.907}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":377.945}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":377.948}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":377.954}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":377.960}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":377.994}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":377.997}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":378.000}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":378.020}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":378.106}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":378.110}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":378.128}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":378.178}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":378.216}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":378.218}",
+        "type": "log"
+      },
+      {
+        "text": "[log] [Mystral] WebP format support: YES",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":378.294}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] DOM event system initialized",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] localStorage initialized: /home/joao/.local/share/mystral/storage/dist.json",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":378.357}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":378.418}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":378.421}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":378.505}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":378.540}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":378.566}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":378.569}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":378.577}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":378.581}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":378.621}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":378.624}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":378.630}",
+        "type": "log"
+      },
+      {
+        "text": "[Audio] Web Audio API bindings initialized",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CAPTURE:{\"version\":1,\"build\":{\"identity\":\"mystral-native@0.3.4\"},\"adapter\":{\"identity\":\"native:vulkan/nvidia/NVIDIA GeForce RTX 2080/turing/NVIDIA: 615.78.08 615.78.8.0\",\"thermal\":\"unavailable\"},\"clock\":{\"source\":\"steady\",\"originMs\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CACHE:{\"version\":1,\"phase\":\"device\",\"mode\":\"unsupported\",\"featureGranted\":false,\"renderAttached\":0,\"computeAttached\":0,\"emptyBytes\":0,\"serializedBytes\":0,\"load\":\"unavailable\",\"loadedBytes\":0,\"loadMs\":0,\"store\":\"not-attempted\",\"storedBytes\":0,\"storeMs\":0,\"snapshotMs\":0,\"reason\":\"this build's WebGPU backend declares no pipeline cache API\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FORMAT:{\"native\":\"bgra8unorm\",\"render\":\"bgra8unorm\",\"bridge\":false,\"present\":\"fifo\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":378.809}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":378.874}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":378.877}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":378.889}",
+        "type": "log"
+      },
+      {
+        "text": "[MystralRT] No hardware RT available, using stub backend",
+        "type": "log"
+      },
+      {
+        "text": "[MystralRT] Bindings initialized (backend: none)",
+        "type": "log"
+      },
+      {
+        "text": "[EventLoop] libuv 1.51.0 initialized",
+        "type": "log"
+      },
+      {
+        "text": "[AsyncHttp] Initialized with curl_multi + libuv",
+        "type": "log"
+      },
+      {
+        "text": "[AsyncFile] Initialized with libuv thread pool",
+        "type": "log"
+      },
+      {
+        "text": "[FileWatcher] Initialized with libuv fs_event",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Runtime initialized",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"runtime_created\",\"atMs\":380.082}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Evaluating script: threenative-playtest-mailbox.js (246 bytes)",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":380.093}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":380.125}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":380.127}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":380.135}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Desktop playtest mailbox configured",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"game_eval_begin\",\"atMs\":380.138}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Loading script: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/examples/abyss-framework/dist/world-warm-up-native.js",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":386.869}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":433.247}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":433.259}",
+        "type": "log"
+      },
+      {
+        "text": "[log] TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"NVIDIA: 615.78.08 615.78.8.0\",\"device\":\"NVIDIA GeForce RTX 2080\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":464.207}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Starting main loop...",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_NATIVE_SMOKE_READY:webgpu",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_NATIVE_SMOKE_FIRST_FRAME",
+        "type": "log"
+      },
+      {
+        "text": "TN_FRAME_NOT_PRESENTED:{\"pending\":false,\"texture\":false,\"surface\":true,\"renderPassEnded\":false,\"suppressed\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"cf01b5890b1b6101\",\"bytes\":28,\"requestId\":\"ready\",\"requestMethod\":\"\",\"requestOrder\":-1,\"pump\":{\"observed\":true,\"pumpCount\":12,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":464.768,\"maxGapMs\":0.377,\"maxGapAtMs\":464.223,\"trailingGapMs\":4.760,\"atMs\":469.529,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":1,\"pipelineIdentity\":\"native-render-1\",\"programIdentity\":\"00fc0a8ad03630cc/458120a84b226496\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":3.0000000000000001e-05,\"settledMs\":4.5383389999999997,\"queueMs\":0,\"serviceMs\":4.5383089999999999,\"wallMs\":4.5383089999999999,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"00fc0a8ad03630cc\",\"bytes\":1299},\"fragment\":{\"hash\":\"458120a84b226496\",\"bytes\":1595},\"cache\":\"unsupported\",\"label\":\"renderPipeline_outputColorTransform_17\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":509.479}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":509.499}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":509.502}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":509.506}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":1}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_FIRST_PRESENT:{\"version\":1,\"boundaryMs\":40.199795000000002}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"first_frame\",\"atMs\":545.062}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_SILENCE:{\"observed\":true,\"pumpCount\":12,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":464.768,\"maxGapMs\":0.377,\"maxGapAtMs\":464.223,\"trailingGapMs\":80.297,\"longGaps\":[],\"droppedLongGaps\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_STALL_SEGMENTS:{\"toFirstFrameMs\":545.077,\"frameBeganAtMs\":464.307,\"gapMs\":80.770,\"segments\":{\"pipelineCompile\":{\"ms\":4.603,\"calls\":1},\"shaderCompile\":{\"ms\":1.425,\"calls\":2},\"textureUpload\":{\"ms\":1.704,\"calls\":4},\"bufferUpload\":{\"ms\":1.005,\"calls\":5},\"queueSubmit\":{\"ms\":0.000,\"calls\":0}},\"attributedMs\":8.737,\"residualMs\":72.033,\"attributedShare\":0.1082}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":1,\"requested\":1,\"emitted\":1,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "[warn] THREE.WebGPURenderer: Timestamp tracking is disabled.",
+        "type": "warning"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":2}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":3}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_WORLD_ASSET_ALIAS assets=3 canonical=3",
+        "type": "log"
+      },
+      {
+        "text": "[info] [WorldWarmUpProbe] installed world output pass",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"09c37ec6bd007df0\",\"bytes\":614,\"requestId\":\"1\",\"requestMethod\":\"describe\",\"requestOrder\":1,\"pump\":{\"observed\":true,\"pumpCount\":15,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":615.943,\"maxGapMs\":80.437,\"maxGapAtMs\":464.768,\"trailingGapMs\":5.758,\"atMs\":621.701,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_WORLD_GPU_SCENE on reason=on instances=0 keys=0 dressed=0/0",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_TERRAIN_TILES tiles=0 blocks=0 draws=0 blending=0 rebuilds=0 blockBytes=0",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":2,\"pipelineIdentity\":\"native-render-2\",\"programIdentity\":\"6049582e6b5e17f9/bde3aea71e36c883\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":138.34048200000001,\"settledMs\":141.23815300000001,\"queueMs\":0,\"serviceMs\":2.8976710000000026,\"wallMs\":2.8976710000000026,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"6049582e6b5e17f9\",\"bytes\":1375},\"fragment\":{\"hash\":\"bde3aea71e36c883\",\"bytes\":1480},\"cache\":\"unsupported\",\"label\":\"renderPipeline_RenderPipeline_18\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":646.171}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":646.183}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":646.185}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":646.191}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":4}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":4,\"requested\":2,\"emitted\":2,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"3966e0140d0b0929\",\"bytes\":167,\"requestId\":\"2\",\"requestMethod\":\"ready\",\"requestOrder\":2,\"pump\":{\"observed\":true,\"pumpCount\":16,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":675.230,\"maxGapMs\":80.437,\"maxGapAtMs\":464.768,\"trailingGapMs\":6.342,\"atMs\":681.572,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":3,\"pipelineIdentity\":\"native-compute-1\",\"programIdentity\":\"79efa198c6cf1f6f\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":188.114171,\"settledMs\":189.529042,\"queueMs\":0,\"serviceMs\":1.4148710000000051,\"wallMs\":1.4148710000000051,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"79efa198c6cf1f6f\",\"bytes\":1589},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":694.450}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":694.461}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":694.463}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":694.468}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":4,\"pipelineIdentity\":\"native-compute-2\",\"programIdentity\":\"b2488a538830441c\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":199.40013400000001,\"settledMs\":202.55112199999999,\"queueMs\":0,\"serviceMs\":3.1509879999999839,\"wallMs\":3.1509879999999839,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"b2488a538830441c\",\"bytes\":6385},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":707.441}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":707.451}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":707.454}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":707.458}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"renderHook\",\"reason\":\"an object carries its own onBeforeRender/onAfterRender\",\"sourceRenderables\":1,\"resultDrawCandidates\":1,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":5,\"pipelineIdentity\":\"native-render-3\",\"programIdentity\":\"bbf82a4549069547/09ad40d6bccbf449\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":225.90506199999999,\"settledMs\":230.88990799999999,\"queueMs\":0,\"serviceMs\":4.9848460000000046,\"wallMs\":4.9848460000000046,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"bbf82a4549069547\",\"bytes\":3182},\"fragment\":{\"hash\":\"09ad40d6bccbf449\",\"bytes\":14731},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshStandardMaterial_21\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":735.801}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":735.813}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":735.816}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":735.821}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":5}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":5,\"requested\":5,\"emitted\":5,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"b2d3b1307938fbd0\",\"bytes\":167,\"requestId\":\"3\",\"requestMethod\":\"ready\",\"requestOrder\":3,\"pump\":{\"observed\":true,\"pumpCount\":17,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":769.047,\"maxGapMs\":93.817,\"maxGapAtMs\":675.230,\"trailingGapMs\":5.561,\"atMs\":774.608,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":6,\"pipelineIdentity\":\"native-compute-3\",\"programIdentity\":\"79efa198c6cf1f6f\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":273.89248300000003,\"settledMs\":273.90313300000003,\"queueMs\":0,\"serviceMs\":0.010649999999998272,\"wallMs\":0.010649999999998272,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"79efa198c6cf1f6f\",\"bytes\":1589},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":778.794}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":778.803}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":778.806}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":778.809}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":7,\"pipelineIdentity\":\"native-compute-4\",\"programIdentity\":\"b2488a538830441c\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":277.670818,\"settledMs\":277.67626799999999,\"queueMs\":0,\"serviceMs\":0.0054499999999961801,\"wallMs\":0.0054499999999961801,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"b2488a538830441c\",\"bytes\":6385},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":782.558}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":782.565}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":782.567}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":782.570}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":6}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":6,\"requested\":7,\"emitted\":7,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_WORLD_CHUNK_MERGE meshes=1 draws=1 bytes=840 uploaded=4 instancedExpanded=0 keptInstanced=0 shadowDraws=0",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":8,\"pipelineIdentity\":\"native-render-4\",\"programIdentity\":\"bceee6f518a75d32/36b74997b7a66db6\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":331.33490999999998,\"settledMs\":336.16953699999999,\"queueMs\":0,\"serviceMs\":4.8346270000000118,\"wallMs\":4.8346270000000118,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"bceee6f518a75d32\",\"bytes\":2008},\"fragment\":{\"hash\":\"36b74997b7a66db6\",\"bytes\":14729},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshStandardMaterial_30\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":841.066}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":841.077}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":841.080}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":841.084}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":9,\"pipelineIdentity\":\"native-render-5\",\"programIdentity\":\"6049582e6b5e17f9/bde3aea71e36c883\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":336.909651,\"settledMs\":338.56155000000001,\"queueMs\":0,\"serviceMs\":1.6518990000000144,\"wallMs\":1.6518990000000144,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"6049582e6b5e17f9\",\"bytes\":1375},\"fragment\":{\"hash\":\"bde3aea71e36c883\",\"bytes\":1480},\"cache\":\"unsupported\",\"label\":\"renderPipeline_RenderPipeline_18\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":843.453}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":843.460}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":843.462}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":843.466}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":843.892}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":843.907}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":843.910}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":843.913}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"50cbc96ab938e8e4\",\"bytes\":71,\"requestId\":\"4\",\"requestMethod\":\"advance\",\"requestOrder\":4,\"pump\":{\"observed\":true,\"pumpCount\":18,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":813.434,\"maxGapMs\":93.817,\"maxGapAtMs\":675.230,\"trailingGapMs\":31.514,\"atMs\":844.948,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":10,\"pipelineIdentity\":\"native-compute-5\",\"programIdentity\":\"79efa198c6cf1f6f\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":346.48228599999999,\"settledMs\":346.487956,\"queueMs\":0,\"serviceMs\":0.0056700000000091677,\"wallMs\":0.0056700000000091677,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"79efa198c6cf1f6f\",\"bytes\":1589},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":851.368}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":851.375}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":851.377}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":851.381}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":11,\"pipelineIdentity\":\"native-compute-6\",\"programIdentity\":\"b2488a538830441c\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":351.47568200000001,\"settledMs\":351.48027200000001,\"queueMs\":0,\"serviceMs\":0.0045900000000074215,\"wallMs\":0.0045900000000074215,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"b2488a538830441c\",\"bytes\":6385},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":856.359}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":856.366}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":856.367}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":856.371}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":12,\"pipelineIdentity\":\"native-render-6\",\"programIdentity\":\"bbf82a4549069547/09ad40d6bccbf449\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":361.91899000000001,\"settledMs\":361.93281000000002,\"queueMs\":0,\"serviceMs\":0.013820000000009713,\"wallMs\":0.013820000000009713,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"bbf82a4549069547\",\"bytes\":3182},\"fragment\":{\"hash\":\"09ad40d6bccbf449\",\"bytes\":14731},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshStandardMaterial_34\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":866.818}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":866.825}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":866.828}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":866.832}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":7}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":7,\"requested\":12,\"emitted\":12,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"0709cef44610c6fa\",\"bytes\":167,\"requestId\":\"5\",\"requestMethod\":\"ready\",\"requestOrder\":5,\"pump\":{\"observed\":true,\"pumpCount\":19,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":911.931,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.903,\"atMs\":912.834,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":13,\"pipelineIdentity\":\"native-compute-7\",\"programIdentity\":\"79efa198c6cf1f6f\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":414.79820799999999,\"settledMs\":414.806378,\"queueMs\":0,\"serviceMs\":0.008170000000006894,\"wallMs\":0.008170000000006894,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"79efa198c6cf1f6f\",\"bytes\":1589},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":919.712}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":919.721}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":919.723}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":919.727}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":14,\"pipelineIdentity\":\"native-compute-8\",\"programIdentity\":\"b2488a538830441c\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":420.32688000000002,\"settledMs\":420.33145000000002,\"queueMs\":0,\"serviceMs\":0.0045700000000010732,\"wallMs\":0.0045700000000010732,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"b2488a538830441c\",\"bytes\":6385},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":925.213}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":925.220}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":925.222}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":925.226}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":15,\"pipelineIdentity\":\"native-render-7\",\"programIdentity\":\"bbf82a4549069547/09ad40d6bccbf449\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":427.54723999999999,\"settledMs\":427.56186000000002,\"queueMs\":0,\"serviceMs\":0.014620000000036271,\"wallMs\":0.014620000000036271,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"bbf82a4549069547\",\"bytes\":3182},\"fragment\":{\"hash\":\"09ad40d6bccbf449\",\"bytes\":14731},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshStandardMaterial_42\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":932.445}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":932.453}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":932.456}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":932.459}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":16,\"pipelineIdentity\":\"native-render-8\",\"programIdentity\":\"ecaec2fbce7bdaad/ecaec2fbce7bdaad\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":447.57766299999997,\"settledMs\":449.347531,\"queueMs\":0,\"serviceMs\":1.7698680000000309,\"wallMs\":1.7698680000000309,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"ecaec2fbce7bdaad\",\"bytes\":1827},\"fragment\":{\"hash\":\"ecaec2fbce7bdaad\",\"bytes\":1827},\"cache\":\"unsupported\",\"label\":\"mipmap-rgba8unorm-srgb-2d-array\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":17,\"pipelineIdentity\":\"native-render-9\",\"programIdentity\":\"331c056040901965/26524dc7fa56cf54\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":454.89844299999999,\"settledMs\":459.36010199999998,\"queueMs\":0,\"serviceMs\":4.4616589999999974,\"wallMs\":4.4616589999999974,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"331c056040901965\",\"bytes\":3316},\"fragment\":{\"hash\":\"26524dc7fa56cf54\",\"bytes\":15112},\"cache\":\"unsupported\",\"label\":\"renderPipeline_probe_bark_40\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":964.252}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":964.263}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":964.265}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":964.270}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":8}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":8,\"requested\":17,\"emitted\":17,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"d5d92518895f7ab9\",\"bytes\":71,\"requestId\":\"6\",\"requestMethod\":\"advance\",\"requestOrder\":6,\"pump\":{\"observed\":true,\"pumpCount\":20,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1000.421,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":4.631,\"atMs\":1005.052,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":18,\"pipelineIdentity\":\"native-compute-9\",\"programIdentity\":\"79efa198c6cf1f6f\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":504.36597399999999,\"settledMs\":504.37578400000001,\"queueMs\":0,\"serviceMs\":0.0098100000000158616,\"wallMs\":0.0098100000000158616,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"79efa198c6cf1f6f\",\"bytes\":1589},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":1009.273}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":1009.282}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":1009.285}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":1009.289}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":19,\"pipelineIdentity\":\"native-compute-10\",\"programIdentity\":\"b2488a538830441c\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":507.54375199999998,\"settledMs\":507.55002200000001,\"queueMs\":0,\"serviceMs\":0.0062700000000290856,\"wallMs\":0.0062700000000290856,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"b2488a538830441c\",\"bytes\":6385},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":1012.430}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":1012.436}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":1012.438}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":1012.441}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":9}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":9,\"requested\":19,\"emitted\":19,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"71597073cc6f50ac\",\"bytes\":167,\"requestId\":\"7\",\"requestMethod\":\"ready\",\"requestOrder\":7,\"pump\":{\"observed\":true,\"pumpCount\":21,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1041.125,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.478,\"atMs\":1041.602,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_WORLD_PREWARM minted=5 shadowPrewarmed=0 castersUnbuilt=0",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":10}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"0b39276302a9dc16\",\"bytes\":71,\"requestId\":\"8\",\"requestMethod\":\"advance\",\"requestOrder\":8,\"pump\":{\"observed\":true,\"pumpCount\":22,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1073.293,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.311,\"atMs\":1073.604,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":11}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":12}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f68571905a5401f6\",\"bytes\":167,\"requestId\":\"9\",\"requestMethod\":\"ready\",\"requestOrder\":9,\"pump\":{\"observed\":true,\"pumpCount\":24,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1135.561,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.144,\"atMs\":1135.704,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":13}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f272abbd3b349564\",\"bytes\":72,\"requestId\":\"10\",\"requestMethod\":\"advance\",\"requestOrder\":10,\"pump\":{\"observed\":true,\"pumpCount\":25,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1167.879,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.228,\"atMs\":1168.106,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":14}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"first_playable\",\"atMs\":1202.818}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"a8f6c88fd3a928ec\",\"bytes\":245,\"requestId\":\"11\",\"requestMethod\":\"ready\",\"requestOrder\":11,\"pump\":{\"observed\":true,\"pumpCount\":26,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1203.219,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.288,\"atMs\":1204.507,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":15}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"b918ae24b08440a2\",\"bytes\":18587,\"requestId\":\"12\",\"requestMethod\":\"sample\",\"requestOrder\":12,\"pump\":{\"observed\":true,\"pumpCount\":27,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1237.377,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":2.817,\"atMs\":1240.194,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":16}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"2e1f7fab296331e7\",\"bytes\":18590,\"requestId\":\"13\",\"requestMethod\":\"sample\",\"requestOrder\":13,\"pump\":{\"observed\":true,\"pumpCount\":28,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1273.729,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.193,\"atMs\":1274.922,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":17}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":20,\"pipelineIdentity\":\"native-render-10\",\"programIdentity\":\"3c9e0c39d4f3153f/8b0216abd1646161\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":823.85671500000001,\"settledMs\":827.09985200000006,\"queueMs\":0,\"serviceMs\":3.243137000000047,\"wallMs\":3.243137000000047,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"3c9e0c39d4f3153f\",\"bytes\":3111},\"fragment\":{\"hash\":\"8b0216abd1646161\",\"bytes\":1533},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshNormalMaterial_16\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":1332.012}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":1332.024}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":1332.028}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":1332.035}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":18}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":18,\"requested\":20,\"emitted\":20,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"b225f35aed287dde\",\"bytes\":19366,\"requestId\":\"14\",\"requestMethod\":\"sample\",\"requestOrder\":14,\"pump\":{\"observed\":true,\"pumpCount\":30,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1361.316,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.683,\"atMs\":1362.999,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":19}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"89ae3579bc3f3f42\",\"bytes\":19372,\"requestId\":\"15\",\"requestMethod\":\"sample\",\"requestOrder\":15,\"pump\":{\"observed\":true,\"pumpCount\":31,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1394.942,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.342,\"atMs\":1396.283,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":20}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":21}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"1bb8fa64067bd89f\",\"bytes\":19375,\"requestId\":\"16\",\"requestMethod\":\"sample\",\"requestOrder\":16,\"pump\":{\"observed\":true,\"pumpCount\":33,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1460.772,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.126,\"atMs\":1461.897,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":22}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"aa2445946f0e7a03\",\"bytes\":19375,\"requestId\":\"17\",\"requestMethod\":\"sample\",\"requestOrder\":17,\"pump\":{\"observed\":true,\"pumpCount\":34,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1492.770,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.759,\"atMs\":1494.529,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":23}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"d587cbef92ab3705\",\"bytes\":19572,\"requestId\":\"18\",\"requestMethod\":\"sample\",\"requestOrder\":18,\"pump\":{\"observed\":true,\"pumpCount\":35,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1534.831,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.560,\"atMs\":1536.391,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":24}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"07eadeec0ecb43a8\",\"bytes\":19569,\"requestId\":\"19\",\"requestMethod\":\"sample\",\"requestOrder\":19,\"pump\":{\"observed\":true,\"pumpCount\":36,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1566.474,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.963,\"atMs\":1567.437,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":25}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"1a4a7e6e12064029\",\"bytes\":19569,\"requestId\":\"20\",\"requestMethod\":\"sample\",\"requestOrder\":20,\"pump\":{\"observed\":true,\"pumpCount\":37,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1600.532,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.535,\"atMs\":1602.067,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":26}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":27}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"183d871efe8a7134\",\"bytes\":19771,\"requestId\":\"21\",\"requestMethod\":\"sample\",\"requestOrder\":21,\"pump\":{\"observed\":true,\"pumpCount\":39,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1672.303,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.475,\"atMs\":1673.778,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":28}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"3c7db79d4f94880e\",\"bytes\":19970,\"requestId\":\"22\",\"requestMethod\":\"sample\",\"requestOrder\":22,\"pump\":{\"observed\":true,\"pumpCount\":40,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1712.586,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":2.253,\"atMs\":1714.840,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":29}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"30ca1d4716612afb\",\"bytes\":18084,\"requestId\":\"23\",\"requestMethod\":\"sample\",\"requestOrder\":23,\"pump\":{\"observed\":true,\"pumpCount\":41,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1745.952,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.787,\"atMs\":1746.739,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":30}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"4b4bfbc7e152ebf2\",\"bytes\":20166,\"requestId\":\"24\",\"requestMethod\":\"sample\",\"requestOrder\":24,\"pump\":{\"observed\":true,\"pumpCount\":42,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1789.527,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.003,\"atMs\":1790.530,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":21,\"pipelineIdentity\":\"native-render-11\",\"programIdentity\":\"079734d7e934a4b1/132e74e642d59afb\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":1299.817824,\"settledMs\":1302.276797,\"queueMs\":0,\"serviceMs\":2.4589730000000145,\"wallMs\":2.4589730000000145,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"079734d7e934a4b1\",\"bytes\":1606},\"fragment\":{\"hash\":\"132e74e642d59afb\",\"bytes\":1504},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshNormalMaterial_16\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":1807.203}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":1807.213}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":1807.216}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":1807.220}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":31}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":31,\"requested\":21,\"emitted\":21,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c1fd8f274ef17b9a\",\"bytes\":21224,\"requestId\":\"25\",\"requestMethod\":\"sample\",\"requestOrder\":25,\"pump\":{\"observed\":true,\"pumpCount\":43,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1841.883,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":5.634,\"atMs\":1847.517,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":32}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"4fc3f6f7bf94572e\",\"bytes\":19340,\"requestId\":\"26\",\"requestMethod\":\"sample\",\"requestOrder\":26,\"pump\":{\"observed\":true,\"pumpCount\":44,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1886.093,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.869,\"atMs\":1886.962,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":33}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c45f70cb0f6f9f56\",\"bytes\":21176,\"requestId\":\"27\",\"requestMethod\":\"sample\",\"requestOrder\":27,\"pump\":{\"observed\":true,\"pumpCount\":45,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1915.425,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.014,\"atMs\":1916.438,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":34}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"192d4c38ba3dadb7\",\"bytes\":21176,\"requestId\":\"28\",\"requestMethod\":\"sample\",\"requestOrder\":28,\"pump\":{\"observed\":true,\"pumpCount\":46,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":1945.100,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.905,\"atMs\":1946.006,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":35}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":36}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f710644a44d22e37\",\"bytes\":19314,\"requestId\":\"29\",\"requestMethod\":\"sample\",\"requestOrder\":29,\"pump\":{\"observed\":true,\"pumpCount\":48,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":2002.279,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.660,\"atMs\":2002.939,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":37}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"85467527840213d5\",\"bytes\":21182,\"requestId\":\"30\",\"requestMethod\":\"sample\",\"requestOrder\":30,\"pump\":{\"observed\":true,\"pumpCount\":49,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":2031.657,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.870,\"atMs\":2032.527,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":38}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"464202485b4c8bb5\",\"bytes\":21182,\"requestId\":\"31\",\"requestMethod\":\"sample\",\"requestOrder\":31,\"pump\":{\"observed\":true,\"pumpCount\":50,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":2060.703,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.863,\"atMs\":2061.566,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":39}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":40}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"9d4e407505a04f1f\",\"bytes\":19314,\"requestId\":\"32\",\"requestMethod\":\"sample\",\"requestOrder\":32,\"pump\":{\"observed\":true,\"pumpCount\":52,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":2117.779,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.644,\"atMs\":2118.424,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":41}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c3b595326d60e7be\",\"bytes\":21182,\"requestId\":\"33\",\"requestMethod\":\"sample\",\"requestOrder\":33,\"pump\":{\"observed\":true,\"pumpCount\":53,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":2146.745,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":1.196,\"atMs\":2147.941,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":42}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":43}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"bd2fd34acca13b77\",\"bytes\":21182,\"requestId\":\"34\",\"requestMethod\":\"sample\",\"requestOrder\":34,\"pump\":{\"observed\":true,\"pumpCount\":55,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":2206.983,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.997,\"atMs\":2207.980,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":44}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"8532796aec6c6130\",\"bytes\":19314,\"requestId\":\"35\",\"requestMethod\":\"sample\",\"requestOrder\":35,\"pump\":{\"observed\":true,\"pumpCount\":56,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":2236.690,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.637,\"atMs\":2237.327,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":45}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"2b4e5660fa931202\",\"bytes\":21184,\"requestId\":\"36\",\"requestMethod\":\"sample\",\"requestOrder\":36,\"pump\":{\"observed\":true,\"pumpCount\":57,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":2265.876,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.891,\"atMs\":2266.768,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":46}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":47}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"ea4c319d52d3d92d\",\"bytes\":21184,\"requestId\":\"37\",\"requestMethod\":\"sample\",\"requestOrder\":37,\"pump\":{\"observed\":true,\"pumpCount\":59,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":2323.658,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.898,\"atMs\":2324.556,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":48}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-l3ahkA/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"912b961fa17455dd\",\"bytes\":21184,\"requestId\":\"38\",\"requestMethod\":\"sample\",\"requestOrder\":38,\"pump\":{\"observed\":true,\"pumpCount\":60,\"firstPumpAtMs\":464.223,\"lastPumpAtMs\":2354.542,\"maxGapMs\":98.497,\"maxGapAtMs\":813.434,\"trailingGapMs\":0.861,\"atMs\":2355.402,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":49}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PRESENTS_TICK:{\"frames\":60,\"presents\":49,\"textureMB\":146,\"textures\":20,\"bufferMB\":6,\"capHz\":60}",
+        "type": "log"
+      },
+      {
+        "text": "TN_TRANSIENT_ATTACHMENTS:{\"granted\":true,\"count\":1,\"nominalBytes\":14745600}",
+        "type": "log"
+      },
+      {
+        "text": "TN_GPU_TEXTURES:{\"totalMB\":146,\"count\":20,\"buckets\":[{\"k\":\"1280x720 depth24plus msaa4\",\"n\":4,\"mb\":56},{\"k\":\"1280x720 rgba16float msaa4\",\"n\":2,\"mb\":56},{\"k\":\"1280x720 bgra8unorm msaa4\",\"n\":1,\"mb\":14},{\"k\":\"1280x720 rgba16float\",\"n\":2,\"mb\":14},{\"k\":\"1280x720 depth24plus\",\"n\":1,\"mb\":3},{\"k\":\"4096x3x2 rgba32float\",\"n\":6,\"mb\":2},{\"k\":\"64x64 rgba8unorm-srgb mips7\",\"n\":1,\"mb\":0},{\"k\":\"16x16 rg16float\",\"n\":1,\"mb\":0},{\"k\":\"1x1 depth24plus\",\"n\":1,\"mb\":0},{\"k\":\"1x1 rgba8unorm\",\"n\":1,\"mb\":0}],\"bucketsTotal\":10}",
+        "type": "log"
+      },
+      {
+        "text": "TN_GPU_BUFFERS:{\"totalMB\":6,\"count\":111,\"buckets\":[{\"k\":\"vertex|storage|copysrc|copydst\",\"n\":19,\"mb\":3},{\"k\":\"vertex|copysrc|copydst\",\"n\":32,\"mb\":1},{\"k\":\"index|copysrc|copydst\",\"n\":14,\"mb\":1},{\"k\":\"copydst|mapread\",\"n\":2,\"mb\":0},{\"k\":\"copysrc\",\"n\":2,\"mb\":0},{\"k\":\"uniform|copydst\",\"n\":38,\"mb\":0},{\"k\":\"storage|indirect|copysrc|copydst\",\"n\":3,\"mb\":0},{\"k\":\"uniform\",\"n\":1,\"mb\":0}]}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":50}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":51}",
+        "type": "log"
+      },
+      {
+        "text": "[Screenshot] First 16 bytes (BGRA raw): 42 26 11 255 42 26 11 255 42 26 11 255 42 26 11 255 ",
+        "type": "log"
+      },
+      {
+        "text": "[Screenshot] Middle bytes (BGRA raw): 168 248 130 255 168 248 131 255 168 248 132 255 167 249 133 255 ",
+        "type": "log"
+      },
+      {
+        "text": "[Screenshot] Saved: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/world-scope-native-visible-final/after.png (1280x720)",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":52}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":53}",
+        "type": "log"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "pipelineCensus": {
+      "version": 1,
+      "complete": true,
+      "overflowed": false,
+      "unsupported": false,
+      "limit": 512,
+      "clock": {
+        "originMs": 456.189523,
+        "source": "performance"
+      },
+      "backend": {
+        "kind": "webgpu",
+        "identity": "webgpu:WebGPUBackend"
+      },
+      "build": {
+        "identity": "@threenative/core@0.3.4"
+      },
+      "adapter": {
+        "identity": "webgpu:architecture=turing|description=NVIDIA%3A%20615.78.08%20615.78.8.0|device=NVIDIA%20GeForce%20RTX%202080|vendor=nvidia",
+        "thermal": "unavailable"
+      },
+      "firstPresent": {
+        "boundaryMs": 48.871114999999975,
+        "eventsSettled": 1
+      },
+      "warmUpScopes": [
+        {
+          "label": "chunk:0:2:0",
+          "boundaryMs": 382.81175699999994,
+          "eventsSettled": 9,
+          "nodeBuilds": 5,
+          "renderPipelineCreations": 5,
+          "firstDraw": {
+            "nodeBuilds": 0,
+            "renderPipelineCreations": 0
+          }
+        }
+      ],
+      "counts": {
+        "lookups": 20,
+        "creations": 21,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 10,
+        "uniquePipelines": 21,
+        "recordedEvents": 21,
+        "droppedEvents": 0,
+        "nodeBuilds": 20,
+        "deviceCreations": 21,
+        "directCreations": 1
+      },
+      "events": [
+        {
+          "sequence": 1,
+          "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+          "pipelineIdentity": "native-render-1",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1299,
+            "hash": "00fc0a8ad03630cc"
+          },
+          "fragment": {
+            "bytes": 1595,
+            "hash": "458120a84b226496"
+          },
+          "provenance": {
+            "material": {
+              "id": 17,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 20,
+              "name": "Output Color Transform",
+              "uuid": "69b230e9-689f-41cf-8c88-0520f3ea7095"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 42.92838599999999,
+          "settledMs": 48.19866999999999,
+          "serviceMs": 5.27032399999996,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": true
+        },
+        {
+          "sequence": 2,
+          "programIdentity": "6049582e6b5e17f9/bde3aea71e36c883",
+          "pipelineIdentity": "native-render-2",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1375,
+            "hash": "6049582e6b5e17f9"
+          },
+          "fragment": {
+            "bytes": 1480,
+            "hash": "bde3aea71e36c883"
+          },
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 23,
+              "name": "Render Pipeline",
+              "uuid": "1d1b1fe8-2bbb-42c9-8c08-b8075755da65"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 181.68333499999994,
+          "settledMs": 184.817364,
+          "serviceMs": 3.127028999999993,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 3,
+          "programIdentity": "79efa198c6cf1f6f",
+          "pipelineIdentity": "native-compute-1",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1589,
+            "hash": "79efa198c6cf1f6f"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 231.49206400000003,
+          "settledMs": 233.09030299999995,
+          "serviceMs": 1.6005090000001019,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 4,
+          "programIdentity": "b2488a538830441c",
+          "pipelineIdentity": "native-compute-2",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6385,
+            "hash": "b2488a538830441c"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 242.846816,
+          "settledMs": 246.080604,
+          "serviceMs": 3.2333380000000034,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 5,
+          "programIdentity": "bbf82a4549069547/09ad40d6bccbf449",
+          "pipelineIdentity": "native-render-3",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3182,
+            "hash": "bbf82a4549069547"
+          },
+          "fragment": {
+            "bytes": 14731,
+            "hash": "09ad40d6bccbf449"
+          },
+          "provenance": {
+            "material": {
+              "id": 21,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 33,
+              "name": "ground_cover:0:0",
+              "uuid": "a230cfde-dfc2-496c-a8ab-e906f416d410"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "instancing"
+          ],
+          "startedMs": 269.26600499999995,
+          "settledMs": 274.44706899999994,
+          "serviceMs": 5.18109400000003,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 6,
+          "programIdentity": "79efa198c6cf1f6f",
+          "pipelineIdentity": "native-compute-3",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1589,
+            "hash": "79efa198c6cf1f6f"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 317.336186,
+          "settledMs": 317.430925,
+          "serviceMs": 0.09423999999989974,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 7,
+          "programIdentity": "b2488a538830441c",
+          "pipelineIdentity": "native-compute-4",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6385,
+            "hash": "b2488a538830441c"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 321.12253,
+          "settledMs": 321.19043899999997,
+          "serviceMs": 0.06765900000004876,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 8,
+          "programIdentity": "bceee6f518a75d32/36b74997b7a66db6",
+          "pipelineIdentity": "native-render-4",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 2008,
+            "hash": "bceee6f518a75d32"
+          },
+          "fragment": {
+            "bytes": 14729,
+            "hash": "36b74997b7a66db6"
+          },
+          "provenance": {
+            "material": {
+              "id": 30,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 44,
+              "uuid": "73aab63b-e0cf-4ddc-92de-b5ee8b4b6bf4"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 374.69131200000004,
+          "settledMs": 379.70777799999996,
+          "serviceMs": 5.0160359999999855,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 9,
+          "programIdentity": "6049582e6b5e17f9/bde3aea71e36c883",
+          "pipelineIdentity": "native-render-5",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1375,
+            "hash": "6049582e6b5e17f9"
+          },
+          "fragment": {
+            "bytes": 1480,
+            "hash": "bde3aea71e36c883"
+          },
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 23,
+              "name": "Render Pipeline",
+              "uuid": "1d1b1fe8-2bbb-42c9-8c08-b8075755da65"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 380.285354,
+          "settledMs": 382.088742,
+          "serviceMs": 1.7981680000000324,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 10,
+          "programIdentity": "79efa198c6cf1f6f",
+          "pipelineIdentity": "native-compute-5",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1589,
+            "hash": "79efa198c6cf1f6f"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 389.92913799999997,
+          "settledMs": 390.003008,
+          "serviceMs": 0.07416000000000622,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 11,
+          "programIdentity": "b2488a538830441c",
+          "pipelineIdentity": "native-compute-6",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6385,
+            "hash": "b2488a538830441c"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 394.92968399999995,
+          "settledMs": 394.990454,
+          "serviceMs": 0.05989999999997053,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 12,
+          "programIdentity": "bbf82a4549069547/09ad40d6bccbf449",
+          "pipelineIdentity": "native-render-6",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3182,
+            "hash": "bbf82a4549069547"
+          },
+          "fragment": {
+            "bytes": 14731,
+            "hash": "09ad40d6bccbf449"
+          },
+          "provenance": {
+            "material": {
+              "id": 34,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 56,
+              "name": "ground_cover:0:0",
+              "uuid": "ab88c446-a58a-45ea-af4d-4f7b0b763e97"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "instancing"
+          ],
+          "startedMs": 405.29756299999997,
+          "settledMs": 405.45372199999997,
+          "serviceMs": 0.15922899999998208,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 13,
+          "programIdentity": "79efa198c6cf1f6f",
+          "pipelineIdentity": "native-compute-7",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1589,
+            "hash": "79efa198c6cf1f6f"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 458.24491,
+          "settledMs": 458.35525900000005,
+          "serviceMs": 0.10980899999992744,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 14,
+          "programIdentity": "b2488a538830441c",
+          "pipelineIdentity": "native-compute-8",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6385,
+            "hash": "b2488a538830441c"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 463.772422,
+          "settledMs": 463.84580199999994,
+          "serviceMs": 0.07265000000006694,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 15,
+          "programIdentity": "bbf82a4549069547/09ad40d6bccbf449",
+          "pipelineIdentity": "native-render-7",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3182,
+            "hash": "bbf82a4549069547"
+          },
+          "fragment": {
+            "bytes": 14731,
+            "hash": "09ad40d6bccbf449"
+          },
+          "provenance": {
+            "material": {
+              "id": 42,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 71,
+              "name": "ground_cover:0:0",
+              "uuid": "d93accb4-a8bb-4323-90f4-48bf5bc81cb2"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "instancing"
+          ],
+          "startedMs": 470.94350299999996,
+          "settledMs": 471.080612,
+          "serviceMs": 0.13616899999999532,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 16,
+          "programIdentity": "ecaec2fbce7bdaad/ecaec2fbce7bdaad",
+          "pipelineIdentity": "native-render-8",
+          "kind": "render",
+          "pass": "unknown",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1827,
+            "hash": "ecaec2fbce7bdaad"
+          },
+          "fragment": {
+            "bytes": 1827,
+            "hash": "ecaec2fbce7bdaad"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "label": "mipmap-rgba8unorm-srgb-2d-array",
+          "reasons": [
+            "device-direct-creation"
+          ],
+          "startedMs": 491.02910499999996,
+          "settledMs": 492.85196299999996,
+          "serviceMs": 1.8246470000000272,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 17,
+          "programIdentity": "331c056040901965/26524dc7fa56cf54",
+          "pipelineIdentity": "native-render-9",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3316,
+            "hash": "331c056040901965"
+          },
+          "fragment": {
+            "bytes": 15112,
+            "hash": "26524dc7fa56cf54"
+          },
+          "provenance": {
+            "material": {
+              "id": 40,
+              "name": "probe_bark",
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 66,
+              "name": "pine:0:0",
+              "uuid": "c0446fab-c284-44f9-860f-c3f13e9b6697"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "instancing",
+            "map"
+          ],
+          "startedMs": 498.289995,
+          "settledMs": 502.90298399999995,
+          "serviceMs": 4.613309000000072,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 18,
+          "programIdentity": "79efa198c6cf1f6f",
+          "pipelineIdentity": "native-compute-9",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1589,
+            "hash": "79efa198c6cf1f6f"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 547.809226,
+          "settledMs": 547.910315,
+          "serviceMs": 0.10047899999995025,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 19,
+          "programIdentity": "b2488a538830441c",
+          "pipelineIdentity": "native-compute-10",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6385,
+            "hash": "b2488a538830441c"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 550.998564,
+          "settledMs": 551.0609039999999,
+          "serviceMs": 0.06209999999998672,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 20,
+          "programIdentity": "3c9e0c39d4f3153f/8b0216abd1646161",
+          "pipelineIdentity": "native-render-10",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3111,
+            "hash": "3c9e0c39d4f3153f"
+          },
+          "fragment": {
+            "bytes": 1533,
+            "hash": "8b0216abd1646161"
+          },
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 82,
+              "uuid": "2b840dbf-d66f-46ed-808e-e41275680cc4"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 867.164278,
+          "settledMs": 870.663434,
+          "serviceMs": 3.498925999999983,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 21,
+          "programIdentity": "079734d7e934a4b1/132e74e642d59afb",
+          "pipelineIdentity": "native-render-11",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1606,
+            "hash": "079734d7e934a4b1"
+          },
+          "fragment": {
+            "bytes": 1504,
+            "hash": "132e74e642d59afb"
+          },
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 121,
+              "name": "tn-terrain-block:0:-1,-1",
+              "uuid": "dc02db51-f1ca-4a7b-9472-0a204d784c7d"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 1343.206976,
+          "settledMs": 1345.846848,
+          "serviceMs": 2.6394820000000436,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        }
+      ],
+      "nodeBuilds": [
+        {
+          "provenance": {
+            "material": {
+              "id": 17,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 20,
+              "name": "Output Color Transform",
+              "uuid": "69b230e9-689f-41cf-8c88-0520f3ea7095"
+            },
+            "unknown": false
+          },
+          "startedMs": 36.235702,
+          "beforeFirstPresent": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 23,
+              "name": "Render Pipeline",
+              "uuid": "1d1b1fe8-2bbb-42c9-8c08-b8075755da65"
+            },
+            "unknown": false
+          },
+          "startedMs": 177.34752500000002,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 21,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 33,
+              "name": "ground_cover:0:0",
+              "uuid": "a230cfde-dfc2-496c-a8ab-e906f416d410"
+            },
+            "unknown": false
+          },
+          "startedMs": 260.703214,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 23,
+              "name": "Render Pipeline",
+              "uuid": "1d1b1fe8-2bbb-42c9-8c08-b8075755da65"
+            },
+            "unknown": false
+          },
+          "startedMs": 361.65065200000004,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 30,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 44,
+              "uuid": "73aab63b-e0cf-4ddc-92de-b5ee8b4b6bf4"
+            },
+            "unknown": false
+          },
+          "startedMs": 369.518008,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 34,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 56,
+              "name": "ground_cover:0:0",
+              "uuid": "ab88c446-a58a-45ea-af4d-4f7b0b763e97"
+            },
+            "unknown": false
+          },
+          "startedMs": 402.76239999999996,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 32,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 51,
+              "name": "rock:0:0",
+              "uuid": "5aadd34c-c200-456c-a52b-c3b386ffe51c"
+            },
+            "unknown": false
+          },
+          "startedMs": 411.033774,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 33,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 54,
+              "name": "rock:1:0",
+              "uuid": "1d4b94c8-524c-4554-adaf-d60a1f729851"
+            },
+            "unknown": false
+          },
+          "startedMs": 417.243481,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 42,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 71,
+              "name": "ground_cover:0:0",
+              "uuid": "d93accb4-a8bb-4323-90f4-48bf5bc81cb2"
+            },
+            "unknown": false
+          },
+          "startedMs": 469.626712,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 43,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 72,
+              "name": "rock:0:0",
+              "uuid": "689d675a-0ce1-42b1-b7cf-7e304af2aea4"
+            },
+            "unknown": false
+          },
+          "startedMs": 478.037814,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 44,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 73,
+              "name": "rock:1:0",
+              "uuid": "8ea6a918-3373-4339-b25a-027835242e5b"
+            },
+            "unknown": false
+          },
+          "startedMs": 482.88898099999994,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 40,
+              "name": "probe_bark",
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 66,
+              "name": "pine:0:0",
+              "uuid": "c0446fab-c284-44f9-860f-c3f13e9b6697"
+            },
+            "unknown": false
+          },
+          "startedMs": 488.26736400000004,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 41,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 69,
+              "name": "pine:1:0",
+              "uuid": "b8b3f165-3138-412f-8717-4289719ef39e"
+            },
+            "unknown": false
+          },
+          "startedMs": 507.98322899999994,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 82,
+              "uuid": "2b840dbf-d66f-46ed-808e-e41275680cc4"
+            },
+            "unknown": false
+          },
+          "startedMs": 863.562422,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 92,
+              "uuid": "01a224c4-40c3-419b-b0a1-08e7057dd3ff"
+            },
+            "unknown": false
+          },
+          "startedMs": 1043.42527,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 102,
+              "uuid": "99e96d04-5a0e-4824-8c5f-7ba6f619ab79"
+            },
+            "unknown": false
+          },
+          "startedMs": 1181.574204,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 107,
+              "uuid": "4531d079-f275-4204-8d10-727b0d1116f8"
+            },
+            "unknown": false
+          },
+          "startedMs": 1221.348251,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 112,
+              "uuid": "64fef149-fcee-48bd-a1ae-72e58e6f9b9f"
+            },
+            "unknown": false
+          },
+          "startedMs": 1296.475806,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 121,
+              "name": "tn-terrain-block:0:-1,-1",
+              "uuid": "dc02db51-f1ca-4a7b-9472-0a204d784c7d"
+            },
+            "unknown": false
+          },
+          "startedMs": 1340.572424,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 117,
+              "uuid": "8e67cbf9-e1ac-4cec-b3b0-270c3893147c"
+            },
+            "unknown": false
+          },
+          "startedMs": 1349.150036,
+          "beforeFirstPresent": false
+        }
+      ],
+      "incompleteReasons": []
+    },
+    "resources": {
+      "state": {
+        "before": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 2.0168059999973593
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 15
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 24,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 0,
+              "gpuTallyAgeFrames": 23,
+              "gpuTriangles": 0
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 25,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 5,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 7,
+            "residentColliders": 0
+          }
+        },
+        "after": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 0
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 15
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 44,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 222,
+              "gpuTallyAgeFrames": 13,
+              "gpuTriangles": 668
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 45,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 5,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 9,
+            "residentColliders": 0
+          }
+        }
+      },
+      "GameState": {
+        "before": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 2.0168059999973593
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 15
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 24,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 0,
+              "gpuTallyAgeFrames": 23,
+              "gpuTriangles": 0
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 25,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 5,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 7,
+            "residentColliders": 0
+          }
+        },
+        "after": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 0
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 15
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 44,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 222,
+              "gpuTallyAgeFrames": 13,
+              "gpuTriangles": 668
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 45,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 5,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 9,
+            "residentColliders": 0
+          }
+        }
+      },
+      "assets": {
+        "before": {
+          "world/assets/ground_cover": {
+            "glb": {
+              "url": "world/assets/ground_cover.3896b589.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine_lod1": {
+            "glb": {
+              "url": "world/assets/pine_lod1.4f82d93e.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock_lod1": {
+            "glb": {
+              "url": "world/assets/rock_lod1.127a1dda.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock": {
+            "glb": {
+              "url": "world/assets/rock.1f312b52.glb",
+              "via": "manifest"
+            }
+          },
+          "world/chunks/yard_0_2": {
+            "glb": {
+              "url": "world/chunks/yard_0_2.a2b36c92.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine": {
+            "glb": {
+              "url": "world/assets/pine.529686d4.glb",
+              "via": "manifest"
+            }
+          }
+        },
+        "after": {
+          "world/assets/ground_cover": {
+            "glb": {
+              "url": "world/assets/ground_cover.3896b589.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine_lod1": {
+            "glb": {
+              "url": "world/assets/pine_lod1.4f82d93e.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock_lod1": {
+            "glb": {
+              "url": "world/assets/rock_lod1.127a1dda.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock": {
+            "glb": {
+              "url": "world/assets/rock.1f312b52.glb",
+              "via": "manifest"
+            }
+          },
+          "world/chunks/yard_0_2": {
+            "glb": {
+              "url": "world/chunks/yard_0_2.a2b36c92.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine": {
+            "glb": {
+              "url": "world/assets/pine.529686d4.glb",
+              "via": "manifest"
+            }
+          }
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "settled-loads",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 6.522285000000238
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 27,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 0,
+                "gpuTallyAgeFrames": 26,
+                "gpuTriangles": 0
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 28,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 6.522285000000238
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 27,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 0,
+                "gpuTallyAgeFrames": 26,
+                "gpuTriangles": 0
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 28,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "no-queued-loads",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 30,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 0,
+                "gpuTallyAgeFrames": 29,
+                "gpuTriangles": 0
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 31,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 30,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 0,
+                "gpuTallyAgeFrames": 29,
+                "gpuTriangles": 0
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 31,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "settled-prewarm",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 34,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 3,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 35,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 34,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 3,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 35,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "complete-terrain-ring",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 39,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 8,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 40,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 39,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 8,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 40,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "admitted-world",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 43,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 12,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 44,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 43,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 12,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 44,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 64
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeDiagnosticsBefore": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplayBefore": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 20260925,
+          "runtime": {
+            "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+            "core": "0.3.4",
+            "randomState": 20260925,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 20260925,
+          "runtime": {
+            "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+            "core": "0.3.4",
+            "randomState": 20260925,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplaySeries": [
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "settled-loads",
+          "tick": 64
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "no-queued-loads",
+          "tick": 64
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "settled-prewarm",
+          "tick": 64
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "complete-terrain-ring",
+          "tick": 64
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "admitted-world",
+          "tick": 64
+        }
+      ]
+    },
+    "scene": {
+      "background": "color:#0b1a2a",
+      "camera": {
+        "far": 1000,
+        "forward": [
+          0.9438583563660174,
+          -0.33035042472810616,
+          2.220446049250313e-16
+        ],
+        "fov": 60,
+        "near": 0.1,
+        "position": [
+          -160,
+          24,
+          0
+        ],
+        "type": "PerspectiveCamera"
+      },
+      "lights": [
+        {
+          "color": "#bfd8ff",
+          "intensity": 2.2,
+          "type": "HemisphereLight",
+          "visible": true
+        },
+        {
+          "color": "#ffffff",
+          "intensity": 2.6,
+          "type": "DirectionalLight",
+          "visible": true
+        }
+      ],
+      "materials": {
+        "MeshNormalMaterial": 1,
+        "MeshStandardMaterial": 6
+      },
+      "objects": 56,
+      "truncated": false,
+      "worldExtent": {
+        "max": [
+          128,
+          68.85755491256714,
+          128
+        ],
+        "min": [
+          -224,
+          -68.70771026611328,
+          -128
+        ]
+      }
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "settled-loads",
+        "signals": [],
+        "tick": 64
+      },
+      {
+        "label": "no-queued-loads",
+        "signals": [],
+        "tick": 64
+      },
+      {
+        "label": "settled-prewarm",
+        "signals": [],
+        "tick": 64
+      },
+      {
+        "label": "complete-terrain-ring",
+        "signals": [],
+        "tick": 64
+      },
+      {
+        "label": "admitted-world",
+        "signals": [],
+        "tick": 64
+      }
+    ],
+    "startup": {
+      "phase": "ready",
+      "progress": 1,
+      "compileSettled": true,
+      "timeline": {
+        "loadStartedMs": 464.560756,
+        "enteredMs": 615.933149,
+        "compileSettledMs": 1133.850939,
+        "frameworkReadyMs": 1133.855119,
+        "readyMs": 1133.885589
+      },
+      "rule": "sustained-frames"
+    },
+    "tone": [
+      {
+        "code": "TN_TONE",
+        "label": "after.png",
+        "mean": 140.83517361111112,
+        "p1": 24,
+        "p50": 205,
+        "p99": 222,
+        "clipFraction": 0,
+        "blackFraction": 0.0009016927083333333
+      }
+    ]
+  },
+  "artifactDirectory": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/world-scope-native-visible-final",
+  "assertionResults": [
+    {
+      "details": {
+        "after": 3,
+        "before": 3,
+        "component": "residentCells",
+        "entity": "world",
+        "expected": {
+          "component": "residentCells",
+          "entity": "world",
+          "allowTrivial": "All three authored cells must be resident before comparing the fixed-camera world.",
+          "gte": 3
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.world.residentCells.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "complete": true,
+        "expected": 0,
+        "incompleteReasons": [],
+        "observed": 0,
+        "scope": "chunk:0:2:0"
+      },
+      "id": "pipelineCensus.maxNodeBuildsAfterWarmUpScope",
+      "pass": true
+    },
+    {
+      "details": {
+        "complete": true,
+        "expected": 0,
+        "incompleteReasons": [],
+        "observed": 0,
+        "scope": "chunk:0:2:0"
+      },
+      "id": "pipelineCensus.maxRenderPipelineCreationsAfterWarmUpScope",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "clock": "fixed-step",
+  "pass": true,
+  "runtime": "native",
+  "scenario": "authored-world-pass-streamed-chunk-warm-up-reuse",
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 464.560756,
+      "enteredMs": 615.933149,
+      "compileSettledMs": 1133.850939,
+      "frameworkReadyMs": 1133.855119,
+      "readyMs": 1133.885589
+    },
+    "rule": "sustained-frames"
+  },
+  "trivialityOptOutCount": 1,
+  "url": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/packages/runtime-native/build/tn-linux/mystral",
+  "sourceCommit": "acc3affd3d3141aa123d0e80ee4794177aa484ea"
+}

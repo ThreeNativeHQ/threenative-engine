@@ -1,0 +1,118 @@
+{
+  "adapter": {
+    "architecture": "turing",
+    "vendor": "nvidia",
+    "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+    "limit.maxBindGroups": "4",
+    "limit.maxTextureDimension2D": "16384",
+    "limit.maxStorageBufferBindingSize": "2147483644"
+  },
+  "browserArgs": [
+    "--ozone-platform=x11",
+    "--enable-unsafe-webgpu",
+    "--disable-gpu-sandbox",
+    "--ignore-gpu-blocklist",
+    "--enable-features=Vulkan"
+  ],
+  "captureMethod": "page.screenshot",
+  "rendererKind": "webgpu",
+  "target": "web",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "sourceCommit": "1d056cec3d84ad0a6aebd89a97d3bd66b8d04de9",
+  "purpose": "visual control only",
+  "stats": {
+    "admission": {
+      "backlog": 0,
+      "deferred": 0,
+      "spentMs": 1.1999999955296516
+    },
+    "bundle": {
+      "children": 6,
+      "on": true,
+      "cpuMeshes": 0,
+      "gpuMeshes": 5,
+      "eligibility": {
+        "checks": 0,
+        "refreshes": 0,
+        "validations": 0,
+        "uncached": 0
+      },
+      "reason": "default",
+      "records": 19
+    },
+    "evictions": 0,
+    "failures": 0,
+    "gpuScene": {
+      "dispatches": 23,
+      "instances": 533,
+      "keys": 5,
+      "on": true,
+      "reason": "on",
+      "dressed": 5,
+      "meshes": 5,
+      "gpuInstances": 48,
+      "gpuTallyAgeFrames": 22,
+      "gpuTriangles": 192
+    },
+    "hlod": {
+      "on": true,
+      "loaded": 0,
+      "compiled": 0,
+      "observed": 0,
+      "active": 0,
+      "pending": 0,
+      "bytes": 0,
+      "refused": 0,
+      "reason": "",
+      "failures": 0
+    },
+    "impostor": {
+      "assets": 0,
+      "atlasBytes": 0,
+      "budgetBytes": 134217728,
+      "far": {
+        "aggregates": 0,
+        "bytes": 0,
+        "instances": 0,
+        "live": 0,
+        "nearOwned": 0,
+        "uploads": 0
+      },
+      "pending": 0,
+      "terminalTriangles": 0
+    },
+    "instances": 533,
+    "loadsInFlight": 0,
+    "loadsQueued": 0,
+    "mainCull": {
+      "frustums": 26,
+      "repacks": 0,
+      "visibleEpoch": 1,
+      "windows": 0
+    },
+    "pendingPrewarm": 0,
+    "prewarmMinted": 4,
+    "pressure": {
+      "cells": 0,
+      "instances": 0,
+      "bytes": 0
+    },
+    "refilters": 1,
+    "refilterEntries": 0,
+    "rebuilds": 0,
+    "levelRefilters": 0,
+    "unchanged": 0,
+    "residentCells": 3,
+    "loadedCells": 3,
+    "residentKeys": [
+      "0:1",
+      "0:2",
+      "0:3"
+    ],
+    "residentTiles": 9,
+    "residentColliders": 0
+  }
+}

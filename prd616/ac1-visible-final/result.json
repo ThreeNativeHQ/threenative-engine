@@ -1,0 +1,4468 @@
+{
+  "after": {
+    "frame": 5,
+    "position": [
+      532.7578139524942,
+      101.8643496364123,
+      0
+    ],
+    "rotation": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "tick": 65
+  },
+  "before": {
+    "frame": 0,
+    "position": [
+      535.8208561182573,
+      93.10241572588033,
+      0
+    ],
+    "rotation": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "tick": 60
+  },
+  "capture": {
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  "diagnostics": [],
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 9.281902453795391,
+  "entity": "player",
+  "expectMoved": false,
+  "frames": 5,
+  "trivialityOptOuts": [],
+  "target": "web",
+  "movementDelta": [
+    -3.063042165763136,
+    8.761933910531965,
+    0
+  ],
+  "observations": {
+    "components": {
+      "player": {
+        "hull": {
+          "before": 100,
+          "after": 100
+        },
+        "position": {
+          "before": [
+            535.8208561182573,
+            93.10241572588033,
+            0
+          ],
+          "after": [
+            532.7578139524942,
+            101.8643496364123,
+            0
+          ]
+        },
+        "score": {
+          "before": 0,
+          "after": 0
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "frame-1",
+        "snapshots": {
+          "player": {
+            "hull": 100,
+            "position": [
+              535.2534121924155,
+              94.86214234117152,
+              0
+            ],
+            "score": 0
+          }
+        },
+        "tick": 61
+      },
+      {
+        "label": "frame-2",
+        "snapshots": {
+          "player": {
+            "hull": 100,
+            "position": [
+              534.6623656807424,
+              96.61830214197617,
+              0
+            ],
+            "score": 0
+          }
+        },
+        "tick": 62
+      },
+      {
+        "label": "frame-3",
+        "snapshots": {
+          "player": {
+            "hull": 100,
+            "position": [
+              534.0487876163845,
+              98.3707903787264,
+              0
+            ],
+            "score": 0
+          }
+        },
+        "tick": 63
+      },
+      {
+        "label": "frame-4",
+        "snapshots": {
+          "player": {
+            "hull": 100,
+            "position": [
+              533.4136455889135,
+              100.11950565904108,
+              0
+            ],
+            "score": 0
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "frame-5",
+        "snapshots": {
+          "player": {
+            "hull": 100,
+            "position": [
+              532.7578139524942,
+              101.8643496364123,
+              0
+            ],
+            "score": 0
+          }
+        },
+        "tick": 65
+      }
+    ],
+    "console": [
+      {
+        "source": "browser-console",
+        "text": "[vite] connecting...",
+        "type": "debug"
+      },
+      {
+        "source": "browser-console",
+        "text": "[vite] connected.",
+        "type": "debug"
+      },
+      {
+        "source": "browser-console",
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+        "type": "log"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_WARMUP:{\"compiled\":1,\"pipelines\":9,\"candidates\":9,\"attempted\":0,\"observed\":{\"created\":13,\"failed\":0,\"pending\":0,\"uniquePrograms\":13,\"uniquePipelines\":13,\"status\":\"complete\"},\"slices\":1,\"elapsedMs\":96,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"computeCompiled\":3,\"computeAbandoned\":0,\"computeUnsupported\":false,\"computeTimedOut\":false,\"passes\":[\"main\"],\"passPipelines\":11,\"cullingForced\":12,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+        "type": "log"
+      },
+      {
+        "source": "browser-console",
+        "text": "THREE.WebGPURenderer: Timestamp tracking is disabled.",
+        "type": "warning"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "pipelineCensus": {
+      "version": 1,
+      "complete": true,
+      "overflowed": false,
+      "unsupported": false,
+      "limit": 512,
+      "clock": {
+        "originMs": 771.8000000044703,
+        "source": "performance"
+      },
+      "backend": {
+        "kind": "webgpu",
+        "identity": "webgpu:WebGPUBackend"
+      },
+      "build": {
+        "identity": "@threenative/core@0.3.4"
+      },
+      "adapter": {
+        "identity": "webgpu:architecture=turing|vendor=nvidia",
+        "thermal": "unavailable"
+      },
+      "firstPresent": {
+        "boundaryMs": 38,
+        "eventsSettled": 1
+      },
+      "warmUpSettled": {
+        "boundaryMs": 127.5,
+        "eventsSettled": 15,
+        "nodeBuilds": 12,
+        "renderPipelineCreations": 12
+      },
+      "counts": {
+        "lookups": 15,
+        "creations": 15,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 15,
+        "uniquePipelines": 15,
+        "recordedEvents": 15,
+        "droppedEvents": 0,
+        "nodeBuilds": 12,
+        "deviceCreations": 15,
+        "directCreations": 0
+      },
+      "events": [
+        {
+          "sequence": 1,
+          "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+          "pipelineIdentity": "backend-pipeline-1",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1299,
+            "hash": "00fc0a8ad03630cc"
+          },
+          "fragment": {
+            "bytes": 1595,
+            "hash": "458120a84b226496"
+          },
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 23,
+              "name": "Output Color Transform",
+              "uuid": "b06270ff-f7a8-492e-8468-1395c4e151e2"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 36.600000001490116,
+          "settledMs": 37.600000001490116,
+          "serviceMs": 1,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": true,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 2,
+          "programIdentity": "d53b2bc0071f3874",
+          "pipelineIdentity": "backend-pipeline-2",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 2258,
+            "hash": "d53b2bc0071f3874"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 56.100000001490116,
+          "settledMs": 56.19999999552965,
+          "serviceMs": 0.09999999403953552,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 3,
+          "programIdentity": "233446aebec2f03a",
+          "pipelineIdentity": "backend-pipeline-3",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 4627,
+            "hash": "233446aebec2f03a"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 64.89999999850988,
+          "settledMs": 65,
+          "serviceMs": 0.10000000149011612,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 4,
+          "programIdentity": "ca827b8aad6a5a39",
+          "pipelineIdentity": "backend-pipeline-4",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1615,
+            "hash": "ca827b8aad6a5a39"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 66.19999999552965,
+          "settledMs": 66.29999999701977,
+          "serviceMs": 0,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 5,
+          "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+          "pipelineIdentity": "backend-pipeline-5",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1368,
+            "hash": "a0dc858b2770e4b6"
+          },
+          "fragment": {
+            "bytes": 2588,
+            "hash": "a9284e64d0b7ab7a"
+          },
+          "provenance": {
+            "material": {
+              "id": 20,
+              "type": "MeshBasicNodeMaterial"
+            },
+            "object": {
+              "id": 29,
+              "uuid": "8a577329-1195-4426-9cb4-94c2882d4814"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 74.19999999552965,
+          "settledMs": 74.19999999552965,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 6,
+          "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+          "pipelineIdentity": "backend-pipeline-6",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 2120,
+            "hash": "d2ea5ac757871426"
+          },
+          "fragment": {
+            "bytes": 1136,
+            "hash": "63f9db766141e0ab"
+          },
+          "provenance": {
+            "material": {
+              "id": 19,
+              "type": "SpriteNodeMaterial"
+            },
+            "object": {
+              "id": 28,
+              "uuid": "9ae6d991-e06c-4ed3-8fab-e19506999035"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 78.19999999552965,
+          "settledMs": 78.39999999850988,
+          "serviceMs": 0.20000000298023224,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 7,
+          "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+          "pipelineIdentity": "backend-pipeline-7",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1825,
+            "hash": "c159003d0d4f355a"
+          },
+          "fragment": {
+            "bytes": 1001,
+            "hash": "41f98e61499c0e67"
+          },
+          "provenance": {
+            "material": {
+              "id": 21,
+              "type": "SpriteNodeMaterial"
+            },
+            "object": {
+              "id": 30,
+              "uuid": "5904becc-566d-4120-9a7c-52e6cb54572f"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 80,
+          "settledMs": 80.10000000149012,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 8,
+          "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+          "pipelineIdentity": "backend-pipeline-8",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1417,
+            "hash": "dcd9d1972708c088"
+          },
+          "fragment": {
+            "bytes": 960,
+            "hash": "a2499803894a35ed"
+          },
+          "provenance": {
+            "material": {
+              "id": 25,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 81.89999999850988,
+          "settledMs": 81.89999999850988,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 9,
+          "programIdentity": "45fc3617fb049a88/c466a179e1f4f0a4",
+          "pipelineIdentity": "backend-pipeline-9",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1818,
+            "hash": "c466a179e1f4f0a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 26,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 0 ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 84.29999999701977,
+          "settledMs": 84.39999999850988,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 10,
+          "programIdentity": "45fc3617fb049a88/904d7d1b777971dc",
+          "pipelineIdentity": "backend-pipeline-10",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "904d7d1b777971dc"
+          },
+          "provenance": {
+            "material": {
+              "id": 27,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 1 ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 86.5,
+          "settledMs": 86.60000000149012,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 11,
+          "programIdentity": "45fc3617fb049a88/9ac08f65518be06c",
+          "pipelineIdentity": "backend-pipeline-11",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "9ac08f65518be06c"
+          },
+          "provenance": {
+            "material": {
+              "id": 28,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 2 ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 88.29999999701977,
+          "settledMs": 88.5,
+          "serviceMs": 0.20000000298023224,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 12,
+          "programIdentity": "45fc3617fb049a88/2b2d9e1b2a1e6bbc",
+          "pipelineIdentity": "backend-pipeline-12",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "2b2d9e1b2a1e6bbc"
+          },
+          "provenance": {
+            "material": {
+              "id": 29,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 3 ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 90.19999999552965,
+          "settledMs": 90.29999999701977,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 13,
+          "programIdentity": "45fc3617fb049a88/4fbcbe479ba1b0a6",
+          "pipelineIdentity": "backend-pipeline-13",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "4fbcbe479ba1b0a6"
+          },
+          "provenance": {
+            "material": {
+              "id": 30,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 4 ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 91.69999999552965,
+          "settledMs": 91.69999999552965,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 14,
+          "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+          "pipelineIdentity": "backend-pipeline-14",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1567,
+            "hash": "ffc0ca9b4adc3a8b"
+          },
+          "fragment": {
+            "bytes": 3311,
+            "hash": "ff20e1db0bfb34f5"
+          },
+          "provenance": {
+            "material": {
+              "id": 31,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Composite ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 94.5,
+          "settledMs": 94.60000000149012,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 15,
+          "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+          "pipelineIdentity": "backend-pipeline-15",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1375,
+            "hash": "b07fbcd4d49ee70f"
+          },
+          "fragment": {
+            "bytes": 1790,
+            "hash": "a170775f358f22a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 24,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 37,
+              "name": "Render Pipeline",
+              "uuid": "38175998-3230-4856-a52f-de98750ac61c"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 95.10000000149012,
+          "settledMs": 95.10000000149012,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        }
+      ],
+      "nodeBuilds": [
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 23,
+              "name": "Output Color Transform",
+              "uuid": "b06270ff-f7a8-492e-8468-1395c4e151e2"
+            },
+            "unknown": false
+          },
+          "startedMs": 32.69999999552965,
+          "beforeFirstPresent": true,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 24,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 37,
+              "name": "Render Pipeline",
+              "uuid": "38175998-3230-4856-a52f-de98750ac61c"
+            },
+            "unknown": false
+          },
+          "startedMs": 69.39999999850988,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 20,
+              "type": "MeshBasicNodeMaterial"
+            },
+            "object": {
+              "id": 29,
+              "uuid": "8a577329-1195-4426-9cb4-94c2882d4814"
+            },
+            "unknown": false
+          },
+          "startedMs": 73.39999999850988,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 19,
+              "type": "SpriteNodeMaterial"
+            },
+            "object": {
+              "id": 28,
+              "uuid": "9ae6d991-e06c-4ed3-8fab-e19506999035"
+            },
+            "unknown": false
+          },
+          "startedMs": 77.60000000149012,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 21,
+              "type": "SpriteNodeMaterial"
+            },
+            "object": {
+              "id": 30,
+              "uuid": "5904becc-566d-4120-9a7c-52e6cb54572f"
+            },
+            "unknown": false
+          },
+          "startedMs": 79.69999999552965,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 25,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "startedMs": 81.5,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 26,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 0 ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "startedMs": 83.79999999701977,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 27,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 1 ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "startedMs": 86.19999999552965,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 28,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 2 ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "startedMs": 88.10000000149012,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 29,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 3 ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "startedMs": 89.89999999850988,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 30,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 4 ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "startedMs": 91.5,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 31,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Composite ]",
+              "uuid": "9daca964-7340-461f-8541-51ac9ace794a"
+            },
+            "unknown": false
+          },
+          "startedMs": 93.39999999850988,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        }
+      ],
+      "incompleteReasons": []
+    },
+    "resources": {
+      "state": {
+        "before": {
+          "best": 0,
+          "elapsed": 0,
+          "energy": 100,
+          "fps": 17.36576146304585,
+          "hull": 100,
+          "hunters": 0,
+          "playerX": 535.8208561182573,
+          "pulsing": false,
+          "score": 0,
+          "status": "attract"
+        },
+        "after": {
+          "best": 0,
+          "elapsed": 0,
+          "energy": 100,
+          "fps": 28.746307940915386,
+          "hull": 100,
+          "hunters": 0,
+          "playerX": 532.7578139524942,
+          "pulsing": false,
+          "score": 0,
+          "status": "attract"
+        }
+      },
+      "GameState": {
+        "before": {
+          "best": 0,
+          "elapsed": 0,
+          "energy": 100,
+          "fps": 17.36576146304585,
+          "hull": 100,
+          "hunters": 0,
+          "playerX": 535.8208561182573,
+          "pulsing": false,
+          "score": 0,
+          "status": "attract"
+        },
+        "after": {
+          "best": 0,
+          "elapsed": 0,
+          "energy": 100,
+          "fps": 28.746307940915386,
+          "hull": 100,
+          "hunters": 0,
+          "playerX": 532.7578139524942,
+          "pulsing": false,
+          "score": 0,
+          "status": "attract"
+        }
+      },
+      "assets": {
+        "before": {},
+        "after": {}
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "frame-1",
+        "snapshots": {
+          "state": {
+            "best": 0,
+            "elapsed": 0,
+            "energy": 100,
+            "fps": 29.792560332039663,
+            "hull": 100,
+            "hunters": 0,
+            "playerX": 535.2534121924155,
+            "pulsing": false,
+            "score": 0,
+            "status": "attract"
+          },
+          "GameState": {
+            "best": 0,
+            "elapsed": 0,
+            "energy": 100,
+            "fps": 29.792560332039663,
+            "hull": 100,
+            "hunters": 0,
+            "playerX": 535.2534121924155,
+            "pulsing": false,
+            "score": 0,
+            "status": "attract"
+          },
+          "assets": {}
+        },
+        "tick": 61
+      },
+      {
+        "label": "frame-2",
+        "snapshots": {
+          "state": {
+            "best": 0,
+            "elapsed": 0,
+            "energy": 100,
+            "fps": 28.523055462958073,
+            "hull": 100,
+            "hunters": 0,
+            "playerX": 534.6623656807424,
+            "pulsing": false,
+            "score": 0,
+            "status": "attract"
+          },
+          "GameState": {
+            "best": 0,
+            "elapsed": 0,
+            "energy": 100,
+            "fps": 28.523055462958073,
+            "hull": 100,
+            "hunters": 0,
+            "playerX": 534.6623656807424,
+            "pulsing": false,
+            "score": 0,
+            "status": "attract"
+          },
+          "assets": {}
+        },
+        "tick": 62
+      },
+      {
+        "label": "frame-3",
+        "snapshots": {
+          "state": {
+            "best": 0,
+            "elapsed": 0,
+            "energy": 100,
+            "fps": 28.26365774680352,
+            "hull": 100,
+            "hunters": 0,
+            "playerX": 534.0487876163845,
+            "pulsing": false,
+            "score": 0,
+            "status": "attract"
+          },
+          "GameState": {
+            "best": 0,
+            "elapsed": 0,
+            "energy": 100,
+            "fps": 28.26365774680352,
+            "hull": 100,
+            "hunters": 0,
+            "playerX": 534.0487876163845,
+            "pulsing": false,
+            "score": 0,
+            "status": "attract"
+          },
+          "assets": {}
+        },
+        "tick": 63
+      },
+      {
+        "label": "frame-4",
+        "snapshots": {
+          "state": {
+            "best": 0,
+            "elapsed": 0,
+            "energy": 100,
+            "fps": 28.83298032090339,
+            "hull": 100,
+            "hunters": 0,
+            "playerX": 533.4136455889135,
+            "pulsing": false,
+            "score": 0,
+            "status": "attract"
+          },
+          "GameState": {
+            "best": 0,
+            "elapsed": 0,
+            "energy": 100,
+            "fps": 28.83298032090339,
+            "hull": 100,
+            "hunters": 0,
+            "playerX": 533.4136455889135,
+            "pulsing": false,
+            "score": 0,
+            "status": "attract"
+          },
+          "assets": {}
+        },
+        "tick": 64
+      },
+      {
+        "label": "frame-5",
+        "snapshots": {
+          "state": {
+            "best": 0,
+            "elapsed": 0,
+            "energy": 100,
+            "fps": 28.746307940915386,
+            "hull": 100,
+            "hunters": 0,
+            "playerX": 532.7578139524942,
+            "pulsing": false,
+            "score": 0,
+            "status": "attract"
+          },
+          "GameState": {
+            "best": 0,
+            "elapsed": 0,
+            "energy": 100,
+            "fps": 28.746307940915386,
+            "hull": 100,
+            "hunters": 0,
+            "playerX": 532.7578139524942,
+            "pulsing": false,
+            "score": 0,
+            "status": "attract"
+          },
+          "assets": {}
+        },
+        "tick": 65
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": [
+          {
+            "id": "player",
+            "projectedBounds": {
+              "max": [
+                0.5881995583620729,
+                0.21704682622386984
+              ],
+              "min": [
+                0.5644014814389962,
+                0.17473913391617757
+              ]
+            },
+            "visible": true
+          }
+        ]
+      }
+    },
+    "runtimeDiagnosticsBefore": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": [
+          {
+            "id": "player",
+            "projectedBounds": {
+              "max": [
+                0.5915129453202304,
+                0.20019695331900067
+              ],
+              "min": [
+                0.5677148683971533,
+                0.1578892610113084
+              ]
+            },
+            "visible": true
+          }
+        ]
+      }
+    },
+    "runtimeObservations": {
+      "gameplayBefore": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [
+          {
+            "from": 54.5747863191757,
+            "path": "state.playerX",
+            "tick": 1,
+            "to": 103.7778163316026
+          },
+          {
+            "from": 103.7778163316026,
+            "path": "state.playerX",
+            "tick": 2,
+            "to": 148.1363231234952
+          },
+          {
+            "from": 148.1363231234952,
+            "path": "state.playerX",
+            "tick": 3,
+            "to": 188.12566369627382
+          },
+          {
+            "from": 188.12566369627382,
+            "path": "state.playerX",
+            "tick": 4,
+            "to": 224.17442325334582
+          },
+          {
+            "from": 224.17442325334582,
+            "path": "state.playerX",
+            "tick": 5,
+            "to": 256.66901725964755
+          },
+          {
+            "from": 256.66901725964755,
+            "path": "state.playerX",
+            "tick": 6,
+            "to": 285.95784068970363
+          },
+          {
+            "from": 285.95784068970363,
+            "path": "state.playerX",
+            "tick": 7,
+            "to": 312.3550090177854
+          },
+          {
+            "from": 312.3550090177854,
+            "path": "state.playerX",
+            "tick": 8,
+            "to": 336.14373111997844
+          },
+          {
+            "from": 336.14373111997844,
+            "path": "state.playerX",
+            "tick": 9,
+            "to": 357.5793503055334
+          },
+          {
+            "from": 357.5793503055334,
+            "path": "state.playerX",
+            "tick": 10,
+            "to": 376.8920861313289
+          },
+          {
+            "from": 376.8920861313289,
+            "path": "state.playerX",
+            "tick": 11,
+            "to": 394.2895064403603
+          },
+          {
+            "from": 394.2895064403603,
+            "path": "state.playerX",
+            "tick": 12,
+            "to": 409.9587561683823
+          },
+          {
+            "from": 409.9587561683823,
+            "path": "state.playerX",
+            "tick": 13,
+            "to": 424.06856685106914
+          },
+          {
+            "from": 424.06856685106914,
+            "path": "state.playerX",
+            "tick": 14,
+            "to": 436.77106840927615
+          },
+          {
+            "from": 436.77106840927615,
+            "path": "state.playerX",
+            "tick": 15,
+            "to": 448.2034226668963
+          },
+          {
+            "from": 448.2034226668963,
+            "path": "state.playerX",
+            "tick": 16,
+            "to": 458.48929614161614
+          },
+          {
+            "from": 458.48929614161614,
+            "path": "state.playerX",
+            "tick": 17,
+            "to": 467.74018792302815
+          },
+          {
+            "from": 467.74018792302815,
+            "path": "state.playerX",
+            "tick": 18,
+            "to": 476.0566268965209
+          },
+          {
+            "from": 476.0566268965209,
+            "path": "state.playerX",
+            "tick": 19,
+            "to": 483.52925116843693
+          },
+          {
+            "from": 483.52925116843693,
+            "path": "state.playerX",
+            "tick": 20,
+            "to": 490.2397812830937
+          },
+          {
+            "from": 490.2397812830937,
+            "path": "state.playerX",
+            "tick": 21,
+            "to": 496.26189768182957
+          },
+          {
+            "from": 496.26189768182957,
+            "path": "state.playerX",
+            "tick": 22,
+            "to": 501.6620318260086
+          },
+          {
+            "from": 501.6620318260086,
+            "path": "state.playerX",
+            "tick": 23,
+            "to": 506.5000794788656
+          },
+          {
+            "from": 506.5000794788656,
+            "path": "state.playerX",
+            "tick": 24,
+            "to": 510.83004380523295
+          },
+          {
+            "from": 510.83004380523295,
+            "path": "state.playerX",
+            "tick": 25,
+            "to": 514.7006151945944
+          },
+          {
+            "from": 514.7006151945944,
+            "path": "state.playerX",
+            "tick": 26,
+            "to": 518.1556940334594
+          },
+          {
+            "from": 518.1556940334594,
+            "path": "state.playerX",
+            "tick": 27,
+            "to": 521.2348620404591
+          },
+          {
+            "from": 521.2348620404591,
+            "path": "state.playerX",
+            "tick": 28,
+            "to": 523.973807225242
+          },
+          {
+            "from": 523.973807225242,
+            "path": "state.playerX",
+            "tick": 29,
+            "to": 526.4047070342726
+          },
+          {
+            "from": 526.4047070342726,
+            "path": "state.playerX",
+            "tick": 30,
+            "to": 528.5565737976583
+          },
+          {
+            "from": 528.5565737976583,
+            "path": "state.playerX",
+            "tick": 31,
+            "to": 530.455566186326
+          },
+          {
+            "from": 530.455566186326,
+            "path": "state.playerX",
+            "tick": 32,
+            "to": 532.1252700239004
+          },
+          {
+            "from": 532.1252700239004,
+            "path": "state.playerX",
+            "tick": 33,
+            "to": 533.5869514685718
+          },
+          {
+            "from": 533.5869514685718,
+            "path": "state.playerX",
+            "tick": 34,
+            "to": 534.8597852835594
+          },
+          {
+            "from": 534.8597852835594,
+            "path": "state.playerX",
+            "tick": 35,
+            "to": 535.9610606472821
+          },
+          {
+            "from": 535.9610606472821,
+            "path": "state.playerX",
+            "tick": 36,
+            "to": 536.9063667131766
+          },
+          {
+            "from": 536.9063667131766,
+            "path": "state.playerX",
+            "tick": 37,
+            "to": 537.7097599116602
+          },
+          {
+            "from": 537.7097599116602,
+            "path": "state.playerX",
+            "tick": 38,
+            "to": 538.3839147906868
+          },
+          {
+            "from": 538.3839147906868,
+            "path": "state.playerX",
+            "tick": 39,
+            "to": 538.9402600145853
+          },
+          {
+            "from": 538.9402600145853,
+            "path": "state.playerX",
+            "tick": 40,
+            "to": 539.3891009815048
+          },
+          {
+            "from": 539.3891009815048,
+            "path": "state.playerX",
+            "tick": 41,
+            "to": 539.739730376105
+          },
+          {
+            "from": 539.739730376105,
+            "path": "state.playerX",
+            "tick": 42,
+            "to": 540.0005278445789
+          },
+          {
+            "from": 540.0005278445789,
+            "path": "state.playerX",
+            "tick": 43,
+            "to": 540.1790498622994
+          },
+          {
+            "from": 540.1790498622994,
+            "path": "state.playerX",
+            "tick": 44,
+            "to": 540.2821107590648
+          },
+          {
+            "from": 540.2821107590648,
+            "path": "state.playerX",
+            "tick": 45,
+            "to": 540.3158557719768
+          },
+          {
+            "from": 540.3158557719768,
+            "path": "state.playerX",
+            "tick": 46,
+            "to": 540.285826910377
+          },
+          {
+            "from": 540.285826910377,
+            "path": "state.playerX",
+            "tick": 47,
+            "to": 540.1970223400859
+          },
+          {
+            "from": 540.1970223400859,
+            "path": "state.playerX",
+            "tick": 48,
+            "to": 540.0539499246001
+          },
+          {
+            "from": 540.0539499246001,
+            "path": "state.playerX",
+            "tick": 49,
+            "to": 539.8606754981623
+          },
+          {
+            "from": 539.8606754981623,
+            "path": "state.playerX",
+            "tick": 50,
+            "to": 539.6208663890526
+          },
+          {
+            "from": 539.6208663890526,
+            "path": "state.playerX",
+            "tick": 51,
+            "to": 539.3378306604452
+          },
+          {
+            "from": 539.3378306604452,
+            "path": "state.playerX",
+            "tick": 52,
+            "to": 539.0145524901932
+          },
+          {
+            "from": 539.0145524901932,
+            "path": "state.playerX",
+            "tick": 53,
+            "to": 538.6537240694433
+          },
+          {
+            "from": 538.6537240694433,
+            "path": "state.playerX",
+            "tick": 54,
+            "to": 538.2577743626042
+          },
+          {
+            "from": 538.2577743626042,
+            "path": "state.playerX",
+            "tick": 55,
+            "to": 537.8288950374882
+          },
+          {
+            "from": 537.8288950374882,
+            "path": "state.playerX",
+            "tick": 56,
+            "to": 537.3690638440622
+          },
+          {
+            "from": 537.3690638440622,
+            "path": "state.playerX",
+            "tick": 57,
+            "to": 536.8800656928465
+          },
+          {
+            "from": 536.8800656928465,
+            "path": "state.playerX",
+            "tick": 58,
+            "to": 536.3635116592997
+          },
+          {
+            "from": 536.3635116592997,
+            "path": "state.playerX",
+            "tick": 59,
+            "to": 535.8208561182573
+          }
+        ],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 90210,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.3.4",
+            "randomState": 90210,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [
+          {
+            "from": 54.5747863191757,
+            "path": "state.playerX",
+            "tick": 1,
+            "to": 103.7778163316026
+          },
+          {
+            "from": 103.7778163316026,
+            "path": "state.playerX",
+            "tick": 2,
+            "to": 148.1363231234952
+          },
+          {
+            "from": 148.1363231234952,
+            "path": "state.playerX",
+            "tick": 3,
+            "to": 188.12566369627382
+          },
+          {
+            "from": 188.12566369627382,
+            "path": "state.playerX",
+            "tick": 4,
+            "to": 224.17442325334582
+          },
+          {
+            "from": 224.17442325334582,
+            "path": "state.playerX",
+            "tick": 5,
+            "to": 256.66901725964755
+          },
+          {
+            "from": 256.66901725964755,
+            "path": "state.playerX",
+            "tick": 6,
+            "to": 285.95784068970363
+          },
+          {
+            "from": 285.95784068970363,
+            "path": "state.playerX",
+            "tick": 7,
+            "to": 312.3550090177854
+          },
+          {
+            "from": 312.3550090177854,
+            "path": "state.playerX",
+            "tick": 8,
+            "to": 336.14373111997844
+          },
+          {
+            "from": 336.14373111997844,
+            "path": "state.playerX",
+            "tick": 9,
+            "to": 357.5793503055334
+          },
+          {
+            "from": 357.5793503055334,
+            "path": "state.playerX",
+            "tick": 10,
+            "to": 376.8920861313289
+          },
+          {
+            "from": 376.8920861313289,
+            "path": "state.playerX",
+            "tick": 11,
+            "to": 394.2895064403603
+          },
+          {
+            "from": 394.2895064403603,
+            "path": "state.playerX",
+            "tick": 12,
+            "to": 409.9587561683823
+          },
+          {
+            "from": 409.9587561683823,
+            "path": "state.playerX",
+            "tick": 13,
+            "to": 424.06856685106914
+          },
+          {
+            "from": 424.06856685106914,
+            "path": "state.playerX",
+            "tick": 14,
+            "to": 436.77106840927615
+          },
+          {
+            "from": 436.77106840927615,
+            "path": "state.playerX",
+            "tick": 15,
+            "to": 448.2034226668963
+          },
+          {
+            "from": 448.2034226668963,
+            "path": "state.playerX",
+            "tick": 16,
+            "to": 458.48929614161614
+          },
+          {
+            "from": 458.48929614161614,
+            "path": "state.playerX",
+            "tick": 17,
+            "to": 467.74018792302815
+          },
+          {
+            "from": 467.74018792302815,
+            "path": "state.playerX",
+            "tick": 18,
+            "to": 476.0566268965209
+          },
+          {
+            "from": 476.0566268965209,
+            "path": "state.playerX",
+            "tick": 19,
+            "to": 483.52925116843693
+          },
+          {
+            "from": 483.52925116843693,
+            "path": "state.playerX",
+            "tick": 20,
+            "to": 490.2397812830937
+          },
+          {
+            "from": 490.2397812830937,
+            "path": "state.playerX",
+            "tick": 21,
+            "to": 496.26189768182957
+          },
+          {
+            "from": 496.26189768182957,
+            "path": "state.playerX",
+            "tick": 22,
+            "to": 501.6620318260086
+          },
+          {
+            "from": 501.6620318260086,
+            "path": "state.playerX",
+            "tick": 23,
+            "to": 506.5000794788656
+          },
+          {
+            "from": 506.5000794788656,
+            "path": "state.playerX",
+            "tick": 24,
+            "to": 510.83004380523295
+          },
+          {
+            "from": 510.83004380523295,
+            "path": "state.playerX",
+            "tick": 25,
+            "to": 514.7006151945944
+          },
+          {
+            "from": 514.7006151945944,
+            "path": "state.playerX",
+            "tick": 26,
+            "to": 518.1556940334594
+          },
+          {
+            "from": 518.1556940334594,
+            "path": "state.playerX",
+            "tick": 27,
+            "to": 521.2348620404591
+          },
+          {
+            "from": 521.2348620404591,
+            "path": "state.playerX",
+            "tick": 28,
+            "to": 523.973807225242
+          },
+          {
+            "from": 523.973807225242,
+            "path": "state.playerX",
+            "tick": 29,
+            "to": 526.4047070342726
+          },
+          {
+            "from": 526.4047070342726,
+            "path": "state.playerX",
+            "tick": 30,
+            "to": 528.5565737976583
+          },
+          {
+            "from": 528.5565737976583,
+            "path": "state.playerX",
+            "tick": 31,
+            "to": 530.455566186326
+          },
+          {
+            "from": 530.455566186326,
+            "path": "state.playerX",
+            "tick": 32,
+            "to": 532.1252700239004
+          },
+          {
+            "from": 532.1252700239004,
+            "path": "state.playerX",
+            "tick": 33,
+            "to": 533.5869514685718
+          },
+          {
+            "from": 533.5869514685718,
+            "path": "state.playerX",
+            "tick": 34,
+            "to": 534.8597852835594
+          },
+          {
+            "from": 534.8597852835594,
+            "path": "state.playerX",
+            "tick": 35,
+            "to": 535.9610606472821
+          },
+          {
+            "from": 535.9610606472821,
+            "path": "state.playerX",
+            "tick": 36,
+            "to": 536.9063667131766
+          },
+          {
+            "from": 536.9063667131766,
+            "path": "state.playerX",
+            "tick": 37,
+            "to": 537.7097599116602
+          },
+          {
+            "from": 537.7097599116602,
+            "path": "state.playerX",
+            "tick": 38,
+            "to": 538.3839147906868
+          },
+          {
+            "from": 538.3839147906868,
+            "path": "state.playerX",
+            "tick": 39,
+            "to": 538.9402600145853
+          },
+          {
+            "from": 538.9402600145853,
+            "path": "state.playerX",
+            "tick": 40,
+            "to": 539.3891009815048
+          },
+          {
+            "from": 539.3891009815048,
+            "path": "state.playerX",
+            "tick": 41,
+            "to": 539.739730376105
+          },
+          {
+            "from": 539.739730376105,
+            "path": "state.playerX",
+            "tick": 42,
+            "to": 540.0005278445789
+          },
+          {
+            "from": 540.0005278445789,
+            "path": "state.playerX",
+            "tick": 43,
+            "to": 540.1790498622994
+          },
+          {
+            "from": 540.1790498622994,
+            "path": "state.playerX",
+            "tick": 44,
+            "to": 540.2821107590648
+          },
+          {
+            "from": 540.2821107590648,
+            "path": "state.playerX",
+            "tick": 45,
+            "to": 540.3158557719768
+          },
+          {
+            "from": 540.3158557719768,
+            "path": "state.playerX",
+            "tick": 46,
+            "to": 540.285826910377
+          },
+          {
+            "from": 540.285826910377,
+            "path": "state.playerX",
+            "tick": 47,
+            "to": 540.1970223400859
+          },
+          {
+            "from": 540.1970223400859,
+            "path": "state.playerX",
+            "tick": 48,
+            "to": 540.0539499246001
+          },
+          {
+            "from": 540.0539499246001,
+            "path": "state.playerX",
+            "tick": 49,
+            "to": 539.8606754981623
+          },
+          {
+            "from": 539.8606754981623,
+            "path": "state.playerX",
+            "tick": 50,
+            "to": 539.6208663890526
+          },
+          {
+            "from": 539.6208663890526,
+            "path": "state.playerX",
+            "tick": 51,
+            "to": 539.3378306604452
+          },
+          {
+            "from": 539.3378306604452,
+            "path": "state.playerX",
+            "tick": 52,
+            "to": 539.0145524901932
+          },
+          {
+            "from": 539.0145524901932,
+            "path": "state.playerX",
+            "tick": 53,
+            "to": 538.6537240694433
+          },
+          {
+            "from": 538.6537240694433,
+            "path": "state.playerX",
+            "tick": 54,
+            "to": 538.2577743626042
+          },
+          {
+            "from": 538.2577743626042,
+            "path": "state.playerX",
+            "tick": 55,
+            "to": 537.8288950374882
+          },
+          {
+            "from": 537.8288950374882,
+            "path": "state.playerX",
+            "tick": 56,
+            "to": 537.3690638440622
+          },
+          {
+            "from": 537.3690638440622,
+            "path": "state.playerX",
+            "tick": 57,
+            "to": 536.8800656928465
+          },
+          {
+            "from": 536.8800656928465,
+            "path": "state.playerX",
+            "tick": 58,
+            "to": 536.3635116592997
+          },
+          {
+            "from": 536.3635116592997,
+            "path": "state.playerX",
+            "tick": 59,
+            "to": 535.8208561182573
+          },
+          {
+            "from": 17.36576146304585,
+            "path": "state.fps",
+            "tick": 60,
+            "to": 29.792560332039663
+          },
+          {
+            "from": 535.8208561182573,
+            "path": "state.playerX",
+            "tick": 60,
+            "to": 535.2534121924155
+          },
+          {
+            "from": 29.792560332039663,
+            "path": "state.fps",
+            "tick": 61,
+            "to": 28.523055462958073
+          },
+          {
+            "from": 535.2534121924155,
+            "path": "state.playerX",
+            "tick": 61,
+            "to": 534.6623656807424
+          },
+          {
+            "from": 28.523055462958073,
+            "path": "state.fps",
+            "tick": 62,
+            "to": 28.26365774680352
+          },
+          {
+            "from": 534.6623656807424,
+            "path": "state.playerX",
+            "tick": 62,
+            "to": 534.0487876163845
+          },
+          {
+            "from": 28.26365774680352,
+            "path": "state.fps",
+            "tick": 63,
+            "to": 28.83298032090339
+          },
+          {
+            "from": 534.0487876163845,
+            "path": "state.playerX",
+            "tick": 63,
+            "to": 533.4136455889135
+          },
+          {
+            "from": 28.83298032090339,
+            "path": "state.fps",
+            "tick": 64,
+            "to": 28.746307940915386
+          },
+          {
+            "from": 533.4136455889135,
+            "path": "state.playerX",
+            "tick": 64,
+            "to": 532.7578139524942
+          }
+        ],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 90210,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.3.4",
+            "randomState": 90210,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplaySeries": [
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [
+              {
+                "from": 54.5747863191757,
+                "path": "state.playerX",
+                "tick": 1,
+                "to": 103.7778163316026
+              },
+              {
+                "from": 103.7778163316026,
+                "path": "state.playerX",
+                "tick": 2,
+                "to": 148.1363231234952
+              },
+              {
+                "from": 148.1363231234952,
+                "path": "state.playerX",
+                "tick": 3,
+                "to": 188.12566369627382
+              },
+              {
+                "from": 188.12566369627382,
+                "path": "state.playerX",
+                "tick": 4,
+                "to": 224.17442325334582
+              },
+              {
+                "from": 224.17442325334582,
+                "path": "state.playerX",
+                "tick": 5,
+                "to": 256.66901725964755
+              },
+              {
+                "from": 256.66901725964755,
+                "path": "state.playerX",
+                "tick": 6,
+                "to": 285.95784068970363
+              },
+              {
+                "from": 285.95784068970363,
+                "path": "state.playerX",
+                "tick": 7,
+                "to": 312.3550090177854
+              },
+              {
+                "from": 312.3550090177854,
+                "path": "state.playerX",
+                "tick": 8,
+                "to": 336.14373111997844
+              },
+              {
+                "from": 336.14373111997844,
+                "path": "state.playerX",
+                "tick": 9,
+                "to": 357.5793503055334
+              },
+              {
+                "from": 357.5793503055334,
+                "path": "state.playerX",
+                "tick": 10,
+                "to": 376.8920861313289
+              },
+              {
+                "from": 376.8920861313289,
+                "path": "state.playerX",
+                "tick": 11,
+                "to": 394.2895064403603
+              },
+              {
+                "from": 394.2895064403603,
+                "path": "state.playerX",
+                "tick": 12,
+                "to": 409.9587561683823
+              },
+              {
+                "from": 409.9587561683823,
+                "path": "state.playerX",
+                "tick": 13,
+                "to": 424.06856685106914
+              },
+              {
+                "from": 424.06856685106914,
+                "path": "state.playerX",
+                "tick": 14,
+                "to": 436.77106840927615
+              },
+              {
+                "from": 436.77106840927615,
+                "path": "state.playerX",
+                "tick": 15,
+                "to": 448.2034226668963
+              },
+              {
+                "from": 448.2034226668963,
+                "path": "state.playerX",
+                "tick": 16,
+                "to": 458.48929614161614
+              },
+              {
+                "from": 458.48929614161614,
+                "path": "state.playerX",
+                "tick": 17,
+                "to": 467.74018792302815
+              },
+              {
+                "from": 467.74018792302815,
+                "path": "state.playerX",
+                "tick": 18,
+                "to": 476.0566268965209
+              },
+              {
+                "from": 476.0566268965209,
+                "path": "state.playerX",
+                "tick": 19,
+                "to": 483.52925116843693
+              },
+              {
+                "from": 483.52925116843693,
+                "path": "state.playerX",
+                "tick": 20,
+                "to": 490.2397812830937
+              },
+              {
+                "from": 490.2397812830937,
+                "path": "state.playerX",
+                "tick": 21,
+                "to": 496.26189768182957
+              },
+              {
+                "from": 496.26189768182957,
+                "path": "state.playerX",
+                "tick": 22,
+                "to": 501.6620318260086
+              },
+              {
+                "from": 501.6620318260086,
+                "path": "state.playerX",
+                "tick": 23,
+                "to": 506.5000794788656
+              },
+              {
+                "from": 506.5000794788656,
+                "path": "state.playerX",
+                "tick": 24,
+                "to": 510.83004380523295
+              },
+              {
+                "from": 510.83004380523295,
+                "path": "state.playerX",
+                "tick": 25,
+                "to": 514.7006151945944
+              },
+              {
+                "from": 514.7006151945944,
+                "path": "state.playerX",
+                "tick": 26,
+                "to": 518.1556940334594
+              },
+              {
+                "from": 518.1556940334594,
+                "path": "state.playerX",
+                "tick": 27,
+                "to": 521.2348620404591
+              },
+              {
+                "from": 521.2348620404591,
+                "path": "state.playerX",
+                "tick": 28,
+                "to": 523.973807225242
+              },
+              {
+                "from": 523.973807225242,
+                "path": "state.playerX",
+                "tick": 29,
+                "to": 526.4047070342726
+              },
+              {
+                "from": 526.4047070342726,
+                "path": "state.playerX",
+                "tick": 30,
+                "to": 528.5565737976583
+              },
+              {
+                "from": 528.5565737976583,
+                "path": "state.playerX",
+                "tick": 31,
+                "to": 530.455566186326
+              },
+              {
+                "from": 530.455566186326,
+                "path": "state.playerX",
+                "tick": 32,
+                "to": 532.1252700239004
+              },
+              {
+                "from": 532.1252700239004,
+                "path": "state.playerX",
+                "tick": 33,
+                "to": 533.5869514685718
+              },
+              {
+                "from": 533.5869514685718,
+                "path": "state.playerX",
+                "tick": 34,
+                "to": 534.8597852835594
+              },
+              {
+                "from": 534.8597852835594,
+                "path": "state.playerX",
+                "tick": 35,
+                "to": 535.9610606472821
+              },
+              {
+                "from": 535.9610606472821,
+                "path": "state.playerX",
+                "tick": 36,
+                "to": 536.9063667131766
+              },
+              {
+                "from": 536.9063667131766,
+                "path": "state.playerX",
+                "tick": 37,
+                "to": 537.7097599116602
+              },
+              {
+                "from": 537.7097599116602,
+                "path": "state.playerX",
+                "tick": 38,
+                "to": 538.3839147906868
+              },
+              {
+                "from": 538.3839147906868,
+                "path": "state.playerX",
+                "tick": 39,
+                "to": 538.9402600145853
+              },
+              {
+                "from": 538.9402600145853,
+                "path": "state.playerX",
+                "tick": 40,
+                "to": 539.3891009815048
+              },
+              {
+                "from": 539.3891009815048,
+                "path": "state.playerX",
+                "tick": 41,
+                "to": 539.739730376105
+              },
+              {
+                "from": 539.739730376105,
+                "path": "state.playerX",
+                "tick": 42,
+                "to": 540.0005278445789
+              },
+              {
+                "from": 540.0005278445789,
+                "path": "state.playerX",
+                "tick": 43,
+                "to": 540.1790498622994
+              },
+              {
+                "from": 540.1790498622994,
+                "path": "state.playerX",
+                "tick": 44,
+                "to": 540.2821107590648
+              },
+              {
+                "from": 540.2821107590648,
+                "path": "state.playerX",
+                "tick": 45,
+                "to": 540.3158557719768
+              },
+              {
+                "from": 540.3158557719768,
+                "path": "state.playerX",
+                "tick": 46,
+                "to": 540.285826910377
+              },
+              {
+                "from": 540.285826910377,
+                "path": "state.playerX",
+                "tick": 47,
+                "to": 540.1970223400859
+              },
+              {
+                "from": 540.1970223400859,
+                "path": "state.playerX",
+                "tick": 48,
+                "to": 540.0539499246001
+              },
+              {
+                "from": 540.0539499246001,
+                "path": "state.playerX",
+                "tick": 49,
+                "to": 539.8606754981623
+              },
+              {
+                "from": 539.8606754981623,
+                "path": "state.playerX",
+                "tick": 50,
+                "to": 539.6208663890526
+              },
+              {
+                "from": 539.6208663890526,
+                "path": "state.playerX",
+                "tick": 51,
+                "to": 539.3378306604452
+              },
+              {
+                "from": 539.3378306604452,
+                "path": "state.playerX",
+                "tick": 52,
+                "to": 539.0145524901932
+              },
+              {
+                "from": 539.0145524901932,
+                "path": "state.playerX",
+                "tick": 53,
+                "to": 538.6537240694433
+              },
+              {
+                "from": 538.6537240694433,
+                "path": "state.playerX",
+                "tick": 54,
+                "to": 538.2577743626042
+              },
+              {
+                "from": 538.2577743626042,
+                "path": "state.playerX",
+                "tick": 55,
+                "to": 537.8288950374882
+              },
+              {
+                "from": 537.8288950374882,
+                "path": "state.playerX",
+                "tick": 56,
+                "to": 537.3690638440622
+              },
+              {
+                "from": 537.3690638440622,
+                "path": "state.playerX",
+                "tick": 57,
+                "to": 536.8800656928465
+              },
+              {
+                "from": 536.8800656928465,
+                "path": "state.playerX",
+                "tick": 58,
+                "to": 536.3635116592997
+              },
+              {
+                "from": 536.3635116592997,
+                "path": "state.playerX",
+                "tick": 59,
+                "to": 535.8208561182573
+              },
+              {
+                "from": 17.36576146304585,
+                "path": "state.fps",
+                "tick": 60,
+                "to": 29.792560332039663
+              },
+              {
+                "from": 535.8208561182573,
+                "path": "state.playerX",
+                "tick": 60,
+                "to": 535.2534121924155
+              }
+            ],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 90210,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 90210,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "frame-1",
+          "tick": 61
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [
+              {
+                "from": 54.5747863191757,
+                "path": "state.playerX",
+                "tick": 1,
+                "to": 103.7778163316026
+              },
+              {
+                "from": 103.7778163316026,
+                "path": "state.playerX",
+                "tick": 2,
+                "to": 148.1363231234952
+              },
+              {
+                "from": 148.1363231234952,
+                "path": "state.playerX",
+                "tick": 3,
+                "to": 188.12566369627382
+              },
+              {
+                "from": 188.12566369627382,
+                "path": "state.playerX",
+                "tick": 4,
+                "to": 224.17442325334582
+              },
+              {
+                "from": 224.17442325334582,
+                "path": "state.playerX",
+                "tick": 5,
+                "to": 256.66901725964755
+              },
+              {
+                "from": 256.66901725964755,
+                "path": "state.playerX",
+                "tick": 6,
+                "to": 285.95784068970363
+              },
+              {
+                "from": 285.95784068970363,
+                "path": "state.playerX",
+                "tick": 7,
+                "to": 312.3550090177854
+              },
+              {
+                "from": 312.3550090177854,
+                "path": "state.playerX",
+                "tick": 8,
+                "to": 336.14373111997844
+              },
+              {
+                "from": 336.14373111997844,
+                "path": "state.playerX",
+                "tick": 9,
+                "to": 357.5793503055334
+              },
+              {
+                "from": 357.5793503055334,
+                "path": "state.playerX",
+                "tick": 10,
+                "to": 376.8920861313289
+              },
+              {
+                "from": 376.8920861313289,
+                "path": "state.playerX",
+                "tick": 11,
+                "to": 394.2895064403603
+              },
+              {
+                "from": 394.2895064403603,
+                "path": "state.playerX",
+                "tick": 12,
+                "to": 409.9587561683823
+              },
+              {
+                "from": 409.9587561683823,
+                "path": "state.playerX",
+                "tick": 13,
+                "to": 424.06856685106914
+              },
+              {
+                "from": 424.06856685106914,
+                "path": "state.playerX",
+                "tick": 14,
+                "to": 436.77106840927615
+              },
+              {
+                "from": 436.77106840927615,
+                "path": "state.playerX",
+                "tick": 15,
+                "to": 448.2034226668963
+              },
+              {
+                "from": 448.2034226668963,
+                "path": "state.playerX",
+                "tick": 16,
+                "to": 458.48929614161614
+              },
+              {
+                "from": 458.48929614161614,
+                "path": "state.playerX",
+                "tick": 17,
+                "to": 467.74018792302815
+              },
+              {
+                "from": 467.74018792302815,
+                "path": "state.playerX",
+                "tick": 18,
+                "to": 476.0566268965209
+              },
+              {
+                "from": 476.0566268965209,
+                "path": "state.playerX",
+                "tick": 19,
+                "to": 483.52925116843693
+              },
+              {
+                "from": 483.52925116843693,
+                "path": "state.playerX",
+                "tick": 20,
+                "to": 490.2397812830937
+              },
+              {
+                "from": 490.2397812830937,
+                "path": "state.playerX",
+                "tick": 21,
+                "to": 496.26189768182957
+              },
+              {
+                "from": 496.26189768182957,
+                "path": "state.playerX",
+                "tick": 22,
+                "to": 501.6620318260086
+              },
+              {
+                "from": 501.6620318260086,
+                "path": "state.playerX",
+                "tick": 23,
+                "to": 506.5000794788656
+              },
+              {
+                "from": 506.5000794788656,
+                "path": "state.playerX",
+                "tick": 24,
+                "to": 510.83004380523295
+              },
+              {
+                "from": 510.83004380523295,
+                "path": "state.playerX",
+                "tick": 25,
+                "to": 514.7006151945944
+              },
+              {
+                "from": 514.7006151945944,
+                "path": "state.playerX",
+                "tick": 26,
+                "to": 518.1556940334594
+              },
+              {
+                "from": 518.1556940334594,
+                "path": "state.playerX",
+                "tick": 27,
+                "to": 521.2348620404591
+              },
+              {
+                "from": 521.2348620404591,
+                "path": "state.playerX",
+                "tick": 28,
+                "to": 523.973807225242
+              },
+              {
+                "from": 523.973807225242,
+                "path": "state.playerX",
+                "tick": 29,
+                "to": 526.4047070342726
+              },
+              {
+                "from": 526.4047070342726,
+                "path": "state.playerX",
+                "tick": 30,
+                "to": 528.5565737976583
+              },
+              {
+                "from": 528.5565737976583,
+                "path": "state.playerX",
+                "tick": 31,
+                "to": 530.455566186326
+              },
+              {
+                "from": 530.455566186326,
+                "path": "state.playerX",
+                "tick": 32,
+                "to": 532.1252700239004
+              },
+              {
+                "from": 532.1252700239004,
+                "path": "state.playerX",
+                "tick": 33,
+                "to": 533.5869514685718
+              },
+              {
+                "from": 533.5869514685718,
+                "path": "state.playerX",
+                "tick": 34,
+                "to": 534.8597852835594
+              },
+              {
+                "from": 534.8597852835594,
+                "path": "state.playerX",
+                "tick": 35,
+                "to": 535.9610606472821
+              },
+              {
+                "from": 535.9610606472821,
+                "path": "state.playerX",
+                "tick": 36,
+                "to": 536.9063667131766
+              },
+              {
+                "from": 536.9063667131766,
+                "path": "state.playerX",
+                "tick": 37,
+                "to": 537.7097599116602
+              },
+              {
+                "from": 537.7097599116602,
+                "path": "state.playerX",
+                "tick": 38,
+                "to": 538.3839147906868
+              },
+              {
+                "from": 538.3839147906868,
+                "path": "state.playerX",
+                "tick": 39,
+                "to": 538.9402600145853
+              },
+              {
+                "from": 538.9402600145853,
+                "path": "state.playerX",
+                "tick": 40,
+                "to": 539.3891009815048
+              },
+              {
+                "from": 539.3891009815048,
+                "path": "state.playerX",
+                "tick": 41,
+                "to": 539.739730376105
+              },
+              {
+                "from": 539.739730376105,
+                "path": "state.playerX",
+                "tick": 42,
+                "to": 540.0005278445789
+              },
+              {
+                "from": 540.0005278445789,
+                "path": "state.playerX",
+                "tick": 43,
+                "to": 540.1790498622994
+              },
+              {
+                "from": 540.1790498622994,
+                "path": "state.playerX",
+                "tick": 44,
+                "to": 540.2821107590648
+              },
+              {
+                "from": 540.2821107590648,
+                "path": "state.playerX",
+                "tick": 45,
+                "to": 540.3158557719768
+              },
+              {
+                "from": 540.3158557719768,
+                "path": "state.playerX",
+                "tick": 46,
+                "to": 540.285826910377
+              },
+              {
+                "from": 540.285826910377,
+                "path": "state.playerX",
+                "tick": 47,
+                "to": 540.1970223400859
+              },
+              {
+                "from": 540.1970223400859,
+                "path": "state.playerX",
+                "tick": 48,
+                "to": 540.0539499246001
+              },
+              {
+                "from": 540.0539499246001,
+                "path": "state.playerX",
+                "tick": 49,
+                "to": 539.8606754981623
+              },
+              {
+                "from": 539.8606754981623,
+                "path": "state.playerX",
+                "tick": 50,
+                "to": 539.6208663890526
+              },
+              {
+                "from": 539.6208663890526,
+                "path": "state.playerX",
+                "tick": 51,
+                "to": 539.3378306604452
+              },
+              {
+                "from": 539.3378306604452,
+                "path": "state.playerX",
+                "tick": 52,
+                "to": 539.0145524901932
+              },
+              {
+                "from": 539.0145524901932,
+                "path": "state.playerX",
+                "tick": 53,
+                "to": 538.6537240694433
+              },
+              {
+                "from": 538.6537240694433,
+                "path": "state.playerX",
+                "tick": 54,
+                "to": 538.2577743626042
+              },
+              {
+                "from": 538.2577743626042,
+                "path": "state.playerX",
+                "tick": 55,
+                "to": 537.8288950374882
+              },
+              {
+                "from": 537.8288950374882,
+                "path": "state.playerX",
+                "tick": 56,
+                "to": 537.3690638440622
+              },
+              {
+                "from": 537.3690638440622,
+                "path": "state.playerX",
+                "tick": 57,
+                "to": 536.8800656928465
+              },
+              {
+                "from": 536.8800656928465,
+                "path": "state.playerX",
+                "tick": 58,
+                "to": 536.3635116592997
+              },
+              {
+                "from": 536.3635116592997,
+                "path": "state.playerX",
+                "tick": 59,
+                "to": 535.8208561182573
+              },
+              {
+                "from": 17.36576146304585,
+                "path": "state.fps",
+                "tick": 60,
+                "to": 29.792560332039663
+              },
+              {
+                "from": 535.8208561182573,
+                "path": "state.playerX",
+                "tick": 60,
+                "to": 535.2534121924155
+              },
+              {
+                "from": 29.792560332039663,
+                "path": "state.fps",
+                "tick": 61,
+                "to": 28.523055462958073
+              },
+              {
+                "from": 535.2534121924155,
+                "path": "state.playerX",
+                "tick": 61,
+                "to": 534.6623656807424
+              }
+            ],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 90210,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 90210,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "frame-2",
+          "tick": 62
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [
+              {
+                "from": 54.5747863191757,
+                "path": "state.playerX",
+                "tick": 1,
+                "to": 103.7778163316026
+              },
+              {
+                "from": 103.7778163316026,
+                "path": "state.playerX",
+                "tick": 2,
+                "to": 148.1363231234952
+              },
+              {
+                "from": 148.1363231234952,
+                "path": "state.playerX",
+                "tick": 3,
+                "to": 188.12566369627382
+              },
+              {
+                "from": 188.12566369627382,
+                "path": "state.playerX",
+                "tick": 4,
+                "to": 224.17442325334582
+              },
+              {
+                "from": 224.17442325334582,
+                "path": "state.playerX",
+                "tick": 5,
+                "to": 256.66901725964755
+              },
+              {
+                "from": 256.66901725964755,
+                "path": "state.playerX",
+                "tick": 6,
+                "to": 285.95784068970363
+              },
+              {
+                "from": 285.95784068970363,
+                "path": "state.playerX",
+                "tick": 7,
+                "to": 312.3550090177854
+              },
+              {
+                "from": 312.3550090177854,
+                "path": "state.playerX",
+                "tick": 8,
+                "to": 336.14373111997844
+              },
+              {
+                "from": 336.14373111997844,
+                "path": "state.playerX",
+                "tick": 9,
+                "to": 357.5793503055334
+              },
+              {
+                "from": 357.5793503055334,
+                "path": "state.playerX",
+                "tick": 10,
+                "to": 376.8920861313289
+              },
+              {
+                "from": 376.8920861313289,
+                "path": "state.playerX",
+                "tick": 11,
+                "to": 394.2895064403603
+              },
+              {
+                "from": 394.2895064403603,
+                "path": "state.playerX",
+                "tick": 12,
+                "to": 409.9587561683823
+              },
+              {
+                "from": 409.9587561683823,
+                "path": "state.playerX",
+                "tick": 13,
+                "to": 424.06856685106914
+              },
+              {
+                "from": 424.06856685106914,
+                "path": "state.playerX",
+                "tick": 14,
+                "to": 436.77106840927615
+              },
+              {
+                "from": 436.77106840927615,
+                "path": "state.playerX",
+                "tick": 15,
+                "to": 448.2034226668963
+              },
+              {
+                "from": 448.2034226668963,
+                "path": "state.playerX",
+                "tick": 16,
+                "to": 458.48929614161614
+              },
+              {
+                "from": 458.48929614161614,
+                "path": "state.playerX",
+                "tick": 17,
+                "to": 467.74018792302815
+              },
+              {
+                "from": 467.74018792302815,
+                "path": "state.playerX",
+                "tick": 18,
+                "to": 476.0566268965209
+              },
+              {
+                "from": 476.0566268965209,
+                "path": "state.playerX",
+                "tick": 19,
+                "to": 483.52925116843693
+              },
+              {
+                "from": 483.52925116843693,
+                "path": "state.playerX",
+                "tick": 20,
+                "to": 490.2397812830937
+              },
+              {
+                "from": 490.2397812830937,
+                "path": "state.playerX",
+                "tick": 21,
+                "to": 496.26189768182957
+              },
+              {
+                "from": 496.26189768182957,
+                "path": "state.playerX",
+                "tick": 22,
+                "to": 501.6620318260086
+              },
+              {
+                "from": 501.6620318260086,
+                "path": "state.playerX",
+                "tick": 23,
+                "to": 506.5000794788656
+              },
+              {
+                "from": 506.5000794788656,
+                "path": "state.playerX",
+                "tick": 24,
+                "to": 510.83004380523295
+              },
+              {
+                "from": 510.83004380523295,
+                "path": "state.playerX",
+                "tick": 25,
+                "to": 514.7006151945944
+              },
+              {
+                "from": 514.7006151945944,
+                "path": "state.playerX",
+                "tick": 26,
+                "to": 518.1556940334594
+              },
+              {
+                "from": 518.1556940334594,
+                "path": "state.playerX",
+                "tick": 27,
+                "to": 521.2348620404591
+              },
+              {
+                "from": 521.2348620404591,
+                "path": "state.playerX",
+                "tick": 28,
+                "to": 523.973807225242
+              },
+              {
+                "from": 523.973807225242,
+                "path": "state.playerX",
+                "tick": 29,
+                "to": 526.4047070342726
+              },
+              {
+                "from": 526.4047070342726,
+                "path": "state.playerX",
+                "tick": 30,
+                "to": 528.5565737976583
+              },
+              {
+                "from": 528.5565737976583,
+                "path": "state.playerX",
+                "tick": 31,
+                "to": 530.455566186326
+              },
+              {
+                "from": 530.455566186326,
+                "path": "state.playerX",
+                "tick": 32,
+                "to": 532.1252700239004
+              },
+              {
+                "from": 532.1252700239004,
+                "path": "state.playerX",
+                "tick": 33,
+                "to": 533.5869514685718
+              },
+              {
+                "from": 533.5869514685718,
+                "path": "state.playerX",
+                "tick": 34,
+                "to": 534.8597852835594
+              },
+              {
+                "from": 534.8597852835594,
+                "path": "state.playerX",
+                "tick": 35,
+                "to": 535.9610606472821
+              },
+              {
+                "from": 535.9610606472821,
+                "path": "state.playerX",
+                "tick": 36,
+                "to": 536.9063667131766
+              },
+              {
+                "from": 536.9063667131766,
+                "path": "state.playerX",
+                "tick": 37,
+                "to": 537.7097599116602
+              },
+              {
+                "from": 537.7097599116602,
+                "path": "state.playerX",
+                "tick": 38,
+                "to": 538.3839147906868
+              },
+              {
+                "from": 538.3839147906868,
+                "path": "state.playerX",
+                "tick": 39,
+                "to": 538.9402600145853
+              },
+              {
+                "from": 538.9402600145853,
+                "path": "state.playerX",
+                "tick": 40,
+                "to": 539.3891009815048
+              },
+              {
+                "from": 539.3891009815048,
+                "path": "state.playerX",
+                "tick": 41,
+                "to": 539.739730376105
+              },
+              {
+                "from": 539.739730376105,
+                "path": "state.playerX",
+                "tick": 42,
+                "to": 540.0005278445789
+              },
+              {
+                "from": 540.0005278445789,
+                "path": "state.playerX",
+                "tick": 43,
+                "to": 540.1790498622994
+              },
+              {
+                "from": 540.1790498622994,
+                "path": "state.playerX",
+                "tick": 44,
+                "to": 540.2821107590648
+              },
+              {
+                "from": 540.2821107590648,
+                "path": "state.playerX",
+                "tick": 45,
+                "to": 540.3158557719768
+              },
+              {
+                "from": 540.3158557719768,
+                "path": "state.playerX",
+                "tick": 46,
+                "to": 540.285826910377
+              },
+              {
+                "from": 540.285826910377,
+                "path": "state.playerX",
+                "tick": 47,
+                "to": 540.1970223400859
+              },
+              {
+                "from": 540.1970223400859,
+                "path": "state.playerX",
+                "tick": 48,
+                "to": 540.0539499246001
+              },
+              {
+                "from": 540.0539499246001,
+                "path": "state.playerX",
+                "tick": 49,
+                "to": 539.8606754981623
+              },
+              {
+                "from": 539.8606754981623,
+                "path": "state.playerX",
+                "tick": 50,
+                "to": 539.6208663890526
+              },
+              {
+                "from": 539.6208663890526,
+                "path": "state.playerX",
+                "tick": 51,
+                "to": 539.3378306604452
+              },
+              {
+                "from": 539.3378306604452,
+                "path": "state.playerX",
+                "tick": 52,
+                "to": 539.0145524901932
+              },
+              {
+                "from": 539.0145524901932,
+                "path": "state.playerX",
+                "tick": 53,
+                "to": 538.6537240694433
+              },
+              {
+                "from": 538.6537240694433,
+                "path": "state.playerX",
+                "tick": 54,
+                "to": 538.2577743626042
+              },
+              {
+                "from": 538.2577743626042,
+                "path": "state.playerX",
+                "tick": 55,
+                "to": 537.8288950374882
+              },
+              {
+                "from": 537.8288950374882,
+                "path": "state.playerX",
+                "tick": 56,
+                "to": 537.3690638440622
+              },
+              {
+                "from": 537.3690638440622,
+                "path": "state.playerX",
+                "tick": 57,
+                "to": 536.8800656928465
+              },
+              {
+                "from": 536.8800656928465,
+                "path": "state.playerX",
+                "tick": 58,
+                "to": 536.3635116592997
+              },
+              {
+                "from": 536.3635116592997,
+                "path": "state.playerX",
+                "tick": 59,
+                "to": 535.8208561182573
+              },
+              {
+                "from": 17.36576146304585,
+                "path": "state.fps",
+                "tick": 60,
+                "to": 29.792560332039663
+              },
+              {
+                "from": 535.8208561182573,
+                "path": "state.playerX",
+                "tick": 60,
+                "to": 535.2534121924155
+              },
+              {
+                "from": 29.792560332039663,
+                "path": "state.fps",
+                "tick": 61,
+                "to": 28.523055462958073
+              },
+              {
+                "from": 535.2534121924155,
+                "path": "state.playerX",
+                "tick": 61,
+                "to": 534.6623656807424
+              },
+              {
+                "from": 28.523055462958073,
+                "path": "state.fps",
+                "tick": 62,
+                "to": 28.26365774680352
+              },
+              {
+                "from": 534.6623656807424,
+                "path": "state.playerX",
+                "tick": 62,
+                "to": 534.0487876163845
+              }
+            ],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 90210,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 90210,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "frame-3",
+          "tick": 63
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [
+              {
+                "from": 54.5747863191757,
+                "path": "state.playerX",
+                "tick": 1,
+                "to": 103.7778163316026
+              },
+              {
+                "from": 103.7778163316026,
+                "path": "state.playerX",
+                "tick": 2,
+                "to": 148.1363231234952
+              },
+              {
+                "from": 148.1363231234952,
+                "path": "state.playerX",
+                "tick": 3,
+                "to": 188.12566369627382
+              },
+              {
+                "from": 188.12566369627382,
+                "path": "state.playerX",
+                "tick": 4,
+                "to": 224.17442325334582
+              },
+              {
+                "from": 224.17442325334582,
+                "path": "state.playerX",
+                "tick": 5,
+                "to": 256.66901725964755
+              },
+              {
+                "from": 256.66901725964755,
+                "path": "state.playerX",
+                "tick": 6,
+                "to": 285.95784068970363
+              },
+              {
+                "from": 285.95784068970363,
+                "path": "state.playerX",
+                "tick": 7,
+                "to": 312.3550090177854
+              },
+              {
+                "from": 312.3550090177854,
+                "path": "state.playerX",
+                "tick": 8,
+                "to": 336.14373111997844
+              },
+              {
+                "from": 336.14373111997844,
+                "path": "state.playerX",
+                "tick": 9,
+                "to": 357.5793503055334
+              },
+              {
+                "from": 357.5793503055334,
+                "path": "state.playerX",
+                "tick": 10,
+                "to": 376.8920861313289
+              },
+              {
+                "from": 376.8920861313289,
+                "path": "state.playerX",
+                "tick": 11,
+                "to": 394.2895064403603
+              },
+              {
+                "from": 394.2895064403603,
+                "path": "state.playerX",
+                "tick": 12,
+                "to": 409.9587561683823
+              },
+              {
+                "from": 409.9587561683823,
+                "path": "state.playerX",
+                "tick": 13,
+                "to": 424.06856685106914
+              },
+              {
+                "from": 424.06856685106914,
+                "path": "state.playerX",
+                "tick": 14,
+                "to": 436.77106840927615
+              },
+              {
+                "from": 436.77106840927615,
+                "path": "state.playerX",
+                "tick": 15,
+                "to": 448.2034226668963
+              },
+              {
+                "from": 448.2034226668963,
+                "path": "state.playerX",
+                "tick": 16,
+                "to": 458.48929614161614
+              },
+              {
+                "from": 458.48929614161614,
+                "path": "state.playerX",
+                "tick": 17,
+                "to": 467.74018792302815
+              },
+              {
+                "from": 467.74018792302815,
+                "path": "state.playerX",
+                "tick": 18,
+                "to": 476.0566268965209
+              },
+              {
+                "from": 476.0566268965209,
+                "path": "state.playerX",
+                "tick": 19,
+                "to": 483.52925116843693
+              },
+              {
+                "from": 483.52925116843693,
+                "path": "state.playerX",
+                "tick": 20,
+                "to": 490.2397812830937
+              },
+              {
+                "from": 490.2397812830937,
+                "path": "state.playerX",
+                "tick": 21,
+                "to": 496.26189768182957
+              },
+              {
+                "from": 496.26189768182957,
+                "path": "state.playerX",
+                "tick": 22,
+                "to": 501.6620318260086
+              },
+              {
+                "from": 501.6620318260086,
+                "path": "state.playerX",
+                "tick": 23,
+                "to": 506.5000794788656
+              },
+              {
+                "from": 506.5000794788656,
+                "path": "state.playerX",
+                "tick": 24,
+                "to": 510.83004380523295
+              },
+              {
+                "from": 510.83004380523295,
+                "path": "state.playerX",
+                "tick": 25,
+                "to": 514.7006151945944
+              },
+              {
+                "from": 514.7006151945944,
+                "path": "state.playerX",
+                "tick": 26,
+                "to": 518.1556940334594
+              },
+              {
+                "from": 518.1556940334594,
+                "path": "state.playerX",
+                "tick": 27,
+                "to": 521.2348620404591
+              },
+              {
+                "from": 521.2348620404591,
+                "path": "state.playerX",
+                "tick": 28,
+                "to": 523.973807225242
+              },
+              {
+                "from": 523.973807225242,
+                "path": "state.playerX",
+                "tick": 29,
+                "to": 526.4047070342726
+              },
+              {
+                "from": 526.4047070342726,
+                "path": "state.playerX",
+                "tick": 30,
+                "to": 528.5565737976583
+              },
+              {
+                "from": 528.5565737976583,
+                "path": "state.playerX",
+                "tick": 31,
+                "to": 530.455566186326
+              },
+              {
+                "from": 530.455566186326,
+                "path": "state.playerX",
+                "tick": 32,
+                "to": 532.1252700239004
+              },
+              {
+                "from": 532.1252700239004,
+                "path": "state.playerX",
+                "tick": 33,
+                "to": 533.5869514685718
+              },
+              {
+                "from": 533.5869514685718,
+                "path": "state.playerX",
+                "tick": 34,
+                "to": 534.8597852835594
+              },
+              {
+                "from": 534.8597852835594,
+                "path": "state.playerX",
+                "tick": 35,
+                "to": 535.9610606472821
+              },
+              {
+                "from": 535.9610606472821,
+                "path": "state.playerX",
+                "tick": 36,
+                "to": 536.9063667131766
+              },
+              {
+                "from": 536.9063667131766,
+                "path": "state.playerX",
+                "tick": 37,
+                "to": 537.7097599116602
+              },
+              {
+                "from": 537.7097599116602,
+                "path": "state.playerX",
+                "tick": 38,
+                "to": 538.3839147906868
+              },
+              {
+                "from": 538.3839147906868,
+                "path": "state.playerX",
+                "tick": 39,
+                "to": 538.9402600145853
+              },
+              {
+                "from": 538.9402600145853,
+                "path": "state.playerX",
+                "tick": 40,
+                "to": 539.3891009815048
+              },
+              {
+                "from": 539.3891009815048,
+                "path": "state.playerX",
+                "tick": 41,
+                "to": 539.739730376105
+              },
+              {
+                "from": 539.739730376105,
+                "path": "state.playerX",
+                "tick": 42,
+                "to": 540.0005278445789
+              },
+              {
+                "from": 540.0005278445789,
+                "path": "state.playerX",
+                "tick": 43,
+                "to": 540.1790498622994
+              },
+              {
+                "from": 540.1790498622994,
+                "path": "state.playerX",
+                "tick": 44,
+                "to": 540.2821107590648
+              },
+              {
+                "from": 540.2821107590648,
+                "path": "state.playerX",
+                "tick": 45,
+                "to": 540.3158557719768
+              },
+              {
+                "from": 540.3158557719768,
+                "path": "state.playerX",
+                "tick": 46,
+                "to": 540.285826910377
+              },
+              {
+                "from": 540.285826910377,
+                "path": "state.playerX",
+                "tick": 47,
+                "to": 540.1970223400859
+              },
+              {
+                "from": 540.1970223400859,
+                "path": "state.playerX",
+                "tick": 48,
+                "to": 540.0539499246001
+              },
+              {
+                "from": 540.0539499246001,
+                "path": "state.playerX",
+                "tick": 49,
+                "to": 539.8606754981623
+              },
+              {
+                "from": 539.8606754981623,
+                "path": "state.playerX",
+                "tick": 50,
+                "to": 539.6208663890526
+              },
+              {
+                "from": 539.6208663890526,
+                "path": "state.playerX",
+                "tick": 51,
+                "to": 539.3378306604452
+              },
+              {
+                "from": 539.3378306604452,
+                "path": "state.playerX",
+                "tick": 52,
+                "to": 539.0145524901932
+              },
+              {
+                "from": 539.0145524901932,
+                "path": "state.playerX",
+                "tick": 53,
+                "to": 538.6537240694433
+              },
+              {
+                "from": 538.6537240694433,
+                "path": "state.playerX",
+                "tick": 54,
+                "to": 538.2577743626042
+              },
+              {
+                "from": 538.2577743626042,
+                "path": "state.playerX",
+                "tick": 55,
+                "to": 537.8288950374882
+              },
+              {
+                "from": 537.8288950374882,
+                "path": "state.playerX",
+                "tick": 56,
+                "to": 537.3690638440622
+              },
+              {
+                "from": 537.3690638440622,
+                "path": "state.playerX",
+                "tick": 57,
+                "to": 536.8800656928465
+              },
+              {
+                "from": 536.8800656928465,
+                "path": "state.playerX",
+                "tick": 58,
+                "to": 536.3635116592997
+              },
+              {
+                "from": 536.3635116592997,
+                "path": "state.playerX",
+                "tick": 59,
+                "to": 535.8208561182573
+              },
+              {
+                "from": 17.36576146304585,
+                "path": "state.fps",
+                "tick": 60,
+                "to": 29.792560332039663
+              },
+              {
+                "from": 535.8208561182573,
+                "path": "state.playerX",
+                "tick": 60,
+                "to": 535.2534121924155
+              },
+              {
+                "from": 29.792560332039663,
+                "path": "state.fps",
+                "tick": 61,
+                "to": 28.523055462958073
+              },
+              {
+                "from": 535.2534121924155,
+                "path": "state.playerX",
+                "tick": 61,
+                "to": 534.6623656807424
+              },
+              {
+                "from": 28.523055462958073,
+                "path": "state.fps",
+                "tick": 62,
+                "to": 28.26365774680352
+              },
+              {
+                "from": 534.6623656807424,
+                "path": "state.playerX",
+                "tick": 62,
+                "to": 534.0487876163845
+              },
+              {
+                "from": 28.26365774680352,
+                "path": "state.fps",
+                "tick": 63,
+                "to": 28.83298032090339
+              },
+              {
+                "from": 534.0487876163845,
+                "path": "state.playerX",
+                "tick": 63,
+                "to": 533.4136455889135
+              }
+            ],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 90210,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 90210,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "frame-4",
+          "tick": 64
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [
+              {
+                "from": 54.5747863191757,
+                "path": "state.playerX",
+                "tick": 1,
+                "to": 103.7778163316026
+              },
+              {
+                "from": 103.7778163316026,
+                "path": "state.playerX",
+                "tick": 2,
+                "to": 148.1363231234952
+              },
+              {
+                "from": 148.1363231234952,
+                "path": "state.playerX",
+                "tick": 3,
+                "to": 188.12566369627382
+              },
+              {
+                "from": 188.12566369627382,
+                "path": "state.playerX",
+                "tick": 4,
+                "to": 224.17442325334582
+              },
+              {
+                "from": 224.17442325334582,
+                "path": "state.playerX",
+                "tick": 5,
+                "to": 256.66901725964755
+              },
+              {
+                "from": 256.66901725964755,
+                "path": "state.playerX",
+                "tick": 6,
+                "to": 285.95784068970363
+              },
+              {
+                "from": 285.95784068970363,
+                "path": "state.playerX",
+                "tick": 7,
+                "to": 312.3550090177854
+              },
+              {
+                "from": 312.3550090177854,
+                "path": "state.playerX",
+                "tick": 8,
+                "to": 336.14373111997844
+              },
+              {
+                "from": 336.14373111997844,
+                "path": "state.playerX",
+                "tick": 9,
+                "to": 357.5793503055334
+              },
+              {
+                "from": 357.5793503055334,
+                "path": "state.playerX",
+                "tick": 10,
+                "to": 376.8920861313289
+              },
+              {
+                "from": 376.8920861313289,
+                "path": "state.playerX",
+                "tick": 11,
+                "to": 394.2895064403603
+              },
+              {
+                "from": 394.2895064403603,
+                "path": "state.playerX",
+                "tick": 12,
+                "to": 409.9587561683823
+              },
+              {
+                "from": 409.9587561683823,
+                "path": "state.playerX",
+                "tick": 13,
+                "to": 424.06856685106914
+              },
+              {
+                "from": 424.06856685106914,
+                "path": "state.playerX",
+                "tick": 14,
+                "to": 436.77106840927615
+              },
+              {
+                "from": 436.77106840927615,
+                "path": "state.playerX",
+                "tick": 15,
+                "to": 448.2034226668963
+              },
+              {
+                "from": 448.2034226668963,
+                "path": "state.playerX",
+                "tick": 16,
+                "to": 458.48929614161614
+              },
+              {
+                "from": 458.48929614161614,
+                "path": "state.playerX",
+                "tick": 17,
+                "to": 467.74018792302815
+              },
+              {
+                "from": 467.74018792302815,
+                "path": "state.playerX",
+                "tick": 18,
+                "to": 476.0566268965209
+              },
+              {
+                "from": 476.0566268965209,
+                "path": "state.playerX",
+                "tick": 19,
+                "to": 483.52925116843693
+              },
+              {
+                "from": 483.52925116843693,
+                "path": "state.playerX",
+                "tick": 20,
+                "to": 490.2397812830937
+              },
+              {
+                "from": 490.2397812830937,
+                "path": "state.playerX",
+                "tick": 21,
+                "to": 496.26189768182957
+              },
+              {
+                "from": 496.26189768182957,
+                "path": "state.playerX",
+                "tick": 22,
+                "to": 501.6620318260086
+              },
+              {
+                "from": 501.6620318260086,
+                "path": "state.playerX",
+                "tick": 23,
+                "to": 506.5000794788656
+              },
+              {
+                "from": 506.5000794788656,
+                "path": "state.playerX",
+                "tick": 24,
+                "to": 510.83004380523295
+              },
+              {
+                "from": 510.83004380523295,
+                "path": "state.playerX",
+                "tick": 25,
+                "to": 514.7006151945944
+              },
+              {
+                "from": 514.7006151945944,
+                "path": "state.playerX",
+                "tick": 26,
+                "to": 518.1556940334594
+              },
+              {
+                "from": 518.1556940334594,
+                "path": "state.playerX",
+                "tick": 27,
+                "to": 521.2348620404591
+              },
+              {
+                "from": 521.2348620404591,
+                "path": "state.playerX",
+                "tick": 28,
+                "to": 523.973807225242
+              },
+              {
+                "from": 523.973807225242,
+                "path": "state.playerX",
+                "tick": 29,
+                "to": 526.4047070342726
+              },
+              {
+                "from": 526.4047070342726,
+                "path": "state.playerX",
+                "tick": 30,
+                "to": 528.5565737976583
+              },
+              {
+                "from": 528.5565737976583,
+                "path": "state.playerX",
+                "tick": 31,
+                "to": 530.455566186326
+              },
+              {
+                "from": 530.455566186326,
+                "path": "state.playerX",
+                "tick": 32,
+                "to": 532.1252700239004
+              },
+              {
+                "from": 532.1252700239004,
+                "path": "state.playerX",
+                "tick": 33,
+                "to": 533.5869514685718
+              },
+              {
+                "from": 533.5869514685718,
+                "path": "state.playerX",
+                "tick": 34,
+                "to": 534.8597852835594
+              },
+              {
+                "from": 534.8597852835594,
+                "path": "state.playerX",
+                "tick": 35,
+                "to": 535.9610606472821
+              },
+              {
+                "from": 535.9610606472821,
+                "path": "state.playerX",
+                "tick": 36,
+                "to": 536.9063667131766
+              },
+              {
+                "from": 536.9063667131766,
+                "path": "state.playerX",
+                "tick": 37,
+                "to": 537.7097599116602
+              },
+              {
+                "from": 537.7097599116602,
+                "path": "state.playerX",
+                "tick": 38,
+                "to": 538.3839147906868
+              },
+              {
+                "from": 538.3839147906868,
+                "path": "state.playerX",
+                "tick": 39,
+                "to": 538.9402600145853
+              },
+              {
+                "from": 538.9402600145853,
+                "path": "state.playerX",
+                "tick": 40,
+                "to": 539.3891009815048
+              },
+              {
+                "from": 539.3891009815048,
+                "path": "state.playerX",
+                "tick": 41,
+                "to": 539.739730376105
+              },
+              {
+                "from": 539.739730376105,
+                "path": "state.playerX",
+                "tick": 42,
+                "to": 540.0005278445789
+              },
+              {
+                "from": 540.0005278445789,
+                "path": "state.playerX",
+                "tick": 43,
+                "to": 540.1790498622994
+              },
+              {
+                "from": 540.1790498622994,
+                "path": "state.playerX",
+                "tick": 44,
+                "to": 540.2821107590648
+              },
+              {
+                "from": 540.2821107590648,
+                "path": "state.playerX",
+                "tick": 45,
+                "to": 540.3158557719768
+              },
+              {
+                "from": 540.3158557719768,
+                "path": "state.playerX",
+                "tick": 46,
+                "to": 540.285826910377
+              },
+              {
+                "from": 540.285826910377,
+                "path": "state.playerX",
+                "tick": 47,
+                "to": 540.1970223400859
+              },
+              {
+                "from": 540.1970223400859,
+                "path": "state.playerX",
+                "tick": 48,
+                "to": 540.0539499246001
+              },
+              {
+                "from": 540.0539499246001,
+                "path": "state.playerX",
+                "tick": 49,
+                "to": 539.8606754981623
+              },
+              {
+                "from": 539.8606754981623,
+                "path": "state.playerX",
+                "tick": 50,
+                "to": 539.6208663890526
+              },
+              {
+                "from": 539.6208663890526,
+                "path": "state.playerX",
+                "tick": 51,
+                "to": 539.3378306604452
+              },
+              {
+                "from": 539.3378306604452,
+                "path": "state.playerX",
+                "tick": 52,
+                "to": 539.0145524901932
+              },
+              {
+                "from": 539.0145524901932,
+                "path": "state.playerX",
+                "tick": 53,
+                "to": 538.6537240694433
+              },
+              {
+                "from": 538.6537240694433,
+                "path": "state.playerX",
+                "tick": 54,
+                "to": 538.2577743626042
+              },
+              {
+                "from": 538.2577743626042,
+                "path": "state.playerX",
+                "tick": 55,
+                "to": 537.8288950374882
+              },
+              {
+                "from": 537.8288950374882,
+                "path": "state.playerX",
+                "tick": 56,
+                "to": 537.3690638440622
+              },
+              {
+                "from": 537.3690638440622,
+                "path": "state.playerX",
+                "tick": 57,
+                "to": 536.8800656928465
+              },
+              {
+                "from": 536.8800656928465,
+                "path": "state.playerX",
+                "tick": 58,
+                "to": 536.3635116592997
+              },
+              {
+                "from": 536.3635116592997,
+                "path": "state.playerX",
+                "tick": 59,
+                "to": 535.8208561182573
+              },
+              {
+                "from": 17.36576146304585,
+                "path": "state.fps",
+                "tick": 60,
+                "to": 29.792560332039663
+              },
+              {
+                "from": 535.8208561182573,
+                "path": "state.playerX",
+                "tick": 60,
+                "to": 535.2534121924155
+              },
+              {
+                "from": 29.792560332039663,
+                "path": "state.fps",
+                "tick": 61,
+                "to": 28.523055462958073
+              },
+              {
+                "from": 535.2534121924155,
+                "path": "state.playerX",
+                "tick": 61,
+                "to": 534.6623656807424
+              },
+              {
+                "from": 28.523055462958073,
+                "path": "state.fps",
+                "tick": 62,
+                "to": 28.26365774680352
+              },
+              {
+                "from": 534.6623656807424,
+                "path": "state.playerX",
+                "tick": 62,
+                "to": 534.0487876163845
+              },
+              {
+                "from": 28.26365774680352,
+                "path": "state.fps",
+                "tick": 63,
+                "to": 28.83298032090339
+              },
+              {
+                "from": 534.0487876163845,
+                "path": "state.playerX",
+                "tick": 63,
+                "to": 533.4136455889135
+              },
+              {
+                "from": 28.83298032090339,
+                "path": "state.fps",
+                "tick": 64,
+                "to": 28.746307940915386
+              },
+              {
+                "from": 533.4136455889135,
+                "path": "state.playerX",
+                "tick": 64,
+                "to": 532.7578139524942
+              }
+            ],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 90210,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 90210,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "frame-5",
+          "tick": 65
+        }
+      ]
+    },
+    "scene": {
+      "background": "color:#04080d",
+      "camera": {
+        "far": 7000,
+        "forward": [
+          0,
+          0,
+          -1
+        ],
+        "near": 5000,
+        "position": [
+          0,
+          0,
+          6000
+        ],
+        "type": "OrthographicCamera"
+      },
+      "lights": [
+        {
+          "color": "#17344a",
+          "intensity": 1.4,
+          "type": "AmbientLight",
+          "visible": true
+        },
+        {
+          "color": "#ffd27a",
+          "intensity": 2.5,
+          "type": "PointLight",
+          "visible": true
+        }
+      ],
+      "materials": {
+        "SpriteNodeMaterial": 2,
+        "MeshBasicNodeMaterial": 2
+      },
+      "objects": 13,
+      "truncated": false,
+      "worldExtent": {
+        "max": [
+          607.7578139524942,
+          307.3673408033668,
+          11
+        ],
+        "min": [
+          -707.6565817531441,
+          -376.0220056982256,
+          -11
+        ]
+      }
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "frame-1",
+        "signals": [],
+        "tick": 61
+      },
+      {
+        "label": "frame-2",
+        "signals": [],
+        "tick": 62
+      },
+      {
+        "label": "frame-3",
+        "signals": [],
+        "tick": 63
+      },
+      {
+        "label": "frame-4",
+        "signals": [],
+        "tick": 64
+      },
+      {
+        "label": "frame-5",
+        "signals": [],
+        "tick": 65
+      }
+    ],
+    "startup": {
+      "phase": "ready",
+      "progress": 1,
+      "warmup": {
+        "attempted": 0,
+        "candidates": 9,
+        "observed": {
+          "created": 13,
+          "failed": 0,
+          "pending": 0,
+          "uniquePrograms": 13,
+          "uniquePipelines": 13,
+          "status": "complete"
+        },
+        "status": "complete"
+      },
+      "compileSettled": true,
+      "timeline": {
+        "loadStartedMs": 781.9000000059605,
+        "enteredMs": 831.3000000044703,
+        "compileSettledMs": 988.9000000059605,
+        "frameworkReadyMs": 988.9000000059605,
+        "readyMs": 988.9000000059605
+      },
+      "rule": "sustained-frames"
+    },
+    "visual": {
+      "changedPixelRatio": 0.2660731336805556,
+      "comparisonSource": "before-after"
+    },
+    "tone": [
+      {
+        "code": "TN_TONE",
+        "label": "before.png",
+        "mean": 25.970401475694445,
+        "p1": 10,
+        "p50": 21,
+        "p99": 208,
+        "clipFraction": 0,
+        "blackFraction": 0
+      },
+      {
+        "code": "TN_TONE",
+        "label": "frame-1.png",
+        "atStep": "frame-1",
+        "mean": 27.43807834201389,
+        "p1": 11,
+        "p50": 23,
+        "p99": 208,
+        "clipFraction": 0,
+        "blackFraction": 0
+      },
+      {
+        "code": "TN_TONE",
+        "label": "frame-2.png",
+        "atStep": "frame-2",
+        "mean": 28.558206380208333,
+        "p1": 11,
+        "p50": 24,
+        "p99": 208,
+        "clipFraction": 0,
+        "blackFraction": 0
+      },
+      {
+        "code": "TN_TONE",
+        "label": "frame-3.png",
+        "atStep": "frame-3",
+        "mean": 29.426686197916666,
+        "p1": 12,
+        "p50": 24,
+        "p99": 208,
+        "clipFraction": 0,
+        "blackFraction": 0
+      },
+      {
+        "code": "TN_TONE",
+        "label": "frame-4.png",
+        "atStep": "frame-4",
+        "mean": 30.067935112847223,
+        "p1": 12,
+        "p50": 25,
+        "p99": 208,
+        "clipFraction": 0,
+        "blackFraction": 0
+      },
+      {
+        "code": "TN_TONE",
+        "label": "frame-5.png",
+        "atStep": "frame-5",
+        "mean": 30.4033203125,
+        "p1": 12,
+        "p50": 25,
+        "p99": 208,
+        "clipFraction": 0,
+        "blackFraction": 0
+      },
+      {
+        "code": "TN_TONE",
+        "label": "after.png",
+        "mean": 30.770998263888888,
+        "p1": 12,
+        "p50": 26,
+        "p99": 208,
+        "clipFraction": 0,
+        "blackFraction": 0
+      }
+    ]
+  },
+  "artifactDirectory": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/ac1-visible-final",
+  "assertionResults": [
+    {
+      "details": {
+        "boundary": {
+          "boundaryMs": 127.5,
+          "eventsSettled": 15,
+          "nodeBuilds": 12,
+          "renderPipelineCreations": 12
+        },
+        "complete": true,
+        "expected": 0,
+        "incompleteReasons": [],
+        "observed": 0
+      },
+      "id": "pipelineCensus.maxNodeBuildsAfterWarmUpSettled",
+      "pass": true
+    },
+    {
+      "details": {
+        "boundary": {
+          "boundaryMs": 127.5,
+          "eventsSettled": 15,
+          "nodeBuilds": 12,
+          "renderPipelineCreations": 12
+        },
+        "complete": true,
+        "expected": 0,
+        "incompleteReasons": [],
+        "observed": 0
+      },
+      "id": "pipelineCensus.maxRenderPipelineCreationsAfterWarmUpSettled",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "clock": "fixed-step",
+  "pass": true,
+  "runtime": "web",
+  "scenario": "abyss-framework-warm-up-reuse",
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "warmup": {
+      "attempted": 0,
+      "candidates": 9,
+      "observed": {
+        "created": 13,
+        "failed": 0,
+        "pending": 0,
+        "uniquePrograms": 13,
+        "uniquePipelines": 13,
+        "status": "complete"
+      },
+      "status": "complete"
+    },
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 781.9000000059605,
+      "enteredMs": 831.3000000044703,
+      "compileSettledMs": 988.9000000059605,
+      "frameworkReadyMs": 988.9000000059605,
+      "readyMs": 988.9000000059605
+    },
+    "rule": "sustained-frames"
+  },
+  "trivialityOptOutCount": 0,
+  "url": "http://127.0.0.1:5190",
+  "sourceCommit": "acc3affd3d3141aa123d0e80ee4794177aa484ea"
+}

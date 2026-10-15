@@ -1,0 +1,1378 @@
+[
+  {
+    "text": "TN_COLD_START:{\"segment\":\"process\",\"atMs\":0.000}",
+    "type": "log"
+  },
+  {
+    "text": "=== ThreeNative Native Runtime ===",
+    "type": "log"
+  },
+  {
+    "text": "Version: 0.3.4",
+    "type": "log"
+  },
+  {
+    "text": "Script: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/examples/abyss-framework/dist/warm-up-native.js",
+    "type": "log"
+  },
+  {
+    "text": "Window: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Initializing runtime...",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Window: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Presentation cap: 60 fps",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Creating window: ThreeNative (1280x720)",
+    "type": "log"
+  },
+  {
+    "text": "[Window] SDL initialized",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Running in hidden mode (MYSTRAL_HEADLESS=1)",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Brand icon unavailable in embedded bundle; using compositor default",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Actual window size: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Window created successfully",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Lifecycle watch installed; backgroundMode=pause",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Actual window size: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Initializing...",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Instance created",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Using X11 display: 0x561c20a3f9a0 window: 4194350",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Creating surface for platform type 4 with display pointer",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Creating X11 surface with display: 0x561c20a3f9a0 window: 0x40002e",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Surface created",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Adapter acquired successfully",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Adapter: NVIDIA GeForce RTX 2080",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Vendor: nvidia",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Backend: Vulkan",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe indirect-first-instance: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Requesting IndirectFirstInstance feature (supported)",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe texture-compression-bc: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe texture-compression-etc2: no",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe texture-compression-astc: no",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe timestamp-query: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe rg11b10ufloat-renderable: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe float32-filterable: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe transient-attachments: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe core-features-and-limits: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Device acquired successfully",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] TN_WEBGPU_FEATURES:{\"timestamp-query\":true,\"texture-compression-bc\":true,\"texture-compression-etc2\":false,\"texture-compression-astc\":false,\"indirect-first-instance\":true,\"rg11b10ufloat-renderable\":true,\"transient-attachments\":true,\"core-features-and-limits\":true}",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Queue acquired",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] configureSurface called: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] surface_=0x561c20b10680, device_=0x561c20e77e30, adapter_=0x561c20b07330",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Getting surface capabilities...",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Got capabilities: formatCount=2",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Available surface formats:",
+    "type": "log"
+  },
+  {
+    "text": "  [0] = 27",
+    "type": "log"
+  },
+  {
+    "text": "  [1] = 28",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Using surface format: 27",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Surface configured: 1280x720",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Present mode: fifo (vsync=true)",
+    "type": "log"
+  },
+  {
+    "text": "[JS] Creating V8 engine (platform default)",
+    "type": "log"
+  },
+  {
+    "text": "[V8] Creating engine...",
+    "type": "log"
+  },
+  {
+    "text": "[V8] Initializing V8 JavaScript engine...",
+    "type": "log"
+  },
+  {
+    "text": "[V8] V8 initialized successfully",
+    "type": "log"
+  },
+  {
+    "text": "[V8] Version: 13.1.201.22",
+    "type": "log"
+  },
+  {
+    "text": "[V8] Engine created successfully",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Using JS engine: V8",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":355.472}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":355.948}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":355.952}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":356.000}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Fetch API initialized (file://, http://, https://)",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":356.019}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":356.363}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":356.366}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":356.392}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Web Streams API initialized (ReadableStream/WritableStream/TransformStream)",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":356.441}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":356.940}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":356.944}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":356.968}",
+    "type": "log"
+  },
+  {
+    "text": "[WorkerRegistry] Initialized",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":357.009}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":357.263}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":357.267}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":357.284}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] URL and native Worker facade initialized",
+    "type": "log"
+  },
+  {
+    "text": "[DOM] Canvas element created with addEventListener, style, etc.",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":357.387}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":357.426}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":357.429}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":357.436}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":357.441}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":357.476}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":357.479}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":357.482}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":357.503}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":357.591}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":357.594}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":357.609}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":357.655}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":357.692}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":357.695}",
+    "type": "log"
+  },
+  {
+    "text": "[log] [Mystral] WebP format support: YES",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":357.773}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] DOM event system initialized",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] localStorage initialized: /home/joao/.local/share/mystral/storage/dist.json",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":357.827}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":357.896}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":357.900}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":357.985}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":358.016}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":358.043}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":358.046}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":358.053}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":358.058}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":358.099}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":358.102}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":358.107}",
+    "type": "log"
+  },
+  {
+    "text": "[Audio] Web Audio API bindings initialized",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_CAPTURE:{\"version\":1,\"build\":{\"identity\":\"mystral-native@0.3.4\"},\"adapter\":{\"identity\":\"native:vulkan/nvidia/NVIDIA GeForce RTX 2080/turing/NVIDIA: 615.78.08 615.78.8.0\",\"thermal\":\"unavailable\"},\"clock\":{\"source\":\"steady\",\"originMs\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_CACHE:{\"version\":1,\"phase\":\"device\",\"mode\":\"unsupported\",\"featureGranted\":false,\"renderAttached\":0,\"computeAttached\":0,\"emptyBytes\":0,\"serializedBytes\":0,\"load\":\"unavailable\",\"loadedBytes\":0,\"loadMs\":0,\"store\":\"not-attempted\",\"storedBytes\":0,\"storeMs\":0,\"snapshotMs\":0,\"reason\":\"this build's WebGPU backend declares no pipeline cache API\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FORMAT:{\"native\":\"bgra8unorm\",\"render\":\"bgra8unorm\",\"bridge\":false,\"present\":\"fifo\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":358.289}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":358.356}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":358.359}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":358.370}",
+    "type": "log"
+  },
+  {
+    "text": "[MystralRT] No hardware RT available, using stub backend",
+    "type": "log"
+  },
+  {
+    "text": "[MystralRT] Bindings initialized (backend: none)",
+    "type": "log"
+  },
+  {
+    "text": "[EventLoop] libuv 1.51.0 initialized",
+    "type": "log"
+  },
+  {
+    "text": "[AsyncHttp] Initialized with curl_multi + libuv",
+    "type": "log"
+  },
+  {
+    "text": "[AsyncFile] Initialized with libuv thread pool",
+    "type": "log"
+  },
+  {
+    "text": "[FileWatcher] Initialized with libuv fs_event",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Runtime initialized",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"runtime_created\",\"atMs\":359.592}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Evaluating script: threenative-playtest-mailbox.js (246 bytes)",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":359.603}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":359.631}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":359.633}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":359.641}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Desktop playtest mailbox configured",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"game_eval_begin\",\"atMs\":359.644}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Loading script: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/examples/abyss-framework/dist/warm-up-native.js",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":363.379}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":405.690}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":405.702}",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"NVIDIA: 615.78.08 615.78.8.0\",\"device\":\"NVIDIA GeForce RTX 2080\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":433.775}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Starting main loop...",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"cf01b5890b1b6101\",\"bytes\":28,\"requestId\":\"ready\",\"requestMethod\":\"\",\"requestOrder\":-1,\"pump\":{\"observed\":true,\"pumpCount\":1,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":433.785,\"maxGapMs\":0.000,\"maxGapAtMs\":-1.000,\"trailingGapMs\":4.814,\"atMs\":438.599,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "[info] TN_NATIVE_SMOKE_READY:webgpu",
+    "type": "log"
+  },
+  {
+    "text": "[info] TN_NATIVE_SMOKE_FIRST_FRAME",
+    "type": "log"
+  },
+  {
+    "text": "[info] TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":1,\"pipelineIdentity\":\"native-render-1\",\"programIdentity\":\"00fc0a8ad03630cc/458120a84b226496\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":3.0000000000000001e-05,\"settledMs\":5.3677770000000002,\"queueMs\":0,\"serviceMs\":5.3677470000000005,\"wallMs\":5.3677470000000005,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"00fc0a8ad03630cc\",\"bytes\":1299},\"fragment\":{\"hash\":\"458120a84b226496\",\"bytes\":1595},\"cache\":\"unsupported\",\"label\":\"renderPipeline_outputColorTransform_16\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":480.304}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":480.325}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":480.328}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":480.333}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":1}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_FIRST_PRESENT:{\"version\":1,\"boundaryMs\":43.657850000000003}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"first_frame\",\"atMs\":518.505}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_SILENCE:{\"observed\":true,\"pumpCount\":1,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":433.785,\"maxGapMs\":0.000,\"maxGapAtMs\":-1.000,\"trailingGapMs\":84.723,\"longGaps\":[],\"droppedLongGaps\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_STALL_SEGMENTS:{\"toFirstFrameMs\":518.517,\"frameBeganAtMs\":438.910,\"gapMs\":79.607,\"segments\":{\"pipelineCompile\":{\"ms\":5.433,\"calls\":1},\"shaderCompile\":{\"ms\":0.780,\"calls\":2},\"textureUpload\":{\"ms\":2.051,\"calls\":4},\"bufferUpload\":{\"ms\":1.181,\"calls\":5},\"queueSubmit\":{\"ms\":0.000,\"calls\":0}},\"attributedMs\":9.446,\"residualMs\":70.161,\"attributedShare\":0.1187}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":1,\"requested\":1,\"emitted\":1,\"outstanding\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":2,\"pipelineIdentity\":\"native-compute-1\",\"programIdentity\":\"90b42ee015344a76\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":77.981554000000003,\"settledMs\":80.349677999999997,\"queueMs\":0,\"serviceMs\":2.3681239999999946,\"wallMs\":2.3681239999999946,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"90b42ee015344a76\",\"bytes\":2194},\"cache\":\"unsupported\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":555.276}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":555.289}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":555.292}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":555.296}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"09c37ec6bd007df0\",\"bytes\":614,\"requestId\":\"1\",\"requestMethod\":\"describe\",\"requestOrder\":1,\"pump\":{\"observed\":true,\"pumpCount\":2,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":518.640,\"maxGapMs\":84.854,\"maxGapAtMs\":433.785,\"trailingGapMs\":42.534,\"atMs\":561.174,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":3,\"pipelineIdentity\":\"native-compute-2\",\"programIdentity\":\"b17f1272349c96aa\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":92.027558999999997,\"settledMs\":94.176364000000007,\"queueMs\":0,\"serviceMs\":2.1488050000000101,\"wallMs\":2.1488050000000101,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"b17f1272349c96aa\",\"bytes\":4563},\"cache\":\"unsupported\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":569.052}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":569.065}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":569.068}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":569.072}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":4,\"pipelineIdentity\":\"native-compute-3\",\"programIdentity\":\"6136da96ebb63459\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":96.813917000000004,\"settledMs\":98.169274000000001,\"queueMs\":0,\"serviceMs\":1.3553569999999979,\"wallMs\":1.3553569999999979,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"6136da96ebb63459\",\"bytes\":1551},\"cache\":\"unsupported\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":573.041}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":573.052}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":573.055}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":573.058}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":5,\"pipelineIdentity\":\"native-render-2\",\"programIdentity\":\"a0dc858b2770e4b6/a9284e64d0b7ab7a\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":113.622815,\"settledMs\":115.978089,\"queueMs\":0,\"serviceMs\":2.3552739999999943,\"wallMs\":2.3552739999999943,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"a0dc858b2770e4b6\",\"bytes\":1368},\"fragment\":{\"hash\":\"a9284e64d0b7ab7a\",\"bytes\":2588},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshBasicNodeMaterial_18\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":590.876}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":590.886}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":590.889}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":590.893}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":6,\"pipelineIdentity\":\"native-render-3\",\"programIdentity\":\"d2ea5ac757871426/63f9db766141e0ab\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":123.64854,\"settledMs\":125.469735,\"queueMs\":0,\"serviceMs\":1.821195000000003,\"wallMs\":1.821195000000003,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"d2ea5ac757871426\",\"bytes\":2120},\"fragment\":{\"hash\":\"63f9db766141e0ab\",\"bytes\":1136},\"cache\":\"unsupported\",\"label\":\"renderPipeline_SpriteNodeMaterial_17\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":600.345}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":600.353}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":600.356}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":600.359}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":7,\"pipelineIdentity\":\"native-render-4\",\"programIdentity\":\"c159003d0d4f355a/41f98e61499c0e67\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":128.95602600000001,\"settledMs\":130.68094199999999,\"queueMs\":0,\"serviceMs\":1.724915999999979,\"wallMs\":1.724915999999979,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"c159003d0d4f355a\",\"bytes\":1825},\"fragment\":{\"hash\":\"41f98e61499c0e67\",\"bytes\":1001},\"cache\":\"unsupported\",\"label\":\"renderPipeline_SpriteNodeMaterial_19\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":605.556}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":605.563}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":605.565}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":605.569}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":8,\"pipelineIdentity\":\"native-render-5\",\"programIdentity\":\"dcd9d1972708c088/a2499803894a35ed\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":134.31007299999999,\"settledMs\":136.22647799999999,\"queueMs\":0,\"serviceMs\":1.9164049999999975,\"wallMs\":1.9164049999999975,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"dcd9d1972708c088\",\"bytes\":1417},\"fragment\":{\"hash\":\"a2499803894a35ed\",\"bytes\":960},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_highPass_23\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":611.104}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":611.112}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":611.115}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":611.118}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":9,\"pipelineIdentity\":\"native-render-6\",\"programIdentity\":\"45fc3617fb049a88/c466a179e1f4f0a4\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":140.80685700000001,\"settledMs\":143.865509,\"queueMs\":0,\"serviceMs\":3.058651999999995,\"wallMs\":3.058651999999995,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"45fc3617fb049a88\",\"bytes\":1516},\"fragment\":{\"hash\":\"c466a179e1f4f0a4\",\"bytes\":1818},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_separable_24\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":618.744}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":618.751}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":618.754}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":618.757}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":10,\"pipelineIdentity\":\"native-render-7\",\"programIdentity\":\"45fc3617fb049a88/904d7d1b777971dc\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":147.51967999999999,\"settledMs\":149.39338499999999,\"queueMs\":0,\"serviceMs\":1.8737050000000011,\"wallMs\":1.8737050000000011,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"45fc3617fb049a88\",\"bytes\":1516},\"fragment\":{\"hash\":\"904d7d1b777971dc\",\"bytes\":1820},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_separable_25\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":624.267}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":624.275}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":624.277}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":624.281}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":11,\"pipelineIdentity\":\"native-render-8\",\"programIdentity\":\"45fc3617fb049a88/9ac08f65518be06c\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":153.18491599999999,\"settledMs\":155.039421,\"queueMs\":0,\"serviceMs\":1.8545050000000174,\"wallMs\":1.8545050000000174,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"45fc3617fb049a88\",\"bytes\":1516},\"fragment\":{\"hash\":\"9ac08f65518be06c\",\"bytes\":1820},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_separable_26\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":629.914}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":629.920}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":629.922}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":629.926}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":12,\"pipelineIdentity\":\"native-render-9\",\"programIdentity\":\"45fc3617fb049a88/2b2d9e1b2a1e6bbc\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":158.47032200000001,\"settledMs\":161.10774499999999,\"queueMs\":0,\"serviceMs\":2.6374229999999841,\"wallMs\":2.6374229999999841,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"45fc3617fb049a88\",\"bytes\":1516},\"fragment\":{\"hash\":\"2b2d9e1b2a1e6bbc\",\"bytes\":1820},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_separable_27\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":635.990}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":635.999}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":636.001}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":636.005}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":13,\"pipelineIdentity\":\"native-render-10\",\"programIdentity\":\"45fc3617fb049a88/4fbcbe479ba1b0a6\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":164.60362699999999,\"settledMs\":166.73634100000001,\"queueMs\":0,\"serviceMs\":2.1327140000000213,\"wallMs\":2.1327140000000213,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"45fc3617fb049a88\",\"bytes\":1516},\"fragment\":{\"hash\":\"4fbcbe479ba1b0a6\",\"bytes\":1820},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_separable_28\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":641.615}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":641.622}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":641.624}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":641.628}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":14,\"pipelineIdentity\":\"native-render-11\",\"programIdentity\":\"ffc0ca9b4adc3a8b/ff20e1db0bfb34f5\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":172.08108799999999,\"settledMs\":174.352642,\"queueMs\":0,\"serviceMs\":2.271554000000009,\"wallMs\":2.271554000000009,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"ffc0ca9b4adc3a8b\",\"bytes\":1567},\"fragment\":{\"hash\":\"ff20e1db0bfb34f5\",\"bytes\":3311},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_comp_29\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":649.226}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":649.234}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":649.236}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":649.240}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":15,\"pipelineIdentity\":\"native-render-12\",\"programIdentity\":\"b07fbcd4d49ee70f/a170775f358f22a4\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":176.26569799999999,\"settledMs\":177.99971300000001,\"queueMs\":0,\"serviceMs\":1.7340150000000278,\"wallMs\":1.7340150000000278,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"b07fbcd4d49ee70f\",\"bytes\":1375},\"fragment\":{\"hash\":\"a170775f358f22a4\",\"bytes\":1790},\"cache\":\"unsupported\",\"label\":\"renderPipeline_RenderPipeline_22\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":652.910}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":652.917}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":652.919}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":652.923}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":656.616}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":656.637}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":656.640}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":656.645}",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_WARMUP:{\"compiled\":1,\"pipelines\":9,\"candidates\":9,\"attempted\":0,\"observed\":{\"created\":13,\"failed\":0,\"pending\":0,\"uniquePrograms\":13,\"uniquePipelines\":13,\"status\":\"complete\"},\"slices\":1,\"elapsedMs\":176,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"computeCompiled\":3,\"computeAbandoned\":0,\"computeUnsupported\":false,\"computeTimedOut\":false,\"passes\":[\"main\"],\"passPipelines\":11,\"cullingForced\":12,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+    "type": "log"
+  },
+  {
+    "text": "[warn] THREE.WebGPURenderer: Timestamp tracking is disabled.",
+    "type": "warning"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":2}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":2,\"requested\":15,\"emitted\":15,\"outstanding\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"48c55e49eb1afe36\",\"bytes\":337,\"requestId\":\"2\",\"requestMethod\":\"ready\",\"requestOrder\":2,\"pump\":{\"observed\":true,\"pumpCount\":3,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":694.811,\"maxGapMs\":176.171,\"maxGapAtMs\":518.640,\"trailingGapMs\":0.409,\"atMs\":695.220,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":3}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"aacea0a38aee8bfb\",\"bytes\":337,\"requestId\":\"3\",\"requestMethod\":\"ready\",\"requestOrder\":3,\"pump\":{\"observed\":true,\"pumpCount\":4,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":728.744,\"maxGapMs\":176.171,\"maxGapAtMs\":518.640,\"trailingGapMs\":0.134,\"atMs\":728.878,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":4}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"50cbc96ab938e8e4\",\"bytes\":71,\"requestId\":\"4\",\"requestMethod\":\"advance\",\"requestOrder\":4,\"pump\":{\"observed\":true,\"pumpCount\":5,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":761.389,\"maxGapMs\":176.171,\"maxGapAtMs\":518.640,\"trailingGapMs\":0.321,\"atMs\":761.709,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":5}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"924f23d94b3372a9\",\"bytes\":337,\"requestId\":\"5\",\"requestMethod\":\"ready\",\"requestOrder\":5,\"pump\":{\"observed\":true,\"pumpCount\":6,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":796.619,\"maxGapMs\":176.171,\"maxGapAtMs\":518.640,\"trailingGapMs\":0.367,\"atMs\":796.985,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":6}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"d5d92518895f7ab9\",\"bytes\":71,\"requestId\":\"6\",\"requestMethod\":\"advance\",\"requestOrder\":6,\"pump\":{\"observed\":true,\"pumpCount\":7,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":832.134,\"maxGapMs\":176.171,\"maxGapAtMs\":518.640,\"trailingGapMs\":0.490,\"atMs\":832.625,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":7}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"first_playable\",\"atMs\":869.238}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"436b24ed3f1e4e82\",\"bytes\":411,\"requestId\":\"7\",\"requestMethod\":\"ready\",\"requestOrder\":7,\"pump\":{\"observed\":true,\"pumpCount\":8,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":869.319,\"maxGapMs\":176.171,\"maxGapAtMs\":518.640,\"trailingGapMs\":0.287,\"atMs\":869.606,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":8}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"8bd0037436bb37dc\",\"bytes\":20307,\"requestId\":\"8\",\"requestMethod\":\"sample\",\"requestOrder\":8,\"pump\":{\"observed\":true,\"pumpCount\":9,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":907.132,\"maxGapMs\":176.171,\"maxGapAtMs\":518.640,\"trailingGapMs\":3.996,\"atMs\":911.128,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":9}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":10}",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] First 16 bytes (BGRA raw): 36 25 10 255 44 31 14 255 28 19 8 255 25 17 7 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Middle bytes (BGRA raw): 77 57 28 255 36 28 12 255 60 45 21 255 84 62 31 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Saved: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/native-ac5-visible-final/before.png (1280x720)",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":11}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":12}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":13}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":14}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":15}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":16}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"d4f5b3bea876d1bb\",\"bytes\":71,\"requestId\":\"9\",\"requestMethod\":\"advance\",\"requestOrder\":9,\"pump\":{\"observed\":true,\"pumpCount\":17,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":1368.113,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":0.361,\"atMs\":1368.474,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":17}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"36da15300b0d8035\",\"bytes\":20467,\"requestId\":\"10\",\"requestMethod\":\"sample\",\"requestOrder\":10,\"pump\":{\"observed\":true,\"pumpCount\":18,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":1409.452,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":1.826,\"atMs\":1411.279,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":18}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"b2e9415b04481bca\",\"bytes\":20467,\"requestId\":\"11\",\"requestMethod\":\"sample\",\"requestOrder\":11,\"pump\":{\"observed\":true,\"pumpCount\":19,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":1452.381,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":1.663,\"atMs\":1454.044,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":19}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":20}",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] First 16 bytes (BGRA raw): 28 20 8 255 28 20 8 255 28 20 8 255 28 20 8 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Middle bytes (BGRA raw): 39 30 14 255 39 30 14 255 43 33 16 255 74 56 29 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Saved: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/native-ac5-visible-final/frame-1.png (1280x720)",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":21}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":22}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":23}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":24}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"bef1ab1cc0305c0e\",\"bytes\":72,\"requestId\":\"12\",\"requestMethod\":\"advance\",\"requestOrder\":12,\"pump\":{\"observed\":true,\"pumpCount\":25,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":1820.927,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":0.528,\"atMs\":1821.454,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":25}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"8bd7cecf9aca698a\",\"bytes\":20639,\"requestId\":\"13\",\"requestMethod\":\"sample\",\"requestOrder\":13,\"pump\":{\"observed\":true,\"pumpCount\":26,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":1861.509,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":1.605,\"atMs\":1863.114,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":26}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c02cf4c56d8f89ab\",\"bytes\":20639,\"requestId\":\"14\",\"requestMethod\":\"sample\",\"requestOrder\":14,\"pump\":{\"observed\":true,\"pumpCount\":27,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":1901.724,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":1.813,\"atMs\":1903.537,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":27}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":28}",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] First 16 bytes (BGRA raw): 29 20 9 255 29 20 9 255 29 21 9 255 29 21 9 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Middle bytes (BGRA raw): 43 33 16 255 43 33 16 255 62 48 25 255 142 110 64 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Saved: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/native-ac5-visible-final/frame-2.png (1280x720)",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":29}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":30}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":31}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":32}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f30c86c924ad6fe4\",\"bytes\":72,\"requestId\":\"15\",\"requestMethod\":\"advance\",\"requestOrder\":15,\"pump\":{\"observed\":true,\"pumpCount\":33,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":2263.580,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":0.419,\"atMs\":2263.999,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":33}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":34}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"04b2a33b4f09e376\",\"bytes\":20796,\"requestId\":\"16\",\"requestMethod\":\"sample\",\"requestOrder\":16,\"pump\":{\"observed\":true,\"pumpCount\":35,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":2338.392,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":1.173,\"atMs\":2339.565,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":35}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"ece65da890fe2b47\",\"bytes\":20796,\"requestId\":\"17\",\"requestMethod\":\"sample\",\"requestOrder\":17,\"pump\":{\"observed\":true,\"pumpCount\":36,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":2374.047,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":1.322,\"atMs\":2375.369,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":36}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":37}",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] First 16 bytes (BGRA raw): 37 27 13 255 37 28 14 255 45 34 17 255 112 86 50 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Middle bytes (BGRA raw): 67 52 29 255 83 65 37 255 70 55 31 255 52 41 22 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Saved: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/native-ac5-visible-final/frame-3.png (1280x720)",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":38}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":39}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":40}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":41}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":42}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"d7e2f894f248bd32\",\"bytes\":72,\"requestId\":\"18\",\"requestMethod\":\"advance\",\"requestOrder\":18,\"pump\":{\"observed\":true,\"pumpCount\":43,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":2757.396,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":0.286,\"atMs\":2757.681,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":43}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"313e57381c75ebba\",\"bytes\":20963,\"requestId\":\"19\",\"requestMethod\":\"sample\",\"requestOrder\":19,\"pump\":{\"observed\":true,\"pumpCount\":44,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":2789.718,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":1.073,\"atMs\":2790.791,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":44}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"78175c85fb00f00e\",\"bytes\":20963,\"requestId\":\"20\",\"requestMethod\":\"sample\",\"requestOrder\":20,\"pump\":{\"observed\":true,\"pumpCount\":45,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":2823.259,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":1.515,\"atMs\":2824.774,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":45}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":46}",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] First 16 bytes (BGRA raw): 41 31 16 255 41 31 16 255 41 31 16 255 41 31 16 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Middle bytes (BGRA raw): 53 42 23 255 51 41 22 255 68 54 31 255 127 101 63 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Saved: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/native-ac5-visible-final/frame-4.png (1280x720)",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":47}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":48}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":49}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":50}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":51}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"65ad9be25fdadaa7\",\"bytes\":72,\"requestId\":\"21\",\"requestMethod\":\"advance\",\"requestOrder\":21,\"pump\":{\"observed\":true,\"pumpCount\":52,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":3191.009,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":0.249,\"atMs\":3191.259,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":52}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"e9845c3091da90e5\",\"bytes\":21126,\"requestId\":\"22\",\"requestMethod\":\"sample\",\"requestOrder\":22,\"pump\":{\"observed\":true,\"pumpCount\":53,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":3221.720,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":1.056,\"atMs\":3222.776,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":53}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":54}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c0020f84c774d254\",\"bytes\":21126,\"requestId\":\"23\",\"requestMethod\":\"sample\",\"requestOrder\":23,\"pump\":{\"observed\":true,\"pumpCount\":55,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":3283.864,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":0.896,\"atMs\":3284.761,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":55}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":56}",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] First 16 bytes (BGRA raw): 45 35 19 255 46 35 19 255 47 36 20 255 49 38 21 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Middle bytes (BGRA raw): 77 61 35 255 90 71 42 255 90 71 42 255 89 71 42 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Saved: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/native-ac5-visible-final/frame-5.png (1280x720)",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":57}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":58}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":59}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":60}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PRESENTS_TICK:{\"frames\":60,\"presents\":60,\"textureMB\":150,\"textures\":21,\"bufferMB\":2,\"capHz\":60}",
+    "type": "log"
+  },
+  {
+    "text": "TN_TRANSIENT_ATTACHMENTS:{\"granted\":true,\"count\":1,\"nominalBytes\":14745600}",
+    "type": "log"
+  },
+  {
+    "text": "TN_GPU_TEXTURES:{\"totalMB\":150,\"count\":21,\"buckets\":[{\"k\":\"1280x720 depth24plus msaa4\",\"n\":4,\"mb\":56},{\"k\":\"1280x720 rgba16float msaa4\",\"n\":2,\"mb\":56},{\"k\":\"1280x720 bgra8unorm msaa4\",\"n\":1,\"mb\":14},{\"k\":\"1280x720 rgba16float\",\"n\":2,\"mb\":14},{\"k\":\"640x360 rgba16float\",\"n\":3,\"mb\":5},{\"k\":\"1280x720 depth24plus\",\"n\":1,\"mb\":3},{\"k\":\"320x180 rgba16float\",\"n\":2,\"mb\":0},{\"k\":\"160x90 rgba16float\",\"n\":2,\"mb\":0},{\"k\":\"80x45 rgba16float\",\"n\":2,\"mb\":0},{\"k\":\"40x22 rgba16float\",\"n\":2,\"mb\":0}],\"bucketsTotal\":10}",
+    "type": "log"
+  },
+  {
+    "text": "TN_GPU_BUFFERS:{\"totalMB\":2,\"count\":48,\"buckets\":[{\"k\":\"vertex|storage|copysrc|copydst\",\"n\":3,\"mb\":2},{\"k\":\"copydst|mapread\",\"n\":2,\"mb\":0},{\"k\":\"copysrc\",\"n\":2,\"mb\":0},{\"k\":\"index|copysrc|copydst\",\"n\":3,\"mb\":0},{\"k\":\"vertex|copysrc|copydst\",\"n\":5,\"mb\":0},{\"k\":\"uniform|copydst\",\"n\":33,\"mb\":0}]}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":61}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-3Fq8UB/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"a93149de62ecb323\",\"bytes\":21126,\"requestId\":\"24\",\"requestMethod\":\"sample\",\"requestOrder\":24,\"pump\":{\"observed\":true,\"pumpCount\":62,\"firstPumpAtMs\":433.785,\"lastPumpAtMs\":3634.676,\"maxGapMs\":176.398,\"maxGapAtMs\":950.288,\"trailingGapMs\":0.927,\"atMs\":3635.603,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":62}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":63}",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] First 16 bytes (BGRA raw): 37 28 15 255 37 28 15 255 37 28 15 255 37 28 15 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Middle bytes (BGRA raw): 131 107 68 255 69 56 32 255 86 69 41 255 126 101 63 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Saved: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/native-ac5-visible-final/after.png (1280x720)",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":64}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":65}",
+    "type": "log"
+  }
+]

@@ -1,0 +1,4669 @@
+{
+  "arm": "before",
+  "browserRecipe": "webgpu",
+  "commit": "1d056cec3d84ad0a6aebd89a97d3bd66b8d04de9",
+  "firstWorld": {
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "censusMetadata": {
+      "globalCounts": {
+        "lookups": 18,
+        "creations": 18,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 15,
+        "uniquePipelines": 18,
+        "recordedEvents": 18,
+        "droppedEvents": 0,
+        "nodeBuilds": 15,
+        "deviceCreations": 18,
+        "directCreations": 0
+      },
+      "postEvents": 11,
+      "postProcessing": {
+        "graphs": 8,
+        "pipelines": 8
+      },
+      "warmBoundary": {
+        "boundaryMs": 107.19999999552965,
+        "eventsSettled": 7,
+        "nodeBuilds": 4,
+        "renderPipelineCreations": 4
+      },
+      "warmedWorld": {
+        "graphs": 3,
+        "nodeBuilds": 3,
+        "pipelines": 3,
+        "positiveNodeBuilds": true
+      }
+    },
+    "readiness": false,
+    "renderMs": 21.3,
+    "tick": 60,
+    "timing": "first game-loop world draw after warmUpSettled; runtimeDiagnosticsSeries phases.render"
+  },
+  "firstVisible": {
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "readiness": true,
+    "renderMs": 2.1,
+    "tick": 60,
+    "timing": "first post-readiness visible world frame; frameBudget phases.render"
+  },
+  "firstWorldRenderMs": 21.3,
+  "firstVisibleRenderMs": 2.1,
+  "run": "run1",
+  "adapter": {
+    "architecture": "turing",
+    "vendor": "nvidia",
+    "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+    "limit.maxBindGroups": "4",
+    "limit.maxTextureDimension2D": "16384",
+    "limit.maxStorageBufferBindingSize": "2147483644"
+  },
+  "frames": [
+    {
+      "frame": 1,
+      "image": {
+        "annotated": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/first-visible/before-run1/frame-1-annotated.png",
+        "raw": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/first-visible/before-run1/frame-1.png"
+      },
+      "record": {
+        "arm": "before",
+        "census": {
+          "version": 1,
+          "complete": true,
+          "overflowed": false,
+          "unsupported": false,
+          "limit": 512,
+          "clock": {
+            "originMs": 669.2000000029802,
+            "source": "performance"
+          },
+          "backend": {
+            "kind": "webgpu",
+            "identity": "webgpu:WebGPUBackend"
+          },
+          "build": {
+            "identity": "@threenative/core@0.3.4"
+          },
+          "adapter": {
+            "identity": "webgpu:architecture=turing|vendor=nvidia",
+            "thermal": "unavailable"
+          },
+          "firstPresent": {
+            "boundaryMs": 38.79999999701977,
+            "eventsSettled": 1
+          },
+          "warmUpSettled": {
+            "boundaryMs": 107.19999999552965,
+            "eventsSettled": 7,
+            "nodeBuilds": 4,
+            "renderPipelineCreations": 4
+          },
+          "counts": {
+            "lookups": 18,
+            "creations": 18,
+            "failures": 0,
+            "pending": 0,
+            "uniquePrograms": 15,
+            "uniquePipelines": 18,
+            "recordedEvents": 18,
+            "droppedEvents": 0,
+            "nodeBuilds": 15,
+            "deviceCreations": 18,
+            "directCreations": 0
+          },
+          "events": [
+            {
+              "sequence": 1,
+              "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+              "pipelineIdentity": "backend-pipeline-1",
+              "kind": "render",
+              "pass": "output",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1299,
+                "hash": "00fc0a8ad03630cc"
+              },
+              "fragment": {
+                "bytes": 1595,
+                "hash": "458120a84b226496"
+              },
+              "provenance": {
+                "material": {
+                  "id": 18,
+                  "name": "outputColorTransform",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 23,
+                  "name": "Output Color Transform",
+                  "uuid": "e4cb182b-8d0f-420e-b3ca-0f55d9e82a0f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 37.599999994039536,
+              "settledMs": 38.29999999701977,
+              "serviceMs": 0.7000000029802322,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": true,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 2,
+              "programIdentity": "d53b2bc0071f3874",
+              "pipelineIdentity": "backend-pipeline-2",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 2258,
+                "hash": "d53b2bc0071f3874"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 55.899999998509884,
+              "settledMs": 56,
+              "serviceMs": 0.10000000149011612,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 3,
+              "programIdentity": "233446aebec2f03a",
+              "pipelineIdentity": "backend-pipeline-3",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 4627,
+                "hash": "233446aebec2f03a"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 64.09999999403954,
+              "settledMs": 64.09999999403954,
+              "serviceMs": 0,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 4,
+              "programIdentity": "ca827b8aad6a5a39",
+              "pipelineIdentity": "backend-pipeline-4",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 1615,
+                "hash": "ca827b8aad6a5a39"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 65.29999999701977,
+              "settledMs": 65.29999999701977,
+              "serviceMs": 0,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 5,
+              "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+              "pipelineIdentity": "backend-pipeline-5",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 1368,
+                "hash": "a0dc858b2770e4b6"
+              },
+              "fragment": {
+                "bytes": 2588,
+                "hash": "a9284e64d0b7ab7a"
+              },
+              "provenance": {
+                "material": {
+                  "id": 20,
+                  "type": "MeshBasicNodeMaterial"
+                },
+                "object": {
+                  "id": 29,
+                  "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 70.59999999403954,
+              "settledMs": 93.89999999850988,
+              "promiseMs": 23.30000000447035,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 6,
+              "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+              "pipelineIdentity": "backend-pipeline-6",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 2120,
+                "hash": "d2ea5ac757871426"
+              },
+              "fragment": {
+                "bytes": 1136,
+                "hash": "63f9db766141e0ab"
+              },
+              "provenance": {
+                "material": {
+                  "id": 19,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 28,
+                  "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 98,
+              "settledMs": 101.89999999850988,
+              "promiseMs": 3.899999998509884,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 7,
+              "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+              "pipelineIdentity": "backend-pipeline-7",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 1825,
+                "hash": "c159003d0d4f355a"
+              },
+              "fragment": {
+                "bytes": 1001,
+                "hash": "41f98e61499c0e67"
+              },
+              "provenance": {
+                "material": {
+                  "id": 21,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 30,
+                  "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 103.5,
+              "settledMs": 106.5,
+              "promiseMs": 3,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 8,
+              "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+              "pipelineIdentity": "backend-pipeline-8",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1368,
+                "hash": "a0dc858b2770e4b6"
+              },
+              "fragment": {
+                "bytes": 2588,
+                "hash": "a9284e64d0b7ab7a"
+              },
+              "provenance": {
+                "material": {
+                  "id": 20,
+                  "type": "MeshBasicNodeMaterial"
+                },
+                "object": {
+                  "id": 29,
+                  "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 127,
+              "settledMs": 127.09999999403954,
+              "serviceMs": 0.09999999403953552,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 9,
+              "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+              "pipelineIdentity": "backend-pipeline-9",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 2120,
+                "hash": "d2ea5ac757871426"
+              },
+              "fragment": {
+                "bytes": 1136,
+                "hash": "63f9db766141e0ab"
+              },
+              "provenance": {
+                "material": {
+                  "id": 19,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 28,
+                  "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 129.09999999403954,
+              "settledMs": 129.09999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 10,
+              "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+              "pipelineIdentity": "backend-pipeline-10",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1825,
+                "hash": "c159003d0d4f355a"
+              },
+              "fragment": {
+                "bytes": 1001,
+                "hash": "41f98e61499c0e67"
+              },
+              "provenance": {
+                "material": {
+                  "id": 21,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 30,
+                  "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 130.09999999403954,
+              "settledMs": 130.09999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 11,
+              "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+              "pipelineIdentity": "backend-pipeline-11",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1417,
+                "hash": "dcd9d1972708c088"
+              },
+              "fragment": {
+                "bytes": 960,
+                "hash": "a2499803894a35ed"
+              },
+              "provenance": {
+                "material": {
+                  "id": 25,
+                  "name": "Bloom_highPass",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ High Pass ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 131.69999999552965,
+              "settledMs": 131.79999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 12,
+              "programIdentity": "45fc3617fb049a88/c466a179e1f4f0a4",
+              "pipelineIdentity": "backend-pipeline-12",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1818,
+                "hash": "c466a179e1f4f0a4"
+              },
+              "provenance": {
+                "material": {
+                  "id": 26,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 0 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 133.89999999850988,
+              "settledMs": 134,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 13,
+              "programIdentity": "45fc3617fb049a88/904d7d1b777971dc",
+              "pipelineIdentity": "backend-pipeline-13",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "904d7d1b777971dc"
+              },
+              "provenance": {
+                "material": {
+                  "id": 27,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 1 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 136.59999999403954,
+              "settledMs": 136.59999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 14,
+              "programIdentity": "45fc3617fb049a88/9ac08f65518be06c",
+              "pipelineIdentity": "backend-pipeline-14",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "9ac08f65518be06c"
+              },
+              "provenance": {
+                "material": {
+                  "id": 28,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 2 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 138.29999999701977,
+              "settledMs": 138.39999999850988,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 15,
+              "programIdentity": "45fc3617fb049a88/2b2d9e1b2a1e6bbc",
+              "pipelineIdentity": "backend-pipeline-15",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "2b2d9e1b2a1e6bbc"
+              },
+              "provenance": {
+                "material": {
+                  "id": 29,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 3 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 139.69999999552965,
+              "settledMs": 139.79999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 16,
+              "programIdentity": "45fc3617fb049a88/4fbcbe479ba1b0a6",
+              "pipelineIdentity": "backend-pipeline-16",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "4fbcbe479ba1b0a6"
+              },
+              "provenance": {
+                "material": {
+                  "id": 30,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 4 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 141.09999999403954,
+              "settledMs": 141.19999999552965,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 17,
+              "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+              "pipelineIdentity": "backend-pipeline-17",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1567,
+                "hash": "ffc0ca9b4adc3a8b"
+              },
+              "fragment": {
+                "bytes": 3311,
+                "hash": "ff20e1db0bfb34f5"
+              },
+              "provenance": {
+                "material": {
+                  "id": 31,
+                  "name": "Bloom_comp",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Composite ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 143.19999999552965,
+              "settledMs": 143.29999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 18,
+              "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+              "pipelineIdentity": "backend-pipeline-18",
+              "kind": "render",
+              "pass": "output",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1375,
+                "hash": "b07fbcd4d49ee70f"
+              },
+              "fragment": {
+                "bytes": 1790,
+                "hash": "a170775f358f22a4"
+              },
+              "provenance": {
+                "material": {
+                  "id": 24,
+                  "name": "RenderPipeline",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 37,
+                  "name": "Render Pipeline",
+                  "uuid": "eed4120d-2fc0-4320-ac53-9f8a57a0a471"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 143.59999999403954,
+              "settledMs": 143.59999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            }
+          ],
+          "incompleteReasons": []
+        },
+        "frame": 1,
+        "frameBudget": {
+          "frameMs": 33.30000000000007,
+          "drawCalls": 22,
+          "passes": [
+            {
+              "draws": 21,
+              "kind": "nested",
+              "triangles": 183854
+            },
+            {
+              "draws": 1,
+              "kind": "main",
+              "triangles": 1
+            }
+          ],
+          "phases": {
+            "hostGap": 30,
+            "overlay": 0,
+            "render": 2.1,
+            "residual": 0,
+            "ui": 0,
+            "update": 0
+          },
+          "triangles": 183855
+        },
+        "readyMs": 897.7000000029802,
+        "tick": 60,
+        "painted": true
+      },
+      "state": {
+        "position": [
+          535.8208561182573,
+          93.10241572588033,
+          0
+        ],
+        "seed": 90210
+      },
+      "censusMetadata": {
+        "globalCounts": {
+          "lookups": 18,
+          "creations": 18,
+          "failures": 0,
+          "pending": 0,
+          "uniquePrograms": 15,
+          "uniquePipelines": 18,
+          "recordedEvents": 18,
+          "droppedEvents": 0,
+          "nodeBuilds": 15,
+          "deviceCreations": 18,
+          "directCreations": 0
+        },
+        "postEvents": 11,
+        "postProcessing": {
+          "graphs": 8,
+          "pipelines": 8
+        },
+        "warmBoundary": {
+          "boundaryMs": 107.19999999552965,
+          "eventsSettled": 7,
+          "nodeBuilds": 4,
+          "renderPipelineCreations": 4
+        },
+        "warmedWorld": {
+          "graphs": 3,
+          "nodeBuilds": 3,
+          "pipelines": 3,
+          "positiveNodeBuilds": true
+        }
+      }
+    },
+    {
+      "frame": 2,
+      "image": {
+        "annotated": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/first-visible/before-run1/frame-2-annotated.png",
+        "raw": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/first-visible/before-run1/frame-2.png"
+      },
+      "record": {
+        "arm": "before",
+        "census": {
+          "version": 1,
+          "complete": true,
+          "overflowed": false,
+          "unsupported": false,
+          "limit": 512,
+          "clock": {
+            "originMs": 669.2000000029802,
+            "source": "performance"
+          },
+          "backend": {
+            "kind": "webgpu",
+            "identity": "webgpu:WebGPUBackend"
+          },
+          "build": {
+            "identity": "@threenative/core@0.3.4"
+          },
+          "adapter": {
+            "identity": "webgpu:architecture=turing|vendor=nvidia",
+            "thermal": "unavailable"
+          },
+          "firstPresent": {
+            "boundaryMs": 38.79999999701977,
+            "eventsSettled": 1
+          },
+          "warmUpSettled": {
+            "boundaryMs": 107.19999999552965,
+            "eventsSettled": 7,
+            "nodeBuilds": 4,
+            "renderPipelineCreations": 4
+          },
+          "counts": {
+            "lookups": 18,
+            "creations": 18,
+            "failures": 0,
+            "pending": 0,
+            "uniquePrograms": 15,
+            "uniquePipelines": 18,
+            "recordedEvents": 18,
+            "droppedEvents": 0,
+            "nodeBuilds": 15,
+            "deviceCreations": 18,
+            "directCreations": 0
+          },
+          "events": [
+            {
+              "sequence": 1,
+              "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+              "pipelineIdentity": "backend-pipeline-1",
+              "kind": "render",
+              "pass": "output",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1299,
+                "hash": "00fc0a8ad03630cc"
+              },
+              "fragment": {
+                "bytes": 1595,
+                "hash": "458120a84b226496"
+              },
+              "provenance": {
+                "material": {
+                  "id": 18,
+                  "name": "outputColorTransform",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 23,
+                  "name": "Output Color Transform",
+                  "uuid": "e4cb182b-8d0f-420e-b3ca-0f55d9e82a0f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 37.599999994039536,
+              "settledMs": 38.29999999701977,
+              "serviceMs": 0.7000000029802322,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": true,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 2,
+              "programIdentity": "d53b2bc0071f3874",
+              "pipelineIdentity": "backend-pipeline-2",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 2258,
+                "hash": "d53b2bc0071f3874"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 55.899999998509884,
+              "settledMs": 56,
+              "serviceMs": 0.10000000149011612,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 3,
+              "programIdentity": "233446aebec2f03a",
+              "pipelineIdentity": "backend-pipeline-3",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 4627,
+                "hash": "233446aebec2f03a"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 64.09999999403954,
+              "settledMs": 64.09999999403954,
+              "serviceMs": 0,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 4,
+              "programIdentity": "ca827b8aad6a5a39",
+              "pipelineIdentity": "backend-pipeline-4",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 1615,
+                "hash": "ca827b8aad6a5a39"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 65.29999999701977,
+              "settledMs": 65.29999999701977,
+              "serviceMs": 0,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 5,
+              "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+              "pipelineIdentity": "backend-pipeline-5",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 1368,
+                "hash": "a0dc858b2770e4b6"
+              },
+              "fragment": {
+                "bytes": 2588,
+                "hash": "a9284e64d0b7ab7a"
+              },
+              "provenance": {
+                "material": {
+                  "id": 20,
+                  "type": "MeshBasicNodeMaterial"
+                },
+                "object": {
+                  "id": 29,
+                  "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 70.59999999403954,
+              "settledMs": 93.89999999850988,
+              "promiseMs": 23.30000000447035,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 6,
+              "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+              "pipelineIdentity": "backend-pipeline-6",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 2120,
+                "hash": "d2ea5ac757871426"
+              },
+              "fragment": {
+                "bytes": 1136,
+                "hash": "63f9db766141e0ab"
+              },
+              "provenance": {
+                "material": {
+                  "id": 19,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 28,
+                  "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 98,
+              "settledMs": 101.89999999850988,
+              "promiseMs": 3.899999998509884,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 7,
+              "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+              "pipelineIdentity": "backend-pipeline-7",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 1825,
+                "hash": "c159003d0d4f355a"
+              },
+              "fragment": {
+                "bytes": 1001,
+                "hash": "41f98e61499c0e67"
+              },
+              "provenance": {
+                "material": {
+                  "id": 21,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 30,
+                  "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 103.5,
+              "settledMs": 106.5,
+              "promiseMs": 3,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 8,
+              "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+              "pipelineIdentity": "backend-pipeline-8",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1368,
+                "hash": "a0dc858b2770e4b6"
+              },
+              "fragment": {
+                "bytes": 2588,
+                "hash": "a9284e64d0b7ab7a"
+              },
+              "provenance": {
+                "material": {
+                  "id": 20,
+                  "type": "MeshBasicNodeMaterial"
+                },
+                "object": {
+                  "id": 29,
+                  "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 127,
+              "settledMs": 127.09999999403954,
+              "serviceMs": 0.09999999403953552,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 9,
+              "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+              "pipelineIdentity": "backend-pipeline-9",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 2120,
+                "hash": "d2ea5ac757871426"
+              },
+              "fragment": {
+                "bytes": 1136,
+                "hash": "63f9db766141e0ab"
+              },
+              "provenance": {
+                "material": {
+                  "id": 19,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 28,
+                  "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 129.09999999403954,
+              "settledMs": 129.09999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 10,
+              "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+              "pipelineIdentity": "backend-pipeline-10",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1825,
+                "hash": "c159003d0d4f355a"
+              },
+              "fragment": {
+                "bytes": 1001,
+                "hash": "41f98e61499c0e67"
+              },
+              "provenance": {
+                "material": {
+                  "id": 21,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 30,
+                  "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 130.09999999403954,
+              "settledMs": 130.09999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 11,
+              "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+              "pipelineIdentity": "backend-pipeline-11",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1417,
+                "hash": "dcd9d1972708c088"
+              },
+              "fragment": {
+                "bytes": 960,
+                "hash": "a2499803894a35ed"
+              },
+              "provenance": {
+                "material": {
+                  "id": 25,
+                  "name": "Bloom_highPass",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ High Pass ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 131.69999999552965,
+              "settledMs": 131.79999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 12,
+              "programIdentity": "45fc3617fb049a88/c466a179e1f4f0a4",
+              "pipelineIdentity": "backend-pipeline-12",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1818,
+                "hash": "c466a179e1f4f0a4"
+              },
+              "provenance": {
+                "material": {
+                  "id": 26,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 0 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 133.89999999850988,
+              "settledMs": 134,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 13,
+              "programIdentity": "45fc3617fb049a88/904d7d1b777971dc",
+              "pipelineIdentity": "backend-pipeline-13",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "904d7d1b777971dc"
+              },
+              "provenance": {
+                "material": {
+                  "id": 27,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 1 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 136.59999999403954,
+              "settledMs": 136.59999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 14,
+              "programIdentity": "45fc3617fb049a88/9ac08f65518be06c",
+              "pipelineIdentity": "backend-pipeline-14",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "9ac08f65518be06c"
+              },
+              "provenance": {
+                "material": {
+                  "id": 28,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 2 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 138.29999999701977,
+              "settledMs": 138.39999999850988,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 15,
+              "programIdentity": "45fc3617fb049a88/2b2d9e1b2a1e6bbc",
+              "pipelineIdentity": "backend-pipeline-15",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "2b2d9e1b2a1e6bbc"
+              },
+              "provenance": {
+                "material": {
+                  "id": 29,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 3 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 139.69999999552965,
+              "settledMs": 139.79999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 16,
+              "programIdentity": "45fc3617fb049a88/4fbcbe479ba1b0a6",
+              "pipelineIdentity": "backend-pipeline-16",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "4fbcbe479ba1b0a6"
+              },
+              "provenance": {
+                "material": {
+                  "id": 30,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 4 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 141.09999999403954,
+              "settledMs": 141.19999999552965,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 17,
+              "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+              "pipelineIdentity": "backend-pipeline-17",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1567,
+                "hash": "ffc0ca9b4adc3a8b"
+              },
+              "fragment": {
+                "bytes": 3311,
+                "hash": "ff20e1db0bfb34f5"
+              },
+              "provenance": {
+                "material": {
+                  "id": 31,
+                  "name": "Bloom_comp",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Composite ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 143.19999999552965,
+              "settledMs": 143.29999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 18,
+              "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+              "pipelineIdentity": "backend-pipeline-18",
+              "kind": "render",
+              "pass": "output",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1375,
+                "hash": "b07fbcd4d49ee70f"
+              },
+              "fragment": {
+                "bytes": 1790,
+                "hash": "a170775f358f22a4"
+              },
+              "provenance": {
+                "material": {
+                  "id": 24,
+                  "name": "RenderPipeline",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 37,
+                  "name": "Render Pipeline",
+                  "uuid": "eed4120d-2fc0-4320-ac53-9f8a57a0a471"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 143.59999999403954,
+              "settledMs": 143.59999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            }
+          ],
+          "incompleteReasons": []
+        },
+        "frame": 2,
+        "frameBudget": {
+          "frameMs": 866.7,
+          "drawCalls": 22,
+          "passes": [
+            {
+              "draws": 21,
+              "kind": "nested",
+              "triangles": 183854
+            },
+            {
+              "draws": 1,
+              "kind": "main",
+              "triangles": 1
+            }
+          ],
+          "phases": {
+            "hostGap": 858.3,
+            "overlay": 0,
+            "render": 2.3,
+            "residual": 0.2,
+            "ui": 0,
+            "update": 0
+          },
+          "triangles": 183855
+        },
+        "readyMs": 897.7000000029802,
+        "tick": 61,
+        "painted": true
+      },
+      "state": {
+        "position": [
+          535.2534121924155,
+          94.86214234117152,
+          0
+        ],
+        "seed": 90210
+      },
+      "censusMetadata": {
+        "globalCounts": {
+          "lookups": 18,
+          "creations": 18,
+          "failures": 0,
+          "pending": 0,
+          "uniquePrograms": 15,
+          "uniquePipelines": 18,
+          "recordedEvents": 18,
+          "droppedEvents": 0,
+          "nodeBuilds": 15,
+          "deviceCreations": 18,
+          "directCreations": 0
+        },
+        "postEvents": 11,
+        "postProcessing": {
+          "graphs": 8,
+          "pipelines": 8
+        },
+        "warmBoundary": {
+          "boundaryMs": 107.19999999552965,
+          "eventsSettled": 7,
+          "nodeBuilds": 4,
+          "renderPipelineCreations": 4
+        },
+        "warmedWorld": {
+          "graphs": 3,
+          "nodeBuilds": 3,
+          "pipelines": 3,
+          "positiveNodeBuilds": true
+        }
+      }
+    },
+    {
+      "frame": 3,
+      "image": {
+        "annotated": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/first-visible/before-run1/frame-3-annotated.png",
+        "raw": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/first-visible/before-run1/frame-3.png"
+      },
+      "record": {
+        "arm": "before",
+        "census": {
+          "version": 1,
+          "complete": true,
+          "overflowed": false,
+          "unsupported": false,
+          "limit": 512,
+          "clock": {
+            "originMs": 669.2000000029802,
+            "source": "performance"
+          },
+          "backend": {
+            "kind": "webgpu",
+            "identity": "webgpu:WebGPUBackend"
+          },
+          "build": {
+            "identity": "@threenative/core@0.3.4"
+          },
+          "adapter": {
+            "identity": "webgpu:architecture=turing|vendor=nvidia",
+            "thermal": "unavailable"
+          },
+          "firstPresent": {
+            "boundaryMs": 38.79999999701977,
+            "eventsSettled": 1
+          },
+          "warmUpSettled": {
+            "boundaryMs": 107.19999999552965,
+            "eventsSettled": 7,
+            "nodeBuilds": 4,
+            "renderPipelineCreations": 4
+          },
+          "counts": {
+            "lookups": 18,
+            "creations": 18,
+            "failures": 0,
+            "pending": 0,
+            "uniquePrograms": 15,
+            "uniquePipelines": 18,
+            "recordedEvents": 18,
+            "droppedEvents": 0,
+            "nodeBuilds": 15,
+            "deviceCreations": 18,
+            "directCreations": 0
+          },
+          "events": [
+            {
+              "sequence": 1,
+              "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+              "pipelineIdentity": "backend-pipeline-1",
+              "kind": "render",
+              "pass": "output",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1299,
+                "hash": "00fc0a8ad03630cc"
+              },
+              "fragment": {
+                "bytes": 1595,
+                "hash": "458120a84b226496"
+              },
+              "provenance": {
+                "material": {
+                  "id": 18,
+                  "name": "outputColorTransform",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 23,
+                  "name": "Output Color Transform",
+                  "uuid": "e4cb182b-8d0f-420e-b3ca-0f55d9e82a0f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 37.599999994039536,
+              "settledMs": 38.29999999701977,
+              "serviceMs": 0.7000000029802322,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": true,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 2,
+              "programIdentity": "d53b2bc0071f3874",
+              "pipelineIdentity": "backend-pipeline-2",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 2258,
+                "hash": "d53b2bc0071f3874"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 55.899999998509884,
+              "settledMs": 56,
+              "serviceMs": 0.10000000149011612,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 3,
+              "programIdentity": "233446aebec2f03a",
+              "pipelineIdentity": "backend-pipeline-3",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 4627,
+                "hash": "233446aebec2f03a"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 64.09999999403954,
+              "settledMs": 64.09999999403954,
+              "serviceMs": 0,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 4,
+              "programIdentity": "ca827b8aad6a5a39",
+              "pipelineIdentity": "backend-pipeline-4",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 1615,
+                "hash": "ca827b8aad6a5a39"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 65.29999999701977,
+              "settledMs": 65.29999999701977,
+              "serviceMs": 0,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 5,
+              "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+              "pipelineIdentity": "backend-pipeline-5",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 1368,
+                "hash": "a0dc858b2770e4b6"
+              },
+              "fragment": {
+                "bytes": 2588,
+                "hash": "a9284e64d0b7ab7a"
+              },
+              "provenance": {
+                "material": {
+                  "id": 20,
+                  "type": "MeshBasicNodeMaterial"
+                },
+                "object": {
+                  "id": 29,
+                  "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 70.59999999403954,
+              "settledMs": 93.89999999850988,
+              "promiseMs": 23.30000000447035,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 6,
+              "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+              "pipelineIdentity": "backend-pipeline-6",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 2120,
+                "hash": "d2ea5ac757871426"
+              },
+              "fragment": {
+                "bytes": 1136,
+                "hash": "63f9db766141e0ab"
+              },
+              "provenance": {
+                "material": {
+                  "id": 19,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 28,
+                  "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 98,
+              "settledMs": 101.89999999850988,
+              "promiseMs": 3.899999998509884,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 7,
+              "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+              "pipelineIdentity": "backend-pipeline-7",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 1825,
+                "hash": "c159003d0d4f355a"
+              },
+              "fragment": {
+                "bytes": 1001,
+                "hash": "41f98e61499c0e67"
+              },
+              "provenance": {
+                "material": {
+                  "id": 21,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 30,
+                  "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 103.5,
+              "settledMs": 106.5,
+              "promiseMs": 3,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 8,
+              "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+              "pipelineIdentity": "backend-pipeline-8",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1368,
+                "hash": "a0dc858b2770e4b6"
+              },
+              "fragment": {
+                "bytes": 2588,
+                "hash": "a9284e64d0b7ab7a"
+              },
+              "provenance": {
+                "material": {
+                  "id": 20,
+                  "type": "MeshBasicNodeMaterial"
+                },
+                "object": {
+                  "id": 29,
+                  "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 127,
+              "settledMs": 127.09999999403954,
+              "serviceMs": 0.09999999403953552,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 9,
+              "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+              "pipelineIdentity": "backend-pipeline-9",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 2120,
+                "hash": "d2ea5ac757871426"
+              },
+              "fragment": {
+                "bytes": 1136,
+                "hash": "63f9db766141e0ab"
+              },
+              "provenance": {
+                "material": {
+                  "id": 19,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 28,
+                  "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 129.09999999403954,
+              "settledMs": 129.09999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 10,
+              "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+              "pipelineIdentity": "backend-pipeline-10",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1825,
+                "hash": "c159003d0d4f355a"
+              },
+              "fragment": {
+                "bytes": 1001,
+                "hash": "41f98e61499c0e67"
+              },
+              "provenance": {
+                "material": {
+                  "id": 21,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 30,
+                  "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 130.09999999403954,
+              "settledMs": 130.09999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 11,
+              "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+              "pipelineIdentity": "backend-pipeline-11",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1417,
+                "hash": "dcd9d1972708c088"
+              },
+              "fragment": {
+                "bytes": 960,
+                "hash": "a2499803894a35ed"
+              },
+              "provenance": {
+                "material": {
+                  "id": 25,
+                  "name": "Bloom_highPass",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ High Pass ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 131.69999999552965,
+              "settledMs": 131.79999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 12,
+              "programIdentity": "45fc3617fb049a88/c466a179e1f4f0a4",
+              "pipelineIdentity": "backend-pipeline-12",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1818,
+                "hash": "c466a179e1f4f0a4"
+              },
+              "provenance": {
+                "material": {
+                  "id": 26,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 0 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 133.89999999850988,
+              "settledMs": 134,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 13,
+              "programIdentity": "45fc3617fb049a88/904d7d1b777971dc",
+              "pipelineIdentity": "backend-pipeline-13",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "904d7d1b777971dc"
+              },
+              "provenance": {
+                "material": {
+                  "id": 27,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 1 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 136.59999999403954,
+              "settledMs": 136.59999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 14,
+              "programIdentity": "45fc3617fb049a88/9ac08f65518be06c",
+              "pipelineIdentity": "backend-pipeline-14",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "9ac08f65518be06c"
+              },
+              "provenance": {
+                "material": {
+                  "id": 28,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 2 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 138.29999999701977,
+              "settledMs": 138.39999999850988,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 15,
+              "programIdentity": "45fc3617fb049a88/2b2d9e1b2a1e6bbc",
+              "pipelineIdentity": "backend-pipeline-15",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "2b2d9e1b2a1e6bbc"
+              },
+              "provenance": {
+                "material": {
+                  "id": 29,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 3 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 139.69999999552965,
+              "settledMs": 139.79999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 16,
+              "programIdentity": "45fc3617fb049a88/4fbcbe479ba1b0a6",
+              "pipelineIdentity": "backend-pipeline-16",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "4fbcbe479ba1b0a6"
+              },
+              "provenance": {
+                "material": {
+                  "id": 30,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 4 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 141.09999999403954,
+              "settledMs": 141.19999999552965,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 17,
+              "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+              "pipelineIdentity": "backend-pipeline-17",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1567,
+                "hash": "ffc0ca9b4adc3a8b"
+              },
+              "fragment": {
+                "bytes": 3311,
+                "hash": "ff20e1db0bfb34f5"
+              },
+              "provenance": {
+                "material": {
+                  "id": 31,
+                  "name": "Bloom_comp",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Composite ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 143.19999999552965,
+              "settledMs": 143.29999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 18,
+              "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+              "pipelineIdentity": "backend-pipeline-18",
+              "kind": "render",
+              "pass": "output",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1375,
+                "hash": "b07fbcd4d49ee70f"
+              },
+              "fragment": {
+                "bytes": 1790,
+                "hash": "a170775f358f22a4"
+              },
+              "provenance": {
+                "material": {
+                  "id": 24,
+                  "name": "RenderPipeline",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 37,
+                  "name": "Render Pipeline",
+                  "uuid": "eed4120d-2fc0-4320-ac53-9f8a57a0a471"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 143.59999999403954,
+              "settledMs": 143.59999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            }
+          ],
+          "incompleteReasons": []
+        },
+        "frame": 3,
+        "frameBudget": {
+          "frameMs": 749.9000000000001,
+          "drawCalls": 22,
+          "passes": [
+            {
+              "draws": 21,
+              "kind": "nested",
+              "triangles": 183854
+            },
+            {
+              "draws": 1,
+              "kind": "main",
+              "triangles": 1
+            }
+          ],
+          "phases": {
+            "hostGap": 747.7,
+            "overlay": 0,
+            "render": 3,
+            "residual": 0.3,
+            "ui": 0,
+            "update": 0
+          },
+          "triangles": 183855
+        },
+        "readyMs": 897.7000000029802,
+        "tick": 62,
+        "painted": true
+      },
+      "state": {
+        "position": [
+          534.6623656807424,
+          96.61830214197617,
+          0
+        ],
+        "seed": 90210
+      },
+      "censusMetadata": {
+        "globalCounts": {
+          "lookups": 18,
+          "creations": 18,
+          "failures": 0,
+          "pending": 0,
+          "uniquePrograms": 15,
+          "uniquePipelines": 18,
+          "recordedEvents": 18,
+          "droppedEvents": 0,
+          "nodeBuilds": 15,
+          "deviceCreations": 18,
+          "directCreations": 0
+        },
+        "postEvents": 11,
+        "postProcessing": {
+          "graphs": 8,
+          "pipelines": 8
+        },
+        "warmBoundary": {
+          "boundaryMs": 107.19999999552965,
+          "eventsSettled": 7,
+          "nodeBuilds": 4,
+          "renderPipelineCreations": 4
+        },
+        "warmedWorld": {
+          "graphs": 3,
+          "nodeBuilds": 3,
+          "pipelines": 3,
+          "positiveNodeBuilds": true
+        }
+      }
+    },
+    {
+      "frame": 4,
+      "image": {
+        "annotated": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/first-visible/before-run1/frame-4-annotated.png",
+        "raw": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/first-visible/before-run1/frame-4.png"
+      },
+      "record": {
+        "arm": "before",
+        "census": {
+          "version": 1,
+          "complete": true,
+          "overflowed": false,
+          "unsupported": false,
+          "limit": 512,
+          "clock": {
+            "originMs": 669.2000000029802,
+            "source": "performance"
+          },
+          "backend": {
+            "kind": "webgpu",
+            "identity": "webgpu:WebGPUBackend"
+          },
+          "build": {
+            "identity": "@threenative/core@0.3.4"
+          },
+          "adapter": {
+            "identity": "webgpu:architecture=turing|vendor=nvidia",
+            "thermal": "unavailable"
+          },
+          "firstPresent": {
+            "boundaryMs": 38.79999999701977,
+            "eventsSettled": 1
+          },
+          "warmUpSettled": {
+            "boundaryMs": 107.19999999552965,
+            "eventsSettled": 7,
+            "nodeBuilds": 4,
+            "renderPipelineCreations": 4
+          },
+          "counts": {
+            "lookups": 18,
+            "creations": 18,
+            "failures": 0,
+            "pending": 0,
+            "uniquePrograms": 15,
+            "uniquePipelines": 18,
+            "recordedEvents": 18,
+            "droppedEvents": 0,
+            "nodeBuilds": 15,
+            "deviceCreations": 18,
+            "directCreations": 0
+          },
+          "events": [
+            {
+              "sequence": 1,
+              "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+              "pipelineIdentity": "backend-pipeline-1",
+              "kind": "render",
+              "pass": "output",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1299,
+                "hash": "00fc0a8ad03630cc"
+              },
+              "fragment": {
+                "bytes": 1595,
+                "hash": "458120a84b226496"
+              },
+              "provenance": {
+                "material": {
+                  "id": 18,
+                  "name": "outputColorTransform",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 23,
+                  "name": "Output Color Transform",
+                  "uuid": "e4cb182b-8d0f-420e-b3ca-0f55d9e82a0f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 37.599999994039536,
+              "settledMs": 38.29999999701977,
+              "serviceMs": 0.7000000029802322,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": true,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 2,
+              "programIdentity": "d53b2bc0071f3874",
+              "pipelineIdentity": "backend-pipeline-2",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 2258,
+                "hash": "d53b2bc0071f3874"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 55.899999998509884,
+              "settledMs": 56,
+              "serviceMs": 0.10000000149011612,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 3,
+              "programIdentity": "233446aebec2f03a",
+              "pipelineIdentity": "backend-pipeline-3",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 4627,
+                "hash": "233446aebec2f03a"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 64.09999999403954,
+              "settledMs": 64.09999999403954,
+              "serviceMs": 0,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 4,
+              "programIdentity": "ca827b8aad6a5a39",
+              "pipelineIdentity": "backend-pipeline-4",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 1615,
+                "hash": "ca827b8aad6a5a39"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 65.29999999701977,
+              "settledMs": 65.29999999701977,
+              "serviceMs": 0,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 5,
+              "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+              "pipelineIdentity": "backend-pipeline-5",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 1368,
+                "hash": "a0dc858b2770e4b6"
+              },
+              "fragment": {
+                "bytes": 2588,
+                "hash": "a9284e64d0b7ab7a"
+              },
+              "provenance": {
+                "material": {
+                  "id": 20,
+                  "type": "MeshBasicNodeMaterial"
+                },
+                "object": {
+                  "id": 29,
+                  "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 70.59999999403954,
+              "settledMs": 93.89999999850988,
+              "promiseMs": 23.30000000447035,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 6,
+              "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+              "pipelineIdentity": "backend-pipeline-6",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 2120,
+                "hash": "d2ea5ac757871426"
+              },
+              "fragment": {
+                "bytes": 1136,
+                "hash": "63f9db766141e0ab"
+              },
+              "provenance": {
+                "material": {
+                  "id": 19,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 28,
+                  "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 98,
+              "settledMs": 101.89999999850988,
+              "promiseMs": 3.899999998509884,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 7,
+              "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+              "pipelineIdentity": "backend-pipeline-7",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 1825,
+                "hash": "c159003d0d4f355a"
+              },
+              "fragment": {
+                "bytes": 1001,
+                "hash": "41f98e61499c0e67"
+              },
+              "provenance": {
+                "material": {
+                  "id": 21,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 30,
+                  "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 103.5,
+              "settledMs": 106.5,
+              "promiseMs": 3,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 8,
+              "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+              "pipelineIdentity": "backend-pipeline-8",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1368,
+                "hash": "a0dc858b2770e4b6"
+              },
+              "fragment": {
+                "bytes": 2588,
+                "hash": "a9284e64d0b7ab7a"
+              },
+              "provenance": {
+                "material": {
+                  "id": 20,
+                  "type": "MeshBasicNodeMaterial"
+                },
+                "object": {
+                  "id": 29,
+                  "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 127,
+              "settledMs": 127.09999999403954,
+              "serviceMs": 0.09999999403953552,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 9,
+              "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+              "pipelineIdentity": "backend-pipeline-9",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 2120,
+                "hash": "d2ea5ac757871426"
+              },
+              "fragment": {
+                "bytes": 1136,
+                "hash": "63f9db766141e0ab"
+              },
+              "provenance": {
+                "material": {
+                  "id": 19,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 28,
+                  "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 129.09999999403954,
+              "settledMs": 129.09999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 10,
+              "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+              "pipelineIdentity": "backend-pipeline-10",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1825,
+                "hash": "c159003d0d4f355a"
+              },
+              "fragment": {
+                "bytes": 1001,
+                "hash": "41f98e61499c0e67"
+              },
+              "provenance": {
+                "material": {
+                  "id": 21,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 30,
+                  "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 130.09999999403954,
+              "settledMs": 130.09999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 11,
+              "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+              "pipelineIdentity": "backend-pipeline-11",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1417,
+                "hash": "dcd9d1972708c088"
+              },
+              "fragment": {
+                "bytes": 960,
+                "hash": "a2499803894a35ed"
+              },
+              "provenance": {
+                "material": {
+                  "id": 25,
+                  "name": "Bloom_highPass",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ High Pass ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 131.69999999552965,
+              "settledMs": 131.79999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 12,
+              "programIdentity": "45fc3617fb049a88/c466a179e1f4f0a4",
+              "pipelineIdentity": "backend-pipeline-12",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1818,
+                "hash": "c466a179e1f4f0a4"
+              },
+              "provenance": {
+                "material": {
+                  "id": 26,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 0 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 133.89999999850988,
+              "settledMs": 134,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 13,
+              "programIdentity": "45fc3617fb049a88/904d7d1b777971dc",
+              "pipelineIdentity": "backend-pipeline-13",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "904d7d1b777971dc"
+              },
+              "provenance": {
+                "material": {
+                  "id": 27,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 1 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 136.59999999403954,
+              "settledMs": 136.59999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 14,
+              "programIdentity": "45fc3617fb049a88/9ac08f65518be06c",
+              "pipelineIdentity": "backend-pipeline-14",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "9ac08f65518be06c"
+              },
+              "provenance": {
+                "material": {
+                  "id": 28,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 2 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 138.29999999701977,
+              "settledMs": 138.39999999850988,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 15,
+              "programIdentity": "45fc3617fb049a88/2b2d9e1b2a1e6bbc",
+              "pipelineIdentity": "backend-pipeline-15",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "2b2d9e1b2a1e6bbc"
+              },
+              "provenance": {
+                "material": {
+                  "id": 29,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 3 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 139.69999999552965,
+              "settledMs": 139.79999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 16,
+              "programIdentity": "45fc3617fb049a88/4fbcbe479ba1b0a6",
+              "pipelineIdentity": "backend-pipeline-16",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "4fbcbe479ba1b0a6"
+              },
+              "provenance": {
+                "material": {
+                  "id": 30,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 4 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 141.09999999403954,
+              "settledMs": 141.19999999552965,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 17,
+              "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+              "pipelineIdentity": "backend-pipeline-17",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1567,
+                "hash": "ffc0ca9b4adc3a8b"
+              },
+              "fragment": {
+                "bytes": 3311,
+                "hash": "ff20e1db0bfb34f5"
+              },
+              "provenance": {
+                "material": {
+                  "id": 31,
+                  "name": "Bloom_comp",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Composite ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 143.19999999552965,
+              "settledMs": 143.29999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 18,
+              "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+              "pipelineIdentity": "backend-pipeline-18",
+              "kind": "render",
+              "pass": "output",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1375,
+                "hash": "b07fbcd4d49ee70f"
+              },
+              "fragment": {
+                "bytes": 1790,
+                "hash": "a170775f358f22a4"
+              },
+              "provenance": {
+                "material": {
+                  "id": 24,
+                  "name": "RenderPipeline",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 37,
+                  "name": "Render Pipeline",
+                  "uuid": "eed4120d-2fc0-4320-ac53-9f8a57a0a471"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 143.59999999403954,
+              "settledMs": 143.59999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            }
+          ],
+          "incompleteReasons": []
+        },
+        "frame": 4,
+        "frameBudget": {
+          "frameMs": 766.6999999999998,
+          "drawCalls": 22,
+          "passes": [
+            {
+              "draws": 21,
+              "kind": "nested",
+              "triangles": 183854
+            },
+            {
+              "draws": 1,
+              "kind": "main",
+              "triangles": 1
+            }
+          ],
+          "phases": {
+            "hostGap": 762.9,
+            "overlay": 0,
+            "render": 2.5,
+            "residual": 0.1,
+            "ui": 0,
+            "update": 0.1
+          },
+          "triangles": 183855
+        },
+        "readyMs": 897.7000000029802,
+        "tick": 63,
+        "painted": true
+      },
+      "state": {
+        "position": [
+          534.0487876163845,
+          98.3707903787264,
+          0
+        ],
+        "seed": 90210
+      },
+      "censusMetadata": {
+        "globalCounts": {
+          "lookups": 18,
+          "creations": 18,
+          "failures": 0,
+          "pending": 0,
+          "uniquePrograms": 15,
+          "uniquePipelines": 18,
+          "recordedEvents": 18,
+          "droppedEvents": 0,
+          "nodeBuilds": 15,
+          "deviceCreations": 18,
+          "directCreations": 0
+        },
+        "postEvents": 11,
+        "postProcessing": {
+          "graphs": 8,
+          "pipelines": 8
+        },
+        "warmBoundary": {
+          "boundaryMs": 107.19999999552965,
+          "eventsSettled": 7,
+          "nodeBuilds": 4,
+          "renderPipelineCreations": 4
+        },
+        "warmedWorld": {
+          "graphs": 3,
+          "nodeBuilds": 3,
+          "pipelines": 3,
+          "positiveNodeBuilds": true
+        }
+      }
+    },
+    {
+      "frame": 5,
+      "image": {
+        "annotated": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/first-visible/before-run1/frame-5-annotated.png",
+        "raw": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/first-visible/before-run1/frame-5.png"
+      },
+      "record": {
+        "arm": "before",
+        "census": {
+          "version": 1,
+          "complete": true,
+          "overflowed": false,
+          "unsupported": false,
+          "limit": 512,
+          "clock": {
+            "originMs": 669.2000000029802,
+            "source": "performance"
+          },
+          "backend": {
+            "kind": "webgpu",
+            "identity": "webgpu:WebGPUBackend"
+          },
+          "build": {
+            "identity": "@threenative/core@0.3.4"
+          },
+          "adapter": {
+            "identity": "webgpu:architecture=turing|vendor=nvidia",
+            "thermal": "unavailable"
+          },
+          "firstPresent": {
+            "boundaryMs": 38.79999999701977,
+            "eventsSettled": 1
+          },
+          "warmUpSettled": {
+            "boundaryMs": 107.19999999552965,
+            "eventsSettled": 7,
+            "nodeBuilds": 4,
+            "renderPipelineCreations": 4
+          },
+          "counts": {
+            "lookups": 18,
+            "creations": 18,
+            "failures": 0,
+            "pending": 0,
+            "uniquePrograms": 15,
+            "uniquePipelines": 18,
+            "recordedEvents": 18,
+            "droppedEvents": 0,
+            "nodeBuilds": 15,
+            "deviceCreations": 18,
+            "directCreations": 0
+          },
+          "events": [
+            {
+              "sequence": 1,
+              "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+              "pipelineIdentity": "backend-pipeline-1",
+              "kind": "render",
+              "pass": "output",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1299,
+                "hash": "00fc0a8ad03630cc"
+              },
+              "fragment": {
+                "bytes": 1595,
+                "hash": "458120a84b226496"
+              },
+              "provenance": {
+                "material": {
+                  "id": 18,
+                  "name": "outputColorTransform",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 23,
+                  "name": "Output Color Transform",
+                  "uuid": "e4cb182b-8d0f-420e-b3ca-0f55d9e82a0f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 37.599999994039536,
+              "settledMs": 38.29999999701977,
+              "serviceMs": 0.7000000029802322,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": true,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 2,
+              "programIdentity": "d53b2bc0071f3874",
+              "pipelineIdentity": "backend-pipeline-2",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 2258,
+                "hash": "d53b2bc0071f3874"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 55.899999998509884,
+              "settledMs": 56,
+              "serviceMs": 0.10000000149011612,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 3,
+              "programIdentity": "233446aebec2f03a",
+              "pipelineIdentity": "backend-pipeline-3",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 4627,
+                "hash": "233446aebec2f03a"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 64.09999999403954,
+              "settledMs": 64.09999999403954,
+              "serviceMs": 0,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 4,
+              "programIdentity": "ca827b8aad6a5a39",
+              "pipelineIdentity": "backend-pipeline-4",
+              "kind": "compute",
+              "pass": "compute",
+              "mode": "sync",
+              "status": "created",
+              "compute": {
+                "bytes": 1615,
+                "hash": "ca827b8aad6a5a39"
+              },
+              "provenance": {
+                "unknown": true
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 65.29999999701977,
+              "settledMs": 65.29999999701977,
+              "serviceMs": 0,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 5,
+              "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+              "pipelineIdentity": "backend-pipeline-5",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 1368,
+                "hash": "a0dc858b2770e4b6"
+              },
+              "fragment": {
+                "bytes": 2588,
+                "hash": "a9284e64d0b7ab7a"
+              },
+              "provenance": {
+                "material": {
+                  "id": 20,
+                  "type": "MeshBasicNodeMaterial"
+                },
+                "object": {
+                  "id": 29,
+                  "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 70.59999999403954,
+              "settledMs": 93.89999999850988,
+              "promiseMs": 23.30000000447035,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 6,
+              "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+              "pipelineIdentity": "backend-pipeline-6",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 2120,
+                "hash": "d2ea5ac757871426"
+              },
+              "fragment": {
+                "bytes": 1136,
+                "hash": "63f9db766141e0ab"
+              },
+              "provenance": {
+                "material": {
+                  "id": 19,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 28,
+                  "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 98,
+              "settledMs": 101.89999999850988,
+              "promiseMs": 3.899999998509884,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 7,
+              "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+              "pipelineIdentity": "backend-pipeline-7",
+              "kind": "render",
+              "pass": "main",
+              "mode": "async",
+              "status": "created",
+              "vertex": {
+                "bytes": 1825,
+                "hash": "c159003d0d4f355a"
+              },
+              "fragment": {
+                "bytes": 1001,
+                "hash": "41f98e61499c0e67"
+              },
+              "provenance": {
+                "material": {
+                  "id": 21,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 30,
+                  "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 103.5,
+              "settledMs": 106.5,
+              "promiseMs": 3,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": true
+            },
+            {
+              "sequence": 8,
+              "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+              "pipelineIdentity": "backend-pipeline-8",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1368,
+                "hash": "a0dc858b2770e4b6"
+              },
+              "fragment": {
+                "bytes": 2588,
+                "hash": "a9284e64d0b7ab7a"
+              },
+              "provenance": {
+                "material": {
+                  "id": 20,
+                  "type": "MeshBasicNodeMaterial"
+                },
+                "object": {
+                  "id": 29,
+                  "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 127,
+              "settledMs": 127.09999999403954,
+              "serviceMs": 0.09999999403953552,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 9,
+              "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+              "pipelineIdentity": "backend-pipeline-9",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 2120,
+                "hash": "d2ea5ac757871426"
+              },
+              "fragment": {
+                "bytes": 1136,
+                "hash": "63f9db766141e0ab"
+              },
+              "provenance": {
+                "material": {
+                  "id": 19,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 28,
+                  "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 129.09999999403954,
+              "settledMs": 129.09999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 10,
+              "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+              "pipelineIdentity": "backend-pipeline-10",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1825,
+                "hash": "c159003d0d4f355a"
+              },
+              "fragment": {
+                "bytes": 1001,
+                "hash": "41f98e61499c0e67"
+              },
+              "provenance": {
+                "material": {
+                  "id": 21,
+                  "type": "SpriteNodeMaterial"
+                },
+                "object": {
+                  "id": 30,
+                  "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 130.09999999403954,
+              "settledMs": 130.09999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 11,
+              "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+              "pipelineIdentity": "backend-pipeline-11",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1417,
+                "hash": "dcd9d1972708c088"
+              },
+              "fragment": {
+                "bytes": 960,
+                "hash": "a2499803894a35ed"
+              },
+              "provenance": {
+                "material": {
+                  "id": 25,
+                  "name": "Bloom_highPass",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ High Pass ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 131.69999999552965,
+              "settledMs": 131.79999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 12,
+              "programIdentity": "45fc3617fb049a88/c466a179e1f4f0a4",
+              "pipelineIdentity": "backend-pipeline-12",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1818,
+                "hash": "c466a179e1f4f0a4"
+              },
+              "provenance": {
+                "material": {
+                  "id": 26,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 0 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 133.89999999850988,
+              "settledMs": 134,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 13,
+              "programIdentity": "45fc3617fb049a88/904d7d1b777971dc",
+              "pipelineIdentity": "backend-pipeline-13",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "904d7d1b777971dc"
+              },
+              "provenance": {
+                "material": {
+                  "id": 27,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 1 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 136.59999999403954,
+              "settledMs": 136.59999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 14,
+              "programIdentity": "45fc3617fb049a88/9ac08f65518be06c",
+              "pipelineIdentity": "backend-pipeline-14",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "9ac08f65518be06c"
+              },
+              "provenance": {
+                "material": {
+                  "id": 28,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 2 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 138.29999999701977,
+              "settledMs": 138.39999999850988,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 15,
+              "programIdentity": "45fc3617fb049a88/2b2d9e1b2a1e6bbc",
+              "pipelineIdentity": "backend-pipeline-15",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "2b2d9e1b2a1e6bbc"
+              },
+              "provenance": {
+                "material": {
+                  "id": 29,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 3 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 139.69999999552965,
+              "settledMs": 139.79999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 16,
+              "programIdentity": "45fc3617fb049a88/4fbcbe479ba1b0a6",
+              "pipelineIdentity": "backend-pipeline-16",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1516,
+                "hash": "45fc3617fb049a88"
+              },
+              "fragment": {
+                "bytes": 1820,
+                "hash": "4fbcbe479ba1b0a6"
+              },
+              "provenance": {
+                "material": {
+                  "id": 30,
+                  "name": "Bloom_separable",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Blur Horizontal - 4 ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 141.09999999403954,
+              "settledMs": 141.19999999552965,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 17,
+              "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+              "pipelineIdentity": "backend-pipeline-17",
+              "kind": "render",
+              "pass": "main-clipped",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1567,
+                "hash": "ffc0ca9b4adc3a8b"
+              },
+              "fragment": {
+                "bytes": 3311,
+                "hash": "ff20e1db0bfb34f5"
+              },
+              "provenance": {
+                "material": {
+                  "id": 31,
+                  "name": "Bloom_comp",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 14,
+                  "name": "Bloom [ Composite ]",
+                  "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 143.19999999552965,
+              "settledMs": 143.29999999701977,
+              "serviceMs": 0.10000000149011612,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            },
+            {
+              "sequence": 18,
+              "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+              "pipelineIdentity": "backend-pipeline-18",
+              "kind": "render",
+              "pass": "output",
+              "mode": "sync",
+              "status": "created",
+              "vertex": {
+                "bytes": 1375,
+                "hash": "b07fbcd4d49ee70f"
+              },
+              "fragment": {
+                "bytes": 1790,
+                "hash": "a170775f358f22a4"
+              },
+              "provenance": {
+                "material": {
+                  "id": 24,
+                  "name": "RenderPipeline",
+                  "type": "NodeMaterial"
+                },
+                "object": {
+                  "id": 37,
+                  "name": "Render Pipeline",
+                  "uuid": "eed4120d-2fc0-4320-ac53-9f8a57a0a471"
+                },
+                "unknown": false
+              },
+              "reasons": [
+                "unknown-structural-difference"
+              ],
+              "startedMs": 143.59999999403954,
+              "settledMs": 143.59999999403954,
+              "serviceMs": 0,
+              "nodeBuilds": 1,
+              "beforeFirstPresent": false,
+              "beforeWarmUpSettled": false
+            }
+          ],
+          "incompleteReasons": []
+        },
+        "frame": 5,
+        "frameBudget": {
+          "frameMs": 733.3000000000002,
+          "drawCalls": 22,
+          "passes": [
+            {
+              "draws": 21,
+              "kind": "nested",
+              "triangles": 183854
+            },
+            {
+              "draws": 1,
+              "kind": "main",
+              "triangles": 1
+            }
+          ],
+          "phases": {
+            "hostGap": 730.8,
+            "overlay": 0,
+            "render": 1.9,
+            "residual": 0.2,
+            "ui": 0,
+            "update": 0
+          },
+          "triangles": 183855
+        },
+        "readyMs": 897.7000000029802,
+        "tick": 64,
+        "painted": true
+      },
+      "state": {
+        "position": [
+          533.4136455889135,
+          100.11950565904108,
+          0
+        ],
+        "seed": 90210
+      },
+      "censusMetadata": {
+        "globalCounts": {
+          "lookups": 18,
+          "creations": 18,
+          "failures": 0,
+          "pending": 0,
+          "uniquePrograms": 15,
+          "uniquePipelines": 18,
+          "recordedEvents": 18,
+          "droppedEvents": 0,
+          "nodeBuilds": 15,
+          "deviceCreations": 18,
+          "directCreations": 0
+        },
+        "postEvents": 11,
+        "postProcessing": {
+          "graphs": 8,
+          "pipelines": 8
+        },
+        "warmBoundary": {
+          "boundaryMs": 107.19999999552965,
+          "eventsSettled": 7,
+          "nodeBuilds": 4,
+          "renderPipelineCreations": 4
+        },
+        "warmedWorld": {
+          "graphs": 3,
+          "nodeBuilds": 3,
+          "pipelines": 3,
+          "positiveNodeBuilds": true
+        }
+      }
+    }
+  ],
+  "firstWorldCpu": {
+    "arm": "before",
+    "census": {
+      "version": 1,
+      "complete": true,
+      "overflowed": false,
+      "unsupported": false,
+      "limit": 512,
+      "clock": {
+        "originMs": 669.2000000029802,
+        "source": "performance"
+      },
+      "backend": {
+        "kind": "webgpu",
+        "identity": "webgpu:WebGPUBackend"
+      },
+      "build": {
+        "identity": "@threenative/core@0.3.4"
+      },
+      "adapter": {
+        "identity": "webgpu:architecture=turing|vendor=nvidia",
+        "thermal": "unavailable"
+      },
+      "firstPresent": {
+        "boundaryMs": 38.79999999701977,
+        "eventsSettled": 1
+      },
+      "warmUpSettled": {
+        "boundaryMs": 107.19999999552965,
+        "eventsSettled": 7,
+        "nodeBuilds": 4,
+        "renderPipelineCreations": 4
+      },
+      "counts": {
+        "lookups": 18,
+        "creations": 18,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 15,
+        "uniquePipelines": 18,
+        "recordedEvents": 18,
+        "droppedEvents": 0,
+        "nodeBuilds": 15,
+        "deviceCreations": 18,
+        "directCreations": 0
+      },
+      "events": [
+        {
+          "sequence": 1,
+          "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+          "pipelineIdentity": "backend-pipeline-1",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1299,
+            "hash": "00fc0a8ad03630cc"
+          },
+          "fragment": {
+            "bytes": 1595,
+            "hash": "458120a84b226496"
+          },
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 23,
+              "name": "Output Color Transform",
+              "uuid": "e4cb182b-8d0f-420e-b3ca-0f55d9e82a0f"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 37.599999994039536,
+          "settledMs": 38.29999999701977,
+          "serviceMs": 0.7000000029802322,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": true,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 2,
+          "programIdentity": "d53b2bc0071f3874",
+          "pipelineIdentity": "backend-pipeline-2",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 2258,
+            "hash": "d53b2bc0071f3874"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 55.899999998509884,
+          "settledMs": 56,
+          "serviceMs": 0.10000000149011612,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 3,
+          "programIdentity": "233446aebec2f03a",
+          "pipelineIdentity": "backend-pipeline-3",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 4627,
+            "hash": "233446aebec2f03a"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 64.09999999403954,
+          "settledMs": 64.09999999403954,
+          "serviceMs": 0,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 4,
+          "programIdentity": "ca827b8aad6a5a39",
+          "pipelineIdentity": "backend-pipeline-4",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1615,
+            "hash": "ca827b8aad6a5a39"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 65.29999999701977,
+          "settledMs": 65.29999999701977,
+          "serviceMs": 0,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 5,
+          "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+          "pipelineIdentity": "backend-pipeline-5",
+          "kind": "render",
+          "pass": "main",
+          "mode": "async",
+          "status": "created",
+          "vertex": {
+            "bytes": 1368,
+            "hash": "a0dc858b2770e4b6"
+          },
+          "fragment": {
+            "bytes": 2588,
+            "hash": "a9284e64d0b7ab7a"
+          },
+          "provenance": {
+            "material": {
+              "id": 20,
+              "type": "MeshBasicNodeMaterial"
+            },
+            "object": {
+              "id": 29,
+              "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 70.59999999403954,
+          "settledMs": 93.89999999850988,
+          "promiseMs": 23.30000000447035,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 6,
+          "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+          "pipelineIdentity": "backend-pipeline-6",
+          "kind": "render",
+          "pass": "main",
+          "mode": "async",
+          "status": "created",
+          "vertex": {
+            "bytes": 2120,
+            "hash": "d2ea5ac757871426"
+          },
+          "fragment": {
+            "bytes": 1136,
+            "hash": "63f9db766141e0ab"
+          },
+          "provenance": {
+            "material": {
+              "id": 19,
+              "type": "SpriteNodeMaterial"
+            },
+            "object": {
+              "id": 28,
+              "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 98,
+          "settledMs": 101.89999999850988,
+          "promiseMs": 3.899999998509884,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 7,
+          "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+          "pipelineIdentity": "backend-pipeline-7",
+          "kind": "render",
+          "pass": "main",
+          "mode": "async",
+          "status": "created",
+          "vertex": {
+            "bytes": 1825,
+            "hash": "c159003d0d4f355a"
+          },
+          "fragment": {
+            "bytes": 1001,
+            "hash": "41f98e61499c0e67"
+          },
+          "provenance": {
+            "material": {
+              "id": 21,
+              "type": "SpriteNodeMaterial"
+            },
+            "object": {
+              "id": 30,
+              "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 103.5,
+          "settledMs": 106.5,
+          "promiseMs": 3,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": true
+        },
+        {
+          "sequence": 8,
+          "programIdentity": "a0dc858b2770e4b6/a9284e64d0b7ab7a",
+          "pipelineIdentity": "backend-pipeline-8",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1368,
+            "hash": "a0dc858b2770e4b6"
+          },
+          "fragment": {
+            "bytes": 2588,
+            "hash": "a9284e64d0b7ab7a"
+          },
+          "provenance": {
+            "material": {
+              "id": 20,
+              "type": "MeshBasicNodeMaterial"
+            },
+            "object": {
+              "id": 29,
+              "uuid": "e6a34f38-6c6e-4ee7-83ff-97bd3bead31c"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 127,
+          "settledMs": 127.09999999403954,
+          "serviceMs": 0.09999999403953552,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        },
+        {
+          "sequence": 9,
+          "programIdentity": "d2ea5ac757871426/63f9db766141e0ab",
+          "pipelineIdentity": "backend-pipeline-9",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 2120,
+            "hash": "d2ea5ac757871426"
+          },
+          "fragment": {
+            "bytes": 1136,
+            "hash": "63f9db766141e0ab"
+          },
+          "provenance": {
+            "material": {
+              "id": 19,
+              "type": "SpriteNodeMaterial"
+            },
+            "object": {
+              "id": 28,
+              "uuid": "0f3b7458-3dc5-4d98-91e4-93c7d9c59510"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 129.09999999403954,
+          "settledMs": 129.09999999403954,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        },
+        {
+          "sequence": 10,
+          "programIdentity": "c159003d0d4f355a/41f98e61499c0e67",
+          "pipelineIdentity": "backend-pipeline-10",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1825,
+            "hash": "c159003d0d4f355a"
+          },
+          "fragment": {
+            "bytes": 1001,
+            "hash": "41f98e61499c0e67"
+          },
+          "provenance": {
+            "material": {
+              "id": 21,
+              "type": "SpriteNodeMaterial"
+            },
+            "object": {
+              "id": 30,
+              "uuid": "9877fc86-8f41-4e1d-b87b-7952d6f2e68b"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 130.09999999403954,
+          "settledMs": 130.09999999403954,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        },
+        {
+          "sequence": 11,
+          "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+          "pipelineIdentity": "backend-pipeline-11",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1417,
+            "hash": "dcd9d1972708c088"
+          },
+          "fragment": {
+            "bytes": 960,
+            "hash": "a2499803894a35ed"
+          },
+          "provenance": {
+            "material": {
+              "id": 25,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 131.69999999552965,
+          "settledMs": 131.79999999701977,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        },
+        {
+          "sequence": 12,
+          "programIdentity": "45fc3617fb049a88/c466a179e1f4f0a4",
+          "pipelineIdentity": "backend-pipeline-12",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1818,
+            "hash": "c466a179e1f4f0a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 26,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 0 ]",
+              "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 133.89999999850988,
+          "settledMs": 134,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        },
+        {
+          "sequence": 13,
+          "programIdentity": "45fc3617fb049a88/904d7d1b777971dc",
+          "pipelineIdentity": "backend-pipeline-13",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "904d7d1b777971dc"
+          },
+          "provenance": {
+            "material": {
+              "id": 27,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 1 ]",
+              "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 136.59999999403954,
+          "settledMs": 136.59999999403954,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        },
+        {
+          "sequence": 14,
+          "programIdentity": "45fc3617fb049a88/9ac08f65518be06c",
+          "pipelineIdentity": "backend-pipeline-14",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "9ac08f65518be06c"
+          },
+          "provenance": {
+            "material": {
+              "id": 28,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 2 ]",
+              "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 138.29999999701977,
+          "settledMs": 138.39999999850988,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        },
+        {
+          "sequence": 15,
+          "programIdentity": "45fc3617fb049a88/2b2d9e1b2a1e6bbc",
+          "pipelineIdentity": "backend-pipeline-15",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "2b2d9e1b2a1e6bbc"
+          },
+          "provenance": {
+            "material": {
+              "id": 29,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 3 ]",
+              "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 139.69999999552965,
+          "settledMs": 139.79999999701977,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        },
+        {
+          "sequence": 16,
+          "programIdentity": "45fc3617fb049a88/4fbcbe479ba1b0a6",
+          "pipelineIdentity": "backend-pipeline-16",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "4fbcbe479ba1b0a6"
+          },
+          "provenance": {
+            "material": {
+              "id": 30,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 4 ]",
+              "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 141.09999999403954,
+          "settledMs": 141.19999999552965,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        },
+        {
+          "sequence": 17,
+          "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+          "pipelineIdentity": "backend-pipeline-17",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1567,
+            "hash": "ffc0ca9b4adc3a8b"
+          },
+          "fragment": {
+            "bytes": 3311,
+            "hash": "ff20e1db0bfb34f5"
+          },
+          "provenance": {
+            "material": {
+              "id": 31,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Composite ]",
+              "uuid": "da9bdcdb-7338-49b1-b826-ecc69d38b78f"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 143.19999999552965,
+          "settledMs": 143.29999999701977,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        },
+        {
+          "sequence": 18,
+          "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+          "pipelineIdentity": "backend-pipeline-18",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1375,
+            "hash": "b07fbcd4d49ee70f"
+          },
+          "fragment": {
+            "bytes": 1790,
+            "hash": "a170775f358f22a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 24,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 37,
+              "name": "Render Pipeline",
+              "uuid": "eed4120d-2fc0-4320-ac53-9f8a57a0a471"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 143.59999999403954,
+          "settledMs": 143.59999999403954,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false,
+          "beforeWarmUpSettled": false
+        }
+      ],
+      "incompleteReasons": []
+    },
+    "ready": false,
+    "tick": 60,
+    "renderMs": 21.3
+  },
+  "firstWorldCensusMetadata": {
+    "globalCounts": {
+      "lookups": 18,
+      "creations": 18,
+      "failures": 0,
+      "pending": 0,
+      "uniquePrograms": 15,
+      "uniquePipelines": 18,
+      "recordedEvents": 18,
+      "droppedEvents": 0,
+      "nodeBuilds": 15,
+      "deviceCreations": 18,
+      "directCreations": 0
+    },
+    "postEvents": 11,
+    "postProcessing": {
+      "graphs": 8,
+      "pipelines": 8
+    },
+    "warmBoundary": {
+      "boundaryMs": 107.19999999552965,
+      "eventsSettled": 7,
+      "nodeBuilds": 4,
+      "renderPipelineCreations": 4
+    },
+    "warmedWorld": {
+      "graphs": 3,
+      "nodeBuilds": 3,
+      "pipelines": 3,
+      "positiveNodeBuilds": true
+    }
+  }
+}
