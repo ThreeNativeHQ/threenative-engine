@@ -43,8 +43,8 @@ import { animationPacketField } from "./animation-packet-state.js";
 import {
   type IAnimationPosePacket,
   type IAnimationPoseVersion,
-  materializeAnimationPoseFallback,
-  materializeAnimationPosePacket,
+  evaluateAnimationPoseFallback,
+  evaluateAnimationPosePacket,
   readAnimationPosePacket,
   readAnimationPosePacketTime,
 } from "./animation-pose-packet.js";
@@ -628,7 +628,7 @@ export class SkinnedBatch {
         }
         if (held && display.current)
           this.#current.set(
-            materializeAnimationPoseFallback(display.current.version),
+            evaluateAnimationPoseFallback(display.current.version),
             slot * this.bones * 16,
           );
         display.current = undefined;
@@ -731,7 +731,7 @@ export class SkinnedBatch {
     if (!this.#observed) return;
     const offset = slot * this.bones * 16;
     if (display.current) {
-      const matrix = materializeAnimationPosePacket(display.current);
+      const matrix = evaluateAnimationPosePacket(display.current);
       this.#current.set(matrix, offset);
       display.expectedCurrent = matrix;
     } else display.expectedCurrent = this.#current.slice(offset, offset + this.bones * 16);
@@ -745,15 +745,14 @@ export class SkinnedBatch {
     this.#prepareRawFrame();
     for (const [slot, display] of this.#rawSlots) {
       const offset = slot * this.bones * 16;
-      if (display.current)
-        this.#current.set(materializeAnimationPosePacket(display.current), offset);
+      if (display.current) this.#current.set(evaluateAnimationPosePacket(display.current), offset);
       const previous =
         display.previous ??
         (!this.#fresh.includes(slot) && this.#rawMeta[slot * 4 + 2] === 1
           ? display.current
           : undefined);
       if (previous && this.#previous)
-        this.#previous.set(materializeAnimationPosePacket(previous), offset);
+        this.#previous.set(evaluateAnimationPosePacket(previous), offset);
       display.expectedCurrent = this.#current.slice(offset, offset + this.bones * 16);
       display.expectedPrevious = this.#previous?.slice(offset, offset + this.bones * 16);
     }
@@ -796,7 +795,7 @@ export class SkinnedBatch {
         if (!display) continue;
         if (display.current)
           this.#current.set(
-            materializeAnimationPoseFallback(display.current.version),
+            evaluateAnimationPoseFallback(display.current.version),
             owner * this.bones * 16,
           );
         display.current = undefined;
@@ -826,7 +825,7 @@ export class SkinnedBatch {
       const captured = this.#rawUpdates.get(skeleton);
       if (captured?.frame === this.#frame) {
         (skeleton.boneMatrices as Float32Array).set(
-          materializeAnimationPoseFallback(captured.version),
+          evaluateAnimationPoseFallback(captured.version),
         );
         if (skeleton.boneTexture !== null) skeleton.boneTexture.needsUpdate = true;
       } else skeleton.update();

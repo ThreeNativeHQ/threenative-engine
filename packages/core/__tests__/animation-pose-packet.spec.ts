@@ -9,8 +9,8 @@ import {
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import {
-  materializeAnimationPoseFallback,
-  materializeAnimationPosePacket,
+  evaluateAnimationPoseFallback,
+  evaluateAnimationPosePacket,
   readAnimationPosePacket,
   readAnimationPosePacketTime,
 } from "../src/animation-pose-packet.js";
@@ -226,7 +226,7 @@ describe("owned scalar-Z pose packets", () => {
     }
     const first = required(readAnimationPosePacket(f.mesh));
     f.mesh.skeleton.update();
-    expect(Array.from(materializeAnimationPoseFallback(first.version))).toEqual(
+    expect(Array.from(evaluateAnimationPoseFallback(first.version))).toEqual(
       Array.from(required(f.mesh.skeleton.boneMatrices)),
     );
     for (let i = 0; i < 8; i++) {
@@ -239,8 +239,8 @@ describe("owned scalar-Z pose packets", () => {
     reference.mesh.updateMatrixWorld(true);
     reference.mesh.skeleton.update();
     const referenceMatrices = required(reference.mesh.skeleton.boneMatrices);
-    const displayed = materializeAnimationPosePacket(packet);
-    const cached = materializeAnimationPoseFallback(packet.version);
+    const displayed = evaluateAnimationPosePacket(packet);
+    const cached = evaluateAnimationPoseFallback(packet.version);
     expect(
       Math.max(...displayed.map((v, i) => Math.abs(v - (referenceMatrices[i] as number)))),
     ).toBeLessThan(2e-6);
@@ -251,7 +251,7 @@ describe("owned scalar-Z pose packets", () => {
     f.player.update(0.3, true);
     f.mesh.updateMatrixWorld(true);
     readAnimationPosePacket(f.mesh);
-    expect(Array.from(materializeAnimationPosePacket(packet))).toEqual(saved);
+    expect(Array.from(evaluateAnimationPosePacket(packet))).toEqual(saved);
     f.player.dispose();
     reference.player.dispose();
   });

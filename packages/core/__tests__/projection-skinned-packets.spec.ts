@@ -142,7 +142,7 @@ describe("SkinnedBatch owned scalar display packets", () => {
           }
         }
         const previousDisplay = firstHeld
-          ? pose.materializeAnimationPosePacket(
+          ? pose.evaluateAnimationPosePacket(
               present(
                 pose.readAnimationPosePacketTime(
                   f.mesh,
@@ -228,10 +228,10 @@ describe("SkinnedBatch owned scalar display packets", () => {
       expect(update).not.toHaveBeenCalled();
       expect(retired.slots[0].previousTime).toBe(before.slots[0].currentTime);
       expect(f.batch.palette.subarray(0, 192)).toEqual(
-        pose.materializeAnimationPoseFallback(saved.version),
+        pose.evaluateAnimationPoseFallback(saved.version),
       );
       expect(present(f.batch.history).subarray(0, 192)).toEqual(
-        pose.materializeAnimationPosePacket(saved),
+        pose.evaluateAnimationPosePacket(saved),
       );
       f.mesh.position.x += 0.1;
       f.scene.updateMatrixWorld(true);
@@ -300,8 +300,8 @@ describe("SkinnedBatch owned scalar display packets", () => {
       f.draw();
       f.held();
       const saved = present(pose.readAnimationPosePacket(f.mesh));
-      const displayed = pose.materializeAnimationPosePacket(saved);
-      expect(displayed).not.toEqual(pose.materializeAnimationPoseFallback(saved.version));
+      const displayed = pose.evaluateAnimationPosePacket(saved);
+      expect(displayed).not.toEqual(pose.evaluateAnimationPoseFallback(saved.version));
       const other = new SkinnedMesh(f.mesh.geometry, f.mesh.material);
       other.bind(f.mesh.skeleton);
       f.scene.add(other);
@@ -333,7 +333,7 @@ describe("SkinnedBatch owned scalar display packets", () => {
       f.draw();
       f.held();
       const saved = present(pose.readAnimationPosePacket(f.mesh));
-      const previousDisplay = pose.materializeAnimationPosePacket(saved);
+      const previousDisplay = pose.evaluateAnimationPosePacket(saved);
       f.batch.begin();
       f.batch.write(0, f.mesh);
       expect(f.receipt().slots[0].currentRaw).toBe(true);
@@ -396,7 +396,7 @@ describe("SkinnedBatch owned scalar display packets", () => {
         const current = f.batch.palette;
         const previous = present(f.batch.history);
         expect(update).not.toHaveBeenCalled();
-        expect(current.subarray(0, 192)).toEqual(pose.materializeAnimationPosePacket(saved));
+        expect(current.subarray(0, 192)).toEqual(pose.evaluateAnimationPosePacket(saved));
         if (!restart) expect(previous.subarray(0, 192)).toEqual(current.subarray(0, 192));
         f.batch.end();
         if (restart) expect(previous.subarray(0, 192)).toEqual(current.subarray(0, 192));
@@ -428,7 +428,7 @@ describe("SkinnedBatch owned scalar display packets", () => {
       const current = f.batch.palette;
       const previous = present(f.batch.history);
       expect(update).not.toHaveBeenCalled();
-      expect(current.subarray(0, 192)).toEqual(pose.materializeAnimationPosePacket(raw));
+      expect(current.subarray(0, 192)).toEqual(pose.evaluateAnimationPosePacket(raw));
       expect(previous.subarray(0, 192)).toEqual(stock);
       update.mockRestore();
     } finally {

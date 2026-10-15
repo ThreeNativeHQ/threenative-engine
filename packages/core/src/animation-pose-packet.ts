@@ -399,7 +399,7 @@ export function readAnimationPosePacketTime(
 }
 
 /** Cached genuine CPU basis for held retirement; no current-time sampling or author calls. */
-export function materializeAnimationPoseFallback(version: IAnimationPoseVersion): Float32Array {
+export function evaluateAnimationPoseFallback(version: IAnimationPoseVersion): Float32Array {
   const out = new Float32Array(192);
   const scratch = new Matrix4();
   for (let b = 0; b < 12; b++) {
@@ -426,7 +426,7 @@ function rawProduct(a: ArrayLike<number>, b: ArrayLike<number>): Float32Array {
 }
 
 /** Owned displayed RAW matrices, including the shader's root/bindInverse prefix. */
-export function materializeAnimationPosePacket(packet: IAnimationPosePacket): Float32Array {
+export function evaluateAnimationPosePacket(packet: IAnimationPosePacket): Float32Array {
   const v = packet.version;
   const out = new Float32Array(192);
   const worlds: Float32Array[] = [];
