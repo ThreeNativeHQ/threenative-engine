@@ -817,6 +817,16 @@ function receiptPathFor(destDir) {
   return join(destDir, LOCK_RECEIPT_DIRNAME, 'receipt.json');
 }
 
+function verifyLockedLinuxArm64V8(destDir, payload) {
+  const expected = payload.provenance?.receiptSha256;
+  if (!/^[a-f0-9]{64}$/u.test(expected ?? ''))
+    throw new Error(`TN_V8_RECEIPT_PIN_MISSING: ${payload.id} requires a locked producer receipt SHA-256.`);
+  const actual = sha256Bytes(readFileSync(join(destDir, 'build-receipt.json')));
+  if (actual !== expected)
+    throw new Error(`TN_V8_RECEIPT_PIN_MISMATCH: ${payload.id} producer receipt differs from the locked archive.`);
+  return verifyLinuxArm64V8Installation(destDir);
+}
+
 function readReceipt(destDir, lockHash) {
   const path = receiptPathFor(destDir);
   if (!existsSync(path)) return undefined;
@@ -1353,7 +1363,7 @@ export async function downloadDep(name, options = {}) {
           console.warn(`${name} has no receipt for ${selectedPayload.id} under the current lock; replacing the stale dependency cache`);
         } else {
           if (name === 'v8' && platformName === 'linux' && ARCH === 'arm64') {
-            verifyLinuxArm64V8Installation(destDir);
+            verifyLockedLinuxArm64V8(destDir, selectedPayload);
           }
           console.log('Skipping (use --force to re-download)');
           return true;
@@ -1416,7 +1426,7 @@ export async function downloadDep(name, options = {}) {
       }
     }
     if (name === 'v8' && platformName === 'linux' && ARCH === 'arm64') {
-      verifyLinuxArm64V8Installation(destDir);
+      verifyLockedLinuxArm64V8(destDir, payload);
     }
     writeReceipt(destDir, {
       schemaVersion: 1, dependency: name, lockHash: lock.lockHash,

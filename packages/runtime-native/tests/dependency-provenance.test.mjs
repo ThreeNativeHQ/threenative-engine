@@ -307,8 +307,10 @@ test('arm64 V8 consumes only its locked archive and verifies fresh and cached re
     execFileSync('tar', ['-czf', archive, '-C', stage, '.']);
     let bytes = readFileSync(archive);
     const payload = { id: 'v8-linux-arm64', url: 'https://example.invalid/ci-v8-linux-arm64/v8-linux-arm64-fixture.tgz' };
+    const receiptSha256 = createHash('sha256').update(readFileSync(join(stage, 'build-receipt.json'))).digest('hex');
     const setBytes = () => lockContext.payloads.set(payload.id, {
       ...payload, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length,
+      provenance: { receiptSha256 },
     });
     setBytes();
     globalThis.fetch = async (url) => { fetched.push(url); return new Response(bytes); };
@@ -325,6 +327,17 @@ test('arm64 V8 consumes only its locked archive and verifies fresh and cached re
     assert.equal(await downloader.downloadDep('v8', { lockContext }), true);
     assert.deepEqual(fetched, [], 'verified installation is a cache hit');
     assert.deepEqual(collectReceipts(join(root, 'third_party'), lockContext.lockHash), freshReceipts);
+    const originalArchive = readFileSync(join(installed, 'libv8_monolith.a'));
+    const originalReceipt = readFileSync(join(installed, 'build-receipt.json'));
+    const substituted = Buffer.from(originalArchive);
+    substituted.writeUInt8(substituted.readUInt8(76) ^ 1, 76);
+    writeFileSync(join(installed, 'libv8_monolith.a'), substituted);
+    writeFileSync(join(installed, 'build-receipt.json'), JSON.stringify(producer.createLinuxArm64V8Receipt(installed, toolchain)));
+    assert.equal(producer.verifyLinuxArm64V8Installation(installed).objects, 1, 'substitution has a self-consistent AArch64 receipt');
+    await assert.rejects(downloader.downloadDep('v8', { lockContext }), /TN_V8_RECEIPT_PIN_MISMATCH/);
+    assert.deepEqual(fetched, [], 'recomputed cached receipt is rejected before fetching');
+    writeFileSync(join(installed, 'libv8_monolith.a'), originalArchive);
+    writeFileSync(join(installed, 'build-receipt.json'), originalReceipt);
     writeFileSync(join(installed, 'include/v8.h'), 'tampered');
     await assert.rejects(downloader.downloadDep('v8', { lockContext }), /checksum\/coverage mismatch/);
     assert.deepEqual(fetched, [], 'tampered cache fails before a fallback fetch');
@@ -332,6 +345,14 @@ test('arm64 V8 consumes only its locked archive and verifies fresh and cached re
     rmSync(installed, { recursive: true });
     const lockReceipt = join(root, 'third_party/.threenative-receipts/v8-linux-arm64.json');
     rmSync(lockReceipt);
+    for (const pin of [undefined, 'not-hex', 'f'.repeat(64)]) {
+      setBytes();
+      const descriptor = lockContext.payloads.get(payload.id);
+      lockContext.payloads.set(payload.id, { ...descriptor, provenance: pin === undefined ? undefined : { receiptSha256: pin } });
+      assert.equal(await downloader.downloadDep('v8', { lockContext }), false, 'fresh acquisition rejects missing or wrong receipt pin');
+      assert.equal(existsSync(lockReceipt), false, 'bad pin cannot create a trusted acquisition receipt');
+      rmSync(installed, { recursive: true, force: true });
+    }
     rmSync(join(stage, 'build-receipt.json'));
     execFileSync('tar', ['-czf', archive, '-C', stage, '.']);
     bytes = readFileSync(archive);
