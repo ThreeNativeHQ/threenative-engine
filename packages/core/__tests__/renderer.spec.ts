@@ -1,4 +1,4 @@
-import { Object3D, PerspectiveCamera, Scene } from "three";
+import { Color, Object3D, PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
 import { RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
@@ -1301,6 +1301,11 @@ describe("createRenderer", () => {
       });
       let boundTarget: unknown = "previous-target";
       let boundMrt: unknown = "previous-mrt";
+      let renderObjectFunction: ((...args: unknown[]) => void) | null = null;
+      let pixelRatio = 1;
+      let clearAlpha = 0.25;
+      let scissorTest = true;
+      const clearColor = new Color(0x123456);
       const targetCalls: unknown[] = [];
       let chunk: Object3D | undefined;
       let worldPass: ReturnType<typeof pass> | undefined;
@@ -1317,16 +1322,25 @@ describe("createRenderer", () => {
         if (throws) throw new Error("covered output render failed");
       });
       const raw = {
+        _renderTarget: boundTarget,
         autoClear: false,
         compute: () => undefined,
         contextNode: originalContextNode,
         dispose: () => undefined,
         domElement: canvas,
+        getActiveCubeFace: () => 3,
+        getActiveMipmapLevel: () => 2,
+        getClearAlpha: () => clearAlpha,
+        getClearColor: (target: Color) => target.copy(clearColor),
         getMRT: () => boundMrt,
+        getPixelRatio: () => pixelRatio,
         getDrawingBufferSize: (size: { set: (width: number, height: number) => unknown }) =>
           size.set(320, 180),
         getOutputRenderTarget: () => null,
-        getRenderTarget: () => boundTarget,
+        getRenderObjectFunction: () => renderObjectFunction,
+        // Match compileAsync's temporary getter without changing the bound target.
+        getRenderTarget: () => "compiler-target",
+        getScissorTest: () => scissorTest,
         init: async () => undefined,
         opaque: false,
         outputColorSpace: "original-output-color-space",
@@ -1334,9 +1348,23 @@ describe("createRenderer", () => {
         setMRT: (value: unknown) => {
           boundMrt = value;
         },
+        setClearColor: (value: Color, alpha?: number) => {
+          clearColor.copy(value);
+          if (alpha !== undefined) clearAlpha = alpha;
+        },
+        setPixelRatio: (value: number) => {
+          pixelRatio = value;
+        },
+        setRenderObjectFunction: (value: ((...args: unknown[]) => void) | null) => {
+          renderObjectFunction = value;
+        },
         setRenderTarget: (value: unknown) => {
           targetCalls.push(value);
           boundTarget = value;
+          raw._renderTarget = value;
+        },
+        setScissorTest: (value: boolean) => {
+          scissorTest = value;
         },
         setSize: () => undefined,
         toneMapping: 17,

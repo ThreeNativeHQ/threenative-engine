@@ -4,7 +4,9 @@ import {
   type PassNode,
   ReadbackBuffer,
   RenderPipeline,
+  RendererUtils,
   type StorageBufferAttribute,
+  type Renderer as ThreeRenderer,
 } from "three/webgpu";
 import { ComputeTimingScopes, type IComputeTimingReceipt } from "./compute-timing.js";
 import type { IFrameSurfaceState } from "./frame-budget.js";
@@ -722,50 +724,43 @@ function wrapRenderer(
         const scoped = targetScene !== undefined && targetScene !== scene;
         const previousPassScene = outputPass?.scene;
         const previousPassCamera = outputPass?.camera;
-        const previousTarget = "_renderTarget" in raw ? raw._renderTarget : raw.getRenderTarget?.();
-        const previousMrt = raw.getMRT?.();
-        const warmRaw = raw as RendererInstance & {
-          contextNode?: unknown;
-          opaque?: boolean;
-          outputColorSpace?: unknown;
-          toneMapping?: unknown;
-          transparent?: boolean;
-        };
-        const rawObject = raw as unknown as Record<string, unknown>;
-        const hadOwnAutoClear = Object.hasOwn(rawObject, "autoClear");
-        const hadOwnTransparent = Object.hasOwn(rawObject, "transparent");
-        const hadOwnOpaque = Object.hasOwn(rawObject, "opaque");
-        const hadOwnContextNode = Object.hasOwn(rawObject, "contextNode");
-        const hadOwnToneMapping = Object.hasOwn(rawObject, "toneMapping");
-        const hadOwnOutputColorSpace = Object.hasOwn(rawObject, "outputColorSpace");
-        const previousAutoClear = warmRaw.autoClear;
-        const previousTransparent = warmRaw.transparent;
-        const previousOpaque = warmRaw.opaque;
-        const previousContextNode = warmRaw.contextNode;
-        const previousToneMapping = warmRaw.toneMapping;
-        const previousOutputColorSpace = warmRaw.outputColorSpace;
-        const previousXr = warmRaw.xr;
+        const warmRenderer = raw as RendererInstance &
+          ThreeRenderer & {
+            contextNode?: unknown;
+            opaque?: boolean;
+            transparent?: boolean;
+          };
+        const rendererState = RendererUtils.saveRendererState(warmRenderer);
+        // An in-flight compile exposes a virtual target through the getter; restore the bound one.
+        if ("_renderTarget" in raw)
+          rendererState.renderTarget = Reflect.get(
+            raw,
+            "_renderTarget",
+          ) as typeof rendererState.renderTarget;
+        const hadOwnTransparent = Object.hasOwn(raw, "transparent");
+        const hadOwnOpaque = Object.hasOwn(raw, "opaque");
+        const hadOwnContextNode = Object.hasOwn(raw, "contextNode");
+        const previousTransparent = Reflect.get(raw, "transparent");
+        const previousOpaque = Reflect.get(raw, "opaque");
+        const previousContextNode = Reflect.get(raw, "contextNode");
+        const previousXr = warmRenderer.xr;
         const hadOwnXrEnabled = previousXr !== undefined && Object.hasOwn(previousXr, "enabled");
-        const previousXrEnabled = previousXr?.enabled;
-        const sceneObject = scene as unknown as Record<string, unknown>;
-        const outputRootObject = outputRoot as unknown as Record<string, unknown>;
-        const hadOwnSceneOverrideMaterial = Object.hasOwn(sceneObject, "overrideMaterial");
-        const hadOwnOutputRootOverrideMaterial = Object.hasOwn(
-          outputRootObject,
-          "overrideMaterial",
-        );
+        const previousXrEnabled =
+          previousXr === undefined ? undefined : Reflect.get(previousXr, "enabled");
+        const hadOwnSceneOverrideMaterial = Object.hasOwn(scene, "overrideMaterial");
+        const hadOwnOutputRootOverrideMaterial = Object.hasOwn(outputRoot, "overrideMaterial");
         const previousSceneName = scene.name;
         const previousOutputRootName = outputRoot.name;
-        const previousSceneOverrideMaterial = sceneObject.overrideMaterial;
-        const previousOutputRootOverrideMaterial = outputRootObject.overrideMaterial;
+        const previousSceneOverrideMaterial = Reflect.get(scene, "overrideMaterial");
+        const previousOutputRootOverrideMaterial = Reflect.get(outputRoot, "overrideMaterial");
         const previousCameraMask = camera.layers.mask;
         const restoreField = (
-          object: Record<string, unknown>,
+          object: object,
           key: string,
           hadOwn: boolean,
           value: unknown,
         ): void => {
-          if (hadOwn) object[key] = value;
+          if (hadOwn) Reflect.set(object, key, value);
           else Reflect.deleteProperty(object, key);
         };
         const originalParent = scene.parent;
@@ -815,34 +810,20 @@ function wrapRenderer(
             outputPass.scene = previousPassScene as Object3D;
             outputPass.camera = previousPassCamera as Camera;
           }
-          if (raw.setMRT !== undefined) raw.setMRT(previousMrt);
-          if (raw.setRenderTarget !== undefined) raw.setRenderTarget(previousTarget);
-          restoreField(rawObject, "autoClear", hadOwnAutoClear, previousAutoClear);
-          restoreField(rawObject, "transparent", hadOwnTransparent, previousTransparent);
-          restoreField(rawObject, "opaque", hadOwnOpaque, previousOpaque);
-          restoreField(rawObject, "contextNode", hadOwnContextNode, previousContextNode);
-          restoreField(rawObject, "toneMapping", hadOwnToneMapping, previousToneMapping);
-          restoreField(
-            rawObject,
-            "outputColorSpace",
-            hadOwnOutputColorSpace,
-            previousOutputColorSpace,
-          );
+          RendererUtils.restoreRendererState(warmRenderer, rendererState);
+          restoreField(raw, "transparent", hadOwnTransparent, previousTransparent);
+          restoreField(raw, "opaque", hadOwnOpaque, previousOpaque);
+          restoreField(raw, "contextNode", hadOwnContextNode, previousContextNode);
           if (previousXr !== undefined)
-            restoreField(
-              previousXr as unknown as Record<string, unknown>,
-              "enabled",
-              hadOwnXrEnabled,
-              previousXrEnabled,
-            );
+            restoreField(previousXr, "enabled", hadOwnXrEnabled, previousXrEnabled);
           restoreField(
-            sceneObject,
+            scene,
             "overrideMaterial",
             hadOwnSceneOverrideMaterial,
             previousSceneOverrideMaterial,
           );
           restoreField(
-            outputRootObject,
+            outputRoot,
             "overrideMaterial",
             hadOwnOutputRootOverrideMaterial,
             previousOutputRootOverrideMaterial,
