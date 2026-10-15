@@ -13,7 +13,7 @@ targets could not be built and are named below.
 | `src/cli/` | 1690 | 1242 | 73.49% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2785 | 2212 | 79.43% |
+| `src/js/` | 2793 | 2216 | 79.34% |
 | `src/platform/` | 1465 | 1008 | 68.81% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
 | `src/runtime.cpp` | 2442 | 1896 | 77.64% |
@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9870 | 7566 | 76.66% |
+| `src/webgpu/` | 9885 | 7581 | 76.69% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24835** | **19470** | **78.40%** |
+| **TOTAL** | **24858** | **19489** | **78.40%** |
 
-Source digest: `sha256:41cd2268ff5ae99a9e7a01b1353e376cff1113ad30646e32384d6cd1c3584dae`
+Source digest: `sha256:1a8ed34cf063a9530e8fa11b2722ae0b4c475402ee1baef998b5dea0acd3a4d7`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
