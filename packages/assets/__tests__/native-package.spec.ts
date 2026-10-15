@@ -2,8 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { NodeIO } from "@gltf-transform/core";
+import { buildFixtureDocument } from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { compileAssets } from "../src/index.js";
 import {
   type INativePackageEntry,
@@ -314,6 +317,33 @@ describe("assets.nativePackage", () => {
     expect(
       (await readFile(path.join(root, "public", "native", "assets.tnpk"))).equals(output),
     ).toBe(true);
+  });
+
+  it("carries the shared images a model names by uri as raw Buffer entries beside it", async () => {
+    const root = await makeTempDir("threenative-native-package-shared-");
+    await mkdir(path.join(root, "assets"));
+    const document = buildFixtureDocument({ gridDepth: 3 });
+    for (const texture of document.getRoot().listTextures())
+      texture.setImage(rgbaPng({ height: 32, width: 32 })).setMimeType("image/png");
+    await writeFile(
+      path.join(root, "assets", "crate.glb"),
+      await new NodeIO().writeBinary(document),
+    );
+
+    await compileAssets({
+      config: { nativePackage: true },
+      cwd: root,
+      transcoder: basisTranscoderPaths(),
+    });
+    const bytes = await readFile(path.join(root, "public", "native", "assets.tnpk"));
+    const names = readNativePackageManifest(bytes).entries.map((entry) => entry.name);
+
+    expect(names.filter((name) => name.startsWith("shared/images/"))).toHaveLength(1);
+    const shared = readNativePackageManifest(bytes).entries.find((entry) =>
+      entry.name.startsWith("shared/images/"),
+    );
+    expect(shared?.kind).toBe(NativeEntryKind.Buffer);
+    expect(names).toContain("crate.glb");
   });
 
   it("writes a model as a Scene entry and a JPEG as a decoded RGBA8 Texture entry", async () => {
