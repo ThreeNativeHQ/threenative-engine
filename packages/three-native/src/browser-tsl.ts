@@ -8,6 +8,7 @@
  * (tn::abi::TslScopes, shared with the V8 back end).
  */
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
+import { defineTslExtras } from "./tsl-extras.js";
 import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
 
 /** One argument as `tn_tsl_call` takes it. */
@@ -420,5 +421,6 @@ export function defineTsl(
   exports.uniform = live.uniform;
   exports.uniformArray = live.uniformArray;
   if (classes !== undefined) withConstValues(exports, classes);
+  Object.assign(exports, defineTslExtras(exports as never));
   return { exports, sync: live.sync };
 }

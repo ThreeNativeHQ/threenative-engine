@@ -54,3 +54,21 @@ describe("Wasm TSL Fn parameters", () => {
     expect(tsl.Fn(() => tsl.float(1))()[TSL_NODE]).toBeGreaterThan(0);
   });
 });
+
+describe("Wasm TSL extras", () => {
+  it("builds densityFogFactor and saturate over the engine's functions, as the V8 player does", () => {
+    const { tsl, runtime } = setup();
+    const extras = tsl as unknown as {
+      densityFogFactor(density: number): INode;
+      saturate(value: INode): INode;
+      fog(color: unknown, factor: unknown): { isFogNode: boolean };
+      velocity: unknown;
+    };
+    expect(extras.densityFogFactor(0.02)[TSL_NODE]).toBeGreaterThan(0);
+    expect(runtime.call).toHaveBeenCalledWith("linearDepth", null, expect.any(Array));
+    expect(extras.saturate(tsl.float(2))[TSL_NODE]).toBeGreaterThan(0);
+    expect(runtime.call).toHaveBeenCalledWith("clamp", null, expect.any(Array));
+    expect(extras.fog(1, 2).isFogNode).toBe(true);
+    expect(() => (extras.velocity as { x: number }).x).toThrow("TN_NATIVE_UNSUPPORTED_VELOCITY");
+  });
+});
