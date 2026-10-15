@@ -325,7 +325,7 @@ describe("recipe and toolchain", () => {
     );
     const builtins = join(sdk, "lib/clang/18/lib/aarch64-unknown-linux-gnu/libclang_rt.builtins.a");
     expect(readlinkSync(builtins)).toBe(LINUX_ARM64_V8_BUILD.toolchain.compilerRt.archive);
-    expect(run.mock.calls[0][1]).toContain(builtins);
+    expect(run.mock.calls[0]?.[1]).toContain(builtins);
     expect(run.mock.calls[1]).toEqual([join(sdk, "preflight"), []]);
     expect(() =>
       prepareLinuxArm64V8Sdk(root, (_program: string, args: string[]) => {
@@ -419,7 +419,7 @@ describe("packaging-only source-cache migration", () => {
     ]);
     expect(() => fetchChromiumBuildLicense(() => Buffer.from(""))).toThrow("checksum mismatch");
     const altered = Buffer.from(chromiumLicense);
-    altered[0] ^= 1;
+    altered.writeUInt8(altered.readUInt8(0) ^ 1, 0);
     expect(() => fetchChromiumBuildLicense(() => Buffer.from(altered.toString("base64")))).toThrow(
       "checksum mismatch",
     );

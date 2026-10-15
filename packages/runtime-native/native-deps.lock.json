@@ -300,6 +300,28 @@
           "bootstrap": "two-run-fetch-2026-09-11"
         },
         {
+          "id": "v8-linux-arm64",
+          "url": "https://github.com/ThreeNativeHQ/threenative-engine/releases/download/ci-v8-linux-arm64/v8-linux-arm64-1632c350bb78a60721a092ab696f0b3d274dbb0e5b926ebdca2c1b5edb8bb262.tgz",
+          "sha256": "ac379519d7e26039831ee7945018c67b48d98e30d04fe760bf5c684d61b82081",
+          "bytes": 18745524,
+          "targets": [
+            "desktop-linux-arm64"
+          ],
+          "bootstrap": "verified-source-run-38720103918-and-release-roundtrip-2026-10-15",
+          "source": {
+            "repository": "https://chromium.googlesource.com/v8/v8.git",
+            "revision": "9c09e7876ff830e1f9a731aa930040d1028ff5a1"
+          },
+          "provenance": {
+            "runId": 38720103918,
+            "artifactId": 11964493465,
+            "assetId": 643500847,
+            "producerRevision": "4ea2e7851f2e3f88758d908290da9b79d66a1727",
+            "recipeHash": "1632c350bb78a60721a092ab696f0b3d274dbb0e5b926ebdca2c1b5edb8bb262",
+            "receiptSha256": "dbec689e6213490b1a581b27cc44fe86c5e6e54dfba2fb1235902f3cc074ab11"
+          }
+        },
+        {
           "id": "v8-macos-arm64",
           "url": "https://github.com/kuoruan/libv8/releases/download/v13.1.201.22/v8_macOS_arm64.tar.xz",
           "sha256": "0e59cbce8c7b6661558ec80217b0f86fcbc75a3cddd3d49253a5f662d3bd0319",

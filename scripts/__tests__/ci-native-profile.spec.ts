@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 const profile = await import(
   new URL("../../packages/runtime-native/scripts/desktop-build-profile.mjs", import.meta.url).href
 );
+const qualification = await import(new URL("../ci-native-qualification.mjs", import.meta.url).href);
 const coverage = await import(
   new URL("../../packages/runtime-native/scripts/native-test-lane.mjs", import.meta.url).href
 );
@@ -31,10 +32,19 @@ describe("shipping desktop identity preserves measured coverage defaults", () =>
   ])("matches supported %s preset", (platform, expected) => {
     expect(profile.desktopPreset(platform)).toBe(expected);
   });
-  it("retains only the existing Linux ARM64 QuickJS/wgpu overrides", () => {
+  it("reports V8/wgpu in the arm64 CI envelope", () => {
+    expect(
+      qualification.nativeBuildProfile({ job: "starter-linux", platform: "linux-arm64" }),
+    ).toEqual({
+      buildVariant: "Release",
+      backend: "wgpu",
+      engine: "V8",
+    });
+  });
+  it("selects V8/wgpu explicitly on Linux ARM64", () => {
     expect(profile.desktopBuildOverrides("linux", "arm64")).toEqual({
-      MYSTRAL_USE_V8: "OFF",
-      MYSTRAL_USE_QUICKJS: "ON",
+      MYSTRAL_USE_V8: "ON",
+      MYSTRAL_USE_QUICKJS: "OFF",
       MYSTRAL_USE_DAWN: "OFF",
       MYSTRAL_USE_WGPU: "ON",
     });
@@ -43,8 +53,8 @@ describe("shipping desktop identity preserves measured coverage defaults", () =>
         ([key, value]) => `-D${key}=${value}`,
       ),
     ).toEqual([
-      "-DMYSTRAL_USE_V8=OFF",
-      "-DMYSTRAL_USE_QUICKJS=ON",
+      "-DMYSTRAL_USE_V8=ON",
+      "-DMYSTRAL_USE_QUICKJS=OFF",
       "-DMYSTRAL_USE_DAWN=OFF",
       "-DMYSTRAL_USE_WGPU=ON",
     ]);

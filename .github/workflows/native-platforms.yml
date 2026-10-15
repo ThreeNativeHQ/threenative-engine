@@ -2186,6 +2186,73 @@ jobs:
           TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS=30000 \
           TN_PLAYTEST_ALLOW_SOFTWARE=1 \
             pnpm --dir "$target" test:native
+      - name: Compare paired starter JS frame duration on Linux ARM64
+        if: matrix.platform == 'linux-arm64'
+        shell: bash
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+        run: |
+          set -euo pipefail
+          runtime="$PWD/packages/runtime-native"
+          target="$RUNNER_TEMP/threenative-starter-native"
+          evidence="$PWD/packages/runtime-native/artifacts/starter-linux-arm64/js-frame-pair"
+          mkdir -p "$evidence"
+          # Keep the V8 host before reconfiguring this same build: every non-engine feature
+          # (including Canvas2D and the web UI library) stays in the same CMake cache.
+          cp "$runtime/build/tn-linux/mystral" "$runtime/build/tn-linux/mystral-v8"
+          cp "$runtime/build/tn-linux/CMakeCache.txt" "$evidence/v8-CMakeCache.txt"
+          mapfile -t feature_flags < <(sed -n 's/^\(TN_ENABLE_[^:]*\):[^=]*=\(.*\)$/-D\1=\2/p' "$evidence/v8-CMakeCache.txt")
+          restore_v8() {
+            cp "$runtime/build/tn-linux/mystral-v8" "$runtime/build/tn-linux/mystral"
+            cmake --preset tn-linux -S "$runtime" -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF \
+              -DMYSTRAL_USE_DAWN=OFF -DMYSTRAL_USE_WGPU=ON "${feature_flags[@]}"
+          }
+          trap restore_v8 EXIT
+          (
+            cd "$runtime"
+            cmake --preset tn-linux -DMYSTRAL_USE_V8=OFF -DMYSTRAL_USE_QUICKJS=ON \
+              -DMYSTRAL_USE_DAWN=OFF -DMYSTRAL_USE_WGPU=ON "${feature_flags[@]}"
+            cmake --build build/tn-linux --target mystral --parallel 2
+          )
+          cp "$runtime/build/tn-linux/CMakeCache.txt" "$evidence/quickjs-CMakeCache.txt"
+          # Fail if selecting an engine changed a feature rather than comparing unlike hosts.
+          diff <(sed -n '/^TN_ENABLE_.*:/p' "$evidence/v8-CMakeCache.txt" | sort) \
+               <(sed -n '/^TN_ENABLE_.*:/p' "$evidence/quickjs-CMakeCache.txt" | sort)
+          grep -qx 'TN_ENABLE_CANVAS2D:BOOL=ON' "$evidence/quickjs-CMakeCache.txt"
+          # Pin the existing resolution override in this temporary scaffold for BOTH arms.
+          # Bundle once with desktop's refusing decoder stubs: V8 cannot gain extra workload.
+          cp "$target/threenative.config.ts" "$evidence/original-config.ts"
+          trap 'cp "$evidence/original-config.ts" "$target/threenative.config.ts"; restore_v8' EXIT
+          sed -i 's/resolutionScale: "auto"/resolutionScale: 1/' "$target/threenative.config.ts"
+          node "$runtime/scripts/bundle.mjs" --project "$target" --entry src/game.ts \
+            --target desktop --native-backend --output "$target/dist-native/perf-game.js"
+          cp "$target/threenative.config.ts" "$evidence/paired-config.ts"
+          cp "$evidence/original-config.ts" "$target/threenative.config.ts"
+          # Hosted software Vulkan is intentional here: JS callback durations only, no FPS/GPU claim.
+          sh scripts/xvfb.sh node "$runtime/scripts/measure-starter-js-frame-pair.mjs" \
+            "$runtime/build/tn-linux/mystral" "$runtime/build/tn-linux/mystral-v8" \
+            "$target/dist-native/perf-game.js" "$evidence"
+          # Separate visual proof uses the shipped deterministic scenario (seed 90210),
+          # not elapsed wall time. Preserve full reports for camera/tick/scene comparison.
+          for engine in quickjs v8; do
+            binary="$runtime/build/tn-linux/mystral"
+            [ "$engine" != v8 ] || binary="$runtime/build/tn-linux/mystral-v8"
+            for capture in 1 2; do
+              sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js \
+                "$target/native-playtests/render-chain.playtest.json" --target desktop \
+                --project "$target/public" --executable "$binary" \
+                --host-arg run --host-arg "$target/dist-native/perf-game.js" \
+                --host-arg --ui --host-arg "$target/dist-native/ui" \
+                --artifacts "$evidence/same-pose/$engine-$capture"
+            done
+          done
+      - name: Upload paired starter JS frame evidence
+        if: always() && matrix.platform == 'linux-arm64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-starter-js-frame-pair-linux-arm64
+          path: packages/runtime-native/artifacts/starter-linux-arm64/js-frame-pair/
+          if-no-files-found: error
       # PRD-365 acceptance criterion 1, Linux flavour of the desktop release container: tar.gz, no
       # zip, and the verifier finds the packaged xvfb.sh itself. The debug step above is untouched.
       - name: Build the desktop release container

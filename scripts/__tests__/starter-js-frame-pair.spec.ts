@@ -1,0 +1,114 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const { compareRuns, launchOrder } = await import(
+  new URL(
+    "../../packages/runtime-native/scripts/measure-starter-js-frame-pair.mjs",
+    import.meta.url,
+  ).href
+);
+
+function runs() {
+  return launchOrder.map((engine: string, index: number) => ({
+    engine,
+    bundleSha256: "a".repeat(64),
+    binarySha256: (engine === "v8" ? "b" : "c").repeat(64),
+    log: `[${engine === "v8" ? "V8" : "QuickJS"}] Engine created successfully\n${engine === "v8" ? "[V8] Version: 13.1.201.22\n" : ""}[WebGPU] Adapter: llvmpipe\n[WebGPU] Backend: Vulkan\nTN_WORLD_ENVIRONMENT:{"stages":[{"name":"grade","applied":true}]}`,
+    report: {
+      pass: true,
+      discardedWindows: [1],
+      violations: [],
+      budgets: [1, 2, 3].map((window) => ({
+        window,
+        frames: 300,
+        frame: {
+          mean: 10,
+          p50:
+            window === 2
+              ? 999
+              : engine === "v8"
+                ? [4, 5, 6][Math.floor(index / 2)]
+                : [9, 10, 100][Math.floor(index / 2)],
+          p95: 120,
+        },
+        surface: {
+          drawingBufferWidth: 1280,
+          drawingBufferHeight: 720,
+          resolutionScale: 1,
+          sampleCount: 1,
+          compiling: false,
+        },
+      })),
+    },
+  }));
+}
+
+describe("starter paired JS frame proof", () => {
+  it("uses alternating pairs and strict median of sampled run p50s, rejecting incomplete or incomparable evidence", () => {
+    expect(launchOrder).toEqual(["quickjs", "v8", "v8", "quickjs", "quickjs", "v8"]);
+    expect(compareRuns(runs())).toMatchObject({ pass: true, quickjsMedianMs: 10, v8MedianMs: 5 });
+    for (const corrupt of [
+      (r: ReturnType<typeof runs>) => r.pop(),
+      (r: ReturnType<typeof runs>) => {
+        r[0].report.budgets.pop();
+      },
+      (r: ReturnType<typeof runs>) => {
+        r[0].report.budgets[1].frame.p50 = Number.NaN;
+      },
+      (r: ReturnType<typeof runs>) => {
+        Reflect.deleteProperty(r[0].report.budgets[1], "frame");
+      },
+      (r: ReturnType<typeof runs>) => {
+        r[0].report.pass = false;
+      },
+      (r: ReturnType<typeof runs>) => {
+        r[0].log = "[V8] Engine created successfully";
+      },
+      (r: ReturnType<typeof runs>) => {
+        r[1].log = r[1].log.replace("13.1.201.22", "13.0.1");
+      },
+      (r: ReturnType<typeof runs>) => {
+        r[0].bundleSha256 = "d".repeat(64);
+      },
+      (r: ReturnType<typeof runs>) => {
+        r[0].report.budgets[1].surface.resolutionScale = 0.5;
+      },
+      (r: ReturnType<typeof runs>) => {
+        r[0].log = r[0].log.replace('"applied":true', '"applied":false');
+      },
+    ]) {
+      const invalid = runs();
+      corrupt(invalid);
+      expect(() => compareRuns(invalid)).toThrow();
+    }
+    const tied = runs();
+    for (const run of tied) for (const window of run.report.budgets) window.frame.p50 = 10;
+    expect(compareRuns(tied)).toMatchObject({ pass: false, quickjsMedianMs: 10, v8MedianMs: 10 });
+  });
+});
+
+it("captures two fixed-step starter poses per engine using the same measured bundle before restoration", () => {
+  const workflow = readFileSync(".github/workflows/native-platforms.yml", "utf8");
+  const step = workflow.slice(
+    workflow.indexOf("- name: Compare paired starter JS"),
+    workflow.indexOf("- name: Upload paired starter JS"),
+  );
+  expect(step).toContain("trap restore_v8 EXIT");
+  expect(step).toContain("for engine in quickjs v8; do");
+  expect(step).toContain("for capture in 1 2; do");
+  expect(step).toContain('"$target/native-playtests/render-chain.playtest.json" --target desktop');
+  expect(step).toContain('--project "$target/public" --executable "$binary"');
+  expect(step).toContain('--host-arg run --host-arg "$target/dist-native/perf-game.js"');
+  expect(step).toContain('--host-arg --ui --host-arg "$target/dist-native/ui"');
+  expect(step).toContain('--artifacts "$evidence/same-pose/$engine-$capture"');
+  expect(step.indexOf('"$target/dist-native/perf-game.js" "$evidence"')).toBeLessThan(
+    step.indexOf("for engine in quickjs v8"),
+  );
+  expect(step).not.toContain("--live-clock");
+  const helper = readFileSync(
+    "packages/runtime-native/scripts/measure-starter-js-frame-pair.mjs",
+    "utf8",
+  );
+  expect(helper).not.toContain("--screenshot");
+  expect(helper).toContain("V8 median JS frame duration must be strictly lower");
+});
