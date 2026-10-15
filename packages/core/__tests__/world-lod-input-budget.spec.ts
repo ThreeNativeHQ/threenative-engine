@@ -55,7 +55,7 @@ it.each([
     builder.flowStagesNode(
       Fn((_inputs: unknown, builder: WGSLNodeBuilder) => {
         Reflect.get(material, "setupPosition").call(material, builder);
-        let value = vec4(origin as Node<"vec3">, 1);
+        let value: Node<"vec4"> = vec4(origin as Node<"vec3">, 1);
         for (let i = 0; i < 10; i++) value = value.add(attribute(`extra${i}`, "float"));
         return value;
       })(),
