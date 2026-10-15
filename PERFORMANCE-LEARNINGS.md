@@ -52,12 +52,13 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 - Cause: preferred-core scheduling packs every busy task onto the top-ranked cores first; a foreign Chrome renderer ran on CPU 3 at 82%, and a pinned thread cannot leave. Pick the last-ranked core, or give the game thread a whole L3 domain so it can move.
 - Artifact: `~/.cache/tmp-tn/screens/q-place-{auto,off}-1/`; campaign experiment E1.
 
-### 2026-10-15 — Game thread pinned to the CPPC last-ranked core pair — INCONCLUSIVE
+### 2026-10-15 — Game thread pinned to the CPPC last-ranked core pair — REJECT as a default (opt-in kept)
 - Where: PRD-610 AC-20, commit `61c7c1d06`; ships opt-in (`TN_PLAYER_MAIN_CORE=auto`, commit `72b606bb2`).
 - Ceiling: the external-pinning diagnostic moved main-thread CPU 7.22 / 9.41 / 9.77 → 6.11 / 6.64 / 7.74 ms at identical instructions.
 - Result: series 1, 3 pairs: median -21 / -33 / -32%, 8 of 9 pose-pairs faster, but one baseline at load 10.7 set margins of 130 / 105 / 35%. Series 2 (load-gated): 2 valid pairs, both faster at every pose (-24 / -5 / -11% and -38 / -34 / -11%), instructions identical, all pass; the third candidate run ended at load 32.7 and then 11.7, and baseline spread set margins of 14 / 29 / 33%.
-- Cause: the direction is consistent, but other lanes on this shared host move the baseline by 10-30%, more than the gain at two poses.
-- Insight: a placement lever needs a quiet host (other lanes paused) or the real-display lane to qualify; more pairs on a loaded host do not converge.
+- Final clean series (load 4 to 7, all six valid, player built from `e4c42d9c8`): cockpit -25 / -24 / -20% (median 20.1%, margin 20.3%), but takeoff +3.7 / -4.1 / -17.8% and rear gunner -12.0 / +8.0 / -10.6% change direction. R5 sentinel: 6 runs exit 0.
+- Cause: pinning removes the shared-core penalty only when the scheduler had put the present spin next to the game thread; when it had not, a pinned thread loses the freedom to move away from other work. The gain is real at the cockpit pose and not robust at the others.
+- Insight: the external-pinning ceiling (1.37x to 1.87x against three.js) came from a quiet host, so it overstated what placement gives in general. Placement is not the native lever; work per frame is (render prepare and encode 39%, AnimationMixer 12%, JS-to-C++ calls 28%).
 - Artifact: `~/.cache/tmp-tn/screens/q-place-off-*`, `q-last-auto-*`, `q-e2s2-*`; campaign `artifacts/native-performance-loop/prd610-placement-20261015/`; dashboard cycle `native-main-core-placement`.
 
 ### 2026-10-15 — Game thread on a whole L3 domain (CCD split) — REJECT
