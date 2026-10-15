@@ -104,6 +104,8 @@ Do not retry these without a new reason. Each result is the A/B against its base
 | WPE HUD backend | p95 32 to 41 ms |
 | HUD state snapshot | p50/p95 23/29 ms against 16/27 ms |
 | CDP endpoint retries (old AC-6) | rAF crosses the endpoints |
+| V8 GC prologue `promote()` skips the full wrapper walk while the ownership epoch is unmoved (2026-10-14) | Flat on the second off/on pair; instructions unchanged. Counter run: 249 GC prologues in 8,400 frames (one per 34 frames) over 26,447 wrappers, so about 0.04 ms per frame. The call-graph profile's 4.9% came from load-time GCs inside its window |
+| Crossing path reuses decoded numeric and handle arguments (2026-10-14) | Projected 0.04 to 0.07 ms per frame; A/B flat. Measured 1,725 crossings per frame: `visible` 315, `count` 152, `getX`/`getY`/`getZ` 327, `time` 109, `setEffectiveWeight` 104 |
 
 Kept: one frame per present (AC-1); the GPU thread for submit, blit, acquire and present (main-thread CPU −19%, every B beat every A); Stack 4 (−9.3% instructions); the T calibration (18.15 M instructions per frame); reflection walk reuse (−3.7%).
 
