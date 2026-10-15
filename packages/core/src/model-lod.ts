@@ -387,7 +387,8 @@ class ModelLod {
     const index = selectLodLevel(
       this.#chain.errors,
       this.#current,
-      this.#policy.maxPixelError,
+      this.#policy.maxPixelError /
+        Math.max(this.#mesh.matrixWorld.getMaxScaleOnAxis(), Number.EPSILON),
       this.#policy.hysteresis,
       [view],
     );
@@ -425,7 +426,8 @@ class ModelLod {
     const index = selectLodLevel(
       errors,
       this.#current,
-      this.#policy.maxPixelError,
+      this.#policy.maxPixelError /
+        Math.max(container.matrixWorld.getMaxScaleOnAxis(), Number.EPSILON),
       this.#policy.hysteresis,
       [view],
     );

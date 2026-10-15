@@ -14,6 +14,7 @@ import {
   TN_DISCRETE_LOD,
   baseGeometryOf,
   isLodJoinProxy,
+  setLodBias,
   setModelLodLayers,
   updateModelLods,
 } from "../src/model-lod.js";
@@ -239,10 +240,35 @@ function proxies(container: Group): Group[] {
 }
 
 afterEach(() => {
+  setLodBias(1);
   vi.restoreAllMocks();
 });
 
 describe("joined far rung runtime selection", () => {
+  it.each([
+    { name: "unit", scale: [1, 1, 1], joined: true },
+    { name: "uniform", scale: [2.42232295, 2.42232295, 2.42232295], joined: false },
+    { name: "nonuniform maximum axis", scale: [2.42232295, 1, 1], joined: false },
+  ])("projects joined error at $name world scale", async ({ scale, joined }) => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const target = fixture({ chainless: true, rungError: 0.0604127214 });
+    await attached(target);
+    const parent = new Group();
+    parent.scale.fromArray(scale);
+    parent.add(target.container);
+    const scene = new Scene();
+    scene.add(parent);
+    scene.updateMatrixWorld(true);
+    // The joined prototype spans [0, 1] on each axis: its sphere has radius sqrt(3) / 2.
+    const camera = new PerspectiveCamera(90, 1, 0.1, 1000);
+    camera.position.z = 0.5 * (scale[2] ?? 1) + (Math.sqrt(3) / 2) * Math.max(...scale) + 40;
+    camera.updateMatrixWorld(true);
+    setLodBias(2.5);
+    expect(updateModelLods(scene, camera, 2000)).toBe(joined ? 2 : LOD0_TRIANGLES * 2);
+    expect(proxies(target.container)).toHaveLength(joined ? 1 : 0);
+    expect(target.members.every((member) => member.visible)).toBe(!joined);
+  });
+
   it("propagates main-layer handoffs to an existing join and restores them before near detail", async () => {
     const target = fixture();
     await attached(target);
