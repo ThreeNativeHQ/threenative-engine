@@ -709,7 +709,12 @@ it("draws both authored levels in the dither band in view and shadow with one sh
       manifest: {
         ...manifest,
         cells: [manifest.cells[0] as import("../src/world.js").IWorldCell],
-        assets: { tree: { ...manifest.assets.tree, lods: [{ glb: "far.glb", distance: 60 }] } },
+        assets: {
+          tree: {
+            ...(manifest.assets.tree as import("../src/world.js").IWorldAsset),
+            lods: [{ glb: "far.glb", distance: 60 }],
+          },
+        },
       },
       placements: new Float32Array([32, 0, 32, 0, 0, 0, 1, 1]).buffer,
     },

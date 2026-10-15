@@ -65,5 +65,8 @@ for (const root of roots) {
 }
 if (Object.keys(entries).length === 0) throw new Error("stage-native-assets: no staged assets");
 // A nonempty manifest skips bare-path probes and rejects absent optional assets before fetching.
-writeFileSync(join(here, "assets.manifest.json"), `${JSON.stringify({ version: 1, entries })}\n`);
+writeFileSync(
+  join(here, "assets.manifest.json"),
+  `${JSON.stringify({ version: 1, entries }, null, 2)}\n`,
+);
 console.log(`stage-native-assets: ${linked} file(s) linked into ${relative(here, out)}/`);
