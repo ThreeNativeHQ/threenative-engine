@@ -1,12 +1,12 @@
 # PRD-610 — The native engine wins on real games
 
 **Status:** PARTIAL
-**Priority:** P1 — the owner bar is 2x to 3x faster than three.js on Midway; the matched ratio is not measured yet (AC-15) and the levers are open (AC-16 to AC-19).
+**Priority:** P1 — the owner bar is 2x to 3x faster than three.js on Midway; the provisional matched ratio is 1.18x to 1.49x (AC-15 open) and the levers are open (AC-20, AC-16 to AC-19).
 **Complexity:** 8 (HIGH)
 **Owner:** João
 **Depends on:** PRD-573 (the epic; this PRD closes its final-tier v1.10 box and rides PR #493)
 
-**Current focus (re-plan, 2026-10-14):** Phase 2 first. The dashboard's 1.51x divides three.js wall time on a Vite dev server by native main-thread CPU time. No lever result is trustworthy until both arms use one instrument. Then the Phase 3 levers, largest first.
+**Current focus (re-plan 2, 2026-10-14):** finish AC-15 (three qualified pairs), then AC-20 first. The matched yardstick shows that the player runs about half of Chromium's instructions per frame at about 60% of its IPC. The stall gap is now the largest lever; the time-share levers (AC-16 to AC-18) follow on top of it.
 
 ## Context
 
@@ -35,6 +35,20 @@ Package `pkg-ac3-calibration-20261014T135316Z-t`, runs `t` and `t2`, 1,000 activ
 6. The player embeds V8 13.1.201.22 (late 2024). The Chromium under test runs a newer V8.
 
 A production build makes the three.js arm faster, so the matched ratio can be lower than 1.51x.
+
+### Matched baseline (provisional, 2026-10-14)
+
+One pair at engine `db22a6230`, private Xvfb, NVIDIA/Turing, lockstep windows of 1,000 frames with one update and one render each, parity PASS. Runs `ac15-db22a6230-{a1-legacy,b1-desktop}` under `~/.cache/tmp-tn/midway-runs/`. The flight post-check refused this pair because of a checker defect (see Decisions), so these numbers are not yet a qualified AC-15 row.
+
+| Pose | three.js main thread | Player main thread | CPU ratio | Instructions per frame (three.js / player) | IPC (three.js / player) | Process-tree CPU per frame (three.js / player) |
+|---|---|---|---|---|---|---|
+| Takeoff | 8.85 ms | 7.48 ms | 1.18x | 41.3 M / 20.5 M | 1.06 / 0.64 | 64.9 / 102.2 ms |
+| Cockpit | 10.20 ms | 7.84 ms | 1.30x | 51.1 M / 22.7 M | 1.11 / 0.67 | 64.0 / 108.0 ms |
+| Rear gunner | 14.58 ms | 9.82 ms | 1.49x | 77.2 M / 29.8 M | 1.18 / 0.70 | 69.9 / 105.3 ms |
+
+The player executes 2.0x to 2.6x fewer instructions per frame, but each instruction costs about 1.6x more cycles. At Chromium's IPC the same player work would take about 4.5, 4.8 and 5.9 ms (2.0x, 2.1x and 2.5x). Both arms ran at 4.3 to 4.5 GHz user-mode cycles per CPU-second, so frequency does not explain the gap. The player's process tree burns about 100 ms of CPU per frame, mostly in the two WebKit HUD processes, against 65 ms for the whole Chromium tree.
+
+Known IPC differences: the embedded V8 13.1.201.22 is built with `v8_enable_pointer_compression=false`, `is_official_build=false`, `use_thin_lto=false` and `chrome_pgo_phase=0` (`third_party/v8/gn-args_Linux.txt`); Chromium ships pointer compression, ThinLTO and PGO on a newer V8. The engine C++ is `-O3` Release. Cache and SMT interference from the HUD processes and the GPU thread is not measured yet.
 
 ### Where the player's main thread goes
 
@@ -137,7 +151,7 @@ Risks:
 
 ## Acceptance Criteria
 
-The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Phase 2 holds AC-14 and AC-15. Phase 3 holds AC-16, AC-17, AC-18, AC-5 and AC-19. AC-3, AC-4 and AC-6 to AC-13 are retired (see Decisions). New IDs start at AC-14, so dashboard run names stay unique.
+The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Phase 2 holds AC-14 and AC-15. Phase 3 holds AC-20, AC-16, AC-17, AC-18, AC-5 and AC-19. AC-3, AC-4 and AC-6 to AC-13 are retired (see Decisions). New IDs start at AC-14, so dashboard run names stay unique.
 
 ## Blocked on
 
@@ -159,6 +173,7 @@ The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Ph
 
 ## Decisions
 
+- 2026-10-14 (lead, re-plan 2; João: "1.5 to 2x seems close enough ... pretty sure we can beat 3x in a week"): the provisional matched ratio is 1.18x, 1.30x and 1.49x. The Solution budget (−2.2 to −2.6 ms from 7.05 ms) reaches about 1.7x to 1.8x at takeoff against the matched 8.85 ms, so it cannot reach 2x alone. The matched counters show a larger lever: the player runs half of Chromium's instructions at about 60% of its IPC. AC-20 (IPC 1.0 or more) comes before AC-16. With AC-20 at Chromium's IPC (about 4.5 ms at takeoff) and the Phase 3 levers on top, 3x (2.95 ms or less at takeoff) is the design target. Two checker defects were fixed on the way: the player drew one automatic frame after each mailbox poll inside the window (`d790e5cfb`, the runner now holds automatic renders), and the window ticks came from the game clock, which led the host's driven tick by 60 (`e3271a19c`, the host now brackets each window with `TN_PLAYER_RENDER_HOLD` markers and the checker reconciles frames per bracket). A debug repro confirmed one held `advance(1000)` per window with no draw inside.
 - 2026-10-14 (AC-15 collector repair, incomplete): the first matched flight rejected multiple Chromium renderers. Page-target tracing now maps the actual root frame to its renderer PID; browser-target trace metadata was empty. The subsequent actual probe exposed an incorrect `/proc/comm == CrRendererMain` requirement: Chromium deliberately keeps the Linux leader process name, while RendererMain runs on that leader ([upstream implementation](https://chromium.googlesource.com/chromium/src/+/main/base/threading/platform_thread_linux.cc)). The collector now uses the verified renderer leader TID and retains process-tree/start-time identity checks. A fresh actual Chromium 151 private-Xvfb probe passes; an independent 1.5-second JS loop adds 1.46 CPU-seconds to that renderer and zero to the spare. Parent focused suites pass 193/193, playtest typecheck passes, and changed-file Biome passes with 14 warnings. Window timestamps and a conserved source-map attribution helper are present; actual calibrated Midway owner rows, matched pairs and parity are still unverified. AC-15 remains open.
 
 - 2026-10-14 (dashboard UI): Sonnet 5.5 High reproduced horizontal page overflow from the wide matched-counter table and intrinsic grid sizing. Reused the existing table scroll container and shrinkable grid tracks; all 135 focused dashboard tests pass. Actual browser checks pass on ports 8765 and 8767 at 1600×900 and 900×900, with clean consoles and pending metrics preserved. Fresh read-only visual judge: IMPROVEMENT at both widths. AC-15 remains open; no speed result is claimed.
@@ -219,12 +234,14 @@ The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Ph
 
 - [x] AC-14 [local]: both Midway browser arms time a production build of the same engine commit as the desktop player, and the harness refuses a dev server or a commit mismatch. proof: a `scripts/__tests__/midway-*.spec.ts` case, red on a page that loads `/@vite/client` and on mismatched commits, plus one legacy `flight.sh` run log that names its build and commit — Evidence (2026-10-14): `ac14-proof-a4c99a39b-legacy/run.log` under `/home/joao/.cache/tmp-tn/prd610-matched-runs/`: production `build:web`, static preview, runner PASS (4 assertions, 1,938 frames), 652 observed requests with no `/@vite/client`; WebGPU adapter NVIDIA/Turing on private Xvfb. Live receipt/hash verification passed for both installs, packed tarballs, desktop bundle/player and legacy web output at `a4c99a39b2b7db7d00d34bc5c5d8adaeec6abe00`. Latest Midway suite: 111 pass, including refusal and strict-exports packing regressions; installed bundler compatibility and acquisition fixture also pass. Fixed-step is not yet frame-coupled: no performance claim (AC-15).
 - [ ] AC-15 [local]: the dashboard headline is the main-thread CPU ratio (three.js renderer main thread over the player main thread) on the lockstep window at takeoff, cockpit and rear gunner, with instructions and process-tree CPU beside it. proof: three alternating legacy and desktop pairs per pose with parity PASS, the dashboard API row, and a V8 profile of each arm split into the same owner rows (engine, game, HUD, harness)
+  Progress (2026-10-14): one clean pair exists (provisional baseline above); the host-tick reconciliation fix is `e3271a19c`. Left: three qualified pairs, the dashboard API row and the owner-row profiles.
 
 #### Phase 3: Structural levers, then the final benchmark
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/src/engine/player/run.cpp`, `packages/runtime-native/src/engine/renderer/{renderer,render_database}.cpp`, `packages/runtime-native/src/engine/animation/mixer.{h,cpp}`, `packages/core/src/animation.ts`, `packages/three-native/src/audio.ts`, `packages/core/src/{ui-state,ui-bridge}.ts`, `packages/runtime-native/src/engine/player/core-three.mjs`, `packages/three-native/src/{object-surface,tsl-uniforms}.ts`, `scripts/midway-bench/*`, `scripts/perf-live.ts`.
-**Implementation:** one lever per commit, in budget order. Each lever passes tier 0, then a tier 1 instruction A/B, and stacks only when every B beats every A. A native fast path keeps the TS path for the web, and a spec or conformance case proves that both agree.
+**Implementation:** AC-20 first, then one lever per commit, in budget order. Each lever passes tier 0, then a tier 1 instruction A/B, and stacks only when every B beats every A. A native fast path keeps the TS path for the web, and a spec or conformance case proves that both agree.
 
+- IPC (AC-20): attribute the stalls first (`perf record` on the player main thread by DSO and symbol, then cache-miss events on the top rows). Candidate levers, each kept only on the A/B rule: a pointer-compression V8 monolith (and ThinLTO/PGO where the recipe allows), HUD snapshot work bounded to real HUD changes, and thread placement that keeps the HUD processes and the GPU thread off the main thread's core and its SMT sibling.
 - Render thread (AC-16): after the matrix walk, the main thread hands a frame snapshot (transforms, visibility, uniforms, skinning palettes) to a render thread. The render thread runs cull, project and encode, then hands submit and present to the GPU thread (old AC-9). Keep one frame in flight in total, and extend the GPU thread's deferred destruction to the snapshot.
 - Animation (AC-17): first apply URO to rigs that no camera draws (PRD-573 v2.3: a staggered 1-in-4 rate, an update on visibility gain). Skip tracks that no consumer reads (28.8% of evaluated tracks). Then evaluate draw-only tracks (69.4%) in per-rig jobs, joined before the skinning upload. Move the `AnimationPlayer` frame step (fades, stride, foot plant) into the C++ mixer: one call per frame for all players.
 - Engine JS (AC-18): positional audio and the listener read world poses in the native audio backend. The HUD bridge validates a message shape once and skips unchanged state. The player shim keeps `parent` and children on the JS side, returns `traverse` lists in one call, and caches attribute names per geometry version.
@@ -232,6 +249,7 @@ The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Ph
 
 **Verification:** the AC-16 to AC-19 proofs. Any lever that can change pixels (render thread, URO) gets the visual judge.
 
+- [ ] AC-20 [local]: the player main thread reaches IPC 1.0 or more on the lockstep window at all three poses, with its instructions per frame no higher than the matched baseline. proof: three alternating pairs per pose with parity PASS, `perf stat` instructions and cycles per window, and a `perf record` DSO split (V8 JIT, V8 runtime, engine C++, driver) before and after
 - [ ] AC-16 [local]: cull, project and encode run on a render thread, and the player main thread's CPU per frame falls by at least 1.0 ms on the lockstep window. proof: a ctest on render-thread ordering (frame N encodes only frame N's snapshot; a mutation goes red), a fixed-step capture pair whose A-against-B difference is no larger than A against A, three alternating pairs per pose, visual judge NEUTRAL or better
 - [ ] AC-17 [local]: animation costs the player main thread at most 0.4 ms per frame on the lockstep window (about 1.05 ms today), and an animated value the game reads is current for its frame. proof: a ctest on read-before-join (red when a game-read track evaluates in a job), the mixer meter on three alternating pairs, visual judge NEUTRAL or better at all three poses
 - [ ] AC-18 [local]: the HUD bridge, positional audio and the player shim cost the player main thread at most 0.2 ms per frame on the lockstep window (about 0.45 ms today). proof: V8 profile owner rows before and after on the same window, an instruction A/B per moved piece, and a spec or conformance case per native fast path
