@@ -19,6 +19,7 @@ const replayRuntime: IGamePluginHooks<AbyssState> = {
   setup: (ctx, runtime) => {
     gameRuntime = runtime;
     if (startupProof === undefined) return undefined;
+    if (runtime === undefined) return undefined;
     const label = document.createElement("div");
     label.dataset.tnStartupProof = startupProof;
     label.style.cssText =

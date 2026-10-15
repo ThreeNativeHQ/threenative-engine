@@ -7,7 +7,7 @@ const game = defineGame<StreamingState>({
   camera: { far: 500, fov: 60, near: 0.1, projection: "perspective" },
   inputTarget: window,
   input: { start: { keys: ["Enter"] } },
-  initialState: { attached: 0, streamingDone: false },
+  initialState: { attached: 0, streamingDone: false, worldReady: false },
   plugins: [playtest<StreamingState>()],
   renderer: { preferWebGPU: true },
   scenes: { streaming: StreamingProbe },

@@ -65,6 +65,11 @@
       "noNetworkErrors": true,
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
+    },
+    "pipelineCensus": {
+      "warmUpScope": "chunk:0:2:1",
+      "maxNodeBuildsAfterWarmUpScope": 0,
+      "maxRenderPipelineCreationsAfterWarmUpScope": 0
     }
   },
   "name": "streaming-sliced-attach-and-parallel-load",
@@ -84,6 +89,16 @@
         "equals": true,
         "id": "state",
         "path": "streamingDone"
+      }
+    },
+    {
+      "label": "world-chunk-settled",
+      "release": true,
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "equals": true,
+        "id": "state",
+        "path": "worldReady"
       }
     }
   ],
