@@ -102,7 +102,7 @@ export class StreamingProbe extends Scene<StreamingState> {
       assets: ctx.assets,
       budgets: { bytes: 8_000_000, instances: 20_000, residentCells: 25 },
       follow: ctx.camera,
-      ring: 1,
+      ring: 0,
       surface: terrainMaterial(),
       terrain: { tileResolution: 65 },
       url: "world/world.json",
