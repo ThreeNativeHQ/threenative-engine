@@ -255,20 +255,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
   // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
-  "action-rpg": "3f7aaaf822de66b511360d6975276f49be0928f7ae1f883a258ff2112ee44443",
-  minimal: "35b572cc28d22787368316db2ff6c9d1b850a16fd58da094bf792c1779e5ad19",
-  platformer: "6da024be41ca9b507e6e83d0028bf903b00cc3e8a549274dd77326f5a16c5e54",
-  puzzle: "74ad5ca8dfc6d48b38336b1bb64ff3704c0a85d6d95c2371e2401c1fea1d2522",
-  racing: "b67163bc97d98ce0a3d55d2b6bf4f98250b2feb633ab4bb9e91054a1a2acecb4",
-  rain: "3677e822ca3bed8b8acbfc1edb0ce8572f9aec830d92e380c8fc0d98e00dc7c8",
-  rts: "0563ddccf9170f8a1ec0038817852b8cb7c4af43c7fd187e9e60c892f0206012",
-  runner: "172e65a6b91db2a16b45e2c4b94a01359441fca75594719ae0416ba003ac34cf",
+  "action-rpg": "9b269c88db97e3d1208c6b7ea3db2617170d4dc166477ee73925b3dfddeed03c",
+  minimal: "57890ec68af9d5cdc2742d073c0db2439fd7c30bd5fa5a4dc105e636fe3d47bd",
+  platformer: "4f5a48198902eb6ea6fdcf2251da8c4d08a11d368a5a2e3beb26ee9937e4a839",
+  puzzle: "1c43d9885292a2f59b7ed11895385116797cfa9a412408823f09d12185ce5e12",
+  racing: "a5ebed06f00d5a8c1150f748e2876cfc3a588c8ab680f25429ef4925b48916af",
+  rain: "2f9970aef8657e9a52c0d4cc1fa162e5ac3937c67c4b4d184e830371f3b32851",
+  rts: "88d2b6752ff6b884fb8d0814d3cfbbc03469e6ad68129eedb9bae43fa7809f3f",
+  runner: "d71c51c8a8357275ee890fb9bac5a6d555f8ec2c3a9c6eff69d4a241bc0cd769",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "f68fec579f40ac59f0dd680abb429b335ebfb186108a5a7b01e43588b92f1ac5",
-  shooter: "e90b274c3deb1678247877489bca3a864e24f44acc778b25262c164478c7d3fe",
-  snow: "cde9db6467ba246bd06c0108d950fb5e97c1a3334ffd9dcc899fcc27b4065f94",
-  starter: "7ffc3e4b64582b442ffa761e30b4b135761624d2d5c09d6517a05cfaa541ac8d",
-  "tower-defense": "ab5c66ce8cdf6b40fcccf9cfe82b7a1c5fdd65e231da129193251868c2681e7f",
+  sailing: "c2ab760cd26938646774da7e3ca356d70a544d656788c6da9da12b3df38452c0",
+  shooter: "b1b2f97d72e8ae48a155537e932cfe52f890daa8bc2a34ed95b1f22dacba7853",
+  snow: "eec4631723a264253d3b1e18b6c042c2486080982e4f01460372177fa9f4ef73",
+  starter: "4a1555ccf4ac008a3a2cfe3bc51295c1d10497329d1e6bc3034ea30414813832",
+  "tower-defense": "19e6874f948e3c23e655ff9687002fe11dcf2c50d2224672c8e996dc2f3f0d1a",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

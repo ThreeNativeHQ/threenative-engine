@@ -755,7 +755,8 @@ test('the actual packed archive excludes C++ runtime source', async () => {
   roots.push(root);
   const packed = await packRuntime(root);
   const files = packed.files.join('\n');
-  assert.doesNotMatch(files, /^(?:src|include|cmake|native|third_party|build)\//mu);
+  // The Wasm engine (build/web) is the one build output the package ships, for the web native engine.
+  assert.doesNotMatch(files, /^(?:src|include|cmake|native|third_party|build(?!\/web\/))\//mu);
   assert.doesNotMatch(files, /\.(?:c|cc|cpp|cxx|h|hh|hpp|m|mm)$/mu);
 
   const manifest = JSON.parse(

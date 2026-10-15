@@ -1,6 +1,10 @@
 import type { IThreeNativeConfig } from "@threenative/core";
 
 const config: IThreeNativeConfig = {
+  // Pinned to the legacy engine: the web native engine's TSL `Fn` takes no parameters yet, and the shared blue-noise
+  // addon calls one (PRD-573 slice 8). The engine player already boots this game on desktop with the pin removed.
+  // Delete this line when `pnpm test` passes without it, and the game runs on the native engine.
+  engine: "legacy",
   app: {
     id: "com.threenative.__PROJECT_ID__",
     name: "__PROJECT_NAME__",

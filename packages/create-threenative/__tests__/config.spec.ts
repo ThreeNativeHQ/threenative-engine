@@ -1318,7 +1318,9 @@ it("rejects a lightmap atlas size that is not a multiple of four on both sides o
 // `engine: "legacy"` with a comment, and leaves this list when the pin goes.
 const LEGACY_PINNED_TEMPLATES = [
   "action-rpg",
+  "minimal",
   "platformer",
+  "puzzle",
   "racing",
   "rain",
   "rts",
