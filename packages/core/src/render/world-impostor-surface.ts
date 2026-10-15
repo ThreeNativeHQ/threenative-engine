@@ -7,7 +7,6 @@ import {
   type InstancedBufferAttribute,
   InstancedInterleavedBuffer,
   type Material,
-  type Object3D,
   Sphere,
   Vector3,
 } from "three";
@@ -60,6 +59,7 @@ import {
   MeshPhysicalNodeMaterial,
   MeshStandardNodeMaterial,
   type Node,
+  type NodeBuilder,
   type NodeMaterial,
 } from "three/webgpu";
 import { IMPOSTOR_VIEW_GRID, type WorldImpostorAtlas } from "./world-impostor.js";
@@ -266,6 +266,8 @@ export function instanceSyncEvent(
 /**
  * The per-instance matrix as a `mat4` node, choosing the path by the attribute three installed.
  *
+ * Standard instancing already built the column nodes: reuse those exact nodes and its upload
+ * synchronization. Only a custom vertex path without them needs the fallback below.
  * A `StorageInstancedBufferAttribute` is read through `storage(...).element(instanceIndex)`, which
  * is the same seam three's own `Instance.js` uses and which includes the indirect draw's
  * `firstInstance`. A plain CPU `InstancedBufferAttribute` cannot require storage support, so it is
@@ -274,7 +276,23 @@ export function instanceSyncEvent(
  * derived buffer exactly as `Instance.js` does — a derived buffer nobody re-uploads draws a stale
  * pose. See {@link instanceSyncEvent}.
  */
-function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
+function instanceMatrixNode(
+  attribute: InstancedBufferAttribute,
+  builder: NodeBuilder,
+): Node<"mat4"> {
+  // Reuse Three's actual column nodes: a second interleaved buffer consumes four more locations.
+  const columns = [...(Reflect.get(builder, "nodes") as Iterable<Node>)].filter((node) => {
+    const value = Reflect.get(node, "value");
+    return (
+      value?.isInstancedInterleavedBuffer === true &&
+      value.array === attribute.array &&
+      Reflect.get(node, "bufferStride") === 16
+    );
+  });
+  if (columns.length === 4) {
+    columns.sort((a, b) => Reflect.get(a, "bufferOffset") - Reflect.get(b, "bufferOffset"));
+    return mat4(...(columns as [Node<"vec4">, Node<"vec4">, Node<"vec4">, Node<"vec4">]));
+  }
   const count = Math.max(attribute.count, 1);
   if (
     (attribute as { isStorageInstancedBufferAttribute?: boolean })
@@ -290,7 +308,7 @@ function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
     attribute.usage === DynamicDrawUsage
       ? instancedDynamicBufferAttribute
       : instancedBufferAttribute;
-  const columns = [
+  const ownColumns = [
     bufferFn(interleaved, "vec4", 16, 0),
     bufferFn(interleaved, "vec4", 16, 4),
     bufferFn(interleaved, "vec4", 16, 8),
@@ -298,17 +316,19 @@ function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
   ];
   instanceSyncEvent(attribute, interleaved).toStack();
   return mat4(
-    columns[0] as Node<"vec4">,
-    columns[1] as Node<"vec4">,
-    columns[2] as Node<"vec4">,
-    columns[3] as Node<"vec4">,
+    ownColumns[0] as Node<"vec4">,
+    ownColumns[1] as Node<"vec4">,
+    ownColumns[2] as Node<"vec4">,
+    ownColumns[3] as Node<"vec4">,
   ) as Node<"mat4">;
 }
 
 /** `cameraViewMatrix * modelWorldMatrix * instanceMatrix`: asset-space to view-space per instance. */
-function instanceViewMatrixNode(object: Object3D): Node<"mat4"> {
+function instanceViewMatrixNode(builder: NodeBuilder): Node<"mat4"> {
+  const object = builder.object;
   const attribute = (object as { instanceMatrix?: InstancedBufferAttribute }).instanceMatrix;
-  const instance = attribute === undefined ? identityMat4() : instanceMatrixNode(attribute);
+  const instance =
+    attribute === undefined ? identityMat4() : instanceMatrixNode(attribute, builder);
   return cameraViewMatrix.mul(modelWorldMatrix).mul(instance) as Node<"mat4">;
 }
 
@@ -394,9 +414,9 @@ export class WorldImpostorSurface {
     const relVarying = varyingProperty("vec3", `${name}Rel`);
     const dirVarying = varyingProperty("vec3", `${name}Dir`);
 
-    const positionNode = Fn((_inputs: unknown, builder: { readonly object: Object3D }) => {
+    const positionNode = Fn((_inputs: unknown, builder: NodeBuilder) => {
       const object = builder.object;
-      const instance = userInstanceMatrix(object);
+      const instance = userInstanceMatrix(builder);
       const view = cameraViewMatrix.mul(modelWorldMatrix).mul(instance);
       const centerView = view.mul(vec4(centerUniform, 1)).xyz;
       // The authored cull contract in `world-gpu-scene.ts` `cullAndSelect` measures horizontal
@@ -453,8 +473,8 @@ export class WorldImpostorSurface {
     material.colorNode = vec4(fragment.albedo, fragment.coverage);
     material.alphaTestNode = fragment.threshold;
     material.maskShadowNode = fragment.coverage.greaterThan(fragment.threshold);
-    material.normalNode = Fn((_inputs: unknown, builder: { readonly object: Object3D }) =>
-      transformNormal(fragment.normalAsset, instanceViewMatrixNode(builder.object)),
+    material.normalNode = Fn((_inputs: unknown, builder: NodeBuilder) =>
+      transformNormal(fragment.normalAsset, instanceViewMatrixNode(builder)),
     )();
     material.positionNode = positionNode;
 
@@ -491,9 +511,10 @@ export class WorldImpostorSurface {
 let surfaceId = 0;
 
 /** The attribute node for the position pass; a plain `Mesh` falls back to the identity. */
-function userInstanceMatrix(object: Object3D): Node<"mat4"> {
+function userInstanceMatrix(builder: NodeBuilder): Node<"mat4"> {
+  const object = builder.object;
   const attribute = (object as { instanceMatrix?: InstancedBufferAttribute }).instanceMatrix;
-  return attribute === undefined ? identityMat4() : instanceMatrixNode(attribute);
+  return attribute === undefined ? identityMat4() : instanceMatrixNode(attribute, builder);
 }
 
 interface IFragmentNodes {
@@ -739,8 +760,8 @@ export function worldLodMaterial(
   const material = cloneLitMaterial(source);
   const inverse = uniform(local.clone().invert());
   const root = Fn(
-    (_inputs: unknown, builder: { readonly object: Object3D }) =>
-      userInstanceMatrix(builder.object)
+    (_inputs: unknown, builder: NodeBuilder) =>
+      userInstanceMatrix(builder)
         .mul(inverse)
         .mul(vec4(0, 0, 0, 1)).xyz,
   )();

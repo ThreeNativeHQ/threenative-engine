@@ -88,7 +88,11 @@ function farMatrixRoute(mesh: InstancedMesh) {
   const material = mesh.material as NodeMaterial;
   const body = (
     material.positionNode as unknown as {
-      node: { shaderNode: { jsFunc: (inputs: unknown, builder: { object: Object3D }) => Node } };
+      node: {
+        shaderNode: {
+          jsFunc: (inputs: unknown, builder: { object: Object3D; nodes: Set<Node> }) => Node;
+        };
+      };
     }
   ).node.shaderNode.jsFunc;
   const previous = getCurrentStack();
@@ -106,7 +110,7 @@ function farMatrixRoute(mesh: InstancedMesh) {
   };
   setCurrentStack(scope);
   try {
-    body([], { object: mesh }).traverse(collect);
+    body([], { object: mesh, nodes: new Set() }).traverse(collect);
     scope.traverse(collect);
   } finally {
     setCurrentStack(previous);
