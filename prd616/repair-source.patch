@@ -1,0 +1,274 @@
+diff --git a/examples/abyss-framework/src/scenes/WorldProbe.ts b/examples/abyss-framework/src/scenes/WorldProbe.ts
+index d2ada0083..8fd46e197 100644
+--- a/examples/abyss-framework/src/scenes/WorldProbe.ts
++++ b/examples/abyss-framework/src/scenes/WorldProbe.ts
+@@ -8,6 +8,7 @@ import {
+   MeshStandardMaterial,
+   SphereGeometry,
+ } from "three";
++import { bloom } from "three/addons/tsl/display/BloomNode.js";
+ import { pass } from "three/tsl";
+ import { ShadowPartialProbe } from "../probes/shadowPartial.js";
+ import { terrainMaterial } from "../render/terrain.js";
+@@ -348,7 +349,11 @@ export class WorldWarmUpProbe extends WorldProbe {
+ 
+   override enter(ctx: WorldCtx): void {
+     const worldPass = pass(ctx.scene, ctx.camera);
+-    const installation = ctx.renderer.setOutputNode(worldPass);
++    const colour = worldPass.getTextureNode();
++    const installation = ctx.renderer.setOutputNode(
++      colour.add(bloom(colour, 0.9, 0.5, 0.25)),
++      worldPass,
++    );
+     if (ctx.renderer.warmUpWorldPass === undefined)
+       throw new Error("WorldWarmUpProbe requires renderer.warmUpWorldPass.");
+     this.#worldPass = worldPass;
+diff --git a/packages/core/__tests__/renderer.spec.ts b/packages/core/__tests__/renderer.spec.ts
+index 661424c38..bafba7908 100644
+--- a/packages/core/__tests__/renderer.spec.ts
++++ b/packages/core/__tests__/renderer.spec.ts
+@@ -1290,9 +1290,14 @@ describe("createRenderer", () => {
+     }
+   });
+ 
+-  it.each([false, true])(
+-    "refreshes a scoped world warm-up and its following main render in one node frame after %s failure",
+-    async (throws) => {
++  it.each([
++    { throws: false, nextFrame: false },
++    { throws: false, nextFrame: true },
++    { throws: true, nextFrame: false },
++    { throws: true, nextFrame: true },
++  ])(
++    "refreshes a scoped world warm-up and its following main render in one outer render with nested post passes: %j",
++    async ({ throws, nextFrame }) => {
+       const canvas = testCanvas();
+       const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+       Object.defineProperty(globalThis, "navigator", {
+@@ -1317,6 +1322,9 @@ describe("createRenderer", () => {
+         nodeFrame.renderId += 1;
+         if (worldPass === undefined) throw new Error("Missing world pass");
+         nodeFrame.updateBeforeNode(worldPass);
++        // Bloom/temporal quads sample the same pass under a new renderId.
++        nodeFrame.renderId += 1;
++        nodeFrame.updateBeforeNode(worldPass);
+         if (!warm) canvasSubmissions.push(worldPass.scene as Object3D);
+       });
+       const rawRender = (scene: Object3D): void => {
+@@ -1379,6 +1387,8 @@ describe("createRenderer", () => {
+         const outputNode = worldPass.add(pass(new Scene(), new PerspectiveCamera()));
+         renderer.setOutputNode(outputNode, worldPass);
+         const authoredUpdateBeforeType = worldPass.updateBeforeType;
++        const authoredUpdateBefore = worldPass.updateBefore;
++        const hadOwnUpdateBefore = Object.hasOwn(worldPass, "updateBefore");
+         expect(authoredUpdateBeforeType).toBe(NodeUpdateType.FRAME);
+         targetScene = new Scene();
+         const terrain = new Object3D();
+@@ -1406,7 +1416,10 @@ describe("createRenderer", () => {
+         expect(draws[1]?.target).not.toBeNull();
+         expect(draws[1]?.warm).toBe(true);
+ 
++        if (nextFrame) nodeFrame.frameId += 1;
+         renderer.render(authoredScene, authoredCamera);
++        expect(worldPass.updateBefore).toBe(authoredUpdateBefore);
++        expect(Object.hasOwn(worldPass, "updateBefore")).toBe(hadOwnUpdateBefore);
+         expect(draws.map((draw) => draw.scene)).toEqual([
+           authoredScene,
+           targetScene,
+diff --git a/packages/core/__tests__/world-capture-fixture.spec.ts b/packages/core/__tests__/world-capture-fixture.spec.ts
+index 76ec1931b..9892c0ce6 100644
+--- a/packages/core/__tests__/world-capture-fixture.spec.ts
++++ b/packages/core/__tests__/world-capture-fixture.spec.ts
+@@ -8,6 +8,7 @@ import {
+   PerspectiveCamera,
+   Scene as ThreeScene,
+ } from "three";
++import { bloom } from "three/addons/tsl/display/BloomNode.js";
+ import { pass } from "three/tsl";
+ import ts from "typescript";
+ import { describe, expect, it } from "vitest";
+@@ -51,6 +52,7 @@ async function probe() {
+         if (name === "@threenative/core/world") return { WorldCells: { load: async () => world } };
+         if (name === "three") return { Color, DirectionalLight, HemisphereLight };
+         if (name === "three/tsl") return { pass };
++        if (name === "three/addons/tsl/display/BloomNode.js") return { bloom };
+         if (name === "../render/terrain.js") return { terrainMaterial: () => ({}) };
+         // Only the `?world&viewDistance` flight applies it, and this context has no location.
+         if (name === "../render/worldFog.js") return { worldFog: () => undefined };
+diff --git a/packages/core/src/renderer.ts b/packages/core/src/renderer.ts
+index 7b2248d6b..0b29e29f9 100644
+--- a/packages/core/src/renderer.ts
++++ b/packages/core/src/renderer.ts
+@@ -567,6 +567,25 @@ function wrapRenderer(
+   let outputInput: unknown;
+   let outputPass: PassNode | undefined;
+   let pendingWorldPassRefresh = false;
++  // Nested bloom/temporal quads sample this pass under distinct renderIds.
++  const refreshWorldPassOnce = (pass: PassNode | undefined): (() => void) | undefined => {
++    if (pass === undefined) return undefined;
++    const updateBefore = pass.updateBefore;
++    const updateBeforeType = pass.updateBeforeType;
++    const hadOwnUpdateBefore = Object.hasOwn(pass, "updateBefore");
++    let updated = false;
++    pass.updateBeforeType = NodeUpdateType.RENDER;
++    pass.updateBefore = function (frame) {
++      if (updated) return;
++      updated = true;
++      updateBefore.call(this, frame);
++    };
++    return () => {
++      pass.updateBeforeType = updateBeforeType;
++      if (hadOwnUpdateBefore) pass.updateBefore = updateBefore;
++      else Reflect.deleteProperty(pass, "updateBefore");
++    };
++  };
+   let warmOutputTarget: RenderTarget | undefined;
+   const renderChains = new Set<RenderChain>();
+   let renderChainUsesPerObjectVelocity = false;
+@@ -646,8 +665,7 @@ function wrapRenderer(
+   const renderFrame = (scene: Object3D, camera: Camera): void => {
+     pipelineCensus?.beginWorldFrame(scene);
+     const refreshPass = pendingWorldPassRefresh ? outputPass : undefined;
+-    const previousUpdateBeforeType = refreshPass?.updateBeforeType;
+-    if (refreshPass !== undefined) refreshPass.updateBeforeType = NodeUpdateType.RENDER;
++    const restoreWorldPass = refreshWorldPassOnce(refreshPass);
+     let completed = false;
+     try {
+       bindSurface();
+@@ -663,8 +681,7 @@ function wrapRenderer(
+       pipelineCensus?.firstPresent();
+       completed = true;
+     } finally {
+-      if (refreshPass !== undefined && previousUpdateBeforeType !== undefined)
+-        refreshPass.updateBeforeType = previousUpdateBeforeType;
++      restoreWorldPass?.();
+       pipelineCensus?.endWorldFrame(scene, completed);
+     }
+   };
+@@ -732,7 +749,7 @@ function wrapRenderer(
+         const scoped = targetScene !== undefined && targetScene !== scene;
+         const previousPassScene = outputPass?.scene;
+         const previousPassCamera = outputPass?.camera;
+-        const previousUpdateBeforeType = outputPass?.updateBeforeType;
++        let restoreWorldPass: (() => void) | undefined;
+         const warmRenderer = raw as RendererInstance &
+           ThreeRenderer & {
+             contextNode?: unknown;
+@@ -780,7 +797,7 @@ function wrapRenderer(
+         renderingFrame += 1;
+         try {
+           if (scoped && outputPass !== undefined) {
+-            outputPass.updateBeforeType = NodeUpdateType.RENDER;
++            restoreWorldPass = refreshWorldPassOnce(outputPass);
+             pendingWorldPassRefresh = true;
+           }
+           if (scoped) {
+@@ -798,8 +815,7 @@ function wrapRenderer(
+           if (outputPass !== undefined) {
+             outputPass.scene = previousPassScene as Object3D;
+             outputPass.camera = previousPassCamera as Camera;
+-            if (previousUpdateBeforeType !== undefined)
+-              outputPass.updateBeforeType = previousUpdateBeforeType;
++            restoreWorldPass?.();
+           }
+           RendererUtils.restoreRendererState(warmRenderer, rendererState);
+           restoreField(raw, "transparent", hadOwnTransparent, previousTransparent);
+diff --git a/packages/playtest/__tests__/pipeline-timing.spec.ts b/packages/playtest/__tests__/pipeline-timing.spec.ts
+index 6967cbb8b..e8d5b5c8e 100644
+--- a/packages/playtest/__tests__/pipeline-timing.spec.ts
++++ b/packages/playtest/__tests__/pipeline-timing.spec.ts
+@@ -528,6 +528,35 @@ describe("pipeline timing capture", () => {
+     ]);
+   });
+ 
++  it.each([
++    ["keeps the maximum for each metric", [
++      { nodeBuilds: 2, renderPipelineCreations: 0 },
++      { nodeBuilds: 0, renderPipelineCreations: 3 },
++      { nodeBuilds: 0, renderPipelineCreations: 0 },
++    ], { nodeBuilds: 2, renderPipelineCreations: 3, observed: true }],
++    ["does not hide a missing later draw", [
++      { nodeBuilds: 2, renderPipelineCreations: 1 }, undefined,
++    ], { nodeBuilds: 2, renderPipelineCreations: 1 }],
++    ["does not hide a missing earlier draw", [
++      undefined, { nodeBuilds: 2, renderPipelineCreations: 1 },
++    ], { nodeBuilds: 2, renderPipelineCreations: 1 }],
++  ])("repeated warm-up label %s", (_name, draws, expected) => {
++    const capture = parsePipelineCapture(browserCapture([browserEvent()], {
++      warmUpScopes: draws.map((firstDraw, index) => ({
++        label: "chunk:0",
++        boundaryMs: 4 + index,
++        eventsSettled: 1,
++        nodeBuilds: 0,
++        renderPipelineCreations: 1,
++        ...(firstDraw === undefined ? {} : { firstDraw }),
++      })),
++    }));
++    expect(capture.complete).toBe(true);
++    expect(summarizePipelineCapture(capture).warmup.scopes).toEqual([
++      { label: "chunk:0", ...expected },
++    ]);
++  });
++
+   it("attributes node-build records when the later render reuses its cached pipeline", () => {
+     const capture = parsePipelineCapture(
+       browserCapture(
+diff --git a/packages/playtest/src/runner/pipeline-summary.ts b/packages/playtest/src/runner/pipeline-summary.ts
+index 7016387eb..62ef3a0fd 100644
+--- a/packages/playtest/src/runner/pipeline-summary.ts
++++ b/packages/playtest/src/runner/pipeline-summary.ts
+@@ -507,12 +507,21 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
+     string,
+     { nodeBuilds: number; renderPipelineCreations: number; observed?: boolean }
+   >();
+-  for (const scope of capture.warmUpScopes ?? [])
++  const measuredScopeLabels = new Set<string>();
++  for (const scope of capture.warmUpScopes ?? []) {
++    const previous = scopeMap.get(scope.label);
++    if (scope.firstDraw !== undefined) measuredScopeLabels.add(scope.label);
+     scopeMap.set(scope.label, {
+-      nodeBuilds: 0,
+-      renderPipelineCreations: 0,
+-      ...(scope.firstDraw === undefined ? {} : { observed: true }),
++      nodeBuilds: Math.max(previous?.nodeBuilds ?? 0, scope.firstDraw?.nodeBuilds ?? 0),
++      renderPipelineCreations: Math.max(
++        previous?.renderPipelineCreations ?? 0,
++        scope.firstDraw?.renderPipelineCreations ?? 0,
++      ),
++      ...(scope.firstDraw !== undefined && (previous === undefined || previous.observed === true)
++        ? { observed: true }
++        : {}),
+     });
++  }
+   let unreported = 0;
+   let sizeSamples = 0;
+   const hasNodeBuildRecords = capture.nodeBuilds !== undefined;
+@@ -592,7 +601,7 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
+         nodeBuilds: 0,
+         renderPipelineCreations: 0,
+       };
+-      if (scope.observed !== true) {
++      if (!measuredScopeLabels.has(event.afterWarmUpScope)) {
+         if (!hasNodeBuildRecords) scope.nodeBuilds += event.nodeBuilds ?? 0;
+         if (event.kind === "render" && event.status === "created")
+           scope.renderPipelineCreations += 1;
+@@ -624,18 +633,10 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
+         nodeBuilds: 0,
+         renderPipelineCreations: 0,
+       };
+-      if (scope.observed !== true) scope.nodeBuilds += 1;
++      if (!measuredScopeLabels.has(nodeBuild.afterWarmUpScope)) scope.nodeBuilds += 1;
+       scopeMap.set(nodeBuild.afterWarmUpScope, scope);
+     }
+   }
+-  for (const scope of capture.warmUpScopes ?? []) {
+-    if (scope.firstDraw === undefined) continue;
+-    scopeMap.set(scope.label, {
+-      observed: true,
+-      nodeBuilds: scope.firstDraw.nodeBuilds,
+-      renderPipelineCreations: scope.firstDraw.renderPipelineCreations,
+-    });
+-  }
+   const source = capture.source;
+   const nodeBuildsAfterWarmUpSettled =
+     capture.warmUpSettled === undefined || capture.counts.nodeBuilds === undefined

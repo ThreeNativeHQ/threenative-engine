@@ -1,0 +1,5748 @@
+{
+  "capture": {
+    "adapter": {
+      "architecture": "turing",
+      "description": "NVIDIA: 615.78.08 615.78.8.0",
+      "device": "NVIDIA GeForce RTX 2080",
+      "vendor": "nvidia"
+    },
+    "browserArgs": [],
+    "captureMethod": "device.screenshot",
+    "rendererKind": "webgpu",
+    "target": "desktop",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  "diagnostics": [],
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 5,
+  "trivialityOptOuts": [
+    {
+      "id": "component.world.residentCells.value",
+      "reason": "All three authored cells must be resident before comparing the fixed-camera world."
+    }
+  ],
+  "target": "desktop",
+  "observations": {
+    "components": {
+      "world": {
+        "cameraPosition": {
+          "before": [
+            -160,
+            24,
+            0
+          ],
+          "after": [
+            -160,
+            24,
+            0
+          ]
+        },
+        "cameraTarget": {
+          "before": [
+            -120,
+            10,
+            0
+          ],
+          "after": [
+            -120,
+            10,
+            0
+          ]
+        },
+        "flyTimeMs": {
+          "before": 0,
+          "after": 0
+        },
+        "landmarks": {
+          "before": [
+            {
+              "id": "yard_crate_a",
+              "position": [
+                -100,
+                1,
+                0
+              ]
+            },
+            {
+              "id": "yard_crate_b",
+              "position": [
+                -30,
+                1,
+                -20
+              ]
+            }
+          ],
+          "after": [
+            {
+              "id": "yard_crate_a",
+              "position": [
+                -100,
+                1,
+                0
+              ]
+            },
+            {
+              "id": "yard_crate_b",
+              "position": [
+                -30,
+                1,
+                -20
+              ]
+            }
+          ]
+        },
+        "admissionBacklog": {
+          "before": 0,
+          "after": 0
+        },
+        "admissionDeferred": {
+          "before": 0,
+          "after": 0
+        },
+        "admissionSpentMs": {
+          "before": 2.058607000000393,
+          "after": 0
+        },
+        "bundleChildren": {
+          "before": 6,
+          "after": 6
+        },
+        "bundleOn": {
+          "before": true,
+          "after": true
+        },
+        "gpuSceneOn": {
+          "before": true,
+          "after": true
+        },
+        "gpuSceneReason": {
+          "before": "on",
+          "after": "on"
+        },
+        "gpuSceneDispatches": {
+          "before": 22,
+          "after": 42
+        },
+        "loadsQueued": {
+          "before": 0,
+          "after": 0
+        },
+        "pendingPrewarm": {
+          "before": 0,
+          "after": 0
+        },
+        "maxAdmissionSpentMs": {
+          "before": 2.3876259999999547,
+          "after": 6.18467300000043
+        },
+        "maxInstances": {
+          "before": 533,
+          "after": 533
+        },
+        "evictions": {
+          "before": 0,
+          "after": 0
+        },
+        "failures": {
+          "before": 0,
+          "after": 0
+        },
+        "instances": {
+          "before": 533,
+          "after": 533
+        },
+        "loadsInFlight": {
+          "before": 0,
+          "after": 0
+        },
+        "maxResidentCells": {
+          "before": 3,
+          "after": 3
+        },
+        "residentTiles": {
+          "before": 6,
+          "after": 9
+        },
+        "residentColliders": {
+          "before": 0,
+          "after": 0
+        },
+        "bodies": {
+          "before": 0,
+          "after": 0
+        },
+        "bodyReachTiles": {
+          "before": 0,
+          "after": 0
+        },
+        "residenceChanges": {
+          "before": 2,
+          "after": 2
+        },
+        "residentCells": {
+          "before": 3,
+          "after": 3
+        },
+        "shadowDeferrals": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowFrame": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowLevels": {
+          "before": 3,
+          "after": 3
+        },
+        "shadowRendered": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowAutoMovers": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowPeakAutoMovers": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowAutoTransitions": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowAutoScanMs": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowRendersSinceMover": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowMoverRenders": {
+          "before": 0,
+          "after": 0
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "settled-loads",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 2.0010790000005727,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 25,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 2.3876259999999547,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 8,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "no-queued-loads",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 0,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 28,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 6.18467300000043,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "settled-prewarm",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 0,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 32,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 6.18467300000043,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "complete-terrain-ring",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 0,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 36,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 6.18467300000043,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "admitted-world",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 0,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 40,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 6.18467300000043,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 64
+      }
+    ],
+    "console": [
+      {
+        "text": "TN_COLD_START:{\"segment\":\"process\",\"atMs\":0.000}",
+        "type": "log"
+      },
+      {
+        "text": "=== ThreeNative Native Runtime ===",
+        "type": "log"
+      },
+      {
+        "text": "Version: 0.3.4",
+        "type": "log"
+      },
+      {
+        "text": "Script: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/dist/world-warm-up-native.js",
+        "type": "log"
+      },
+      {
+        "text": "Window: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Initializing runtime...",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Window: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Presentation cap: 60 fps",
+        "type": "log"
+      },
+      {
+        "text": "[Window] Creating window: ThreeNative (1280x720)",
+        "type": "log"
+      },
+      {
+        "text": "[Window] SDL initialized",
+        "type": "log"
+      },
+      {
+        "text": "[Window] Running in hidden mode (MYSTRAL_HEADLESS=1)",
+        "type": "log"
+      },
+      {
+        "text": "[Window] Brand icon unavailable in embedded bundle; using compositor default",
+        "type": "log"
+      },
+      {
+        "text": "[Window] Actual window size: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[Window] Window created successfully",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Lifecycle watch installed; backgroundMode=pause",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Actual window size: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Initializing...",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Instance created",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Using X11 display: 0x558de7b3f980 window: 4194350",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Creating surface for platform type 4 with display pointer",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Creating X11 surface with display: 0x558de7b3f980 window: 0x40002e",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Surface created",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Adapter acquired successfully",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Adapter: NVIDIA GeForce RTX 2080",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Vendor: nvidia",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Backend: Vulkan",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe indirect-first-instance: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Requesting IndirectFirstInstance feature (supported)",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe texture-compression-bc: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe texture-compression-etc2: no",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe texture-compression-astc: no",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe timestamp-query: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe rg11b10ufloat-renderable: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe float32-filterable: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe transient-attachments: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] adapter feature probe core-features-and-limits: yes",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Device acquired successfully",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] TN_WEBGPU_FEATURES:{\"timestamp-query\":true,\"texture-compression-bc\":true,\"texture-compression-etc2\":false,\"texture-compression-astc\":false,\"indirect-first-instance\":true,\"rg11b10ufloat-renderable\":true,\"transient-attachments\":true,\"core-features-and-limits\":true}",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Queue acquired",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] configureSurface called: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] surface_=0x558de7c04a10, device_=0x558de7f78db0, adapter_=0x558de7c042b0",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Getting surface capabilities...",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Got capabilities: formatCount=2",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Available surface formats:",
+        "type": "log"
+      },
+      {
+        "text": "  [0] = 27",
+        "type": "log"
+      },
+      {
+        "text": "  [1] = 28",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Using surface format: 27",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Surface configured: 1280x720",
+        "type": "log"
+      },
+      {
+        "text": "[WebGPU] Present mode: fifo (vsync=true)",
+        "type": "log"
+      },
+      {
+        "text": "[JS] Creating V8 engine (platform default)",
+        "type": "log"
+      },
+      {
+        "text": "[V8] Creating engine...",
+        "type": "log"
+      },
+      {
+        "text": "[V8] Initializing V8 JavaScript engine...",
+        "type": "log"
+      },
+      {
+        "text": "[V8] V8 initialized successfully",
+        "type": "log"
+      },
+      {
+        "text": "[V8] Version: 13.1.201.22",
+        "type": "log"
+      },
+      {
+        "text": "[V8] Engine created successfully",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Using JS engine: V8",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":389.413}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":392.064}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":392.069}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":392.115}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Fetch API initialized (file://, http://, https://)",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":392.134}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":392.481}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":392.486}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":392.514}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Web Streams API initialized (ReadableStream/WritableStream/TransformStream)",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":392.565}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":393.066}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":393.070}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":393.092}",
+        "type": "log"
+      },
+      {
+        "text": "[WorkerRegistry] Initialized",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":393.132}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":393.381}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":393.385}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":393.403}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] URL and native Worker facade initialized",
+        "type": "log"
+      },
+      {
+        "text": "[DOM] Canvas element created with addEventListener, style, etc.",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":393.507}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":393.545}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":393.548}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":393.554}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":393.560}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":393.595}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":393.598}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":393.600}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":393.652}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":393.748}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":393.751}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":393.768}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":393.827}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":393.875}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":393.878}",
+        "type": "log"
+      },
+      {
+        "text": "[log] [Mystral] WebP format support: YES",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":393.969}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] DOM event system initialized",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] localStorage initialized: /home/joao/.local/share/mystral/storage/dist.json",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":394.042}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":394.121}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":394.124}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":394.230}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":394.319}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":394.360}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":394.363}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":394.372}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":394.378}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":394.430}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":394.434}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":394.441}",
+        "type": "log"
+      },
+      {
+        "text": "[Audio] Web Audio API bindings initialized",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CAPTURE:{\"version\":1,\"build\":{\"identity\":\"mystral-native@0.3.4\"},\"adapter\":{\"identity\":\"native:vulkan/nvidia/NVIDIA GeForce RTX 2080/turing/NVIDIA: 615.78.08 615.78.8.0\",\"thermal\":\"unavailable\"},\"clock\":{\"source\":\"steady\",\"originMs\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CACHE:{\"version\":1,\"phase\":\"device\",\"mode\":\"unsupported\",\"featureGranted\":false,\"renderAttached\":0,\"computeAttached\":0,\"emptyBytes\":0,\"serializedBytes\":0,\"load\":\"unavailable\",\"loadedBytes\":0,\"loadMs\":0,\"store\":\"not-attempted\",\"storedBytes\":0,\"storeMs\":0,\"snapshotMs\":0,\"reason\":\"this build's WebGPU backend declares no pipeline cache API\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FORMAT:{\"native\":\"bgra8unorm\",\"render\":\"bgra8unorm\",\"bridge\":false,\"present\":\"fifo\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":394.667}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":394.753}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":394.757}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":394.769}",
+        "type": "log"
+      },
+      {
+        "text": "[MystralRT] No hardware RT available, using stub backend",
+        "type": "log"
+      },
+      {
+        "text": "[MystralRT] Bindings initialized (backend: none)",
+        "type": "log"
+      },
+      {
+        "text": "[EventLoop] libuv 1.51.0 initialized",
+        "type": "log"
+      },
+      {
+        "text": "[AsyncHttp] Initialized with curl_multi + libuv",
+        "type": "log"
+      },
+      {
+        "text": "[AsyncFile] Initialized with libuv thread pool",
+        "type": "log"
+      },
+      {
+        "text": "[FileWatcher] Initialized with libuv fs_event",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Runtime initialized",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"runtime_created\",\"atMs\":395.951}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Evaluating script: threenative-playtest-mailbox.js (246 bytes)",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":395.963}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":395.993}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":395.996}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":396.003}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Desktop playtest mailbox configured",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"game_eval_begin\",\"atMs\":396.007}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Loading script: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/dist/world-warm-up-native.js",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":401.500}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":450.240}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":450.251}",
+        "type": "log"
+      },
+      {
+        "text": "[log] TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"NVIDIA: 615.78.08 615.78.8.0\",\"device\":\"NVIDIA GeForce RTX 2080\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":483.153}",
+        "type": "log"
+      },
+      {
+        "text": "[Mystral] Starting main loop...",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"cf01b5890b1b6101\",\"bytes\":28,\"requestId\":\"ready\",\"requestMethod\":\"\",\"requestOrder\":-1,\"pump\":{\"observed\":true,\"pumpCount\":1,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":483.166,\"maxGapMs\":0.000,\"maxGapAtMs\":-1.000,\"trailingGapMs\":5.618,\"atMs\":488.784,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_NATIVE_SMOKE_READY:webgpu",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_NATIVE_SMOKE_FIRST_FRAME",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":1,\"pipelineIdentity\":\"native-render-1\",\"programIdentity\":\"00fc0a8ad03630cc/458120a84b226496\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":4.0000000000000003e-05,\"settledMs\":5.9177549999999997,\"queueMs\":0,\"serviceMs\":5.9177149999999994,\"wallMs\":5.9177149999999994,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"00fc0a8ad03630cc\",\"bytes\":1299},\"fragment\":{\"hash\":\"458120a84b226496\",\"bytes\":1595},\"cache\":\"unsupported\",\"label\":\"renderPipeline_outputColorTransform_17\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":532.809}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":532.831}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":532.834}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":532.840}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":1}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_FIRST_PRESENT:{\"version\":1,\"boundaryMs\":40.607979999999998}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"first_frame\",\"atMs\":567.399}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_SILENCE:{\"observed\":true,\"pumpCount\":1,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":483.166,\"maxGapMs\":0.000,\"maxGapAtMs\":-1.000,\"trailingGapMs\":84.237,\"longGaps\":[],\"droppedLongGaps\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_STALL_SEGMENTS:{\"toFirstFrameMs\":567.412,\"frameBeganAtMs\":489.401,\"gapMs\":78.010,\"segments\":{\"pipelineCompile\":{\"ms\":5.992,\"calls\":1},\"shaderCompile\":{\"ms\":0.992,\"calls\":2},\"textureUpload\":{\"ms\":1.923,\"calls\":4},\"bufferUpload\":{\"ms\":1.181,\"calls\":5},\"queueSubmit\":{\"ms\":0.000,\"calls\":0}},\"attributedMs\":10.088,\"residualMs\":67.922,\"attributedShare\":0.1293}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":1,\"requested\":1,\"emitted\":1,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "[warn] THREE.WebGPURenderer: Timestamp tracking is disabled.",
+        "type": "warning"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":2}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":3}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_WORLD_ASSET_ALIAS assets=3 canonical=3",
+        "type": "log"
+      },
+      {
+        "text": "[info] [WorldWarmUpProbe] installed world output pass",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"09c37ec6bd007df0\",\"bytes\":614,\"requestId\":\"1\",\"requestMethod\":\"describe\",\"requestOrder\":1,\"pump\":{\"observed\":true,\"pumpCount\":4,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":638.910,\"maxGapMs\":84.381,\"maxGapAtMs\":483.166,\"trailingGapMs\":6.609,\"atMs\":645.519,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_WORLD_GPU_SCENE on reason=on instances=0 keys=0 dressed=0/0",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_TERRAIN_TILES tiles=0 blocks=0 draws=0 blending=0 rebuilds=0 blockBytes=0",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":2,\"pipelineIdentity\":\"native-render-2\",\"programIdentity\":\"dcd9d1972708c088/a2499803894a35ed\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":143.64505199999999,\"settledMs\":146.15877699999999,\"queueMs\":0,\"serviceMs\":2.5137249999999938,\"wallMs\":2.5137249999999938,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"dcd9d1972708c088\",\"bytes\":1417},\"fragment\":{\"hash\":\"a2499803894a35ed\",\"bytes\":960},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_highPass_19\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":672.989}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":672.999}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":673.002}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":673.006}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":3,\"pipelineIdentity\":\"native-render-3\",\"programIdentity\":\"45fc3617fb049a88/c466a179e1f4f0a4\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":152.97601700000001,\"settledMs\":156.29417699999999,\"queueMs\":0,\"serviceMs\":3.3181599999999776,\"wallMs\":3.3181599999999776,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"45fc3617fb049a88\",\"bytes\":1516},\"fragment\":{\"hash\":\"c466a179e1f4f0a4\",\"bytes\":1818},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_separable_20\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":683.141}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":683.154}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":683.157}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":683.162}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":4,\"pipelineIdentity\":\"native-render-4\",\"programIdentity\":\"45fc3617fb049a88/904d7d1b777971dc\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":161.22377800000001,\"settledMs\":163.82795300000001,\"queueMs\":0,\"serviceMs\":2.6041749999999979,\"wallMs\":2.6041749999999979,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"45fc3617fb049a88\",\"bytes\":1516},\"fragment\":{\"hash\":\"904d7d1b777971dc\",\"bytes\":1820},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_separable_21\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":690.657}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":690.666}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":690.669}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":690.674}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":5,\"pipelineIdentity\":\"native-render-5\",\"programIdentity\":\"45fc3617fb049a88/9ac08f65518be06c\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":167.956188,\"settledMs\":170.118315,\"queueMs\":0,\"serviceMs\":2.1621269999999981,\"wallMs\":2.1621269999999981,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"45fc3617fb049a88\",\"bytes\":1516},\"fragment\":{\"hash\":\"9ac08f65518be06c\",\"bytes\":1820},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_separable_22\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":696.956}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":696.965}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":696.967}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":696.971}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":6,\"pipelineIdentity\":\"native-render-6\",\"programIdentity\":\"45fc3617fb049a88/2b2d9e1b2a1e6bbc\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":173.647604,\"settledMs\":176.77872600000001,\"queueMs\":0,\"serviceMs\":3.1311220000000048,\"wallMs\":3.1311220000000048,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"45fc3617fb049a88\",\"bytes\":1516},\"fragment\":{\"hash\":\"2b2d9e1b2a1e6bbc\",\"bytes\":1820},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_separable_23\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":703.613}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":703.626}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":703.629}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":703.634}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":7,\"pipelineIdentity\":\"native-render-7\",\"programIdentity\":\"45fc3617fb049a88/4fbcbe479ba1b0a6\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":181.16928999999999,\"settledMs\":183.584586,\"queueMs\":0,\"serviceMs\":2.4152960000000121,\"wallMs\":2.4152960000000121,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"45fc3617fb049a88\",\"bytes\":1516},\"fragment\":{\"hash\":\"4fbcbe479ba1b0a6\",\"bytes\":1820},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_separable_24\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":710.446}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":710.456}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":710.458}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":710.462}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":8,\"pipelineIdentity\":\"native-render-8\",\"programIdentity\":\"ffc0ca9b4adc3a8b/ff20e1db0bfb34f5\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":188.69817599999999,\"settledMs\":190.910303,\"queueMs\":0,\"serviceMs\":2.2121270000000095,\"wallMs\":2.2121270000000095,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"ffc0ca9b4adc3a8b\",\"bytes\":1567},\"fragment\":{\"hash\":\"ff20e1db0bfb34f5\",\"bytes\":3311},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_comp_25\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":717.730}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":717.738}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":717.740}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":717.744}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":9,\"pipelineIdentity\":\"native-render-9\",\"programIdentity\":\"b07fbcd4d49ee70f/a170775f358f22a4\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":192.539163,\"settledMs\":194.130224,\"queueMs\":0,\"serviceMs\":1.5910609999999963,\"wallMs\":1.5910609999999963,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"b07fbcd4d49ee70f\",\"bytes\":1375},\"fragment\":{\"hash\":\"a170775f358f22a4\",\"bytes\":1790},\"cache\":\"unsupported\",\"label\":\"renderPipeline_RenderPipeline_18\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":720.961}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":720.967}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":720.970}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":720.973}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":4}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":4,\"requested\":9,\"emitted\":9,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"a82d5940b7eab90e\",\"bytes\":167,\"requestId\":\"2\",\"requestMethod\":\"ready\",\"requestOrder\":2,\"pump\":{\"observed\":true,\"pumpCount\":5,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":751.232,\"maxGapMs\":112.322,\"maxGapAtMs\":638.910,\"trailingGapMs\":8.004,\"atMs\":759.236,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":5}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"881fbb1b6c3f61b7\",\"bytes\":167,\"requestId\":\"3\",\"requestMethod\":\"ready\",\"requestOrder\":3,\"pump\":{\"observed\":true,\"pumpCount\":6,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":793.113,\"maxGapMs\":112.322,\"maxGapAtMs\":638.910,\"trailingGapMs\":4.753,\"atMs\":797.866,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":10,\"pipelineIdentity\":\"native-compute-1\",\"programIdentity\":\"79efa198c6cf1f6f\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":283.87882400000001,\"settledMs\":285.352485,\"queueMs\":0,\"serviceMs\":1.4736609999999928,\"wallMs\":1.4736609999999928,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"79efa198c6cf1f6f\",\"bytes\":1589},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":812.201}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":812.211}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":812.214}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":812.218}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":11,\"pipelineIdentity\":\"native-compute-2\",\"programIdentity\":\"b2488a538830441c\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":295.619214,\"settledMs\":298.91466500000001,\"queueMs\":0,\"serviceMs\":3.2954510000000141,\"wallMs\":3.2954510000000141,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"b2488a538830441c\",\"bytes\":6385},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":825.740}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":825.752}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":825.755}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":825.759}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"renderHook\",\"reason\":\"an object carries its own onBeforeRender/onAfterRender\",\"sourceRenderables\":3,\"resultDrawCandidates\":3,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":12,\"pipelineIdentity\":\"native-render-10\",\"programIdentity\":\"bbf82a4549069547/09ad40d6bccbf449\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":322.52178600000002,\"settledMs\":328.52987000000002,\"queueMs\":0,\"serviceMs\":6.0080839999999966,\"wallMs\":6.0080839999999966,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"bbf82a4549069547\",\"bytes\":3182},\"fragment\":{\"hash\":\"09ad40d6bccbf449\",\"bytes\":14731},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshStandardMaterial_37\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":855.374}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":855.388}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":855.392}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":855.398}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":6}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":6,\"requested\":12,\"emitted\":12,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_WORLD_CHUNK_MERGE meshes=1 draws=1 bytes=840 uploaded=4 instancedExpanded=0 keptInstanced=0 shadowDraws=0",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":13,\"pipelineIdentity\":\"native-render-11\",\"programIdentity\":\"bceee6f518a75d32/36b74997b7a66db6\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":402.81164200000001,\"settledMs\":407.79584199999999,\"queueMs\":0,\"serviceMs\":4.9841999999999871,\"wallMs\":4.9841999999999871,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"bceee6f518a75d32\",\"bytes\":2008},\"fragment\":{\"hash\":\"36b74997b7a66db6\",\"bytes\":14729},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshStandardMaterial_42\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":934.640}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":934.653}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":934.655}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":934.661}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":14,\"pipelineIdentity\":\"native-render-12\",\"programIdentity\":\"b07fbcd4d49ee70f/a170775f358f22a4\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":408.50189799999998,\"settledMs\":410.08384899999999,\"queueMs\":0,\"serviceMs\":1.5819510000000037,\"wallMs\":1.5819510000000037,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"b07fbcd4d49ee70f\",\"bytes\":1375},\"fragment\":{\"hash\":\"a170775f358f22a4\",\"bytes\":1790},\"cache\":\"unsupported\",\"label\":\"renderPipeline_RenderPipeline_18\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":936.900}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":936.908}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":936.911}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":936.915}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":937.292}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":937.308}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":937.311}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":937.314}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"50cbc96ab938e8e4\",\"bytes\":71,\"requestId\":\"4\",\"requestMethod\":\"advance\",\"requestOrder\":4,\"pump\":{\"observed\":true,\"pumpCount\":7,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":910.737,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":28.941,\"atMs\":939.678,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":15,\"pipelineIdentity\":\"native-compute-3\",\"programIdentity\":\"79efa198c6cf1f6f\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":416.66804999999999,\"settledMs\":416.67502999999999,\"queueMs\":0,\"serviceMs\":0.0069799999999986539,\"wallMs\":0.0069799999999986539,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"79efa198c6cf1f6f\",\"bytes\":1589},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":943.486}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":943.493}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":943.496}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":943.500}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":16,\"pipelineIdentity\":\"native-compute-4\",\"programIdentity\":\"b2488a538830441c\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":419.69098200000002,\"settledMs\":419.69578200000001,\"queueMs\":0,\"serviceMs\":0.0047999999999888132,\"wallMs\":0.0047999999999888132,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"b2488a538830441c\",\"bytes\":6385},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":946.504}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":946.511}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":946.513}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":946.517}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":17,\"pipelineIdentity\":\"native-render-13\",\"programIdentity\":\"dcd9d1972708c088/a2499803894a35ed\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":422.95838300000003,\"settledMs\":422.970663,\"queueMs\":0,\"serviceMs\":0.012279999999975644,\"wallMs\":0.012279999999975644,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"dcd9d1972708c088\",\"bytes\":1417},\"fragment\":{\"hash\":\"a2499803894a35ed\",\"bytes\":960},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_highPass_19\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":949.786}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":949.793}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":949.796}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":949.799}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":18,\"pipelineIdentity\":\"native-render-14\",\"programIdentity\":\"ffc0ca9b4adc3a8b/ff20e1db0bfb34f5\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":427.156858,\"settledMs\":427.167888,\"queueMs\":0,\"serviceMs\":0.011030000000005202,\"wallMs\":0.011030000000005202,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"ffc0ca9b4adc3a8b\",\"bytes\":1567},\"fragment\":{\"hash\":\"ff20e1db0bfb34f5\",\"bytes\":3311},\"cache\":\"unsupported\",\"label\":\"renderPipeline_Bloom_comp_25\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":953.979}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":953.987}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":953.989}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":953.993}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":7}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":7,\"requested\":18,\"emitted\":18,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"b6e8148bde1ee2d1\",\"bytes\":167,\"requestId\":\"5\",\"requestMethod\":\"ready\",\"requestOrder\":5,\"pump\":{\"observed\":true,\"pumpCount\":8,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":982.591,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.052,\"atMs\":983.643,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":19,\"pipelineIdentity\":\"native-compute-5\",\"programIdentity\":\"79efa198c6cf1f6f\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":465.68749100000002,\"settledMs\":465.69620099999997,\"queueMs\":0,\"serviceMs\":0.0087099999999509237,\"wallMs\":0.0087099999999509237,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"79efa198c6cf1f6f\",\"bytes\":1589},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":992.516}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":992.526}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":992.528}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":992.532}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":20,\"pipelineIdentity\":\"native-compute-6\",\"programIdentity\":\"b2488a538830441c\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":471.65402599999999,\"settledMs\":471.65911599999998,\"queueMs\":0,\"serviceMs\":0.005089999999995598,\"wallMs\":0.005089999999995598,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"b2488a538830441c\",\"bytes\":6385},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":998.470}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":998.477}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":998.479}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":998.482}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":21,\"pipelineIdentity\":\"native-render-15\",\"programIdentity\":\"bbf82a4549069547/09ad40d6bccbf449\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":479.71654799999999,\"settledMs\":479.73488800000001,\"queueMs\":0,\"serviceMs\":0.018340000000023338,\"wallMs\":0.018340000000023338,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"bbf82a4549069547\",\"bytes\":3182},\"fragment\":{\"hash\":\"09ad40d6bccbf449\",\"bytes\":14731},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshStandardMaterial_53\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":1006.549}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":1006.556}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":1006.560}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":1006.563}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":22,\"pipelineIdentity\":\"native-render-16\",\"programIdentity\":\"ecaec2fbce7bdaad/ecaec2fbce7bdaad\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":500.76125400000001,\"settledMs\":502.77269200000001,\"queueMs\":0,\"serviceMs\":2.0114379999999983,\"wallMs\":2.0114379999999983,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"ecaec2fbce7bdaad\",\"bytes\":1827},\"fragment\":{\"hash\":\"ecaec2fbce7bdaad\",\"bytes\":1827},\"cache\":\"unsupported\",\"label\":\"mipmap-rgba8unorm-srgb-2d-array\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":23,\"pipelineIdentity\":\"native-render-17\",\"programIdentity\":\"331c056040901965/26524dc7fa56cf54\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":509.04896500000001,\"settledMs\":513.88837599999999,\"queueMs\":0,\"serviceMs\":4.8394109999999841,\"wallMs\":4.8394109999999841,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"331c056040901965\",\"bytes\":3316},\"fragment\":{\"hash\":\"26524dc7fa56cf54\",\"bytes\":15112},\"cache\":\"unsupported\",\"label\":\"renderPipeline_probe_bark_51\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":1040.718}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":1040.730}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":1040.734}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":1040.739}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":8}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":8,\"requested\":23,\"emitted\":23,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"d5d92518895f7ab9\",\"bytes\":71,\"requestId\":\"6\",\"requestMethod\":\"advance\",\"requestOrder\":6,\"pump\":{\"observed\":true,\"pumpCount\":9,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1080.836,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":5.497,\"atMs\":1086.333,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":9}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"aa597f986699ab2b\",\"bytes\":167,\"requestId\":\"7\",\"requestMethod\":\"ready\",\"requestOrder\":7,\"pump\":{\"observed\":true,\"pumpCount\":10,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1121.242,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":0.332,\"atMs\":1121.574,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "[info] TN_WORLD_PREWARM minted=5 shadowPrewarmed=0 castersUnbuilt=0",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":24,\"pipelineIdentity\":\"native-compute-7\",\"programIdentity\":\"79efa198c6cf1f6f\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":598.22598800000003,\"settledMs\":598.23468800000001,\"queueMs\":0,\"serviceMs\":0.0086999999999761712,\"wallMs\":0.0086999999999761712,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"79efa198c6cf1f6f\",\"bytes\":1589},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":1125.054}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":1125.063}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":1125.066}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":1125.070}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":25,\"pipelineIdentity\":\"native-compute-8\",\"programIdentity\":\"b2488a538830441c\",\"kind\":\"compute\",\"pass\":\"compute\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":601.76104799999996,\"settledMs\":601.76620800000001,\"queueMs\":0,\"serviceMs\":0.0051600000000462387,\"wallMs\":0.0051600000000462387,\"provenance\":{\"unknown\":true},\"compute\":{\"hash\":\"b2488a538830441c\",\"bytes\":6385},\"cache\":\"unsupported\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":1128.581}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":1128.589}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":1128.592}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":1128.596}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":10}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":10,\"requested\":25,\"emitted\":25,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"0b39276302a9dc16\",\"bytes\":71,\"requestId\":\"8\",\"requestMethod\":\"advance\",\"requestOrder\":8,\"pump\":{\"observed\":true,\"pumpCount\":11,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1158.765,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":0.249,\"atMs\":1159.015,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":11}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"dfeeb62855c68bd5\",\"bytes\":167,\"requestId\":\"9\",\"requestMethod\":\"ready\",\"requestOrder\":9,\"pump\":{\"observed\":true,\"pumpCount\":12,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1190.970,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":0.151,\"atMs\":1191.121,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":12}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f272abbd3b349564\",\"bytes\":72,\"requestId\":\"10\",\"requestMethod\":\"advance\",\"requestOrder\":10,\"pump\":{\"observed\":true,\"pumpCount\":13,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1223.756,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":0.359,\"atMs\":1224.115,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":13}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"33cf96ed68661044\",\"bytes\":242,\"requestId\":\"11\",\"requestMethod\":\"ready\",\"requestOrder\":11,\"pump\":{\"observed\":true,\"pumpCount\":14,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1258.281,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":0.690,\"atMs\":1258.972,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":14}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"first_playable\",\"atMs\":1293.117}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":15}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"99325aea0507ca48\",\"bytes\":25106,\"requestId\":\"12\",\"requestMethod\":\"sample\",\"requestOrder\":12,\"pump\":{\"observed\":true,\"pumpCount\":16,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1325.424,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":3.020,\"atMs\":1328.443,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":16}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"82ae449ad8648f15\",\"bytes\":25111,\"requestId\":\"13\",\"requestMethod\":\"sample\",\"requestOrder\":13,\"pump\":{\"observed\":true,\"pumpCount\":17,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1360.199,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.935,\"atMs\":1362.134,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":26,\"pipelineIdentity\":\"native-render-18\",\"programIdentity\":\"3c9e0c39d4f3153f/8b0216abd1646161\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":854.46207500000003,\"settledMs\":857.58721700000001,\"queueMs\":0,\"serviceMs\":3.1251419999999825,\"wallMs\":3.1251419999999825,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"3c9e0c39d4f3153f\",\"bytes\":3111},\"fragment\":{\"hash\":\"8b0216abd1646161\",\"bytes\":1533},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshNormalMaterial_16\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":1384.431}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":1384.445}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":1384.449}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":1384.456}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":17}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":17,\"requested\":26,\"emitted\":26,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"bbe6c1f181c89a34\",\"bytes\":25901,\"requestId\":\"14\",\"requestMethod\":\"sample\",\"requestOrder\":14,\"pump\":{\"observed\":true,\"pumpCount\":18,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1414.823,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.546,\"atMs\":1416.369,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":18}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"874294eedce6aa0b\",\"bytes\":25904,\"requestId\":\"15\",\"requestMethod\":\"sample\",\"requestOrder\":15,\"pump\":{\"observed\":true,\"pumpCount\":19,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1448.847,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.275,\"atMs\":1450.122,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":19}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"5f7615f3fd515efc\",\"bytes\":25901,\"requestId\":\"16\",\"requestMethod\":\"sample\",\"requestOrder\":16,\"pump\":{\"observed\":true,\"pumpCount\":20,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1482.961,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.972,\"atMs\":1484.933,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":20}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"e841428c003994b6\",\"bytes\":25904,\"requestId\":\"17\",\"requestMethod\":\"sample\",\"requestOrder\":17,\"pump\":{\"observed\":true,\"pumpCount\":21,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1517.654,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.395,\"atMs\":1519.049,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":21}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"90767e7c829f3730\",\"bytes\":25904,\"requestId\":\"18\",\"requestMethod\":\"sample\",\"requestOrder\":18,\"pump\":{\"observed\":true,\"pumpCount\":22,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1554.415,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.798,\"atMs\":1556.213,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":22}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":23}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"e9753c22f66e94db\",\"bytes\":26102,\"requestId\":\"19\",\"requestMethod\":\"sample\",\"requestOrder\":19,\"pump\":{\"observed\":true,\"pumpCount\":24,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1633.492,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.504,\"atMs\":1634.996,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":24}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":25}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f1186559d9718168\",\"bytes\":26096,\"requestId\":\"20\",\"requestMethod\":\"sample\",\"requestOrder\":20,\"pump\":{\"observed\":true,\"pumpCount\":26,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1703.736,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":2.283,\"atMs\":1706.019,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":26}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"35309e2adaf67c13\",\"bytes\":26102,\"requestId\":\"21\",\"requestMethod\":\"sample\",\"requestOrder\":21,\"pump\":{\"observed\":true,\"pumpCount\":27,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1740.125,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.448,\"atMs\":1741.572,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":27}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"d27960b0a4a448d3\",\"bytes\":26297,\"requestId\":\"22\",\"requestMethod\":\"sample\",\"requestOrder\":22,\"pump\":{\"observed\":true,\"pumpCount\":28,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1785.055,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.438,\"atMs\":1786.493,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":28}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"400af2e98ed4648e\",\"bytes\":24613,\"requestId\":\"23\",\"requestMethod\":\"sample\",\"requestOrder\":23,\"pump\":{\"observed\":true,\"pumpCount\":29,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1829.393,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.627,\"atMs\":1831.021,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":29}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f374cad0dd4d4666\",\"bytes\":26496,\"requestId\":\"24\",\"requestMethod\":\"sample\",\"requestOrder\":24,\"pump\":{\"observed\":true,\"pumpCount\":30,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1866.533,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.632,\"atMs\":1868.165,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":30}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"4508a9b7ecf65ac1\",\"bytes\":26697,\"requestId\":\"25\",\"requestMethod\":\"sample\",\"requestOrder\":25,\"pump\":{\"observed\":true,\"pumpCount\":31,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1914.963,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":6.190,\"atMs\":1921.153,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":27,\"pipelineIdentity\":\"native-render-19\",\"programIdentity\":\"079734d7e934a4b1/132e74e642d59afb\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":1409.119142,\"settledMs\":1412.131793,\"queueMs\":0,\"serviceMs\":3.0126510000000053,\"wallMs\":3.0126510000000053,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"079734d7e934a4b1\",\"bytes\":1606},\"fragment\":{\"hash\":\"132e74e642d59afb\",\"bytes\":1504},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshNormalMaterial_16\"}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":1938.962}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":1938.974}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":1938.977}",
+        "type": "log"
+      },
+      {
+        "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":1938.983}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":31}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":31,\"requested\":27,\"emitted\":27,\"outstanding\":0}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"4c23c3b20192d09f\",\"bytes\":25871,\"requestId\":\"26\",\"requestMethod\":\"sample\",\"requestOrder\":26,\"pump\":{\"observed\":true,\"pumpCount\":32,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":1976.643,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.489,\"atMs\":1978.132,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":32}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f589387870764350\",\"bytes\":27756,\"requestId\":\"27\",\"requestMethod\":\"sample\",\"requestOrder\":27,\"pump\":{\"observed\":true,\"pumpCount\":33,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2016.676,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.397,\"atMs\":2018.073,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":33}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"5381ac2e76e2ed54\",\"bytes\":27708,\"requestId\":\"28\",\"requestMethod\":\"sample\",\"requestOrder\":28,\"pump\":{\"observed\":true,\"pumpCount\":34,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2049.016,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.450,\"atMs\":2050.466,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":34}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":35}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f41621f643fe3fa4\",\"bytes\":25841,\"requestId\":\"29\",\"requestMethod\":\"sample\",\"requestOrder\":29,\"pump\":{\"observed\":true,\"pumpCount\":36,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2110.580,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":0.953,\"atMs\":2111.533,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":36}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"5496f05e9362985b\",\"bytes\":27708,\"requestId\":\"30\",\"requestMethod\":\"sample\",\"requestOrder\":30,\"pump\":{\"observed\":true,\"pumpCount\":37,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2142.129,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.349,\"atMs\":2143.478,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":37}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"247d5b708f68248d\",\"bytes\":27714,\"requestId\":\"31\",\"requestMethod\":\"sample\",\"requestOrder\":31,\"pump\":{\"observed\":true,\"pumpCount\":38,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2174.003,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.248,\"atMs\":2175.251,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":38}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":39}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"db932d4778d33836\",\"bytes\":25847,\"requestId\":\"32\",\"requestMethod\":\"sample\",\"requestOrder\":32,\"pump\":{\"observed\":true,\"pumpCount\":40,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2236.706,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.007,\"atMs\":2237.712,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":40}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"6e0d5cf467e3a44a\",\"bytes\":27714,\"requestId\":\"33\",\"requestMethod\":\"sample\",\"requestOrder\":33,\"pump\":{\"observed\":true,\"pumpCount\":41,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2268.810,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.389,\"atMs\":2270.199,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":41}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"b7294673fdcd6f80\",\"bytes\":27714,\"requestId\":\"34\",\"requestMethod\":\"sample\",\"requestOrder\":34,\"pump\":{\"observed\":true,\"pumpCount\":42,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2300.541,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.346,\"atMs\":2301.888,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":42}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":43}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"b0371ae6941487af\",\"bytes\":25847,\"requestId\":\"35\",\"requestMethod\":\"sample\",\"requestOrder\":35,\"pump\":{\"observed\":true,\"pumpCount\":44,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2362.851,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":0.941,\"atMs\":2363.792,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":44}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"0e4afac9b515185b\",\"bytes\":27714,\"requestId\":\"36\",\"requestMethod\":\"sample\",\"requestOrder\":36,\"pump\":{\"observed\":true,\"pumpCount\":45,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2393.635,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.163,\"atMs\":2394.797,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":45}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"78b189671b134bc6\",\"bytes\":27714,\"requestId\":\"37\",\"requestMethod\":\"sample\",\"requestOrder\":37,\"pump\":{\"observed\":true,\"pumpCount\":46,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2425.336,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.345,\"atMs\":2426.681,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":46}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":47}",
+        "type": "log"
+      },
+      {
+        "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-atBUoK/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"ce10cb9c8c79821b\",\"bytes\":27716,\"requestId\":\"38\",\"requestMethod\":\"sample\",\"requestOrder\":38,\"pump\":{\"observed\":true,\"pumpCount\":48,\"firstPumpAtMs\":483.166,\"lastPumpAtMs\":2486.126,\"maxGapMs\":117.623,\"maxGapAtMs\":793.113,\"trailingGapMs\":1.269,\"atMs\":2487.395,\"longGaps\":[],\"droppedLongGaps\":0}}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":48}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":49}",
+        "type": "log"
+      },
+      {
+        "text": "[Screenshot] First 16 bytes (BGRA raw): 70 79 41 255 70 79 41 255 70 79 41 255 70 79 41 255 ",
+        "type": "log"
+      },
+      {
+        "text": "[Screenshot] Middle bytes (BGRA raw): 255 255 221 255 255 255 222 255 255 255 223 255 255 255 224 255 ",
+        "type": "log"
+      },
+      {
+        "text": "[Screenshot] Saved: /home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/repair-bloom-native/after.png (1280x720)",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":50}",
+        "type": "log"
+      },
+      {
+        "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":51}",
+        "type": "log"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "pipelineCensus": {
+      "version": 1,
+      "complete": true,
+      "overflowed": false,
+      "unsupported": false,
+      "limit": 512,
+      "clock": {
+        "originMs": 479.881327,
+        "source": "performance"
+      },
+      "backend": {
+        "kind": "webgpu",
+        "identity": "webgpu:WebGPUBackend"
+      },
+      "build": {
+        "identity": "@threenative/core@0.3.4"
+      },
+      "adapter": {
+        "identity": "webgpu:architecture=turing|description=NVIDIA%3A%20615.78.08%20615.78.8.0|device=NVIDIA%20GeForce%20RTX%202080|vendor=nvidia",
+        "thermal": "unavailable"
+      },
+      "firstPresent": {
+        "boundaryMs": 53.18896599999999,
+        "eventsSettled": 1
+      },
+      "warmUpScopes": [
+        {
+          "label": "chunk:0:2:0",
+          "boundaryMs": 457.185531,
+          "eventsSettled": 14,
+          "nodeBuilds": 14,
+          "renderPipelineCreations": 12,
+          "firstDraw": {
+            "nodeBuilds": 0,
+            "renderPipelineCreations": 0
+          }
+        }
+      ],
+      "counts": {
+        "lookups": 26,
+        "creations": 27,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 17,
+        "uniquePipelines": 27,
+        "recordedEvents": 27,
+        "droppedEvents": 0,
+        "nodeBuilds": 28,
+        "deviceCreations": 27,
+        "directCreations": 1
+      },
+      "events": [
+        {
+          "sequence": 1,
+          "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+          "pipelineIdentity": "native-render-1",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1299,
+            "hash": "00fc0a8ad03630cc"
+          },
+          "fragment": {
+            "bytes": 1595,
+            "hash": "458120a84b226496"
+          },
+          "provenance": {
+            "material": {
+              "id": 17,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 21,
+              "name": "Output Color Transform",
+              "uuid": "33d18eb8-e3e3-4671-ac09-b67f176f1385"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 45.74600000000004,
+          "settledMs": 52.45795100000004,
+          "serviceMs": 6.713070000000016,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": true
+        },
+        {
+          "sequence": 2,
+          "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+          "pipelineIdentity": "native-render-2",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1417,
+            "hash": "dcd9d1972708c088"
+          },
+          "fragment": {
+            "bytes": 960,
+            "hash": "a2499803894a35ed"
+          },
+          "provenance": {
+            "material": {
+              "id": 19,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 189.87903899999998,
+          "settledMs": 192.541583,
+          "serviceMs": 2.6628339999999753,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 3,
+          "programIdentity": "45fc3617fb049a88/c466a179e1f4f0a4",
+          "pipelineIdentity": "native-render-3",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1818,
+            "hash": "c466a179e1f4f0a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 20,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Blur Horizontal - 0 ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 199.199234,
+          "settledMs": 202.69934400000005,
+          "serviceMs": 3.5002300000001014,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 4,
+          "programIdentity": "45fc3617fb049a88/904d7d1b777971dc",
+          "pipelineIdentity": "native-render-4",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "904d7d1b777971dc"
+          },
+          "provenance": {
+            "material": {
+              "id": 21,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Blur Horizontal - 1 ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 207.44367600000004,
+          "settledMs": 210.20914899999997,
+          "serviceMs": 2.765713000000005,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 5,
+          "programIdentity": "45fc3617fb049a88/9ac08f65518be06c",
+          "pipelineIdentity": "native-render-5",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "9ac08f65518be06c"
+          },
+          "provenance": {
+            "material": {
+              "id": 22,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Blur Horizontal - 2 ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 214.176676,
+          "settledMs": 216.50485199999997,
+          "serviceMs": 2.3279569999999694,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 6,
+          "programIdentity": "45fc3617fb049a88/2b2d9e1b2a1e6bbc",
+          "pipelineIdentity": "native-render-6",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "2b2d9e1b2a1e6bbc"
+          },
+          "provenance": {
+            "material": {
+              "id": 23,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Blur Horizontal - 3 ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 219.888802,
+          "settledMs": 223.16734300000002,
+          "serviceMs": 3.2788909999999305,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 7,
+          "programIdentity": "45fc3617fb049a88/4fbcbe479ba1b0a6",
+          "pipelineIdentity": "native-render-7",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "4fbcbe479ba1b0a6"
+          },
+          "provenance": {
+            "material": {
+              "id": 24,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Blur Horizontal - 4 ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 227.40526800000004,
+          "settledMs": 229.994932,
+          "serviceMs": 2.590373999999997,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 8,
+          "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+          "pipelineIdentity": "native-render-8",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1567,
+            "hash": "ffc0ca9b4adc3a8b"
+          },
+          "fragment": {
+            "bytes": 3311,
+            "hash": "ff20e1db0bfb34f5"
+          },
+          "provenance": {
+            "material": {
+              "id": 25,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Composite ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 234.93449300000003,
+          "settledMs": 237.27692900000005,
+          "serviceMs": 2.342516000000046,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 9,
+          "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+          "pipelineIdentity": "native-render-9",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1375,
+            "hash": "b07fbcd4d49ee70f"
+          },
+          "fragment": {
+            "bytes": 1790,
+            "hash": "a170775f358f22a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 24,
+              "name": "Render Pipeline",
+              "uuid": "39eba514-ba73-42e2-8cf5-7c306e69fa65"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 238.752091,
+          "settledMs": 240.50759999999997,
+          "serviceMs": 1.7502590000000282,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 10,
+          "programIdentity": "79efa198c6cf1f6f",
+          "pipelineIdentity": "native-compute-1",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1589,
+            "hash": "79efa198c6cf1f6f"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 330.082162,
+          "settledMs": 331.75405199999994,
+          "serviceMs": 1.6779999999999973,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 11,
+          "programIdentity": "b2488a538830441c",
+          "pipelineIdentity": "native-compute-2",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6385,
+            "hash": "b2488a538830441c"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 341.902042,
+          "settledMs": 345.291592,
+          "serviceMs": 3.388580000000047,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 12,
+          "programIdentity": "bbf82a4549069547/09ad40d6bccbf449",
+          "pipelineIdentity": "native-render-10",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3182,
+            "hash": "bbf82a4549069547"
+          },
+          "fragment": {
+            "bytes": 14731,
+            "hash": "09ad40d6bccbf449"
+          },
+          "provenance": {
+            "material": {
+              "id": 37,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 49,
+              "name": "ground_cover:0:0",
+              "uuid": "01f8f012-d09e-4486-b9a4-8c89e4686d7d"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "instancing"
+          ],
+          "startedMs": 368.704824,
+          "settledMs": 374.935547,
+          "serviceMs": 6.234542999999917,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 13,
+          "programIdentity": "bceee6f518a75d32/36b74997b7a66db6",
+          "pipelineIdentity": "native-render-11",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 2008,
+            "hash": "bceee6f518a75d32"
+          },
+          "fragment": {
+            "bytes": 14729,
+            "hash": "36b74997b7a66db6"
+          },
+          "provenance": {
+            "material": {
+              "id": 42,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 52,
+              "uuid": "9589368f-a001-493b-9182-4f9cd6a675cc"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 449.04678900000005,
+          "settledMs": 454.19502900000003,
+          "serviceMs": 5.149130000000014,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 14,
+          "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+          "pipelineIdentity": "native-render-12",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1375,
+            "hash": "b07fbcd4d49ee70f"
+          },
+          "fragment": {
+            "bytes": 1790,
+            "hash": "a170775f358f22a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 24,
+              "name": "Render Pipeline",
+              "uuid": "39eba514-ba73-42e2-8cf5-7c306e69fa65"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 454.752626,
+          "settledMs": 456.44538600000004,
+          "serviceMs": 1.6924000000000206,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 15,
+          "programIdentity": "79efa198c6cf1f6f",
+          "pipelineIdentity": "native-compute-3",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1589,
+            "hash": "79efa198c6cf1f6f"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 462.95676699999996,
+          "settledMs": 463.03053700000004,
+          "serviceMs": 0.07334000000003016,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 16,
+          "programIdentity": "b2488a538830441c",
+          "pipelineIdentity": "native-compute-4",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6385,
+            "hash": "b2488a538830441c"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 465.985019,
+          "settledMs": 466.047069,
+          "serviceMs": 0.06128999999998541,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 17,
+          "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+          "pipelineIdentity": "native-render-13",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1417,
+            "hash": "dcd9d1972708c088"
+          },
+          "fragment": {
+            "bytes": 960,
+            "hash": "a2499803894a35ed"
+          },
+          "provenance": {
+            "material": {
+              "id": 19,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 469.22099,
+          "settledMs": 469.329359,
+          "serviceMs": 0.10770899999999983,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 18,
+          "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+          "pipelineIdentity": "native-render-14",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1567,
+            "hash": "ffc0ca9b4adc3a8b"
+          },
+          "fragment": {
+            "bytes": 3311,
+            "hash": "ff20e1db0bfb34f5"
+          },
+          "provenance": {
+            "material": {
+              "id": 25,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Composite ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 473.42893499999997,
+          "settledMs": 473.523125,
+          "serviceMs": 0.09358999999994921,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 19,
+          "programIdentity": "79efa198c6cf1f6f",
+          "pipelineIdentity": "native-compute-5",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1589,
+            "hash": "79efa198c6cf1f6f"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 511.97068800000005,
+          "settledMs": 512.0625769999999,
+          "serviceMs": 0.09186899999997422,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 20,
+          "programIdentity": "b2488a538830441c",
+          "pipelineIdentity": "native-compute-6",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6385,
+            "hash": "b2488a538830441c"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 517.944013,
+          "settledMs": 518.011342,
+          "serviceMs": 0.06653900000003432,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 21,
+          "programIdentity": "bbf82a4549069547/09ad40d6bccbf449",
+          "pipelineIdentity": "native-render-15",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3182,
+            "hash": "bbf82a4549069547"
+          },
+          "fragment": {
+            "bytes": 14731,
+            "hash": "09ad40d6bccbf449"
+          },
+          "provenance": {
+            "material": {
+              "id": 53,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 69,
+              "name": "ground_cover:0:0",
+              "uuid": "be447b87-9715-4d6f-8555-8a0ae1ed0095"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "instancing"
+          ],
+          "startedMs": 525.960615,
+          "settledMs": 526.093574,
+          "serviceMs": 0.13218899999992573,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 22,
+          "programIdentity": "ecaec2fbce7bdaad/ecaec2fbce7bdaad",
+          "pipelineIdentity": "native-render-16",
+          "kind": "render",
+          "pass": "unknown",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1827,
+            "hash": "ecaec2fbce7bdaad"
+          },
+          "fragment": {
+            "bytes": 1827,
+            "hash": "ecaec2fbce7bdaad"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "label": "mipmap-rgba8unorm-srgb-2d-array",
+          "reasons": [
+            "device-direct-creation"
+          ],
+          "startedMs": 547.0441409999999,
+          "settledMs": 549.1226489999999,
+          "serviceMs": 2.082748000000038,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 23,
+          "programIdentity": "331c056040901965/26524dc7fa56cf54",
+          "pipelineIdentity": "native-render-17",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3316,
+            "hash": "331c056040901965"
+          },
+          "fragment": {
+            "bytes": 15112,
+            "hash": "26524dc7fa56cf54"
+          },
+          "provenance": {
+            "material": {
+              "id": 51,
+              "name": "probe_bark",
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 64,
+              "name": "pine:0:0",
+              "uuid": "d01047c9-f993-4b9d-b715-f3afb5b02768"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "instancing",
+            "map"
+          ],
+          "startedMs": 555.2844519999999,
+          "settledMs": 560.272573,
+          "serviceMs": 4.988280000000032,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 24,
+          "programIdentity": "79efa198c6cf1f6f",
+          "pipelineIdentity": "native-compute-7",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1589,
+            "hash": "79efa198c6cf1f6f"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 644.5065459999998,
+          "settledMs": 644.6047449999999,
+          "serviceMs": 0.09786899999994603,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 25,
+          "programIdentity": "b2488a538830441c",
+          "pipelineIdentity": "native-compute-8",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6385,
+            "hash": "b2488a538830441c"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 648.0441249999999,
+          "settledMs": 648.1264739999999,
+          "serviceMs": 0.08755900000005568,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 26,
+          "programIdentity": "3c9e0c39d4f3153f/8b0216abd1646161",
+          "pipelineIdentity": "native-render-18",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3111,
+            "hash": "3c9e0c39d4f3153f"
+          },
+          "fragment": {
+            "bytes": 1533,
+            "hash": "8b0216abd1646161"
+          },
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 83,
+              "uuid": "7f7ec2b6-b1c2-4b48-8745-911d710f3eec"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 900.669243,
+          "settledMs": 903.990904,
+          "serviceMs": 3.3215600000000904,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 27,
+          "programIdentity": "079734d7e934a4b1/132e74e642d59afb",
+          "pipelineIdentity": "native-render-19",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1606,
+            "hash": "079734d7e934a4b1"
+          },
+          "fragment": {
+            "bytes": 1504,
+            "hash": "132e74e642d59afb"
+          },
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 122,
+              "name": "tn-terrain-block:0:-1,-1",
+              "uuid": "e11e457a-7948-4327-ace3-7ecbce75c20b"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 1455.336299,
+          "settledMs": 1458.51576,
+          "serviceMs": 3.1792709999999715,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        }
+      ],
+      "nodeBuilds": [
+        {
+          "provenance": {
+            "material": {
+              "id": 17,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 21,
+              "name": "Output Color Transform",
+              "uuid": "33d18eb8-e3e3-4671-ac09-b67f176f1385"
+            },
+            "unknown": false
+          },
+          "startedMs": 37.352648999999985,
+          "beforeFirstPresent": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 24,
+              "name": "Render Pipeline",
+              "uuid": "39eba514-ba73-42e2-8cf5-7c306e69fa65"
+            },
+            "unknown": false
+          },
+          "startedMs": 183.37199700000002,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 19,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "startedMs": 187.84090099999997,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 20,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Blur Horizontal - 0 ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "startedMs": 197.36102499999998,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 21,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Blur Horizontal - 1 ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "startedMs": 206.256863,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 22,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Blur Horizontal - 2 ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "startedMs": 212.86078400000002,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 23,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Blur Horizontal - 3 ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "startedMs": 218.80266799999998,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 24,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Blur Horizontal - 4 ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "startedMs": 225.34449,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 25,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Composite ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "startedMs": 233.05670400000002,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 37,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 49,
+              "name": "ground_cover:0:0",
+              "uuid": "01f8f012-d09e-4486-b9a4-8c89e4686d7d"
+            },
+            "unknown": false
+          },
+          "startedMs": 361.18534800000003,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 35,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 44,
+              "name": "rock:0:0",
+              "uuid": "4448794f-7712-4a4e-8306-560026424d5d"
+            },
+            "unknown": false
+          },
+          "startedMs": 382.353763,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 36,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 47,
+              "name": "rock:1:0",
+              "uuid": "1ac6d235-a640-4b3a-91a3-f8a6826055dd"
+            },
+            "unknown": false
+          },
+          "startedMs": 390.667404,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 24,
+              "name": "Render Pipeline",
+              "uuid": "39eba514-ba73-42e2-8cf5-7c306e69fa65"
+            },
+            "unknown": false
+          },
+          "startedMs": 438.584711,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 42,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 52,
+              "uuid": "9589368f-a001-493b-9182-4f9cd6a675cc"
+            },
+            "unknown": false
+          },
+          "startedMs": 444.48778599999997,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 19,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "startedMs": 468.807882,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 25,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 12,
+              "name": "Bloom [ Composite ]",
+              "uuid": "96d0fe98-55e9-4e8e-9f12-3266edc3201e"
+            },
+            "unknown": false
+          },
+          "startedMs": 472.69635999999997,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 53,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 69,
+              "name": "ground_cover:0:0",
+              "uuid": "be447b87-9715-4d6f-8555-8a0ae1ed0095"
+            },
+            "unknown": false
+          },
+          "startedMs": 524.5751929999999,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 54,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 70,
+              "name": "rock:0:0",
+              "uuid": "9bb38041-95df-407f-a7d4-410daab41627"
+            },
+            "unknown": false
+          },
+          "startedMs": 531.3352829999999,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 55,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 71,
+              "name": "rock:1:0",
+              "uuid": "1d1b02a0-b05d-4736-8ad4-6af3272f4356"
+            },
+            "unknown": false
+          },
+          "startedMs": 537.2854480000001,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 51,
+              "name": "probe_bark",
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 64,
+              "name": "pine:0:0",
+              "uuid": "d01047c9-f993-4b9d-b715-f3afb5b02768"
+            },
+            "unknown": false
+          },
+          "startedMs": 543.8491300000001,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 52,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 67,
+              "name": "pine:1:0",
+              "uuid": "c1619d03-80cb-46ff-a657-ad4f1e0842bf"
+            },
+            "unknown": false
+          },
+          "startedMs": 566.5128459999999,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 83,
+              "uuid": "7f7ec2b6-b1c2-4b48-8745-911d710f3eec"
+            },
+            "unknown": false
+          },
+          "startedMs": 896.9942149999999,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 93,
+              "uuid": "542c414c-9d02-4a39-9a25-e3b8a6da3bd2"
+            },
+            "unknown": false
+          },
+          "startedMs": 1119.913499,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 103,
+              "uuid": "8b22ec50-1fd0-428e-a229-c86fab5e67b4"
+            },
+            "unknown": false
+          },
+          "startedMs": 1272.11942,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 108,
+              "uuid": "ddcb3e6c-2f2f-429e-a99b-e506c269fe79"
+            },
+            "unknown": false
+          },
+          "startedMs": 1315.457285,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 113,
+              "uuid": "842e631d-1f70-41bf-855d-8f0087eeccfb"
+            },
+            "unknown": false
+          },
+          "startedMs": 1399.27487,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 122,
+              "name": "tn-terrain-block:0:-1,-1",
+              "uuid": "e11e457a-7948-4327-ace3-7ecbce75c20b"
+            },
+            "unknown": false
+          },
+          "startedMs": 1452.668365,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 16,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 118,
+              "uuid": "a7a4e723-b7ca-4067-b663-489fa955f92c"
+            },
+            "unknown": false
+          },
+          "startedMs": 1462.4869569999998,
+          "beforeFirstPresent": false
+        }
+      ],
+      "incompleteReasons": []
+    },
+    "resources": {
+      "state": {
+        "before": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 2.058607000000393
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 15
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 22,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 0,
+              "gpuTallyAgeFrames": 21,
+              "gpuTriangles": 0
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 24,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 5,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 6,
+            "residentColliders": 0
+          }
+        },
+        "after": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 0
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 15
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 42,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 222,
+              "gpuTallyAgeFrames": 11,
+              "gpuTriangles": 668
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 44,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 5,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 9,
+            "residentColliders": 0
+          }
+        }
+      },
+      "GameState": {
+        "before": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 2.058607000000393
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 15
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 22,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 0,
+              "gpuTallyAgeFrames": 21,
+              "gpuTriangles": 0
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 24,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 5,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 6,
+            "residentColliders": 0
+          }
+        },
+        "after": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 0
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 15
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 42,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 222,
+              "gpuTallyAgeFrames": 11,
+              "gpuTriangles": 668
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 44,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 5,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 9,
+            "residentColliders": 0
+          }
+        }
+      },
+      "assets": {
+        "before": {
+          "world/assets/ground_cover": {
+            "glb": {
+              "url": "world/assets/ground_cover.3896b589.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine_lod1": {
+            "glb": {
+              "url": "world/assets/pine_lod1.4f82d93e.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock": {
+            "glb": {
+              "url": "world/assets/rock.1f312b52.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock_lod1": {
+            "glb": {
+              "url": "world/assets/rock_lod1.127a1dda.glb",
+              "via": "manifest"
+            }
+          },
+          "world/chunks/yard_0_2": {
+            "glb": {
+              "url": "world/chunks/yard_0_2.a2b36c92.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine": {
+            "glb": {
+              "url": "world/assets/pine.529686d4.glb",
+              "via": "manifest"
+            }
+          }
+        },
+        "after": {
+          "world/assets/ground_cover": {
+            "glb": {
+              "url": "world/assets/ground_cover.3896b589.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine_lod1": {
+            "glb": {
+              "url": "world/assets/pine_lod1.4f82d93e.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock": {
+            "glb": {
+              "url": "world/assets/rock.1f312b52.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock_lod1": {
+            "glb": {
+              "url": "world/assets/rock_lod1.127a1dda.glb",
+              "via": "manifest"
+            }
+          },
+          "world/chunks/yard_0_2": {
+            "glb": {
+              "url": "world/chunks/yard_0_2.a2b36c92.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine": {
+            "glb": {
+              "url": "world/assets/pine.529686d4.glb",
+              "via": "manifest"
+            }
+          }
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "settled-loads",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 2.0010790000005727
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 25,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 0,
+                "gpuTallyAgeFrames": 24,
+                "gpuTriangles": 0
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 27,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 8,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 2.0010790000005727
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 25,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 0,
+                "gpuTallyAgeFrames": 24,
+                "gpuTriangles": 0
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 27,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 8,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "no-queued-loads",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 28,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 0,
+                "gpuTallyAgeFrames": 27,
+                "gpuTriangles": 0
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 30,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 28,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 0,
+                "gpuTallyAgeFrames": 27,
+                "gpuTriangles": 0
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 30,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "settled-prewarm",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 32,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 1,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 34,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 32,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 1,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 34,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "complete-terrain-ring",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 36,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 5,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 38,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 36,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 5,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 38,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 64
+      },
+      {
+        "label": "admitted-world",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 40,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 9,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 42,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 0
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 15
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 40,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 222,
+                "gpuTallyAgeFrames": 9,
+                "gpuTriangles": 668
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 42,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 5,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 64
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeDiagnosticsBefore": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplayBefore": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 20260925,
+          "runtime": {
+            "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+            "core": "0.3.4",
+            "randomState": 20260925,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 20260925,
+          "runtime": {
+            "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+            "core": "0.3.4",
+            "randomState": 20260925,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplaySeries": [
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "settled-loads",
+          "tick": 64
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "no-queued-loads",
+          "tick": 64
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "settled-prewarm",
+          "tick": 64
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "complete-terrain-ring",
+          "tick": 64
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "admitted-world",
+          "tick": 64
+        }
+      ]
+    },
+    "scene": {
+      "background": "color:#0b1a2a",
+      "camera": {
+        "far": 1000,
+        "forward": [
+          0.9438583563660174,
+          -0.33035042472810616,
+          2.220446049250313e-16
+        ],
+        "fov": 60,
+        "near": 0.1,
+        "position": [
+          -160,
+          24,
+          0
+        ],
+        "type": "PerspectiveCamera"
+      },
+      "lights": [
+        {
+          "color": "#bfd8ff",
+          "intensity": 2.2,
+          "type": "HemisphereLight",
+          "visible": true
+        },
+        {
+          "color": "#ffffff",
+          "intensity": 2.6,
+          "type": "DirectionalLight",
+          "visible": true
+        }
+      ],
+      "materials": {
+        "MeshNormalMaterial": 1,
+        "MeshStandardMaterial": 6
+      },
+      "objects": 56,
+      "truncated": false,
+      "worldExtent": {
+        "max": [
+          128,
+          68.85755491256714,
+          128
+        ],
+        "min": [
+          -224,
+          -68.70771026611328,
+          -128
+        ]
+      }
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "settled-loads",
+        "signals": [],
+        "tick": 64
+      },
+      {
+        "label": "no-queued-loads",
+        "signals": [],
+        "tick": 64
+      },
+      {
+        "label": "settled-prewarm",
+        "signals": [],
+        "tick": 64
+      },
+      {
+        "label": "complete-terrain-ring",
+        "signals": [],
+        "tick": 64
+      },
+      {
+        "label": "admitted-world",
+        "signals": [],
+        "tick": 64
+      }
+    ],
+    "startup": {
+      "phase": "ready",
+      "progress": 1,
+      "compileSettled": true,
+      "timeline": {
+        "loadStartedMs": 488.420747,
+        "enteredMs": 644.340396,
+        "compileSettledMs": 1229.79501,
+        "frameworkReadyMs": 1229.79891,
+        "readyMs": 1229.83037
+      },
+      "rule": "sustained-frames"
+    },
+    "tone": [
+      {
+        "code": "TN_TONE",
+        "label": "after.png",
+        "mean": 197.4249956597222,
+        "p1": 72,
+        "p50": 240,
+        "p99": 255,
+        "clipFraction": 0.12524848090277776,
+        "blackFraction": 0
+      }
+    ]
+  },
+  "artifactDirectory": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/repair-bloom-native",
+  "assertionResults": [
+    {
+      "details": {
+        "after": 3,
+        "before": 3,
+        "component": "residentCells",
+        "entity": "world",
+        "expected": {
+          "component": "residentCells",
+          "entity": "world",
+          "allowTrivial": "All three authored cells must be resident before comparing the fixed-camera world.",
+          "gte": 3
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.world.residentCells.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "complete": true,
+        "expected": 0,
+        "incompleteReasons": [],
+        "observed": 0,
+        "scope": "chunk:0:2:0"
+      },
+      "id": "pipelineCensus.maxNodeBuildsAfterWarmUpScope",
+      "pass": true
+    },
+    {
+      "details": {
+        "complete": true,
+        "expected": 0,
+        "incompleteReasons": [],
+        "observed": 0,
+        "scope": "chunk:0:2:0"
+      },
+      "id": "pipelineCensus.maxRenderPipelineCreationsAfterWarmUpScope",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "clock": "fixed-step",
+  "pass": true,
+  "runtime": "native",
+  "scenario": "authored-world-pass-streamed-chunk-warm-up-reuse",
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 488.420747,
+      "enteredMs": 644.340396,
+      "compileSettledMs": 1229.79501,
+      "frameworkReadyMs": 1229.79891,
+      "readyMs": 1229.83037
+    },
+    "rule": "sustained-frames"
+  },
+  "trivialityOptOutCount": 1,
+  "url": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/packages/runtime-native/build/tn-linux/mystral"
+}

@@ -1,0 +1,4267 @@
+{
+  "capture": {
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  "diagnostics": [],
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 5,
+  "trivialityOptOuts": [
+    {
+      "id": "component.world.residentCells.value",
+      "reason": "All three authored cells must be resident before comparing the fixed-camera world."
+    }
+  ],
+  "target": "web",
+  "observations": {
+    "components": {
+      "world": {
+        "cameraPosition": {
+          "before": [
+            -160,
+            24,
+            0
+          ],
+          "after": [
+            -160,
+            24,
+            0
+          ]
+        },
+        "cameraTarget": {
+          "before": [
+            -120,
+            10,
+            0
+          ],
+          "after": [
+            -120,
+            10,
+            0
+          ]
+        },
+        "flyTimeMs": {
+          "before": 0,
+          "after": 0
+        },
+        "landmarks": {
+          "before": [
+            {
+              "id": "yard_crate_a",
+              "position": [
+                -100,
+                1,
+                0
+              ]
+            },
+            {
+              "id": "yard_crate_b",
+              "position": [
+                -30,
+                1,
+                -20
+              ]
+            }
+          ],
+          "after": [
+            {
+              "id": "yard_crate_a",
+              "position": [
+                -100,
+                1,
+                0
+              ]
+            },
+            {
+              "id": "yard_crate_b",
+              "position": [
+                -30,
+                1,
+                -20
+              ]
+            }
+          ]
+        },
+        "admissionBacklog": {
+          "before": 0,
+          "after": 0
+        },
+        "admissionDeferred": {
+          "before": 0,
+          "after": 0
+        },
+        "admissionSpentMs": {
+          "before": 2.2000000029802322,
+          "after": 0
+        },
+        "bundleChildren": {
+          "before": 6,
+          "after": 6
+        },
+        "bundleOn": {
+          "before": true,
+          "after": true
+        },
+        "gpuSceneOn": {
+          "before": true,
+          "after": true
+        },
+        "gpuSceneReason": {
+          "before": "on",
+          "after": "on"
+        },
+        "gpuSceneDispatches": {
+          "before": 9,
+          "after": 24
+        },
+        "loadsQueued": {
+          "before": 0,
+          "after": 0
+        },
+        "pendingPrewarm": {
+          "before": 0,
+          "after": 0
+        },
+        "maxAdmissionSpentMs": {
+          "before": 5,
+          "after": 5
+        },
+        "maxInstances": {
+          "before": 533,
+          "after": 533
+        },
+        "evictions": {
+          "before": 0,
+          "after": 0
+        },
+        "failures": {
+          "before": 0,
+          "after": 0
+        },
+        "instances": {
+          "before": 533,
+          "after": 533
+        },
+        "loadsInFlight": {
+          "before": 0,
+          "after": 0
+        },
+        "maxResidentCells": {
+          "before": 3,
+          "after": 3
+        },
+        "residentTiles": {
+          "before": 1,
+          "after": 9
+        },
+        "residentColliders": {
+          "before": 0,
+          "after": 0
+        },
+        "bodies": {
+          "before": 0,
+          "after": 0
+        },
+        "bodyReachTiles": {
+          "before": 0,
+          "after": 0
+        },
+        "residenceChanges": {
+          "before": 2,
+          "after": 2
+        },
+        "residentCells": {
+          "before": 3,
+          "after": 3
+        },
+        "shadowDeferrals": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowFrame": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowLevels": {
+          "before": 3,
+          "after": 3
+        },
+        "shadowRendered": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowAutoMovers": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowPeakAutoMovers": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowAutoTransitions": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowAutoScanMs": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowRendersSinceMover": {
+          "before": 0,
+          "after": 0
+        },
+        "shadowMoverRenders": {
+          "before": 0,
+          "after": 0
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "settled-loads",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 2,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 10,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 5,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 2,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 60
+      },
+      {
+        "label": "no-queued-loads",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 2,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 11,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 5,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 2,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 60
+      },
+      {
+        "label": "settled-prewarm",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 2,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 12,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 5,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 3,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 60
+      },
+      {
+        "label": "complete-terrain-ring",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 1,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 22,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 5,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 71
+      },
+      {
+        "label": "admitted-world",
+        "snapshots": {
+          "world": {
+            "cameraPosition": [
+              -160,
+              24,
+              0
+            ],
+            "cameraTarget": [
+              -120,
+              10,
+              0
+            ],
+            "flyTimeMs": 0,
+            "landmarks": [
+              {
+                "id": "yard_crate_a",
+                "position": [
+                  -100,
+                  1,
+                  0
+                ]
+              },
+              {
+                "id": "yard_crate_b",
+                "position": [
+                  -30,
+                  1,
+                  -20
+                ]
+              }
+            ],
+            "admissionBacklog": 0,
+            "admissionDeferred": 0,
+            "admissionSpentMs": 1,
+            "bundleChildren": 6,
+            "bundleOn": true,
+            "gpuSceneOn": true,
+            "gpuSceneReason": "on",
+            "gpuSceneDispatches": 22,
+            "loadsQueued": 0,
+            "pendingPrewarm": 0,
+            "maxAdmissionSpentMs": 5,
+            "maxInstances": 533,
+            "evictions": 0,
+            "failures": 0,
+            "instances": 533,
+            "loadsInFlight": 0,
+            "maxResidentCells": 3,
+            "residentTiles": 9,
+            "residentColliders": 0,
+            "bodies": 0,
+            "bodyReachTiles": 0,
+            "residenceChanges": 2,
+            "residentCells": 3,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 3,
+            "shadowRendered": 0,
+            "shadowAutoMovers": 0,
+            "shadowPeakAutoMovers": 0,
+            "shadowAutoTransitions": 0,
+            "shadowAutoScanMs": 0,
+            "shadowRendersSinceMover": 0,
+            "shadowMoverRenders": 0
+          }
+        },
+        "tick": 71
+      }
+    ],
+    "console": [
+      {
+        "source": "browser-console",
+        "text": "[vite] connecting...",
+        "type": "debug"
+      },
+      {
+        "source": "browser-console",
+        "text": "[vite] connected.",
+        "type": "debug"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+        "type": "log"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "THREE.WebGPURenderer: Timestamp tracking is disabled.",
+        "type": "warning"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_WORLD_ASSET_ALIAS assets=3 canonical=3",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "[WorldWarmUpProbe] installed world output pass",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_WORLD_GPU_SCENE on reason=on instances=0 keys=0 dressed=0/0",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_TERRAIN_TILES tiles=0 blocks=0 draws=0 blending=0 rebuilds=0 blockBytes=0",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_WORLD_CHUNK_MERGE meshes=1 draws=1 bytes=840 uploaded=4 instancedExpanded=0 keptInstanced=0 shadowDraws=0",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"renderHook\",\"reason\":\"an object carries its own onBeforeRender/onAfterRender\",\"sourceRenderables\":3,\"resultDrawCandidates\":3,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "Compilation log for [ShaderModule \"compute_worldGpuSceneClear\"]:\n\n1 warning(s) generated while compiling the shader:\n:68:3 warning: code is unreachable\n    return;\n    ^^^^^^\n",
+        "type": "warning"
+      },
+      {
+        "source": "browser-console",
+        "text": "Compilation log for [ShaderModule \"compute_worldGpuSceneCull\"]:\n\n10 warning(s) generated while compiling the shader:\n:116:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:125:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:134:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:143:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:152:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:161:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:170:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:179:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:188:3 warning: code is unreachable\n    return;\n    ^^^^^^\n\n:198:3 warning: code is unreachable\n    return;\n    ^^^^^^\n",
+        "type": "warning"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_WORLD_PREWARM minted=3 shadowPrewarmed=0 castersUnbuilt=0",
+        "type": "info"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "pipelineCensus": {
+      "version": 1,
+      "complete": true,
+      "overflowed": false,
+      "unsupported": false,
+      "limit": 512,
+      "clock": {
+        "originMs": 750.8999999985099,
+        "source": "performance"
+      },
+      "backend": {
+        "kind": "webgpu",
+        "identity": "webgpu:WebGPUBackend"
+      },
+      "build": {
+        "identity": "@threenative/core@0.3.4"
+      },
+      "adapter": {
+        "identity": "webgpu:architecture=turing|vendor=nvidia",
+        "thermal": "unavailable"
+      },
+      "firstPresent": {
+        "boundaryMs": 35.30000000447035,
+        "eventsSettled": 1
+      },
+      "warmUpScopes": [
+        {
+          "label": "chunk:0:2:0",
+          "boundaryMs": 247,
+          "eventsSettled": 23,
+          "nodeBuilds": 21,
+          "renderPipelineCreations": 17,
+          "firstDraw": {
+            "nodeBuilds": 0,
+            "renderPipelineCreations": 0
+          }
+        }
+      ],
+      "counts": {
+        "lookups": 26,
+        "creations": 27,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 17,
+        "uniquePipelines": 27,
+        "recordedEvents": 27,
+        "droppedEvents": 0,
+        "nodeBuilds": 28,
+        "deviceCreations": 27,
+        "directCreations": 1
+      },
+      "events": [
+        {
+          "sequence": 1,
+          "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+          "pipelineIdentity": "backend-pipeline-1",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1299,
+            "hash": "00fc0a8ad03630cc"
+          },
+          "fragment": {
+            "bytes": 1595,
+            "hash": "458120a84b226496"
+          },
+          "provenance": {
+            "material": {
+              "id": 19,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 23,
+              "name": "Output Color Transform",
+              "uuid": "8758700d-6000-41b1-a390-87df2db8db3d"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 34.100000001490116,
+          "settledMs": 34.899999998509884,
+          "serviceMs": 0.7999999970197678,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": true
+        },
+        {
+          "sequence": 2,
+          "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+          "pipelineIdentity": "backend-pipeline-2",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1417,
+            "hash": "dcd9d1972708c088"
+          },
+          "fragment": {
+            "bytes": 960,
+            "hash": "a2499803894a35ed"
+          },
+          "provenance": {
+            "material": {
+              "id": 21,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 79.70000000298023,
+          "settledMs": 79.80000000447035,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 3,
+          "programIdentity": "45fc3617fb049a88/c466a179e1f4f0a4",
+          "pipelineIdentity": "backend-pipeline-3",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1818,
+            "hash": "c466a179e1f4f0a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 22,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 0 ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 83.5,
+          "settledMs": 83.60000000149012,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 4,
+          "programIdentity": "45fc3617fb049a88/904d7d1b777971dc",
+          "pipelineIdentity": "backend-pipeline-4",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "904d7d1b777971dc"
+          },
+          "provenance": {
+            "material": {
+              "id": 23,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 1 ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 86.30000000447035,
+          "settledMs": 86.30000000447035,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 5,
+          "programIdentity": "45fc3617fb049a88/9ac08f65518be06c",
+          "pipelineIdentity": "backend-pipeline-5",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "9ac08f65518be06c"
+          },
+          "provenance": {
+            "material": {
+              "id": 24,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 2 ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 88.30000000447035,
+          "settledMs": 88.39999999850988,
+          "serviceMs": 0.09999999403953552,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 6,
+          "programIdentity": "45fc3617fb049a88/2b2d9e1b2a1e6bbc",
+          "pipelineIdentity": "backend-pipeline-6",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "2b2d9e1b2a1e6bbc"
+          },
+          "provenance": {
+            "material": {
+              "id": 25,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 3 ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 90.20000000298023,
+          "settledMs": 90.20000000298023,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 7,
+          "programIdentity": "45fc3617fb049a88/4fbcbe479ba1b0a6",
+          "pipelineIdentity": "backend-pipeline-7",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1516,
+            "hash": "45fc3617fb049a88"
+          },
+          "fragment": {
+            "bytes": 1820,
+            "hash": "4fbcbe479ba1b0a6"
+          },
+          "provenance": {
+            "material": {
+              "id": 26,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 4 ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 92.10000000149012,
+          "settledMs": 92.10000000149012,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 8,
+          "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+          "pipelineIdentity": "backend-pipeline-8",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1567,
+            "hash": "ffc0ca9b4adc3a8b"
+          },
+          "fragment": {
+            "bytes": 3311,
+            "hash": "ff20e1db0bfb34f5"
+          },
+          "provenance": {
+            "material": {
+              "id": 27,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Composite ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 94.80000000447035,
+          "settledMs": 95,
+          "serviceMs": 0.19999999552965164,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 9,
+          "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+          "pipelineIdentity": "backend-pipeline-9",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1375,
+            "hash": "b07fbcd4d49ee70f"
+          },
+          "fragment": {
+            "bytes": 1790,
+            "hash": "a170775f358f22a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 20,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 26,
+              "name": "Render Pipeline",
+              "uuid": "68152289-1b34-4a6c-aa65-69939fbe4621"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 95.60000000149012,
+          "settledMs": 95.60000000149012,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 10,
+          "programIdentity": "bceee6f518a75d32/36b74997b7a66db6",
+          "pipelineIdentity": "backend-pipeline-10",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 2008,
+            "hash": "bceee6f518a75d32"
+          },
+          "fragment": {
+            "bytes": 14729,
+            "hash": "36b74997b7a66db6"
+          },
+          "provenance": {
+            "material": {
+              "id": 33,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 44,
+              "uuid": "73721336-3912-45e5-8abc-a179a1b7ca79"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 144.30000000447035,
+          "settledMs": 144.39999999850988,
+          "serviceMs": 0.09999999403953552,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 11,
+          "programIdentity": "b07fbcd4d49ee70f/a170775f358f22a4",
+          "pipelineIdentity": "backend-pipeline-11",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1375,
+            "hash": "b07fbcd4d49ee70f"
+          },
+          "fragment": {
+            "bytes": 1790,
+            "hash": "a170775f358f22a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 20,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 26,
+              "name": "Render Pipeline",
+              "uuid": "68152289-1b34-4a6c-aa65-69939fbe4621"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 144.80000000447035,
+          "settledMs": 144.80000000447035,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 12,
+          "programIdentity": "80768164f38aad4b",
+          "pipelineIdentity": "backend-pipeline-12",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1653,
+            "hash": "80768164f38aad4b"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 156.30000000447035,
+          "settledMs": 156.39999999850988,
+          "serviceMs": 0.09999999403953552,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 13,
+          "programIdentity": "dbca0166af75d354",
+          "pipelineIdentity": "backend-pipeline-13",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6449,
+            "hash": "dbca0166af75d354"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 160.80000000447035,
+          "settledMs": 160.80000000447035,
+          "serviceMs": 0,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 14,
+          "programIdentity": "bbf82a4549069547/09ad40d6bccbf449",
+          "pipelineIdentity": "backend-pipeline-14",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3182,
+            "hash": "bbf82a4549069547"
+          },
+          "fragment": {
+            "bytes": 14731,
+            "hash": "09ad40d6bccbf449"
+          },
+          "provenance": {
+            "material": {
+              "id": 47,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 59,
+              "name": "rock:1:0",
+              "uuid": "3849c458-b6c1-4094-b671-c58f4844481f"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "instancing"
+          ],
+          "startedMs": 168.5,
+          "settledMs": 168.60000000149012,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 15,
+          "programIdentity": "dcd9d1972708c088/a2499803894a35ed",
+          "pipelineIdentity": "backend-pipeline-15",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1417,
+            "hash": "dcd9d1972708c088"
+          },
+          "fragment": {
+            "bytes": 960,
+            "hash": "a2499803894a35ed"
+          },
+          "provenance": {
+            "material": {
+              "id": 21,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 179.89999999850988,
+          "settledMs": 180.10000000149012,
+          "serviceMs": 0.20000000298023224,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 16,
+          "programIdentity": "ffc0ca9b4adc3a8b/ff20e1db0bfb34f5",
+          "pipelineIdentity": "backend-pipeline-16",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1567,
+            "hash": "ffc0ca9b4adc3a8b"
+          },
+          "fragment": {
+            "bytes": 3311,
+            "hash": "ff20e1db0bfb34f5"
+          },
+          "provenance": {
+            "material": {
+              "id": 27,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Composite ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 183.30000000447035,
+          "settledMs": 183.30000000447035,
+          "serviceMs": 0,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 17,
+          "programIdentity": "80768164f38aad4b",
+          "pipelineIdentity": "backend-pipeline-17",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1653,
+            "hash": "80768164f38aad4b"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 187.5,
+          "settledMs": 187.5,
+          "serviceMs": 0,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 18,
+          "programIdentity": "dbca0166af75d354",
+          "pipelineIdentity": "backend-pipeline-18",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6449,
+            "hash": "dbca0166af75d354"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 189.10000000149012,
+          "settledMs": 189.20000000298023,
+          "serviceMs": 0.10000000149011612,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 19,
+          "programIdentity": "80768164f38aad4b",
+          "pipelineIdentity": "backend-pipeline-19",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1653,
+            "hash": "80768164f38aad4b"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 215.80000000447035,
+          "settledMs": 215.80000000447035,
+          "serviceMs": 0,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 20,
+          "programIdentity": "dbca0166af75d354",
+          "pipelineIdentity": "backend-pipeline-20",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6449,
+            "hash": "dbca0166af75d354"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 218.80000000447035,
+          "settledMs": 218.80000000447035,
+          "serviceMs": 0,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 21,
+          "programIdentity": "bbf82a4549069547/09ad40d6bccbf449",
+          "pipelineIdentity": "backend-pipeline-21",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3182,
+            "hash": "bbf82a4549069547"
+          },
+          "fragment": {
+            "bytes": 14731,
+            "hash": "09ad40d6bccbf449"
+          },
+          "provenance": {
+            "material": {
+              "id": 56,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 77,
+              "name": "rock:1:0",
+              "uuid": "b38041d1-58c4-4dd2-9be6-d07bd2c45575"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "instancing"
+          ],
+          "startedMs": 224.89999999850988,
+          "settledMs": 225,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 22,
+          "programIdentity": "ecaec2fbce7bdaad/ecaec2fbce7bdaad",
+          "pipelineIdentity": "backend-pipeline-22",
+          "kind": "render",
+          "pass": "unknown",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1827,
+            "hash": "ecaec2fbce7bdaad"
+          },
+          "fragment": {
+            "bytes": 1827,
+            "hash": "ecaec2fbce7bdaad"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "label": "mipmap-rgba8unorm-srgb-2d-array",
+          "reasons": [
+            "device-direct-creation"
+          ],
+          "startedMs": 243.39999999850988,
+          "settledMs": 243.5,
+          "serviceMs": 0.10000000149011612,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 23,
+          "programIdentity": "331c056040901965/26524dc7fa56cf54",
+          "pipelineIdentity": "backend-pipeline-23",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3316,
+            "hash": "331c056040901965"
+          },
+          "fragment": {
+            "bytes": 15112,
+            "hash": "26524dc7fa56cf54"
+          },
+          "provenance": {
+            "material": {
+              "id": 55,
+              "name": "probe_bark",
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 75,
+              "name": "pine:0:0",
+              "uuid": "b79287c0-d5bf-4aea-8a99-f18523db64b4"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "instancing",
+            "map"
+          ],
+          "startedMs": 244.10000000149012,
+          "settledMs": 244.20000000298023,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 24,
+          "programIdentity": "80768164f38aad4b",
+          "pipelineIdentity": "backend-pipeline-24",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 1653,
+            "hash": "80768164f38aad4b"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 356.30000000447035,
+          "settledMs": 356.30000000447035,
+          "serviceMs": 0,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 25,
+          "programIdentity": "dbca0166af75d354",
+          "pipelineIdentity": "backend-pipeline-25",
+          "kind": "compute",
+          "pass": "compute",
+          "mode": "sync",
+          "status": "created",
+          "compute": {
+            "bytes": 6449,
+            "hash": "dbca0166af75d354"
+          },
+          "provenance": {
+            "unknown": true
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 358.1000000014901,
+          "settledMs": 358.1000000014901,
+          "serviceMs": 0,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 26,
+          "programIdentity": "3c9e0c39d4f3153f/8b0216abd1646161",
+          "pipelineIdentity": "backend-pipeline-26",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3111,
+            "hash": "3c9e0c39d4f3153f"
+          },
+          "fragment": {
+            "bytes": 1533,
+            "hash": "8b0216abd1646161"
+          },
+          "provenance": {
+            "material": {
+              "id": 18,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 86,
+              "uuid": "c8c20c47-5e23-4344-815b-0691f40b5b7b"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 527.1000000014901,
+          "settledMs": 527.1000000014901,
+          "serviceMs": 0.10000000149011612,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 27,
+          "programIdentity": "079734d7e934a4b1/132e74e642d59afb",
+          "pipelineIdentity": "backend-pipeline-27",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1606,
+            "hash": "079734d7e934a4b1"
+          },
+          "fragment": {
+            "bytes": 1504,
+            "hash": "132e74e642d59afb"
+          },
+          "provenance": {
+            "material": {
+              "id": 18,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 125,
+              "name": "tn-terrain-block:0:-1,-1",
+              "uuid": "647954cf-f124-46f5-a5fe-f55789a3a5d8"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 938.3000000044703,
+          "settledMs": 938.3999999985099,
+          "serviceMs": 0.09999999403953552,
+          "nodeBuilds": 1,
+          "beforeFirstPresent": false
+        }
+      ],
+      "nodeBuilds": [
+        {
+          "provenance": {
+            "material": {
+              "id": 19,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 23,
+              "name": "Output Color Transform",
+              "uuid": "8758700d-6000-41b1-a390-87df2db8db3d"
+            },
+            "unknown": false
+          },
+          "startedMs": 30.399999998509884,
+          "beforeFirstPresent": true
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 20,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 26,
+              "name": "Render Pipeline",
+              "uuid": "68152289-1b34-4a6c-aa65-69939fbe4621"
+            },
+            "unknown": false
+          },
+          "startedMs": 76.80000000447035,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 21,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "startedMs": 78.89999999850988,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 22,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 0 ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "startedMs": 82.70000000298023,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 23,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 1 ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "startedMs": 85.89999999850988,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 24,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 2 ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "startedMs": 87.89999999850988,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 25,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 3 ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "startedMs": 89.89999999850988,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 26,
+              "name": "Bloom_separable",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Blur Horizontal - 4 ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "startedMs": 91.70000000298023,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 27,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Composite ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "startedMs": 94.10000000149012,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 20,
+              "name": "RenderPipeline",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 26,
+              "name": "Render Pipeline",
+              "uuid": "68152289-1b34-4a6c-aa65-69939fbe4621"
+            },
+            "unknown": false
+          },
+          "startedMs": 133,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 33,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 44,
+              "uuid": "73721336-3912-45e5-8abc-a179a1b7ca79"
+            },
+            "unknown": false
+          },
+          "startedMs": 142.39999999850988,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 47,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 59,
+              "name": "rock:1:0",
+              "uuid": "3849c458-b6c1-4094-b671-c58f4844481f"
+            },
+            "unknown": false
+          },
+          "startedMs": 166.70000000298023,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 48,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 60,
+              "name": "rock:0:0",
+              "uuid": "a6f4a7c3-4057-45ef-a033-bcf7c85fbb66"
+            },
+            "unknown": false
+          },
+          "startedMs": 172.89999999850988,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 46,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 57,
+              "name": "ground_cover:0:0",
+              "uuid": "bac1047d-014b-4626-8f15-84887688b1e2"
+            },
+            "unknown": false
+          },
+          "startedMs": 177.20000000298023,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 21,
+              "name": "Bloom_highPass",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ High Pass ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "startedMs": 178.80000000447035,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 27,
+              "name": "Bloom_comp",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 14,
+              "name": "Bloom [ Composite ]",
+              "uuid": "88c28eca-9f13-4782-a2b0-117fc3fee825"
+            },
+            "unknown": false
+          },
+          "startedMs": 182.80000000447035,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 56,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 77,
+              "name": "rock:1:0",
+              "uuid": "b38041d1-58c4-4dd2-9be6-d07bd2c45575"
+            },
+            "unknown": false
+          },
+          "startedMs": 223,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 57,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 78,
+              "name": "rock:0:0",
+              "uuid": "aa234ef8-e5fe-4c7a-8151-d1d70dc7078a"
+            },
+            "unknown": false
+          },
+          "startedMs": 229.30000000447035,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 58,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 79,
+              "name": "ground_cover:0:0",
+              "uuid": "22401297-bb47-485a-bedc-c16cd0e06bf4"
+            },
+            "unknown": false
+          },
+          "startedMs": 233.5,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 54,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 72,
+              "name": "pine:1:0",
+              "uuid": "a15b2541-4f8f-427e-8ae8-ca6c86bfce66"
+            },
+            "unknown": false
+          },
+          "startedMs": 238.5,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 55,
+              "name": "probe_bark",
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 75,
+              "name": "pine:0:0",
+              "uuid": "b79287c0-d5bf-4aea-8a99-f18523db64b4"
+            },
+            "unknown": false
+          },
+          "startedMs": 242.70000000298023,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 86,
+              "uuid": "c8c20c47-5e23-4344-815b-0691f40b5b7b"
+            },
+            "unknown": false
+          },
+          "startedMs": 526.1000000014901,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 96,
+              "uuid": "1370cff0-b750-4113-8a34-7b39728c0c42"
+            },
+            "unknown": false
+          },
+          "startedMs": 667.3000000044703,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 106,
+              "uuid": "bec1a486-3a71-4c3a-ad1e-5e551ef857bc"
+            },
+            "unknown": false
+          },
+          "startedMs": 767.6000000014901,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 111,
+              "uuid": "bea18037-1168-4e1f-9914-75c7ffcb178f"
+            },
+            "unknown": false
+          },
+          "startedMs": 799.3999999985099,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 116,
+              "uuid": "7dfd66a6-e953-49fc-a11b-dc962a698d8f"
+            },
+            "unknown": false
+          },
+          "startedMs": 833.1000000014901,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 121,
+              "uuid": "c8ad0867-5d64-447d-b867-592a7acacb5f"
+            },
+            "unknown": false
+          },
+          "startedMs": 904.3999999985099,
+          "beforeFirstPresent": false
+        },
+        {
+          "provenance": {
+            "material": {
+              "id": 18,
+              "type": "MeshNormalMaterial"
+            },
+            "object": {
+              "id": 125,
+              "name": "tn-terrain-block:0:-1,-1",
+              "uuid": "647954cf-f124-46f5-a5fe-f55789a3a5d8"
+            },
+            "unknown": false
+          },
+          "startedMs": 937.8000000044703,
+          "beforeFirstPresent": false
+        }
+      ],
+      "incompleteReasons": []
+    },
+    "resources": {
+      "state": {
+        "before": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 2.2000000029802322
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 16
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 9,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 48,
+              "gpuTallyAgeFrames": 8,
+              "gpuTriangles": 192
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 12,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 3,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 1,
+            "residentColliders": 0
+          }
+        },
+        "after": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 0
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 16
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 24,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 48,
+              "gpuTallyAgeFrames": 23,
+              "gpuTriangles": 192
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 27,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 3,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 9,
+            "residentColliders": 0
+          }
+        }
+      },
+      "GameState": {
+        "before": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 2.2000000029802322
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 16
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 9,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 48,
+              "gpuTallyAgeFrames": 8,
+              "gpuTriangles": 192
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 12,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 3,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 1,
+            "residentColliders": 0
+          }
+        },
+        "after": {
+          "evictions": 0,
+          "failures": 0,
+          "instances": 0,
+          "loadsInFlight": 0,
+          "maxResidentCells": 0,
+          "residenceChanges": 0,
+          "residentCells": 0,
+          "shadowDeferrals": 0,
+          "shadowFrame": 0,
+          "shadowLevels": 0,
+          "shadowPartialDone": 0,
+          "shadowRendered": 0,
+          "stats": {
+            "admission": {
+              "backlog": 0,
+              "deferred": 0,
+              "spentMs": 0
+            },
+            "bundle": {
+              "children": 6,
+              "on": true,
+              "cpuMeshes": 0,
+              "gpuMeshes": 5,
+              "eligibility": {
+                "checks": 0,
+                "refreshes": 0,
+                "validations": 0,
+                "uncached": 0
+              },
+              "reason": "default",
+              "records": 16
+            },
+            "evictions": 0,
+            "failures": 0,
+            "gpuScene": {
+              "dispatches": 24,
+              "instances": 533,
+              "keys": 5,
+              "on": true,
+              "reason": "on",
+              "dressed": 5,
+              "meshes": 5,
+              "gpuInstances": 48,
+              "gpuTallyAgeFrames": 23,
+              "gpuTriangles": 192
+            },
+            "hlod": {
+              "on": true,
+              "loaded": 0,
+              "compiled": 0,
+              "observed": 0,
+              "active": 0,
+              "pending": 0,
+              "bytes": 0,
+              "refused": 0,
+              "reason": "",
+              "failures": 0
+            },
+            "impostor": {
+              "assets": 0,
+              "atlasBytes": 0,
+              "budgetBytes": 134217728,
+              "far": {
+                "aggregates": 0,
+                "bytes": 0,
+                "instances": 0,
+                "live": 0,
+                "nearOwned": 0,
+                "uploads": 0
+              },
+              "pending": 0,
+              "terminalTriangles": 0
+            },
+            "instances": 533,
+            "loadsInFlight": 0,
+            "loadsQueued": 0,
+            "mainCull": {
+              "frustums": 27,
+              "repacks": 0,
+              "visibleEpoch": 1,
+              "windows": 0
+            },
+            "pendingPrewarm": 0,
+            "prewarmMinted": 3,
+            "pressure": {
+              "cells": 0,
+              "instances": 0,
+              "bytes": 0
+            },
+            "refilters": 1,
+            "refilterEntries": 0,
+            "rebuilds": 0,
+            "levelRefilters": 0,
+            "unchanged": 0,
+            "residentCells": 3,
+            "loadedCells": 3,
+            "residentKeys": [
+              "0:1",
+              "0:2",
+              "0:3"
+            ],
+            "residentTiles": 9,
+            "residentColliders": 0
+          }
+        }
+      },
+      "assets": {
+        "before": {
+          "world/chunks/yard_0_2": {
+            "glb": {
+              "url": "world/chunks/yard_0_2.a2b36c92.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock_lod1": {
+            "glb": {
+              "url": "world/assets/rock_lod1.127a1dda.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock": {
+            "glb": {
+              "url": "world/assets/rock.1f312b52.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine_lod1": {
+            "glb": {
+              "url": "world/assets/pine_lod1.4f82d93e.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/ground_cover": {
+            "glb": {
+              "url": "world/assets/ground_cover.3896b589.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine": {
+            "glb": {
+              "url": "world/assets/pine.529686d4.glb",
+              "via": "manifest"
+            }
+          }
+        },
+        "after": {
+          "world/chunks/yard_0_2": {
+            "glb": {
+              "url": "world/chunks/yard_0_2.a2b36c92.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock_lod1": {
+            "glb": {
+              "url": "world/assets/rock_lod1.127a1dda.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/rock": {
+            "glb": {
+              "url": "world/assets/rock.1f312b52.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine_lod1": {
+            "glb": {
+              "url": "world/assets/pine_lod1.4f82d93e.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/ground_cover": {
+            "glb": {
+              "url": "world/assets/ground_cover.3896b589.glb",
+              "via": "manifest"
+            }
+          },
+          "world/assets/pine": {
+            "glb": {
+              "url": "world/assets/pine.529686d4.glb",
+              "via": "manifest"
+            }
+          }
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "settled-loads",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 2
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 16
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 10,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 48,
+                "gpuTallyAgeFrames": 9,
+                "gpuTriangles": 192
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 13,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 3,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 2,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 2
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 16
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 10,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 48,
+                "gpuTallyAgeFrames": 9,
+                "gpuTriangles": 192
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 13,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 3,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 2,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 60
+      },
+      {
+        "label": "no-queued-loads",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 2
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 16
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 11,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 48,
+                "gpuTallyAgeFrames": 10,
+                "gpuTriangles": 192
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 14,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 3,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 2,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 2
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 16
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 11,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 48,
+                "gpuTallyAgeFrames": 10,
+                "gpuTriangles": 192
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 14,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 3,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 2,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 60
+      },
+      {
+        "label": "settled-prewarm",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 2
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 16
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 12,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 48,
+                "gpuTallyAgeFrames": 11,
+                "gpuTriangles": 192
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 15,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 3,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 3,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 2
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 16
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 12,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 48,
+                "gpuTallyAgeFrames": 11,
+                "gpuTriangles": 192
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 15,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 3,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 3,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 60
+      },
+      {
+        "label": "complete-terrain-ring",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 1
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 16
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 22,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 48,
+                "gpuTallyAgeFrames": 21,
+                "gpuTriangles": 192
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 25,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 3,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 1
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 16
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 22,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 48,
+                "gpuTallyAgeFrames": 21,
+                "gpuTriangles": 192
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 25,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 3,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 71
+      },
+      {
+        "label": "admitted-world",
+        "snapshots": {
+          "state": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 1
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 16
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 22,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 48,
+                "gpuTallyAgeFrames": 21,
+                "gpuTriangles": 192
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 25,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 3,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "GameState": {
+            "evictions": 0,
+            "failures": 0,
+            "instances": 0,
+            "loadsInFlight": 0,
+            "maxResidentCells": 0,
+            "residenceChanges": 0,
+            "residentCells": 0,
+            "shadowDeferrals": 0,
+            "shadowFrame": 0,
+            "shadowLevels": 0,
+            "shadowPartialDone": 0,
+            "shadowRendered": 0,
+            "stats": {
+              "admission": {
+                "backlog": 0,
+                "deferred": 0,
+                "spentMs": 1
+              },
+              "bundle": {
+                "children": 6,
+                "on": true,
+                "cpuMeshes": 0,
+                "gpuMeshes": 5,
+                "eligibility": {
+                  "checks": 0,
+                  "refreshes": 0,
+                  "validations": 0,
+                  "uncached": 0
+                },
+                "reason": "default",
+                "records": 16
+              },
+              "evictions": 0,
+              "failures": 0,
+              "gpuScene": {
+                "dispatches": 22,
+                "instances": 533,
+                "keys": 5,
+                "on": true,
+                "reason": "on",
+                "dressed": 5,
+                "meshes": 5,
+                "gpuInstances": 48,
+                "gpuTallyAgeFrames": 21,
+                "gpuTriangles": 192
+              },
+              "hlod": {
+                "on": true,
+                "loaded": 0,
+                "compiled": 0,
+                "observed": 0,
+                "active": 0,
+                "pending": 0,
+                "bytes": 0,
+                "refused": 0,
+                "reason": "",
+                "failures": 0
+              },
+              "impostor": {
+                "assets": 0,
+                "atlasBytes": 0,
+                "budgetBytes": 134217728,
+                "far": {
+                  "aggregates": 0,
+                  "bytes": 0,
+                  "instances": 0,
+                  "live": 0,
+                  "nearOwned": 0,
+                  "uploads": 0
+                },
+                "pending": 0,
+                "terminalTriangles": 0
+              },
+              "instances": 533,
+              "loadsInFlight": 0,
+              "loadsQueued": 0,
+              "mainCull": {
+                "frustums": 25,
+                "repacks": 0,
+                "visibleEpoch": 1,
+                "windows": 0
+              },
+              "pendingPrewarm": 0,
+              "prewarmMinted": 3,
+              "pressure": {
+                "cells": 0,
+                "instances": 0,
+                "bytes": 0
+              },
+              "refilters": 1,
+              "refilterEntries": 0,
+              "rebuilds": 0,
+              "levelRefilters": 0,
+              "unchanged": 0,
+              "residentCells": 3,
+              "loadedCells": 3,
+              "residentKeys": [
+                "0:1",
+                "0:2",
+                "0:3"
+              ],
+              "residentTiles": 9,
+              "residentColliders": 0
+            }
+          },
+          "assets": {
+            "world/chunks/yard_0_2": {
+              "glb": {
+                "url": "world/chunks/yard_0_2.a2b36c92.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock_lod1": {
+              "glb": {
+                "url": "world/assets/rock_lod1.127a1dda.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/rock": {
+              "glb": {
+                "url": "world/assets/rock.1f312b52.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine_lod1": {
+              "glb": {
+                "url": "world/assets/pine_lod1.4f82d93e.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/ground_cover": {
+              "glb": {
+                "url": "world/assets/ground_cover.3896b589.glb",
+                "via": "manifest"
+              }
+            },
+            "world/assets/pine": {
+              "glb": {
+                "url": "world/assets/pine.529686d4.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 71
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeDiagnosticsBefore": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplayBefore": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 20260925,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.3.4",
+            "randomState": 20260925,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 20260925,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.3.4",
+            "randomState": 20260925,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplaySeries": [
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "settled-loads",
+          "tick": 60
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "no-queued-loads",
+          "tick": 60
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "settled-prewarm",
+          "tick": 60
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "complete-terrain-ring",
+          "tick": 71
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 20260925,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 20260925,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "admitted-world",
+          "tick": 71
+        }
+      ]
+    },
+    "scene": {
+      "background": "color:#0b1a2a",
+      "camera": {
+        "far": 1000,
+        "forward": [
+          0.9438583563660174,
+          -0.33035042472810616,
+          2.220446049250313e-16
+        ],
+        "fov": 60,
+        "near": 0.1,
+        "position": [
+          -160,
+          24,
+          0
+        ],
+        "type": "PerspectiveCamera"
+      },
+      "lights": [
+        {
+          "color": "#bfd8ff",
+          "intensity": 2.2,
+          "type": "HemisphereLight",
+          "visible": true
+        },
+        {
+          "color": "#ffffff",
+          "intensity": 2.6,
+          "type": "DirectionalLight",
+          "visible": true
+        }
+      ],
+      "materials": {
+        "MeshNormalMaterial": 1,
+        "MeshStandardMaterial": 6
+      },
+      "objects": 56,
+      "truncated": false,
+      "worldExtent": {
+        "max": [
+          128,
+          68.85755491256714,
+          128
+        ],
+        "min": [
+          -224,
+          -68.70771026611328,
+          -128
+        ]
+      }
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "settled-loads",
+        "signals": [],
+        "tick": 60
+      },
+      {
+        "label": "no-queued-loads",
+        "signals": [],
+        "tick": 60
+      },
+      {
+        "label": "settled-prewarm",
+        "signals": [],
+        "tick": 60
+      },
+      {
+        "label": "complete-terrain-ring",
+        "signals": [],
+        "tick": 71
+      },
+      {
+        "label": "admitted-world",
+        "signals": [],
+        "tick": 71
+      }
+    ],
+    "startup": {
+      "phase": "ready",
+      "progress": 1,
+      "compileSettled": true,
+      "timeline": {
+        "loadStartedMs": 760.2000000029802,
+        "enteredMs": 806.2999999970198,
+        "compileSettledMs": 942.7000000029802,
+        "frameworkReadyMs": 942.7000000029802,
+        "readyMs": 942.7000000029802
+      },
+      "rule": "sustained-frames"
+    },
+    "visual": {},
+    "tone": [
+      {
+        "code": "TN_TONE",
+        "label": "after.png",
+        "mean": 197.4249956597222,
+        "p1": 72,
+        "p50": 240,
+        "p99": 255,
+        "clipFraction": 0.12524848090277776,
+        "blackFraction": 0
+      }
+    ]
+  },
+  "artifactDirectory": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd616/artifacts/prd616/repair-bloom-after-2",
+  "assertionResults": [
+    {
+      "details": {
+        "after": 3,
+        "before": 3,
+        "component": "residentCells",
+        "entity": "world",
+        "expected": {
+          "component": "residentCells",
+          "entity": "world",
+          "allowTrivial": "All three authored cells must be resident before comparing the fixed-camera world.",
+          "gte": 3
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.world.residentCells.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "complete": true,
+        "expected": 0,
+        "incompleteReasons": [],
+        "observed": 0,
+        "scope": "chunk:0:2:0"
+      },
+      "id": "pipelineCensus.maxNodeBuildsAfterWarmUpScope",
+      "pass": true
+    },
+    {
+      "details": {
+        "complete": true,
+        "expected": 0,
+        "incompleteReasons": [],
+        "observed": 0,
+        "scope": "chunk:0:2:0"
+      },
+      "id": "pipelineCensus.maxRenderPipelineCreationsAfterWarmUpScope",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "clock": "fixed-step",
+  "pass": true,
+  "runtime": "web",
+  "scenario": "authored-world-pass-streamed-chunk-warm-up-reuse",
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 760.2000000029802,
+      "enteredMs": 806.2999999970198,
+      "compileSettledMs": 942.7000000029802,
+      "frameworkReadyMs": 942.7000000029802,
+      "readyMs": 942.7000000029802
+    },
+    "rule": "sustained-frames"
+  },
+  "trivialityOptOutCount": 1,
+  "url": "http://127.0.0.1:5198/?world&warmup"
+}
