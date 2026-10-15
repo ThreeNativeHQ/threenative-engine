@@ -28,9 +28,19 @@ Known hazards: encode syncs a live `BufferStore` and clears its update ranges (`
 
 ## Solution
 
-Pending the implementation plan (2026-10-14). Outline: after JS and the matrix walk, the main thread hands an owned frame packet to a render thread. The render thread runs cull, project, resolve and encode on packet data only, then hands submit and present to the `GpuThread`. One frame in flight in total. The `GpuThread`'s deferred destruction extends to everything a packet references.
+A second `GpuThread` instance is the render thread (created beside the existing one in `player/run.cpp`). It adds no new class, condition variable or join, so `cmake/CheckNoBlockingWaits.cmake` needs no waiver.
 
-Measurement: PRD-610 tier ladder. Tier 0 is a ctest. Tier 1 is one matched native screen (about 4 min). Tier 2 is three alternating pairs with parity PASS and the visual judge.
+- **Baton rule.** After the main thread waits on the render thread and then the `GpuThread`, both are idle. Only in that window does main touch the `Renderer`, `GpuResources`, `GeometryCache`, `PipelineCache` and the queue: geometry and canvas-texture sync, handle resolve, the retire drain. Then it posts packet N. While the render thread runs, main touches none of them. One frame is in flight in total.
+- **Frame packet, no mirrored tree.** Main keeps the traversal, LOD, skeleton update, shadow-camera update, `onBeforeRender` callbacks and `ProjectedCull::apply` (about 0.3 ms; it writes JS-visible `visible`). The draw data that main already writes (`items_`, `Record::Draw`, skinned palettes, batch stores, lights, camera state, shadow frustums) becomes two ping-pong sets selected by frame parity, so stage 1 copies nothing. Stage 2 adds a flat per-frame `MeshRef` array (about 190 B per visible plain opaque mesh) with per-frame deduped `GeometryInfo` and `MaterialSnap` tables. The packet has no parent or child links and no JS-owned pointers, and nothing mutates it after the post.
+- **Render thread job.** Apply deltas (output, sample count, size, overlay), then resolve (cull, batch, sort, fog and environment), encode, prepare the blit, post present to the `GpuThread`, and mail `lastFrame_`, diagnostics and `renderThreadCpuMs` back. Encode exceptions are caught and rethrown at the next handoff.
+- **Lifetime.** One mutex guards `GpuResources::Shared` (`destroy`, `submit`, completion). A `shared_ptr<Packet>` holds CPU references and is retired by a final `GpuThread` job; its destructor only queues objects for main to drop, because the last reference to an `Object3D`-adjacent object must die on main.
+- **Inline fallback.** The first frame, resize, held renders, reflections, `tn.renderTarget`, `readTarget`, `readFrame` and `compileAsync` wait for both threads and take today's inline path. A diagnostic counts fallbacks; Midway must show zero in steady state.
+- **Switch.** `TN_RENDER_THREAD=0|1`, default on once Phase 3 passes.
+- **Hooks.** `renderCpuMs` becomes main-thread only (the KPI). `renderEncodeMs`, `renderThreadCpuMs` and `renderer.info.render` arrive from the mailbox one frame late, as `gpuThreadCpuMs` does today. Screenshots and readbacks post after encode N on the render thread, so they still read frame N.
+
+Estimated main-thread ms removed (takeoff / cockpit / rear gunner), not measured: stage 1 about 0.2 / 0.6 / 1.0; stage 2 about 1.0 / 1.9 / 2.7 cumulative, after a 0.3 to 0.45 ms packet cost. Takeoff is the risk: the matrix walk stays on main. Stage 0 measures it before stage 2 is built. Stage 3 (shadows, skinning, `GpuJointScene` on the render side, −0.1 to −0.3 ms) runs only if stage 2 misses its target, as a follow-up.
+
+Measurement: PRD-610 tier ladder. Tier 0 is a ctest. Tier 1 is one matched native screen (about 4 min). Tier 2 is three alternating pairs with parity PASS and the visual judge. Each stage opens and closes a cycle in the dashboard ledger (`scripts/midway-bench/cycle.ts`).
 
 ## Acceptance Criteria
 
@@ -48,14 +58,27 @@ Boxes live under each phase.
 
 ## Execution Phases
 
-### Phase 1 — Encode and submit on the render thread
+### Phase 1 — Measure, then encode on the render thread
 
 **Status:** NOT STARTED
+**Files:** `player/run.cpp`, `renderer/gpu_resources.{h,cpp}`, `renderer/render_database.{h,cpp}`, `renderer/renderer.cpp`, `tests/native-engine/render_thread_order_test.cpp`
 
-### Phase 2 — Cull and project on the render thread
+- [ ] **Stage 0 split.** One matched run logs the prepare split per pose (matrix walk, project, batch, other), the plain-opaque share of draws and the geometry bytes uploaded per frame, and the numbers land in this PRD. proof: matched native screen with `database.profiling` on
+- [ ] **Order ctest.** Frame N encodes only frame N's packet; a live mutation of transform, material colour, attribute bytes or a uniform node after the post does not reach frame N; at most one frame in flight; a test hook that aliases live data goes red. proof: `ctest -R native_engine_render_thread_order`, plus a ThreadSanitizer build of that test
+- [ ] **Stage 1 lever.** With `TN_RENDER_THREAD=1`, main-thread CPU per frame drops at all three poses against `TN_RENDER_THREAD=0`, every on-run below every off-run, parity PASS. proof: two alternating matched native screens per arm, `cmp.py`
+
+### Phase 2 — Cull, batch and sort on the render thread
 
 **Status:** NOT STARTED
+**Files:** `renderer/render_database.{h,cpp}` (`project`, the compact lane, `addBatchMesh`, `batch`), `renderer/renderer.cpp`, `tests/native-engine/render_packet_parity_test.cpp`
+
+- [ ] **Packet parity ctest.** Draw items built from the packet on the render side equal the inline items, in order, on the existing `prepare` corpus. proof: `ctest -R native_engine_render_packet_parity`
+- [ ] **Stage 2 lever.** Main-thread CPU per frame drops by at least 1.0 ms at takeoff, cockpit and rear gunner against `TN_RENDER_THREAD=0`, parity PASS. proof: two alternating matched native screens per arm, `cmp.py`
 
 ### Phase 3 — Qualification
 
 **Status:** NOT STARTED
+
+- [ ] **Steady state has no fallback.** The fallback diagnostic reads zero after the first frame on all three Midway poses. proof: matched native run, `TN_PLAYER_FRAME` fallback counter
+- [ ] **Three pairs.** Main-thread CPU per frame falls by at least 1.0 ms at all three poses, three alternating pairs, parity PASS in every run. proof: `ac15-pair.sh` with `TN_RENDER_THREAD=1` against the PRD-610 baseline pairs
+- [ ] **Pixels unchanged.** A fixed-step capture of A1, A2 (off, off) and B (on) per pose gives diff(A, B) no larger than diff(A1, A2), and the visual judge returns NEUTRAL or better. proof: capture pair per pose, visual-judge subagent verdict
