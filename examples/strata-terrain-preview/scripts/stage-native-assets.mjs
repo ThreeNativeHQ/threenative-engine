@@ -12,8 +12,9 @@ import {
   readdirSync,
   statSync,
   unlinkSync,
+  writeFileSync,
 } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -24,6 +25,7 @@ const roots = [
 ];
 
 let linked = 0;
+const entries = {};
 function mirror(source, target) {
   for (const entry of readdirSync(source, { withFileTypes: true })) {
     const from = join(source, entry.name);
@@ -34,6 +36,8 @@ function mirror(source, target) {
       continue;
     }
     if (!entry.isFile()) continue;
+    const logical = relative(out, to).split(sep).join("/");
+    entries[logical] = { output: `assets/${logical}`, bytes: statSync(from).size };
     if (existsSync(to)) {
       if (statSync(to).ino === statSync(from).ino) continue;
       unlinkSync(to);
@@ -59,4 +63,7 @@ for (const root of roots) {
   mkdirSync(target, { recursive: true });
   mirror(root.dir, target);
 }
+if (Object.keys(entries).length === 0) throw new Error("stage-native-assets: no staged assets");
+// A nonempty manifest skips bare-path probes and rejects absent optional assets before fetching.
+writeFileSync(join(here, "assets.manifest.json"), `${JSON.stringify({ version: 1, entries })}\n`);
 console.log(`stage-native-assets: ${linked} file(s) linked into ${relative(here, out)}/`);

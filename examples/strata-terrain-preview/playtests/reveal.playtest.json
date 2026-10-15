@@ -51,7 +51,8 @@
       {
         "id": "GameState",
         "path": "timeToReadyMs",
-        "gte": 1
+        "gte": 1,
+        "allowTrivial": "Native attaches after readiness; this recorded startup duration is already positive when reveal sampling begins."
       }
     ],
     "components": [
@@ -77,19 +78,22 @@
         "entity": "props",
         "component": "reveal",
         "path": "publishedBatchesInView",
-        "equals": 0
+        "equals": 0,
+        "allowTrivial": "Held invariant: no visible prop batches may publish throughout the measured post-reveal window."
       },
       {
         "entity": "props",
         "component": "reveal",
         "path": "shadowInvalidated",
-        "equals": 0
+        "equals": 0,
+        "allowTrivial": "Held invariant: shadows must remain valid throughout the measured post-reveal window."
       },
       {
         "entity": "props",
         "component": "reveal",
         "path": "impostorPendingPeak",
-        "equals": 0
+        "equals": 0,
+        "allowTrivial": "Held invariant: no impostor bake may remain pending throughout the measured post-reveal window."
       }
     ]
   }
