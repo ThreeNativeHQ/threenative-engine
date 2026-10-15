@@ -337,6 +337,7 @@ export class AnimationPlayer {
   readonly root: Object3D;
   readonly #rateState: IAnimationRateState = {
     rate: 1,
+    effectiveRate: 1,
     frame: 0,
     source: undefined,
     evaluated: true,
@@ -943,6 +944,7 @@ export class AnimationPlayer {
       this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
     }
     const rate = this.#effectiveUpdateRate();
+    this.#rateState.effectiveRate = force ? 1 : rate;
     this.#updateFrame += 1;
     this.#skippedFrames += 1;
     this.#rateState.evaluated = false;

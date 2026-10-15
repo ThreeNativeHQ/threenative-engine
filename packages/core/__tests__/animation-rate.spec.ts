@@ -15,7 +15,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { AnimationComposer } from "../src/animation-composition.js";
 import { AnimationPlayer } from "../src/animation.js";
-import { RenderCameraCull } from "../src/render-camera-cull.js";
+import { RenderCameraCull, animationRateStates } from "../src/render-camera-cull.js";
 import { SkeletalMesh3D } from "../src/skeletal-mesh.js";
 
 function player(updateRate: "auto" | number = "auto") {
@@ -49,6 +49,31 @@ function rendered(result: AnimationPlayer, z = -100) {
 }
 
 describe("AnimationPlayer update rate", () => {
+  it("records named rate1 independently of distant cull policy", () => {
+    const rig = player(1);
+    const view = rendered(rig, -120);
+    view.camera.lookAt(10, 0, -120);
+    view.render();
+    rig.update(1 / 60);
+    expect(animationRateStates.get(rig.root)?.rate).toBeGreaterThan(1);
+    expect(animationRateStates.get(rig.root)?.effectiveRate).toBe(1);
+    view.cull.dispose();
+    rig.dispose();
+  });
+
+  it("records explicit cadence without cull and forces stock on forced evaluation", () => {
+    const rig = player(4);
+    rig.update(1 / 60);
+    expect(animationRateStates.get(rig.root)?.rate).toBe(1);
+    expect(animationRateStates.get(rig.root)?.effectiveRate).toBe(4);
+    rig.update(1 / 60, true);
+    expect(animationRateStates.get(rig.root)?.effectiveRate).toBe(1);
+    expect(rig.updateRateReport.rate).toBe(4);
+    rig.update(1 / 60);
+    expect(animationRateStates.get(rig.root)?.effectiveRate).toBe(4);
+    rig.dispose();
+  });
+
   it.each([1, 8])("preserves public callback mixer state at requested rate %i", (rate) => {
     for (const event of ["loop", "finished"] as const) {
       const candidate = player(rate);
@@ -681,6 +706,7 @@ describe("AnimationPlayer update rate", () => {
     view.render();
     rig.update(1 / 60);
     expect(rig.updateRateReport).toMatchObject({ rate: 1, evaluated: true });
+    expect(animationRateStates.get(rig.root)?.effectiveRate).toBe(1);
     view.cull.dispose();
     rig.dispose();
   });

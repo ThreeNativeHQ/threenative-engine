@@ -79,6 +79,8 @@ const ANIMATION_RATE_SOURCES_KEY = "threenative.animationRateSources";
 /** Internal observations shared with AnimationPlayer, owned by the root rather than the game. */
 export interface IAnimationRateState {
   rate: number;
+  /** Cadence actually selected by the player on its last update; absent metadata stays stock. */
+  effectiveRate?: number;
   frame: number;
   source: RenderCameraCull | undefined;
   evaluated: boolean;
