@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   mkdirSync,
   mkdtempSync,
@@ -13,19 +14,26 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CHROMIUM_BUILD_LICENSE,
   LINUX_ARM64_V8_BUILD,
   assertArm64V8Archive,
   createLinuxArm64V8Receipt,
+  fetchChromiumBuildLicense,
   inspectLinuxArm64V8Toolchain,
   linuxArm64V8GnArgs,
   prepareLinuxArm64V8Sdk,
   provisionLinuxArm64V8,
+  reusableLinuxArm64V8State,
   runLinuxArm64V8Command,
   verifyLinuxArm64V8Installation,
 } from "../../packages/runtime-native/scripts/build-linux-arm64-v8.mjs";
 
 import { promoteV8Payload } from "../../packages/runtime-native/scripts/build-linux-arm64-v8.mjs";
 
+const chromiumLicense = Buffer.from(
+  "Ly8gQ29weXJpZ2h0IDIwMTUgVGhlIENocm9taXVtIEF1dGhvcnMKLy8KLy8gUmVkaXN0cmlidXRpb24gYW5kIHVzZSBpbiBzb3VyY2UgYW5kIGJpbmFyeSBmb3Jtcywgd2l0aCBvciB3aXRob3V0Ci8vIG1vZGlmaWNhdGlvbiwgYXJlIHBlcm1pdHRlZCBwcm92aWRlZCB0aGF0IHRoZSBmb2xsb3dpbmcgY29uZGl0aW9ucyBhcmUKLy8gbWV0OgovLwovLyAgICAqIFJlZGlzdHJpYnV0aW9ucyBvZiBzb3VyY2UgY29kZSBtdXN0IHJldGFpbiB0aGUgYWJvdmUgY29weXJpZ2h0Ci8vIG5vdGljZSwgdGhpcyBsaXN0IG9mIGNvbmRpdGlvbnMgYW5kIHRoZSBmb2xsb3dpbmcgZGlzY2xhaW1lci4KLy8gICAgKiBSZWRpc3RyaWJ1dGlvbnMgaW4gYmluYXJ5IGZvcm0gbXVzdCByZXByb2R1Y2UgdGhlIGFib3ZlCi8vIGNvcHlyaWdodCBub3RpY2UsIHRoaXMgbGlzdCBvZiBjb25kaXRpb25zIGFuZCB0aGUgZm9sbG93aW5nIGRpc2NsYWltZXIKLy8gaW4gdGhlIGRvY3VtZW50YXRpb24gYW5kL29yIG90aGVyIG1hdGVyaWFscyBwcm92aWRlZCB3aXRoIHRoZQovLyBkaXN0cmlidXRpb24uCi8vICAgICogTmVpdGhlciB0aGUgbmFtZSBvZiBHb29nbGUgTExDIG5vciB0aGUgbmFtZXMgb2YgaXRzCi8vIGNvbnRyaWJ1dG9ycyBtYXkgYmUgdXNlZCB0byBlbmRvcnNlIG9yIHByb21vdGUgcHJvZHVjdHMgZGVyaXZlZCBmcm9tCi8vIHRoaXMgc29mdHdhcmUgd2l0aG91dCBzcGVjaWZpYyBwcmlvciB3cml0dGVuIHBlcm1pc3Npb24uCi8vCi8vIFRISVMgU09GVFdBUkUgSVMgUFJPVklERUQgQlkgVEhFIENPUFlSSUdIVCBIT0xERVJTIEFORCBDT05UUklCVVRPUlMKLy8gIkFTIElTIiBBTkQgQU5ZIEVYUFJFU1MgT1IgSU1QTElFRCBXQVJSQU5USUVTLCBJTkNMVURJTkcsIEJVVCBOT1QKLy8gTElNSVRFRCBUTywgVEhFIElNUExJRUQgV0FSUkFOVElFUyBPRiBNRVJDSEFOVEFCSUxJVFkgQU5EIEZJVE5FU1MgRk9SCi8vIEEgUEFSVElDVUxBUiBQVVJQT1NFIEFSRSBESVNDTEFJTUVELiBJTiBOTyBFVkVOVCBTSEFMTCBUSEUgQ09QWVJJR0hUCi8vIE9XTkVSIE9SIENPTlRSSUJVVE9SUyBCRSBMSUFCTEUgRk9SIEFOWSBESVJFQ1QsIElORElSRUNULCBJTkNJREVOVEFMLAovLyBTUEVDSUFMLCBFWEVNUExBUlksIE9SIENPTlNFUVVFTlRJQUwgREFNQUdFUyAoSU5DTFVESU5HLCBCVVQgTk9UCi8vIExJTUlURUQgVE8sIFBST0NVUkVNRU5UIE9GIFNVQlNUSVRVVEUgR09PRFMgT1IgU0VSVklDRVM7IExPU1MgT0YgVVNFLAovLyBEQVRBLCBPUiBQUk9GSVRTOyBPUiBCVVNJTkVTUyBJTlRFUlJVUFRJT04pIEhPV0VWRVIgQ0FVU0VEIEFORCBPTiBBTlkKLy8gVEhFT1JZIE9GIExJQUJJTElUWSwgV0hFVEhFUiBJTiBDT05UUkFDVCwgU1RSSUNUIExJQUJJTElUWSwgT1IgVE9SVAovLyAoSU5DTFVESU5HIE5FR0xJR0VOQ0UgT1IgT1RIRVJXSVNFKSBBUklTSU5HIElOIEFOWSBXQVkgT1VUIE9GIFRIRSBVU0UKLy8gT0YgVEhJUyBTT0ZUV0FSRSwgRVZFTiBJRiBBRFZJU0VEIE9GIFRIRSBQT1NTSUJJTElUWSBPRiBTVUNIIERBTUFHRS4K",
+  "base64",
+);
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -88,6 +96,7 @@ function fixture() {
     "COMPILER-RT-COPYRIGHT",
   ])
     writeFileSync(join(root, "licenses", name), "license fixture");
+  writeFileSync(join(root, "licenses/BUILD-LICENSE"), chromiumLicense);
   writeFileSync(join(root, "libv8_monolith.a"), archive());
   const receipt = createLinuxArm64V8Receipt(root, toolchain());
   writeFileSync(join(root, "build-receipt.json"), JSON.stringify(receipt));
@@ -346,5 +355,81 @@ describe("recipe and toolchain", () => {
     );
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Usage:");
+  });
+});
+
+describe("packaging-only source-cache migration", () => {
+  it("pins the migration destination to the final producer bytes in CI", () => {
+    const workflow = readFileSync(".github/workflows/native-platforms.yml", "utf8");
+    const pin = workflow.match(/THREENATIVE_V8_PACKAGING_REPAIR_SCRIPT_SHA: ([a-f0-9]{64})/u)?.[1];
+    const actual = createHash("sha256")
+      .update(readFileSync("packages/runtime-native/scripts/build-linux-arm64-v8.mjs"))
+      .digest("hex");
+    expect(pin).toBe(actual);
+  });
+
+  const previousScript = "3a5872301fb0fb8b9ed380b1172ca15de414fa370e23812356c736ffc233b1e8";
+  const expected = {
+    build: LINUX_ARM64_V8_BUILD,
+    toolchain: toolchain(),
+    buildScript: "b".repeat(64),
+  };
+  it("accepts only the exact previous script with otherwise identical full state", () => {
+    expect(reusableLinuxArm64V8State(JSON.stringify(expected), JSON.stringify(expected))).toBe(
+      true,
+    );
+    expect(
+      reusableLinuxArm64V8State(
+        JSON.stringify({ ...expected, buildScript: previousScript }),
+        JSON.stringify(expected),
+        expected.buildScript,
+      ),
+    ).toBe(true);
+    for (const changed of [
+      { ...expected, buildScript: "c".repeat(64) },
+      { ...expected, buildScript: previousScript, build: { ...expected.build, source: "wrong" } },
+      {
+        ...expected,
+        buildScript: previousScript,
+        toolchain: { ...expected.toolchain, compilerRt: { sha256: "wrong" } },
+      },
+      { ...expected, buildScript: previousScript, unexpected: true },
+    ])
+      expect(
+        reusableLinuxArm64V8State(
+          JSON.stringify(changed),
+          JSON.stringify(expected),
+          expected.buildScript,
+        ),
+      ).toBe(false);
+  });
+  it("rejects predecessor reuse by a future script even with unchanged build and toolchain", () => {
+    const old = JSON.stringify({ ...expected, buildScript: previousScript });
+    const future = JSON.stringify({ ...expected, buildScript: "c".repeat(64) });
+    expect(reusableLinuxArm64V8State(old, future, expected.buildScript)).toBe(false);
+    expect(reusableLinuxArm64V8State(old, JSON.stringify(expected))).toBe(false);
+    expect(reusableLinuxArm64V8State(old, JSON.stringify(expected), "wrong")).toBe(false);
+  });
+  it("fetches the exact owning Chromium license and rejects missing or altered bytes", () => {
+    const run = vi.fn(() => Buffer.from(chromiumLicense.toString("base64")));
+    expect(fetchChromiumBuildLicense(run)).toEqual(chromiumLicense);
+    expect(run.mock.calls[0]).toEqual([
+      "curl",
+      ["--fail", "--location", "--silent", "--show-error", CHROMIUM_BUILD_LICENSE.url],
+    ]);
+    expect(() => fetchChromiumBuildLicense(() => Buffer.from(""))).toThrow("checksum mismatch");
+    const altered = Buffer.from(chromiumLicense);
+    altered[0] ^= 1;
+    expect(() => fetchChromiumBuildLicense(() => Buffer.from(altered.toString("base64")))).toThrow(
+      "checksum mismatch",
+    );
+    expect(() =>
+      fetchChromiumBuildLicense(() => {
+        throw new Error("404");
+      }),
+    ).toThrow("404");
+    const root = fixture();
+    writeFileSync(join(root, "licenses/BUILD-LICENSE"), altered);
+    expect(() => createLinuxArm64V8Receipt(root, toolchain())).toThrow("checksum mismatch");
   });
 });

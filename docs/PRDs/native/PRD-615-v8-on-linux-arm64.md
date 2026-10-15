@@ -89,3 +89,6 @@ The source job requires `gh workflow run native-platforms.yml --ref feat/prd615-
 **Files:** `.github/workflows/native-platforms.yml` (paired perf step in the arm64 leg)
 **Implementation:** Build both engines in one job and run the same starter scenario on each, alternating, at least three runs per engine.
 - [ ] AC-2 V8 beats QuickJS on JS frame time. proof: playtest `perf` paired runs in the arm64 leg
+
+
+The sixth producer attempt (`38711129527`, source job `116342598739`) completed all 1,624 Ninja targets, including the V8 monolith, after native SDK preflight and GN generation. Packaging then failed because the pinned Chromium build checkout has no root `LICENSE`. The required build notice now comes from its owning Chromium revision `054463d932e1883832422ab7280c71899cde8ae7`, verified as 1,536 bytes and SHA-256 `368cca1106be99d39ecd32a38d8305585d802a475effb66380b91ffc9bcf709b`. A one-off migration accepts only the exact saved attempt cache and old/new producer script hashes with every other build-state field identical; native identity checks, SDK preflight, GN and Ninja rerun. The corrected payload, receipt and cache publication remain unverified until the next actual producer succeeds. No acceptance criterion is claimed.

@@ -47,6 +47,29 @@ export const LINUX_ARM64_V8_BUILD = Object.freeze({
     }),
   }),
 });
+const BUILD_REVISION = "61966507f36426729edb3cf308d78b80eecb7b73";
+export const CHROMIUM_BUILD_LICENSE = Object.freeze({
+  revision: "054463d932e1883832422ab7280c71899cde8ae7",
+  url: "https://chromium.googlesource.com/chromium/src/+/054463d932e1883832422ab7280c71899cde8ae7/LICENSE?format=TEXT",
+  bytes: 1536,
+  sha256: "368cca1106be99d39ecd32a38d8305585d802a475effb66380b91ffc9bcf709b",
+});
+// Packaging-only repair of attempt 38711129527; all other state fields must match exactly.
+const PREVIOUS_BUILD_SCRIPT = "3a5872301fb0fb8b9ed380b1172ca15de414fa370e23812356c736ffc233b1e8";
+export function reusableLinuxArm64V8State(previous, expected, repairScriptSha) {
+  if (previous === expected) return true;
+  const current = JSON.parse(expected);
+  return current.buildScript === repairScriptSha && previous === JSON.stringify({
+    ...current, buildScript: PREVIOUS_BUILD_SCRIPT,
+  });
+}
+export function fetchChromiumBuildLicense(run = (program, args) => execFileSync(program, args)) {
+  const bytes = Buffer.from(run("curl", ["--fail", "--location", "--silent", "--show-error", CHROMIUM_BUILD_LICENSE.url]).toString().trim(), "base64");
+  if (bytes.length !== CHROMIUM_BUILD_LICENSE.bytes ||
+    createHash("sha256").update(bytes).digest("hex") !== CHROMIUM_BUILD_LICENSE.sha256)
+    throw new Error("Pinned Chromium build license checksum mismatch");
+  return bytes;
+}
 const SDK = ".threenative-llvm-18";
 const BUILTINS = "lib/clang/18/lib/aarch64-unknown-linux-gnu/libclang_rt.builtins.a";
 const packageVersion = (name) => name === "libclang-rt-18-dev"
@@ -98,7 +121,6 @@ const LICENSES = {
   "V8-LICENSE.v8": "LICENSE.v8",
   "V8-FDLIBM": "LICENSE.fdlibm",
   "V8-STRONGTALK": "LICENSE.strongtalk",
-  "BUILD-LICENSE": "build/LICENSE",
   // Build dependency notice; inclusion does not assert that compiler-rt objects are embedded.
   "COMPILER-RT-COPYRIGHT": "/usr/share/doc/libclang-rt-18-dev/copyright",
 };
@@ -271,10 +293,13 @@ export function createLinuxArm64V8Receipt(root, toolchain) {
     "include/v8.h",
     "include/v8-version.h",
     "libv8_monolith.a",
+    "licenses/BUILD-LICENSE",
     ...Object.keys(LICENSES).map((name) => `licenses/${name}`),
   ]) {
     if (!files.includes(path)) throw new Error(`Linux arm64 V8 is missing ${path}`);
   }
+  if (sha256(join(root, "licenses/BUILD-LICENSE")) !== CHROMIUM_BUILD_LICENSE.sha256)
+    throw new Error("Pinned Chromium build license checksum mismatch");
   const header = readFileSync(join(root, "include/v8-version.h"), "utf8");
   const version = ["MAJOR_VERSION", "MINOR_VERSION", "BUILD_NUMBER", "PATCH_LEVEL"]
     .map((part) => new RegExp(`^#define V8_${part} (\\d+)\\s*$`, "mu").exec(header)?.[1])
@@ -286,6 +311,7 @@ export function createLinuxArm64V8Receipt(root, toolchain) {
     schemaVersion: 1,
     build: LINUX_ARM64_V8_BUILD,
     args: linuxArm64V8GnArgs(),
+    buildLicense: CHROMIUM_BUILD_LICENSE,
     toolchain,
     objects,
     files: Object.fromEntries(files.map((path) => [path, sha256(join(root, path))])),
@@ -299,7 +325,8 @@ export function verifyLinuxArm64V8Installation(root) {
   if (
     receipt.schemaVersion !== 1 ||
     JSON.stringify(receipt.build) !== JSON.stringify(LINUX_ARM64_V8_BUILD) ||
-    receipt.args !== linuxArm64V8GnArgs()
+    receipt.args !== linuxArm64V8GnArgs() ||
+    JSON.stringify(receipt.buildLicense) !== JSON.stringify(CHROMIUM_BUILD_LICENSE)
   )
     throw new Error("Linux arm64 V8 recipe/flags mismatch");
   const actual = createLinuxArm64V8Receipt(root, receipt.toolchain);
@@ -375,7 +402,7 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
     if (
       force ||
       !existsSync(statePath) ||
-      readFileSync(statePath, "utf8") !== state ||
+      !reusableLinuxArm64V8State(readFileSync(statePath, "utf8"), state, env.THREENATIVE_V8_PACKAGING_REPAIR_SCRIPT_SHA) ||
       !existsSync(gn)
     ) {
       rmSync(work, { recursive: true, force: true });
@@ -399,6 +426,8 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
         "--nohooks",
       ]);
       const deps = readFileSync(join(source, "DEPS"), "utf8");
+      if (!deps.includes(`'/chromium/src/build.git' + '@' + '${BUILD_REVISION}'`))
+        throw new Error("Pinned V8 DEPS Chromium build revision mismatch");
       if (!deps.includes(`'gn_version': 'git_revision:${LINUX_ARM64_V8_BUILD.gn}'`))
         throw new Error("Pinned V8 DEPS GN revision mismatch");
       writeFileSync(statePath, state);
@@ -406,6 +435,7 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
     for (const [directory, revision] of [
       [source, LINUX_ARM64_V8_BUILD.source],
       [depot, LINUX_ARM64_V8_BUILD.depotTools],
+      [join(source, "build"), BUILD_REVISION],
     ]) {
       const actual = execFileSync("git", ["rev-parse", "HEAD"], {
         cwd: directory,
@@ -423,6 +453,7 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
     toolchain.gn = { package: LINUX_ARM64_V8_BUILD.gnPackage, sha256: sha256(gn), version: gnVersion };
     prepareLinuxArm64V8Sdk(source, run);
     run(gn, ["gen", "out/linux-arm64", `--args=${linuxArm64V8GnArgs()}`], source);
+    writeFileSync(statePath, state);
     run("/usr/bin/ninja", [`-j${jobs}`, "-C", "out/linux-arm64", "v8_monolith"], source);
     rmSync(stage, { recursive: true, force: true });
     mkdirSync(join(stage, "licenses"), { recursive: true });
@@ -431,6 +462,7 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
       join(source, "out/linux-arm64/obj/libv8_monolith.a"),
       join(stage, "libv8_monolith.a"),
     );
+    writeFileSync(join(stage, "licenses/BUILD-LICENSE"), fetchChromiumBuildLicense());
     for (const [name, path] of Object.entries(LICENSES))
       copyFileSync(resolve(source, path), join(stage, "licenses", name));
     const receipt = createLinuxArm64V8Receipt(stage, toolchain);

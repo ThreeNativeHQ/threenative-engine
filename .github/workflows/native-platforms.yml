@@ -321,7 +321,10 @@ jobs:
             packages/runtime-native/third_party/.v8-linux-arm64-source
             packages/runtime-native/third_party/v8-linux-arm64
           key: linux-arm64-v8-source-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: linux-arm64-v8-source-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}-
+          # Exact completed compilation from the packaging-only LICENSE repair; no broad fallback.
+          restore-keys: |
+            linux-arm64-v8-source-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}-
+            linux-arm64-v8-source-Linux-ARM64-e6cd6d572634333391f1f0a607f71a51a9d3ead5b94a6545649654ee48e2f90d-38711129527-1
       - name: Install the pinned Linux arm64 V8 compiler
         if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
         run: |
@@ -333,6 +336,9 @@ jobs:
       - name: Build the Linux arm64 V8 payload
         id: build
         if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
+        env:
+          # Fixed destination of the one-off packaging repair, never derived at runtime.
+          THREENATIVE_V8_PACKAGING_REPAIR_SCRIPT_SHA: cf3a8edabe1fd91691285d9402d3cec716a8723ff32b92789a3b04b509712beb
         run: |
           set -euo pipefail
           export THREENATIVE_V8_BUILD_JOBS="${THREENATIVE_V8_BUILD_JOBS:-$(nproc)}"
