@@ -491,11 +491,10 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
 
 #if defined(__linux__) && !defined(__ANDROID__)
 /**
- * PRD-610: the game thread keeps its own cores. It takes one L3 domain (a Ryzen CCD), or one physical
- * core where all cores share one L3. Every other thread of the player and its child processes (the GPU
- * present worker, the render thread, shader compiles, V8 workers, the HUD overlay and its WebKit
- * processes) runs on the remaining CPUs. On Xvfb the NVIDIA present waits in a busy loop, and sharing
- * cores with it cost the game thread 15 to 30% of its IPC on Midway.
+ * PRD-610: the game thread owns one physical core. Every other thread of the player and its child
+ * processes (the GPU present worker, the render thread, shader compiles, V8 workers, the HUD overlay
+ * and its WebKit processes) runs on the remaining CPUs. On Xvfb the NVIDIA present waits in a busy
+ * loop, and sharing cores with it cost the game thread 15 to 30% of its IPC on Midway.
  * TN_PLAYER_MAIN_CORE unset or off leaves placement to the OS; auto picks a core; a CPU number names the core to start from.
  * Auto starts from the core the firmware ranks last (ACPI CPPC) among the fastest by max frequency:
  * the scheduler packs other busy work onto top-ranked cores first, and a game thread pinned there
@@ -556,16 +555,11 @@ struct ThreadPlacement {
                 if (rank <= lowest) lowest = rank, chosen = c;
             }
         }
-        // Several L3 domains (a Ryzen CCD): the game thread takes the chosen core's domain and the helpers the
-        // others, so neither shares a core or an L3 with the other. One shared L3: the game thread takes the core.
-        const std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(chosen);
-        const cpu_set_t domain = readList(base + "/cache/index3/shared_cpu_list");
+        // The game thread takes the chosen physical core. A whole L3 domain (Ryzen CCD) was measured and
+        // rejected: other work on the domain reached the game thread (PERFORMANCE-LEARNINGS 2026-10-15).
+        const cpu_set_t core = readList("/sys/devices/system/cpu/cpu" + std::to_string(chosen) + "/topology/thread_siblings_list");
         cpu_set_t main;
-        CPU_AND(&main, &domain, &allowed);
-        if (CPU_COUNT(&main) == 0 || CPU_EQUAL(&main, &allowed)) {
-            const cpu_set_t core = readList(base + "/topology/thread_siblings_list");
-            CPU_AND(&main, &core, &allowed);
-        }
+        CPU_AND(&main, &core, &allowed);
         if (CPU_COUNT(&main) == 0) CPU_SET(chosen, &main);
         CPU_XOR(&helpers, &allowed, &main);
         if (CPU_COUNT(&helpers) == 0 || sched_setaffinity(0, sizeof main, &main) != 0) return;

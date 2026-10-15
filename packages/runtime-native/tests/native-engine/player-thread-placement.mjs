@@ -1,5 +1,5 @@
-// PRD-610: the player's game thread keeps its own cores (one L3 domain, or one physical core under a single
-// L3) and every other player thread runs on the remaining CPUs (TN_PLAYER_MAIN_CORE, Linux desktop). On Midway a busy-waiting present worker sharing
+// PRD-610: the player's game thread owns one physical core and every other player thread runs on the
+// remaining CPUs (TN_PLAYER_MAIN_CORE, Linux desktop). On Midway a busy-waiting present worker sharing
 // the game thread's core cost it 15 to 30% of its IPC. Unset or `off` leaves placement to the OS (opt-in until a policy passes the keep rule).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -24,10 +24,8 @@ if (allowed.length < 4) {
   process.exit(0);
 }
 const target = allowed.at(-1);
-// Several L3 domains among the allowed CPUs: the game thread takes the target's domain; one: its core.
-const cpusOf = (file) => parseList(readFileSync(`/sys/devices/system/cpu/cpu${target}/${file}`, "utf8")).filter((cpu) => allowed.includes(cpu));
-const domain = cpusOf("cache/index3/shared_cpu_list");
-const core = domain.length < allowed.length ? domain : cpusOf("topology/thread_siblings_list");
+const core = parseList(readFileSync(`/sys/devices/system/cpu/cpu${target}/topology/thread_siblings_list`, "utf8"))
+  .filter((cpu) => allowed.includes(cpu));
 
 const work = await mkdtemp(resolve(native, "build/player-thread-placement-"));
 process.once("exit", () => rmSync(work, { recursive: true, force: true }));
