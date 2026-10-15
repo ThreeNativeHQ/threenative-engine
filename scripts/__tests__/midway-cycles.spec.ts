@@ -170,13 +170,14 @@ describe("Iteration cycles panel", () => {
     expect(await draw(cyclesOf(undefined), T0)).toContain("no cycles yet");
   });
   it("colours under-goal green, over-goal red, and shows open cycles live with skipped lines", async () => {
-    const text =
-      line({ lever: "fast", event: "start", at: iso(0) }) +
-      line({ lever: "fast", event: "end", at: iso(12), verdict: "keep", runs: ["r1"] }) +
-      line({ lever: "slow", event: "start", at: iso(20) }) +
-      line({ lever: "slow", event: "end", at: iso(70), verdict: "reject" }) +
-      line({ lever: "now", event: "start", at: iso(100) }) +
-      "garbage\n";
+    const text = [
+      line({ lever: "fast", event: "start", at: iso(0) }),
+      line({ lever: "fast", event: "end", at: iso(12), verdict: "keep", runs: ["r1"] }),
+      line({ lever: "slow", event: "start", at: iso(20) }),
+      line({ lever: "slow", event: "end", at: iso(70), verdict: "reject" }),
+      line({ lever: "now", event: "start", at: iso(100) }),
+      "garbage\n",
+    ].join("");
     const html = await draw(cyclesOf(text, T0 + 140 * 60000), T0 + 140 * 60000);
     expect(html).toContain('<span class="ok">12.0 min</span>');
     expect(html).toContain('<span class="bad">50.0 min</span>');

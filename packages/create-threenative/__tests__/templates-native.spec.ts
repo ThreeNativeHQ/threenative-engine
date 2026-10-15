@@ -453,7 +453,10 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
 
   it("builds a project with only the legacy engine named through all native targets using defaults", async () => {
     const project = await projectRoot("threenative-native-no-config-");
-    await writeFile(path.join(project, "threenative.config.ts"), 'export default { engine: "legacy" };\n');
+    await writeFile(
+      path.join(project, "threenative.config.ts"),
+      'export default { engine: "legacy" };\n',
+    );
     await mkdir(path.join(project, "src/ui"), { recursive: true });
     await writeFile(
       path.join(project, "src/ui/main.tsx"),

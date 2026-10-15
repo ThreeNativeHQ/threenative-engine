@@ -54,7 +54,10 @@ async function writeProject(root: string): Promise<void> {
   await mkdir(path.join(root, "src"), { recursive: true });
   await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "asset-order" }));
   await writeFile(path.join(root, "src/game.ts"), "export default { start: async () => {} };\n");
-  await writeFile(path.join(root, "threenative.config.ts"), 'export default { engine: "legacy" };\n');
+  await writeFile(
+    path.join(root, "threenative.config.ts"),
+    'export default { engine: "legacy" };\n',
+  );
 }
 
 async function writeRuntime(root: string, available = true): Promise<void> {

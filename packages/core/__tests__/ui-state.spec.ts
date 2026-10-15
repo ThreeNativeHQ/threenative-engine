@@ -52,9 +52,9 @@ describe("published state", () => {
       store.flush();
       expect(stringify).toHaveBeenCalledTimes(1);
       const [value] = stringify.mock.calls[0] ?? [];
-      expect(value === store.getPublishedState() || value?.state === store.getPublishedState()).toBe(
-        true,
-      );
+      expect(
+        value === store.getPublishedState() || value?.state === store.getPublishedState(),
+      ).toBe(true);
       stringify.mockClear();
       publisher.publish();
       expect(stringify).toHaveBeenCalledTimes(1);

@@ -1317,7 +1317,9 @@ it("rejects a lightmap atlas size that is not a multiple of four on both sides o
 it("gives every freshly scaffolded template the native engine", async () => {
   const root = await makeTempDir("threenative-scaffold-engine-");
   roots.push(root);
-  for (const template of discoverTemplateNames(path.resolve("packages/create-threenative/templates"))) {
+  for (const template of discoverTemplateNames(
+    path.resolve("packages/create-threenative/templates"),
+  )) {
     const { target } = await createProject({ install: false, target: template, template }, root);
     expect(await loadConfig(target)).toMatchObject({ engine: "native" });
   }
