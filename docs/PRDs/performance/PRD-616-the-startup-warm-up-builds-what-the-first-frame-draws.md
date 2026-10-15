@@ -79,11 +79,11 @@ Risk: a covered render through the real pipeline can advance temporal history (T
 #### Phase 2: The warm-up compiles against the world pass (green)
 
 **Status:** IN PROGRESS
-**Files:** `packages/core/src/warmup.ts`, `packages/core/src/renderer.ts` (expose the world-pass compile entry point beside `renderFrame`), `packages/core/src/game.ts`, `packages/core/src/world-cells.ts`, `packages/core/__tests__/warmup.spec.ts`.
+**Files:** `packages/core/src/warmup.ts`, `packages/core/src/renderer.ts` (expose the world-pass compile entry point beside `renderFrame`), `packages/core/src/game.ts`, `packages/core/src/world-cells.ts`, `packages/core/__tests__/warmup.spec.ts`, `examples/abyss-framework/playtests/world-flythrough.playtest.json`.
 **Implementation:** Measure option 1 against option 2 from Solution on the AC-1 scenario and record the choice under `## Decisions`. Route all three warm-up callers through it. Keep the no-output-pipeline path unchanged.
 
 - [ ] AC-1 and AC-2 are green. proof: the AC-1 command, three runs
-- [ ] AC-3 is green. proof: the streaming scenario
+- [ ] AC-3 is green. proof: `world-flythrough.playtest.json`'s scoped `chunk:0:2:1` census assertion; the existing `streaming.playtest.json` exercises synthetic `addInSlices` and does not attach a `WorldCells` chunk.
 - [x] A renderer without an output pipeline warms exactly as before. proof: `pnpm exec vitest run packages/core/__tests__/warmup.spec.ts` — 35 tests passed locally on 2026-10-14, including the scoped output-world-pass regression.
 
 #### Phase 3: Prove the look and the native host
@@ -98,3 +98,4 @@ Risk: a covered render through the real pipeline can advance temporal history (T
 
 - API precheck (read-only, not runtime proof): stock Three r185 `PassNode.compileAsync` sets its target/MRT, but `Renderer.compileAsync` chooses a render context without a call-depth argument (default 0). `RenderPipeline.render` also temporarily sets output color space/tone mapping around the quad draw. These facts suggest the preferred compile-only path may still miss real-frame reuse; Phase 2 must measure it against the covered real-render fallback before choosing. No Three.js patch change is authorized.
 - Implementation checkpoint 2026-10-14: the source-level API comparison confirms stock `compileAsync` cannot carry the output pass's active render depth. The shared warm-up entry point therefore selects the covered output-pipeline render for output-pipeline scenes; `renderPasses: false` still runs that covered world pass for chunk/cell warm-ups, while no-output renderers retain the existing compile path. The real-WebGPU comparison, CPU samples and final AC evidence remain pending until the capture lock clears.
+- AC-3 fixture checkpoint 2026-10-14: the scoped assertion lives on the existing `world-flythrough` fixture because it reaches `WorldCells.#warmChunk`; the named `streaming` fixture only tests generic sliced attachment and cannot observe a chunk warm-up boundary.
