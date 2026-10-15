@@ -106,7 +106,6 @@ private:
     void flatten(MathKind kind, const void* object, std::array<double, 16>& flat) const;
     void write(MathKind kind, const std::array<double, 16>& flat, v8::Local<v8::Object> js);
     double read(v8::Local<v8::Object> object, int key);
-    bool readBulk(v8::Local<v8::Object> object, bool quaternion, std::array<double, 16>& flat);
     v8::Local<v8::String> key(int which) const;
 
     v8::Isolate* isolate_;
@@ -114,14 +113,6 @@ private:
     v8::Global<v8::Context> jsContext_;
     std::array<v8::Global<v8::Function>, kMathKinds> makers_;
     v8::Global<v8::Function> link_;
-    v8::Global<v8::Function> bulkReader_;
-    struct Scratch {
-        v8::Global<v8::Float64Array> view;
-        std::shared_ptr<v8::BackingStore> backing;
-    };
-    std::vector<std::unique_ptr<Scratch>> scratch_;
-    std::size_t scratchDepth_ = 0;
-    bool bulkEnabled_ = false;
     std::vector<v8::Global<v8::String>> keys_;
     std::array<int, 16> tags_{};  // JS tag -> MathKind, as the script numbers its kinds
     std::array<std::vector<Slot>, kMathKinds> pools_;

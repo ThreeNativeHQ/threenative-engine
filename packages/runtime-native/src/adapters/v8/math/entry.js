@@ -174,16 +174,6 @@ globalThis.__tnMathInstall = function install(target, layoutText) {
   target.MathUtils = { ...MathUtils };
 
   return {
-    // Keep each Get/ToNumber pair ordered; the native reader currently substitutes NaN on failure.
-    // An arrow has no reflected arguments object exposing private scratch after IIFE bundling.
-    bulkRead: (value, scratch, quaternion) => {
-      try { scratch[0] = +value.x; } catch { scratch[0] = 0 / 0; }
-      try { scratch[1] = +value.y; } catch { scratch[1] = 0 / 0; }
-      try { scratch[2] = +value.z; } catch { scratch[2] = 0 / 0; }
-      if (quaternion) {
-        try { scratch[3] = +value.w; } catch { scratch[3] = 0 / 0; }
-      }
-    },
     kinds: KINDS,
     bytes: Object.fromEntries(KINDS.map((name) => [name, layout[name].bytes])),
     views,
