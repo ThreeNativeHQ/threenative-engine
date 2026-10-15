@@ -422,7 +422,7 @@ describe("WorldCells admission budget", () => {
   it.each([
     {
       name: "one-cell move",
-      budgetMs: Infinity,
+      budgetMs: Number.POSITIVE_INFINITY,
       startX: 537,
       endX: 739.1,
       endZ: -426.6,
@@ -444,7 +444,7 @@ describe("WorldCells admission budget", () => {
     },
     {
       name: "two-cell jump below velocity reset distance",
-      budgetMs: Infinity,
+      budgetMs: Number.POSITIVE_INFINITY,
       startX: 639.9,
       endX: 850,
       endZ: -555.5,
@@ -468,18 +468,23 @@ describe("WorldCells admission budget", () => {
       });
       let clock = 0;
       const finite = Number.isFinite(budgetMs);
-      const now = vi.fn(() => (clock += finite ? 0.5 : 0));
+      const now = vi.fn(() => {
+        clock += finite ? 0.5 : 0;
+        return clock;
+      });
       let releaseModel: (() => void) | undefined;
       const modelReady = new Promise<void>((resolve) => {
         releaseModel = resolve;
       });
       const follow = followAt(startX, -555.5); // Actual cell 12:3.
+      const pine = manifest.assets.pine;
+      if (pine === undefined) throw new Error("Missing pine fixture asset");
       const world = await WorldCells.load({
         url: "/world/world.json",
         data: {
           manifest: {
             ...manifest,
-            assets: { pine: { glb: "assets/pine.glb", bounds: manifest.assets.pine!.bounds } },
+            assets: { pine: { glb: "assets/pine.glb", bounds: pine.bounds } },
             cellSize: 128,
             extent: { minX: -1024, minZ: -1024, sizeX: 2304, sizeZ: 2304 },
             terrain: { ...manifest.terrain, spacing: 18 },
@@ -528,7 +533,8 @@ describe("WorldCells admission budget", () => {
         expect(world.stats().residentCells).toBe(25);
         if (finite) {
           expect(world.stats().loadedCells).toBe(0);
-          releaseModel!();
+          if (releaseModel === undefined) throw new Error("Missing delayed model release");
+          releaseModel();
           await flush();
           world.update();
           expect(world.stats().admission.backlog).toBeGreaterThan(0);
