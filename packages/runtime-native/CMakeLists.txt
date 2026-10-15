@@ -824,7 +824,7 @@ endif()
 # Prebuilts from kuoruan/libv8: https://github.com/kuoruan/libv8/releases
 # See docs/V8_PREBUILTS.md for fork/update information
 if(MYSTRAL_USE_V8)
-    set(V8_DIR ${THIRD_PARTY_DIR}/v8)
+    set(V8_DIR "${THIRD_PARTY_DIR}/v8" CACHE PATH "Desktop V8 headers and monolith")
     # Android ships a shared `libv8android.so` rather than the desktop monolith archive, and it
     # lives beside the desktop one so a host build and a device build can coexist in one checkout.
     # Without this the arm64 link pulls in the x86_64 archive and fails object by object.
