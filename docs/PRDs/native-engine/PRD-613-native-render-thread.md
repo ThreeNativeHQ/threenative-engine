@@ -1,6 +1,6 @@
 # PRD-613 — Native render thread: cull, project and encode leave the main thread
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — the largest measured lever for PRD-610's 2x to 3x bar: render prepare and encode cost 1.65 / 2.89 / 4.41 ms of the native main thread per frame on Midway, and no box below is done.
 **Complexity:** 7 (HIGH)
 **Owner:** João
@@ -76,12 +76,15 @@ Boxes live under each phase.
 ## Decisions
 
 - 2026-10-14 (owner): "this shit that's days of work, you have to extract into a separate prd". PRD-610 AC-16 moves here; PRD-610 keeps AC-16 as the consumer box, proved by this PRD.
+- 2026-10-15 (resumed evaluation): Stage 1 is implemented at `a57423817`, default off; its acceptance boxes remain open. Fresh exploratory screen `rt-resume-off-1` passes three assertions on NVIDIA RTX 2080, with exactly 1,000 updates/renders per window: main-thread CPU 7.743 / 8.277 / 12.049 ms and instructions 20.482 / 22.748 / 29.980 M per frame (takeoff / cockpit / rear gunner). Binary SHA-256 `2ce82ac2aabbeb195592b3d3b499b113208886d7e2d7292b9de6d87c81247713`, game SHA-256 `e69f72523ba34517466240deb354df5cbae4c5566d981320d3ef984f55fcb709`; raw screen records are under `~/.cache/tmp-tn/screens/`. The old package receipt names the baseline binary, so these screens are not qualified provenance. Candidate comparison, parity, visual review and TSan remain unverified. Read-only review also identified Android presenter/surface destruction before the render-thread fence, including lifecycle suspension; fix and verify that ordering before claiming platform readiness.
+- 2026-10-15 (Stage 1 screen closed INCONCLUSIVE): `rt-resume-on-1` also passes all three assertions and exact 1,000-update/render windows. CPU is 9.557 / 11.929 / 14.158 ms (+23.43% / +44.12% / +17.51%); instructions are 20.060 / 21.095 / 27.036 M (-2.06% / -7.27% / -9.82%). The switch is active: render-thread CPU medians are 0.283 / 0.792 / 1.016 ms; cumulative fallback count stays at one, so no additional steady-window fallback occurred. Host load varied, and the cause of the CPU/instruction disagreement remains unproven. Dashboard cycle `prd613-s1-render-thread-resume` is closed; no winner promoted. Diagnose the disagreement before repeating timing. Parity, visual review, TSan and qualified provenance remain open.
+- 2026-10-15 (attribution and document checks): main-thread IPC fell from 0.634 / 0.657 / 0.591 to 0.502 / 0.428 / 0.464; game JS CPU medians rose from 4.764 / 4.982 / 6.186 to 6.078 / 7.302 / 7.950 ms. `GpuThread::wait` parks on a condition variable, so busy polling is not the cause. Existing `SCREEN_TASKSET` controls only a shared process-tree mask, not separate main/HUD/render-worker placement; prior coarse placement screens do not isolate the new worker. Documentation validation passes: `pnpm check:docs`, the six required prose-lane suites (264 tests), `pnpm prd:progress` (1/8 boxes), and `git diff --check`. No native rebuild or TSan run is claimed.
 
 ## Execution Phases
 
 ### Phase 1 — Measure, then encode on the render thread
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `player/run.cpp`, `renderer/gpu_resources.{h,cpp}`, `renderer/render_database.{h,cpp}`, `renderer/renderer.cpp`, `tests/native-engine/render_thread_order_test.cpp`
 
 - [x] **Stage 0 split.** One matched run logs the prepare split per pose (matrix walk, project, batch, other), the plain-opaque share of draws and the geometry bytes uploaded per frame, and the numbers land in this PRD. proof: matched native screen with `database.profiling` on — screens `s0-split-2` and `s0-split-3` (`TN_RENDER_PREPARE_SPLIT=1`), table in Context; loaded host, so shares only; the batched-member count stands in for the plain-opaque share.
