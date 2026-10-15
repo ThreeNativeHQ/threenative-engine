@@ -374,7 +374,7 @@ export class AnimationPlayer {
         return;
       }
       this.#lookupExact = !eligible;
-      if (!eligible) {
+      if (!eligible && (this.#pendingDt !== 0 || this.#effectiveUpdateRate(true) !== 1)) {
         this.#evaluate(this.#pendingDt);
         this.#evaluated = true;
         this.root.updateMatrixWorld(true);

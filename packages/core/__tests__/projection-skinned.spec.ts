@@ -121,6 +121,38 @@ function expectPalette(batch: SkinnedBatch, slot: number, mesh: SkinnedMesh): vo
 }
 
 describe("skinned lane of the render projection", () => {
+  it("keeps the named rate-1 control at one mixer evaluation per update", () => {
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    (mesh.skeleton.bones[0] as Bone).name = "joint";
+    const player = new AnimationPlayer({
+      root: mesh,
+      clips: [
+        new AnimationClip("move", 1, [
+          new NumberKeyframeTrack("joint.position[x]", [0, 1], [0, 1]),
+        ]),
+      ],
+      updateRate: 1,
+      strideSync: false,
+    });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    player.play("move");
+    const update = vi.spyOn(player.mixer, "update");
+    try {
+      for (let frame = 0; frame < 5; frame += 1) {
+        player.update(1 / 60);
+        mesh.updateMatrixWorld(true);
+        batch.begin();
+        batch.write(batch.claim(mesh) as number, mesh);
+        batch.end();
+      }
+      expect(update.mock.calls.map(([dt]) => dt)).toEqual(new Array(5).fill(1 / 60));
+    } finally {
+      update.mockRestore();
+      batch.dispose();
+      player.dispose();
+    }
+  });
+
   it.each(["values", "times"] as const)(
     "flushes pending time before drawing edited clip %s",
     (field) => {
