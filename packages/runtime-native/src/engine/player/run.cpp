@@ -496,7 +496,7 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
  * present worker, the render thread, shader compiles, V8 workers, the HUD overlay and its WebKit
  * processes) runs on the remaining CPUs. On Xvfb the NVIDIA present waits in a busy loop, and sharing
  * cores with it cost the game thread 15 to 30% of its IPC on Midway.
- * TN_PLAYER_MAIN_CORE=off leaves placement to the OS; a CPU number names the core to start from.
+ * TN_PLAYER_MAIN_CORE unset or off leaves placement to the OS; auto picks a core; a CPU number names the core to start from.
  * Auto starts from the core the firmware ranks last (ACPI CPPC) among the fastest by max frequency:
  * the scheduler packs other busy work onto top-ranked cores first, and a game thread pinned there
  * competed with it.
@@ -533,7 +533,8 @@ struct ThreadPlacement {
     }
     void start() {
         const char* setting = std::getenv("TN_PLAYER_MAIN_CORE");
-        if (setting && std::strcmp(setting, "off") == 0) return;
+        // Opt-in until a policy passes the PRD-610 keep rule (campaign prd610-placement-20261015).
+        if (!setting || !*setting || std::strcmp(setting, "off") == 0) return;
         cpu_set_t allowed;
         if (sched_getaffinity(0, sizeof allowed, &allowed) != 0 || CPU_COUNT(&allowed) < 4) return;
         int chosen = -1;

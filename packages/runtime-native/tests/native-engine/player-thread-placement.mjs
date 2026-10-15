@@ -1,6 +1,6 @@
 // PRD-610: the player's game thread keeps its own cores (one L3 domain, or one physical core under a single
 // L3) and every other player thread runs on the remaining CPUs (TN_PLAYER_MAIN_CORE, Linux desktop). On Midway a busy-waiting present worker sharing
-// the game thread's core cost it 15 to 30% of its IPC. `off` leaves placement to the OS.
+// the game thread's core cost it 15 to 30% of its IPC. Unset or `off` leaves placement to the OS (opt-in until a policy passes the keep rule).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readdirSync, readFileSync, rmSync } from "node:fs";
@@ -47,6 +47,7 @@ await bundleNativeEngine({ entry, outfile, boot: false, host: true });
 async function placement(setting) {
   const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy", TN_PLAYER_MAIN_CORE: setting };
   delete env.TN_PLAYTEST_MAILBOX_ROOT;
+  if (setting === undefined) delete env.TN_PLAYER_MAIN_CORE;
   const child = spawn(resolve(executable), [outfile], { env });
   let output = "";
   const closed = new Promise((done) => child.once("close", done));
@@ -72,7 +73,9 @@ for (const helper of pinned.helpers)
   assert(!helper.cpus.some((cpu) => core.includes(cpu)), `helper ${helper.tid} may run on the game core: ${helper.cpus}`);
 console.log(`PASS game thread on ${core.join(",")}, ${pinned.helpers.length} helper threads off it`);
 
-const free = await placement("off");
-assert.doesNotMatch(free.output, /TN_THREAD_PLACEMENT/);
-assert.deepEqual(free.main, allowed, "off leaves the game thread's CPUs alone");
-console.log("PASS off leaves placement to the OS");
+for (const setting of [undefined, "off"]) {
+  const free = await placement(setting);
+  assert.doesNotMatch(free.output, /TN_THREAD_PLACEMENT/);
+  assert.deepEqual(free.main, allowed, `${setting ?? "unset"} leaves the game thread's CPUs alone`);
+  console.log(`PASS ${setting ?? "unset"} leaves placement to the OS`);
+}
