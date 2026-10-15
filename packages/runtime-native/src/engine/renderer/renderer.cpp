@@ -2036,7 +2036,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (const DrawItem& item : items) {
         if (!item.nodeStorages) continue;
         for (const auto& [name, attribute] : *item.nodeStorages) {
-            const Handle buffer = geometry_->cache.sync(*attribute->store, WGPUBufferUsage_Storage);
+            const Handle buffer = geometry_->cache.sync(*attribute->store, WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc);
             const std::pair<Handle, uint64_t> bound{buffer, attribute->store->byteLength()};
             if (const auto found = externalStorage_.find(name); found != externalStorage_.end()) {
                 const Handle& was = found->second.first;
@@ -3521,6 +3521,41 @@ void Renderer::flushMipmaps() {
     mipGroups_.clear();
     mipViews_.clear();
 }
+
+GraphCompute& Renderer::graphCompute() {
+    if (!graphCompute_) graphCompute_ = std::make_unique<GraphCompute>(device_, geometry_->gpu, geometry_->cache);
+    return *graphCompute_;
+}
+
+void Renderer::prepareCompute(const shader::graph::Node& node) { (void)graphCompute().prepare(node); }
+
+void Renderer::dispatchCompute(const ComputeDispatch& dispatch) {
+    WGPUCommandEncoderDescriptor desc = {};
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &desc);
+    try {
+        graphCompute().record(encoder, dispatch);
+    } catch (...) {
+        wgpuCommandEncoderRelease(encoder);
+        throw;
+    }
+    WGPUCommandBufferDescriptor commandDesc = {};
+    // Its own submission: the uniform block written for this dispatch is not rewritten before it runs.
+    submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    wgpuCommandEncoderRelease(encoder);
+}
+
+GpuStatus Renderer::readStorage(const BufferAttribute& attribute, ReadbackCallback done) {
+    BufferStore& store = *attribute.store;
+    const Handle buffer = geometry_->cache.sync(store, WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst);
+    const uint64_t bytes = store.byteLength();
+    const uint64_t padded = (bytes + 3) & ~uint64_t{3};
+    return geometry_->gpu.readBuffer(buffer, 0, padded, [bytes, done = std::move(done)](GpuStatus status, std::vector<uint8_t> data) {
+        if (data.size() > bytes) data.resize(bytes);
+        done(status, std::move(data));
+    });
+}
+
+void Renderer::releaseStorage(const BufferAttribute& attribute) { geometry_->cache.forget(*attribute.store); }
 
 void Renderer::submit(WGPUCommandBuffer commands) {
     flushMipmaps();

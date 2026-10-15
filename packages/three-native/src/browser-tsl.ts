@@ -1,6 +1,7 @@
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { type IRttClasses, defineRtt } from "./rtt.js";
+import { defineStorage } from "./storage.js";
 import { defineStruct } from "./tsl-struct.js";
 import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
 /**
@@ -34,6 +35,12 @@ export interface ITslRuntime {
   effectParameter(node: number, name: string, value?: number): number;
   /** three's RenderPipeline: the post graph the web host draws between scene and output, or none. */
   setPost(node: number | null): void;
+  /** three's `renderer.compute(node)`: queues the kernel; it runs ahead of the next draw or read. */
+  compute(node: number): void;
+  /** `renderer.getArrayBufferAsync(attribute)`: the storage buffer's bytes after every queued kernel. */
+  readStorage(attribute: IEngineRef): Promise<ArrayBuffer>;
+  /** `renderer.deleteAttribute(attribute)`: drops the attribute's GPU copy. */
+  deleteStorage(attribute: IEngineRef): void;
 }
 
 /** Module functions the shared table answers (engine/abi/tsl_call.cpp). */
@@ -41,6 +48,7 @@ const FUNCTIONS = [
   "float",
   "int",
   "uint",
+  "atomicLoad",
   "vec2",
   "vec3",
   "vec4",
@@ -155,6 +163,7 @@ const CONSTANTS = [
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
+  "compute",
   "add",
   "sub",
   "mul",
@@ -405,7 +414,9 @@ export function defineTsl(
         const input = named
           ? args[0]
           : args.map((value) =>
-              typeof value === "number" ? (exports.float as (value: number) => unknown)(value) : value,
+              typeof value === "number"
+                ? (exports.float as (value: number) => unknown)(value)
+                : value,
             );
         return wrap(capture("Fn", callback, input));
       };
@@ -437,11 +448,14 @@ export function defineTsl(
       ),
     );
   };
-  // A storage buffer: setName names it, element(index) reads or assigns one element.
+  // three's storage(attribute, type, count) over an engine BufferAttribute (storage.ts): setName names the
+  // binding, element(index) reads or assigns one element of the attribute's own GPU buffer.
   let storageSerial = 0;
-  exports.instancedArray = (count: unknown, type: unknown) => {
-    if (!Number.isInteger(count) || (count as number) <= 0)
-      throw new TypeError("TN_TSL instancedArray: storage count must be positive");
+  const makeStorage = (attribute: unknown, type: unknown) => {
+    const ref =
+      typeof attribute === "object" && attribute !== null ? engineRef(attribute) : undefined;
+    if (ref === undefined || typeof type !== "string")
+      throw new TypeError("TN_TSL storage: expected an engine BufferAttribute and an element type");
     let label = `nodeStorageBuffer${++storageSerial}`;
     let atomic = false;
     const elements = new Set<WeakRef<ITslNode>>();
@@ -450,25 +464,43 @@ export function defineTsl(
         if (type !== "int" && type !== "uint")
           throw new TypeError("TN_TSL toAtomic: expected int or uint elements");
         atomic = true;
-        for (const ref of elements) {
-          const element = ref.deref();
-          if (element) runtime.release(call("storage:atomic", element[TSL_NODE], []));
+        for (const element of elements) {
+          const target = element.deref();
+          if (target) runtime.release(call("storage:atomic", target[TSL_NODE], []));
         }
         elements.clear();
         return buffer;
       },
+      toReadOnly: () => buffer,
       setName(name: unknown) {
         label = String(name);
         return buffer;
       },
       element(index: unknown) {
-        const element = wrap(call("storage:element", null, [label, type, index, Number(atomic)]));
+        const handle: TslArgValue = { kind: "handle", ref };
+        const element = wrap(
+          runtime.call("storage:object", null, [
+            handle,
+            { kind: "string", text: type },
+            { kind: "string", text: label },
+            argument("storage:object", 3, index),
+            { kind: "number", number: Number(atomic) },
+          ]),
+        );
         if (!atomic) elements.add(new WeakRef(element));
         return element;
       },
     };
     return buffer;
   };
+  if (classes !== undefined && "BufferAttribute" in classes)
+    Object.assign(
+      exports,
+      defineStorage(
+        { storage: makeStorage as never },
+        (classes as unknown as { BufferAttribute: never }).BufferAttribute,
+      ),
+    );
   for (const name of CONSTANTS) {
     let made: ITslNode | undefined;
     Object.defineProperty(exports, name, {

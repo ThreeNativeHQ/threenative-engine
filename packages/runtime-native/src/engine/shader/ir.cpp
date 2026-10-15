@@ -315,7 +315,10 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
     for (std::string_view name : binary) {
         if (function != name) continue;
         known = true;
-        if (args.size() != 2 || !floating(0) || type(0) != type(1)) error = "takes two floating values of one type";
+        // mod of two whole numbers of one type is WGSL's remainder, as three builds an integer `x % y`.
+        const bool whole = function == "mod" && args.size() == 2 && !type(0).isMatrix() &&
+                           (type(0).scalar == Type::Scalar::I32 || type(0).scalar == Type::Scalar::U32);
+        if (args.size() != 2 || !(floating(0) || whole) || type(0) != type(1)) error = "takes two floating values of one type";
         else result = type(0);
     }
     if (function == "dot" || function == "distance") {

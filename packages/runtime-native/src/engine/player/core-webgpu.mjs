@@ -1,7 +1,8 @@
 export * from "./core-three.mjs";
 import { BufferAttribute, Color, Material, NormalBlending } from "./core-three.mjs";
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
-import { syncUniforms } from "./core-tsl.mjs";
+import { StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms } from "./core-tsl.mjs";
+import { readStorageBytes } from "../../../../three-native/src/storage.ts";
 import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
 import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
@@ -98,6 +99,20 @@ export class WebGPURenderer {
     globalThis.tn.setRendererState(this);
     return globalThis.tn.compileAsync(root, camera, scene);
   }
+  // PRD-620: three's compute(node | node[]) queues kernels in call order; the player runs them before the
+  // frame's passes (and before a render target or a read of one). A dispatch size override has no native form.
+  compute(computeNodes, dispatchSize = null) {
+    if (dispatchSize !== null) throw new Error("TN_COMPUTE_DISPATCH_SIZE: renderer.compute(nodes, dispatchSize) is not available on the native engine; give the node its count.");
+    syncUniforms();
+    globalThis.tn.compute(computeNodes);
+  }
+  async computeAsync(computeNodes, dispatchSize = null) { this.compute(computeNodes, dispatchSize); }
+  // The buffer's bytes after every kernel queued before this call.
+  getArrayBufferAsync(attribute, target = null, offset = 0, count = -1) {
+    return readStorageBytes((a) => globalThis.tn.readStorage(a), attribute, target, offset, count);
+  }
+  // Drops the attribute's GPU copy; the next use uploads its CPU contents again.
+  deleteAttribute(attribute) { globalThis.tn.deleteStorage(attribute); return this; }
   dispose() {}
 }
 
@@ -143,13 +158,9 @@ export class RenderPipeline {
 }
 // three's NodeUpdateType, the constants a node's update schedule names.
 export const NodeUpdateType = Object.freeze({ NONE: "none", FRAME: "frame", RENDER: "render", OBJECT: "object" });
-// three's StorageBufferAttribute: a BufferAttribute that TSL storage() binds as a storage buffer.
-export class StorageBufferAttribute extends BufferAttribute {
-  constructor(count, itemSize, typeClass = Float32Array) {
-    super(ArrayBuffer.isView(count) ? count : new typeClass(count * itemSize), itemSize);
-  }
-}
-StorageBufferAttribute.prototype.isStorageBufferAttribute = true;
+// three's StorageBufferAttribute and StorageInstancedBufferAttribute: BufferAttributes that TSL storage() binds
+// as storage buffers (defined with the storage nodes, in core-tsl.mjs).
+export { StorageBufferAttribute, StorageInstancedBufferAttribute };
 export const MeshLambertNodeMaterial = unsupportedExport("MeshLambertNodeMaterial");
 export const MeshMatcapNodeMaterial = unsupportedExport("MeshMatcapNodeMaterial");
 export const MeshNormalNodeMaterial = unsupportedExport("MeshNormalNodeMaterial");
@@ -175,9 +186,7 @@ export class BlendMode {
 }
 
 // three's ReadbackBuffer (renderers/common/ReadbackBuffer.js): the caller-owned target of
-// `renderer.getArrayBufferAsync(attribute, target)`. The class is bound so core's argument check
-// (`target instanceof ReadbackBuffer`) runs; the native renderer has no `getArrayBufferAsync`, so
-// core's `readback` refuses by name ("webgpu renderer does not expose getArrayBufferAsync()").
+// `renderer.getArrayBufferAsync(attribute, target)`, which assigns `target.buffer` the bytes.
 export class ReadbackBuffer {
   isReadbackBuffer = true;
   name = "";

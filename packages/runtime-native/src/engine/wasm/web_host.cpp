@@ -7,6 +7,8 @@
 #include "engine/renderer/render_database.h"
 #include "engine/abi/binding.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/renderer/compute.h"
+#include "engine/scene/geometry.h"
 #include "engine/shader/graph/graph.h"
 
 #include <cstdio>
@@ -42,6 +44,7 @@ EventQueue events;
 std::unique_ptr<Renderer> renderer;
 RenderDatabase database;
 tn::engine::shader::graph::Node pendingPost;  // a RenderPipeline set before the device was ready
+ComputeQueue computeQueue;  // PRD-620: renderer.compute kernels and storage reads, run in call order
 // three's renderer settings the game last set (WebGPURenderer's defaults until it does), applied
 // before the next frame, as the V8 player's setRendererState does.
 OutputState output{std::nullopt, 1, true};
@@ -59,6 +62,12 @@ int fail(const std::string& message) {
     if (state != Failed) failure = message;
     state = Failed;
     return 1;
+}
+
+/** Runs the queued kernels and readbacks ahead of whatever draws or reads next; a refusal prints by name. */
+void flushCompute() {
+    if (state != Ready || !renderer || computeQueue.empty()) return;
+    computeQueue.flush(*renderer, [](const std::string& reason) { std::fprintf(stderr, "%s\n", reason.c_str()); });
 }
 
 void configureWebSurface() {
@@ -195,6 +204,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     wgpuSurfaceGetCurrentTexture(surface, &frame);
     if (frame.texture == nullptr) return fail("TN_WASM_SURFACE: no canvas texture");
     WGPUTextureView view = wgpuTextureCreateView(frame.texture, nullptr);
+    flushCompute();
     if (outputChanged) renderer->setOutput(output);
     outputChanged = false;
     database.shadowMapEnabled = shadowMap;
@@ -235,6 +245,7 @@ extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_h
     auto* camera = cameraOf(cameraHandle);
     if (target == nullptr || root == nullptr || camera == nullptr)
         return fail("TN_WASM_RENDER_TARGET: target, root or camera handle invalid");
+    flushCompute();  // a material in the target may read what a queued kernel writes
     const auto refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap);
     if (!refused.empty()) return fail(refused.front());
     return 0;
@@ -254,6 +265,7 @@ uint32_t nextTargetRead = 0;
 extern "C" uint32_t tnw_web_read_target(const tn_handle_t* targetHandle, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     auto* target = objectAs<RenderTarget>(targetHandle, "RenderTarget");
     if (target == nullptr) return fail("TN_WASM_READ_TARGET: not a RenderTarget"), 0;
+    flushCompute();
     const uint32_t id = ++nextTargetRead;
     targetReads[id] = {};
     const GpuStatus started = readRenderTarget(*target, x, y, w, h, [id](GpuStatus status, std::vector<uint8_t> bytes) {
@@ -279,6 +291,86 @@ extern "C" int tnw_web_read_target_take(uint32_t id, uint8_t* out, uint32_t capa
     if (status == 1) std::memcpy(out, found->second.bytes.data(), found->second.bytes.size());
     if (status != 0) targetReads.erase(found);
     return status;
+}
+
+/**
+ * PRD-620, three's renderer.compute(node): queues the kernel with its uniform values as of now. A kernel the
+ * engine cannot hold refuses here, by name, and leaves the renderer running (tnw_web_error says why).
+ */
+extern "C" int tnw_web_compute(tn_context_t* context, const uint64_t* node) {
+    auto graph = node == nullptr ? shader::graph::Node{} : tn::abi::tslNode(context, *node);
+    try {
+        if (!graph) throw std::runtime_error("TN_COMPUTE_NODE: renderer.compute takes the node Fn(() => { ... })().compute(count) makes");
+        computeQueue.dispatch(graph);
+    } catch (const std::exception& error) {
+        failure = error.what();
+        return 1;
+    }
+    return 0;
+}
+
+/** Runs everything queued so far; a read waits for it. */
+extern "C" void tnw_web_compute_flush() {
+    tnw_web_poll();
+    flushCompute();
+}
+
+namespace {
+/** getArrayBufferAsync's pending reads by id: the storage buffer's bytes once delivered. */
+std::map<uint32_t, TargetRead> storageReads;
+uint32_t nextStorageRead = 0;
+
+std::shared_ptr<BufferAttribute> attributeOf(const tn_handle_t* handle) {
+    auto* object = handle == nullptr ? nullptr : tn::abi::objectOf(*handle);
+    if (object == nullptr || object->cls != "BufferAttribute") return nullptr;
+    return std::static_pointer_cast<BufferAttribute>(object->ptr);
+}
+}  // namespace
+
+/** Queues a copy of the attribute's GPU buffer after every kernel queued before; returns its id, or 0. */
+extern "C" uint32_t tnw_web_read_storage(const tn_handle_t* attributeHandle) {
+    const auto attribute = attributeOf(attributeHandle);
+    if (!attribute) {
+        failure = "TN_NATIVE_READ_STORAGE: expected the BufferAttribute of a storage buffer";
+        return 0;
+    }
+    const uint32_t id = ++nextStorageRead;
+    storageReads[id] = {};
+    computeQueue.readback(attribute, [id](GpuStatus status, std::vector<uint8_t> bytes) {
+        auto found = storageReads.find(id);
+        if (found == storageReads.end()) return;
+        found->second.status = status == GpuStatus::Ok ? 1 : -1;
+        found->second.bytes = std::move(bytes);
+    });
+    return id;
+}
+
+/** The delivered read's byte length, or 0 while it is pending or failed. */
+extern "C" uint32_t tnw_web_read_storage_size(uint32_t id) {
+    const auto found = storageReads.find(id);
+    return found == storageReads.end() || found->second.status != 1 ? 0 : static_cast<uint32_t>(found->second.bytes.size());
+}
+
+/** The read's state (0 pending, 1 delivered, -1 failed); delivered bytes are copied to `out` and the read ends. */
+extern "C" int tnw_web_read_storage_take(uint32_t id, uint8_t* out, uint32_t capacity) {
+    auto found = storageReads.find(id);
+    if (found == storageReads.end()) return -1;
+    const int status = found->second.status;
+    if (status == 1 && (out == nullptr || capacity < found->second.bytes.size())) return -1;
+    if (status == 1) std::memcpy(out, found->second.bytes.data(), found->second.bytes.size());
+    if (status != 0) storageReads.erase(found);
+    return status;
+}
+
+/** three's renderer.deleteAttribute: drops the attribute's GPU copy once the kernels queued so far have run. */
+extern "C" int tnw_web_delete_storage(const tn_handle_t* attributeHandle) {
+    const auto attribute = attributeOf(attributeHandle);
+    if (!attribute) {
+        failure = "TN_NATIVE_DELETE_ATTRIBUTE: expected a BufferAttribute";
+        return 1;
+    }
+    computeQueue.release(attribute);
+    return 0;
 }
 
 /**

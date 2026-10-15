@@ -296,6 +296,18 @@ public:
      */
     void setStorage(const std::string& name, Handle buffer, uint64_t bytes) { externalStorage_[name] = {buffer, bytes}; }
 
+    /**
+     * PRD-620: `Fn(...)().compute(n)` over storage(attribute) buffers. prepareCompute compiles the node's
+     * pass (throwing TN_COMPUTE_* by name for a program it cannot hold); dispatchCompute submits one
+     * dispatch with the uniform values it was queued with, ahead of every later submission; readStorage
+     * copies the attribute's GPU buffer to the host (completing on a later drain); releaseStorage drops
+     * the attribute's GPU copy, which the next use uploads again from its CPU contents.
+     */
+    void prepareCompute(const shader::graph::Node& node);
+    void dispatchCompute(const ComputeDispatch& dispatch);
+    GpuStatus readStorage(const BufferAttribute& attribute, ReadbackCallback done);
+    void releaseStorage(const BufferAttribute& attribute);
+
     // Internal production admission: resources are validated before Bone boundaries become live.
     std::shared_ptr<GpuJointScene> prepareGpuJoints(Object3D& scene, std::shared_ptr<GpuJointScene> shared = {});
     std::shared_ptr<GpuJointScene> currentGpuJoints() const {
@@ -825,6 +837,8 @@ private:
     uint64_t gpuJointScan_ = ~uint64_t(0);
     Handle gpuJointLocals_;
     std::unique_ptr<JointComputePass> gpuJointPass_;
+    std::unique_ptr<GraphCompute> graphCompute_;
+    GraphCompute& graphCompute();
     bool bindGpuJoints(const std::shared_ptr<GpuJointScene>& plan);
     std::map<std::string, std::pair<Handle, uint64_t>> externalStorage_;  // setStorage, by name
     // A material's diffuse map: its GPU texture/sampler, and, per (program, texture), the bind group

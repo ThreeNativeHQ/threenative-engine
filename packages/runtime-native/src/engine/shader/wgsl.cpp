@@ -161,6 +161,7 @@ std::string WgslEmitter::inlined(ExprId id) const {
                 const std::string& fn = p_.names_[e.immediate];
                 if (fn == "greaterEqual") return "(" + expr(e.args[0]) + " >= " + expr(e.args[1]) + ")";
                 if (fn == "lessEqual") return "(" + expr(e.args[0]) + " <= " + expr(e.args[1]) + ")";
+                if (fn == "mod" && e.type.scalar != Type::Scalar::F32) return "(" + expr(e.args[0]) + " % " + expr(e.args[1]) + ")";
             }
             std::string out = e.op == Op::Call ? p_.names_[e.immediate] : type(e.type);
             if (out == "dFdx") out = "dpdx";
@@ -351,7 +352,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
             break;
         }
     }
-    out += stage == Stage::Compute ? "@compute @workgroup_size(64)\n" : stage == Stage::Vertex ? "@vertex\n" : "@fragment\n";
+    out += stage == Stage::Compute ? "@compute @workgroup_size(" + std::to_string(program.workgroupSize()) + ")\n" : stage == Stage::Vertex ? "@vertex\n" : "@fragment\n";
     out += "fn main(";
     bool first = true;
     uint32_t location = 0;

@@ -41,6 +41,10 @@ Type type(const std::string& name) {
     if (name == "vec2") return Type::vec(2);
     if (name == "vec3") return Type::vec(3);
     if (name == "vec4") return Type::vec(4);
+    for (int lanes = 2; lanes <= 4; ++lanes) {
+        if (name == "uvec" + std::to_string(lanes)) return Type::vec(lanes, Type::Scalar::U32);
+        if (name == "ivec" + std::to_string(lanes)) return Type::vec(lanes, Type::Scalar::I32);
+    }
     if (name == "mat3") return Type::mat(3, 3);
     if (name == "mat4") return Type::mat(4, 4);
     throw std::runtime_error("unsupported TSL type: " + name);
@@ -170,7 +174,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // TSL storage(attribute, type, count).element(index): the attribute's own data, bound under the
     // label setName gave it or, unnamed, one derived from the attribute (StorageBufferNode r185).
     if (!method && name == "storage:object") {
-        arity(4);
+        if (args.size() != 4 && args.size() != 5) throw std::runtime_error("storage needs an attribute, type, label, index and an optional atomic flag");
         if (args[0].kind != TslArg::Kind::Object || args[0].cls.find("BufferAttribute") == std::string::npos ||
             !args[0].object)
             throw std::runtime_error("storage needs an engine BufferAttribute");
@@ -178,7 +182,17 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (label.empty()) label = "nodeStorage" + std::to_string(reinterpret_cast<uintptr_t>(args[0].object.get()));
         g::Storage buffer = g::storage(label, type(text(args[1])));
         buffer.object = args[0].object;
+        if (args.size() == 5) *buffer.atomic = number(args[4]) != 0;
         return buffer.element(arg(3));
+    }
+    // r185's atomicLoad(element): the element of a toAtomic buffer; a read of one lowers to WGSL's atomicLoad.
+    if (!method && name == "atomicLoad") {
+        arity(1);
+        const auto target = arg(0);
+        if (!target || target->kind != g::Kind::StorageElement || !target->atomic || !*target->atomic ||
+            (target->type != Type::u32() && target->type != Type::i32()))
+            throw std::runtime_error("atomicLoad requires an integer element of a toAtomic storage buffer");
+        return target;
     }
     if (method && name == "storage:atomic") {
         arity(0); const auto node = receiver->node;
@@ -197,7 +211,9 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(1);
         const auto& self = receiver->node;
         if (text(args[0]).empty()) throw std::runtime_error("empty name");
-        if (!self || self->kind != g::Kind::Uniform) throw std::runtime_error("setName requires a uniform or storage buffer");
+        if (self && self->kind == g::Kind::Compute)  // a compute node's label names it in a refusal
+            return g::computeNode(self->args[0], self->bits, self->width, text(args[0]));
+        if (!self || self->kind != g::Kind::Uniform) throw std::runtime_error("setName requires a uniform, a compute node or a storage buffer");
         return g::uniform(text(args[0]), self->type, self->values);
     }
     if (name == "nodeObject") {
@@ -362,6 +378,19 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "dispose" && method) {
         arity(0);
         return lhs();
+    }
+    // PRD-620: `Fn(...)().compute(count, workgroupSize)`, the dispatch renderer.compute runs. A number
+    // count and workgroup size only; three's array forms (a 3D dispatch) refuse by name.
+    if (name == "compute" && method) {
+        if (args.empty() || args.size() > 2 || args[0].kind != TslArg::Kind::Number ||
+            (args.size() == 2 && args[1].kind != TslArg::Kind::Number))
+            throw std::runtime_error("compute takes a whole-number count and an optional whole-number workgroup size; a 2D or 3D dispatch is not supported");
+        const auto whole = [&](double value, const char* what) {
+            if (!(value >= 1) || value > std::numeric_limits<int32_t>::max() || value != std::floor(value))
+                throw std::runtime_error(std::string("compute ") + what + " must be a whole number of at least 1");
+            return static_cast<uint32_t>(value);
+        };
+        return g::computeNode(receiver->node, whole(args[0].number, "count"), args.size() == 2 ? whole(args[1].number, "workgroup size") : 64);
     }
     if (name == "color") {
         engine::Color value;

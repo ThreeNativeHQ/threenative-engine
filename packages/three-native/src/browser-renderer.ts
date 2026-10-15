@@ -4,9 +4,11 @@
  * surface and every draw; this class turns three's calls into host calls and reports what the
  * engine did. What it does not implement throws its diagnostic rather than doing nothing.
  */
-import { type TnAbiModule, engineRef } from "./browser-backend.js";
+import { type TnAbiModule, TSL_NODE, engineRef } from "./browser-backend.js";
+import { type ITslRuntime, isTslNode } from "./browser-tsl.js";
 import { defineRenderTargets } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
+import { readStorageBytes } from "./storage.js";
 
 /** The product host's exports beside the catalog ABI (all numbers: pointers, sizes, status). */
 type HostCall =
@@ -62,6 +64,7 @@ export function defineWebRenderer(
   module: WebEngineModule,
   Color: new (...args: unknown[]) => IColorLike,
   beforeRender: () => void = () => {},
+  tsl?: ITslRuntime,
 ): new (
   parameters?: Record<string, unknown>,
 ) => object {
@@ -311,6 +314,63 @@ export function defineWebRenderer(
 
     compileAsync(): Promise<void> {
       return Promise.resolve();
+    }
+
+    /**
+     * three's renderer.compute(node | node[]) (PRD-620): the kernels queue in call order, each with the uniform
+     * values it was called with, and run ahead of the next draw or read. A kernel the engine cannot lower
+     * refuses here, by name.
+     */
+    compute(computeNodes: unknown, dispatchSize: unknown = null): void {
+      if (tsl === undefined) unsupported("compute");
+      if (dispatchSize !== null)
+        throw new Error(
+          "TN_COMPUTE_DISPATCH_SIZE: renderer.compute(nodes, dispatchSize) is not available on the Wasm engine; give the node its count.",
+        );
+      beforeRender();
+      for (const node of Array.isArray(computeNodes) ? computeNodes : [computeNodes]) {
+        if (!isTslNode(node))
+          throw new TypeError(
+            "TN_COMPUTE_NODE: renderer.compute takes the node Fn(() => { ... })().compute(count) makes",
+          );
+        tsl.compute(node[TSL_NODE]);
+      }
+    }
+
+    async computeAsync(computeNodes: unknown, dispatchSize: unknown = null): Promise<void> {
+      this.compute(computeNodes, dispatchSize);
+    }
+
+    /** The attribute's storage bytes after every kernel queued before this call (three's resolved forms). */
+    getArrayBufferAsync(
+      attribute: object,
+      target: ArrayBuffer | { isReadbackBuffer?: boolean; buffer: unknown } | null = null,
+      offset = 0,
+      count = -1,
+    ): Promise<ArrayBuffer | { isReadbackBuffer?: boolean; buffer: unknown }> {
+      const runtime = tsl;
+      if (runtime === undefined) return unsupported("getArrayBufferAsync");
+      const ref = engineRef(attribute);
+      if (ref === undefined)
+        throw new TypeError(
+          "TN_NATIVE_READ_STORAGE: expected the BufferAttribute of a storage buffer",
+        );
+      return readStorageBytes(
+        (a) => runtime.readStorage(engineRef(a as object) ?? ref),
+        attribute,
+        target,
+        offset,
+        count,
+      );
+    }
+
+    /** Drops the attribute's GPU copy; the next use uploads its CPU contents again. */
+    deleteAttribute(attribute: object): this {
+      const ref = engineRef(attribute);
+      if (tsl === undefined || ref === undefined)
+        throw new TypeError("TN_NATIVE_DELETE_ATTRIBUTE: expected a BufferAttribute");
+      tsl.deleteStorage(ref);
+      return this;
     }
 
     getRenderTarget(): null {

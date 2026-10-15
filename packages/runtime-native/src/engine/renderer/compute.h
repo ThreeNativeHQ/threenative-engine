@@ -1,19 +1,26 @@
 #pragma once
 
 #include <array>
+#include <functional>
+#include <map>
 #include <memory>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <webgpu/webgpu.h>
 
+#include "engine/renderer/geometry_cache.h"
 #include "engine/renderer/gpu_resources.h"
+#include "engine/shader/graph/graph.h"
 #include "engine/shader/ir.h"
 #include "engine/shader/package.h"
 
 namespace tn::engine {
+
+class BufferAttribute;
 
 /**
  * A compute program from the shader IR dispatched over storage buffers (PRD-513 phase 1): one
@@ -37,14 +44,87 @@ public:
      */
     bool dispatch(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
                   const std::vector<std::pair<std::string, double>>& uniforms = {});
+    /**
+     * The graph form (PRD-620): `uniforms` carries one value per lane by name, as the game's uniform
+     * nodes held them, and a dispatch too long for one dimension spreads over rows of workgroups.
+     * Throws std::runtime_error naming the uniform or storage buffer the program cannot be given.
+     */
+    void dispatchValues(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
+                        const std::map<std::string, std::vector<float>>& uniforms);
+    const shader::StageModule& module() const { return module_; }
+
+private:
+    bool encode(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
+                const std::vector<uint8_t>& uniformBlock);
+    WGPUDevice device_;
+    GpuResources& gpu_;
+    shader::StageModule module_;
+    uint32_t workgroup_ = 64;
+    WGPUComputePipeline pipeline_ = nullptr;
+    Handle uniforms_;
+    std::string error_;
+};
+
+/** A compute node and the uniform values it was called with, so a later edit reaches only later calls. */
+struct ComputeDispatch {
+    shader::graph::Node node;
+    std::map<std::string, std::vector<float>> uniforms;
+    /** Snapshots `node`'s uniforms now. Throws unless `node` is a `Fn(...)().compute(n)` node. */
+    static ComputeDispatch of(const shader::graph::Node& node);
+};
+
+/**
+ * `Fn(...)().compute(count, workgroupSize)` nodes as WGSL compute passes (PRD-620). The body lowers
+ * through the shader graph into one `@compute` entry point guarded by `instanceIndex < count`; each
+ * storage(attribute) / instancedArray it touches binds the attribute's GPU copy, and a pass is
+ * compiled once per graph structure. A feature the program cannot hold refuses by name.
+ */
+class GraphCompute {
+public:
+    GraphCompute(WGPUDevice device, GpuResources& gpu, GeometryCache& cache) : device_(device), gpu_(gpu), cache_(cache) {}
+    /** Compiles the node's pass if it has none; throws std::runtime_error TN_COMPUTE_* with the reason. */
+    ComputePass& prepare(const shader::graph::Node& node);
+    /** Records one dispatch into `encoder`. */
+    void record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch);
 
 private:
     WGPUDevice device_;
     GpuResources& gpu_;
-    shader::StageModule module_;
-    WGPUComputePipeline pipeline_ = nullptr;
-    Handle uniforms_;
-    std::string error_;
+    GeometryCache& cache_;
+    std::unordered_map<uint64_t, std::unique_ptr<ComputePass>> passes_;
+};
+
+class Renderer;
+
+/**
+ * `renderer.compute` and `renderer.getArrayBufferAsync` in call order (PRD-620). A host queues them as
+ * the game calls and flushes before it draws, so a kernel runs ahead of the frame's passes and a
+ * readback sees every kernel queued before it. Nothing here needs the renderer until the flush.
+ */
+class ComputeQueue {
+public:
+    /** Queues a dispatch with the node's uniform values as of now. Lowers the node at once, so a kernel
+     *  the engine cannot hold refuses here, by name, at the game's call. */
+    void dispatch(const shader::graph::Node& node);
+    /** Queues a copy of `attribute`'s GPU buffer, as it stands after the dispatches queued so far. */
+    void readback(std::shared_ptr<BufferAttribute> attribute, ReadbackCallback done);
+    /** Queues the release of `attribute`'s GPU copy. */
+    void release(std::shared_ptr<BufferAttribute> attribute);
+    bool empty() const { return items_.empty(); }
+    /**
+     * Submits everything queued, in call order. A dispatch that fails goes to `failed` by name and the
+     * rest still run; a readback that cannot start completes with an error status.
+     */
+    void flush(Renderer& renderer, const std::function<void(const std::string&)>& failed);
+
+private:
+    struct Item {
+        ComputeDispatch dispatch;
+        std::shared_ptr<BufferAttribute> attribute;  // a readback or release
+        ReadbackCallback done;
+        bool release = false;
+    };
+    std::vector<Item> items_;
 };
 
 // Internal palette kernel. Indices are joint/packed-TRS/matrix offsets, never byte offsets.

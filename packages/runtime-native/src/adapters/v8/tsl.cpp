@@ -62,6 +62,10 @@ Type type(const std::string& name) {
         return Type::vec(3);
     if (name == "vec4")
         return Type::vec(4);
+    for (int lanes = 2; lanes <= 4; ++lanes) {
+        if (name == "uvec" + std::to_string(lanes)) return Type::vec(lanes, Type::Scalar::U32);
+        if (name == "ivec" + std::to_string(lanes)) return Type::vec(lanes, Type::Scalar::I32);
+    }
     if (name == "mat3")
         return Type::mat(3, 3);
     if (name == "mat4")
@@ -258,8 +262,10 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
             self->storage.name = label;
         else if (self->node->kind == g::Kind::Uniform)
             self->node = g::uniform(label, self->node->type, self->node->values);
+        else if (self->node->kind == g::Kind::Compute)  // a compute node's label names it in a refusal
+            self->node = g::computeNode(self->node->args[0], self->node->bits, self->node->width, label);
         else
-            throw std::runtime_error("setName requires a uniform or storage buffer");
+            throw std::runtime_error("setName requires a uniform, a compute node or a storage buffer");
         info.GetReturnValue().Set(info.This());
         return;
     }
@@ -510,6 +516,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "__effect",
                              "oneMinus",
                              "dispose",
+                             "compute",
                              "flipX",
                              "flipY",
                              "flipZ",
@@ -560,7 +567,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "ao", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform",
                              "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
-                             "atomicAdd", "atomicStore", "lightShadowMatrix", "wgslFunction", "texture3D", "getViewPosition", "transformNormalToView", "property"})
+                             "atomicAdd", "atomicStore", "atomicLoad", "lightShadowMatrix", "wgslFunction", "texture3D", "getViewPosition", "transformNormalToView", "property"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())

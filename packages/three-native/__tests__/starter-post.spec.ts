@@ -7,7 +7,9 @@ import { LUTCubeLoader as UpstreamLUTCubeLoader } from "three/addons/loaders/LUT
 import { describe, expect, it, vi } from "vitest";
 import { defineLUTCubeLoader } from "../src/addons/lut-cube-loader.js";
 import { definePostEffects } from "../src/addons/post-effects.js";
+import { type IBrowserRuntime, defineBrowserClasses } from "../src/browser-backend.js";
 import { type ITslRuntime, type TslArgValue, defineTsl } from "../src/browser-tsl.js";
+import { loadCatalog } from "../src/catalog.js";
 import { defineRtt } from "../src/rtt.js";
 import { defineStruct } from "../src/tsl-struct.js";
 import { defineWgslFn } from "../src/wgsl-fn.js";
@@ -309,17 +311,38 @@ describe("starter post bindings", () => {
   it("schedules atomic stores and adds through the Wasm statement scopes", () => {
     const calls: string[] = [];
     let serial = 0;
-    const { exports: tsl } = defineTsl({
-      call: (name) => {
-        calls.push(name);
-        return ++serial;
-      },
-      release: vi.fn(),
+    // storage is over an engine BufferAttribute, so the classes come from the registry over a bare engine.
+    let handle = 0;
+    const engine: IBrowserRuntime = {
+      typeId: () => 1,
+      construct: (name) => ({ key: `${name}:0:${++handle}:1`, type: 1 }),
+      invoke: () => null,
+      get: () => 2,
       set: vi.fn(),
-      setUniform: vi.fn(),
-      setPost: vi.fn(),
-      effectParameter: vi.fn(),
-    });
+      release: vi.fn(),
+      setCallback: vi.fn(),
+    };
+    const registry = JSON.parse(
+      readFileSync("packages/three-native/api/native-registry.json", "utf8"),
+    ) as Parameters<typeof defineBrowserClasses>[0];
+    const { classes } = defineBrowserClasses(registry, engine, loadCatalog(process.cwd()));
+    const { exports: tsl } = defineTsl(
+      {
+        call: (name) => {
+          calls.push(name);
+          return ++serial;
+        },
+        release: vi.fn(),
+        set: vi.fn(),
+        setUniform: vi.fn(),
+        setPost: vi.fn(),
+        effectParameter: vi.fn(),
+        compute: vi.fn(),
+        readStorage: vi.fn(),
+        deleteStorage: vi.fn(),
+      },
+      classes as never,
+    );
     const buffer = (
       tsl.instancedArray as (
         count: number,
@@ -333,7 +356,7 @@ describe("starter post bindings", () => {
     })();
     expect(calls).toEqual([
       "scope:open",
-      "storage:element",
+      "storage:object",
       "atomicStore",
       "atomicAdd",
       "scope:close",
@@ -353,6 +376,9 @@ describe("starter post bindings", () => {
       setUniform: vi.fn(),
       setPost: vi.fn(),
       effectParameter: vi.fn(),
+      compute: vi.fn(),
+      readStorage: vi.fn(),
+      deleteStorage: vi.fn(),
     });
     const seen: unknown[] = [];
     const blend = (
@@ -395,6 +421,9 @@ describe("starter post bindings", () => {
       setPost: vi.fn(),
       setUniform,
       effectParameter: vi.fn(() => 0),
+      compute: vi.fn(),
+      readStorage: vi.fn(),
+      deleteStorage: vi.fn(),
     });
     const reference = tsl.reference as (
       property: string,
@@ -437,6 +466,9 @@ describe("starter post bindings", () => {
       setUniform: vi.fn(),
       setPost: vi.fn(),
       effectParameter: vi.fn(() => 0),
+      compute: vi.fn(),
+      readStorage: vi.fn(),
+      deleteStorage: vi.fn(),
     };
     const { exports: tsl } = defineTsl(runtime);
     const float = tsl.float as (value: number) => object;

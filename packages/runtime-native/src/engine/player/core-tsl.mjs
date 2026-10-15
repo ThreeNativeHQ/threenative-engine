@@ -2,7 +2,8 @@
 import { liveUniforms, withConstValues } from "../../../../three-native/src/tsl-uniforms.ts";
 import { defineReflector } from "../../../../three-native/src/reflector.ts";
 import { definePass, markNormalTarget } from "../../../../three-native/src/pass-node.ts";
-import { Color, Object3D, PerspectiveCamera, Vector2, Vector3, Vector4 } from "./core-three.mjs";
+import { BufferAttribute, Color, Object3D, PerspectiveCamera, Vector2, Vector3, Vector4 } from "./core-three.mjs";
+import { defineStorage } from "../../../../three-native/src/storage.ts";
 import { defineStruct } from "../../../../three-native/src/tsl-struct.ts";
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 
@@ -21,8 +22,8 @@ export const syncUniforms = live.sync;
 export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const {
-  atomicAdd, atomicStore, lightShadowMatrix, attribute, uv, texture, renderOutput, Fn, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
-  instancedArray, add, sub, mul, div, negate, lessThan, greaterThan, equal, abs, sin, cos,
+  atomicAdd, atomicStore, atomicLoad, lightShadowMatrix, attribute, uv, texture, renderOutput, Fn, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
+  add, sub, mul, div, negate, lessThan, greaterThan, equal, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
   normalViewGeometry, instanceIndex, cameraViewMatrix, ivec2, nodeObject, reflect, textureLoad,
@@ -33,10 +34,15 @@ export const {
 } = globalThis.tsl;
 export const {
   oneMinus, screenCoordinate, normalGeometry, tangentGeometry, positionViewDirection, dFdx, dFdy, lengthSq,
-  normalLocal, tangentLocal, positionPrevious, storage,
+  normalLocal, tangentLocal, positionPrevious,
   atan, mod, fwidth, saturation, mat2, hash, time, transformDirection, normalWorldGeometry,
   getViewPosition, frameGroup, renderGroup, objectGroup, transformNormalToView, property,
 } = globalThis.tsl;
+
+// three's storage buffers over engine BufferAttributes (shared with the Wasm back end): `storage`,
+// `instancedArray` and `attributeArray` build the engine's storage node, whose kernels `renderer.compute` runs.
+export const { storage, instancedArray, attributeArray, StorageBufferAttribute, StorageInstancedBufferAttribute } =
+  defineStorage(globalThis.tsl, BufferAttribute);
 
 // three's pass(), mrt() and MRT slots over the player's one scene pass (shared with the Wasm back
 // end); the player draws the scene and camera a pass is pointed at.

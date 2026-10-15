@@ -13,19 +13,21 @@ On 2026-10-15 the starter booted on the native engine desktop player and then fa
 Use the upstream three.js API only (`instancedArray`, `storage`, `Fn().compute(count, workgroupSize)`, `renderer.compute` / `computeAsync`, `renderer.getArrayBufferAsync(attribute)`). Lower the compute node graph through the existing shader graph to a WGSL compute entry point. Allocate read-write storage buffers for `instancedArray` / `StorageBufferAttribute`, bind them to compute and render reads, queue dispatches in renderer order before the frame's render passes, and read back by a mapped staging copy that resolves the returned promise. The same code serves the V8 player and the Wasm web engine.
 
 ## Acceptance Criteria
-- [ ] AC-1 [local]: `instancedArray(Float32Array, "vec3")` and `instancedArray(count, type)` construct storage on V8 and Wasm. proof: native-engine ctest + vitest.
-- [ ] AC-2 [local]: a `Fn().compute(n)` kernel that writes storage runs through `renderer.compute`, and a render material reads the written values in the same frame. proof: GPU ctest with a pixel or readback assertion.
-- [ ] AC-3 [local]: `renderer.getArrayBufferAsync` returns the written bytes; atomics (`atomicAdd`, `atomicStore`, `atomicLoad`) give the exact expected counts. proof: GPU ctest.
+- [x] AC-1 [local]: `instancedArray(Float32Array, "vec3")` and `instancedArray(count, type)` construct storage on V8 and Wasm. proof: native-engine ctest + vitest. Passed: see Phase 1.
+- [x] AC-2 [local]: a `Fn().compute(n)` kernel that writes storage runs through `renderer.compute`, and a render material reads the written values in the same frame. proof: GPU ctest with a pixel or readback assertion.
+- [x] AC-3 [local]: `renderer.getArrayBufferAsync` returns the written bytes; atomics (`atomicAdd`, `atomicStore`, `atomicLoad`) give the exact expected counts. proof: GPU ctest.
 - [ ] AC-4 [local]: the starter (cloth and temporal rejection) and snow run on native desktop and web with their pins removed; playtests pass; a fresh visual judge returns NEUTRAL or IMPROVEMENT against legacy. proof: template playtests, judge verdict.
 
 ## Execution Phases
 #### Phase 1: storage and dispatch
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `src/engine/shader/graph/*`, `src/engine/renderer/*`, `src/engine/abi/bindings_*.cpp`, `src/adapters/v8/tsl.cpp`, `src/engine/player/core-tsl.mjs`, `packages/three-native/src/*` (Wasm facade).
-- [ ] Storage constructs and a compute kernel writes it before the frame's render reads it (AC-1, AC-2). proof: native-engine ctest + vitest.
+- [x] Storage constructs and a compute kernel writes it before the frame's render reads it (AC-1, AC-2). proof: native-engine ctest + vitest.
+  Result 2026-10-15: V8 player `native_engine_player_compute` passes (instancedArray count and typed-array forms, padded vec3, a vertex-stage `positionNode` read, a render-target read and a main-frame read of kernel output, in the same frame as the dispatch); red before the work was `COMPUTE_ERROR TN_TSL instancedArray: expected a finite number`. Wasm facade: `packages/three-native/__tests__/storage.spec.ts` (7 tests) and the browser page `examples/wasm-engine-boot/compute.html`, whose 9 component assertions pass on an NVIDIA Turing adapter. `ctest -L native-engine` 400/400, three-native vitest 161/161.
 #### Phase 2: readback and atomics
-**Status:** NOT STARTED
-- [ ] `getArrayBufferAsync` returns the written bytes and atomics give exact counts (AC-3). proof: GPU ctest.
+**Status:** DONE
+- [x] `getArrayBufferAsync` returns the written bytes and atomics give exact counts (AC-3). proof: GPU ctest.
+  Result 2026-10-15: `native_engine_player_compute` reads 256 floats, a padded vec3 buffer and a uint buffer back exactly, and 1000 threads count `[334,1000]` twice (a reset in its own dispatch between rounds). The same bytes come back on the Wasm page. `getArrayBufferAsync` takes no target, an ArrayBuffer target or a ReadbackBuffer, and refuses an offset or count that is not a multiple of 4. The WGSL is accepted by Dawn (desktop player) and by Chrome's Tint (Wasm page).
 #### Phase 3: templates
 **Status:** NOT STARTED
 - [ ] Starter and snow pass their playtests on native desktop and web, judged NEUTRAL or better (AC-4). proof: template playtests + judge.

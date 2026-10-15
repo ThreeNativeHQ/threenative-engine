@@ -174,11 +174,16 @@ export async function bindWebEngine(
   // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
   // and the wrapper safe point runs (collect: held while the engine references them).
   if (isWebHostModule(module))
-    bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, () => {
-      collect();
-      tsl?.sync();
-      audio.updateAudio();
-    });
+    bound.WebGPURenderer = defineWebRenderer(
+      module,
+      classes.Color as never,
+      () => {
+        collect();
+        tsl?.sync();
+        audio.updateAudio();
+      },
+      runtime.tsl,
+    );
   // A GLB through the engine's own glTF loader, for the web GLTFLoader (addons/gltf-loader-web.ts).
   const { loadGltf } = runtime;
   if (loadGltf !== undefined)

@@ -114,7 +114,15 @@ inline Node positionLocal(Where w = Where::current()) {
 inline Node uv(Where w = Where::current()) { return attribute("uv", Type::vec(2), w); }
 /** In a compute stage TSL's instanceIndex is the invocation's global x, as upstream builds it. */
 inline Node instanceIndex(Where w = Where::current()) {
-    if (program().stage() == Stage::Compute) return program().swizzle(program().builtin("globalInvocationId", w), "x", w);
+    if (program().stage() == Stage::Compute) {
+        const ExprId global = program().builtin("globalInvocationId", w);
+        const ExprId x = program().swizzle(global, "x", w);
+        const uint32_t stride = program().computeRowStride();
+        if (stride == 0) return x;
+        const ExprId row = program().mul(program().swizzle(global, "y", w),
+            program().construct(Type::u32(), {program().constant(static_cast<int32_t>(stride), w)}, w), w);
+        return program().add(x, row, w);
+    }
     return program().builtin("instanceIndex", w);
 }
 

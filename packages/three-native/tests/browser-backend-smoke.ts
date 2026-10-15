@@ -955,6 +955,9 @@ function traceTsl(real: ITslRuntime): ITrace {
       return real.effectParameter(node, name, value);
     },
     setPost: (node) => real.setPost(node),
+    compute: (node) => real.compute(node),
+    readStorage: (attribute) => real.readStorage(attribute),
+    deleteStorage: (attribute) => real.deleteStorage(attribute),
   };
   const live = defineTsl(runtime, constClasses);
   return { calls, sets, uniforms, released, runtime, tsl: live.exports, sync: live.sync };

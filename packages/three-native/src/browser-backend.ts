@@ -1210,7 +1210,15 @@ type TslCall =
   | "_tn_tsl_set"
   | "_tn_tsl_set_uniform"
   | "_tn_tsl_effect_parameter"
-  | "_tnw_web_set_post";
+  | "_tnw_web_set_post"
+  | "_tnw_web_compute"
+  | "_tnw_web_compute_flush"
+  | "_tnw_web_read_storage"
+  | "_tnw_web_read_storage_size"
+  | "_tnw_web_read_storage_take"
+  | "_tnw_web_delete_storage"
+  | "_tnw_web_poll"
+  | "_tnw_web_error";
 
 interface IAbiHelpers {
   scoped<T>(work: () => T): T;
@@ -1276,6 +1284,14 @@ function tslOf(
     _tn_tsl_set_uniform: setUniform,
     _tn_tsl_effect_parameter: effectParameter,
     _tnw_web_set_post: setPost,
+    _tnw_web_compute: computeNode,
+    _tnw_web_compute_flush: computeFlush,
+    _tnw_web_read_storage: readStorage,
+    _tnw_web_read_storage_size: readStorageSize,
+    _tnw_web_read_storage_take: readStorageTake,
+    _tnw_web_delete_storage: deleteStorage,
+    _tnw_web_poll: poll,
+    _tnw_web_error: webError,
   } = calls;
   if (
     call === undefined ||
@@ -1358,6 +1374,55 @@ function tslOf(
         h.scoped(() => {
           if (setPost === undefined) throw new Error("TN_WASM_POST: this module has no web host");
           if (setPost(context, nodeOf(node)) !== 0) throw new Error("TN_WASM_POST: refused");
+        }),
+      // PRD-620: renderer.compute and storage reads over the product web host.
+      compute: (node) =>
+        h.scoped(() => {
+          if (computeNode === undefined || webError === undefined)
+            throw new Error("TN_WASM_COMPUTE: this module has no web host");
+          if (computeNode(context, nodeOf(node)) !== 0)
+            throw new Error(abi.UTF8ToString(webError()));
+        }),
+      readStorage: async (attribute) => {
+        if (
+          readStorage === undefined ||
+          readStorageSize === undefined ||
+          readStorageTake === undefined ||
+          computeFlush === undefined ||
+          poll === undefined ||
+          webError === undefined
+        )
+          throw new Error("TN_WASM_COMPUTE: this module has no web host");
+        const id = h.scoped(() => {
+          const pointer = h.alloc(HANDLE);
+          h.writeHandle(pointer, attribute);
+          return readStorage(pointer);
+        });
+        if (id === 0) throw new Error(abi.UTF8ToString(webError()));
+        computeFlush();
+        for (;;) {
+          poll();
+          const size = readStorageSize(id);
+          if (size > 0 || readStorageTake(id, 0, 0) < 0) {
+            const out = abi._malloc(size) >>> 0;
+            try {
+              if (readStorageTake(id, out, size) === 1)
+                return abi.HEAPU8.slice(out, out + size).buffer;
+            } finally {
+              abi._free(out);
+            }
+            throw new Error("TN_NATIVE_READ_STORAGE: the read failed");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      },
+      deleteStorage: (attribute) =>
+        h.scoped(() => {
+          if (deleteStorage === undefined || webError === undefined)
+            throw new Error("TN_WASM_COMPUTE: this module has no web host");
+          const pointer = h.alloc(HANDLE);
+          h.writeHandle(pointer, attribute);
+          if (deleteStorage(pointer) !== 0) throw new Error(abi.UTF8ToString(webError()));
         }),
       setUniform: (node, lanes) =>
         h.scoped(() => {

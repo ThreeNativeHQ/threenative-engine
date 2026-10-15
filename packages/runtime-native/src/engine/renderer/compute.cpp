@@ -2,15 +2,22 @@
 #include "engine/renderer/pipeline_cache.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstring>
+#include <functional>
+#include <stdexcept>
+#include <unordered_set>
+
+#include "engine/renderer/renderer.h"
+#include "engine/shader/tsl/tsl.h"
 
 #include "mystral/webgpu_compat.h"
 
 namespace tn::engine {
 
 ComputePass::ComputePass(WGPUDevice device, GpuResources& gpu, const shader::Program& program)
-    : device_(device), gpu_(gpu), module_(shader::buildStage(program, 0)) {
+    : device_(device), gpu_(gpu), module_(shader::buildStage(program, 0)), workgroup_(program.workgroupSize()) {
     if (!module_.wgsl.ok()) {
         error_ = "TN_COMPUTE_PROGRAM: " + (module_.wgsl.errors.empty() ? std::string("invalid") : module_.wgsl.errors[0]);
         return;
@@ -39,17 +46,43 @@ ComputePass::~ComputePass() {
 bool ComputePass::dispatch(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
                            const std::vector<std::pair<std::string, double>>& uniforms) {
     if (!pipeline_) return false;
-    if (module_.uniformBlockSize) {
-        std::vector<uint8_t> block(module_.uniformBlockSize);
-        for (const auto& [name, value] : uniforms) {
-            for (const shader::UniformField& f : module_.uniforms) {
-                if (f.name != name) continue;
-                const float v = static_cast<float>(value);
-                std::memcpy(&block[f.offset], &v, 4);
-            }
+    std::vector<uint8_t> block(module_.uniformBlockSize);
+    for (const auto& [name, value] : uniforms) {
+        for (const shader::UniformField& f : module_.uniforms) {
+            if (f.name != name) continue;
+            const float v = static_cast<float>(value);
+            std::memcpy(&block[f.offset], &v, 4);
         }
-        gpu_.writeBuffer(uniforms_, 0, block.data(), block.size());
     }
+    return encode(encoder, storage, invocations, block);
+}
+
+void ComputePass::dispatchValues(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
+                                 const std::map<std::string, std::vector<float>>& uniforms) {
+    std::vector<uint8_t> block(module_.uniformBlockSize);
+    for (const shader::UniformField& f : module_.uniforms) {
+        const auto found = uniforms.find(f.name);
+        if (found == uniforms.end())
+            throw std::runtime_error("TN_COMPUTE_UNIFORM: " + f.name + " is the engine's own value and has no meaning in a compute kernel");
+        const std::vector<float>& lanes = found->second;
+        if (f.type.isMatrix() || lanes.size() != f.type.rows)
+            throw std::runtime_error("TN_COMPUTE_UNIFORM: " + f.name + " is " + f.type.name() + " and the node holds " +
+                                     std::to_string(lanes.size()) + " value(s)");
+        for (size_t i = 0; i < lanes.size(); ++i) {
+            // A uint or int uniform holds its whole number; a float one holds the float.
+            const uint32_t word = f.type.scalar == shader::Type::Scalar::U32 ? static_cast<uint32_t>(lanes[i])
+                : f.type.scalar == shader::Type::Scalar::I32 ? static_cast<uint32_t>(static_cast<int32_t>(lanes[i]))
+                : std::bit_cast<uint32_t>(lanes[i]);
+            std::memcpy(&block[f.offset + i * 4], &word, 4);
+        }
+    }
+    if (!pipeline_ || !encode(encoder, storage, invocations, block))
+        throw std::runtime_error(error_.empty() ? std::string("TN_COMPUTE_PIPELINE_REFUSED") : error_);
+}
+
+bool ComputePass::encode(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
+                         const std::vector<uint8_t>& uniformBlock) {
+    if (module_.uniformBlockSize) gpu_.writeBuffer(uniforms_, 0, uniformBlock.data(), uniformBlock.size());
     std::vector<WGPUBindGroupEntry> entries;
     size_t next = 0;
     for (const shader::Binding& b : module_.bindings) {
@@ -86,7 +119,10 @@ bool ComputePass::dispatch(WGPUCommandEncoder encoder, std::span<const Handle> s
     WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
     wgpuComputePassEncoderSetPipeline(pass, pipeline_);
     wgpuComputePassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
-    wgpuComputePassEncoderDispatchWorkgroups(pass, (invocations + 63) / 64, 1, 1);
+    // One row of at most 65535 workgroups; a longer dispatch stacks rows, which instanceIndex folds back.
+    const uint64_t groups = (static_cast<uint64_t>(invocations) + workgroup_ - 1) / workgroup_;
+    const uint32_t across = static_cast<uint32_t>(std::min<uint64_t>(groups, 65535));
+    wgpuComputePassEncoderDispatchWorkgroups(pass, across, across == 0 ? 1 : static_cast<uint32_t>((groups + across - 1) / across), 1);
     wgpuComputePassEncoderEnd(pass);
     wgpuComputePassEncoderRelease(pass);
     wgpuBindGroupRelease(group);
@@ -244,6 +280,110 @@ bool JointComputePass::dispatch(WGPUCommandEncoder encoder) {
     const bool ok = pass_->dispatch(encoder, storage_, count_);
     if (!ok) error_ = pass_->error();
     return ok;
+}
+
+namespace graph = shader::graph;
+
+namespace {
+// The BufferAttributes a compute graph's storage(attribute) / instancedArray nodes name, by binding name.
+void collectStorages(const graph::Node& node, std::unordered_map<std::string, const BufferAttribute*>& out,
+                     std::unordered_set<const graph::NodeData*>& seen) {
+    if (!node || !seen.insert(node.get()).second) return;
+    if (node->kind == graph::Kind::StorageElement && node->object)
+        out.emplace(node->name, static_cast<const BufferAttribute*>(node->object.get()));
+    for (const auto* list : {&node->args, &node->body, &node->otherwise})
+        for (const auto& child : *list) collectStorages(child, out, seen);
+}
+
+// The lowered program of a compute node, built once per structure and shared by every GraphCompute: a
+// node is checked when the game calls renderer.compute, which has no device yet. ponytail: never
+// pruned, like graph::keyId's table; one entry per distinct kernel.
+const shader::Program& loweredProgram(const graph::Node& node) {
+    static std::unordered_map<uint64_t, std::unique_ptr<shader::Program>> programs;
+    const uint64_t id = graph::keyId(node);
+    if (const auto found = programs.find(id); found != programs.end()) return *found->second;
+    const uint32_t count = static_cast<uint32_t>(node->bits), workgroup = node->width;
+    const uint64_t groups = (static_cast<uint64_t>(count) + workgroup - 1) / workgroup;
+    auto program = std::make_unique<shader::Program>(shader::Stage::Compute);
+    program->setWorkgroup(workgroup, groups > 65535 ? 65535 * workgroup : 0);
+    {
+        shader::tsl::Build build(*program);
+        const shader::ExprId index = shader::tsl::instanceIndex().id;
+        const shader::ExprId limit = program->construct(shader::Type::u32(), {program->constant(static_cast<int32_t>(count))});
+        // A thread past the count writes nothing, so the last workgroup's spare threads never count.
+        program->If(program->less(index, limit), [&] { graph::lower(node->args[0], *program); });
+    }
+    if (!program->ok()) {
+        const shader::Diagnostic& d = program->diagnostics().front();
+        throw std::runtime_error("TN_COMPUTE_PROGRAM: " + d.code + " " + d.node + ": " + d.reason +
+                                 (node->name.empty() ? "" : " (compute node " + node->name + ")"));
+    }
+    return *programs.emplace(id, std::move(program)).first->second;
+}
+}  // namespace
+
+ComputeDispatch ComputeDispatch::of(const graph::Node& node) {
+    if (!node || node->kind != graph::Kind::Compute)
+        throw std::runtime_error("TN_COMPUTE_NODE: renderer.compute takes the node Fn(() => { ... })().compute(count) makes");
+    (void)loweredProgram(node);
+    return {node, graph::uniforms(node)};
+}
+
+ComputePass& GraphCompute::prepare(const graph::Node& node) {
+    const uint64_t id = graph::keyId(node);
+    if (const auto found = passes_.find(id); found != passes_.end()) return *found->second;
+    auto pass = std::make_unique<ComputePass>(device_, gpu_, loweredProgram(node));
+    if (!pass->error().empty()) throw std::runtime_error(pass->error());
+    return *passes_.emplace(id, std::move(pass)).first->second;
+}
+
+void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch) {
+    ComputePass& pass = prepare(dispatch.node);
+    std::unordered_map<std::string, const BufferAttribute*> attributes;
+    std::unordered_set<const graph::NodeData*> seen;
+    collectStorages(dispatch.node, attributes, seen);
+    std::vector<Handle> storage;
+    for (const shader::Binding& b : pass.module().bindings) {
+        if (b.kind != shader::BindingKind::Storage) continue;
+        const auto found = attributes.find(b.name.substr(2));
+        if (found == attributes.end())
+            throw std::runtime_error("TN_COMPUTE_STORAGE: the kernel uses storage '" + b.name.substr(2) +
+                                     "' that no storage(attribute) or instancedArray owns");
+        // Copies in and out: a kernel's result is read back, and the CPU contents seed the buffer.
+        storage.push_back(cache_.sync(*found->second->store,
+                                      WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst));
+    }
+    pass.dispatchValues(encoder, storage, static_cast<uint32_t>(dispatch.node->bits), dispatch.uniforms);
+}
+
+void ComputeQueue::dispatch(const graph::Node& node) { items_.push_back({ComputeDispatch::of(node), nullptr, {}, false}); }
+
+void ComputeQueue::readback(std::shared_ptr<BufferAttribute> attribute, ReadbackCallback done) {
+    items_.push_back({{}, std::move(attribute), std::move(done), false});
+}
+
+void ComputeQueue::release(std::shared_ptr<BufferAttribute> attribute) {
+    items_.push_back({{}, std::move(attribute), {}, true});
+}
+
+void ComputeQueue::flush(Renderer& renderer, const std::function<void(const std::string&)>& failed) {
+    // Items queued while this runs (a completion callback never runs inside it) wait for the next flush.
+    std::vector<Item> items;
+    items.swap(items_);
+    for (Item& item : items) {
+        if (item.release) {
+            renderer.releaseStorage(*item.attribute);
+        } else if (item.attribute) {
+            const GpuStatus status = renderer.readStorage(*item.attribute, item.done);
+            if (status != GpuStatus::Ok) item.done(status, {});
+        } else {
+            try {
+                renderer.dispatchCompute(item.dispatch);
+            } catch (const std::exception& error) {
+                failed(error.what());
+            }
+        }
+    }
 }
 
 }  // namespace tn::engine

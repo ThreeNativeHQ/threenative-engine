@@ -39,6 +39,7 @@ enum class Kind : uint8_t {
     StorageElement, VarRead, LoopIndex,
     Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
     Pmrem, ScreenUv, Reflector, ViewportDepth, StructType, Struct, StructMember, RenderOutput, PipelineOutput,
+    Compute,
 };
 
 enum class UnOp : uint8_t { Negate };
@@ -212,6 +213,13 @@ struct Storage {
     Node element(Node index) const;
 };
 inline Storage storage(std::string_view name, Type element) { return Storage{std::string(name), element}; }
+
+/**
+ * TSL's `Fn(...)().compute(count, workgroupSize)` (PRD-620): the Body `body` as one compute dispatch
+ * of `count` invocations, `workgroupSize` threads to a group. `bits` holds the count, `width` the
+ * workgroup size and `name` the label setName gives it. It lowers through computeProgram, never lower().
+ */
+Node computeNode(Node body, uint32_t count, uint32_t workgroupSize = 64, std::string label = {});
 
 /** Builds a function body: the statement nodes in program order, nested by If and Loop. */
 class Block {

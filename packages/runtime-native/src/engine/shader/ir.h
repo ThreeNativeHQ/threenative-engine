@@ -173,6 +173,14 @@ public:
      * as three's is, and only the programs of a frame that draws a second pipeline depth-Equal against the colour pass (a normal pass, TRAA's velocity pass) ask for it.
      */
     void setInvariantPosition(bool on) { invariantPosition_ = on; }
+    /**
+     * A compute stage's threads per workgroup (WGSL `@workgroup_size`), and the width in invocations
+     * of one row of workgroups when a dispatch is too long for one dimension (0: one row). TSL's
+     * instanceIndex is then `x + y * rowStride`, so a kernel never sees the split.
+     */
+    void setWorkgroup(uint32_t size, uint32_t rowStride = 0) { workgroupSize_ = size; computeRowStride_ = rowStride; }
+    uint32_t workgroupSize() const { return workgroupSize_; }
+    uint32_t computeRowStride() const { return computeRowStride_; }
 
     /**
      * Canonical text: one line per statement, expressions numbered by first use. `typed` suffixes
@@ -237,6 +245,7 @@ private:
     };
     std::vector<OutputSlot> outputs_;
     bool invariantPosition_ = false;
+    uint32_t workgroupSize_ = 64, computeRowStride_ = 0;
     std::vector<std::vector<Stmt>> blocks_;
     uint32_t current_ = 0;
     std::vector<Diagnostic> diagnostics_;

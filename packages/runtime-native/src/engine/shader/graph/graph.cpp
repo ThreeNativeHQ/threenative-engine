@@ -74,6 +74,8 @@ private:
     std::vector<ExprId> aggregate(Node node);
     std::vector<VarId> aggregateReturns_;
     ExprId convert(ExprId value, Type target);
+    /** A storage element's index: a float (the JS number 0) is the whole number it holds, as three builds it as uint. */
+    ExprId index(const Node& element);
 
     Program& program_;
     const std::unordered_map<std::string, ExprId>& inputs_;
@@ -103,6 +105,11 @@ ExprId Lowerer::convert(ExprId value, Type target) {
         return convert(part, target);
     }
     return program_.construct(target, {value});
+}
+
+ExprId Lowerer::index(const Node& element) {
+    const ExprId value = expression(element->args[0]);
+    return value != kInvalid && program_.expr(value).type == Type::f32() ? convert(value, Type::u32()) : value;
 }
 
 ExprId Lowerer::expression(Node node) {
@@ -165,7 +172,7 @@ ExprId Lowerer::emit(Node node) {
     switch (d.kind) {
         case Kind::AtomicAdd: {
             const auto& target = *d.args[0];
-            return program_.atomicAdd(ensureStorage(target), expression(target.args[0]), convert(expression(d.args[1]), target.type));
+            return program_.atomicAdd(ensureStorage(target), index(d.args[0]), convert(expression(d.args[1]), target.type));
         }
         case Kind::AtomicStore: throw std::runtime_error("atomicStore has no return value");
         case Kind::WgslFunction: throw std::runtime_error("wgslFn must be called before use");
@@ -350,7 +357,7 @@ ExprId Lowerer::emit(Node node) {
                                        ? program_.texture3d(d.name) : program_.texture2d(d.name), coordinate);
         }
         case Kind::StorageElement:
-            return program_.loadStorage(ensureStorage(d), expression(d.args[0]));
+            return program_.loadStorage(ensureStorage(d), index(node));
         case Kind::VarRead: { const auto variable = ensureVar(d.args[0]); return variable == noVar ? kInvalid : program_.load(variable); }
         case Kind::LoopIndex: {
             const auto found = loopIndex_.find(&d);
@@ -393,7 +400,7 @@ void Lowerer::statement(Node node) {
         case Kind::Call: case Kind::AtomicAdd: (void)expression(node); return;
         case Kind::AtomicStore: {
             const auto& target = *s.args[0];
-            program_.store(ensureStorage(target), expression(target.args[0]), convert(expression(s.args[1]), target.type));
+            program_.store(ensureStorage(target), index(s.args[0]), convert(expression(s.args[1]), target.type));
             return;
         }
         case Kind::Return: {
@@ -436,8 +443,7 @@ void Lowerer::statement(Node node) {
                 program_.assign(variable, program_.construct(type, parts));
             } else if (target->kind == Kind::StorageElement) {
                 const uint32_t buffer = ensureStorage(*target);
-                const ExprId index = expression(target->args[0]);
-                program_.store(buffer, index, expression(s.args[1]));
+                program_.store(buffer, index(target), convert(expression(s.args[1]), target->type));
             }
             return;
         }
@@ -741,6 +747,20 @@ void Block::Loop(int32_t count, const std::function<void(Node)>& body) {
 }
 
 void Block::append(Node statement) { blocks_.back()->push_back(std::move(statement)); }
+
+Node computeNode(Node body, uint32_t count, uint32_t workgroupSize, std::string label) {
+    if (!body || body->kind != Kind::Body)
+        throw std::runtime_error("compute needs a function that makes statements: Fn(() => { ... })().compute(count)");
+    if (count == 0) throw std::runtime_error("compute count must be positive");
+    if (workgroupSize == 0 || workgroupSize > 256) throw std::runtime_error("compute workgroup size must be in [1, 256]");
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Compute;
+    data->bits = count;
+    data->width = workgroupSize;
+    data->name = std::move(label);
+    data->args = {std::move(body)};
+    return data;
+}
 
 Node Block::node() const {
     auto data = std::make_shared<NodeData>();
