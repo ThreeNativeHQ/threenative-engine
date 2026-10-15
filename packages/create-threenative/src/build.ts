@@ -1574,9 +1574,12 @@ export function engineDesktopPlayer(
   cwd = process.cwd(),
 ): string {
   const explicit = env.THREENATIVE_ENGINE_PLAYER;
-  return explicit === undefined
-    ? path.join(runtimeRoot, "build", "tn-engine-ui", "tn-native-engine-player-v8")
-    : path.resolve(cwd, explicit);
+  if (explicit !== undefined) return path.resolve(cwd, explicit);
+  const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
+  const checkout = path.join(runtimeRoot, "build", "tn-engine-ui", filename);
+  return existsSync(checkout)
+    ? checkout
+    : path.join(runtimeRoot, "prebuilt", `${process.platform}-${process.arch}`, filename);
 }
 
 /** The desktop package of a game with `engine: "native"`: the engine player, the game on its own three, cooked assets and UI. */

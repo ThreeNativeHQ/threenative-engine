@@ -18,8 +18,17 @@ const core = dirname(require.resolve("@threenative/core/package.json"));
 const threeNative = dirname(require.resolve("@threenative/three-native/package.json"));
 const assetsEntry = resolve(dirname(require.resolve("@threenative/assets/package.json")), "dist/index.js");
 
+// Player facades share source with sibling packages; installed packages need their resolved roots.
+const packageImports = { name: "native-player-packages", setup(builder) {
+  builder.onResolve({ filter: /^\.\.\/\.\.\/\.\.\/\.\.\/(?:three-native|core)\/src\// }, (args) => {
+    if (!args.importer.startsWith(`${player}/`)) return;
+    const [, name, source] = /^\.\.\/\.\.\/\.\.\/\.\.\/(three-native|core)\/(.+)$/.exec(args.path);
+    return { path: resolve(name === "core" ? core : threeNative, source) };
+  });
+} };
+
 function rejectUpstream(metafile) {
-  const upstream = Object.keys(metafile.inputs).filter((file) => /(?:^|\/)node_modules\/(?:.*\/)?three\//.test(file));
+  const upstream = Object.keys(metafile.inputs).filter((file) => /(?:^|\/)node_modules\/three\//.test(file));
   if (upstream.length) throw new Error(`TN_NATIVE_ENGINE_UPSTREAM: ${upstream.join(", ")}`);
 }
 
@@ -119,7 +128,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     logLevel: "silent", metafile: true, sourcemap: "inline", sourcesContent: true,
     // A script entry that imports core's loader by relative path (the load test's Fox) would inline the
     // browser loader and its GLTFLoader; it reads the cooked package like core's own imports do.
-    plugins: [{ name: "native-assets", setup(builder) {
+    plugins: [packageImports, { name: "native-assets", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
         if (resolve(args.resolveDir, args.path) === resolve(core, "src/assets.js"))
           return { path: resolve(player, "core-assets.mjs"), external: true };
@@ -164,7 +173,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
   const exports = new Map(await Promise.all(Object.values(modules).map(async (facade) => {
     // A facade's own exports; `three` inside one (an addon over the engine) is the facade above.
     const result = await build({ entryPoints: [facade], bundle: true, write: false, format: "esm",
-      metafile: true, logLevel: "silent", external: ["three"] });
+      metafile: true, logLevel: "silent", external: ["three"], plugins: [packageImports] });
     return [facade, Object.values(result.metafile.outputs)[0].exports];
   })));
   const unresolved = new Map();
@@ -175,7 +184,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     bundle: true, write: false, format: "iife", platform: "neutral", target: "es2022",
     conditions: ["threenative-native"], define: { "import.meta.env": "{}", ...define }, metafile: true,
     logLevel: "silent", outfile, sourcemap: "external", sourcesContent: true,
-    plugins: [{ name: "native-engine", setup(builder) {
+    plugins: [packageImports, { name: "native-engine", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
         if (args.importer.startsWith(`${resolve(core, "src")}/`))
           return { path: resolve(player, "core-assets.mjs") };
