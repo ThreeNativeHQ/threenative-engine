@@ -145,7 +145,7 @@ describe("assemblePatches", () => {
 
     const { basePatch } = await assemblePatches({ patchedDir, pin, stockDir });
     const headers = basePatch.match(/^diff --git /gmu) ?? [];
-    expect(headers.length).toBe(30);
+    expect(headers.length).toBe(Object.keys(pin.baseFinalHashes).length);
     expect(basePatch).not.toContain("node_modules");
     expect(basePatch).not.toContain("diff --git a/package.json");
     expect(basePatch).not.toContain("b/package-lock.json");
@@ -186,20 +186,24 @@ describe("assemblePatches", () => {
     await writeFile(join(patchedDir, rel), "// current renderer\n", "utf8");
 
     const { basePatch, upgradePatch } = await assemblePatches({ patchedDir, pin, stockDir });
-    expect(Object.keys(pin.baseFinalHashes)).toHaveLength(30);
-    expect(pin.frozenCompatPairs).toHaveLength(35);
+    expect(Object.keys(pin.baseFinalHashes)).toHaveLength(31);
+    expect(pin.frozenCompatPairs).toHaveLength(64);
 
     const json = JSON.parse(upgradePatch);
-    expect(Object.keys(json.generatedFinalHashes)).toHaveLength(30);
-    expect(json.acceptedLegacyCompatPairs).toHaveLength(35);
-    expect(Object.keys(json.acceptedLegacyFinalHashes)).toHaveLength(30);
+    expect(Object.keys(json.generatedFinalHashes)).toHaveLength(
+      Object.keys(pin.baseFinalHashes).length,
+    );
+    expect(json.acceptedLegacyCompatPairs).toHaveLength(64);
+    expect(Object.keys(json.acceptedLegacyFinalHashes)).toHaveLength(
+      Object.keys(pin.baseFinalHashes).length,
+    );
     expect(json.generatedFinalHashes[rel]).toBe(blobHash("// current renderer\n"));
     expect(json.acceptedLegacyFinalHashes[rel]).toBe(pin.baseFinalHashes[rel]);
 
     const bundled = JSON.parse(
       brotliDecompressSync(Buffer.from(json.bundleBrotliBase64, "base64")).toString("utf8"),
     );
-    expect(Object.keys(bundled)).toHaveLength(30);
+    expect(Object.keys(bundled)).toHaveLength(Object.keys(pin.baseFinalHashes).length);
     expect(basePatch).toContain(
       "diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js",
     );

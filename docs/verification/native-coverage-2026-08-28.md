@@ -2,18 +2,18 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-46 native contract targets; 3 configured
+47 native contract targets; 3 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 60 | 82.19% |
-| `src/audio/` | 1471 | 1296 | 88.10% |
+| `src/audio/` | 1471 | 1301 | 88.44% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
 | `src/cli/` | 1690 | 1242 | 73.49% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2785 | 2214 | 79.50% |
+| `src/js/` | 2785 | 2212 | 79.43% |
 | `src/platform/` | 1460 | 1003 | 68.70% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
 | `src/runtime.cpp` | 2425 | 1890 | 77.94% |
@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9802 | 7492 | 76.43% |
+| `src/webgpu/` | 9842 | 7566 | 76.87% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24745** | **19382** | **78.33%** |
+| **TOTAL** | **24785** | **19459** | **78.51%** |
 
-Source digest: `sha256:6641642a6478104268025fcdd02b7ae3af4a7d1a8d8f58bbe19899fced8e3f21`
+Source digest: `sha256:2828ae43f9f7f863426676c8b76acf9a02576361e410f0fafac09a8df706b1b9`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -48,7 +48,7 @@ change requires this opt-in command to refresh the record.
 | `src/storage/` | 86.54% |
 | `src/utils/` | 0.00% |
 | `src/vfs/` | 76.59% |
-| `src/webgpu/` | 71.72% |
+| `src/webgpu/` | 71.87% |
 | `src/webtransport/` | 72.50% |
 | `src/workers/` | 80.69% |
 

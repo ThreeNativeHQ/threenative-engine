@@ -192,8 +192,10 @@ async function tinyTree(
 }
 
 describe("the versioned JSON upgrade patch", () => {
-  it("frozen fixture matches the shipped final hashes for all 30 registered targets", () => {
-    expect(Object.keys(FIXTURE.targetTexts)).toHaveLength(30);
+  it("frozen fixture matches the shipped final hashes for all registered targets", () => {
+    expect(Object.keys(FIXTURE.targetTexts).sort()).toEqual(
+      Object.keys(UPGRADE.acceptedLegacyFinalHashes).sort(),
+    );
     for (const [rel, hash] of Object.entries(UPGRADE.acceptedLegacyFinalHashes)) {
       expect(blobHash(FIXTURE.targetTexts[rel] ?? ""), rel).toBe(hash);
     }

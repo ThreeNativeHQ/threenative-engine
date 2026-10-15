@@ -23,6 +23,13 @@ const metahumanTarget = "threenative-metahuman-bindings-test";
 const videoTarget = "threenative-video-recorder-state-test";
 
 export const executionContracts = {
+  "threenative-transient-attachments-test": {
+    invocations: [
+      { args: [], passLine: "native transient attachments host contract passed:" },
+      { args: ["--feature-off"], passLine: "native transient attachments host contract passed:" },
+      { args: ["--direct"], passLine: "native transient attachments host contract passed:" },
+    ],
+  },
   "threenative-exposure-graph-test": {
     invocations: [
       { args: [], passLine: "native exposure graph contract passed" },

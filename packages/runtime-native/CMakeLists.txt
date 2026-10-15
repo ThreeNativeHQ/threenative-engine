@@ -2390,6 +2390,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         target_include_directories(threenative-exposure-graph-test PRIVATE ${TN_EXPOSURE_WGPU_INCLUDES})
     endif()
 
+    add_executable(threenative-transient-attachments-test EXCLUDE_FROM_ALL
+        tests/transient_attachments_test.cpp)
+    target_link_libraries(threenative-transient-attachments-test PRIVATE mystral-runtime)
+    if(MYSTRAL_USE_DAWN)
+        target_include_directories(threenative-transient-attachments-test PRIVATE ${DAWN_INCLUDE_DIR})
+    elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+        target_include_directories(threenative-transient-attachments-test PRIVATE ${WGPU_INCLUDE_DIR})
+    endif()
+
     add_executable(threenative-timestamp-query-test EXCLUDE_FROM_ALL
         tests/timestamp_query_test.cpp)
     target_link_libraries(threenative-timestamp-query-test PRIVATE mystral-runtime)
@@ -2724,6 +2733,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-pipeline-cache-lifecycle-test)
     tn_register_contract_test(threenative-pipeline-cache-test)
     tn_register_contract_test(threenative-stall-budget-hitch-test)
+    tn_register_contract_test(threenative-transient-attachments-test)
+    add_test(NAME threenative-transient-attachments-test-feature-off
+        COMMAND $<TARGET_FILE:threenative-transient-attachments-test> --feature-off)
+    add_test(NAME threenative-transient-attachments-test-direct
+        COMMAND $<TARGET_FILE:threenative-transient-attachments-test> --direct)
+    set_tests_properties(threenative-transient-attachments-test-feature-off
+        threenative-transient-attachments-test-direct PROPERTIES LABELS "native-contract")
     tn_register_contract_test(threenative-timestamp-query-test)
     tn_register_contract_test(threenative-exposure-graph-test)
     add_test(NAME threenative-exposure-graph-test-validation-negative

@@ -916,6 +916,9 @@ static WGPUFeatureName jsFeatureNameToWGPU(const std::string& featureName) {
     // resolveQuerySet. Answered from the real adapter and device below, so an adapter without it
     // still reports false — the feature is advertised because it works, not because it is named.
     if (featureName == "timestamp-query") return WGPUFeatureName_TimestampQuery;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    if (featureName == "transient-attachments") return WGPUFeatureName_TransientAttachments;
+#endif
 #if defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU)
     // The feature behind three's SSGI target format (RGBFormat + UnsignedInt101111Type maps to
     // an rg11b10ufloat render target). Both shipped WebGPU C headers define this enum; without
