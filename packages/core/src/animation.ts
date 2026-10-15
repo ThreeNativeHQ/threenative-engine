@@ -136,7 +136,7 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   const restore = objects.map((object) => ({
     object,
     position: object.position.clone(),
-    quaternion: object.quaternion.clone(),
+    rotation: object.rotation.clone(),
     scale: object.scale.clone(),
   }));
 
@@ -163,7 +163,7 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
     mixer.uncacheClip(clip);
     for (const entry of restore) {
       entry.object.position.copy(entry.position);
-      entry.object.quaternion.copy(entry.quaternion);
+      entry.object.rotation.copy(entry.rotation);
       entry.object.scale.copy(entry.scale);
     }
     root.updateMatrixWorld(true);

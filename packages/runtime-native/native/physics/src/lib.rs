@@ -403,7 +403,11 @@ impl Simulation {
         vertices: Vec<Point3<Real>>,
         indices: Vec<[u32; 3]>,
     ) -> bool {
-        let Ok(collider) = ColliderBuilder::trimesh(vertices, indices) else {
+        let Ok(collider) = ColliderBuilder::trimesh_with_flags(
+            vertices,
+            indices,
+            TriMeshFlags::FIX_INTERNAL_EDGES,
+        ) else {
             return false;
         };
         self.insert_body(options, collider)

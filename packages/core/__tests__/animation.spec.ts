@@ -869,6 +869,22 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
       ),
     ]);
 
+  it("preserves exact Euler angles and order while measuring a foot-plant stride", () => {
+    const root = new Object3D();
+    const foot = new Object3D();
+    foot.name = "Foot";
+    root.add(foot);
+    root.rotation.set(0, Math.PI, 0);
+    foot.rotation.set(0, Math.PI, 0, "ZYX");
+    const player = new AnimationPlayer({ root, clips: [plantedWalk()] });
+    player.play("walk");
+    player.update(1 / 60);
+
+    expect(player.stride.clipGroundSpeed).toBeGreaterThan(0);
+    expect(root.rotation.toArray()).toEqual([0, Math.PI, 0, "XYZ"]);
+    expect(foot.rotation.toArray()).toEqual([0, Math.PI, 0, "ZYX"]);
+  });
+
   it("matches an in-place walk cycle from the ground its planted foot sweeps", () => {
     const { body, player } = character({ clips: [plantedWalk()] });
     player.play("walk");

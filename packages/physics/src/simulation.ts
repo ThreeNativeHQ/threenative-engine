@@ -757,7 +757,11 @@ export function createWebPhysicsShape(
   else if (shape.kind === "trimesh") {
     if (shape.vertices === undefined || shape.indices === undefined)
       throw new Error("CollisionShape3D.trimesh is missing mesh data.");
-    descriptor = rapier.ColliderDesc.trimesh(shape.vertices, shape.indices);
+    descriptor = rapier.ColliderDesc.trimesh(
+      shape.vertices,
+      shape.indices,
+      rapier.TriMeshFlags.FIX_INTERNAL_EDGES,
+    );
   } else if (shape.kind === "convexHull") {
     if (shape.vertices === undefined)
       throw new Error("CollisionShape3D.convexHull is missing vertices.");

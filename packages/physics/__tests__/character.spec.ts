@@ -44,6 +44,35 @@ afterEach(() => {
 });
 
 describe("CharacterBody3D", () => {
+  it("falls beside a trimesh box while moving into its vertical face", async () => {
+    const { ctx, plugin } = await setup();
+    const wall = new Mesh(new BoxGeometry(3, 10, 2.6));
+    wall.position.set(1.5, -5, 0);
+    const body = new RigidBody3D({
+      object: wall,
+      physics: ctx.physics,
+      shape: CollisionShape3D.fromMesh(wall, "trimesh"),
+      type: "fixed",
+    });
+    const mesh = new Group();
+    mesh.position.set(-0.32, -1, 0);
+    const character = new CharacterBody3D({
+      autostep: { maxHeight: 0.4, minWidth: 0.2 },
+      object: mesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.6, 0.3),
+    });
+    for (let tick = 0; tick < 60; tick += 1) {
+      character.velocity.x = 2;
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+      expect(character.grounded, `tick ${tick}`).toBe(false);
+    }
+    expect(mesh.position.y).toBeLessThan(-2);
+    character.dispose();
+    body.dispose();
+  });
+
   it("should accumulate gravity into velocity when airborne", async () => {
     const { ctx, plugin } = await setup();
     const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
