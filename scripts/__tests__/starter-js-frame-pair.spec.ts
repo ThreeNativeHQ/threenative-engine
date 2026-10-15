@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
@@ -171,3 +171,76 @@ ${step.slice(start, end)}
   );
   expect(step).not.toContain('node "$runtime/scripts/bundle.mjs"');
 });
+
+for (const failPair of [false, true]) {
+  it(`restores the verified consumer after the actual paired step ${failPair ? "fails" : "succeeds"}`, () => {
+    const workflow = readFileSync(".github/workflows/native-platforms.yml", "utf8");
+    const step = workflow.slice(
+      workflow.indexOf("- name: Compare paired starter JS"),
+      workflow.indexOf("- name: Upload paired starter JS"),
+    );
+    const shell = step
+      .slice(step.indexOf("          set -euo pipefail"))
+      .split("\n")
+      .map((line) => line.replace(/^ {10}/u, ""))
+      .join("\n");
+    const root = makeTempDirSync("starter-paired-restore-");
+    const target = join(root, "threenative-starter-native");
+    const runtime = join(root, "packages/runtime-native");
+    const evidence = join(runtime, "artifacts/starter-linux-arm64/js-frame-pair");
+    for (const path of [
+      join(runtime, "build/tn-linux"),
+      join(target, "dist-native"),
+      join(target, "public"),
+    ])
+      mkdirSync(path, { recursive: true });
+    const consumer = join(target, "dist-native/threenative-starter-native");
+    writeFileSync(consumer, "verified consumer bytes");
+    chmodSync(consumer, 0o751);
+    writeFileSync(join(runtime, "build/tn-linux/mystral"), "verified V8 host");
+    writeFileSync(join(runtime, "build/tn-linux/CMakeCache.txt"), "TN_ENABLE_CANVAS2D:BOOL=ON\n");
+    writeFileSync(join(target, "threenative.config.ts"), 'resolutionScale: "auto"');
+    const stubs = `
+cmake() {
+  case "$*" in
+    *--build*) printf quickjs-host > "$runtime/build/tn-linux/mystral" ;;
+  esac
+}
+pnpm() {
+  mkdir -p "$target/.threenative/build"
+  printf changed-consumer > "$target/dist-native/threenative-starter-native"
+  chmod 600 "$target/dist-native/threenative-starter-native"
+  printf shared-native-bundle > "$target/.threenative/build/game.js"
+  printf cooked-native-assets > "$target/public/assets.manifest.json"
+}
+sh() {
+  case "$*" in
+    *measure-starter-js-frame-pair.mjs*) return "$FAIL_PAIR" ;;
+    *) printf '{"pass":true}\\n'; printf runner-diagnostic >&2 ;;
+  esac
+}
+`;
+    const run = spawnSync("bash", ["-c", stubs + shell], {
+      cwd: root,
+      env: { ...process.env, RUNNER_TEMP: root, FAIL_PAIR: failPair ? "23" : "0" },
+      encoding: "utf8",
+      timeout: 5_000,
+    });
+    expect(run.status, run.stderr).toBe(failPair ? 23 : 0);
+    expect(readFileSync(consumer, "utf8")).toBe("verified consumer bytes");
+    expect(statSync(consumer).mode & 0o777).toBe(0o751);
+    expect(readFileSync(join(runtime, "build/tn-linux/mystral"), "utf8")).toBe("verified V8 host");
+    expect(readFileSync(join(target, "threenative.config.ts"), "utf8")).toBe(
+      'resolutionScale: "auto"',
+    );
+    if (!failPair)
+      for (const arm of ["quickjs-1", "quickjs-2", "v8-1", "v8-2"]) {
+        expect(
+          JSON.parse(readFileSync(join(evidence, "same-pose", arm, "report.json"), "utf8")),
+        ).toEqual({ pass: true });
+        expect(readFileSync(join(evidence, "same-pose", arm, "runner.stderr.log"), "utf8")).toBe(
+          "runner-diagnostic",
+        );
+      }
+  });
+}

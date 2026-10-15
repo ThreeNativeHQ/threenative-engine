@@ -2222,7 +2222,9 @@ jobs:
           # Pin the existing resolution override in this temporary scaffold for BOTH arms.
           # Cook and bundle once for QuickJS; both engines use the same prepared assets.
           cp "$target/threenative.config.ts" "$evidence/original-config.ts"
-          trap 'cp "$evidence/original-config.ts" "$target/threenative.config.ts"; restore_v8' EXIT
+          # The cook replaces the consumer whose exact bytes the starter receipt already verified.
+          cp -p "$target/dist-native/threenative-starter-native" "$evidence/verified-consumer"
+          trap 'cp -p "$evidence/verified-consumer" "$target/dist-native/threenative-starter-native"; cp "$evidence/original-config.ts" "$target/threenative.config.ts"; restore_v8' EXIT
           sed -i 's/resolutionScale: "auto"/resolutionScale: 1/' "$target/threenative.config.ts"
           THREENATIVE_RUNTIME_BINARY="$runtime/build/tn-linux/mystral" \
             pnpm --dir "$target" exec threenative build --target desktop
@@ -2240,12 +2242,15 @@ jobs:
             binary="$runtime/build/tn-linux/mystral"
             [ "$engine" != v8 ] || binary="$runtime/build/tn-linux/mystral-v8"
             for capture in 1 2; do
+              mkdir -p "$evidence/same-pose/$engine-$capture"
               sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js \
                 "$target/native-playtests/render-chain.playtest.json" --target desktop \
                 --project "$target/public" --executable "$binary" \
                 --host-arg run --host-arg "$target/dist-native/perf-game.js" \
                 --host-arg --ui --host-arg "$target/dist-native/ui" \
-                --artifacts "$evidence/same-pose/$engine-$capture"
+                --artifacts "$evidence/same-pose/$engine-$capture" \
+                > "$evidence/same-pose/$engine-$capture/report.json" \
+                2> "$evidence/same-pose/$engine-$capture/runner.stderr.log"
             done
           done
       - name: Upload paired starter JS frame evidence
