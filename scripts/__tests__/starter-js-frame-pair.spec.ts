@@ -1,5 +1,8 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 const { compareRuns, launchOrder } = await import(
   new URL(
@@ -111,4 +114,54 @@ it("captures two fixed-step starter poses per engine using the same measured bun
   );
   expect(helper).not.toContain("--screenshot");
   expect(helper).toContain("V8 median JS frame duration must be strictly lower");
+});
+
+it("executes the installed QuickJS cook before freezing its canonical bundle and asset manifest", () => {
+  const workflow = readFileSync(".github/workflows/native-platforms.yml", "utf8");
+  const step = workflow.slice(
+    workflow.indexOf("- name: Compare paired starter JS"),
+    workflow.indexOf("- name: Upload paired starter JS"),
+  );
+  const start = step.indexOf("          THREENATIVE_RUNTIME_BINARY=");
+  const end = step.indexOf(
+    '          cp "$target/threenative.config.ts" "$evidence/paired-config.ts"',
+    start,
+  );
+  expect(start).toBeGreaterThan(0);
+  expect(end).toBeGreaterThan(start);
+  const root = makeTempDirSync("starter-paired-cook-");
+  for (const path of ["project/dist-native", "project/public", "evidence"])
+    mkdirSync(join(root, path), { recursive: true });
+  const script = join(root, "cook.sh");
+  writeFileSync(
+    script,
+    `set -eu
+runtime="$1/runtime"
+target="$1/project"
+evidence="$1/evidence"
+pnpm() {
+  test "$THREENATIVE_RUNTIME_BINARY" = "$runtime/build/tn-linux/mystral"
+  test "$*" = "--dir $target exec threenative build --target desktop"
+  mkdir -p "$target/.threenative/build"
+  printf shared-native-bundle > "$target/.threenative/build/game.js"
+  printf cooked-native-assets > "$target/public/assets.manifest.json"
+}
+${step.slice(start, end)}
+`,
+  );
+  const run = spawnSync("bash", [script, root], { encoding: "utf8" });
+  expect(run.status, run.stderr).toBe(0);
+  expect(readFileSync(join(root, "project/dist-native/perf-game.js"), "utf8")).toBe(
+    "shared-native-bundle",
+  );
+  expect(readFileSync(join(root, "evidence/assets.manifest.json"), "utf8")).toBe(
+    "cooked-native-assets",
+  );
+  expect(
+    step.indexOf('cp "$runtime/build/tn-linux/CMakeCache.txt" "$evidence/quickjs-CMakeCache.txt"'),
+  ).toBeLessThan(start);
+  expect(end).toBeLessThan(
+    step.indexOf('sh scripts/xvfb.sh node "$runtime/scripts/measure-starter-js-frame-pair.mjs"'),
+  );
+  expect(step).not.toContain('node "$runtime/scripts/bundle.mjs"');
 });

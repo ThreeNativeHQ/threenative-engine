@@ -2220,12 +2220,14 @@ jobs:
                <(sed -n '/^TN_ENABLE_.*:/p' "$evidence/quickjs-CMakeCache.txt" | sort)
           grep -qx 'TN_ENABLE_CANVAS2D:BOOL=ON' "$evidence/quickjs-CMakeCache.txt"
           # Pin the existing resolution override in this temporary scaffold for BOTH arms.
-          # Bundle once with desktop's refusing decoder stubs: V8 cannot gain extra workload.
+          # Cook and bundle once for QuickJS; both engines use the same prepared assets.
           cp "$target/threenative.config.ts" "$evidence/original-config.ts"
           trap 'cp "$evidence/original-config.ts" "$target/threenative.config.ts"; restore_v8' EXIT
           sed -i 's/resolutionScale: "auto"/resolutionScale: 1/' "$target/threenative.config.ts"
-          node "$runtime/scripts/bundle.mjs" --project "$target" --entry src/game.ts \
-            --target desktop --native-backend --output "$target/dist-native/perf-game.js"
+          THREENATIVE_RUNTIME_BINARY="$runtime/build/tn-linux/mystral" \
+            pnpm --dir "$target" exec threenative build --target desktop
+          cp "$target/.threenative/build/game.js" "$target/dist-native/perf-game.js"
+          cp "$target/public/assets.manifest.json" "$evidence/assets.manifest.json"
           cp "$target/threenative.config.ts" "$evidence/paired-config.ts"
           cp "$evidence/original-config.ts" "$target/threenative.config.ts"
           # Hosted software Vulkan is intentional here: JS callback durations only, no FPS/GPU claim.
