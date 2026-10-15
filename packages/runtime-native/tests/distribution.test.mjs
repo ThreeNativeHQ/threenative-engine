@@ -2,11 +2,13 @@ import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { promisify } from 'node:util';
-import { afterEach, test, vi } from 'vitest';
+import { afterAll, afterEach, test, vi } from 'vitest';
 import { PNG } from 'pngjs';
 
 import {
@@ -101,6 +103,44 @@ async function packRuntime(root) {
   const packed = JSON.parse(stdout);
   return { archive: packed.filename, files: packed.files.map(({ path }) => path) };
 }
+
+// The packed runtime depends on its unpublished cohort (core, assets, three-native). A consumer install
+// resolves every @threenative/* dependency from these packed tarballs, never from the npm registry.
+const packages = fileURLToPath(new URL('../..', import.meta.url));
+let cohort;
+async function cohortOverrides() {
+  cohort ??= (async () => {
+    // Not makeTempDirSync: that directory goes when the test that asked for it ends, and the cohort outlives it.
+    const root = mkdtempSync(join(tmpdir(), 'threenative-cohort-'));
+    cohortRoots.push(root);
+    const manifests = new Map(
+      readdirSync(packages).flatMap((directory) => {
+        const file = join(packages, directory, 'package.json');
+        if (!existsSync(file)) return [];
+        const manifest = JSON.parse(readFileSync(file, 'utf8'));
+        return [[manifest.name, { directory: join(packages, directory), manifest }]];
+      }),
+    );
+    const overrides = {};
+    const pending = ['@threenative/runtime-native'];
+    for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
+      const { manifest } = manifests.get(name);
+      for (const dependency of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies })) {
+        if (!dependency.startsWith('@threenative/') || dependency in overrides) continue;
+        const { directory } = manifests.get(dependency);
+        const { stdout } = await run('pnpm', ['pack', '--json', '--pack-destination', root], { cwd: directory });
+        overrides[dependency] = `file:${JSON.parse(stdout).filename}`;
+        pending.push(dependency);
+      }
+    }
+    return overrides;
+  })();
+  return cohort;
+}
+const cohortRoots = [];
+afterAll(() => {
+  for (const root of cohortRoots) rmSync(root, { force: true, recursive: true });
+});
 
 afterEach(() => {
   Reflect.deleteProperty(process.env, 'THREENATIVE_ALLOW_INSECURE_PREBUILT');
@@ -370,6 +410,7 @@ test('a clean-room install builds for Android from a fixture manifest, with no e
         dependencies: { '@threenative/runtime-native': `file:${packed.archive}` },
         name: 'android-cleanroom-proof',
         private: true,
+        pnpm: { overrides: await cohortOverrides() },
       })}\n`,
     );
     await run('pnpm', ['install', '--ignore-scripts'], { cwd: consumer, env: { ...process.env } });
@@ -573,7 +614,7 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
         optionalDependencies: {
           '@threenative/runtime-native': `file:${packed.archive}`,
         },
-        pnpm: { onlyBuiltDependencies: ['@threenative/runtime-native'] },
+        pnpm: { onlyBuiltDependencies: ['@threenative/runtime-native'], overrides: await cohortOverrides() },
       })}\n`,
     );
     await run('pnpm', ['install'], {
@@ -631,6 +672,7 @@ test.runIf(process.platform === 'linux')('an installed runtime verifier uses pac
       dependencies: { '@threenative/runtime-native': `file:${packed.archive}` },
       name: 'installed-verifier-proof',
       private: true,
+      pnpm: { overrides: await cohortOverrides() },
     }),
   );
   await run('pnpm', ['install', '--ignore-scripts', '--node-linker=hoisted'], {
@@ -707,7 +749,7 @@ test('a corrupted download fails the packed consumer install lifecycle', async (
       `${JSON.stringify({
         dependencies: { '@threenative/runtime-native': `file:${packed.archive}` },
         name: 'native-consumer-corrupt-proof',
-        pnpm: { onlyBuiltDependencies: ['@threenative/runtime-native'] },
+        pnpm: { onlyBuiltDependencies: ['@threenative/runtime-native'], overrides: await cohortOverrides() },
         private: true,
       })}\n`,
     );
