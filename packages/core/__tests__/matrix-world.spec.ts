@@ -11,7 +11,7 @@ import {
   Skeleton,
   SkinnedMesh,
 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MatrixWorldPass } from "../src/matrix-world.js";
 
 /**
@@ -78,15 +78,89 @@ describe("MatrixWorldPass", () => {
   it("does not walk a hidden subtree", () => {
     const { scene } = hiddenBody();
     const pass = new MatrixWorldPass();
-    // The scene and the hidden node itself — its own matrix is composed — and nothing below it.
+    // The scene and the hidden root are visited; nothing below the hidden root is visited.
     expect(pass.apply(scene)).toBe(2);
     pass.dispose();
   });
 
+  it("leaves a hidden root's local and world matrices untouched until it shows", () => {
+    const { scene, hidden } = hiddenBody();
+    hidden.position.set(1, 2, 3);
+    scene.updateMatrixWorld(true);
+    const local = hidden.matrix.elements.slice();
+    const world = hidden.matrixWorld.elements.slice();
+    const compose = vi.spyOn(hidden, "updateMatrix");
+    const pass = new MatrixWorldPass();
+    hidden.position.set(7, 8, 9);
+    pass.apply(scene);
+    pass.apply(scene);
+    expect(compose).not.toHaveBeenCalled();
+    expect(hidden.matrix.elements).toEqual(local);
+    expect(hidden.matrixWorld.elements).toEqual(world);
+    hidden.visible = true;
+    pass.apply(scene);
+    expect(compose).toHaveBeenCalledOnce();
+    expect(hidden.matrixWorld.elements.slice(12, 15)).toEqual([7, 8, 9]);
+    compose.mockRestore();
+    pass.dispose();
+  });
+
+  it.each([true, false])(
+    "refreshes a reparented hidden root and descendants with matrixAutoUpdate=%s",
+    (matrixAutoUpdate) => {
+      const { scene, hidden, mesh } = hiddenBody();
+      const first = new Group();
+      const next = new Group();
+      first.position.set(2, 3, 4);
+      next.position.set(-5, 6, 7);
+      scene.add(first, next);
+      first.add(hidden);
+      scene.updateMatrixWorld(true);
+      hidden.matrixAutoUpdate = matrixAutoUpdate;
+      const pass = new MatrixWorldPass();
+      pass.apply(scene);
+      hidden.position.set(8, 9, 10);
+      if (!matrixAutoUpdate) hidden.updateMatrix();
+      mesh.position.set(0, 2, 0);
+      first.position.x += 3;
+      next.add(hidden);
+      pass.apply(scene);
+      next.position.z += 4;
+      hidden.visible = true;
+      pass.apply(scene);
+      const actual = capture(scene);
+      scene.updateMatrixWorld(true);
+      expect(actual).toEqual(capture(scene));
+      expect(mesh.matrixWorld.elements.slice(12, 15)).toEqual([3, 17, 21]);
+      pass.dispose();
+    },
+  );
+
+  it("preserves an authored world matrix when a hidden root is revealed", () => {
+    const { scene, hidden, mesh } = hiddenBody();
+    scene.updateMatrixWorld(true);
+    hidden.matrixAutoUpdate = false;
+    hidden.matrixWorldAutoUpdate = false;
+    const pass = new MatrixWorldPass();
+    pass.apply(scene);
+    hidden.matrixWorld.makeTranslation(4, 5, 6);
+    scene.position.x = 20;
+    pass.apply(scene);
+    hidden.visible = true;
+    pass.apply(scene);
+    const actual = capture(scene);
+    scene.updateMatrixWorld(true);
+    expect(actual).toEqual(capture(scene));
+    expect(mesh.matrixWorld.elements.slice(12, 15)).toEqual([4, 5, 6]);
+    pass.dispose();
+  });
+
   it('walks every node in "all" mode, as three\'s own pass does', () => {
-    const { scene } = hiddenBody();
+    const { scene, hidden } = hiddenBody();
     const pass = new MatrixWorldPass({ mode: "all" });
+    hidden.position.set(2, 3, 4);
     expect(pass.apply(scene)).toBe(4);
+    expect(hidden.matrixWorld.elements.slice(12, 15)).toEqual([2, 3, 4]);
     pass.dispose();
   });
 
@@ -168,6 +242,7 @@ describe("MatrixWorldPass", () => {
   it("gives a camera in the scene a fresh matrixWorldInverse", () => {
     const scene = new Scene();
     const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+    camera.visible = false;
     scene.add(camera);
     const pass = new MatrixWorldPass();
     pass.apply(scene);
@@ -189,6 +264,7 @@ describe("MatrixWorldPass", () => {
     }
     const scene = new Scene();
     const object = new Custom(geometry(), new MeshBasicMaterial());
+    object.visible = false;
     scene.add(object);
     const pass = new MatrixWorldPass();
     pass.apply(scene);
