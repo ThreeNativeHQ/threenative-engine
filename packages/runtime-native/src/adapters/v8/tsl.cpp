@@ -345,50 +345,39 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
             fn->Set(ctx, str(isolate_, "setLayout"), chain.ToLocalChecked()).Check();
         };
         const auto body = callback(info[0]);
-        // A callback with parameters (`Fn(([a, b]) => ...)`) builds per call, inline with the caller's arguments:
-        // three hands it the arguments as an array, or as one object when the caller passes a plain object.
-        if (number(body->Get(ctx, str(isolate_, "length")).ToLocalChecked()) > 0) {
-            const auto data = v8::Array::New(isolate_, 2);
-            data->Set(ctx, 0, v8::External::New(isolate_, this)).Check();
-            data->Set(ctx, 1, body).Check();
-            const auto fn =
-                v8::Function::New(
-                    ctx,
-                    [](const v8::FunctionCallbackInfo<v8::Value>& call) {
-                        const auto isolate = call.GetIsolate();
-                        const auto context = isolate->GetCurrentContext();
-                        const auto data = call.Data().As<v8::Array>();
-                        auto* tsl = static_cast<Tsl*>(data->Get(context, 0).ToLocalChecked().As<v8::External>()->Value());
-                        try {
-                            v8::Local<v8::Value> argument;
-                            if (call.Length() == 1 && call[0]->IsObject() && !call[0]->IsArray() && !tsl->wrapper(call[0]))
-                                argument = call[0];
-                            else {
-                                const auto list = v8::Array::New(isolate, call.Length());
-                                for (int i = 0; i < call.Length(); ++i)
-                                    list->Set(context, i, call[i]->IsNumber() ? tsl->wrap(tsl->input(call[i])).As<v8::Value>() : call[i]).Check();
-                                argument = list;
-                            }
-                            call.GetReturnValue().Set(
-                                tsl->wrap(tsl->capture(data->Get(context, 1).ToLocalChecked().As<v8::Function>(), argument)));
-                        } catch (const JsFailure&) {
-                            // The original JS exception is still pending.
-                        } catch (const std::exception& error) {
-                            isolate->ThrowException(v8::Exception::TypeError(str(isolate, std::string("TN_TSL Fn: ") + error.what())));
-                        }
-                    },
-                    data)
-                    .ToLocalChecked();
-            setLayout(fn);
-            info.GetReturnValue().Set(fn);
-            return;
-        }
-        const auto graph = wrap(capture(body));
-        // Fn builds once at definition. Calling the returned function only returns that graph.
+        // Every call builds the body anew, inline with the caller's arguments, as upstream three builds a
+        // node: three hands the callback the arguments as an array, or as one object when the caller passes
+        // a plain object. A callback without parameters ignores them.
+        const auto data = v8::Array::New(isolate_, 2);
+        data->Set(ctx, 0, v8::External::New(isolate_, this)).Check();
+        data->Set(ctx, 1, body).Check();
         const auto fn =
             v8::Function::New(
-                ctx, [](const v8::FunctionCallbackInfo<v8::Value>& call) { call.GetReturnValue().Set(call.Data()); },
-                graph)
+                ctx,
+                [](const v8::FunctionCallbackInfo<v8::Value>& call) {
+                    const auto isolate = call.GetIsolate();
+                    const auto context = isolate->GetCurrentContext();
+                    const auto data = call.Data().As<v8::Array>();
+                    auto* tsl = static_cast<Tsl*>(data->Get(context, 0).ToLocalChecked().As<v8::External>()->Value());
+                    try {
+                        v8::Local<v8::Value> argument;
+                        if (call.Length() == 1 && call[0]->IsObject() && !call[0]->IsArray() && !tsl->wrapper(call[0]))
+                            argument = call[0];
+                        else {
+                            const auto list = v8::Array::New(isolate, call.Length());
+                            for (int i = 0; i < call.Length(); ++i)
+                                list->Set(context, i, call[i]->IsNumber() ? tsl->wrap(tsl->input(call[i])).As<v8::Value>() : call[i]).Check();
+                            argument = list;
+                        }
+                        call.GetReturnValue().Set(
+                            tsl->wrap(tsl->capture(data->Get(context, 1).ToLocalChecked().As<v8::Function>(), argument)));
+                    } catch (const JsFailure&) {
+                        // The original JS exception is still pending.
+                    } catch (const std::exception& error) {
+                        isolate->ThrowException(v8::Exception::TypeError(str(isolate, std::string("TN_TSL Fn: ") + error.what())));
+                    }
+                },
+                data)
                 .ToLocalChecked();
         setLayout(fn);
         info.GetReturnValue().Set(fn);

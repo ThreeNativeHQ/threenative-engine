@@ -681,15 +681,16 @@ void tslApi() {
             const { Fn, If, Loop, float, uint, vec3, uniform, instancedArray } = tsl;
             let calls = 0;
             const fn = Fn(() => { calls++; float(0).toVar(); });
-            const checks = [calls === 1, fn() === fn(), calls === 1];
+            // Fn builds per call, not at definition: nothing runs until it is called, and each call is its own graph.
+            const checks = [calls === 0, fn() !== fn(), calls === 2];
             const bad = (body) => {
                 try { body(); return false; } catch (e) { return e instanceof TypeError && e.message.startsWith('TN_TSL'); }
             };
             checks.push(bad(() => float({})), bad(() => float(NaN)), bad(() => uint(-1)),
                 bad(() => uniform(vec3(1)).setName('')), bad(() => instancedArray(0, 'vec4')),
                 bad(() => float(0).toVar()), bad(() => float(0).assign(1)),
-                bad(() => Fn(() => Loop(1.5, () => {}))),
-                bad(() => Fn(() => If(float(0).equal(0), 7))));
+                bad(() => Fn(() => Loop(1.5, () => {}))()),
+                bad(() => Fn(() => If(float(0).equal(0), 7))()));
             let branch;
             const nested = Fn(() => {
                 try { If(float(0).equal(0), () => { throw new Error('original'); }); }
@@ -700,12 +701,12 @@ void tslApi() {
                 });
                 checks.push(bad(() => branch.Else(() => {})));
             });
-            checks.push(nested() === nested(), bad(() => float(1).add.call(new Vector3(), 2)));
+            checks.push(nested() !== nested(), bad(() => float(1).add.call(new Vector3(), 2)));
             return checks.map(Number).join('');
         })()
     )JS");
-    CHECK(got == "1111111111111111");
-    if (got != "1111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
+    CHECK(got == "111111111111111111");
+    if (got != "111111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
 
     // Compare the actual native DAG, not just the presence of fluent methods. r185's
     // stepElement/mixElement/smoothstepElement reorder the fluent receiver to the last argument.
