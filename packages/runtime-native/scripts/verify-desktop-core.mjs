@@ -281,6 +281,19 @@ export function analyzePresentTicks(log, { minTicks = 1 } = {}) {
   return { failures: [...new Set(failures)], ticks };
 }
 
+/**
+ * The Linux video driver this run must use, from the environment a caller set.
+ *
+ * SDL 3 reads `SDL_VIDEO_DRIVER`; `SDL_VIDEODRIVER` is the SDL 2 spelling the documented
+ * `SDL_VIDEODRIVER=wayland pnpm native:verify:desktop` still uses, and `src/platform/window.cpp`
+ * honours it for the same reason. SDL_VIDEO_DRIVER wins when both are set. Absent either, this gate
+ * keeps its X11 default.
+ */
+export function requestedLinuxVideoDriver(env = process.env) {
+  const driver = env.SDL_VIDEO_DRIVER || env.SDL_VIDEODRIVER || 'x11';
+  return { driver, wayland: driver === 'wayland' };
+}
+
 export function verifyDesktopCore({ frames = 300 } = {}) {
   const preset = process.platform === 'darwin'
     ? 'tn-macos'
@@ -308,13 +321,20 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
   // Not `xvfb-run`: on xorg-server-xvfb 21.1.24 its cleanup `kill` fails after Xvfb has already
   // exited and that failing kill's status replaces the command's, so this gate reported a red
   // 300-frame run that had in fact rendered every frame and written a good screenshot.
-  const command = process.platform === 'linux' ? 'sh' : binary;
-  const args = process.platform === 'linux'
+  const requested = requestedLinuxVideoDriver();
+  // Xvfb is an X11 server, so wrapping a Wayland request in it would run the proof on X11 and report
+  // it as Wayland. A Wayland run needs the compositor the caller started, and it reads the window
+  // handles SDL's Wayland driver hands back.
+  const command = process.platform === 'linux' && !requested.wayland ? 'sh' : binary;
+  const args = process.platform === 'linux' && !requested.wayland
     ? [join(workspace, 'scripts', 'xvfb.sh'), binary, ...runtimeArgs]
     : runtimeArgs;
   const runtimeEnv = { ...process.env };
   if (process.platform === 'linux') {
-    runtimeEnv.SDL_VIDEODRIVER = 'x11';
+    console.info(`desktop core gate: SDL video driver ${requested.driver}${requested.wayland ? ' (no Xvfb wrapper; the compositor comes from the environment)' : ''}`);
+    // Both spellings, so the child resolves the same driver this gate read.
+    runtimeEnv.SDL_VIDEO_DRIVER = requested.driver;
+    runtimeEnv.SDL_VIDEODRIVER = requested.driver;
     // Same reason as the video driver: this gate runs headless on a runner with no sound card, and
     // SDL aborts before the first frame with
     //   [Audio] Failed to open audio device: ALSA: Couldn't open audio device: No such file or

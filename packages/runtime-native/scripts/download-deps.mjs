@@ -146,7 +146,7 @@ const DEPS = {
     extractTo: 'sdl3-ios',
   },
   dawn: {
-    // Dawn prebuilts from official releases: https://github.com/google/dawn/releases
+    // Official Dawn prebuilts; Linux uses our same-revision Wayland+X11 dependency cache.
     // Naming: Dawn-{commit}-{platform}-Release.tar.gz
     // Headers: dawn-headers-{commit}.tar.gz
     //
@@ -163,7 +163,7 @@ const DEPS = {
         const variant = ARCH === 'arm64' ? 'macos-latest' : 'macos-15-intel';
         return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-${variant}-Release.tar.gz`;
       }if (platformName === 'linux') {
-        return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-ubuntu-latest-Release.tar.gz`;
+        return `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/dawn-linux-x64-v1/Dawn-${commit}-ubuntu-latest-Release.tar.gz`;
       }if (platformName === 'windows') {
         return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-windows-latest-Release.tar.gz`;
       }
@@ -1249,7 +1249,7 @@ export async function downloadDep(name, options = {}) {
     return false;
   }
 
-  console.log(`\n=== Downloading ${name} ${dep.version} ===`);
+  console.log(`\n=== Downloading ${name} ===`);
   const lock = options.lockContext ?? readNativeDepsLockContext();
 
   if (name === 'v8-android') {
@@ -1331,6 +1331,8 @@ export async function downloadDep(name, options = {}) {
     );
     return false;
   }
+
+  console.log(`Selected locked payload ${selectedPayload.id}: ${url}`);
 
   // Check if already downloaded
   if (existsSync(destDir)) {

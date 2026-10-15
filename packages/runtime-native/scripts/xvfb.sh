@@ -33,6 +33,17 @@ display_file="$runtime/display"
 Xvfb -displayfd 3 +extension COMPOSITE +extension SHAPE -screen 0 "$screen" -nolisten tcp 3>"$display_file" &
 xvfb_pid=$!
 
+# This script hands the command an X11 server, so it is also the honest place to answer a Wayland
+# request: say which display the run really uses instead of letting an X11 result pass as Wayland.
+# Both spellings are set because SDL 3 reads SDL_VIDEO_DRIVER and src/platform/window.cpp also
+# honours the SDL 2 spelling SDL_VIDEODRIVER.
+if [ "${SDL_VIDEO_DRIVER:-${SDL_VIDEODRIVER:-}}" = "wayland" ]; then
+  echo "scripts/xvfb.sh: SDL_VIDEO_DRIVER/SDL_VIDEODRIVER asks for Wayland; this gate runs on the X11 display this script provides." >&2
+fi
+SDL_VIDEO_DRIVER=x11
+SDL_VIDEODRIVER=x11
+export SDL_VIDEO_DRIVER SDL_VIDEODRIVER
+
 compositor_pid=""
 
 cleanup() {

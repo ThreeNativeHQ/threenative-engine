@@ -225,13 +225,13 @@
       "payloads": [
         {
           "id": "dawn-ubuntu",
-          "url": "https://github.com/google/dawn/releases/download/v20260117.152313/Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-ubuntu-latest-Release.tar.gz",
-          "sha256": "34f042447836b2d36204b05cbc76ec8186eedf9c58fbcdca8c1f0607d8b9826d",
-          "bytes": 28197558,
+          "url": "https://github.com/ThreeNativeHQ/threenative-engine/releases/download/dawn-linux-x64-v1/Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-ubuntu-latest-Release.tar.gz",
+          "sha256": "bafce657936c161dc14642ddb61f71dcf6528b7ae90c40698831797e9c43d530",
+          "bytes": 28193047,
           "targets": [
             "desktop-linux"
           ],
-          "bootstrap": "two-run-fetch-2026-09-11"
+          "bootstrap": "github-release-digest-2026-10-15"
         },
         {
           "id": "dawn-macos-arm64",
