@@ -957,7 +957,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
+        version: 0.185.1(patch_hash=00ce98ec952e72dff1f8f10e10ecc691f27365e9ae7a7482becdad1614181437)
     devDependencies:
       '@threenative/playtest':
         specifier: workspace:*
@@ -1422,7 +1422,7 @@ importers:
         version: 0.185.3
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=21ed5f6632ee7188f9bc46fa5a3da4af3e44dd32a0d6da119f49f555e09ea38d)
+        version: 0.185.1(patch_hash=00ce98ec952e72dff1f8f10e10ecc691f27365e9ae7a7482becdad1614181437)
       typescript:
         specifier: 'catalog:'
         version: '@typescript/typescript6@6.0.2'
