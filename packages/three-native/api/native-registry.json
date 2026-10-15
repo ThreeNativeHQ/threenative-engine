@@ -1121,7 +1121,7 @@
     },
     "CanvasTexture": {
       "constructor": true,
-      "methods": [],
+      "methods": ["dispose"],
       "getters": [
         "anisotropy",
         "colorSpace",
@@ -1551,7 +1551,7 @@
     },
     "Data3DTexture": {
       "constructor": true,
-      "methods": [],
+      "methods": ["dispose"],
       "getters": [
         "anisotropy",
         "colorSpace",
@@ -1605,7 +1605,7 @@
     },
     "DataTexture": {
       "constructor": true,
-      "methods": [],
+      "methods": ["dispose"],
       "getters": [
         "anisotropy",
         "colorSpace",
@@ -7582,7 +7582,7 @@
     },
     "Texture": {
       "constructor": true,
-      "methods": [],
+      "methods": ["dispose"],
       "getters": [
         "anisotropy",
         "colorSpace",

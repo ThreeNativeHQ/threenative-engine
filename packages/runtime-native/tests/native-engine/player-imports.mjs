@@ -270,6 +270,8 @@ const lit = new THREE.MeshStandardMaterial({ normalMap: grid, normalScale: new T
 check(lit.normalMap === grid && lit.normalScale.y === 0.25 && lit.normalScale === lit.normalScale, "normalMap and normalScale");
 const before = grid.version; grid.needsUpdate = true;
 check(grid.version === before + 1 && !Object.hasOwn(grid, "needsUpdate"), "needsUpdate reaches the engine");
+grid.dispose();
+check(grid.version === before + 2, "Texture.dispose frees the GPU copy and the texture uploads again");
 check(lit instanceof Material && lit.onBeforeCompile === Material.prototype.onBeforeCompile && lit.isMaterial, "Material base");
 const vertex = new THREE.Vector3();
 check(new THREE.Mesh(rounded, lit).getVertexPosition(0, vertex) === vertex && vertex.equals(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 0)), "getVertexPosition");

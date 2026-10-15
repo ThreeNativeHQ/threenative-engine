@@ -2686,6 +2686,8 @@ generateMipmaps: boolean;
 readonly source: Source;
 format: number;
 type: number;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */

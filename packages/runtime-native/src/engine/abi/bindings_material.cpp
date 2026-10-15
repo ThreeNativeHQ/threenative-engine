@@ -492,6 +492,8 @@ void registerTextureFields(ClassBinding& b) {
         as<Texture>(self)->name = v.text;
     };
     b.getters["version"] = [](void* self) { return Value::of(double(as<Texture>(self)->version())); };
+    // three's Texture.dispose(): the renderer frees the GPU copy; the texture stays usable and uploads again.
+    b.methods["dispose"] = [](void* self, const Args&, Store&) { as<Texture>(self)->needsUpdate(); return Value{}; };
     b.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) as<Texture>(self)->needsUpdate();
     };
@@ -662,7 +664,6 @@ void registerTextureBindings(Registry& classes) {
         texture->minFilter = texture->magFilter = uint16_t(TextureFilter::Nearest);
         return texture;
     };
-    depth.methods["dispose"] = [](void* self, const Args&, Store&) { as<Texture>(self)->needsUpdate(); return Value{}; };
     // three's RenderTarget (PRD-551): its size, type and colour texture. The renderer facades draw into it
     // (setRenderTarget) and read it back; a material samples `target.texture`.
     // ponytail: the colour is RGBA16Float whatever the type, so a FloatType target reads back at half

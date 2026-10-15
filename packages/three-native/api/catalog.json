@@ -20902,7 +20902,21 @@
           }
         }
       ],
-      "methods": []
+      "methods": [
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "TextureComparisonFunction",
