@@ -2385,6 +2385,37 @@ describe("AC15 matched OS CPU", () => {
   });
 });
 
+it("shows newest exact-window acquisitions above headlines without scoring sampled timings", async () => {
+  const html = await readFile(new URL("../midway-bench/dashboard.html", import.meta.url), "utf8");
+  const script = (html.split("<script>")[1] as string)
+    .split("</script>")[0]
+    ?.replace("tick(); setInterval(tick, 5000);", "");
+  const windows = cpuReport(120).acquisition.cpuWindows;
+  const rows = Array.from({ length: 7 }, (_, i) => ({
+    dir: `recent-${i}`,
+    arm: "desktop",
+    mtimeMs: 1700000000000 + i * 1000,
+    cpuWindows: windows,
+  }));
+  const output = runInNewContext(`${script}\nrecentMeasurements(data)`, {
+    data: [
+      ...rows,
+      { dir: "missing-windows", mtimeMs: 1800000000000 },
+      { ...rows[6], dir: "sampled", mtimeMs: 1700000008000, profiled: true },
+    ],
+    document: { getElementById: () => ({}) },
+  });
+  expect(html.indexOf('id="recent"')).toBeLessThan(html.indexOf('id="hero"'));
+  expect(output.indexOf("sampled</td>")).toBeLessThan(output.indexOf("recent-6</td>"));
+  expect(output).toContain("instrumented diagnostic");
+  expect(output).toContain("sampled · excluded");
+  expect(output).toContain("unqualified");
+  expect(output).toContain("run-log time");
+  expect(output).not.toContain("missing-windows");
+  expect(output).not.toContain("recent-2</td>");
+  expect(output.match(/instrumented diagnostic/g)).toHaveLength(3);
+});
+
 it("reconciles exact CPU boundaries rather than release/sample ticks", () => {
   const r = cpuReport(120, "native");
   const frames = cpuRecords(r.acquisition.cpuWindows);
