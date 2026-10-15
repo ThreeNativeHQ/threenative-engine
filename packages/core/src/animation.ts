@@ -10,6 +10,13 @@ import {
   Vector3,
   type VectorKeyframeTrack,
 } from "three";
+import {
+  type IAnimationPacketState,
+  animationPacketField,
+  animationPacketMethodsPristine,
+  animationPacketReaders,
+  animationPacketTime,
+} from "./animation-packet-state.js";
 import { clipTrackBindings } from "./clip-audit.js";
 import { type IAnimationRateState, animationRateStates } from "./render-camera-cull.js";
 import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
@@ -325,6 +332,7 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
 }
 
 export class AnimationPlayer {
+  readonly #packetReader = () => this.#readPacketState();
   readonly mixer: AnimationMixer;
   readonly root: Object3D;
   readonly #rateState: IAnimationRateState = {
@@ -423,6 +431,7 @@ export class AnimationPlayer {
           `${owner}: clip '${name}' binds 0 tracks to '${options.root.name || options.root.type}'.`,
         );
     }
+    animationPacketReaders.set(this.root, this.#packetReader);
     animationRateStates.set(this.root, this.#rateState);
     this.root.userData[ANIMATION_RATE_STATE_KEY] = this.#rateState;
   }
@@ -946,6 +955,75 @@ export class AnimationPlayer {
     this.#syncStride(dt);
   }
 
+  #readPacketState(): IAnimationPacketState | undefined {
+    if (
+      this.#evaluating ||
+      this.#actions.size !== 1 ||
+      this.#mode !== "loop" ||
+      this.#finished ||
+      this.#fadeOut.length !== 0 ||
+      this.#blendTargets !== undefined ||
+      this.#timeScaleInterpolations.size !== 0
+    )
+      return undefined;
+    const action = this.#actions.get(this.#current ?? "");
+    const clip = this.#clips.get(this.#current ?? "");
+    if (
+      action === undefined ||
+      clip === undefined ||
+      !animationPacketMethodsPristine(action, this.mixer)
+    )
+      return undefined;
+    const field = animationPacketField;
+    const duration = field(clip, "duration");
+    const held = field(action, "time");
+    const index = field(action, "_cacheIndex");
+    const active = field(this.mixer, "_nActiveActions");
+    const actions = field(this.mixer, "_actions");
+    if (
+      field(action, "_mixer") !== this.mixer ||
+      field(action, "_clip") !== clip ||
+      field(this.mixer, "_root") !== this.root ||
+      field(this.mixer, "timeScale") !== 1 ||
+      field(action, "loop") !== LoopRepeat ||
+      field(action, "repetitions") !== Number.POSITIVE_INFINITY ||
+      field(action, "clampWhenFinished") !== false ||
+      field(action, "paused") !== false ||
+      field(action, "enabled") !== true ||
+      field(action, "weight") !== 1 ||
+      field(action, "_effectiveWeight") !== 1 ||
+      field(action, "timeScale") !== 1 ||
+      field(action, "_effectiveTimeScale") !== 1 ||
+      field(action, "_startTime") !== null ||
+      field(action, "_weightInterpolant") !== null ||
+      field(action, "_timeScaleInterpolant") !== null ||
+      active !== 1 ||
+      typeof index !== "number" ||
+      index !== 0 ||
+      !Array.isArray(actions) ||
+      field(actions, String(index)) !== action ||
+      typeof duration !== "number" ||
+      !Number.isFinite(duration) ||
+      duration <= 0 ||
+      typeof held !== "number" ||
+      !Number.isFinite(held) ||
+      held < 0 ||
+      held > duration
+    )
+      return undefined;
+    const time = animationPacketTime(held, this.#pendingActionTimes.get(action) ?? 0, duration);
+    if (time === undefined) return undefined;
+    return Object.freeze({
+      root: this.root,
+      mixer: this.mixer,
+      action,
+      clip,
+      time,
+      evaluated: this.#rateState.evaluated,
+      evaluation: this.#rateState.evaluation,
+    });
+  }
+
   #flushPending(): void {
     if (this.#pendingDt !== 0) this.#evaluate(this.#pendingDt);
   }
@@ -1074,6 +1152,8 @@ export class AnimationPlayer {
     this.#clips.clear();
     this.#clipGroundSpeed.clear();
     this.#preparation = undefined;
+    if (animationPacketReaders.get(this.root) === this.#packetReader)
+      animationPacketReaders.delete(this.root);
     if (animationRateStates.get(this.root) === this.#rateState)
       animationRateStates.delete(this.root);
     if (this.root.userData[ANIMATION_RATE_STATE_KEY] === this.#rateState)
