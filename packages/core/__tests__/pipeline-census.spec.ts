@@ -32,7 +32,7 @@ interface IStubDevice {
 interface IStubBackend {
   device: IStubDevice;
   createProgram: (program: Record<string, unknown>) => void;
-  createRenderPipeline: (renderObject: Record<string, unknown>, promises: unknown) => void;
+  createRenderPipeline: (renderObject?: Record<string, unknown>, promises?: unknown) => void;
   createComputePipeline: (pipeline: Record<string, unknown>) => void;
   get: (key: object) => Record<string, unknown>;
 }
@@ -85,7 +85,8 @@ function webgpuStub(): { backend: IStubBackend; device: IStubDevice; pipelines: 
     device,
     get,
     createProgram,
-    createRenderPipeline: (renderObject: Record<string, unknown>, promises: unknown) => {
+    createRenderPipeline: (renderObject, promises) => {
+      if (renderObject === undefined) return;
       const pipeline = renderObject.pipeline as Record<string, unknown>;
       const descriptor = {
         label: "renderPipeline",
@@ -669,7 +670,7 @@ describe("pipeline census", () => {
     expect(report.complete).toBe(true);
     expect(report.counts.nodeBuilds).toBe(1);
     expect(report.events[0]?.nodeBuilds).toBe(1);
-    expect(mesh.getNodeBuilderState).toBeUndefined();
+    expect("getNodeBuilderState" in mesh).toBe(false);
 
     census.dispose();
     expect(nodes.getForRender).toBe(originalGetForRender);
@@ -683,18 +684,11 @@ describe("pipeline census", () => {
     const raw = {
       backend,
       _nodes: {},
-      renderObject: (...args: unknown[]) => backend.createRenderPipeline?.(...args),
+      renderObject: () => backend.createRenderPipeline?.(),
     };
     const census = createPipelineCensus({ kind: "webgpu" });
     census.installRenderer(raw);
-    raw.renderObject(
-      renderObject(
-        { vertexProgram: { code: source("v") }, fragmentProgram: { code: source("f") } },
-        {},
-        {},
-      ),
-      null,
-    );
+    raw.renderObject();
 
     const report = census.snapshot();
     expect(report.complete).toBe(false);
