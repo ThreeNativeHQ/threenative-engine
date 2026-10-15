@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
+import { PerspectiveCamera, Scene } from "three/webgpu";
 
 import { createMixerAnimationProof } from "../conformance/scenes/shared/mixer-animation.js";
 import { createMorphTargetAnimationProof } from "../conformance/scenes/shared/morph-target-animation.js";
@@ -17,6 +18,7 @@ import { advanceRotationWithRaf } from "../conformance/scenes/shared/raf-rotatio
 import {
   createRawSkinnedProof,
   createSkinnedMeshAnimationProof,
+  createSkinnedVelocityPass,
 } from "../conformance/scenes/shared/skinned-mesh-animation.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -89,7 +91,10 @@ test("rows 51 through 53 exercise mixer, skeleton, and morph target semantics", 
 
 test("row 52 RAW fixture owns genuine players and independently retiring display slots", () => {
   const proof = createRawSkinnedProof();
+  const scenePass = createSkinnedVelocityPass(new Scene(), new PerspectiveCamera());
   try {
+    assert.equal(scenePass.getMRT().has("velocity"), true);
+    assert.equal(scenePass.renderTarget.textures.some((texture) => texture.name === "velocity"), true);
     proof.advance();
     assert.equal(proof.batch.bones, 12);
     assert.equal(proof.players.length, 2);
@@ -119,6 +124,7 @@ test("row 52 RAW fixture owns genuine players and independently retiring display
     assert.equal(proof.receipt().slots[1].retired, true);
     assert.equal(proof.receipt().slots[1].currentRaw, false);
   } finally {
+    scenePass.renderTarget.dispose();
     proof.dispose();
   }
 });

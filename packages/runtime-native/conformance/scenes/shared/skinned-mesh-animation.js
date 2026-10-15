@@ -3,7 +3,7 @@ import { playClipAt } from "./planned-animation-support.js";
 import { pass } from "three/tsl";
 import { AnimationPlayer } from "../../../../core/src/animation.ts";
 import { SkinnedBatch } from "../../../../core/src/projection-skinned.ts";
-import { ensureVelocityOutput, VelocityTracker } from "../../../../core/src/render/velocity.ts";
+import { velocityTexture, VelocityTracker } from "../../../../core/src/render/velocity.ts";
 import { createTemporalVelocityProbe } from "./temporal-velocity-probe.ts";
 import { REPROJECTION_PIXELS } from "./temporal-aa-fixture.js";
 
@@ -137,6 +137,12 @@ export function createRawSkinnedProof() {
   };
 }
 
+export function createSkinnedVelocityPass(scene, camera) {
+  const scenePass = pass(scene, camera);
+  velocityTexture(scenePass);
+  return scenePass;
+}
+
 export async function startScene(canvas, dimensions) {
   const proof = createSkinnedMeshAnimationProof();
   let complete;
@@ -155,8 +161,7 @@ export async function startScene(canvas, dimensions) {
       scene.add(proof.mesh);
       const raw = createRawSkinnedProof();
       scene.add(raw.batch.mesh);
-      const scenePass = pass(scene, camera);
-      ensureVelocityOutput(scenePass);
+      const scenePass = createSkinnedVelocityPass(scene, camera);
       const pipeline = new THREE.RenderPipeline(renderer);
       pipeline.outputNode = scenePass.getTextureNode("output");
       const tracker = new VelocityTracker();
