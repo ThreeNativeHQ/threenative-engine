@@ -6079,17 +6079,19 @@ export class WorldCells extends Group implements IComputeDriven {
       if (this.#resident.has(key)) continue;
       const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
       const bytes = instances * PLACEMENT_RECORD_BYTES;
-      // After a jump or a retired speculative eviction, an unwanted hysteresis cell yields its share
-      // of the budgets to one that is. Without this the budgets stayed full of the ring the camera
-      // jumped from and the cells around it were refused until it moved again.
+      // Wanted cells take priority over unwanted hysteresis under pressure, including ordinary
+      // one-cell moves. With room, retention still avoids unloading the ring just left behind.
       while (
-        (jumped || recovering) &&
-        (this.#resident.size >= this.#budgets.residentCells ||
-          this.#instances + this.#farInstances + instances > this.#budgets.instances ||
-          this.#bytes + this.#farBytes + this.#hlodBytes + bytes > this.#budgets.bytes)
+        this.#resident.size >= this.#budgets.residentCells ||
+        this.#instances + this.#farInstances + instances > this.#budgets.instances ||
+        this.#bytes + this.#farBytes + this.#hlodBytes + bytes > this.#budgets.bytes
       ) {
         const spare = this.#farthestUnwanted(followCell);
         if (spare === undefined) break;
+        // Pressure alone can displace an actual wanted edge while the speculative lead is only
+        // one cell away. Owe its recovery even if the actual follow cell never moves again.
+        if (Math.max(Math.abs(spare.x - here.x), Math.abs(spare.z - here.z)) <= this.#ring)
+          this.#prefetchRecovery = true;
         this.#evict(spare);
       }
       if (this.#resident.size >= this.#budgets.residentCells) {

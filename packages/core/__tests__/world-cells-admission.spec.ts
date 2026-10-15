@@ -401,12 +401,14 @@ describe("WorldCells admission budget", () => {
       await step(cells);
       expect(cells.stats().residentCells).toBe(4);
       const before = cells.stats().pressure.cells;
+      const originalKeys = cells.stats().residentKeys;
       const at = cellCenter(to[0], to[1]);
       follow.position.x = at.x;
       follow.position.z = at.z;
       await step(cells);
       expect(cells.stats().residentCells).toBe(4);
       expect(cells.stats().failures).toBe(0);
+      if (to[0] === 1) expect(cells.stats().residentKeys).toEqual(originalKeys);
       const refused = cells.stats().pressure.cells - before;
       cells.dispose();
       return refused;
@@ -415,13 +417,73 @@ describe("WorldCells admission budget", () => {
     // all within the hysteresis ring, so without the yield all eight new ones are refused; with it
     // three of the four the corner held give way and only five are.
     expect(await jump([2, 2])).toBe(5);
-    // A one-cell step is not a jump: the hysteresis holds, as a walk needs it to.
+    // All four original cells are still wanted after this one-cell step: pressure must not
+    // evict a wanted resident merely to replace it with a different wanted cell.
     expect(await jump([1, 1])).toBe(5);
   });
 
   it.each([
     {
+      name: "full-capacity ordinary one-cell shift",
+      capacity: 25,
+      prefetchSeconds: 0,
+      slack: false,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 537,
+      endX: 650,
+      endZ: -555.5,
+      hereX: 13,
+      hereZ: 3,
+      lost: "10:3",
+      ledEdge: "15:3",
+    },
+    {
+      name: "finite ordinary shift and delayed models",
+      capacity: 25,
+      prefetchSeconds: 0,
+      slack: false,
+      budgetMs: 2,
+      startX: 537,
+      endX: 650,
+      endZ: -555.5,
+      hereX: 13,
+      hereZ: 3,
+      lost: "10:3",
+      ledEdge: "15:3",
+    },
+    {
+      name: "pressure-only one-cell lead retires without moving actual cell",
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 537,
+      endX: 600,
+      endZ: -555.5,
+      hereX: 12,
+      hereZ: 3,
+      lost: "10:3",
+      ledEdge: "15:3",
+    },
+    {
+      name: "ordinary shift retains hysteresis when there is room",
+      capacity: 30,
+      prefetchSeconds: 0,
+      slack: true,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 537,
+      endX: 650,
+      endZ: -555.5,
+      hereX: 13,
+      hereZ: 3,
+      lost: "10:3",
+      ledEdge: "15:3",
+    },
+    {
       name: "one-cell move",
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
       budgetMs: Number.POSITIVE_INFINITY,
       startX: 537,
       endX: 739.1,
@@ -433,6 +495,9 @@ describe("WorldCells admission budget", () => {
     },
     {
       name: "finite admission and delayed model",
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
       budgetMs: 2,
       startX: 537,
       endX: 739.1,
@@ -444,6 +509,9 @@ describe("WorldCells admission budget", () => {
     },
     {
       name: "two-cell jump below velocity reset distance",
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
       budgetMs: Number.POSITIVE_INFINITY,
       startX: 639.9,
       endX: 850,
@@ -454,8 +522,20 @@ describe("WorldCells admission budget", () => {
       ledEdge: "17:3",
     },
   ])(
-    "recovers the actual wanted ring after a speculative lead retires: $name",
-    async ({ budgetMs, startX, endX, endZ, hereX, hereZ, lost, ledEdge }) => {
+    "keeps the wanted ring available after movement: $name",
+    async ({
+      capacity,
+      prefetchSeconds,
+      slack,
+      budgetMs,
+      startX,
+      endX,
+      endZ,
+      hereX,
+      hereZ,
+      lost,
+      ledEdge,
+    }) => {
       const placements = new Float32Array(18 * 18 * 8);
       const cells = Array.from({ length: 18 * 18 }, (_, index) => {
         const x = index % 18;
@@ -494,7 +574,8 @@ describe("WorldCells admission budget", () => {
         },
         admissionNow: now,
         admissionBudgetMs: budgetMs,
-        budgets: { ...budgets, residentCells: 25 },
+        budgets: { ...budgets, residentCells: capacity },
+        prefetchSeconds,
         follow,
         concurrency: 1,
         loadModel: async () => {
@@ -510,27 +591,31 @@ describe("WorldCells admission budget", () => {
         await step(world);
         expect(world.stats().residentCells).toBe(25);
         expect(world.stats().residentKeys).toContain(lost);
-        // Both routes are below the 256 m velocity reset: the original 239.6 m move leads to
-        // 15:5; the 210.1 m two-cell jump leads to 16:3. Each evicts an actually wanted column.
+        // All moves stay below the velocity reset. The 63 m move keeps the actual cell unchanged
+        // and leads only one cell: pressure, rather than the outer eviction ring, displaces its edge.
         clock = 1660;
         follow.position.x = endX;
         follow.position.z = endZ;
         world.update();
-        expect(world.stats().residentKeys).not.toContain(lost);
+        expect(world.stats().residentKeys.includes(lost)).toBe(slack);
         expect(world.stats().residentKeys).toContain(ledEdge);
         // Let the lead retire, then stop completely. No further camera movement can rescue a cell.
         for (let frame = 0; frame < 8; frame += 1) {
           clock += 600;
           await step(world);
-          expect(world.stats().residentCells).toBeLessThanOrEqual(25);
+          expect(world.stats().residentCells).toBeLessThanOrEqual(capacity);
         }
         const wanted = new Set(
           cells
-            .filter(({ x, z }) => Math.max(Math.abs(x - hereX), Math.abs(z - hereZ)) <= 2)
+            .filter(
+              ({ x, z }) =>
+                Math.max(Math.abs(x - hereX), Math.abs(z - hereZ)) <= 2 ||
+                (slack && Math.max(Math.abs(x - 12), Math.abs(z - 3)) <= 2),
+            )
             .map(({ x, z }) => `${x}:${z}`),
         );
         expect(new Set(world.stats().residentKeys)).toEqual(wanted);
-        expect(world.stats().residentCells).toBe(25);
+        expect(world.stats().residentCells).toBe(wanted.size);
         if (finite) {
           expect(world.stats().loadedCells).toBe(0);
           if (releaseModel === undefined) throw new Error("Missing delayed model release");
@@ -541,10 +626,10 @@ describe("WorldCells admission budget", () => {
           for (let frame = 0; frame < 80 && world.stats().loadedCells < 25; frame += 1) {
             clock += 600;
             await step(world);
-            expect(world.stats().residentCells).toBeLessThanOrEqual(25);
+            expect(world.stats().residentCells).toBeLessThanOrEqual(capacity);
           }
         }
-        expect(world.stats().loadedCells).toBe(25);
+        expect(world.stats().loadedCells).toBe(wanted.size);
         expect(new Set(world.stats().residentKeys)).toEqual(wanted);
         expect(world.stats().failures).toBe(0);
         now.mockClear();
