@@ -1,7 +1,7 @@
 # PRD-616 — The startup warm-up builds what the first frame draws
 
 **Status:** IN PROGRESS
-**Priority:** P1 — AC-1 to AC-3 are open: a measured warm-up rebuilt 3 of 3 warmed node graphs and created their 3 render pipelines again in the first visible frame, a startup cost on every supported platform.
+**Priority:** P1 — startup reuse is proven locally; streamed output-pass reuse and visual judging remain open.
 **Complexity:** 2 (LOW) — 6–10 implementation files (`warmup.ts`, `renderer.ts`, `game.ts`, `world-cells.ts`, `pipeline-census.ts`, the playtest census evaluator) (+2); risk override: none
 **Owner:** Codex — draft PR [#509](https://github.com/ThreeNativeHQ/threenative-engine/pull/509)
 **Depends on:** None. [PRD-611](../Unreal/vfx/PRD-611-a-gpu-effect-that-starts-hidden-draws-its-first-frame-with-its-pipeline-built.md) depends on this PRD: its warm render of a hidden emitter has the same call-depth miss.
@@ -48,11 +48,11 @@ Risk: a covered render through the real pipeline can advance temporal history (T
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: On abyss-framework with `warmUp: {}`, the pipeline census reports 0 node builds and 0 render-pipeline creations for warmed objects between warm-up settled and the end of frame 5. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/warm-up-reuse.playtest.json --url http://127.0.0.1:5180 --server-command "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort" --browser-recipe webgpu --headed` — Evidence: pending.
-- [ ] AC-2 [local]: The first-frame CPU time on that run falls from the 29–30 ms baseline, and the median of three runs is recorded in the PRD. proof: the same scenario's frame-budget report — Evidence: pending.
+- [x] AC-1 [local]: On abyss-framework with `warmUp: {}`, the pipeline census reports 0 node builds and 0 render-pipeline creations for warmed objects between warm-up settled and the end of frame 5. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/warm-up-reuse.playtest.json --url http://127.0.0.1:5180 --server-command "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort" --browser-recipe webgpu --headed` — Evidence: Verified 2026-10-15 on core `a536d0555`: headed NVIDIA Turing scenario `artifacts/prd616/ac1-final` passed both complete zero ceilings and diagnostics. Warm boundary: 134.1 ms, 12 node builds and 12 render-pipeline creations. The actual first-five-visible-world collector independently reports zero afterward in all three AFTER runs; no events dropped or observations missing.
+- [x] AC-2 [local]: The first-frame CPU time on that run falls from the 29–30 ms baseline, and the median of three runs is recorded in the PRD. proof: the same scenario's frame-budget report — Evidence: Verified 2026-10-15 with real `FrameBudget.phases.render` from the first GameLoop world draw after warm-up settlement, before sustained READY. Final AFTER samples: 3.4, 3.7, 3.5 ms; median 3.5 ms. Same-harness BEFORE controls: 24.5 and 23.7 ms, while the original brief recorded 29–30 ms. Fresh headed NVIDIA Turing contexts, 1280×720, after the desktop CPU gate ended. Later first-visible CPU samples are reported separately; no FPS or screenshot-duration claim. Source: `artifacts/prd616/first-visible/after-matrix.json` and the two BEFORE records.
 - [ ] AC-3 [local]: A streamed chunk's first draw creates 0 render pipelines after its chunk warm-up settles. proof: `examples/abyss-framework/playtests/streaming.playtest.json` with the new census assertion — Evidence: pending.
 - [ ] AC-4 [local]: The first visible frame is unchanged. A visual judge subagent rates BEFORE/AFTER frame 1 to 5 captures NEUTRAL or IMPROVEMENT. proof: two headed `--browser-recipe webgpu` runs per arm, judged per the root `AGENTS.md` rule — Evidence: pending.
-- [ ] AC-5 [local]: The native desktop host passes the AC-1 scenario. proof: the AC-1 command with `--target desktop` — Evidence: pending.
+- [x] AC-5 [local]: The native desktop host passes the AC-1 scenario. proof: the AC-1 command with `--target desktop` — Evidence: Verified 2026-10-15: `artifacts/prd616/native-ac5-final`, actual Abyss `warm-up-native.js` rebuilt against core `a536d0555`, owned C++ desktop host. Both complete census zero ceilings and diagnostics passed; 12 positive warm node builds and 12 warm render pipelines, zero afterward. Run from `--project <absolute examples/abyss-framework/dist>` so the staged manifest resolves; scenario, executable, bundle and artifact paths are absolute.
 
 ## Blocked on
 
@@ -82,17 +82,17 @@ Risk: a covered render through the real pipeline can advance temporal history (T
 **Files:** `packages/core/src/warmup.ts`, `packages/core/src/renderer.ts` (expose the world-pass compile entry point beside `renderFrame`), `packages/core/src/game.ts`, `packages/core/src/world-cells.ts`, `packages/core/__tests__/warmup.spec.ts`, `examples/abyss-framework/playtests/world-flythrough.playtest.json`.
 **Implementation:** Measure option 1 against option 2 from Solution on the AC-1 scenario and record the choice under `## Decisions`. Route all three warm-up callers through it. Keep the no-output-pipeline path unchanged.
 
-- [ ] AC-1 and AC-2 are green. proof: the AC-1 command, three runs
+- [x] AC-1 and AC-2 are green. proof: the AC-1 command, three runs
 - [ ] AC-3 is green. proof: `world-flythrough.playtest.json`'s scoped `chunk:0:2:1` census assertion; the existing `streaming.playtest.json` exercises synthetic `addInSlices` and does not attach a `WorldCells` chunk.
 - [x] A renderer without an output pipeline warms exactly as before. proof: `pnpm exec vitest run packages/core/__tests__/warmup.spec.ts` — 35 tests passed locally on 2026-10-14, including the scoped output-world-pass regression.
 
 #### Phase 3: Prove the look and the native host
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** none expected; fixes go back to Phase 2 files.
 
 - [ ] AC-4 judge verdict is recorded, with the images on the PR. proof: visual judge subagent
-- [ ] AC-5 is green on the desktop host. proof: the AC-1 command with `--target desktop`
+- [x] AC-5 is green on the desktop host. proof: the AC-1 command with `--target desktop`
 
 ## Decisions
 
