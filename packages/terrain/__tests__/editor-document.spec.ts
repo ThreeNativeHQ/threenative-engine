@@ -190,7 +190,7 @@ describe("project terrain editor document", () => {
     expect(() => new TerrainEditorDocument("relative.json")).toThrow("absolute");
   });
   it("streams accepted revisions and observes complete external file saves", async () => {
-    const { path, base, get, post } = await api();
+    const { path, base, get, post, server } = await api();
     const before = await get();
     const cancellation = new AbortController();
     const stream = await fetch(`${base}events`, { signal: cancellation.signal });
@@ -198,12 +198,23 @@ describe("project terrain editor document", () => {
     expect(reader).toBeTruthy();
     const initial = new TextDecoder().decode((await reader?.read())?.value);
     expect(initial).toContain(before.revision);
+    // Observe the API save before the next complete external save; adjacent writes
+    // must not rely on a later unrelated filesystem event to refresh the document.
+    const committed = new Promise<void>((resolve) => {
+      const changed = (changedPath: string) => {
+        if (changedPath !== path) return;
+        server.watcher.off("change", changed);
+        resolve();
+      };
+      server.watcher.on("change", changed);
+    });
     const edit = await post({
       baseRevision: before.revision,
       commands: [{ op: "update", id: "hills", patch: { params: { amplitude: 7 } } }],
     });
     const next = await edit.json();
     expect(new TextDecoder().decode((await reader?.read())?.value)).toContain(next.revision);
+    await committed;
     writeFileSync(
       path,
       JSON.stringify({

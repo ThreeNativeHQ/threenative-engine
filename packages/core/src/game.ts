@@ -1713,6 +1713,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // Before anything walks: a frozen subtree whose author moved its root thaws here, so the
           // walk that follows sees a transform nobody had to remember to announce.
           refreshStaticTransforms();
+          // Camera-rate metadata is an input to scene-owned beforeRender work and the projection
+          // palette write, not a post-draw observation. Publish it before either can skip a rig;
+          // this pass observes animation only and does not decide draw visibility.
+          const drawingBufferHeight = renderer.surface().drawingBufferHeight;
+          const cullPrepareStart = spans === undefined ? 0 : spanNow();
+          this.#cameraCull?.prepareAnimation(
+            this.#projection?.root ?? threeScene,
+            camera,
+            drawingBufferHeight,
+          );
+          if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullPrepareStart);
           // Scene prep that must read the frame's last solved state before the projection packs and
           // the renderer draws. Inside the world-render block it cannot land on a held loader frame.
           if (this.#beforeRenderCallbacks.size > 0) {
@@ -1775,20 +1786,20 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           } finally {
             endSpan(SPANS.lod);
           }
-          // Projected-size cull, per render camera, default on. It writes only `object.visible` —
-          // the one per-frame flag the projection's batch key ignores — and restores what it hid
-          // immediately after the draw, so the authored scene is untouched between frames. The
-          // renderer walks the same root the projection is about to draw, so a declined projection
-          // and an active one both get the gate.
-          const drawingBufferHeight = renderer.surface().drawingBufferHeight;
+          const renderRoot = this.#projection?.root ?? threeScene;
+          // The cull reads the matrices the renderer will draw. Projection exact proxies carry the
+          // authored world matrix in their local matrix, so their own world walk must precede both
+          // the cull and the render rather than following the cull.
+          renderRoot.matrixWorldAutoUpdate = false;
+          this.#matrixWorld?.apply(renderRoot);
+          // Visibility is decided against the transforms and LOD selection that will actually be
+          // drawn. The earlier animation-only pass has already published the rate for this frame.
           const cullApplyStart = spans === undefined ? 0 : spanNow();
           this.#cameraCull?.apply(
             this.#projection?.root ?? threeScene,
             camera,
             drawingBufferHeight,
           );
-          // Added, not bracketed: the render call sits between the apply and the restore, and a
-          // span that contained it would report the world pass as cull work.
           if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullApplyStart);
           const capturing = geometryCapture.armed();
           if (capturing) {
@@ -1812,12 +1823,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 : { backend: rendererBackendIdentity(renderer.raw) as string }),
             });
           }
-          const renderRoot = this.#projection?.root ?? threeScene;
-          // three's renderer walks whatever scene it is handed, so it is told not to: the pass above
-          // is the walk. Handing it the mirror sets the mirror scene's flag; the authored scene was
-          // marked at construction.
-          renderRoot.matrixWorldAutoUpdate = false;
-          this.#matrixWorld?.apply(renderRoot);
           renderer.render(renderRoot, camera);
           // *After* the render, because that is where the draw happened. The matrices read here are
           // the ones drawn: the walk above refreshed them and `render()` did not touch them. The

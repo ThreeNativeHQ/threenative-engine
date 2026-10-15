@@ -122,7 +122,9 @@ fi
 # Initialize only this run's private infrastructure before counting; still require no lease or
 # queue entry after SIGTERM, so a real lock/process/profile leak cannot become a green count.
 capture_coordination_root="$suite_temp_root/threenative-playtest-capture"
-mkdir -p -- "$capture_coordination_root/queue"
+# Corepack retains its V8 cache; keep it in this run's owned infrastructure baseline.
+export V8_COMPILE_CACHE_CACHE_DIR="$suite_temp_root/v8-compile-cache"
+mkdir -p -- "$capture_coordination_root/queue" "$V8_COMPILE_CACHE_CACHE_DIR"
 capture_coordination_empty() {
   [[ ! -e "$capture_coordination_root/lock" && ! -L "$capture_coordination_root/lock" ]] || return 1
   if [[ -d "$capture_coordination_root/queue" && ! -L "$capture_coordination_root/queue" ]]; then

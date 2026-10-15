@@ -1,0 +1,35 @@
+{
+  "name": "crowd-rate-visual",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "label": "freeze-at-render-frame-120",
+      "timeoutMs": 30000,
+      "waitForResource": {
+        "id": "state",
+        "path": "crowdRate.visualFrozen",
+        "equals": true
+      }
+    },
+    {
+      "label": "render-frame-120",
+      "waitTicks": 1,
+      "screenshot": "render-frame-120"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    }
+  }
+}

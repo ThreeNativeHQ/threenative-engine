@@ -65,6 +65,12 @@
         "component": "footClearance",
         "lte": 0.03,
         "allowTrivial": "grounded soldier contact is a standing invariant of the patrol loop"
+      },
+      {
+        "entity": "enemy",
+        "component": "bodyUsesOpaqueFade",
+        "equals": true,
+        "allowTrivial": "reads each live body material: blended soldiers leave background normals in the deferred pass even at opacity 1, producing a building-shaped stripe across the helmet"
       }
     ],
     "resources": [

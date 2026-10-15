@@ -38,6 +38,26 @@ function driveGpu(
 }
 
 describe("frame-budget GPU series", () => {
+  it("counts only fresh main-bucket samples, retaining measured zero and absent semantics", () => {
+    const budget = gpuBudget();
+    budget.beginFrame(0, 0);
+    budget.addGpuMs(9, 1);
+    budget.addGpuBucketMs({ shadow: 9 });
+    budget.endFrame(1);
+    expect(budget.window().gpuMainSamples).toBeUndefined();
+    for (const [index, frame] of [2, 2, 3].entries()) {
+      budget.beginFrame((index + 1) * 16, (index + 1) * 16);
+      budget.addGpuMs(8, frame);
+      budget.addGpuBucketMs(frame === 2 ? { main: index === 0 ? 0 : 99 } : { shadow: 8 });
+      budget.endFrame((index + 1) * 16 + 1);
+    }
+    const window = budget.window();
+    expect(window.frames).toBe(4);
+    expect(window.gpu?.samples).toBe(3);
+    expect(window.gpuMain).toBe(0);
+    expect(window.gpuMainSamples).toBe(1);
+  });
+
   it("keeps stale bucket samples out of a new window's resolved frame range", () => {
     const windows: IFrameBudgetWindow[] = [];
     const budget = gpuBudget({ reportEvery: 4, onWindow: (window) => windows.push(window) });
@@ -207,17 +227,19 @@ describe("frame-budget GPU series", () => {
       (marker as string).slice(`${FRAME_BUDGET_MARKER}:`.length),
     ) as Record<string, unknown>;
     expect(payload.gpuMain).toBe(6.1);
+    expect(payload.gpuMainSamples).toBe(2);
     expect(payload.gpuShadow).toBe(2);
     expect(payload.gpuOther).toBe(1);
     expect(payload.gpuCompute).toBe(0.4);
     // Appended after every existing field, so a reader that parsed the older line keeps its keys.
-    expect(Object.keys(payload).slice(-6)).toEqual([
+    expect(Object.keys(payload).slice(-7)).toEqual([
       "gpuMain",
       "gpuShadow",
       "gpuOther",
       "gpuCompute",
       "gpuShadowP95",
       "gpuShadowSamples",
+      "gpuMainSamples",
     ]);
   });
 

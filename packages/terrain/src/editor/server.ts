@@ -1,5 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstatSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  unwatchFile,
+  watchFile,
+  writeFileSync,
+} from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import type { Plugin } from "vite";
@@ -351,6 +359,10 @@ export function terrainEditor(options: {
         if (resolve(path) === document.path) document.refresh();
       };
       vite.watcher.on("add", refresh).on("change", refresh).on("unlink", refresh);
+      // Vite coalesces rapid same-path changes. Reconcile completed external saves
+      // independently so a save immediately after our atomic commit is not lost.
+      const refreshFile = () => document.refresh();
+      watchFile(document.path, { interval: 100, persistent: false }, refreshFile);
       const heartbeat = setInterval(() => {
         for (const response of clients) if (!response.write(": keepalive\n\n")) response.end();
       }, 15000);
@@ -358,6 +370,7 @@ export function terrainEditor(options: {
       http.once("close", () => {
         clearInterval(heartbeat);
         unsubscribe();
+        unwatchFile(document.path, refreshFile);
         for (const response of clients) response.end();
         vite.watcher.off("add", refresh).off("change", refresh).off("unlink", refresh);
       });
