@@ -37,6 +37,7 @@ interface IStreamOptions {
   readonly whileCurrent: () => boolean;
   readonly invalidateShadows?: (region?: IShadowRegion) => void;
   readonly onProgress?: (progress: IPropPreparationProgress) => void;
+  readonly onCellAdmissions?: (bounds: readonly Box3[]) => void;
 }
 
 /** Keep WorldCells' changed caster bounds when forwarding to the existing shadow renderer. */
@@ -336,6 +337,50 @@ export async function createStreamedProps(options: IStreamOptions) {
           return model;
         },
       });
+      // Observe completed cells through the public readiness query, without changing admission.
+      if (options.onCellAdmissions) {
+        const pending = cells.map((cell) => {
+          const bounds = new Box3();
+          for (const run of grouped.get(`${cell.x}:${cell.z}`)?.values() ?? []) {
+            for (const record of run) {
+              if (
+                Math.hypot(
+                  record.position.x - options.follow.position.x,
+                  record.position.z - options.follow.position.z,
+                ) > record.reach
+              )
+                continue;
+              const asset = definitions[record.key];
+              if (!asset) throw new Error(`Missing probe asset '${record.key}'`);
+              const local = new Box3(
+                new Vector3().fromArray(asset.bounds.min),
+                new Vector3().fromArray(asset.bounds.max),
+              );
+              const matrix = record.pose.matrix.clone();
+              matrix.scale(new Vector3(1 / record.ratio.x, 1 / record.ratio.y, 1 / record.ratio.z));
+              bounds.union(local.applyMatrix4(matrix));
+            }
+          }
+          return {
+            bounds,
+            x: minX + (cell.x + 0.5) * CELL_SIZE,
+            z: minZ + (cell.z + 0.5) * CELL_SIZE,
+          };
+        });
+        const process = world.process.bind(world);
+        world.process = (...args) => {
+          process(...args);
+          const admitted: Box3[] = [];
+          for (let i = pending.length - 1; i >= 0; i--) {
+            const cell = pending[i];
+            if (cell && world.readinessAt(cell).ready) {
+              if (!cell.bounds.isEmpty()) admitted.push(cell.bounds);
+              pending.splice(i, 1);
+            }
+          }
+          options.onCellAdmissions?.(admitted);
+        };
+      }
       world.name = `strata-props:${bucket}`;
       worlds.push(world);
       void world.prewarmed.then(() => warmed.add(world));

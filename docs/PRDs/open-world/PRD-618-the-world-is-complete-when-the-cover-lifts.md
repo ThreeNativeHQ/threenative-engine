@@ -1,6 +1,6 @@
 # PRD-618 — The world is complete when the cover lifts, and far trees keep their shape
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — AC-1 to AC-9 are open: on the Strata forest, shadows and nearby props appear after the loading bar ends, and far spruces read as noise (owner report, 2026-10-15).
 **Complexity:** 4 (MEDIUM) — 6–10 implementation files (`virtual-shadow.ts`, core `game.ts`, `world-cells.ts`, the Strata `loading.ts`, `game.ts`, `propStreaming.ts`, `props.ts`, `prep-fab-temperate.mjs`) (+2); startup readiness state (+2). Risk override: none.
 **Owner:** unassigned
@@ -103,12 +103,16 @@ The boxes live in the phases below; each names the AC it proves.
 
 #### Phase 1: Measure the pop-in (red)
 
-**Status:** NOT STARTED
-**Files:** `examples/strata-terrain-preview/playtests/reveal.playtest.json` (new); a debug readout in `src/game.ts` if a counter is not already in `ctx.entities` debug.
+**Status:** PARTIAL
+**Files:** `examples/strata-terrain-preview/playtests/reveal.playtest.json` (new); a debug readout in `src/game.ts`; `src/render/propStreaming.ts` supplies the game-side cell-completion observations.
 **Implementation:** Reuse the existing `walk`/`terrain` scenario shape. Hold the camera still for 3 s after `worldReady`. Read `props.stats()`, the shadow node stats (`invalidated`, delayed levels) and the pipeline census. Record the current numbers and `timeToReadyMs` (3 runs) in AC-1 and AC-3.
 **Verification:** the AC-1 command fails on current develop, for the counter reasons and not for an environment reason (`adapter.info` names the real GPU).
 
 - [ ] Scenario is red on develop with the numbers recorded. proof: AC-1 command.
+  - 2026-10-15 corrective attempt (base `e57975874`, runtime base `1d056cec3`): removed cumulative `byAdmission` assertions, default-zero impostor fallback and the invented 15,000 ms threshold. The probe starts after the actual canvas cover is absent, measures a 3,000 ms stationary window, differences real `byInvalidation` and device pipeline creation totals, and retains peak impostor pending work. Missing census stays unavailable (`-1`), never zero; AC-2 is not asserted yet. Game-side cell observations currently measure completed cells with in-reach placement bounds intersecting the reveal frustum; partial run publication within an unfinished cell is not covered, so this probe cannot yet qualify the full AC-1 admission claim.
+  - Checks: `pnpm --filter strata-terrain-preview exec tsc --noEmit -p tsconfig.json` exit 0; Biome formatting and `git diff --check` passed. Two initial scenario-schema errors were corrected (unsupported component wait, invalid text overlay); neither was a baseline result. The corrected scenario was accepted by the CLI, but its GPU run never started.
+  - Attempted command: `DISPLAY=:1 TN_PLAYTEST_HOST_DISPLAY=1 node packages/playtest/dist/runner/cli.js examples/strata-terrain-preview/playtests/reveal.playtest.json --url http://127.0.0.1:16180 --server-command "pnpm --filter strata-terrain-preview dev --host 127.0.0.1 --port 16180 --strictPort" --browser-recipe webgpu --headed --timeout 180000 --artifacts artifacts/playtest/prd618-corrected/baseline-1`. Exit 75: capture lock held by PID 3620521 for the full 120,000 ms queue timeout. Preserved output: `artifacts/playtest/prd618-corrected/baseline-1/run.log`. `node packages/playtest/dist/runner/cli.js doctor --text` exit 0 confirmed installed Chromium/Playwright and display support; the physical RTX 2080 was reported by `nvidia-smi`, but **no browser adapter.info was obtained**, so this is setup evidence only.
+  - Baseline counters, three `timeToReadyMs` samples/median, two BEFORE reveal/+3 s capture pairs and overview/river captures: **unverified, none collected**. No baseline red or AC completion claimed. Earlier `/tmp/opensecc/reveal-run` captures remain rejected. Licensed Fab bytes are absent; procedural fallback cannot qualify AC-6–AC-8. Resume after the shared GPU capture lane is available; close the partial-cell observation gap before qualifying AC-1.
 
 #### Phase 2: The cover lifts on a finished frame
 

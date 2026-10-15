@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-reveal",
+  "subject": "Post-reveal pop-in: cells, shadows and impostor bakes after the cover lifts",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "world-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "timeToReadyMs",
+        "gte": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reveal",
+      "waitTicks": 1,
+      "release": true,
+      "screenshot": "reveal"
+    },
+    {
+      "label": "reveal-plus-3s",
+      "timeoutMs": 30000,
+      "screenshot": "reveal-plus-3s",
+      "release": true,
+      "waitForResource": {
+        "id": "GameState",
+        "path": "revealComplete",
+        "equals": true
+      }
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "timeToReadyMs",
+        "gte": 1
+      }
+    ],
+    "components": [
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "complete",
+        "equals": true
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "samples",
+        "gte": 2
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "elapsedMs",
+        "gte": 3000
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "completedCellsInView",
+        "equals": 0
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "shadowInvalidated",
+        "equals": 0
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "impostorPendingPeak",
+        "equals": 0
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "cellSamples",
+        "gte": 1
+      }
+    ]
+  }
+}
