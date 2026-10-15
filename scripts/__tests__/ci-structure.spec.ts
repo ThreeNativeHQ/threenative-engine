@@ -3039,6 +3039,7 @@ describe("CI pipeline structure", () => {
     const job = requiredJob(integration, "packaged-quickjs");
     const name = "Build the QuickJS host required by the packaged fallback";
     const step = job.slice(job.indexOf(`      - name: ${name}`)).split("\n      - ")[0];
+    if (step === undefined) throw new Error(`workflow step ${name} was not found.`);
     const script = step.includes("        run: |")
       ? workflowRunScript(job, name)
       : step.match(/ {8}run: (.+)/u)?.[1];
