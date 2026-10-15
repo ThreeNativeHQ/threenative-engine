@@ -16,8 +16,8 @@ import {
 } from "../src/animation-pose-packet.js";
 import { AnimationPlayer } from "../src/animation.js";
 
-function required<T>(value: T | undefined): T {
-  if (value === undefined) throw new Error("missing fixture or eligible packet");
+function required<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) throw new Error("missing fixture or eligible packet");
   return value;
 }
 
@@ -227,7 +227,7 @@ describe("owned scalar-Z pose packets", () => {
     const first = required(readAnimationPosePacket(f.mesh));
     f.mesh.skeleton.update();
     expect(Array.from(materializeAnimationPoseFallback(first.version))).toEqual(
-      Array.from(f.mesh.skeleton.boneMatrices),
+      Array.from(required(f.mesh.skeleton.boneMatrices)),
     );
     for (let i = 0; i < 8; i++) {
       f.player.update(1 / 60);
@@ -238,14 +238,11 @@ describe("owned scalar-Z pose packets", () => {
     reference.player.update(packet.time, true);
     reference.mesh.updateMatrixWorld(true);
     reference.mesh.skeleton.update();
+    const referenceMatrices = required(reference.mesh.skeleton.boneMatrices);
     const displayed = materializeAnimationPosePacket(packet);
     const cached = materializeAnimationPoseFallback(packet.version);
     expect(
-      Math.max(
-        ...displayed.map((v, i) =>
-          Math.abs(v - (reference.mesh.skeleton.boneMatrices[i] as number)),
-        ),
-      ),
+      Math.max(...displayed.map((v, i) => Math.abs(v - (referenceMatrices[i] as number)))),
     ).toBeLessThan(2e-6);
     expect(
       Math.max(...displayed.map((v, i) => Math.abs(v - (cached[i] as number)))),

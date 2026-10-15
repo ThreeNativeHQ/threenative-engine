@@ -1,7 +1,7 @@
 import {
   LinearInterpolant,
   Matrix4,
-  type Quaternion,
+  Quaternion,
   Skeleton,
   type SkinnedMesh,
   type Vector3,
@@ -161,12 +161,7 @@ function validTransform(
   compose.call(
     scratch,
     { x: position[0], y: position[1], z: position[2] } as Vector3,
-    {
-      _x: q[0],
-      _y: q[1],
-      _z: q[2],
-      _w: q[3],
-    } as unknown as Quaternion,
+    new Quaternion(q[0], q[1], q[2], q[3]),
     { x: scale[0], y: scale[1], z: scale[2] } as Vector3,
   );
   if (!same(local, scratch.elements)) return undefined;

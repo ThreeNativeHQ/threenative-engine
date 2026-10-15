@@ -313,7 +313,7 @@ describe("SkinnedBatch owned scalar display packets", () => {
       f.batch.write(0, f.mesh);
       f.batch.write(1, other);
       f.batch.end();
-      expect(f.receipt().slots.every((s) => !s.currentRaw)).toBe(true);
+      expect(f.receipt().slots.every((s: { currentRaw: boolean }) => !s.currentRaw)).toBe(true);
       expect(update).toHaveBeenCalledTimes(1);
       expect(f.receipt().slots[0].previousRaw).toBe(true);
       expect(present(f.batch.history).subarray(0, 192)).toEqual(displayed);
@@ -343,7 +343,9 @@ describe("SkinnedBatch owned scalar display packets", () => {
       expect(f.receipt().slots[0].currentRaw).toBe(false);
       f.batch.write(1, other);
       f.batch.end();
-      expect(f.receipt().slots.every((slot) => !slot.currentRaw)).toBe(true);
+      expect(f.receipt().slots.every((slot: { currentRaw: boolean }) => !slot.currentRaw)).toBe(
+        true,
+      );
       expect(present(f.batch.history).subarray(0, 192)).toEqual(previousDisplay);
     } finally {
       f.close();
@@ -366,7 +368,10 @@ describe("SkinnedBatch owned scalar display packets", () => {
       f.batch.write(0, f.mesh);
       f.batch.write(1, neighbor.mesh);
       f.batch.end();
-      expect(f.receipt().slots.map((s) => s.currentRaw)).toEqual([false, true]);
+      expect(f.receipt().slots.map((s: { currentRaw: boolean }) => s.currentRaw)).toEqual([
+        false,
+        true,
+      ]);
       expect(update).not.toHaveBeenCalled();
       update.mockRestore();
       f.batch.hide(0);
@@ -492,7 +497,10 @@ describe("SkinnedBatch owned scalar display packets", () => {
         current[0] = 77;
         if (boundary === "getter") expect(f.batch.palette[0]).toBe(77);
         f.batch.end();
-        expect(f.receipt().slots.map((s) => s.currentRaw)).toEqual([false, true]);
+        expect(f.receipt().slots.map((s: { currentRaw: boolean }) => s.currentRaw)).toEqual([
+          false,
+          true,
+        ]);
         expect(current[0]).toBe(77);
         f.batch.begin();
         expect(history[0]).toBe(77);
