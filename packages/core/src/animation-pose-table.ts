@@ -49,6 +49,34 @@ export function captureEvaluatedPose(root: Object3D, pose: WeakMap<Object3D, Flo
   });
 }
 
+/** Preserve game-authored components across draw-time evaluation, even without a lookup basis. */
+export function preservePublicPoseEdits(
+  root: Object3D,
+  pose: WeakMap<Object3D, Float64Array> | undefined,
+): () => void {
+  const edits: (() => void)[] = [];
+  root.traverse((node) => {
+    const evaluated = pose?.get(node);
+    if (evaluated === undefined) return;
+    for (const [vector, offset] of [
+      [node.position, 0],
+      [node.scale, 7],
+    ] as const)
+      for (let component = 0; component < 3; component += 1) {
+        const value = vector.getComponent(component);
+        if (value !== evaluated[offset + component])
+          edits.push(() => vector.setComponent(component, value));
+      }
+    const rotation = node.quaternion.toArray();
+    if (rotation.some((value, component) => value !== evaluated[3 + component]))
+      edits.push(() => node.quaternion.fromArray(rotation));
+  });
+  return () => {
+    for (const restore of edits) restore();
+    root.updateMatrixWorld(true);
+  };
+}
+
 /** Internal bake inputs. Live references validate caller edits; canonical rest data permits phases to differ. */
 export class PoseBasis {
   readonly #rest: Float64Array;

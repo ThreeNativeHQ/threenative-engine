@@ -13,7 +13,7 @@ import {
   Vector3,
   type VectorKeyframeTrack,
 } from "three";
-import { captureEvaluatedPose } from "./animation-pose-table.js";
+import { captureEvaluatedPose, preservePublicPoseEdits } from "./animation-pose-table.js";
 import { clipTrackBindings } from "./clip-audit.js";
 import {
   type IAnimationPoseSample,
@@ -21,6 +21,10 @@ import {
   animationRateStates,
 } from "./render-camera-cull.js";
 import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
+
+type AnimationPlayerRateState = Omit<IAnimationRateState, "prepareDraw"> & {
+  prepareDraw: () => (() => void) | undefined;
+};
 
 export interface IAnimationPlayerOptions {
   readonly clips: readonly AnimationClip[];
@@ -258,6 +262,38 @@ type FinishedListener = EventListener<
 >;
 type BeforeFirstLoopListener = (duringUpdate: boolean) => void;
 
+interface IClipTrackSnapshot {
+  readonly track: AnimationClip["tracks"][number];
+  readonly name: string;
+  readonly factory: unknown;
+  readonly timesRef: ArrayLike<number>;
+  readonly valuesRef: ArrayLike<number>;
+  readonly times: number[];
+  readonly values: number[];
+}
+
+interface IClipSnapshot {
+  readonly duration: number;
+  readonly blendMode: AnimationClip["blendMode"];
+  readonly tracks: readonly IClipTrackSnapshot[];
+}
+
+function snapshotClip(clip: AnimationClip): IClipSnapshot {
+  return {
+    duration: clip.duration,
+    blendMode: clip.blendMode,
+    tracks: clip.tracks.map((track) => ({
+      track,
+      name: track.name,
+      factory: Reflect.get(track, "createInterpolant"),
+      timesRef: track.times,
+      valuesRef: track.values,
+      times: Array.from(track.times),
+      values: Array.from(track.values),
+    })),
+  };
+}
+
 class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
   readonly #loopListeners = new Set<LoopListener>();
   readonly #finishedListeners = new Set<FinishedListener>();
@@ -361,7 +397,7 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
 export class AnimationPlayer {
   readonly mixer: AnimationMixer;
   readonly root: Object3D;
-  readonly #rateState: IAnimationRateState = {
+  readonly #rateState: AnimationPlayerRateState = {
     rate: 1,
     frame: 0,
     source: undefined,
@@ -390,17 +426,7 @@ export class AnimationPlayer {
     | { action: AnimationAction; evaluation: number; time: number; scale: number }
     | undefined;
   #drawClip: AnimationClip | undefined;
-  #drawTracks: {
-    track: AnimationClip["tracks"][number];
-    name: string;
-    factory: unknown;
-    timesRef: ArrayLike<number>;
-    valuesRef: ArrayLike<number>;
-    times: number[];
-    values: number[];
-  }[] = [];
-  #drawDuration = 0;
-  #drawBlendMode: AnimationClip["blendMode"] = NormalAnimationBlendMode;
+  #clipSnapshots = new WeakMap<AnimationClip, IClipSnapshot>();
   readonly #lookupInvalidClips = new WeakSet<AnimationClip>();
   #drawRevision = 0;
   #firstStep = 0;
@@ -480,6 +506,7 @@ export class AnimationPlayer {
       this.#observeTimeScaleInterpolation(action);
       this.#actions.set(clip.name, action);
       this.#clips.set(clip.name, clip);
+      this.#clipSnapshots.set(clip, snapshotClip(clip));
     }
     for (const name of requiredClipNames(options.requiredClips)) {
       const clip = this.#clips.get(name);
@@ -1112,55 +1139,48 @@ export class AnimationPlayer {
     return sample;
   }
 
-  #prepareDraw(): void {
+  #prepareDraw(): (() => void) | undefined {
     const clip = this.#clips.get(this.#current ?? "");
     if (clip === undefined) {
       this.#drawClip = undefined;
-      this.#drawTracks.length = 0;
       return;
     }
     // Three exposes mutable track arrays without a revision; identity alone misses in-place edits.
+    const previous = this.#clipSnapshots.get(clip);
     const changed =
-      this.#drawClip === clip &&
-      (this.#drawDuration !== clip.duration ||
-        this.#drawBlendMode !== clip.blendMode ||
-        this.#drawTracks.length !== clip.tracks.length ||
-        clip.tracks.some((track, index) => {
-          const previous = this.#drawTracks[index];
-          return (
-            previous === undefined ||
-            previous.track !== track ||
-            previous.name !== track.name ||
-            previous.factory !== Reflect.get(track, "createInterpolant") ||
-            previous.timesRef !== track.times ||
-            previous.valuesRef !== track.values ||
-            previous.times.length !== track.times.length ||
-            previous.values.length !== track.values.length ||
-            track.times.some((value, at) => value !== previous.times[at]) ||
-            track.values.some((value, at) => value !== previous.values[at])
-          );
-        }));
+      previous === undefined ||
+      previous.duration !== clip.duration ||
+      previous.blendMode !== clip.blendMode ||
+      previous.tracks.length !== clip.tracks.length ||
+      clip.tracks.some((track, index) => {
+        const snapshot = previous?.tracks[index];
+        return (
+          snapshot === undefined ||
+          snapshot.track !== track ||
+          snapshot.name !== track.name ||
+          snapshot.factory !== Reflect.get(track, "createInterpolant") ||
+          snapshot.timesRef !== track.times ||
+          snapshot.valuesRef !== track.values ||
+          snapshot.times.length !== track.times.length ||
+          snapshot.values.length !== track.values.length ||
+          track.times.some((value, at) => value !== snapshot.times[at]) ||
+          track.values.some((value, at) => value !== snapshot.values[at])
+        );
+      });
     if (this.#drawClip !== clip || changed) {
       this.#drawRevision += 1;
       if (changed) this.#lookupInvalidClips.add(clip);
       this.#drawClip = clip;
-      this.#drawDuration = clip.duration;
-      this.#drawBlendMode = clip.blendMode;
-      this.#drawTracks = clip.tracks.map((track) => ({
-        track,
-        name: track.name,
-        factory: Reflect.get(track, "createInterpolant"),
-        timesRef: track.times,
-        valuesRef: track.values,
-        times: Array.from(track.times),
-        values: Array.from(track.values),
-      }));
+      this.#clipSnapshots.set(clip, snapshotClip(clip));
     }
-    if (changed) {
+    if (changed && (this.#pendingDt !== 0 || this.#effectiveUpdateRate(true) !== 1)) {
+      const restore = preservePublicPoseEdits(this.root, this.#rateState.pose);
       this.#evaluate(this.#pendingDt);
       this.#evaluated = true;
       this.root.updateMatrixWorld(true);
+      return restore;
     }
+    return undefined;
   }
 
   #evaluate(dt: number): void {
@@ -1288,8 +1308,8 @@ export class AnimationPlayer {
     this.mixer.removeEventListener("finished", this.#onFinished);
     this.#actions.clear();
     this.#clips.clear();
+    this.#clipSnapshots = new WeakMap<AnimationClip, IClipSnapshot>();
     this.#clipGroundSpeed.clear();
-    this.#drawTracks.length = 0;
     this.#drawClip = undefined;
     this.#preparation = undefined;
     if (animationRateStates.get(this.root) === this.#rateState)

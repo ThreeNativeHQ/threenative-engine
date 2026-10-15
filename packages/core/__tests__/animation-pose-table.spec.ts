@@ -67,6 +67,51 @@ function expectDisplayed(batch: SkinnedBatch, f: ReturnType<typeof playback>, sl
 }
 
 describe("current-time batch lookup", () => {
+  it("drops lookup pose state when the player is disposed before the batch", () => {
+    const f = playback(8);
+    const batch = new SkinnedBatch({
+      first: f.mesh,
+      capacity: 1,
+      velocity: true,
+      lookupLimits: limits,
+    });
+    try {
+      f.player.update(1 / 60, true);
+      draw(batch, f);
+      const previous = batch.palette.slice();
+      f.player.dispose();
+      f.root.position.x = 3;
+      draw(batch, f);
+      expectDisplayed(batch, f);
+      expect([...(batch.history as Float32Array)]).toEqual([...previous]);
+    } finally {
+      batch.dispose();
+      f.player.dispose();
+    }
+  });
+
+  it("declines lookup when a clip track is replaced before its first draw", () => {
+    const actual = playback(8);
+    const expected = playback(1);
+    const batch = new SkinnedBatch({
+      first: actual.mesh,
+      capacity: 1,
+      velocity: true,
+      lookupLimits: limits,
+    });
+    try {
+      actual.player.update(1 / 60);
+      expected.player.update(1 / 60);
+      actual.track.values = new Float32Array([0, 2, 0]);
+      draw(batch, actual);
+      expectDisplayed(batch, expected);
+    } finally {
+      batch.dispose();
+      actual.player.dispose();
+      expected.player.dispose();
+    }
+  });
+
   it.each(["first", "forced", "scheduled"])(
     "preserves a public bone edit after the %s evaluation",
     (evaluation) => {
@@ -97,6 +142,32 @@ describe("current-time batch lookup", () => {
         expect(f.player.updateRateReport.rate).toBe(1);
         if (evaluation !== "first")
           expect([...(batch.history as Float32Array)]).toEqual([...previous]);
+      } finally {
+        batch.dispose();
+        f.player.dispose();
+      }
+    },
+  );
+
+  it.each(["first", "retained", "unsupported", "rate1"])(
+    "preserves simultaneous clip and bone edits with %s lookup state",
+    (state) => {
+      const f = playback(state === "rate1" ? 1 : 8);
+      if (state === "unsupported") f.mesh.bindMode = "detached";
+      const batch = new SkinnedBatch({
+        first: f.mesh,
+        capacity: 1,
+        velocity: true,
+        lookupLimits: limits,
+      });
+      try {
+        f.player.update(1 / 60, true);
+        if (state === "retained") draw(batch, f);
+        f.track.values[1] = 1.5;
+        f.joint.position.x = 0.9;
+        draw(batch, f);
+        expect(f.joint.position.x).toBeCloseTo(0.9);
+        expectDisplayed(batch, f);
       } finally {
         batch.dispose();
         f.player.dispose();

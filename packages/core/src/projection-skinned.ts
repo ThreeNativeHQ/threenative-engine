@@ -46,7 +46,7 @@ interface IAnimationRateStateLike {
   readonly evaluated: boolean;
   readonly evaluation: number;
   readonly pose?: WeakMap<Object3D, Float64Array>;
-  readonly prepareDraw?: () => void;
+  readonly prepareDraw?: () => (() => void) | undefined;
   readonly readPose?: () => IAnimationPoseSample | undefined;
   readonly setPoseLookup?: (eligible: boolean) => void;
 }
@@ -632,10 +632,14 @@ export class SkinnedBatch {
         this.#retireLookup();
       }
       const state = animationRateStateOf(rig);
-      if (typeof state?.prepareDraw === "function") state.prepareDraw();
+      let basis = this.#lookup?.bases.get(rig);
+      const evaluation = state?.evaluation ?? 0;
+      const restoreEdits = state?.prepareDraw?.();
+      if (this.#lookup !== undefined && state?.readPose === undefined) {
+        this.#lookup.bases.delete(rig);
+        this.#lookup.coordinates[slot * 4] = -1;
+      }
       if (state?.readPose !== undefined) {
-        let basis = this.#lookup?.bases.get(rig);
-        const evaluation = state.evaluation;
         const sample = state.readPose();
         if (sample !== undefined) {
           basis ??= preparePoseBasis(sample.root, rig, sample.clip);
@@ -653,6 +657,7 @@ export class SkinnedBatch {
         basis?.restoreEdits(evaluation);
         basis?.root.updateMatrixWorld(true);
       }
+      restoreEdits?.();
       const writtenWorld = this.#writtenWorldMatrices.get(rig);
       if (
         state !== undefined &&
