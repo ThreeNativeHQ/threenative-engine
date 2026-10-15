@@ -9,11 +9,47 @@
   "warmupFrames": 10,
   "steps": [
     {
-      "label": "settled-world",
+      "label": "settled-loads",
       "timeoutMs": 20000,
       "waitForResource": {
         "id": "state",
-        "path": "loadsInFlight",
+        "path": "stats.loadsInFlight",
+        "equals": 0
+      }
+    },
+    {
+      "label": "no-queued-loads",
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "id": "state",
+        "path": "stats.loadsQueued",
+        "equals": 0
+      }
+    },
+    {
+      "label": "settled-prewarm",
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "id": "state",
+        "path": "stats.pendingPrewarm",
+        "equals": 0
+      }
+    },
+    {
+      "label": "complete-terrain-ring",
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "id": "state",
+        "path": "stats.residentTiles",
+        "equals": 9
+      }
+    },
+    {
+      "label": "admitted-world",
+      "timeoutMs": 20000,
+      "waitForResource": {
+        "id": "state",
+        "path": "stats.admission.backlog",
         "equals": 0
       }
     }
@@ -23,8 +59,8 @@
       {
         "entity": "world",
         "component": "residentCells",
-        "gte": 1,
-        "allowTrivial": "The settled world must retain a resident cell that the real world pass can draw."
+        "gte": 3,
+        "allowTrivial": "All three authored cells must be resident before comparing the fixed-camera world."
       }
     ],
     "pipelineCensus": {
