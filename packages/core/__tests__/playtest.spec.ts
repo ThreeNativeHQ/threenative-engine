@@ -236,9 +236,17 @@ describe("playtest plugin", () => {
           .runtimeDiagnosticsSeries ?? [];
       // The frame budget is on by default, so each sample also carries its phase split.
       expect(series.every(({ phases }) => phases !== undefined)).toBe(true);
-      expect(series.map(({ passes: _passes, phases: _phases, ...sample }) => sample)).toEqual([
-        { drawCalls: 7, frameMs: 16, triangles: 42 },
-      ]);
+      expect(
+        series.map(
+          ({
+            passes: _passes,
+            phases: _phases,
+            sequence: _sequence,
+            completedAtMs: _completedAtMs,
+            ...sample
+          }) => sample,
+        ),
+      ).toEqual([{ drawCalls: 7, frameMs: 16, triangles: 42 }]);
     } finally {
       game.stop();
       if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
@@ -1011,6 +1019,98 @@ describe("playtest holdUntilAttached", () => {
       });
       if (previousEndpoint === undefined) Reflect.deleteProperty(host, "TN_PLAYTEST_ENDPOINT");
       else host.TN_PLAYTEST_ENDPOINT = previousEndpoint;
+    }
+  });
+
+  it("negotiates an autonomous pose window and restores the fixed clock on teardown", async () => {
+    const host = globalThis as Record<string, unknown>;
+    const previousEndpoint = host[PLAYTEST_RUNNER_EXPECTED_GLOBAL];
+    host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = true;
+    const callbacks = new Map<number, (time: number) => void>();
+    let handle = 0;
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        callbacks.set(++handle, callback);
+        return handle;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: (id: number) => {
+        callbacks.delete(id);
+      },
+    });
+    const canvas = testCanvas();
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: false })],
+      renderer: stubRenderer(canvas),
+      scenes: { test: class extends Scene {} },
+      start: "test",
+    });
+    try {
+      await game.start();
+      await bridge().advance?.(2);
+      const control = bridge() as IPlaytestBridgeV1 & {
+        _clockEpoch: number;
+        _setClockMode(mode: unknown): { mode: string; tick: number; epoch: number };
+      };
+      const pump = (time: number): void => {
+        const entry = callbacks.entries().next().value;
+        expect(entry).toBeDefined();
+        if (entry === undefined) return;
+        callbacks.delete(entry[0]);
+        entry[1](time);
+      };
+      expect(control._setClockMode("wall-clock")).toEqual({
+        mode: "wall-clock",
+        tick: 2,
+        epoch: 1,
+      });
+      expect(callbacks.size).toBe(1);
+      pump(100_000);
+      pump(100_020);
+      expect(control._setClockMode("wall-clock")).toEqual({
+        mode: "wall-clock",
+        tick: 3,
+        epoch: 1,
+      });
+      expect((await bridge().sample({})).clock).toMatchObject({ mode: "wall-clock", tick: 3 });
+      expect((await bridge().describe()).capabilities).toContain("runtime.fixedStep");
+      expect(await bridge().ready?.()).toMatchObject({ ready: true });
+      expect(control._clockEpoch).toBe(1);
+      expect(() => control._setClockMode("invalid")).toThrow(/clock mode/iu);
+      expect(control._setClockMode("fixed-step")).toEqual({
+        mode: "fixed-step",
+        tick: 3,
+        epoch: 2,
+      });
+      pump(200_000);
+      await bridge().advance?.(2);
+      expect((await bridge().sample({})).clock).toMatchObject({ mode: "fixed-step", tick: 5 });
+      expect((await bridge().describe()).capabilities).toContain("runtime.fixedStep");
+      expect(await bridge().ready?.()).toMatchObject({ ready: true });
+      control._setClockMode("wall-clock");
+      game.stop();
+      expect(control._clockEpoch).toBe(4);
+      expect(callbacks.size).toBe(0);
+      expect(() => control._setClockMode("wall-clock")).toThrow(/disposed/iu);
+    } finally {
+      game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: cancelFrame,
+      });
+      if (previousEndpoint === undefined)
+        Reflect.deleteProperty(host, PLAYTEST_RUNNER_EXPECTED_GLOBAL);
+      else host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = previousEndpoint;
     }
   });
 

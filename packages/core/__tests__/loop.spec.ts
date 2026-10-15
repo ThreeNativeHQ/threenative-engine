@@ -8,6 +8,59 @@ import {
 import { FRAME_PASS_KINDS, type IRenderPassSample } from "../src/render-pass-budget.js";
 
 describe("FixedStepLoop", () => {
+  it("rebases negotiated clock transitions and rearms a driven loop exactly once", () => {
+    const callbacks = new Map<number, (time: number) => void>();
+    let handle = 0;
+    let now = 0;
+    const loop = new FixedStepLoop({
+      collectMetrics: true,
+      now: () => now,
+      onUpdate: () => undefined,
+      requestFrame: (callback) => {
+        callbacks.set(++handle, callback);
+        return handle;
+      },
+      cancelFrame: (id) => {
+        callbacks.delete(id);
+      },
+    });
+    const pump = (time: number): void => {
+      now = time;
+      const entry = callbacks.entries().next().value;
+      expect(entry).toBeDefined();
+      if (entry === undefined) return;
+      callbacks.delete(entry[0]);
+      entry[1](time);
+    };
+    loop.start(0);
+    loop.advance(2, { render: true });
+    const priorSequence = loop.runtimeDiagnosticsSeries().at(-1)?.sequence ?? 0;
+    expect(callbacks.size).toBe(0);
+    loop._setClockMode("wall-clock");
+    expect(callbacks.size).toBe(1);
+    expect(loop.runtimeDiagnosticsSeries()).toEqual([]);
+    pump(100_000);
+    expect(loop.tick()).toBe(2);
+    pump(100_020);
+    expect(loop.tick()).toBe(3);
+    expect(loop.runtimeDiagnosticsSeries().at(-1)?.sequence).toBeGreaterThan(priorSequence);
+    const retained = loop.runtimeDiagnosticsSeries();
+    expect(retained.at(-1)?.completedAtMs).toBe(100_020);
+    loop._setClockMode("wall-clock");
+    expect(loop.runtimeDiagnosticsSeries()).toEqual(retained);
+    expect(callbacks.size).toBe(1);
+    expect(() => loop._setClockMode("invalid" as "fixed-step")).toThrow(/clock mode/iu);
+    expect(loop.clockFrozen).toBe(false);
+    loop._setClockMode("fixed-step");
+    pump(200_000);
+    expect(loop.tick()).toBe(3);
+    loop.advance(2, { render: true });
+    expect(loop.tick()).toBe(5);
+    loop.stop();
+    loop._setClockMode("wall-clock");
+    expect(callbacks.size).toBe(0);
+  });
+
   it("should reject a maxSteps that can never run an update", () => {
     // A maxSteps of zero (or negative, or NaN) made the catch-up while-loop run
     // zero updates every frame, forever: the game rendered but never simulated,

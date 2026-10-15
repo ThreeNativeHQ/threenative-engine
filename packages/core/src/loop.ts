@@ -266,6 +266,22 @@ export class FixedStepLoop {
   setHeld(held: boolean): void {
     this.#held = held;
   }
+  /** Reserved playtest seam: transition without banking elapsed wall time. */
+  _setClockMode(mode: "fixed-step" | "wall-clock"): void {
+    if (mode !== "fixed-step" && mode !== "wall-clock") throw new Error("Unknown clock mode.");
+    const frozen = mode === "fixed-step";
+    if (this.#clockFrozen === frozen) return;
+    this.#clockFrozen = frozen;
+    this.#primePending = false;
+    this.#accumulator = 0;
+    this.#lastTime = frozen ? Number.POSITIVE_INFINITY : undefined;
+    this.#lastRenderTime = undefined;
+    this.#driven = false;
+    this.clearRuntimeDiagnostics();
+    if (this.#running && this.#frameHandle === undefined)
+      this.#frameHandle = this.#requestFrame(this.#frameCallback);
+  }
+
   /**
    * Stop the live clock: from here a rendered frame draws and simulates nothing, and banks no
    * time. `advance()` is then the only thing that moves the simulation.

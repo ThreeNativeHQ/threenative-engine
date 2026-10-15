@@ -2040,6 +2040,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       step: gameLoop.step,
       runtimeDiagnosticsSeries: () => gameLoop.runtimeDiagnosticsSeries(),
     };
+    Object.assign(runtime, {
+      _setClockMode: (mode: "fixed-step" | "wall-clock") => gameLoop._setClockMode(mode),
+    });
     // A boot that throws must end exactly like an aborted boot: every cleanup attempted, every
     // resource released — and the original error rethrown, not a teardown error standing in
     // for it. The abort branches below stay outside these guards: they tear down themselves.
