@@ -4,6 +4,7 @@
  * Fail closed: no data is `pending`, never `pass`, and a missing PRD file reports no progress.
  */
 import { readFile } from "node:fs/promises";
+import { cyclesOf } from "./cycle.js";
 import {
   ARMS,
   type Arm,
@@ -933,6 +934,7 @@ export function midwayOf(
   prdText?: string,
   lockText?: string,
   now = Date.now(),
+  cyclesText?: string,
 ) {
   const runs = all.filter((r) => !r.profiled && !r.timingExclusion && !r.rejection);
   const prd = prdText === undefined ? undefined : prdProgress(prdText);
@@ -999,6 +1001,7 @@ export function midwayOf(
     : undefined;
   return {
     hero: heroOf(runs, now),
+    cycles: cyclesOf(cyclesText, now),
     matchedCpu: [...matchedOf(runs), ...matchedOf(runs, "native")],
     winner,
     selection: {
@@ -1069,5 +1072,7 @@ export async function midwayState() {
     await readFile(`${runsDir()}/winner-lock.json`, "utf8").catch((error) =>
       error.code === "ENOENT" ? undefined : "invalid unreadable winner lock",
     ),
+    Date.now(),
+    await readFile(`${runsDir()}/cycles.jsonl`, "utf8").catch(() => undefined),
   );
 }

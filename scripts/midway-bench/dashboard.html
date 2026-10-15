@@ -50,6 +50,10 @@
   .panel table th, .panel table td { padding:2px 6px; } .panel table td { text-align:right; } .panel tr.sec td, .panel tr.sec th { color:var(--mute); }
   .chip.warn { background:var(--amber-bg); color:var(--amber); } .chip.run { background:var(--wasm); color:#fff; }
   .two { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:14px; align-items:start; }
+  .cyc { display:grid; grid-template-columns:minmax(120px,1.2fr) 70px minmax(160px,3fr) 80px 90px minmax(0,2fr); gap:4px 10px; align-items:center; font-size:12.5px; }
+  .cyc .trk { position:relative; height:12px; border-radius:6px; background:var(--track); } .cyc .trk i { position:absolute; inset:0 auto 0 0; border-radius:6px; background:var(--green); } .cyc .trk.over i { background:var(--red); } .cyc .trk.live i { background:repeating-linear-gradient(135deg,var(--accent) 0 8px,transparent 8px 16px); } .cyc .trk.live.over i { background:repeating-linear-gradient(135deg,var(--red) 0 8px,transparent 8px 16px); }
+  .cyc .trk u { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ink); }
+  .cyc .rn { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--mute); }
   .count { font-size:20px; font-weight:750; margin-right:6px; }
   .stack { display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
   .kpi { display:grid; gap:5px; padding:9px 0 11px; border-top:1px solid var(--line); } .kpi:first-of-type { border-top:0; padding-top:0; }
@@ -82,7 +86,7 @@
   th, td { text-align:right; padding:3px 8px; border-top:1px solid var(--line); white-space:nowrap; } th:first-child, td:first-child { text-align:left; } th { color:var(--mute); font-weight:500; }
   details summary { cursor:pointer; font-weight:650; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); }
   #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px; }
-  @media (max-width:1100px) { .hero { grid-template-columns:minmax(0,1fr); } .two { grid-template-columns:minmax(0,1fr); } .poses { gap:8px; } .ratio { font-size:34px; } }
+  @media (max-width:1100px) { .hero { grid-template-columns:minmax(0,1fr); } .two { grid-template-columns:minmax(0,1fr); } .poses { gap:8px; } .ratio { font-size:34px; } .cyc { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 </style>
 </head>
 <body>
@@ -94,6 +98,7 @@
   <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
 </header>
 <section class="hero" id="hero"></section>
+<section class="card"><h2>Iteration cycles · start optimization to results · goal under 30 min</h2><div id="cycles"></div></section>
 <section class="two">
   <div class="card"><h2>PRD-610 acceptance boxes</h2><div class="ring" id="ring"></div></div>
   <div class="card"><h2>HUD round trip · AC-5</h2><div id="hud"></div></div>
@@ -225,6 +230,20 @@ function progress(d) {
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Matched ratio per pose by engine commit">${refs}${lines}${ticks}</svg><div class="legend"><span style="--c:var(--desktop)">Native desktop</span><span style="--c:var(--wasm)">Web Wasm</span><span>solid takeoff · dashed cockpit · dotted rear gunner</span></div>`;
 }
 
+/** Closed cycles and live open ones as bars against the 30-minute goal; `now` is the viewer's clock. */
+function cyclesPanel(c, now = Date.now()) {
+  if (!c) return "";
+  const open = c.open.map((o) => ({ ...o, minutes: Math.max(0, (now - Date.parse(o.startedAt)) / 60000), live: true }));
+  const rows = [...c.last.map((x) => ({ ...x, live: false })), ...open];
+  const skipped = c.skipped ? `<span class="chip fail" title="Lines that did not parse or broke the start/end order">${c.skipped} malformed line${c.skipped === 1 ? "" : "s"} skipped</span>` : "";
+  if (!rows.length) return `<span class="mute">no cycles yet · start one with <code>node --import tsx scripts/midway-bench/cycle.ts start &lt;lever&gt;</code></span> ${skipped}`;
+  const T = c.targetMin, max = Math.max(T * 2, ...rows.map((r) => r.minutes)) * 1.05, pos = (m) => Math.min(100, (m / max) * 100);
+  const sum = c.count ? `<span class="chip ${c.medianMin < T ? "pass" : "fail"}">median ${c.medianMin.toFixed(1)} min</span><span class="chip ${c.pctUnder >= 50 ? "pass" : "fail"}">${c.pctUnder.toFixed(0)}% under ${T} min</span><span class="chip">${c.count} closed</span>` : '<span class="chip">no closed cycle yet</span>';
+  const V = { keep: "pass", reject: "fail", inconclusive: "" };
+  const body = rows.map((r) => `<span><b>${esc(r.lever)}</b></span><span class="mute">${esc(r.arm ?? "—")}</span><span class="trk ${r.minutes >= T ? "over" : ""} ${r.live ? "live" : ""}" role="img" aria-label="${r.minutes.toFixed(1)} minutes"><i style="width:${pos(r.minutes)}%"></i><u style="left:${pos(T)}%"></u></span><span class="${r.minutes >= T ? "bad" : "ok"}">${r.minutes.toFixed(1)} min${r.live ? " ⏱" : ""}</span><span>${r.live ? '<span class="chip run">OPEN</span>' : `<span class="chip ${V[r.verdict] ?? ""}">${esc(String(r.verdict).toUpperCase())}</span>`}</span><span class="rn" title="${esc((r.runs ?? []).join(", "))}">${esc((r.runs ?? []).join(", ") || r.note || "")}</span>`).join("");
+  return `<div class="legend" style="gap:6px;margin-bottom:8px">${sum}${skipped}<span>last ${c.last.length} · black tick = ${T} min goal</span></div><div class="cyc">${body}</div>`;
+}
+
 function side(d) {
   const g = d.gap, bars = [["desktop", g.desktop], ["native", g.wasm], ["legacy", g.legacyMs === undefined ? undefined : { ms: g.legacyMs, build: "three.js", runs: d.runs.filter((r) => r.arm === "legacy").length }]].map(([arm, m]) => ({ arm, v: m?.ms, build: m?.build, runs: m?.runs }));
   const W = 410, A = 320, H = 225, base = H - 34, top = 26, hi = Math.max(...bars.map((b) => b.v ?? 0), 1) * 1.15, bw = 64, gap = (A - 3 * bw) / 4;
@@ -306,6 +325,7 @@ function render(d) {
   const hud = d.kpis.find((k) => k.id === "AC-5");
   $("hud").innerHTML = hud ? kpi(hud) : '<span class="mute">no HUD samples</span>';
   renderHero(d);
+  $("cycles").innerHTML = cyclesPanel(d.cycles);
   const chart = progress(d);
   $("progress").innerHTML = chart;
   $("progressCard").hidden = !chart;
