@@ -9,6 +9,7 @@ import {
 } from "three";
 import {
   Fn,
+  If,
   attribute,
   instanceIndex,
   normalGeometry,
@@ -34,7 +35,9 @@ import {
   StorageBufferAttribute,
 } from "three/webgpu";
 
+import { type PoseBasis, bakePoseTable, preparePoseBasis } from "./animation-pose-table.js";
 import { SPANS, beginSpan, endSpan } from "./profiling/Spans.js";
+import type { IAnimationPoseSample } from "./render-camera-cull.js";
 
 const ANIMATION_RATE_SOURCES_KEY = "threenative.animationRateSources";
 const ANIMATION_RATE_STATE_KEY = "threenative.animationRateState";
@@ -43,6 +46,50 @@ interface IAnimationRateStateLike {
   readonly evaluated: boolean;
   readonly evaluation: number;
   readonly prepareDraw?: () => void;
+  readonly readPose?: () => IAnimationPoseSample | undefined;
+  readonly setPoseLookup?: (eligible: boolean) => void;
+}
+
+/** Internal renderer/device seam; absent limits decline lookup before any allocation. */
+export interface IPoseLookupLimits {
+  readonly maxStorageBufferBindingSize: number;
+  readonly maxBufferSize: number;
+  readonly maxStorageBuffersPerShaderStage: number;
+}
+
+interface ISharedPoseTable {
+  readonly basis: PoseBasis;
+  readonly step: number;
+  readonly data: Float32Array;
+  readonly segments: number;
+  readonly attribute: StorageBufferAttribute;
+  users: number;
+}
+
+const poseTables = new Set<ISharedPoseTable>();
+
+function acquirePoseTable(
+  basis: PoseBasis,
+  step: number,
+  maxBytes: number,
+): ISharedPoseTable | undefined {
+  for (const table of poseTables) {
+    if (table.step === step && table.data.byteLength <= maxBytes && table.basis.compatible(basis)) {
+      table.users += 1;
+      return table;
+    }
+  }
+  const baked = bakePoseTable(basis, step, maxBytes);
+  if (baked === undefined) return undefined;
+  const table = {
+    ...baked,
+    basis,
+    step,
+    users: 1,
+    attribute: new StorageBufferAttribute(baked.data, 16),
+  };
+  poseTables.add(table);
+  return table;
 }
 
 /**
@@ -198,6 +245,7 @@ export interface ISkinnedBatchOptions {
   readonly first: SkinnedMesh;
   readonly capacity: number;
   readonly velocity: boolean;
+  readonly lookupLimits?: IPoseLookupLimits;
 }
 
 /** One skinned draw: a palette of `capacity × bones` world-space matrices and the shader reading it. */
@@ -224,6 +272,18 @@ export class SkinnedBatch {
   #frame = 0;
   #dirty = false;
   #sourceVersion: number;
+  readonly #lookupLimits: IPoseLookupLimits | undefined;
+  #lookup:
+    | {
+        table: ISharedPoseTable;
+        bases: Map<SkinnedMesh, PoseBasis>;
+        coordinates: Float32Array;
+        coordinateAttribute: StorageBufferAttribute;
+        roots: Float32Array;
+        rootAttribute: StorageBufferAttribute;
+        writtenFrames: Float64Array;
+      }
+    | undefined;
 
   constructor(options: ISkinnedBatchOptions) {
     const { first, capacity, velocity } = options;
@@ -233,6 +293,7 @@ export class SkinnedBatch {
     this.#sourceVersion = this.sourceMaterial.version;
     this.bones = first.skeleton.bones.length;
     this.capacity = capacity;
+    this.#lookupLimits = options.lookupLimits;
     const floats = capacity * this.bones * 16;
     this.#current = new Float32Array(floats);
     this.#currentAttribute = new StorageBufferAttribute(this.#current, 16);
@@ -254,7 +315,22 @@ export class SkinnedBatch {
       geometry.addGroup(group.start, group.count, group.materialIndex);
     geometry.instanceCount = 0;
 
-    const count = capacity * this.bones;
+    const material = new NodeClass();
+    this.#syncMaterial(material);
+
+    this.mesh = new Mesh(geometry, material);
+    this.#shader();
+    this.mesh.matrixAutoUpdate = false;
+    this.mesh.userData[ANIMATION_RATE_SOURCES_KEY] = this.instances;
+    // The palette spans every rig; only the per-rig sources have meaningful bounds.
+    this.mesh.frustumCulled = false;
+    this.mesh.castShadow = first.castShadow;
+    this.mesh.receiveShadow = first.receiveShadow;
+    this.mesh.layers.mask = first.layers.mask;
+  }
+
+  #shader(): void {
+    const count = this.capacity * this.bones;
     const current = storage(this.#currentAttribute, "mat4", count).toReadOnly();
     const previous =
       this.#previousAttribute === undefined
@@ -263,34 +339,58 @@ export class SkinnedBatch {
     const boneIndex = attribute<"uvec4">("skinIndex", "uvec4");
     const weight = attribute<"vec4">("skinWeight", "vec4");
     const base = instanceIndex.mul(uint(this.bones));
-    const blend = (palette: typeof current) =>
-      palette
-        .element(base.add(boneIndex.x))
+    const lookup = this.#lookup;
+    const samples =
+      lookup === undefined
+        ? undefined
+        : storage(lookup.table.attribute, "mat4", lookup.table.data.length / 16).toReadOnly();
+    const coordinates =
+      lookup === undefined
+        ? undefined
+        : storage(lookup.coordinateAttribute, "vec4", this.capacity).toReadOnly();
+    const roots =
+      lookup === undefined
+        ? undefined
+        : storage(lookup.rootAttribute, "mat4", lookup.roots.length / 16).toReadOnly();
+    const boneMatrix = (palette: typeof current, bone: typeof boneIndex.x, history: boolean) =>
+      Fn(() => {
+        const matrix = palette.element(base.add(bone)).toVar();
+        if (samples !== undefined && coordinates !== undefined && roots !== undefined) {
+          const coordinate = coordinates.element(instanceIndex);
+          const frame = history ? coordinate.z : coordinate.x;
+          const alpha = history ? coordinate.w : coordinate.y;
+          If(frame.greaterThanEqual(0), () => {
+            const at = uint(frame).mul(uint(this.bones)).add(bone);
+            const pose = samples
+              .element(at)
+              .mul(alpha.oneMinus())
+              .add(samples.element(at.add(uint(this.bones))).mul(alpha));
+            matrix.assign(
+              roots
+                .element(history ? instanceIndex.add(uint(this.capacity)) : instanceIndex)
+                .mul(pose),
+            );
+          });
+        }
+        return matrix;
+      })();
+    const blend = (palette: typeof current, history = false) =>
+      boneMatrix(palette, boneIndex.x, history)
         .mul(weight.x)
-        .add(palette.element(base.add(boneIndex.y)).mul(weight.y))
-        .add(palette.element(base.add(boneIndex.z)).mul(weight.z))
-        .add(palette.element(base.add(boneIndex.w)).mul(weight.w));
-    const hasTangent = source.getAttribute("tangent") !== undefined;
-    const material = new NodeClass();
-    this.#syncMaterial(material);
+        .add(boneMatrix(palette, boneIndex.y, history).mul(weight.y))
+        .add(boneMatrix(palette, boneIndex.z, history).mul(weight.z))
+        .add(boneMatrix(palette, boneIndex.w, history).mul(weight.w));
+    const hasTangent = this.mesh.geometry.getAttribute("tangent") !== undefined;
+    const material = this.mesh.material;
     material.positionNode = Fn(() => {
       const matrix = blend(current);
       normalLocal.assign(matrix.mul(vec4(normalGeometry, 0)).xyz);
       if (hasTangent) tangentLocal.assign(matrix.mul(vec4(tangentGeometry.xyz, 0)).xyz);
       if (previous !== undefined)
-        positionPrevious.assign(blend(previous).mul(vec4(positionGeometry, 1)).xyz);
+        positionPrevious.assign(blend(previous, true).mul(vec4(positionGeometry, 1)).xyz);
       return matrix.mul(vec4(positionGeometry, 1)).xyz;
     })();
     material.needsUpdate = true;
-
-    this.mesh = new Mesh(geometry, material);
-    this.mesh.matrixAutoUpdate = false;
-    this.mesh.userData[ANIMATION_RATE_SOURCES_KEY] = this.instances;
-    // The palette spans every rig; only the per-rig sources have meaningful bounds.
-    this.mesh.frustumCulled = false;
-    this.mesh.castShadow = first.castShadow;
-    this.mesh.receiveShadow = first.receiveShadow;
-    this.mesh.layers.mask = first.layers.mask;
   }
 
   /**
@@ -339,21 +439,145 @@ export class SkinnedBatch {
     const slot = this.instances.get(rig);
     if (slot === undefined) return;
     this.instances.delete(rig);
+    this.#lookup?.bases.delete(rig as SkinnedMesh);
     this.#slotRigs.delete(slot);
     this.#writtenEvaluations.delete(rig);
     this.#writtenWorldMatrices.delete(rig);
+    animationRateStateOf(rig)?.setPoseLookup?.(true);
     this.hide(slot);
     this.free.push(slot);
   }
 
   /** This frame's world-space bone matrices, `capacity × bones` of them in slot order. */
   get palette(): Float32Array {
-    return this.#current;
+    return this.#display(false);
   }
 
   /** Last frame's palette, present only while a temporal stage asks for per-object history. */
   get history(): Float32Array | undefined {
-    return this.#previous;
+    return this.#previous === undefined ? undefined : this.#display(true);
+  }
+
+  /** Adapter inspection only: materialize exactly the indexing and Float32 inputs the shader reads. */
+  #display(history: boolean): Float32Array {
+    const source = history ? (this.#previous as Float32Array) : this.#current;
+    const lookup = this.#lookup;
+    if (lookup === undefined) return source;
+    const out = source.slice();
+    const matrix = new Float32Array(16);
+    for (let slot = 0; slot < this.capacity; slot += 1) {
+      const frame = lookup.coordinates[slot * 4 + (history ? 2 : 0)] as number;
+      if (frame < 0) continue;
+      const alpha = lookup.coordinates[slot * 4 + (history ? 3 : 1)] as number;
+      for (let bone = 0; bone < this.bones; bone += 1) {
+        const at = (frame * this.bones + bone) * 16;
+        for (let component = 0; component < 16; component += 1)
+          matrix[component] =
+            (lookup.table.data[at + component] as number) * (1 - alpha) +
+            (lookup.table.data[at + this.bones * 16 + component] as number) * alpha;
+        multiply(
+          lookup.roots,
+          (slot + (history ? this.capacity : 0)) * 16,
+          matrix,
+          0,
+          out,
+          (slot * this.bones + bone) * 16,
+        );
+      }
+    }
+    return out;
+  }
+
+  #retireLookup(): void {
+    const lookup = this.#lookup;
+    if (lookup === undefined || lookup.bases.size > 0) return;
+    for (let slot = 0; slot < this.capacity; slot += 1)
+      if (
+        (lookup.coordinates[slot * 4] as number) >= 0 ||
+        (this.#previous !== undefined && (lookup.coordinates[slot * 4 + 2] as number) >= 0)
+      )
+        return;
+    lookup.coordinateAttribute.dispose();
+    lookup.rootAttribute.dispose();
+    lookup.table.users -= 1;
+    if (lookup.table.users === 0) {
+      poseTables.delete(lookup.table);
+      lookup.table.attribute.dispose();
+    }
+    this.#lookup = undefined;
+    this.#shader();
+  }
+
+  #writeLookup(
+    slot: number,
+    rig: SkinnedMesh,
+    sample: IAnimationPoseSample,
+    evaluation: number,
+  ): boolean {
+    const limits = this.#lookupLimits;
+    const velocity = this.#previous !== undefined;
+    const rootBytes = this.capacity * 64 * (velocity ? 2 : 1);
+    if (
+      Reflect.get(this.sourceMaterial, "isNodeMaterial") === true ||
+      limits === undefined ||
+      ![
+        limits.maxStorageBufferBindingSize,
+        limits.maxBufferSize,
+        limits.maxStorageBuffersPerShaderStage,
+      ].every((value) => Number.isSafeInteger(value) && value > 0) ||
+      limits.maxStorageBuffersPerShaderStage < (velocity ? 5 : 4) ||
+      rootBytes > Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize) ||
+      this.#current.byteLength > Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize)
+    )
+      return false;
+    const existing = this.#lookup?.bases.get(rig);
+    if (existing !== undefined && !existing.current()) return false;
+    const basis = existing ?? preparePoseBasis(sample.root, rig, sample.clip);
+    if (basis === undefined || !basis.observed(evaluation)) return false;
+    let lookup = this.#lookup;
+    if (lookup === undefined) {
+      const table = acquirePoseTable(
+        basis,
+        sample.step,
+        Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize),
+      );
+      if (table === undefined) return false;
+      const coordinates = new Float32Array(this.capacity * 4);
+      for (let at = 0; at < coordinates.length; at += 4) {
+        coordinates[at] = -1;
+        coordinates[at + 2] = -1;
+      }
+      const roots = new Float32Array(rootBytes / 4);
+      lookup = {
+        table,
+        coordinates,
+        roots,
+        bases: new Map(),
+        coordinateAttribute: new StorageBufferAttribute(coordinates, 4),
+        rootAttribute: new StorageBufferAttribute(roots, 16),
+        writtenFrames: new Float64Array(this.capacity),
+      };
+      this.#lookup = lookup;
+      this.#shader();
+    } else if (
+      lookup.table.basis.clip !== sample.clip ||
+      lookup.table.step !== sample.step ||
+      !lookup.table.basis.compatible(basis)
+    )
+      return false;
+    lookup.bases.set(rig, basis);
+    lookup.writtenFrames[slot] = this.#frame;
+    const position = Math.max(
+      0,
+      Math.min(lookup.table.segments, (sample.time / sample.clip.duration) * lookup.table.segments),
+    );
+    const frame = Math.min(lookup.table.segments - 1, Math.floor(position));
+    lookup.coordinates[slot * 4] = frame;
+    lookup.coordinates[slot * 4 + 1] = position - frame;
+    sample.root.updateWorldMatrix(true, false);
+    sample.root.matrixWorld.toArray(lookup.roots, slot * 16);
+    this.#dirty = true;
+    return true;
   }
 
   /** Marks a slot whose history must restart from its next pose. */
@@ -368,6 +592,14 @@ export class SkinnedBatch {
     const stride = this.bones * 16;
     this.#current.fill(0, slot * stride, (slot + 1) * stride);
     this.#previous?.fill(0, slot * stride, (slot + 1) * stride);
+    if (this.#lookup !== undefined) {
+      const rig = this.#slotRigs.get(slot);
+      if (rig !== undefined) this.#lookup.bases.delete(rig as SkinnedMesh);
+      this.#lookup.coordinates[slot * 4] = -1;
+      this.#lookup.coordinates[slot * 4 + 2] = -1;
+      this.#lookup.coordinateAttribute.needsUpdate = true;
+      this.#retireLookup();
+    }
     this.#dirty = true;
   }
 
@@ -386,8 +618,38 @@ export class SkinnedBatch {
   write(slot: number, rig: SkinnedMesh): void {
     beginSpan(SPANS.skinnedWrite);
     try {
+      const lookup = this.#lookup;
+      if (lookup !== undefined && lookup.writtenFrames[slot] !== this.#frame) {
+        lookup.writtenFrames[slot] = this.#frame;
+        if (this.#previous !== undefined) {
+          lookup.coordinates[slot * 4 + 2] = lookup.coordinates[slot * 4] as number;
+          lookup.coordinates[slot * 4 + 3] = lookup.coordinates[slot * 4 + 1] as number;
+          lookup.roots.set(
+            lookup.roots.subarray(slot * 16, (slot + 1) * 16),
+            (slot + this.capacity) * 16,
+          );
+        }
+        this.#retireLookup();
+      }
       const state = animationRateStateOf(rig);
       if (typeof state?.prepareDraw === "function") state.prepareDraw();
+      if (state?.readPose !== undefined) {
+        const basis = this.#lookup?.bases.get(rig);
+        const evaluation = state.evaluation;
+        const sample = state.readPose();
+        if (sample !== undefined && this.#writeLookup(slot, rig, sample, state.evaluation)) {
+          state.setPoseLookup?.(true);
+          return;
+        }
+        if (this.#lookup !== undefined) {
+          this.#lookup.bases.delete(rig);
+          this.#lookup.coordinates[slot * 4] = -1;
+        }
+        basis?.observed(evaluation);
+        state.setPoseLookup?.(false);
+        basis?.restoreEdits(evaluation);
+        basis?.root.updateMatrixWorld(true);
+      }
       const writtenWorld = this.#writtenWorldMatrices.get(rig);
       if (
         state !== undefined &&
@@ -433,6 +695,19 @@ export class SkinnedBatch {
         this.#writtenWorldMatrices.set(rig, nextWorld);
       }
     } finally {
+      const lookup = this.#lookup;
+      if (lookup !== undefined) {
+        if (this.#previous !== undefined && this.#fresh.includes(slot)) {
+          lookup.coordinates[slot * 4 + 2] = lookup.coordinates[slot * 4] as number;
+          lookup.coordinates[slot * 4 + 3] = lookup.coordinates[slot * 4 + 1] as number;
+          lookup.roots.set(
+            lookup.roots.subarray(slot * 16, (slot + 1) * 16),
+            (slot + this.capacity) * 16,
+          );
+        }
+        lookup.coordinateAttribute.needsUpdate = true;
+        lookup.rootAttribute.needsUpdate = true;
+      }
       endSpan(SPANS.skinnedWrite);
     }
   }
@@ -460,6 +735,15 @@ export class SkinnedBatch {
    * buffers are the game's own, and disposing it would free them under the source mesh.
    */
   dispose(): void {
+    for (const rig of this.instances.keys()) animationRateStateOf(rig)?.setPoseLookup?.(true);
+    if (this.#lookup !== undefined) {
+      this.#lookup.bases.clear();
+      for (let at = 0; at < this.#lookup.coordinates.length; at += 4) {
+        this.#lookup.coordinates[at] = -1;
+        this.#lookup.coordinates[at + 2] = -1;
+      }
+      this.#retireLookup();
+    }
     this.mesh.removeFromParent();
     this.#currentAttribute.dispose();
     this.#previousAttribute?.dispose();

@@ -17,8 +17,8 @@ import {
   Uint16BufferAttribute,
 } from "three";
 import { positionLocal } from "three/tsl";
-import { MeshStandardNodeMaterial } from "three/webgpu";
-import { describe, expect, it, vi } from "vitest";
+import { MeshStandardNodeMaterial, WGSLNodeBuilder } from "three/webgpu";
+import { assert, describe, expect, it, vi } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
 import { SpanRecorder, setSpanRecorder } from "../src/profiling/Spans.js";
 import { SkinnedBatch, isSimilarityTransform } from "../src/projection-skinned.js";
@@ -31,6 +31,11 @@ import { SceneRenderProjection } from "../src/renderProjection.js";
  */
 
 const BONES = 3;
+const lookupLimits = {
+  maxStorageBufferBindingSize: 1_000_000,
+  maxBufferSize: 2_000_000,
+  maxStorageBuffersPerShaderStage: 8,
+};
 
 function rigGeometry(): BufferGeometry {
   const geometry = new BufferGeometry();
@@ -139,7 +144,12 @@ describe("skinned lane of the render projection", () => {
       };
       const actual = make(8);
       const expected = make(1);
-      const batch = new SkinnedBatch({ first: actual.mesh, capacity: 1, velocity: true });
+      const batch = new SkinnedBatch({
+        first: actual.mesh,
+        capacity: 1,
+        velocity: true,
+        lookupLimits,
+      });
       const slot = batch.claim(actual.mesh) as number;
       const draw = () => {
         actual.root.updateMatrixWorld(true);
@@ -317,6 +327,59 @@ describe("skinned lane of the render projection", () => {
 });
 
 describe("SkinnedBatch palette", () => {
+  it("builds the actual lookup shader with bounded storage and current/previous coordinates for all deformation paths", () => {
+    const geometry = rigGeometry();
+    geometry.setAttribute(
+      "tangent",
+      new Float32BufferAttribute([1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1], 4),
+    );
+    const mesh = rig(geometry, new MeshStandardMaterial());
+    (mesh.skeleton.bones[0] as Bone).name = "joint";
+    const root = new Group();
+    root.add(mesh);
+    const player = new AnimationPlayer({
+      root,
+      clips: [
+        new AnimationClip("move", 1, [
+          new NumberKeyframeTrack("joint.position[x]", [0, 1], [0, 1]),
+        ]),
+      ],
+      strideSync: false,
+      updateRate: 8,
+    });
+    player.play("move");
+    player.update(1 / 60);
+    const batch = new SkinnedBatch({ first: mesh, capacity: 2, velocity: true, lookupLimits });
+    try {
+      batch.begin();
+      batch.write(batch.claim(mesh) as number, mesh);
+      batch.end();
+      const builder = new WGSLNodeBuilder(batch.mesh, { backend: {} } as never);
+      builder.setShaderStage("vertex");
+      const node = batch.mesh.material.positionNode;
+      assert(node);
+      const flow = builder.flowStagesNode(node, "vec3");
+      expect(flow.code).toContain(".x >= 0.0");
+      expect(flow.code).toContain(".z >= 0.0");
+      expect(flow.code).toContain("normalLocal");
+      expect(flow.code).toContain("tangentLocal");
+      expect(flow.code).toContain("positionPrevious");
+      expect(
+        builder.uniforms.vertex.filter((uniform) => uniform.type === "storageBuffer"),
+      ).toHaveLength(5);
+      const recorder = new SpanRecorder();
+      setSpanRecorder(recorder);
+      batch.begin();
+      batch.write(batch.claim(mesh) as number, mesh);
+      batch.end();
+      recorder.endFrame(1);
+      expect(recorder.window()?.spans.skinnedWrite?.perFrame).toBe(1);
+    } finally {
+      setSpanRecorder(undefined);
+      batch.dispose();
+      player.dispose();
+    }
+  });
   function posed(mesh: SkinnedMesh, angle: number): void {
     for (const bone of mesh.skeleton.bones) bone.rotation.z = angle;
     mesh.updateMatrixWorld(true);
@@ -382,7 +445,7 @@ describe("SkinnedBatch palette", () => {
     const mesh = rig(rigGeometry(), new MeshStandardMaterial());
     root.add(mesh);
     const player = new AnimationPlayer({ root, clips: [], strideSync: false, updateRate });
-    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true, lookupLimits });
     const slot = batch.claim(mesh) as number;
 
     player.update(0, true);
@@ -425,7 +488,7 @@ describe("SkinnedBatch palette", () => {
       strideSync: false,
       updateRate: 8,
     });
-    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true, lookupLimits });
     const slot = batch.claim(mesh) as number;
     player.play("move");
     player.update(0, true);
@@ -453,7 +516,7 @@ describe("SkinnedBatch palette", () => {
     batch.dispose();
   });
 
-  it("skips a palette write on a skipped animation frame and carries the whole step on evaluation", () => {
+  it("keeps animated roots on current exact palettes with the last displayed velocity pose", () => {
     const root = new Group();
     const mesh = rig(rigGeometry(), new MeshStandardMaterial());
     root.add(mesh);
@@ -477,29 +540,12 @@ describe("SkinnedBatch palette", () => {
     batch.end();
     const first = batch.palette.slice();
 
-    let skipped = false;
-    while (!skipped) {
-      player.update(1 / 60);
-      if (player.updateRateReport.evaluated) {
-        root.updateMatrixWorld(true);
-        batch.begin();
-        batch.write(slot, mesh);
-        batch.end();
-        first.set(batch.palette);
-      }
-      skipped = !player.updateRateReport.evaluated;
-    }
+    player.update(1 / 60);
     root.updateMatrixWorld(true);
     batch.begin();
     batch.write(slot, mesh);
     batch.end();
-    expect([...(batch.history as Float32Array)]).toEqual([...batch.palette]);
-
-    while (!player.updateRateReport.evaluated) player.update(1 / 60);
-    root.updateMatrixWorld(true);
-    batch.begin();
-    batch.write(slot, mesh);
-    batch.end();
+    expect(player.updateRateReport.rate).toBe(1);
     expect([...(batch.history as Float32Array)]).toEqual([...first]);
     expect([...batch.palette]).not.toEqual([...first]);
 
@@ -522,21 +568,23 @@ describe("SkinnedBatch palette", () => {
       const root = new Group();
       root.position.set(index * 5, 0, -120);
       const mesh = rig(geometry, material);
+      (mesh.skeleton.bones[0] as Bone).name = "joint";
       root.add(mesh);
       scene.add(root);
       const player = new AnimationPlayer({
         root,
         clips: [
           new AnimationClip("turn", 1, [
-            new NumberKeyframeTrack(".rotation[z]", [0, 1], [0, Math.PI]),
+            new NumberKeyframeTrack("joint.rotation[z]", [0, 1], [0, Math.PI]),
           ]),
         ],
         strideSync: false,
       });
       player.play("turn");
+      player.update(1 / 60);
       return { player, root };
     });
-    const projection = new SceneRenderProjection(scene);
+    const projection = new SceneRenderProjection(scene, {}, lookupLimits);
     const camera = new PerspectiveCamera(60, 1, 0.1, 1_000);
     camera.lookAt(0, 0, -120);
     scene.updateMatrixWorld(true);
@@ -547,6 +595,7 @@ describe("SkinnedBatch palette", () => {
     cull.apply(projection.root, camera, 720);
     cull.restore();
     for (const entry of entries) entry.player.update(1 / 60);
+    projection.reconcile();
 
     expect(entries[0]?.player.updateRateReport).toMatchObject({ rate: 1, overridden: false });
     expect(entries[1]?.player.updateRateReport.rate).toBe(4);

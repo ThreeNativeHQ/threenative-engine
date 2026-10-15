@@ -1,8 +1,10 @@
 import {
   type AnimationAction,
+  type AnimationBlendMode,
   type AnimationClip,
   AnimationMixer,
   type AnimationMixerEventMap,
+  type AnimationObjectGroup,
   type EventListener,
   LoopOnce,
   LoopRepeat,
@@ -259,6 +261,7 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
   readonly #loopListeners = new Set<LoopListener>();
   readonly #finishedListeners = new Set<FinishedListener>();
   readonly #beforeFirstLoopListener: BeforeFirstLoopListener;
+  readonly #observedActions = new WeakSet<AnimationAction>();
   #updateDepth = 0;
 
   constructor(
@@ -273,6 +276,31 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
 
   get hasPublicListeners(): boolean {
     return this.#loopListeners.size > 0 || this.#finishedListeners.size > 0;
+  }
+
+  override clipAction(
+    clip: AnimationClip,
+    root?: Object3D | AnimationObjectGroup,
+    blendMode?: AnimationBlendMode,
+  ): AnimationAction;
+  override clipAction(
+    clip: AnimationClip | string,
+    root?: Object3D | AnimationObjectGroup,
+    blendMode?: AnimationBlendMode,
+  ): AnimationAction | null;
+  override clipAction(...args: Parameters<AnimationMixer["clipAction"]>): AnimationAction | null {
+    const action = super.clipAction(...args);
+    if (action === null) return null;
+    if (!this.#observedActions.has(action)) {
+      this.#observedActions.add(action);
+      const play = action.play.bind(action);
+      action.play = () => {
+        // An action started through the public mixer must not inherit pre-activation pending time.
+        if (!action.isScheduled()) this.#beforeFirstLoopListener(this.#updateDepth > 0);
+        return play();
+      };
+    }
+    return action;
   }
 
   override addEventListener(type: "loop", listener: LoopListener): void;
@@ -340,9 +368,38 @@ export class AnimationPlayer {
     evaluation: 0,
     prepareDraw: () => this.#prepareDraw(),
     readPose: () => this.#readPose(),
+    setPoseLookup: (eligible) => {
+      if (this.#current === undefined) {
+        this.#lookupExact = false;
+        return;
+      }
+      this.#lookupExact = !eligible;
+      if (!eligible) {
+        this.#evaluate(this.#pendingDt);
+        this.#evaluated = true;
+        this.root.updateMatrixWorld(true);
+        this.#lookupBlockedTime = this.mixer.time;
+      }
+    },
   };
+  #lookupExact = false;
+  #lookupBlockedTime = Number.NaN;
+  #poseActionState:
+    | { action: AnimationAction; evaluation: number; time: number; scale: number }
+    | undefined;
   #drawClip: AnimationClip | undefined;
-  #drawTracks: { times: number[]; values: number[] }[] = [];
+  #drawTracks: {
+    track: AnimationClip["tracks"][number];
+    name: string;
+    factory: unknown;
+    timesRef: ArrayLike<number>;
+    valuesRef: ArrayLike<number>;
+    times: number[];
+    values: number[];
+  }[] = [];
+  #drawDuration = 0;
+  #drawBlendMode: AnimationClip["blendMode"] = NormalAnimationBlendMode;
+  readonly #lookupInvalidClips = new WeakSet<AnimationClip>();
   #drawRevision = 0;
   #firstStep = 0;
   #poseSample:
@@ -460,7 +517,8 @@ export class AnimationPlayer {
     };
   }
 
-  #effectiveUpdateRate(): number {
+  #effectiveUpdateRate(lookup = false): number {
+    if (!lookup && this.#lookupExact) return 1;
     // Public mixer speed overrides and observed events retain ordinary Three.js tick semantics.
     if (this.mixer.timeScale !== 1) return 1;
     // Event deadlines and changing blend weights remain exactly on the gameplay tick.
@@ -985,7 +1043,8 @@ export class AnimationPlayer {
   }
 
   #readPose(): IAnimationPoseSample | undefined {
-    if (this.#effectiveUpdateRate() === 1 || this.#firstStep === 0) return undefined;
+    if (this.#lookupExact && this.mixer.time === this.#lookupBlockedTime) return undefined;
+    if (this.#effectiveUpdateRate(true) === 1 || this.#firstStep === 0) return undefined;
     const action = this.#actions.get(this.#current ?? "");
     if (
       action === undefined ||
@@ -1004,6 +1063,20 @@ export class AnimationPlayer {
       if (other !== action && other.isScheduled()) return undefined;
     }
     const clip = action.getClip();
+    if (this.#lookupInvalidClips.has(clip)) return undefined;
+    if (this.mixer.stats.actions.inUse !== 1) return undefined;
+    const previous = this.#poseActionState;
+    const mutated =
+      previous?.action === action &&
+      previous.evaluation === this.#rateState.evaluation &&
+      (previous.time !== action.time || previous.scale !== action.timeScale);
+    this.#poseActionState = {
+      action,
+      evaluation: this.#rateState.evaluation,
+      time: action.time,
+      scale: action.timeScale,
+    };
+    if (mutated) return undefined;
     const duration = clip.duration;
     if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(action.time))
       return undefined;
@@ -1041,11 +1114,18 @@ export class AnimationPlayer {
     // Three exposes mutable track arrays without a revision; identity alone misses in-place edits.
     const changed =
       this.#drawClip === clip &&
-      (this.#drawTracks.length !== clip.tracks.length ||
+      (this.#drawDuration !== clip.duration ||
+        this.#drawBlendMode !== clip.blendMode ||
+        this.#drawTracks.length !== clip.tracks.length ||
         clip.tracks.some((track, index) => {
           const previous = this.#drawTracks[index];
           return (
             previous === undefined ||
+            previous.track !== track ||
+            previous.name !== track.name ||
+            previous.factory !== Reflect.get(track, "createInterpolant") ||
+            previous.timesRef !== track.times ||
+            previous.valuesRef !== track.values ||
             previous.times.length !== track.times.length ||
             previous.values.length !== track.values.length ||
             track.times.some((value, at) => value !== previous.times[at]) ||
@@ -1054,8 +1134,16 @@ export class AnimationPlayer {
         }));
     if (this.#drawClip !== clip || changed) {
       this.#drawRevision += 1;
+      if (changed) this.#lookupInvalidClips.add(clip);
       this.#drawClip = clip;
+      this.#drawDuration = clip.duration;
+      this.#drawBlendMode = clip.blendMode;
       this.#drawTracks = clip.tracks.map((track) => ({
+        track,
+        name: track.name,
+        factory: Reflect.get(track, "createInterpolant"),
+        timesRef: track.times,
+        valuesRef: track.values,
         times: Array.from(track.times),
         values: Array.from(track.values),
       }));

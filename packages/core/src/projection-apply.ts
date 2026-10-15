@@ -30,7 +30,11 @@ import type {
   IProjectionProjectPlan,
   IProjectionUniformGroup,
 } from "./projection-plan.js";
-import { SkinnedBatch, isSimilarityTransform } from "./projection-skinned.js";
+import {
+  type IPoseLookupLimits,
+  SkinnedBatch,
+  isSimilarityTransform,
+} from "./projection-skinned.js";
 import { baseColorOf, uniformUnchanged } from "./projection-uniform.js";
 import {
   disposeBatchedMeshVelocity,
@@ -318,7 +322,11 @@ export class ProjectionMirror {
   /** Materials this frame's sweep found drifted; every member holding one leaves its group. */
   readonly #drifted = new Set<Material>();
 
-  constructor(velocityEnabled = false, materialChecks: ProjectionMaterialChecks = "spread") {
+  constructor(
+    velocityEnabled = false,
+    materialChecks: ProjectionMaterialChecks = "spread",
+    private readonly lookupLimits?: IPoseLookupLimits,
+  ) {
     this.#velocityEnabled = velocityEnabled;
     this.#materialChecks = materialChecks;
   }
@@ -643,7 +651,12 @@ export class ProjectionMirror {
     }
     let batch: SkinnedBatch;
     try {
-      batch = new SkinnedBatch({ first, capacity, velocity: this.#velocityEnabled });
+      batch = new SkinnedBatch({
+        first,
+        capacity,
+        velocity: this.#velocityEnabled,
+        lookupLimits: this.lookupLimits,
+      });
     } catch {
       return undefined;
     }

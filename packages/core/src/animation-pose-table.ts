@@ -2,7 +2,9 @@ import {
   AnimationClip,
   AnimationMixer,
   Bone,
+  type EulerOrder,
   Group,
+  InterpolateLinear,
   type KeyframeTrack,
   LoopOnce,
   Matrix4,
@@ -51,6 +53,8 @@ export class PoseBasis {
   readonly #duration: number;
   readonly #blendMode;
   readonly #tracks;
+  #evaluation = -1;
+  readonly #observed: Float64Array;
 
   constructor(
     readonly root: Object3D,
@@ -76,6 +80,7 @@ export class PoseBasis {
     }));
     this.#rest = new Float64Array(nodes.length * 10);
     this.#scratch = new Float64Array(this.#rest.length);
+    this.#observed = new Float64Array(this.#rest.length);
     this.#parents = nodes.map((node) => node.parent);
     this.#children = nodes.map((node) => node.children.length);
     this.#names = nodes.map((node) => node.name);
@@ -87,6 +92,43 @@ export class PoseBasis {
     rig.skeleton.boneInverses.forEach((matrix, index) =>
       matrix.toArray(this.#inverses, index * 16),
     );
+  }
+
+  /** Animated components may change on evaluation, but public edits between evaluations decline lookup. */
+  observed(evaluation: number): boolean {
+    for (let index = 1; index < this.nodes.length; index += 1)
+      localTransform(
+        this.nodes[index] as Object3D,
+        this.euler[index] === true,
+        this.#scratch,
+        index * 10,
+      );
+    if (this.#evaluation === evaluation) {
+      for (let at = 10; at < this.#scratch.length; at += 1)
+        if (this.#scratch[at] !== this.#observed[at]) return false;
+    }
+    this.#evaluation = evaluation;
+    this.#observed.set(this.#scratch);
+    return true;
+  }
+
+  /** A public local-pose edit happened after the logical tick; flushing must not overwrite it. */
+  restoreEdits(evaluation: number): void {
+    if (this.#evaluation !== evaluation) return;
+    for (let index = 1; index < this.nodes.length; index += 1) {
+      const node = this.nodes[index] as Object3D;
+      const at = index * 10;
+      for (let component = 0; component < 10; component += 1) {
+        const value = this.#scratch[at + component] as number;
+        if (value === this.#observed[at + component]) continue;
+        if (component < 3) node.position.setComponent(component, value);
+        else if (component >= 7) node.scale.setComponent(component - 7, value);
+        else if (this.euler[index]) {
+          if (component === 6) node.rotation.order = ORDERS[value] as EulerOrder;
+          else Reflect.set(node.rotation, "xyz"[component - 3] as string, value);
+        } else Reflect.set(node.quaternion, "xyzw"[component - 3] as string, value);
+      }
+    }
   }
 
   current(): boolean {
@@ -222,6 +264,8 @@ export function preparePoseBasis(
   const quaternion = new Set<number>();
   const bindings: IPoseBinding[] = [];
   for (const track of clip.tracks) {
+    // Discrete discontinuities and smooth repeat endings cannot use linear LoopOnce samples.
+    if (track.getInterpolation() !== InterpolateLinear) return undefined;
     let parsed: ReturnType<typeof PropertyBinding.parseTrackName>;
     try {
       parsed = PropertyBinding.parseTrackName(track.name);
@@ -287,6 +331,7 @@ export function bakePoseTable(
     !Number.isFinite(duration) ||
     duration <= 0 ||
     !Number.isSafeInteger(floats) ||
+    segments > 16_777_215 ||
     floats * 4 > maxBytes ||
     !basis.current()
   )

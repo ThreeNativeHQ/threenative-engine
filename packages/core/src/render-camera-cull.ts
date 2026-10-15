@@ -102,6 +102,7 @@ export interface IAnimationRateState {
   evaluation: number;
   prepareDraw?: () => void;
   readPose?: () => IAnimationPoseSample | undefined;
+  setPoseLookup?: (eligible: boolean) => void;
 }
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
 

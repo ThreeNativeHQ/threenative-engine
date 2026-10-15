@@ -10,6 +10,7 @@ import {
   releaseProjectionScanWorkspace,
   scanProjection,
 } from "./projection-plan.js";
+import type { IPoseLookupLimits } from "./projection-skinned.js";
 import { ProjectionStability } from "./projection-stability.js";
 import { VelocityTracker } from "./render/velocity.js";
 
@@ -222,7 +223,11 @@ export class SceneRenderProjection {
   #framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
   #velocityActive: boolean;
 
-  constructor(source: Scene, options: IRenderProjectionOptions = {}) {
+  constructor(
+    source: Scene,
+    options: IRenderProjectionOptions = {},
+    lookupLimits?: IPoseLookupLimits,
+  ) {
     const minMeshes = options.minMeshes ?? 200;
     if (!Number.isInteger(minMeshes) || minMeshes < 1)
       throw new Error("SceneRenderProjection.minMeshes must be a positive integer.");
@@ -236,7 +241,7 @@ export class SceneRenderProjection {
     this.#velocityActive = resolveVelocityEnabled(this.#velocity);
     this.#matrixWorld = options.matrixWorld;
     this.#mirror = this.#enabled
-      ? new ProjectionMirror(this.#velocityActive, this.#materialChecks)
+      ? new ProjectionMirror(this.#velocityActive, this.#materialChecks, lookupLimits)
       : undefined;
     this.#onReport = options.onReport;
   }

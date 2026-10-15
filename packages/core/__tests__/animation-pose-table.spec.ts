@@ -1,19 +1,340 @@
 import {
+  AdditiveAnimationBlendMode,
   AnimationClip,
   AnimationMixer,
   Bone,
   BoxGeometry,
   Group,
   InterpolateDiscrete,
+  InterpolateSmooth,
   Matrix4,
   MeshBasicMaterial,
   NumberKeyframeTrack,
   Skeleton,
   SkinnedMesh,
 } from "three";
+import { StorageBufferAttribute } from "three/webgpu";
 import { assert, describe, expect, it, vi } from "vitest";
 import { bakePoseTable, preparePoseBasis } from "../src/animation-pose-table.js";
 import { AnimationPlayer } from "../src/animation.js";
+import { SkinnedBatch } from "../src/projection-skinned.js";
+
+const limits = {
+  maxStorageBufferBindingSize: 1_000_000,
+  maxBufferSize: 2_000_000,
+  maxStorageBuffersPerShaderStage: 8,
+};
+
+function playback(rate: number, clip?: AnimationClip) {
+  const f = fixture();
+  f.mixer.stopAllAction();
+  f.track = new NumberKeyframeTrack("joint.position[x]", [0, 1, 2], [0, 1, 0]);
+  f.clip = clip ?? new AnimationClip("bend", 2, [f.track]);
+  const player = new AnimationPlayer({
+    root: f.root,
+    clips: [f.clip],
+    strideSync: false,
+    updateRate: rate,
+  });
+  player.play("bend");
+  player.update(0, true);
+  return { ...f, player };
+}
+
+function draw(batch: SkinnedBatch, f: ReturnType<typeof playback>) {
+  f.root.updateMatrixWorld(true);
+  batch.begin();
+  batch.write(batch.claim(f.mesh) as number, f.mesh);
+  batch.end();
+}
+
+function expectDisplayed(batch: SkinnedBatch, f: ReturnType<typeof playback>, slot = 0) {
+  f.root.updateMatrixWorld(true);
+  f.mesh.skeleton.update();
+  const stride = f.mesh.skeleton.bones.length * 16;
+  const actual = batch.palette.subarray(slot * stride, (slot + 1) * stride);
+  for (let bone = 0; bone < f.mesh.skeleton.bones.length; bone += 1) {
+    const expected = f.mesh.matrixWorld
+      .clone()
+      .multiply(f.mesh.bindMatrixInverse)
+      .multiply(new Matrix4().fromArray(f.mesh.skeleton.boneMatrices, bone * 16))
+      .multiply(f.mesh.bindMatrix);
+    for (let at = 0; at < 16; at += 1)
+      expect(actual[bone * 16 + at]).toBeCloseTo(expected.elements[at] as number, 5);
+  }
+}
+
+describe("current-time batch lookup", () => {
+  it("draws independent phases, loop seams and variable/zero dt without evaluating skipped players", () => {
+    const a = playback(8);
+    const b = playback(8, a.clip);
+    const exact = [playback(1, a.clip), playback(1, a.clip)] as const;
+    b.player.mixer.clipAction(a.clip).time = 0.71;
+    exact[1].player.mixer.clipAction(a.clip).time = 0.71;
+    const batch = new SkinnedBatch({
+      first: a.mesh,
+      capacity: 2,
+      velocity: true,
+      lookupLimits: limits,
+    });
+    const updates = [vi.spyOn(a.player.mixer, "update"), vi.spyOn(b.player.mixer, "update")];
+    try {
+      for (let frame = 0; frame < 240; frame += 1) {
+        const dt = [1 / 60, 0, 1 / 30, 1 / 120, 1 / 90][frame % 5] as number;
+        batch.begin();
+        for (const [index, f] of [a, b].entries()) {
+          const reference = exact[index];
+          const update = updates[index];
+          assert(reference && update);
+          f.player.update(dt);
+          reference.player.update(dt);
+          const before = update.mock.calls.length;
+          const skipped = !f.player.updateRateReport.evaluated;
+          f.root.position.x = reference.root.position.x = frame / 10 + index * 20;
+          f.root.rotation.y = reference.root.rotation.y = frame / 100;
+          f.root.scale.setScalar(1.2);
+          reference.root.scale.setScalar(1.2);
+          f.root.updateMatrixWorld(true);
+          batch.write(batch.claim(f.mesh) as number, f.mesh);
+          if (skipped) expect(update.mock.calls.length).toBe(before);
+          expectDisplayed(batch, reference, index);
+        }
+        batch.end();
+      }
+    } finally {
+      batch.dispose();
+      for (const f of [a, b, ...exact]) f.player.dispose();
+    }
+  });
+
+  it.each([
+    "rest",
+    "animated",
+    "inverse",
+    "values",
+    "interpolation",
+    "weight",
+    "time",
+    "attachment",
+  ])(
+    "falls back in the same write after pending %s mutation, preserving the displayed velocity pose",
+    (mutation) => {
+      const f = playback(8);
+      const reference = playback(1);
+      const batch = new SkinnedBatch({
+        first: f.mesh,
+        capacity: 1,
+        velocity: true,
+        lookupLimits: limits,
+      });
+      try {
+        f.player.update(1 / 60);
+        reference.player.update(1 / 60);
+        draw(batch, f);
+        do {
+          f.player.update(1 / 60);
+          reference.player.update(1 / 60);
+          draw(batch, f);
+        } while (f.player.updateRateReport.evaluated);
+        const previous = batch.palette.slice();
+        const pending =
+          reference.player.mixer.clipAction(reference.clip).time -
+          f.player.mixer.clipAction(f.clip).time;
+        for (const target of [f, reference]) {
+          const action = target.player.mixer.clipAction(target.clip);
+          if (mutation === "rest") target.base.position.y = 0.25;
+          if (mutation === "animated") target.joint.position.x = 0.9;
+          if (mutation === "inverse") target.inverse.elements[13] = 0.5;
+          if (mutation === "values") target.track.values[1] = 2;
+          if (mutation === "interpolation") target.track.setInterpolation(InterpolateDiscrete);
+          if (mutation === "weight") action.setEffectiveWeight(0.5);
+          if (mutation === "time") action.time = 0.4 + (target === reference ? pending : 0);
+          if (mutation === "attachment") target.joint.add(new Group());
+        }
+        // Public time edits apply to the already evaluated clock; pending ticks must be flushed first.
+        reference.player.update(0, true);
+        draw(batch, f);
+        expectDisplayed(batch, reference);
+        expect(f.player.updateRateReport.rate).toBe(1);
+        expect([...(batch.history as Float32Array)]).toEqual([...previous]);
+        if (mutation === "animated") {
+          draw(batch, f);
+          expectDisplayed(batch, reference);
+          f.player.update(0);
+          reference.player.update(0);
+          draw(batch, f);
+          expectDisplayed(batch, reference);
+        }
+      } finally {
+        batch.dispose();
+        f.player.dispose();
+        reference.player.dispose();
+      }
+    },
+  );
+
+  it.each(["partial", "root", "attachment", "bind", "bytes", "bindings", "unknown"])(
+    "uses current exact evaluation for %s ineligible rigs without baking",
+    (reason) => {
+      const f = playback(8);
+      const reference = playback(1);
+      for (const target of [f, reference]) {
+        if (reason === "partial")
+          target.mesh.skeleton = new Skeleton([target.joint], [target.inverse]);
+        if (reason === "root") target.track.name = ".position[x]";
+        if (reason === "attachment") target.joint.add(new Group());
+        if (reason === "bind") target.mesh.bindMatrix.makeTranslation(0, 0.1, 0);
+      }
+      const batch = new SkinnedBatch({
+        first: f.mesh,
+        capacity: 1,
+        velocity: true,
+        lookupLimits:
+          reason === "unknown"
+            ? undefined
+            : {
+                ...limits,
+                maxStorageBufferBindingSize:
+                  reason === "bytes" ? 256 : limits.maxStorageBufferBindingSize,
+                maxStorageBuffersPerShaderStage: reason === "bindings" ? 4 : 8,
+              },
+      });
+      const bake = vi.spyOn(AnimationMixer.prototype, "setTime");
+      try {
+        for (let frame = 0; frame < 4; frame += 1) {
+          f.player.update(1 / 60);
+          reference.player.update(1 / 60);
+          bake.mockClear();
+          draw(batch, f);
+          expectDisplayed(batch, reference);
+          expect(f.player.updateRateReport.rate).toBe(1);
+          expect(bake).not.toHaveBeenCalled();
+        }
+      } finally {
+        bake.mockRestore();
+        batch.dispose();
+        f.player.dispose();
+        reference.player.dispose();
+      }
+    },
+  );
+
+  it.each(["blend", "extra", "additive", "listener", "paused", "speed"])(
+    "keeps public %s playback exact while time is pending",
+    (reason) => {
+      const f = playback(8);
+      const reference = playback(1);
+      const batch = new SkinnedBatch({
+        first: f.mesh,
+        capacity: 1,
+        velocity: true,
+        lookupLimits: limits,
+      });
+      try {
+        for (let frame = 0; frame < 3; frame += 1) {
+          f.player.update(1 / 60);
+          reference.player.update(1 / 60);
+          draw(batch, f);
+        }
+        for (const target of [f, reference]) {
+          const action = target.player.mixer.clipAction(target.clip);
+          if (reason === "blend") action.setEffectiveWeight(0.5);
+          if (reason === "extra")
+            target.player.mixer
+              .clipAction(
+                new AnimationClip("extra", 2, [
+                  new NumberKeyframeTrack("joint.position[y]", [0, 2], [1, 2]),
+                ]),
+              )
+              .play();
+          if (reason === "additive") action.blendMode = AdditiveAnimationBlendMode;
+          if (reason === "listener") target.player.mixer.addEventListener("loop", () => {});
+          if (reason === "paused") action.paused = true;
+          if (reason === "speed") action.setEffectiveTimeScale(-1);
+        }
+        reference.player.update(0, true);
+        draw(batch, f);
+        expectDisplayed(batch, reference);
+        expect(f.player.updateRateReport.rate).toBe(1);
+      } finally {
+        batch.dispose();
+        f.player.dispose();
+        reference.player.dispose();
+      }
+    },
+  );
+
+  it("bakes compatible users once and releases shared storage only after the last batch/history owner", () => {
+    const a = playback(8);
+    const b = playback(8, a.clip);
+    a.player.update(1 / 60);
+    b.player.update(1 / 60);
+    const batches = [a, b].map(
+      (f) => new SkinnedBatch({ first: f.mesh, capacity: 1, velocity: true, lookupLimits: limits }),
+    );
+    const [first, second] = batches;
+    assert(first && second);
+    const bake = vi.spyOn(AnimationMixer.prototype, "setTime");
+    const dispose = vi.spyOn(StorageBufferAttribute.prototype, "dispose");
+    try {
+      draw(first, a);
+      draw(second, b);
+      expect(bake).toHaveBeenCalledTimes(121);
+      first.release(a.mesh);
+      first.begin();
+      first.end();
+      expect(
+        dispose.mock.contexts.filter((attribute) => attribute.array.byteLength === 121 * 2 * 64),
+      ).toHaveLength(0);
+      b.player.update(1 / 60);
+      draw(second, b);
+      second.release(b.mesh);
+      second.begin();
+      second.end();
+      expect(
+        dispose.mock.contexts.filter((attribute) => attribute.array.byteLength === 121 * 2 * 64),
+      ).toHaveLength(1);
+    } finally {
+      for (const batch of batches) batch.dispose();
+      a.player.dispose();
+      b.player.dispose();
+      bake.mockRestore();
+      dispose.mockRestore();
+    }
+  });
+
+  it("preserves lookup/exact history and resets a reused slot to its new owner's displayed pose", () => {
+    const f = playback(8);
+    const reference = playback(1, f.clip);
+    const replacement = playback(8, f.clip);
+    replacement.player.mixer.clipAction(f.clip).time = 0.73;
+    const batch = new SkinnedBatch({
+      first: f.mesh,
+      capacity: 1,
+      velocity: true,
+      lookupLimits: limits,
+    });
+    try {
+      for (const rate of [8, 1, 8, 1, 8]) {
+        const previous = batch.palette.slice();
+        f.player.updateRate = rate;
+        f.player.update(1 / 60);
+        reference.player.update(1 / 60);
+        draw(batch, f);
+        expectDisplayed(batch, reference);
+        if (rate === 1) expect([...(batch.history as Float32Array)]).toEqual([...previous]);
+      }
+      batch.release(f.mesh);
+      replacement.player.update(1 / 60);
+      draw(batch, replacement);
+      expect([...(batch.history as Float32Array)]).toEqual([...batch.palette]);
+      expect(batch.palette[28]).toBeCloseTo(0.73 + 1 / 60, 5);
+    } finally {
+      batch.dispose();
+      for (const target of [f, reference, replacement]) target.player.dispose();
+    }
+  });
+});
 
 function fixture(phase = 0) {
   const root = new Group();
@@ -115,6 +436,8 @@ describe("internal clip pose table", () => {
     f.mesh.skeleton = new Skeleton([f.joint], [new Matrix4()]);
     expect(preparePoseBasis(f.root, f.mesh, f.clip)).toBeUndefined();
     const other = fixture();
+    other.track.setInterpolation(InterpolateSmooth);
+    expect(preparePoseBasis(other.root, other.mesh, other.clip)).toBeUndefined();
     other.track.name = "joint.visible";
     expect(preparePoseBasis(other.root, other.mesh, other.clip)).toBeUndefined();
   });
