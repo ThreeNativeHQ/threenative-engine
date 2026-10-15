@@ -1290,6 +1290,83 @@ describe("createRenderer", () => {
     }
   });
 
+  it.each([false, true])(
+    "warms a scoped output pass offscreen and restores state after %s failure",
+    async (throws) => {
+      const canvas = testCanvas();
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: { gpu: {} },
+      });
+      let boundTarget: unknown = "previous-target";
+      let boundMrt: unknown = "previous-mrt";
+      const targetCalls: unknown[] = [];
+      const raw = {
+        compute: () => undefined,
+        dispose: () => undefined,
+        domElement: canvas,
+        getMRT: () => boundMrt,
+        getRenderTarget: () => boundTarget,
+        init: async () => undefined,
+        render: () => undefined,
+        setMRT: (value: unknown) => {
+          boundMrt = value;
+        },
+        setRenderTarget: (value: unknown) => {
+          targetCalls.push(value);
+          boundTarget = value;
+        },
+        setSize: () => undefined,
+      };
+      const renderPipeline = vi.spyOn(RenderPipeline.prototype, "render").mockImplementation(() => {
+        if (throws) throw new Error("covered output render failed");
+      });
+
+      try {
+        const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+        const authoredScene = new Scene();
+        const authoredCamera = new PerspectiveCamera();
+        const worldPass = pass(authoredScene, authoredCamera);
+        const outputNode = worldPass.add(pass(new Scene(), new PerspectiveCamera()));
+        renderer.setOutputNode(outputNode, worldPass);
+
+        const targetScene = new Scene();
+        const chunk = new Object3D();
+        chunk.position.set(3, 4, 5);
+        const originalMatrix = chunk.matrix.clone();
+        const camera = new PerspectiveCamera();
+        let seenScene: unknown;
+        let seenChunkParent: unknown;
+        renderPipeline.mockImplementation(() => {
+          seenScene = worldPass.scene;
+          seenChunkParent = chunk.parent;
+          if (throws) throw new Error("covered output render failed");
+        });
+
+        const warm = () => renderer.warmUpWorldPass?.(chunk, camera, targetScene);
+        if (throws) expect(warm).toThrow("covered output render failed");
+        else warm();
+
+        expect(seenScene).toBe(targetScene);
+        expect(seenChunkParent).toBe(targetScene);
+        expect(worldPass.scene).toBe(authoredScene);
+        expect(worldPass.camera).toBe(authoredCamera);
+        expect(chunk.parent).toBeNull();
+        expect(chunk.matrix.equals(originalMatrix)).toBe(true);
+        expect(boundTarget).toBe("previous-target");
+        expect(boundMrt).toBe("previous-mrt");
+        expect(targetCalls.length).toBeGreaterThan(0);
+        expect(targetCalls).not.toContain(null);
+        renderer.dispose();
+      } finally {
+        renderPipeline.mockRestore();
+        if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+        else Object.defineProperty(globalThis, "navigator", descriptor);
+      }
+    },
+  );
+
   it("rejects an output graph with multiple passes when no world pass is named", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

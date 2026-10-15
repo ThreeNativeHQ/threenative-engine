@@ -9719,9 +9719,17 @@ export class WorldCells extends Group implements IComputeDriven {
       )
       .then(
         (report) => {
-          if (report.unsupported || report.timedOut || report.abandoned > 0)
+          if (
+            report.unsupported ||
+            report.timedOut ||
+            report.abandoned > 0 ||
+            (renderer.warmUpWorldPass !== undefined && report.passes?.includes("main") !== true)
+          )
             throw new Error("cell proxy warm-up incomplete");
-          renderer.warmUpScopeSettled?.(`cell:${state.cell.key}:${String(state.cell.generation)}`);
+          renderer.warmUpScopeSettled?.(
+            `cell:${state.cell.key}:${String(state.cell.generation)}`,
+            prepared.root,
+          );
           state.compiling = false;
           if (state.cancelled || !this.#cellLive(state.cell, state.cell.generation)) {
             state.cancelled = true;
@@ -10089,12 +10097,15 @@ export class WorldCells extends Group implements IComputeDriven {
     const renderer = this.#renderer;
     const camera = this.#camera;
     if (renderer === undefined || camera === undefined || this.parent === null) return false;
+    let targetScene: Object3D = this;
+    while (targetScene.parent !== null) targetScene = targetScene.parent;
+    if (Reflect.get(targetScene, "isScene") !== true) return false;
     // The rejected compile is a pipeline this warm-up could not build, not a reason to fail the
     // admission: the frame that needs it will try again and fail there, where the error belongs.
     return warmUpScene(renderer, chunk, camera, {
       budgetMs: CHUNK_WARM_TIMEOUT_MS,
       renderPasses: false,
-      targetScene: this,
+      targetScene,
       yieldFrame: yieldToHost,
     }).then(
       (report) => {
@@ -10102,8 +10113,9 @@ export class WorldCells extends Group implements IComputeDriven {
           !report.unsupported &&
           report.observed.status === "complete" &&
           !report.timedOut &&
-          report.abandoned === 0;
-        if (settled) renderer.warmUpScopeSettled?.(scopeLabel);
+          report.abandoned === 0 &&
+          (renderer.warmUpWorldPass === undefined || report.passes?.includes("main") === true);
+        if (settled) renderer.warmUpScopeSettled?.(scopeLabel, chunk);
         return settled;
       },
       () => false,

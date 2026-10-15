@@ -43,7 +43,7 @@ export function emitPipelineCensus(ctx: IEvaluationContext): void {
     ["maxRenderPipelineCreationsAfterWarmUpSettled", renderPipelineCreations, "render-pipeline creations"] as const,
   ];
   if (assertion.maxNodeBuildsAfterWarmUpScope !== undefined || assertion.maxRenderPipelineCreationsAfterWarmUpScope !== undefined) {
-    const scopedUsable = capture?.complete === true && scope !== undefined;
+    const scopedUsable = capture?.complete === true && scope?.observed === true;
     const scopedChecks = [
       ["maxNodeBuildsAfterWarmUpScope", scope?.nodeBuilds, "node builds"] as const,
       ["maxRenderPipelineCreationsAfterWarmUpScope", scope?.renderPipelineCreations, "render-pipeline creations"] as const,

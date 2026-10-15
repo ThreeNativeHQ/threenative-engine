@@ -1,3 +1,4 @@
+import { RenderTarget } from "three";
 import type { BufferGeometry, Camera, DepthTexture, Object3D, Texture } from "three";
 import {
   type PassNode,
@@ -173,9 +174,9 @@ export interface IRendererLike {
   /** Marks the completion of the renderer's current scene warm-up attempt. */
   warmUpSettled?(): void;
   /** Marks a repeatable streamed warm-up boundary for the next first draw. */
-  warmUpScopeSettled?(label: string): void;
+  warmUpScopeSettled?(label: string, target?: Object3D): void;
   /** Performs one covered output-pipeline render without marking first present. */
-  warmUpWorldPass?(scene: Object3D, camera: Camera): void;
+  warmUpWorldPass?(scene: Object3D, camera: Camera, targetScene?: Object3D): void;
   /**
    * What alpha antialiasing did with the multisampled surface, and why, when it did nothing.
    *
@@ -562,6 +563,7 @@ function wrapRenderer(
   // Keep caller identity separately: RenderPipeline may wrap its public output node.
   let outputInput: unknown;
   let outputPass: PassNode | undefined;
+  let warmOutputTarget: RenderTarget | undefined;
   const renderChains = new Set<RenderChain>();
   let renderChainUsesPerObjectVelocity = false;
   let activeCompiles = 0;
@@ -638,16 +640,23 @@ function wrapRenderer(
 
   let renderingFrame = 0;
   const renderFrame = (scene: Object3D, camera: Camera): void => {
-    bindSurface();
-    if (outputPipeline === undefined) raw.render(scene, camera);
-    else {
-      // RenderPipeline.render() has no scene argument and PassNode keeps the scene it captured
-      // when the graph was built. Retarget only the authored world pass at the root the wrapper
-      // is rendering so a projection mirror and its velocity history remain the same input.
-      setOutputPipelineRoot(outputPass, scene, camera);
-      outputPipeline.render();
+    pipelineCensus?.beginWorldFrame(scene);
+    let completed = false;
+    try {
+      bindSurface();
+      if (outputPipeline === undefined) raw.render(scene, camera);
+      else {
+        // RenderPipeline.render() has no scene argument and PassNode keeps the scene it captured
+        // when the graph was built. Retarget only the authored world pass at the root the wrapper
+        // is rendering so a projection mirror and its velocity history remain the same input.
+        setOutputPipelineRoot(outputPass, scene, camera);
+        outputPipeline.render();
+      }
+      pipelineCensus?.firstPresent();
+      completed = true;
+    } finally {
+      pipelineCensus?.endWorldFrame(scene, completed);
     }
-    pipelineCensus?.firstPresent();
   };
   const renderOverlayFrame = (scene: Object3D, camera: Camera): void => {
     bindSurface();
@@ -702,17 +711,75 @@ function wrapRenderer(
       : { warmUpSettled: () => pipelineCensus.warmUpSettled() }),
     ...(pipelineCensus === undefined
       ? {}
-      : { warmUpScopeSettled: (label: string) => pipelineCensus.warmUpScopeSettled(label) }),
+      : {
+          warmUpScopeSettled: (label: string, target?: Object3D) =>
+            pipelineCensus.warmUpScopeSettled(label, target),
+        }),
     get warmUpWorldPass() {
       if (outputPipeline === undefined) return undefined;
-      return (scene: Object3D, camera: Camera): void => {
-        bindSurface();
-        setOutputPipelineRoot(outputPass, scene, camera);
+      return (scene: Object3D, camera: Camera, targetScene?: Object3D): void => {
+        const outputRoot = targetScene ?? scene;
+        const scoped = targetScene !== undefined && targetScene !== scene;
+        const previousPassScene = outputPass?.scene;
+        const previousPassCamera = outputPass?.camera;
+        const previousTarget = "_renderTarget" in raw ? raw._renderTarget : raw.getRenderTarget?.();
+        const previousMrt = raw.getMRT?.();
+        const originalParent = scene.parent;
+        const originalMatrix = scene.matrix.clone();
+        const originalMatrixWorld = scene.matrixWorld.clone();
+        const attached = scoped && !isInObject3DSubtree(outputRoot, scene);
+        const hidden: { object: Object3D; visible: boolean }[] = [];
+        const keep = new Set<Object3D>();
+        const keepWithAncestors = (object: Object3D): void => {
+          let current: Object3D | null = object;
+          while (current !== null) {
+            keep.add(current);
+            if (current === outputRoot) break;
+            current = current.parent;
+          }
+        };
+        if (scoped) {
+          keepWithAncestors(scene);
+          scene.traverse((object) => keep.add(object));
+          outputRoot.traverse((object) => {
+            if ((object as Object3D & { isLight?: boolean }).isLight === true)
+              keepWithAncestors(object);
+          });
+          outputRoot.traverse((object) => {
+            if (object !== outputRoot && !keep.has(object)) {
+              hidden.push({ object, visible: object.visible });
+              object.visible = false;
+            }
+          });
+        }
+        if (attached) outputRoot.add(scene);
         renderingFrame += 1;
         try {
+          if (scoped) {
+            if (raw.setRenderTarget === undefined)
+              throw new Error(
+                "TN_WARMUP_OFFSCREEN_TARGET_UNAVAILABLE: scoped world warm-up needs a render target seam.",
+              );
+            warmOutputTarget ??= new RenderTarget(1, 1);
+            raw.setRenderTarget(warmOutputTarget);
+          } else bindSurface();
+          setOutputPipelineRoot(outputPass, outputRoot, camera);
           outputPipeline?.render();
         } finally {
           renderingFrame -= 1;
+          if (outputPass !== undefined) {
+            outputPass.scene = previousPassScene as Object3D;
+            outputPass.camera = previousPassCamera as Camera;
+          }
+          if (raw.setMRT !== undefined) raw.setMRT(previousMrt);
+          if (raw.setRenderTarget !== undefined) raw.setRenderTarget(previousTarget);
+          for (const entry of hidden) entry.object.visible = entry.visible;
+          if (attached) {
+            outputRoot.remove(scene);
+            if (originalParent !== null) originalParent.add(scene);
+          }
+          scene.matrix.copy(originalMatrix);
+          scene.matrixWorld.copy(originalMatrixWorld);
         }
       };
     },
@@ -1123,6 +1190,8 @@ function wrapRenderer(
       renderChainUsesPerObjectVelocity = false;
       outputPipeline?.dispose();
       outputPipeline = undefined;
+      warmOutputTarget?.dispose();
+      warmOutputTarget = undefined;
       outputInput = undefined;
       outputPass = undefined;
       pipelineCensus?.dispose();
@@ -1270,6 +1339,15 @@ function setOutputPipelineRoot(pass: PassNode | undefined, scene: Object3D, came
   if (pass === undefined) return;
   pass.scene = scene;
   pass.camera = camera;
+}
+
+function isInObject3DSubtree(root: Object3D, object: Object3D): boolean {
+  let current: Object3D | null = object;
+  while (current !== null) {
+    if (current === root) return true;
+    current = current.parent;
+  }
+  return false;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

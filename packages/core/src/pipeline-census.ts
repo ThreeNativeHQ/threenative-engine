@@ -82,6 +82,15 @@ export interface IPipelineCensusEvent {
   readonly afterWarmUpScope?: string;
 }
 
+/** A node-builder state observed even when Three reused an existing GPU pipeline. */
+export interface IPipelineNodeBuild {
+  readonly provenance: IPipelineProvenance;
+  readonly startedMs: number;
+  readonly beforeFirstPresent?: boolean;
+  readonly beforeWarmUpSettled?: boolean;
+  readonly afterWarmUpScope?: string;
+}
+
 export interface IPipelineCensusCounts {
   readonly lookups: number;
   readonly creations: number;
@@ -138,9 +147,14 @@ export interface IPipelineCensus {
     readonly eventsSettled: number;
     readonly nodeBuilds: number;
     readonly renderPipelineCreations: number;
+    readonly firstDraw?: {
+      readonly nodeBuilds: number;
+      readonly renderPipelineCreations: number;
+    };
   }[];
   readonly counts: IPipelineCensusCounts;
   readonly events: readonly IPipelineCensusEvent[];
+  readonly nodeBuilds?: readonly IPipelineNodeBuild[];
   readonly incompleteReasons: readonly string[];
 }
 
@@ -203,6 +217,7 @@ interface IActiveRenderObject {
   readonly clippingContext: unknown;
   readonly object: unknown;
   readonly material: unknown;
+  readonly scene: unknown;
   readonly passId: unknown;
   nodeBuilds: number;
 }
@@ -262,6 +277,22 @@ interface INodeBuilderObservation {
   reported: boolean;
 }
 
+interface IMutableWarmUpScope {
+  label: string;
+  boundaryMs: number;
+  eventsSettled: number;
+  nodeBuilds: number;
+  renderPipelineCreations: number;
+  target?: object;
+  firstDraw?: {
+    nodeBuilds: number;
+    renderPipelineCreations: number;
+  };
+  frameObserved: boolean;
+  frameNodeBuilds: number;
+  frameRenderPipelineCreations: number;
+}
+
 /**
  * Create and install a bounded census. The returned object is intentionally small: renderers own
  * lifecycle and callers only need `snapshot()`, `withRenderObject()`, and the two lifecycle
@@ -282,6 +313,7 @@ export class PipelineCensus {
   readonly #adapterIdentity: string;
   readonly #thermalIdentity: string;
   readonly #events: IMutableCensusEvent[] = [];
+  readonly #nodeBuildEvents: IPipelineNodeBuild[] = [];
   readonly #programs = new Set<string>();
   readonly #pipelines = new Set<string>();
   readonly #installed: IInstalledBackend[] = [];
@@ -310,6 +342,7 @@ export class PipelineCensus {
   #failures = 0;
   #pending = 0;
   #dropped = 0;
+  #droppedNodeBuilds = 0;
   #deviceCreations = 0;
   #directCreations = 0;
   #nodeBuilds = 0;
@@ -325,14 +358,9 @@ export class PipelineCensus {
   #eventsSettledAtWarmUpSettled = 0;
   #nodeBuildsAtWarmUpSettled = 0;
   #renderPipelineCreationsAtWarmUpSettled = 0;
-  readonly #warmUpScopes: {
-    label: string;
-    boundaryMs: number;
-    eventsSettled: number;
-    nodeBuilds: number;
-    renderPipelineCreations: number;
-  }[] = [];
+  readonly #warmUpScopes: IMutableWarmUpScope[] = [];
   #activeWarmUpScope: { label: string; boundaryMs: number } | undefined;
+  #activeWorldFrame: { root: object } | undefined;
   #nodeBuilderObservationUnavailable = false;
   #cleanup: (() => void) | undefined;
 
@@ -542,14 +570,52 @@ export class PipelineCensus {
       clippingContext: args[7],
       object: args[0],
       material: args[4],
+      scene: args[1],
       passId: args[8],
       nodeBuilds: 0,
     };
     this.#activeRenderObject = active;
+    for (const scope of this.#matchingWarmUpScopes()) scope.frameObserved = true;
     try {
       return callback();
     } finally {
       this.#activeRenderObject = previous;
+    }
+  }
+
+  #matchingWarmUpScopes(active = this.#activeRenderObject): IMutableWarmUpScope[] {
+    const activeObject = active?.object;
+    if (
+      active === undefined ||
+      this.#activeWorldFrame?.root !== active.scene ||
+      !isObject(activeObject) ||
+      !isMainWorldPass(active.passId)
+    )
+      return [];
+    return this.#warmUpScopes.filter(
+      (scope) => scope.target !== undefined && belongsToWarmUpTarget(activeObject, scope.target),
+    );
+  }
+
+  /** Begin the outer world render that can close target-bound streamed warm-up scopes. */
+  beginWorldFrame(root: object): void {
+    this.#activeWorldFrame = { root };
+  }
+
+  /** Close target-bound scopes only after the complete visible world frame has returned. */
+  endWorldFrame(root: object, completed: boolean): void {
+    const frame = this.#activeWorldFrame;
+    this.#activeWorldFrame = undefined;
+    const matches = completed && frame !== undefined && frame.root === root;
+    for (const scope of this.#warmUpScopes) {
+      if (matches && scope.frameObserved && scope.firstDraw === undefined)
+        scope.firstDraw = {
+          nodeBuilds: scope.frameNodeBuilds,
+          renderPipelineCreations: scope.frameRenderPipelineCreations,
+        };
+      scope.frameObserved = false;
+      scope.frameNodeBuilds = 0;
+      scope.frameRenderPipelineCreations = 0;
     }
   }
 
@@ -617,6 +683,31 @@ export class PipelineCensus {
         : previous;
     this.#nodeBuilderObservations.set(renderObjectValue, observation);
     if (this.#activeRenderObject !== undefined) this.#activeRenderObject.nodeBuilds += 1;
+    const startedMs = this.#clock();
+    const matching = this.#matchingWarmUpScopes();
+    for (const scope of matching) {
+      scope.frameObserved = true;
+      scope.frameNodeBuilds += 1;
+    }
+    const legacyScope =
+      this.#activeWarmUpScope !== undefined && startedMs > this.#activeWarmUpScope.boundaryMs
+        ? this.#activeWarmUpScope.label
+        : undefined;
+    const scopedLabel = matching.length === 1 ? matching[0]?.label : legacyScope;
+    const record: IPipelineNodeBuild = {
+      provenance: provenance(
+        { object: this.#activeRenderObject?.object, material: this.#activeRenderObject?.material },
+        this.#activeRenderObject,
+      ),
+      startedMs,
+      beforeFirstPresent: this.#firstPresentMs === undefined || startedMs <= this.#firstPresentMs,
+      ...(this.#warmUpSettledMs === undefined
+        ? {}
+        : { beforeWarmUpSettled: startedMs <= this.#warmUpSettledMs }),
+      ...(scopedLabel === undefined ? {} : { afterWarmUpScope: scopedLabel }),
+    };
+    if (this.#nodeBuildEvents.length < this.#limit) this.#nodeBuildEvents.push(record);
+    else this.#droppedNodeBuilds += 1;
   }
 
   #nodeBuildsFor(renderObjectValue: IRenderObjectLike | undefined): number {
@@ -658,8 +749,8 @@ export class PipelineCensus {
     }
   }
 
-  /** Mark one repeatable streamed warm-up boundary; later events carry its label. */
-  warmUpScopeSettled(label: string): void {
+  /** Mark one repeatable streamed warm-up boundary; target-bound scopes close on their first world frame. */
+  warmUpScopeSettled(label: string, target?: object): void {
     if (label.trim() === "") throw new Error("TN_PIPELINE_CENSUS_SCOPE_INVALID: empty label");
     const boundaryMs = this.#clock();
     this.#warmUpScopes.push({
@@ -676,8 +767,12 @@ export class PipelineCensus {
           event.settledMs !== undefined &&
           event.settledMs <= boundaryMs,
       ).length,
+      ...(target === undefined ? {} : { target }),
+      frameObserved: false,
+      frameNodeBuilds: 0,
+      frameRenderPipelineCreations: 0,
     });
-    this.#activeWarmUpScope = { label, boundaryMs };
+    if (target === undefined) this.#activeWarmUpScope = { label, boundaryMs };
   }
 
   snapshot(): IPipelineCensus {
@@ -689,6 +784,7 @@ export class PipelineCensus {
     if (this.#adapterIdentity === "unavailable")
       incompleteReasons.push("adapter identity unavailable");
     if (this.#overflowed) incompleteReasons.push("bounded event buffer overflowed");
+    if (this.#droppedNodeBuilds > 0) incompleteReasons.push("bounded node-build buffer overflowed");
     if (this.#pending > 0) incompleteReasons.push(`${this.#pending} pipeline event(s) are pending`);
     if (this.#failures > 0) incompleteReasons.push(`${this.#failures} pipeline creation(s) failed`);
     if (this.#creations === 0) incompleteReasons.push("no pipeline creations observed");
@@ -737,7 +833,16 @@ export class PipelineCensus {
           }),
       ...(this.#warmUpScopes.length === 0
         ? {}
-        : { warmUpScopes: this.#warmUpScopes.map((scope) => ({ ...scope })) }),
+        : {
+            warmUpScopes: this.#warmUpScopes.map((scope) => ({
+              label: scope.label,
+              boundaryMs: scope.boundaryMs,
+              eventsSettled: scope.eventsSettled,
+              nodeBuilds: scope.nodeBuilds,
+              renderPipelineCreations: scope.renderPipelineCreations,
+              ...(scope.firstDraw === undefined ? {} : { firstDraw: { ...scope.firstDraw } }),
+            })),
+          }),
       counts: {
         lookups: this.#lookups,
         creations: this.#creations,
@@ -751,6 +856,9 @@ export class PipelineCensus {
         ...this.#deviceCounts(),
       },
       events,
+      ...(this.#nodeBuildEvents.length === 0 && this.#nodeBuilds === 0
+        ? {}
+        : { nodeBuilds: this.#nodeBuildEvents.map((entry) => freezeNodeBuild(entry)) }),
       incompleteReasons,
     };
   }
@@ -966,6 +1074,12 @@ export class PipelineCensus {
     readonly label?: string;
   }): IMutableCensusEvent {
     this.#creations += 1;
+    const matching =
+      input.kind === "render" && input.direct !== true ? this.#matchingWarmUpScopes() : [];
+    for (const scope of matching) {
+      scope.frameObserved = true;
+      scope.frameRenderPipelineCreations += 1;
+    }
     // A direct creation has no logical Three pipeline to be identified by, and one shared
     // placeholder would make two of them look like one. Each takes its own until its handle lands.
     const pipelineIdentity =
@@ -995,6 +1109,9 @@ export class PipelineCensus {
       ...(input.label === undefined ? {} : { label: input.label }),
       ...(input.kind === "render" && input.direct !== true
         ? { nodeBuilds: this.#nodeBuildsFor(input.renderObject) }
+        : {}),
+      ...(matching.length === 1 && matching[0] !== undefined
+        ? { afterWarmUpScope: matching[0].label }
         : {}),
       startedMs: this.#clock(),
       backendPipeline: input.pipeline,
@@ -1052,7 +1169,11 @@ export class PipelineCensus {
       this.#firstPresentMs === undefined || settledAt <= this.#firstPresentMs;
     if (this.#warmUpSettledMs !== undefined)
       event.beforeWarmUpSettled = settledAt <= this.#warmUpSettledMs;
-    if (this.#activeWarmUpScope !== undefined && settledAt > this.#activeWarmUpScope.boundaryMs)
+    if (
+      event.afterWarmUpScope === undefined &&
+      this.#activeWarmUpScope !== undefined &&
+      settledAt > this.#activeWarmUpScope.boundaryMs
+    )
       event.afterWarmUpScope = this.#activeWarmUpScope.label;
     if (event.pending === true) {
       event.pending = false;
@@ -1232,6 +1353,25 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return isObject(value) && typeof value.then === "function";
 }
 
+function isMainWorldPass(passId: unknown): boolean {
+  return passId === undefined || passId === null || passId === "main";
+}
+
+function belongsToWarmUpTarget(value: object, target: object): boolean {
+  if (value === target) return true;
+  const record = value as { userData?: unknown; parent?: unknown };
+  const userData = isObject(record.userData) ? record.userData : undefined;
+  if (userData?.tnChunkRoot === target) return true;
+  const seen = new Set<object>();
+  let current: unknown = record.parent;
+  while (isObject(current) && !seen.has(current)) {
+    if (current === target) return true;
+    seen.add(current);
+    current = (current as { parent?: unknown }).parent;
+  }
+  return false;
+}
+
 function asyncPromises(value: unknown): Promise<unknown>[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -1374,5 +1514,25 @@ function freezeEvent(event: IMutableCensusEvent): IPipelineCensusEvent {
       ? {}
       : { beforeWarmUpSettled: event.beforeWarmUpSettled }),
     ...(event.afterWarmUpScope === undefined ? {} : { afterWarmUpScope: event.afterWarmUpScope }),
+  };
+}
+
+function freezeNodeBuild(entry: IPipelineNodeBuild): IPipelineNodeBuild {
+  return {
+    provenance: {
+      ...(entry.provenance.material === undefined
+        ? {}
+        : { material: { ...entry.provenance.material } }),
+      ...(entry.provenance.object === undefined ? {} : { object: { ...entry.provenance.object } }),
+      unknown: entry.provenance.unknown,
+    },
+    startedMs: entry.startedMs,
+    ...(entry.beforeFirstPresent === undefined
+      ? {}
+      : { beforeFirstPresent: entry.beforeFirstPresent }),
+    ...(entry.beforeWarmUpSettled === undefined
+      ? {}
+      : { beforeWarmUpSettled: entry.beforeWarmUpSettled }),
+    ...(entry.afterWarmUpScope === undefined ? {} : { afterWarmUpScope: entry.afterWarmUpScope }),
   };
 }

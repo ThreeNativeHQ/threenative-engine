@@ -71,7 +71,14 @@ describe("evaluator semantics (characterization)", () => {
             adapter: { identity: "adapter:test", thermal: "unavailable" },
             firstPresent: { boundaryMs: 1, eventsSettled: 1 },
             warmUpSettled: { boundaryMs: 1, eventsSettled: 1, nodeBuilds: 1, renderPipelineCreations: 1 },
-            warmUpScopes: [{ label: "chunk:0", boundaryMs: 1.5, eventsSettled: 1, nodeBuilds: 1, renderPipelineCreations: 1 }],
+            warmUpScopes: [{
+              label: "chunk:0",
+              boundaryMs: 1.5,
+              eventsSettled: 1,
+              nodeBuilds: 1,
+              renderPipelineCreations: 1,
+              firstDraw: { nodeBuilds: 1, renderPipelineCreations: 1 },
+            }],
             counts: {
               lookups: 2,
               creations: 2,

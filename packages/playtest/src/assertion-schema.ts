@@ -612,7 +612,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "The timeline is stamped by the runtime as milestones happen; a missing milestone fails the ceiling rather than passing it.",
   },
   {
-    description: "Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; missing, incomplete, or malformed census evidence fails closed.",
+    description: "Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; a named streamed scope must also prove its target-bound first visible world frame, and missing, incomplete, or malformed census evidence fails closed.",
     example: { pipelineCensus: { maxNodeBuildsAfterWarmUpSettled: 0, maxRenderPipelineCreationsAfterWarmUpSettled: 0 } },
     fields: [
       { description: "Ceiling on distinct node-builder states first observed after warm-up settled.", name: "maxNodeBuildsAfterWarmUpSettled", type: "non-negative integer" },

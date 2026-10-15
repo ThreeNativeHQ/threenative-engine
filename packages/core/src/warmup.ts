@@ -216,7 +216,7 @@ export interface IWarmUpRenderer {
   computeAsync?: (node: unknown) => Promise<void>;
   pipelineCensus?: () => IPipelineCensus;
   /** Performs one covered output-pipeline render without marking first present. */
-  warmUpWorldPass?: (scene: Object3D, camera: Camera) => void;
+  warmUpWorldPass?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => void;
   /** The renderer's own render path, used to build every pass's pipelines once. */
   render?: (scene: Object3D, camera: Camera) => void;
   raw?: unknown;
@@ -724,10 +724,16 @@ function renderWarmPasses(
   camera: Camera,
   enabled: boolean,
   includeHidden: boolean,
+  targetScene?: Object3D,
 ): IWarmPassRender | undefined {
   const coveredWorldPass = renderer.warmUpWorldPass;
-  const render = coveredWorldPass ?? renderer.render;
-  if (typeof render !== "function") return undefined;
+  const render =
+    coveredWorldPass === undefined
+      ? renderer.render === undefined
+        ? undefined
+        : () => renderer.render?.(scene, camera)
+      : () => coveredWorldPass(scene, camera, targetScene);
+  if (render === undefined) return undefined;
   const skipped: IWarmPassRender = {
     passes: [],
     created: 0,
@@ -790,7 +796,7 @@ function renderWarmPasses(
     if (sceneVisible === false) (scene as IWarmVisibilityHost).visible = true;
     if (raw !== undefined) raw.autoClear = false;
     if (shadowMap !== undefined) shadowMap.needsUpdate = true;
-    render(scene, camera);
+    render();
   } finally {
     if (raw !== undefined) {
       if (hadOwnAutoClear) raw.autoClear = autoClear;
@@ -937,23 +943,37 @@ export async function warmUpScene(
   const invokeSceneCompile = (): Promise<void> => {
     // Stock Three compileAsync has no render-depth input, so an output pipeline's covered render
     // is the only path that can build the world graph against the target the first frame draws.
-    if (renderer.warmUpWorldPass !== undefined) return Promise.resolve();
+    if (renderer.warmUpWorldPass !== undefined) {
+      const pass = renderWarmPassesOnce();
+      return pass === undefined
+        ? Promise.reject(passError ?? new Error("covered world warm render did not settle"))
+        : Promise.resolve();
+    }
     return invokeCompile(scene, options.targetScene);
   };
 
   const finish = (report: IWarmUpReport): IWarmUpReport => {
+    const coveredPassIncomplete =
+      renderer.warmUpWorldPass !== undefined && passResult === undefined;
+    const normalized = coveredPassIncomplete
+      ? {
+          ...report,
+          abandoned: Math.max(1, report.abandoned),
+          timedOut: report.timedOut || now() >= startedAt + budgetMs,
+        }
+      : report;
     const complete =
-      !report.unsupported &&
-      !report.timedOut &&
-      report.abandoned === 0 &&
-      report.computeUnsupported !== true &&
-      report.computeTimedOut !== true &&
-      (report.computeAbandoned ?? 0) === 0;
+      !normalized.unsupported &&
+      !normalized.timedOut &&
+      normalized.abandoned === 0 &&
+      normalized.computeUnsupported !== true &&
+      normalized.computeTimedOut !== true &&
+      (normalized.computeAbandoned ?? 0) === 0;
     const finalCache =
       complete && cacheIdentity !== undefined
         ? storeWarmUpCache(cacheIdentity, candidates, computeNodes.length)
         : cacheStatus;
-    return reconcileWarmUpObservation({ ...report, cache: finalCache });
+    return reconcileWarmUpObservation({ ...normalized, cache: finalCache });
   };
 
   // The hidden pass render runs once, after the compile and before the ending census snapshot, so
@@ -962,6 +982,7 @@ export async function warmUpScene(
   // be worse than the stall it exists to prevent.
   let passResult: IWarmPassRender | undefined;
   let passRendered = false;
+  let passError: unknown;
   const renderWarmPassesOnce = (): IWarmPassRender | undefined => {
     if (passRendered) return passResult;
     passRendered = true;
@@ -973,8 +994,10 @@ export async function warmUpScene(
         camera,
         options.renderPasses !== false,
         options.includeHidden === true,
+        options.targetScene,
       );
-    } catch {
+    } catch (error) {
+      passError = error;
       passResult = undefined;
     }
     return passResult;
@@ -1030,7 +1053,7 @@ export async function warmUpScene(
           elapsedMs: now() - startedAt,
           unsupported: false,
           abandoned: finished ? 0 : 1,
-          timedOut: !finished,
+          timedOut: !finished && (passError === undefined || now() >= deadline),
         }),
       );
     }
