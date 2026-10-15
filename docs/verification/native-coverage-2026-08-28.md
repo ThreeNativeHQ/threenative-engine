@@ -23,10 +23,10 @@ targets could not be built and are named below.
 | `src/vfs/` | 239 | 195 | 81.59% |
 | `src/webgpu/` | 9870 | 7566 | 76.66% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24835** | **19470** | **78.40%** |
+| `src/workers/` | 615 | 524 | 85.20% |
+| **TOTAL** | **24835** | **19467** | **78.39%** |
 
-Source digest: `sha256:6fd6a85360ae1c1cd2016f6daf241e8a892e616ee6041d5d9f0c091d14c2a0a3`
+Source digest: `sha256:4694f6c260feec4929114d04f323617c5d8b260073cdb3394f70e751c2122dce`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -41,7 +41,7 @@ change requires this opt-in command to refresh the record.
 | `src/fs/` | 75.43% |
 | `src/http/` | 86.95% |
 | `src/js/` | 74.50% |
-| `src/platform/` | 63.70% |
+| `src/platform/` | 63.81% |
 | `src/raytracing/` | 81.55% |
 | `src/runtime.cpp` | 73.28% |
 | `src/screenshot_gate.cpp` | 88.89% |
