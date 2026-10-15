@@ -634,6 +634,7 @@ int Session::initialize() {
     inspect::Host host;
     host.scene = game.scene;
     host.gameRuntime = game.gameRuntime;
+    host.renderEachTick = game.renderEachTick;
     host.observe = game.observe;
     host.tick = [this] { return tick(); };
     host.step = [this] {
@@ -983,6 +984,7 @@ int Session::step() {
     if (game.uiFrame) game.uiFrame();
     // An advance may render several streaming frames; each tick gets its own admission cap.
     mailbox->poll(*endpoint);
+    if (endpoint->automaticRenderHeld()) return viewFailed ? -1 : 1;
     // A launched runner holds the game's boot until its first request, and that request races this
     // loop: the host reaches its first step in milliseconds, the runner polls every 40 ms. A frame
     // presented before the request is a loader frame, so how many there were, which settings the

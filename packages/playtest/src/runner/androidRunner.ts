@@ -165,6 +165,7 @@ async function runDevicePlaytestInternal(
   );
   const cpuLabels = cpuWindowLabels(scenario, target.name, config.liveClock === true);
   const cpuWindows: ICpuWindow[] = [];
+  let failureEvidenceCaptured = false;
   await throwIfAborted(target);
   await mkdir(config.artifactDirectory, { recursive: true });
   await throwIfAborted(target);
@@ -451,11 +452,19 @@ async function runDevicePlaytestInternal(
         if (step.label !== undefined && cpuLabels.includes(step.label)) {
           const measuredBridge = bridge;
           if (frames > 1000) await measuredBridge.advance(frames - 1000);
-          cpuWindows.push(await measureCpuWindow(step.label, async () => {
-            const pid = target.driver.processId;
-            if (pid === undefined) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: native child PID unavailable");
-            return { rootPid: pid, pid, tid: pid };
-          }, measuredBridge, () => measuredBridge.advance(1000)));
+          const profile: unknown = "profile" in measuredBridge.description ? measuredBridge.description.profile : undefined;
+          const holdRender = target.name === "desktop" && typeof profile === "object" && profile !== null
+            && "engine" in profile && profile.engine === "native";
+          if (holdRender) await transport.call("_holdAutomaticRender", true);
+          try {
+            cpuWindows.push(await measureCpuWindow(step.label, async () => {
+              const pid = target.driver.processId;
+              if (pid === undefined) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: native child PID unavailable");
+              return { rootPid: pid, pid, tid: pid };
+            }, measuredBridge, () => measuredBridge.advance(1000)));
+          } finally {
+            if (holdRender) await transport.call("_holdAutomaticRender", false);
+          }
         } else if (coverageRecordingStarted) {
           for (let frame = 0; frame < frames; frame += 1) {
             await bridge.advance(1);
@@ -599,6 +608,7 @@ async function runDevicePlaytestInternal(
   } catch (error) {
     if (error instanceof PlaytestBridgeError) {
       let diagnostic = error.diagnostic;
+      failureEvidenceCaptured = true;
       // Preserve this failed host's output before stop/transport cleanup. Diagnostic
       // collection is best effort and must never replace the original failure.
       const consoleEntries = await target.driver.captureConsole().catch(() => []);
@@ -653,7 +663,7 @@ async function runDevicePlaytestInternal(
       });
     }
     await attemptCleanup(() => target.driver.stop());
-    if (target.name === "desktop") {
+    if (target.name === "desktop" && !failureEvidenceCaptured) {
       await attemptCleanup(async () => {
         await mkdir(config.artifactDirectory, { recursive: true });
         await writeObservationArtifacts(config.artifactDirectory, { console: true }, {

@@ -71,7 +71,37 @@ std::string request(const std::string& id, const std::string& method, const std:
            (argument.empty() ? "" : ",\"argument\":" + argument) + "}";
 }
 
+void automaticRenderHold() {
+    Host host;
+    Endpoint unsupported(host);
+    CHECK(reply(unsupported, request("h", "_holdAutomaticRender", "true")).find("error") != nullptr);
+    CHECK(!unsupported.automaticRenderHeld());
+    uint64_t updates = 0;
+    host.tick = [&] { return updates; };
+    host.step = [&] { ++updates; };
+    host.renderEachTick = true;
+    Endpoint endpoint(host);
+    CHECK(!endpoint.automaticRenderHeld());
+    for (const std::string argument : {"", "null", "1", "\"true\"", "{}"}) {
+        const auto answer = reply(endpoint, request("h", "_holdAutomaticRender", argument));
+        CHECK(answer.find("error")->find("message")->string().rfind("TN_INSPECT_INVALID_ARGUMENT", 0) == 0);
+        CHECK(!endpoint.automaticRenderHeld());
+    }
+    CHECK(reply(endpoint, request("h", "_holdAutomaticRender", "true")).find("error") == nullptr);
+    CHECK(endpoint.automaticRenderHeld());
+    CHECK(reply(endpoint, request("s", "sample", "{}")).find("error") == nullptr);
+    CHECK(updates == 0);
+    CHECK(reply(endpoint, request("a", "advance", "1000")).find("error") == nullptr);
+    CHECK(updates == 1000);
+    CHECK(endpoint.automaticRenderHeld());
+    CHECK(reply(endpoint, request("s", "sample", "{}")).find("error") == nullptr);
+    CHECK(updates == 1000);
+    CHECK(reply(endpoint, request("h", "_holdAutomaticRender", "false")).find("error") == nullptr);
+    CHECK(!endpoint.automaticRenderHeld());
+}
+
 void protocol() {
+    automaticRenderHold();
     Game game;
     // Valid and invalid arguments for every method device.ts dispatches.
     struct Case {
@@ -168,6 +198,7 @@ void protocol() {
     std::printf("inspect protocol: %zu message types, %zu cases, %zu wrong\n", std::size(kMethods), cases.size(), bad);
     CHECK(bad == 0);
 }
+
 
 void inputTick() {
     Game game;

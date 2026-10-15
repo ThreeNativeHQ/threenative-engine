@@ -85,6 +85,14 @@ bool Endpoint::dispatch(const std::string& method, const Value* argument, Value&
         }
         if (!error.empty()) return false;
     }
+    if (method == "_holdAutomaticRender") {
+        if (!argument || !argument->isBool())
+            return fail(error, "TN_INSPECT_INVALID_ARGUMENT: _holdAutomaticRender takes a boolean.");
+        if (argument->boolean() && !host_.renderEachTick)
+            return fail(error, "TN_INSPECT_UNSUPPORTED: holding automatic render requires rendering each driven tick.");
+        automaticRenderHeld_ = argument->boolean();
+        return result = Value::makeBool(automaticRenderHeld_), true;
+    }
     if (method.rfind("input.", 0) == 0) {
         if (!input(method, argument, error))
             return false;

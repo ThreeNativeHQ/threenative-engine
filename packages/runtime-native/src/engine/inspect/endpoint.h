@@ -43,6 +43,7 @@ struct Host {
     /** The artifact's game runtime, reported in `describe.profile`: "cpp" for a built-in game, "v8"
      *  for a game bundle on the V8 adapter. Mirrored into `sample.resources.profile`. */
     std::string gameRuntime = "cpp";
+    bool renderEachTick = false; // only driven renders may replace automatic outer-loop frames
     /** One JSON-safe registered resource by id, or null for an id this player does not carry. */
     std::function<json::Value(const std::string& id)> resource;
     /** A game runtime's installed observation bridge. False without an error uses native fallback;
@@ -76,6 +77,8 @@ class Endpoint {
      *  what it first saw. */
     [[nodiscard]] uint64_t tick() const { return host_.tick ? host_.tick() : 0; }
 
+    [[nodiscard]] bool automaticRenderHeld() const { return automaticRenderHeld_; }
+
     static constexpr std::size_t kMaxPayloadBytes = 1'000'000;
 
   private:
@@ -92,6 +95,7 @@ class Endpoint {
     json::Value clock() const;
 
     Host host_;
+    bool automaticRenderHeld_ = false;
     std::vector<InputEvent> input_;
     std::vector<Pointer> pointers_; // the touch set input.pointers last reported, in its order
 };
