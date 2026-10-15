@@ -16,10 +16,13 @@
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
 #include "engine/scene/nodes.h"
+#include "engine/scene/lights.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/projected_cull.h"
 
+#include <fstream>
+#include <cstdlib>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -1614,10 +1617,24 @@ void struct_function_return() {
     callable->kind = g::Kind::Call;
     callable->args = {body};
     const auto call = TslArg::of(callable);
-    bool refused = false;
-    try { tn::abi::tslCall("get", &call, {TslArg::of(std::string("first"))}, serial); }
-    catch (const std::exception& error) { refused = std::string(error.what()).find("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND") != std::string::npos; }
-    CHECK(refused);
+    const auto calledFirst = tn::abi::tslCall("get", &call, {TslArg::of(std::string("first"))}, serial);
+    auto early = std::make_shared<g::NodeData>(); early->kind = g::Kind::Return; early->args = {value};
+    auto branch = std::make_shared<g::NodeData>(); branch->kind = g::Kind::If;
+    branch->args = {g::greaterThan(g::uniform("early", Type::f32(), {1}), g::float_(0))}; branch->body = {early};
+    auto earlyBody = std::make_shared<g::NodeData>(*body); earlyBody->body.push_back(branch);
+    auto earlyCall = std::make_shared<g::NodeData>(*callable); earlyCall->args = {earlyBody};
+    const auto earlyReceiver = TslArg::of(earlyCall);
+    const auto earlyFirst = tn::abi::tslCall("get", &earlyReceiver, {TslArg::of(std::string("first"))}, serial);
+    const auto earlySecond = tn::abi::tslCall("get", &earlyReceiver, {TslArg::of(std::string("second"))}, serial);
+    Program aggregateProgram(Stage::Fragment);
+    {
+        tn::engine::shader::tsl::Build aggregateBuild(aggregateProgram);
+        aggregateProgram.output("color", g::lower(g::vec4({calledFirst, earlyFirst, earlySecond, g::float_(1)}), aggregateProgram));
+    }
+    const auto aggregateShader = buildStage(aggregateProgram);
+    CHECK(aggregateProgram.ok() && aggregateShader.wgsl.ok());
+    if (const char* output = std::getenv("TN_STRUCT_WGSL_OUTPUT")) std::ofstream(output) << aggregateShader.wgsl.code;
+
 
 }
 
@@ -1666,6 +1683,92 @@ void starter_post_bindings() {
         return result;
     };
     const auto scene = g::texture("scene", g::uv());
+    const auto rtt = call("rtt", {TslArg::of(scene), TslArg::of(64.0), TslArg::of(32.0),
+                                  TslArg::of(1003.0), TslArg::of(1003.0)});
+    if (!rtt) return;
+    auto passes = g::postPasses(rtt);
+    CHECK(passes.size() == 1 && passes[0].width == 64 && passes[0].height == 32);
+    const double scale = 0.5, width = 80, no = 0, yes = 1;
+    CHECK(tn::abi::tslEffectParameter(rtt, "resolutionScale", &scale) == scale);
+    CHECK(tn::abi::tslEffectParameter(rtt, "width", &width) == width);
+    CHECK(tn::abi::tslEffectParameter(rtt, "autoUpdate", &no) == no);
+    CHECK(tn::abi::tslEffectParameter(rtt, "textureNeedsUpdate", &yes) == yes);
+    passes = g::postPasses(rtt);
+    CHECK(passes[0].width == 80 && passes[0].resolutionScale == 0.5 && !passes[0].autoUpdate);
+    tn_context_t* context = nullptr;
+    tn_diagnostic_t diagnostic{};
+    const auto version = tn_engine_version();
+    CHECK(tn_context_create(&context, &version, &diagnostic) == TN_OK);
+    tn_handle_t depth{};
+    const tn_value_t depthArgs[]{num(64.0), num(32.0)};
+    CHECK(tn_construct(context, "DepthTexture", depthArgs, 2, &depth, &diagnostic) == TN_OK);
+    if (depth.type) {
+        const auto* object = tn::abi::objectOf(depth);
+        const auto sampled = call("texture", {TslArg::objectOf("DepthTexture", object->ptr), TslArg::of(g::uv())});
+        tn::engine::shader::Program p(tn::engine::shader::Stage::Fragment);
+        tn::engine::shader::tsl::Build build(p);
+        const auto value = g::lower(sampled, p);
+        p.output("color", p.construct(tn::engine::shader::Type::vec(4), {value}));
+        const auto stage = tn::engine::shader::buildStage(p);
+        CHECK(stage.wgsl.ok());
+        CHECK(stage.wgsl.code.find("texture_depth_2d") != std::string::npos);
+        tn_handle_t target{};
+        CHECK(tn_construct(context, "RenderTarget", depthArgs, 2, &target, &diagnostic) == TN_OK);
+        const auto attachment = ref(depth);
+        CHECK(tn_set(target, "depthTexture", &attachment, &diagnostic) == TN_OK);
+        tn_value_t attached{};
+        CHECK(tn_get(target, "depthTexture", &attached, &diagnostic) == TN_OK && same(attached.handle, depth));
+        CHECK(tn_object_release(depth, &diagnostic) == TN_OK);
+        CHECK(tn_get(target, "depthTexture", &attached, &diagnostic) == TN_OK);
+    }
+    CHECK(tn_context_destroy(context, &diagnostic) == TN_OK);
+    std::string authoredSource = "fn authoredArea(sample: u32, lo: vec2<f32>, hi: vec2<f32>) -> f32 { return f32(sample) + dot(hi-lo, hi-lo); }";
+    std::string authoredName = "authoredArea";
+    if (const char* source = std::getenv("TN_AUTHORED_WGSL_SOURCE")) {
+        std::ifstream input(source); CHECK(input.good());
+        authoredSource.assign(std::istreambuf_iterator<char>(input), {}); authoredName = "currentSampleArea";
+    }
+    const auto authored = call("wgslFunction", {TslArg::of(authoredSource),
+        TslArg::of(authoredName), TslArg::of(std::string("float")),
+        TslArg::of(std::string("uint")), TslArg::of(std::string("vec2")), TslArg::of(std::string("vec2"))});
+    if (!authored) return;
+    const auto authoredReceiver = TslArg::of(authored);
+    const auto invoked = tn::abi::tslCall("invoke", &authoredReceiver,
+        {TslArg::of(g::uint_(1)), TslArg::of(g::vec2({g::float_(0)})), TslArg::of(g::vec2({g::float_(1)}))}, serial);
+    CHECK(invoked != nullptr);
+    {
+        tn::engine::shader::Program p(tn::engine::shader::Stage::Fragment);
+        tn::engine::shader::tsl::Build build(p);
+        const auto value = g::lower(invoked, p);
+        p.output("color", p.construct(tn::engine::shader::Type::vec(4), {value}));
+        const auto stage = tn::engine::shader::buildStage(p);
+        CHECK(stage.wgsl.ok() && p.ok());
+        CHECK(stage.wgsl.code.find("fn " + authoredName) != std::string::npos);
+        if (const char* output = std::getenv("TN_AUTHORED_WGSL_OUTPUT")) std::ofstream(output) << stage.wgsl.code;
+    }
+    const auto sun = std::make_shared<tn::engine::DirectionalLight>();
+    const auto shadowMatrix = call("lightShadowMatrix", {TslArg::objectOf("DirectionalLight", sun)});
+    if (!shadowMatrix) return;
+    CHECK(shadowMatrix->name == "authoredLightShadowMatrix" + std::to_string(sun->id()));
+    {
+        const auto buffer = g::storage("rejection", tn::engine::shader::Type::u32());
+        auto element = std::make_shared<g::NodeData>(*buffer.element(g::uint_(0)));
+        *element->atomic = true;
+        tn::abi::TslScopes scopes;
+        g::Node ignored, body;
+        CHECK(scopes.call("scope:open", nullptr, {}, ignored));
+        CHECK(scopes.call("atomicStore", nullptr, {TslArg::of(element), TslArg::of(g::uint_(0))}, ignored));
+        CHECK(scopes.call("atomicAdd", nullptr, {TslArg::of(element), TslArg::of(g::uint_(1))}, ignored));
+        CHECK(scopes.call("scope:close", nullptr, {}, body));
+        tn::engine::shader::Program p(tn::engine::shader::Stage::Compute);
+        tn::engine::shader::tsl::Build build(p);
+        g::lower(body, p);
+        const auto stage = tn::engine::shader::buildStage(p);
+        CHECK(stage.wgsl.ok() && p.ok());
+        CHECK(stage.wgsl.code.find("array<atomic<u32>>") != std::string::npos);
+        CHECK(stage.wgsl.code.find("atomicStore") < stage.wgsl.code.find("atomicAdd"));
+        if (const char* output = std::getenv("TN_ATOMIC_WGSL_OUTPUT")) std::ofstream(output) << stage.wgsl.code;
+    }
     const auto temporal = call("traa", {TslArg::of(scene), TslArg::of(g::texture("depth", g::uv())),
                                       TslArg::of(g::texture("velocity", g::uv())), TslArg::other()});
     if (!temporal) return;

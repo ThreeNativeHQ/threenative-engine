@@ -1,4 +1,5 @@
 #include "engine/shader/graph/graph.h"
+#include "engine/scene/texture.h"
 
 #include "engine/shader/tsl/tsl.h"
 #include "engine/shader/cube_uv.h"
@@ -71,11 +72,12 @@ private:
     uint32_t ensureStorage(const NodeData& element);
     ExprId emit(Node node);
     std::vector<ExprId> aggregate(Node node);
+    std::vector<VarId> aggregateReturns_;
     ExprId convert(ExprId value, Type target);
 
     Program& program_;
     const std::unordered_map<std::string, ExprId>& inputs_;
-    std::unordered_map<const NodeData*, ExprId> exprs_;
+    std::unordered_map<const NodeData*, ExprId> exprs_, effects_;
     std::unordered_map<const NodeData*, std::vector<ExprId>> aggregates_;
     std::unordered_map<const NodeData*, VarId> vars_;
     std::unordered_map<std::string, uint32_t> buffers_;
@@ -105,33 +107,51 @@ ExprId Lowerer::convert(ExprId value, Type target) {
 
 ExprId Lowerer::expression(Node node) {
     if (!node) return kInvalid;
+    if (const auto effect = effects_.find(node.get()); effect != effects_.end()) return effect->second;
     const auto found = exprs_.find(node.get());
     if (found != exprs_.end()) return found->second;
     const ExprId id = emit(node);
     exprs_.emplace(node.get(), id);
+    if (node->kind == Kind::AtomicAdd) effects_.emplace(node.get(), id);
     return id;
 }
 
 std::vector<ExprId> Lowerer::aggregate(Node node) {
     if (const auto found = aggregates_.find(node.get()); found != aggregates_.end()) return found->second;
-    if (doneVar_ != noVar)
-        throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: aggregates inside callable functions need invocation-local member slots");
     std::vector<ExprId> values;
-    if (node->kind == Kind::Struct) {
+    if (node->kind == Kind::Call) {
+        Lowerer invocation(program_, inputs_, toneMapping_, srgb_);
+        invocation.vars_ = vars_; invocation.loopIndex_ = loopIndex_;
+        values = invocation.aggregate(node->args.at(0));
+    } else if (node->kind == Kind::Struct) {
         for (const auto& member : node->args) {
             const auto value = expression(member);
-            if (value == kInvalid) throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: invalid struct member");
-            // Snapshot every member before later statements can change the function's local variables.
+            if (value == kInvalid) throw std::runtime_error("TN_TSL_STRUCT_MEMBER: invalid struct member");
             values.push_back(program_.load(program_.var(program_.expr(value).type, value)));
         }
     } else if (node->kind == Kind::Body && node->args.size() == 1) {
+        auto schema = node->args[0];
+        while (schema && (schema->kind == Kind::Call || schema->kind == Kind::Body) && schema->args.size() == 1)
+            schema = schema->args[0];
+        if (!schema || schema->kind != Kind::Struct) throw std::runtime_error("TN_TSL_STRUCT_RETURN_TYPE: expected a struct result");
+        const auto previousReturns = std::move(aggregateReturns_);
+        const VarId previousDone = doneVar_, previousReturn = returnVar_;
+        aggregateReturns_.clear(); returnVar_ = noVar;
+        doneVar_ = program_.var(Type::boolean(), program_.constant(false));
+        for (const auto& [name, type] : schema->members)
+            aggregateReturns_.push_back(program_.var(type, convert(program_.constant(0.0f), type)));
         statements(node->body);
-        exprs_.clear();
-        values = aggregate(node->args[0]);
+        program_.If(program_.equal(program_.load(doneVar_), program_.constant(false)), [&] {
+            exprs_.clear();
+            const auto final = aggregate(node->args[0]);
+            for (size_t i = 0; i < final.size(); ++i) program_.assign(aggregateReturns_.at(i), final[i]);
+        });
+        for (const auto slot : aggregateReturns_) values.push_back(program_.load(slot));
+        aggregateReturns_ = previousReturns; doneVar_ = previousDone; returnVar_ = previousReturn;
     } else {
-        throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: expected a final struct value");
+        throw std::runtime_error("TN_TSL_STRUCT_RETURN_TYPE: expected a struct result");
     }
-    aggregates_[node.get()] = values;
+    if (node->kind != Kind::Struct) aggregates_[node.get()] = values;
     return values;
 }
 
@@ -142,6 +162,19 @@ ExprId Lowerer::emit(Node node) {
         if (input != inputs_.end()) return input->second;
     }
     switch (d.kind) {
+        case Kind::AtomicAdd: {
+            const auto& target = *d.args[0];
+            return program_.atomicAdd(ensureStorage(target), expression(target.args[0]), convert(expression(d.args[1]), target.type));
+        }
+        case Kind::AtomicStore: throw std::runtime_error("atomicStore has no return value");
+        case Kind::WgslFunction: throw std::runtime_error("wgslFn must be called before use");
+        case Kind::WgslCall: {
+            const auto& function = *d.args[0];
+            std::vector<Type> inputs; std::vector<ExprId> arguments;
+            for (const auto& [name, type] : function.members) inputs.push_back(type);
+            for (size_t i = 1; i < d.args.size(); ++i) arguments.push_back(convert(expression(d.args[i]), inputs.at(i - 1)));
+            return program_.authoredCall(function.name, function.lanes, function.type, inputs, arguments);
+        }
         case Kind::StructMember: return aggregate(d.args[0]).at(d.bits);
         case Kind::PipelineOutput: return expression(d.args[0]);
         case Kind::RenderOutput: {
@@ -167,18 +200,13 @@ ExprId Lowerer::emit(Node node) {
             return program_.load(returnVar_);
         }
         case Kind::Call: {
-            // Each invocation gets its own return slot; callbacks are inlined, like upstream
-            // ShaderCallNodeInternal without a layout. A return inside If remains local.
-            const VarId previousReturn = returnVar_, previousDone = doneVar_;
-            const Type previousType = returnType_; returnType_ = d.type;
-            returnVar_ = noVar; doneVar_ = program_.var(Type::boolean(), program_.constant(false));
-            const ExprId result = expression(d.args[0]);
-            ExprId value = returnVar_ == noVar ? result : program_.load(returnVar_);
-            if (value != kInvalid && returnType_.scalar != Type::Scalar::Void && program_.expr(value).type != returnType_)
-                value = convert(value, returnType_);
-            returnType_ = previousType;
-            returnVar_ = previousReturn; doneVar_ = previousDone;
-            return value;
+            Lowerer invocation(program_, inputs_, toneMapping_, srgb_);
+            invocation.vars_ = vars_; invocation.loopIndex_ = loopIndex_;
+            invocation.returnType_ = d.type;
+            invocation.doneVar_ = program_.var(Type::boolean(), program_.constant(false));
+            const ExprId result = invocation.expression(d.args.at(0));
+            const ExprId value = invocation.returnVar_ == noVar ? result : program_.load(invocation.returnVar_);
+            return value != kInvalid && d.type.scalar != Type::Scalar::Void ? convert(value, d.type) : value;
         }
         case Kind::Var: { const auto variable = ensureVar(node); return variable == noVar ? kInvalid : program_.load(variable); }
         case Kind::RenderTexture:
@@ -186,7 +214,7 @@ ExprId Lowerer::emit(Node node) {
         case Kind::TextureSize:
             return program_.textureSize(program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
         case Kind::TextureLoad:
-            return program_.textureLoad(program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
+            return program_.textureLoad(d.bits == 1 ? program_.textureDepth(d.name) : program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
         case Kind::Constant:
             if (d.type.scalar == Type::Scalar::F32)
                 return program_.constant(std::bit_cast<float>(static_cast<uint32_t>(d.bits)));
@@ -301,6 +329,13 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Texture: {
             const ExprId coordinate = expression(d.args[0]);
             if (coordinate == kInvalid) return kInvalid;
+            if (d.bits == 1) {
+                const auto texture = program_.textureDepth(d.name);
+                const auto size = program_.textureSize(texture, program_.constant(int32_t(0)));
+                const auto texel = program_.construct(Type::vec(2, Type::Scalar::I32), {
+                    program_.mul(coordinate, program_.construct(Type::vec(2), {size}))});
+                return program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
+            }
             // TextureNode.level(n): an explicit mip, which a vertex stage needs.
             if (d.args.size() == 2) {
                 const ExprId level = expression(d.args[1]);
@@ -338,7 +373,7 @@ VarId Lowerer::ensureVar(Node var) {
 uint32_t Lowerer::ensureStorage(const NodeData& element) {
     const auto found = buffers_.find(element.name);
     if (found != buffers_.end()) return found->second;
-    const uint32_t buffer = program_.storageBuffer(element.name, element.type);
+    const uint32_t buffer = program_.storageBuffer(element.name, element.type, element.atomic ? *element.atomic : element.bits == 1);
     buffers_.emplace(element.name, buffer);
     return buffer;
 }
@@ -353,11 +388,22 @@ void Lowerer::statement(Node node) {
             statements(s.body);
             if (!s.args.empty()) statement(s.args[0]);
             return;
-        case Kind::Call: (void)expression(node); return;
+        case Kind::Call: case Kind::AtomicAdd: (void)expression(node); return;
+        case Kind::AtomicStore: {
+            const auto& target = *s.args[0];
+            program_.store(ensureStorage(target), expression(target.args[0]), convert(expression(s.args[1]), target.type));
+            return;
+        }
         case Kind::Return: {
             if (s.args.empty()) {
                 if (doneVar_ != noVar) program_.assign(doneVar_, program_.constant(true));
                 return;
+            }
+            if (!aggregateReturns_.empty()) {
+                const auto values = aggregate(s.args[0]);
+                if (values.size() != aggregateReturns_.size()) throw std::runtime_error("TN_TSL_STRUCT_RETURN_TYPE: incompatible early return");
+                for (size_t i = 0; i < values.size(); ++i) program_.assign(aggregateReturns_[i], values[i]);
+                program_.assign(doneVar_, program_.constant(true)); return;
             }
             ExprId value = expression(s.args[0]);
             if (value == kInvalid) return;
@@ -499,6 +545,7 @@ Node objectTexture(std::shared_ptr<const void> texture, std::string name, Node u
     auto data = std::make_shared<NodeData>();
     data->kind = Kind::Texture;
     data->name = std::move(name);
+    data->bits = std::static_pointer_cast<const tn::engine::Texture>(texture)->depthTexture ? 1 : 0;
     data->object = std::move(texture);
     data->args = {std::move(uvs)};
     return data;
@@ -627,6 +674,7 @@ Node Storage::element(Node index) const {
     data->name = name;
     data->type = elementType;
     data->object = object;
+    data->atomic = atomic;
     data->args = {std::move(index)};
     return data;
 }
@@ -726,6 +774,8 @@ std::string key(const Graph& graph) {
                std::to_string(n->bits) + "," + std::to_string(n->scale) + "," + std::to_string(n->width) + "," + std::to_string(n->height) + "," + std::to_string(int(n->unary)) + "," +
                std::to_string(int(n->binary)) + ";";
         text(n->name); text(n->lanes);
+        out += n->atomic && *n->atomic ? "atomic;" : "plain;";
+        for (const auto& [name, type] : n->members) { text(name); text(type.name()); }
         for (const auto* list : {&n->args, &n->body, &n->otherwise}) {
             out += "[";
             for (const auto& child : *list) visit(child);

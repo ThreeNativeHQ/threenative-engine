@@ -635,6 +635,21 @@ void registerTextureBindings(Registry& classes) {
     registerTextureClass(classes["DataTexture"], true);
     classes["DataTexture"].ctorTakesBytes = true;
     classes["DataTexture"].settersTakeBytes = {"image.data"};
+    auto& depth = classes["DepthTexture"];
+    registerTextureFields(depth);
+    depth.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+        const double width = optional(a, 0, 1), height = optional(a, 1, 1), type = optional(a, 2, 1014);
+        if (a.size() > 3 || width < 1 || height < 1 || width > 16384 || height > 16384 ||
+            width != std::floor(width) || height != std::floor(height) || (type != 1014 && type != 1015))
+            throw Unsupported{"DepthTexture needs integer extents in [1, 16384] and UnsignedIntType or FloatType"};
+        auto texture = std::make_shared<Texture>();
+        texture->depthTexture = true; texture->width = uint32_t(width); texture->height = uint32_t(height);
+        texture->type = uint16_t(type); texture->format = 1026;
+        texture->flipY = false; texture->generateMipmaps = false;
+        texture->minFilter = texture->magFilter = uint16_t(TextureFilter::Nearest);
+        return texture;
+    };
+    depth.methods["dispose"] = [](void* self, const Args&, Store&) { as<Texture>(self)->needsUpdate(); return Value{}; };
     // three's RenderTarget (PRD-551): its size, type and colour texture. The renderer facades draw into it
     // (setRenderTarget) and read it back; a material samples `target.texture`.
     // ponytail: the colour is RGBA16Float whatever the type, so a FloatType target reads back at half
@@ -662,6 +677,20 @@ void registerTextureBindings(Registry& classes) {
     fixedMember(target, "texture", [](void* self, const Args&, Store& store) {
         return store.share("Texture", as<RenderTarget>(self)->texture);
     });
+    target.members["depthTexture"] = [](void* self, const Args&, Store& store) -> Value {
+        const auto& texture = as<RenderTarget>(self)->depthTexture;
+        return texture ? store.share("DepthTexture", texture) : Value{};
+    };
+    target.setters["depthTexture"] = [](void* self, const Value& v, Store& store) {
+        auto& target = *as<RenderTarget>(self);
+        if (v.kind == Value::Kind::Null) { target.depthTexture.reset(); return; }
+        const auto* object = store.find(v);
+        if (!object || object->cls != "DepthTexture") throw Unsupported{"RenderTarget depthTexture needs a DepthTexture"};
+        auto texture = std::static_pointer_cast<Texture>(object->ptr);
+        if (!texture->depthTexture) throw Unsupported{"RenderTarget depthTexture needs a DepthTexture"};
+        target.depthTexture = std::move(texture);
+        target.setSize(target.width, target.height);
+    };
     target.getters["width"] = [](void* self) { return Value::of(double(as<RenderTarget>(self)->width)); };
     target.getters["height"] = [](void* self) { return Value::of(double(as<RenderTarget>(self)->height)); };
     target.methods["setSize"] = [](void* self, const Args& a, Store&) {

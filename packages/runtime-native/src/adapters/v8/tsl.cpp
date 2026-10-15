@@ -126,7 +126,7 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
     // pmremTexture prefilters the texture object itself and texture3D samples it, and storage reads the attribute's buffer, not a map the material
     // names; reflector takes its target and virtual camera.
-    if ((index == 0 && (name == "pmremTexture" || name == "texture3D" || name == "storage")) || (index < 2 && name == "reflector")) {
+    if ((index == 0 && (name == "pmremTexture" || name == "texture3D" || name == "storage" || name == "lightShadowMatrix")) || (index < 2 && name == "reflector")) {
         tn_handle_t handle{};
         const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
         if (object == nullptr) throw std::runtime_error(name + " needs an engine object as argument " + std::to_string(index));
@@ -266,19 +266,25 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         if (self->node)
             throw std::runtime_error("element requires a storage buffer");
         if (self->attribute.kind == abi::TslArg::Kind::Object) {
-            return result(abi::tslCall("storage:object", nullptr,
+            const auto element = abi::tslCall("storage:object", nullptr,
                 {self->attribute, abi::TslArg::of(self->elementType), abi::TslArg::of(self->storage.name),
-                 abi::TslArg::of(arg(0))}, serial_));
+                 abi::TslArg::of(arg(0))}, serial_);
+            auto atomic = std::make_shared<g::NodeData>(*element); atomic->atomic = self->storage.atomic;
+            return result(atomic);
         }
         if (self->storage.name.empty())
             throw std::runtime_error("storage buffer needs setName");
         return result(self->storage.element(arg(0)));
     }
     // r185's toReadOnly()/toReadWrite() pick the buffer's access; the engine reads what a stage reads.
-    if (name == "toReadOnly" || name == "toReadWrite") {
+    if (name == "toAtomic" || name == "toReadOnly" || name == "toReadWrite") {
         arity(0);
         if (self->node)
             throw std::runtime_error(name + " requires a storage buffer");
+        if (name == "toAtomic") {
+            if (self->storage.elementType != Type::u32() && self->storage.elementType != Type::i32()) throw std::runtime_error("toAtomic requires int or uint elements");
+            *self->storage.atomic = true;
+        }
         info.GetReturnValue().Set(info.This());
         return;
     }
@@ -293,6 +299,10 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
             throw std::runtime_error("statement outside Fn");
     };
     const abi::TslArg receiver = call.method ? abi::TslArg::of(self->node) : abi::TslArg{};
+    if (name == "atomicAdd" || name == "atomicStore") {
+        arity(2); statement();
+        return result(scoped(name.c_str(), nullptr, {abi::TslArg::of(arg(0)), abi::TslArg::of(arg(1))}));
+    }
     if (name == "toVar") {
         arity(0);
         return result(scoped("toVar", &receiver, {}));
@@ -359,7 +369,7 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         if (count(info[0]) == 0)
             throw std::runtime_error("storage count must be positive");
         const auto object = wrap({});
-        wrapper(object)->storage = g::storage("", type(text(isolate_, info[1])));
+        wrapper(object)->storage = g::storage("nodeStorageBuffer" + std::to_string(++serial_), type(text(isolate_, info[1])));
         info.GetReturnValue().Set(object);
         return;
     }
@@ -369,9 +379,12 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         const double scale = number(info[0]);
         if (source->kind != g::Kind::RenderTexture || scale <= 0)
             throw std::runtime_error("resolution scale requires a render texture and positive scale");
-        auto target = std::make_shared<g::NodeData>(*source);
-        target->scale = scale;
-        self->node = target;
+        if (source->rtt) source->rtt->scale = scale;
+        else {
+            auto target = std::make_shared<g::NodeData>(*source);
+            target->scale = scale;
+            self->node = target;
+        }
         info.GetReturnValue().Set(info.This());
         return;
     }
@@ -405,13 +418,13 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     const auto node = v8::ObjectTemplate::New(isolate_);
     node->SetInternalFieldCount(2);
     for (const char* name : {"add", "sub", "mul", "div", "negate", "lessThan", "greaterThan", "equal", "setName",
-                             "toVar", "assign", "element", "toReadOnly", "toReadWrite", "Else", "abs", "sin", "cos", "floor", "fract",
+                             "toVar", "assign", "element", "toAtomic", "toReadOnly", "toReadWrite", "Else", "abs", "sin", "cos", "floor", "fract",
                              "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
                              "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",
                              "flipX", "flipY", "flipZ", "flipW", "addAssign", "subAssign", "mulAssign",
                              "divAssign", "dFdx", "dFdy", "sign", "cbrt", "atan", "mod", "fwidth", "transformDirection",
-                             "level", "lengthSq", "setGroup", "newStruct", "get", "renderOutput"})
+                             "level", "lengthSq", "setGroup", "invoke", "newStruct", "get", "renderOutput"})
         node->Set(str(isolate_, name), function(context, name, true));
     // three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, read as xyzw lanes.
     const std::function<void(const char*, const std::string&, const std::string&)> swizzles =
@@ -435,11 +448,11 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",
                              "mod", "fwidth", "saturation", "mat2", "hash",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
-                             "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
+                             "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture", "rtt",
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "ao", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform",
                              "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
-                             "texture3D", "getViewPosition", "transformNormalToView", "property"})
+                             "atomicAdd", "atomicStore", "lightShadowMatrix", "wgslFunction", "texture3D", "getViewPosition", "transformNormalToView", "property"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())

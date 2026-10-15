@@ -115,6 +115,7 @@ public:
     std::vector<uint8_t> data;
     uint32_t width = 0, height = 0;
     uint32_t depth = 1;   // slices of a Data3DTexture, stored one after another
+    bool depthTexture = false;
     bool volume = false;  // three's isData3DTexture: uploaded and sampled as a 3D texture, at any depth
     /**
      * The render target this texture is the colour of (three's `renderTarget.texture`,
@@ -136,7 +137,7 @@ public:
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
     [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || external); }
     /** A material can sample it: an uploaded image, or a render target's last render. */
-    [[nodiscard]] bool sampleable() const { return hasImage() || !renderTarget.expired(); }
+    [[nodiscard]] bool sampleable() const { return (depthTexture && width > 0 && height > 0) || hasImage() || !renderTarget.expired(); }
 
 private:
     uint32_t version_ = 0;

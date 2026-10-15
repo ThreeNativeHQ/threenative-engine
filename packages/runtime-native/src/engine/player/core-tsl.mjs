@@ -21,7 +21,7 @@ export const syncUniforms = live.sync;
 export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const {
-  attribute, uv, texture, renderOutput, Fn, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
+  atomicAdd, atomicStore, lightShadowMatrix, attribute, uv, texture, renderOutput, Fn, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
   instancedArray, add, sub, mul, div, negate, lessThan, greaterThan, equal, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
@@ -71,3 +71,9 @@ export const context = unsupportedExport("context");
 export const velocity = unsupportedExport("velocity");
 
 export const struct = defineStruct(globalThis.tsl.struct);
+
+import { defineRtt } from "../../../../three-native/src/rtt.ts";
+export const rtt = defineRtt(globalThis.tsl.rtt);
+
+import { defineWgslFn } from "../../../../three-native/src/wgsl-fn.ts";
+export const wgslFn = defineWgslFn(globalThis.tsl.wgslFunction);

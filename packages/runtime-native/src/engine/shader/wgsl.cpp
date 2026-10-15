@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include "wgsl.h"
 #include "materialx_noise.h"
@@ -328,6 +329,11 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
         }
         out += "}\n";
     }
+
+    std::vector<std::string> authoredNames;
+    for (const auto& [name, source] : program.authoredFunctions_) authoredNames.push_back(name);
+    std::sort(authoredNames.begin(), authoredNames.end());
+    for (const auto& name : authoredNames) out += program.authoredFunctions_.at(name) + "\n";
 
     // A call into the MaterialX noise library brings the library, once.
     for (ExprId id = 1; id < program.exprs_.size(); ++id) {

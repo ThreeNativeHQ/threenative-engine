@@ -36,6 +36,7 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
     gpu.database->shadowMapEnabled = shadowMap;
     gpu.database->render(*gpu.renderer, root, camera, clear);
     gpu.rendered = true;
+    if (target.depthTexture) gpu.renderer->copyDepthToTexture(*target.depthTexture);
     std::vector<std::string> diagnostics = gpu.database->diagnostics();
     for (const std::string& message : gpu.renderer->diagnostics()) diagnostics.push_back(message);
     return diagnostics;

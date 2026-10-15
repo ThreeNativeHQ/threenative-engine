@@ -3,6 +3,7 @@
 #include "engine/abi/tsl_call.h"
 #include "engine/renderer/reflector.h"
 #include "engine/scene/texture.h"
+#include "engine/scene/lights.h"
 
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/graph/post_effects.h"
@@ -30,6 +31,7 @@ const std::string& text(const TslArg& value) {
 }
 
 Type type(const std::string& name) {
+    if (name == "bool") return Type::boolean();
     if (name == "float") return Type::f32();
     if (name == "int") return Type::i32();
     if (name == "uint") return Type::u32();
@@ -70,6 +72,36 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     const auto lhs = [&] { return method ? input(*receiver) : arg(0); };
     const auto rhs = [&] { return arg(method ? 0 : 1); };
 
+    if (!method && name == "lightShadowMatrix") {
+        arity(1);
+        if (args[0].kind != TslArg::Kind::Object || !args[0].object ||
+            (args[0].cls != "DirectionalLight" && args[0].cls != "SpotLight" && args[0].cls != "PointLight"))
+            throw std::runtime_error("lightShadowMatrix requires a shadow-casting light");
+        const auto light = std::static_pointer_cast<const engine::Light>(args[0].object);
+        auto node = std::make_shared<g::NodeData>(); node->kind = g::Kind::Uniform;
+        node->type = Type::mat(4, 4); node->object = light;
+        node->name = "authoredLightShadowMatrix" + std::to_string(light->id());
+        return node;
+    }
+    if (!method && name == "wgslFunction") {
+        if (args.size() < 3 || args.size() > 7) throw std::runtime_error("wgslFn requires source, name, result type and up to four input types");
+        auto function = std::make_shared<g::NodeData>();
+        function->kind = g::Kind::WgslFunction;
+        function->lanes = text(args[0]); function->name = text(args[1]); function->type = type(text(args[2]));
+        if (function->name.empty() || function->name.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != std::string::npos ||
+            function->name[0] >= '0' && function->name[0] <= '9') throw std::runtime_error("invalid WGSL function name");
+        for (size_t i = 3; i < args.size(); ++i) function->members.emplace_back(std::to_string(i - 3), type(text(args[i])));
+        return function;
+    }
+    if (method && name == "invoke") {
+        const auto function = receiver->node;
+        if (!function || function->kind != g::Kind::WgslFunction || args.size() != function->members.size())
+            throw std::runtime_error("wgslFn arguments do not match its declaration");
+        auto call = std::make_shared<g::NodeData>(); call->kind = g::Kind::WgslCall; call->type = function->type;
+        call->args = {function};
+        for (size_t i = 0; i < args.size(); ++i) call->args.push_back(arg(i));
+        return call;
+    }
     if (!method && name == "struct") {
         if (args.size() < 3 || args.size() % 2 != 1)
             throw std::runtime_error("struct needs a name and member/type pairs");
@@ -108,19 +140,10 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(1);
         const auto& value = receiver->node;
         auto schema = value;
-        while (schema && schema->kind == g::Kind::Body && schema->args.size() == 1)
+        while (schema && (schema->kind == g::Kind::Body || schema->kind == g::Kind::Call) && schema->args.size() == 1)
             schema = schema->args[0];
         if (!schema || schema->kind != g::Kind::Struct)
             throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: get requires a direct struct or final Body value; callable and early aggregate returns need member return slots");
-        // Early aggregate returns need one return slot per member, rather than the scalar return slot.
-        const std::function<void(g::Node)> validate = [&](g::Node node) {
-            if (!node || node->kind == g::Kind::Call) return;
-            if (node->kind == g::Kind::Return)
-                throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: early aggregate returns need member return slots");
-            for (const auto* list : {&node->body, &node->otherwise})
-                for (const auto& child : *list) validate(child);
-        };
-        validate(value);
         for (size_t i = 0; i < schema->members.size(); ++i) {
             if (schema->members[i].first != text(args[0])) continue;
             if (value->kind == g::Kind::Struct) return value->args.at(i);
@@ -154,10 +177,18 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         buffer.object = args[0].object;
         return buffer.element(arg(3));
     }
+    if (method && name == "storage:atomic") {
+        arity(0); const auto node = receiver->node;
+        if (!node || node->kind != g::Kind::StorageElement || !node->atomic ||
+            (node->type != Type::u32() && node->type != Type::i32())) throw std::runtime_error("toAtomic requires int or uint storage");
+        *node->atomic = true; return node;
+    }
     if (!method && name == "storage:element") {  // instancedArray(n, type).setName(name).element(index)
-        arity(3);
+        if (args.size() != 3 && args.size() != 4) throw std::runtime_error("storage element needs name, type, index and optional atomic flag");
         if (text(args[0]).empty()) throw std::runtime_error("storage buffer needs setName");
-        return g::storage(text(args[0]), type(text(args[1]))).element(arg(2));
+        auto storage = g::storage(text(args[0]), type(text(args[1])));
+        if (args.size() == 4) *storage.atomic = number(args[3]) != 0;
+        return storage.element(arg(2));
     }
     if (method && name == "setName") {  // a uniform under the name a material binds; the data stays
         arity(1);
@@ -455,6 +486,11 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (label.empty()) throw std::runtime_error("textureLoad needs a named texture");
         auto node = std::make_shared<g::NodeData>();
         node->kind = g::Kind::TextureLoad; node->name = label; node->type = Type::vec(4);
+        if (args[0].kind == TslArg::Kind::Node && args[0].node) {
+            node->object = args[0].node->object; node->bits = args[0].node->bits;
+            // Retain the target producer and the texture owner as graph dependencies.
+            if (node->object || args[0].node->kind == g::Kind::RenderTexture) node->otherwise = {args[0].node};
+        }
         node->args = {arg(1)};
         if (args.size() == 3) node->args.push_back(arg(2));
         return node;
@@ -642,6 +678,26 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (args.empty() || args.size() > 2) throw std::runtime_error("expected a node and an optional name");
         return g::varying(arg(0), args.size() == 2 ? text(args[1]) : "nodeVarying" + std::to_string(++serial));
     }
+    if (name == "rtt") {
+        arity(5);
+        auto target = std::make_shared<g::NodeData>();
+        target->kind = g::Kind::RenderTexture;
+        target->name = "native_rtt_" + std::to_string(++serial);
+        target->type = Type::vec(4);
+        target->args = {arg(0), g::uv()};
+        target->rtt = std::make_shared<g::RttState>();
+        for (size_t i = 1; i <= 2; ++i) {
+            const double n = number(args[i]);
+            if (n < 0 || n > 16384 || n != std::floor(n)) throw std::runtime_error("rtt extent must be an integer in [0, 16384]");
+            (i == 1 ? target->rtt->width : target->rtt->height) = uint32_t(n);
+        }
+        for (size_t i = 3; i <= 4; ++i) {
+            const double n = number(args[i]);
+            if (n != 1003 && n != 1006) throw std::runtime_error("rtt filter must be NearestFilter or LinearFilter");
+            (i == 3 ? target->rtt->minFilter : target->rtt->magFilter) = uint16_t(n);
+        }
+        return target;
+    }
     if (name == "convertToTexture") {
         arity(1);
         const auto source = arg(0);
@@ -793,6 +849,51 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
 }
 
 double tslEffectParameter(const g::Node& node, const std::string& name, const double* value) {
+    if (node && node->rtt) {
+        auto& r = *node->rtt;
+        if (value && !std::isfinite(*value)) throw std::runtime_error("rtt parameter must be finite");
+        if (name == "resolutionScale") {
+            if (value) {
+                if (*value <= 0 || *value > 8) throw std::runtime_error("rtt scale must be in (0, 8]");
+                r.scale = *value; ++r.revision; r.textureNeedsUpdate = true;
+            }
+            return r.scale;
+        }
+        if (name == "width" || name == "height") {
+            auto& extent = name == "width" ? r.width : r.height;
+            if (value) {
+                if (*value < 0 || *value > 16384 || *value != std::floor(*value)) throw std::runtime_error("rtt extent must be an integer in [0, 16384]");
+                extent = uint32_t(*value); ++r.revision; r.textureNeedsUpdate = true;
+            }
+            return extent;
+        }
+        if (name == "actualWidth" || name == "actualHeight") {
+            if (value) throw std::runtime_error("rtt actual extent is read-only");
+            const auto extent = name == "actualWidth" ? r.width : r.height;
+            return extent ? std::max(1.0, std::floor(extent * r.scale)) : name == "actualWidth" ? r.actualWidth : r.actualHeight;
+        }
+        if (name == "minFilter" || name == "magFilter") {
+            auto& filter = name == "minFilter" ? r.minFilter : r.magFilter;
+            if (value) {
+                if (*value != 1003 && *value != 1006) throw std::runtime_error("rtt filter must be NearestFilter or LinearFilter");
+                filter = uint16_t(*value);
+            }
+            return filter;
+        }
+        if (name == "autoUpdate") {
+            if (value) r.autoUpdate = *value != 0;
+            return r.autoUpdate;
+        }
+        if (name == "textureNeedsUpdate") {
+            if (value) { r.textureNeedsUpdate = *value != 0; if (r.textureNeedsUpdate) ++r.revision; }
+            return r.textureNeedsUpdate;
+        }
+        if (name == "dispose") {
+            if (value) { ++r.disposal; ++r.revision; r.textureNeedsUpdate = true; }
+            return r.disposal;
+        }
+        throw std::runtime_error("unknown rtt parameter " + name);
+    }
     g::Node parameter = g::bloomParameter(node, name);
     if (!parameter && node && node->name.starts_with("native_lut_") && name == "size")
         for (const auto& uniform : g::uniformNodes(node))
@@ -908,6 +1009,20 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         // keeps the value: the Body lowers its statements, then yields args[0].
         if (!args.empty()) node->args = {input(args[0])};
         out = node;
+        return true;
+    }
+    if (name == "atomicAdd" || name == "atomicStore") {
+        arity(2);
+        auto& statements = open().back().statements;
+        const auto target = input(args[0]);
+        if (target->kind != g::Kind::StorageElement ||
+            !(target->atomic ? *target->atomic : target->bits == 1) ||
+            (target->type != Type::u32() && target->type != Type::i32()))
+            throw std::runtime_error(name + " requires an integer element of a toAtomic storage buffer");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = name == "atomicAdd" ? g::Kind::AtomicAdd : g::Kind::AtomicStore;
+        node->type = name == "atomicAdd" ? target->type : Type{};
+        node->args = {target, input(args[1])}; statements.push_back(node); out = node;
         return true;
     }
     if (name == "toVar") {

@@ -1,4 +1,7 @@
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
+import { defineRtt } from "./rtt.js";
+import { defineStruct } from "./tsl-struct.js";
+import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
 /**
  * TSL on the Wasm engine (PRD-540): three's `three/tsl` authoring functions and node methods as JS
  * wrappers over node ids, built by the engine's one TSL name table (`tn_tsl_call`, shared with the
@@ -8,8 +11,7 @@ import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
  * the engine's `scope:open` and `scope:close`, so their statements land in the engine's open body
  * (tn::abi::TslScopes, shared with the V8 back end).
  */
-import { defineStruct } from "./tsl-struct.js";
-import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
+import { defineWgslFn } from "./wgsl-fn.js";
 
 /** One argument as `tn_tsl_call` takes it. */
 export type TslArgValue =
@@ -94,6 +96,7 @@ const FUNCTIONS = [
   "viewportDepthTexture",
   "linearDepth",
   "convertToTexture",
+  "rtt",
   "varying",
   // The live post effects (lane-531's table entries); post-effects.ts publishes them as three's addons.
   "ao",
@@ -105,6 +108,8 @@ const FUNCTIONS = [
   "lut3D",
   "renderOutput",
   "struct",
+  "wgslFunction",
+  "lightShadowMatrix",
   "luminance",
   "viewZToOrthographicDepth",
   "viewZToPerspectiveDepth",
@@ -192,6 +197,7 @@ const METHODS = [
   "oneMinus",
   "dispose",
   "newStruct",
+  "invoke",
   "renderOutput",
   "get",
   "flipX",
@@ -227,7 +233,8 @@ export function isTslNode(value: unknown): value is ITslNode {
  */
 function takesEngineObject(name: string, index: number): boolean {
   return (
-    (index === 0 && (name === "pmremTexture" || name === "texture3D")) ||
+    (index === 0 &&
+      (name === "pmremTexture" || name === "texture3D" || name === "lightShadowMatrix")) ||
     (index < 2 && name === "reflector")
   );
 }
@@ -370,12 +377,19 @@ export function defineTsl(
   const exports: Record<string, unknown> = {};
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
+  exports.rtt = defineRtt(exports.rtt as Parameters<typeof defineRtt>[0]);
+  exports.wgslFn = defineWgslFn(exports.wgslFunction as Parameters<typeof defineWgslFn>[0]);
   exports.struct = defineStruct(exports.struct as Parameters<typeof defineStruct>[0]);
   // Fn builds once at definition; calling the returned function returns that graph, as on V8.
   exports.Fn = (callback: unknown) => {
     const graph = wrap(capture("Fn", callback));
     return () => graph;
   };
+  for (const name of ["atomicAdd", "atomicStore"])
+    exports[name] = (...args: unknown[]) => {
+      statement(name);
+      return wrap(call(name, null, args));
+    };
   exports.If = (condition: unknown, callback: unknown) => {
     statement("If");
     const test = argument("If", 0, condition);
@@ -394,16 +408,34 @@ export function defineTsl(
     );
   };
   // A storage buffer: setName names it, element(index) reads or assigns one element.
+  let storageSerial = 0;
   exports.instancedArray = (count: unknown, type: unknown) => {
     if (!Number.isInteger(count) || (count as number) <= 0)
       throw new TypeError("TN_TSL instancedArray: storage count must be positive");
-    let label = "";
+    let label = `nodeStorageBuffer${++storageSerial}`;
+    let atomic = false;
+    const elements = new Set<WeakRef<ITslNode>>();
     const buffer = {
+      toAtomic() {
+        if (type !== "int" && type !== "uint")
+          throw new TypeError("TN_TSL toAtomic: expected int or uint elements");
+        atomic = true;
+        for (const ref of elements) {
+          const element = ref.deref();
+          if (element) runtime.release(call("storage:atomic", element[TSL_NODE], []));
+        }
+        elements.clear();
+        return buffer;
+      },
       setName(name: unknown) {
         label = String(name);
         return buffer;
       },
-      element: (index: unknown) => wrap(call("storage:element", null, [label, type, index])),
+      element(index: unknown) {
+        const element = wrap(call("storage:element", null, [label, type, index, Number(atomic)]));
+        if (!atomic) elements.add(new WeakRef(element));
+        return element;
+      },
     };
     return buffer;
   };

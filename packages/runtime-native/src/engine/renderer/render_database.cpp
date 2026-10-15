@@ -1353,7 +1353,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     const auto projected = profiling ? Clock::now() : Clock::time_point{};
     // three's LightsNode sorts its lights by id; the direct terms are summed in that order.
     std::stable_sort(direct_.begin(), direct_.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-    for (const auto& [id, light] : direct_) lights.direct.push_back(light);
+    for (const auto& [id, light] : direct_) { lights.direct.push_back(light); lights.direct.back().id = id; }
     // Callbacks may detach members or edit their transforms. Snapshot their draws before invoking
     // any hook, just as the exact path does; the common hook-free path stays compact.
     if (!callbacks_.empty()) {

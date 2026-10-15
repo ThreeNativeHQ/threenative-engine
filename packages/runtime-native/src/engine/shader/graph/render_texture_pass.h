@@ -11,6 +11,11 @@ inline PostPass renderTexturePass(Node node, std::optional<ToneMapping> toneMapp
     const PostNode post{key(node->args[0]), [node, toneMapping, srgb](Program& p, uint32_t, ExprId coordinate) {
         tsl::Build scope(p); return lower(node->args[0], p, {{"uv", coordinate}}, toneMapping, srgb);
     }};
+    if (node->rtt) {
+        pass.rtt = node->rtt;
+        pass.width = node->rtt->width; pass.height = node->rtt->height;
+        pass.resolutionScale = node->rtt->scale; pass.autoUpdate = node->rtt->autoUpdate;
+    }
     // Intermediate RTTs render the shader value verbatim, before RenderOutput transforms.
     auto programs = buildOutput(std::nullopt, false, &post, false);
     if (!node->otherwise.empty()) {

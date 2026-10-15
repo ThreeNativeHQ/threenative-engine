@@ -252,6 +252,7 @@ ExprId Program::swizzle(ExprId value, std::string_view lanes, Where where) {
     }
     encoded |= static_cast<uint64_t>(lanes.size()) << 8;
     const auto n = static_cast<uint8_t>(lanes.size());
+    if (t.isScalar()) return n == 1 ? value : construct(Type::vec(n, t.scalar), {value}, where);
     return pure(Expr{Op::Swizzle, n == 1 ? Type{t.scalar, 1, 1} : Type::vec(n, t.scalar), {value}, 1, encoded});
 }
 
@@ -277,6 +278,21 @@ ExprId Program::construct(Type type, const std::vector<ExprId>& parts, Where whe
         return fail("construct " + type.name(), std::to_string(components) + " components for " + std::to_string(want), where);
     }
     return pure(e);
+}
+
+ExprId Program::authoredCall(std::string_view name, std::string_view source, Type result,
+                             const std::vector<Type>& inputs, const std::vector<ExprId>& args, Where where) {
+    if (args.size() != inputs.size() || args.size() > 4)
+        return fail("wgslFn", "expected the declared arguments (at most four)", where);
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == kInvalid) return kInvalid;
+        if (exprs_[args[i]].type != inputs[i]) return fail("wgslFn " + std::string(name), "argument type does not match declaration", where);
+    }
+    const auto [it, inserted] = authoredFunctions_.emplace(name, source);
+    if (!inserted && it->second != source) return fail("wgslFn", "conflicting function " + std::string(name), where);
+    Expr call{Op::Call, result, {}, uint8_t(args.size()), intern(name)};
+    std::copy(args.begin(), args.end(), call.args.begin());
+    return pure(call);
 }
 
 ExprId Program::call(std::string_view function, const std::vector<ExprId>& args, Where where) {
@@ -526,8 +542,8 @@ ExprId Program::sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where whe
 
 ExprId Program::textureSize(uint32_t texture, ExprId level, Where where) {
     if (level == kInvalid) return kInvalid;
-    if (texture >= textures_.size() || textureKinds_[texture] != TextureKind::Float2d)
-        return fail("textureSize", "requires a 2D float texture", where);
+    if (texture >= textures_.size() || (textureKinds_[texture] != TextureKind::Float2d && textureKinds_[texture] != TextureKind::Depth2d))
+        return fail("textureSize", "requires a 2D float or depth texture", where);
     if (exprs_[level].type != Type::i32()) return fail("textureSize", "mip must be i32", where);
     return pure(Expr{Op::TextureSize, Type::vec(2, Type::Scalar::U32), {level}, 1, texture});
 }

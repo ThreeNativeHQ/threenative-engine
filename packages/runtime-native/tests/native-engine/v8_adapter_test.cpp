@@ -553,7 +553,15 @@ void catalogCoverage() {
     }
     for (const auto& [name, want] : numbers) CHECK(tableConstants.count(name) == 1);
     for (const auto& [name, want] : strings) CHECK(tableConstants.count(name) == 1);
-    CHECK(installed.size() + tableConstants.size() + recordTypes.size() + enums.size() ==
+    // Supported TSL functions live on the TSL module, rather than the class/constant globals.
+    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix"};
+    v8::Local<v8::Value> tsl;
+    CHECK(global->Get(ctx, key("tsl")).ToLocal(&tsl) && tsl->IsObject());
+    for (const auto& name : tslFunctions) {
+        v8::Local<v8::Value> value;
+        CHECK(tsl.As<v8::Object>()->Get(ctx, key(name)).ToLocal(&value) && value->IsFunction());
+    }
+    CHECK(installed.size() + tableConstants.size() + recordTypes.size() + enums.size() + tslFunctions.size() ==
           tn_engine_version().capability_count);
 
     // Every class's prototype exposes exactly its registry members: methods, top-level getters and

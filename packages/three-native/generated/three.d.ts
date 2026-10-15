@@ -6,7 +6,7 @@ export interface IUnsupportedCatalogSymbol<Name extends string> {
   new (...arguments_: never[]): never;
 }
 
-/** Catalog partial (aggregate-lowering, storage-members, member-assignment): three/tsl/struct. */
+/** Catalog partial (storage-members, member-assignment): three/tsl/struct. */
 export declare function struct(membersLayout: Record<string, string>, name?: string): Function;
 
 /** Catalog supported: three/ACESFilmicToneMapping. */
@@ -678,6 +678,13 @@ export type DepthModes = (typeof DepthModes)[keyof typeof DepthModes];
 
 /** Catalog partial (native-not-implemented): three/DepthStencilFormat. */
 export declare const DepthStencilFormat: 1027;
+
+/** Catalog supported: three/DepthTexture. */
+export declare class DepthTexture extends Texture {
+constructor(width?: number, height?: number, type?: number);
+
+  dispose(): void;
+}
 
 /** Catalog partial (native-not-implemented): three/DetachedBindMode. */
 export declare const DetachedBindMode: "detached";
@@ -2292,6 +2299,7 @@ export declare const ReinhardToneMapping: 2;
 /** Catalog supported: three/webgpu/RenderTarget. */
 export declare class RenderTarget extends EventDispatcher {
 constructor();
+depthTexture: DepthTexture | null;
 readonly height: number;
 readonly width: number;
 readonly texture: Texture;
@@ -3191,6 +3199,15 @@ export declare const ZeroSlopeEnding: 2401;
 /** Catalog partial (native-not-implemented): three/ZeroStencilOp. */
 export declare const ZeroStencilOp: 0;
 
+/** Catalog supported: three/tsl/lightShadowMatrix. */
+export declare function lightShadowMatrix(light: Light): Node;
+
+/** Catalog partial (custom-quad-material, manual-update-before): three/tsl/rtt. */
+export declare function rtt(node: Node, width?: number | null, height?: number | null, options?: Record<string, unknown>): Node;
+
+/** Catalog partial (resource-parameters, includes, more-than-four-arguments): three/tsl/wgslFn. */
+export declare function wgslFn(code: string, includes?: unknown[]): Function;
+
 /** Catalog supported: three/MeshLambertMaterial. */
 export declare class MeshLambertMaterial extends Material {
 constructor();
@@ -3479,3 +3496,9 @@ constructor();
 
   clone(source: Object3D): Object3D;
 }
+
+/** Catalog supported: three/tsl/atomicAdd. */
+export declare function atomicAdd(pointerNode: Node, valueNode: Node | number): Node;
+
+/** Catalog supported: three/tsl/atomicStore. */
+export declare function atomicStore(pointerNode: Node, valueNode: Node | number): Node;

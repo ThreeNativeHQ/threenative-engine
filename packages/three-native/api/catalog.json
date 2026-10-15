@@ -19,11 +19,19 @@
       "source": "three/tsl",
       "status": {
         "kind": "partial",
-        "gaps": ["aggregate-lowering", "storage-members", "member-assignment"]
+        "gaps": ["storage-members", "member-assignment"]
       },
       "parameters": [
-        { "name": "membersLayout", "type": "Record<string, string>", "optional": false },
-        { "name": "name", "type": "string", "optional": true }
+        {
+          "name": "membersLayout",
+          "type": "Record<string, string>",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "optional": true
+        }
       ],
       "returns": "Function"
     },
@@ -5405,13 +5413,42 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_DEPTHTEXTURE"
+        "kind": "supported"
       },
-      "extends": null,
-      "constructor": [],
+      "extends": "Texture",
+      "constructor": [
+        {
+          "name": "width",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "height",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "type",
+          "type": "number",
+          "optional": true
+        }
+      ],
       "fields": [],
-      "methods": []
+      "methods": [
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "DepthTexturePixelFormat",
@@ -18192,6 +18229,15 @@
       "constructor": [],
       "fields": [
         {
+          "name": "depthTexture",
+          "type": "DepthTexture | null",
+          "mutable": true,
+          "lifetime": "reference",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "height",
           "type": "number",
           "mutable": false,
@@ -25651,9 +25697,16 @@
       "kind": "function",
       "source": "three/tsl",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_LIGHTSHADOWMATRIX"
-      }
+        "kind": "supported"
+      },
+      "parameters": [
+        {
+          "name": "light",
+          "type": "Light",
+          "optional": false
+        }
+      ],
+      "returns": "Node"
     },
     {
       "name": "linearDepth",
@@ -25930,9 +25983,32 @@
       "kind": "function",
       "source": "three/tsl",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_RTT"
-      }
+        "kind": "partial",
+        "gaps": ["custom-quad-material", "manual-update-before"]
+      },
+      "parameters": [
+        {
+          "name": "node",
+          "type": "Node",
+          "optional": false
+        },
+        {
+          "name": "width",
+          "type": "number | null",
+          "optional": true
+        },
+        {
+          "name": "height",
+          "type": "number | null",
+          "optional": true
+        },
+        {
+          "name": "options",
+          "type": "Record<string, unknown>",
+          "optional": true
+        }
+      ],
+      "returns": "Node"
     },
     {
       "name": "saturate",
@@ -26164,9 +26240,22 @@
       "kind": "function",
       "source": "three/tsl",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_WGSLFN"
-      }
+        "kind": "partial",
+        "gaps": ["resource-parameters", "includes", "more-than-four-arguments"]
+      },
+      "parameters": [
+        {
+          "name": "code",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "includes",
+          "type": "unknown[]",
+          "optional": true
+        }
+      ],
+      "returns": "Function"
     },
     {
       "name": "MeshLambertMaterial",
@@ -28430,6 +28519,48 @@
           }
         }
       ]
+    },
+    {
+      "name": "atomicAdd",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      },
+      "parameters": [
+        {
+          "name": "pointerNode",
+          "type": "Node",
+          "optional": false
+        },
+        {
+          "name": "valueNode",
+          "type": "Node | number",
+          "optional": false
+        }
+      ],
+      "returns": "Node"
+    },
+    {
+      "name": "atomicStore",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      },
+      "parameters": [
+        {
+          "name": "pointerNode",
+          "type": "Node",
+          "optional": false
+        },
+        {
+          "name": "valueNode",
+          "type": "Node | number",
+          "optional": false
+        }
+      ],
+      "returns": "Node"
     }
   ]
 }

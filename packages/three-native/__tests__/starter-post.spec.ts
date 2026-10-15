@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import { defineLUTCubeLoader } from "../src/addons/lut-cube-loader.js";
 import { definePostEffects } from "../src/addons/post-effects.js";
 import { type ITslRuntime, type TslArgValue, defineTsl } from "../src/browser-tsl.js";
+import { defineRtt } from "../src/rtt.js";
 import { defineStruct } from "../src/tsl-struct.js";
+import { defineWgslFn } from "../src/wgsl-fn.js";
 
 const source = readFileSync(
   "packages/create-threenative/templates/starter/public/grade.cube",
@@ -114,6 +116,106 @@ describe("starter post bindings", () => {
       "TN_NATIVE_TRAA_LIFECYCLE_UNBOUND",
     );
     expect(tsl.traa).toHaveBeenCalledWith(input, depth, velocity, camera);
+  });
+
+  it("links positional and named WGSL arguments with their declared scalar and vector types", () => {
+    const invoke = vi.fn();
+    const make = vi.fn(() => ({ invoke }));
+    const wgslFn = defineWgslFn(make);
+    const code =
+      "fn area(sample: u32, lo: vec2<f32>, hi: vec2<f32>) -> f32 { return f32(sample); }";
+    const area = wgslFn(code);
+    expect(make).toHaveBeenCalledWith(code, "area", "float", "uint", "vec2", "vec2");
+    const lo = {};
+    const hi = {};
+    area(1, lo, hi);
+    expect(invoke).toHaveBeenLastCalledWith(1, lo, hi);
+    area({ hi, sample: 2, lo });
+    expect(invoke).toHaveBeenLastCalledWith(2, lo, hi);
+    expect(() => area(1, lo)).toThrow("TN_TSL_WGSL_ARGUMENTS");
+    expect(() => wgslFn("fn invalid(x) {} ")).toThrow("TN_TSL_WGSL_DECLARATION");
+    expect(() => wgslFn(code, [area])).toThrow("TN_TSL_WGSL_INCLUDES");
+  });
+
+  it("forwards RTT filter, extent, dirty, disposal and scale mutations to its scheduled target", () => {
+    const state = new Map<string, number>([
+      ["actualWidth", 40],
+      ["actualHeight", 20],
+    ]);
+    const effect = vi.fn((name: string, value?: number) => {
+      if (value !== undefined) state.set(name, value);
+      return state.get(name) ?? 0;
+    });
+    const make = vi.fn(() => ({ __effect: effect }));
+    const node = defineRtt(make)({}, null, null, {
+      depthBuffer: false,
+      type: 1016,
+      minFilter: 1003,
+      magFilter: 1003,
+    }) as unknown as {
+      autoUpdate: boolean;
+      textureNeedsUpdate: boolean;
+      renderTarget: {
+        width: number;
+        height: number;
+        texture: { minFilter: number };
+        setSize(w: number, h: number): void;
+        dispose(): void;
+      };
+      setResolutionScale(value: number): void;
+    };
+    expect(make).toHaveBeenCalledWith({}, 0, 0, 1003, 1003);
+    expect([node.renderTarget.width, node.renderTarget.height]).toEqual([40, 20]);
+    node.autoUpdate = false;
+    node.textureNeedsUpdate = true;
+    node.renderTarget.setSize(80, 40);
+    node.renderTarget.texture.minFilter = 1006;
+    node.setResolutionScale(0.5);
+    node.renderTarget.dispose();
+    expect(Object.fromEntries(state)).toMatchObject({
+      autoUpdate: 0,
+      textureNeedsUpdate: 1,
+      width: 80,
+      height: 40,
+      minFilter: 1006,
+      resolutionScale: 0.5,
+      dispose: 1,
+    });
+    expect(() => defineRtt(make)({}, 1, 1, { samples: 4 })).toThrow("TN_TSL_RTT_OPTION");
+  });
+
+  it("schedules atomic stores and adds through the Wasm statement scopes", () => {
+    const calls: string[] = [];
+    let serial = 0;
+    const { exports: tsl } = defineTsl({
+      call: (name) => {
+        calls.push(name);
+        return ++serial;
+      },
+      release: vi.fn(),
+      set: vi.fn(),
+      setUniform: vi.fn(),
+      setPost: vi.fn(),
+      effectParameter: vi.fn(),
+    });
+    const buffer = (
+      tsl.instancedArray as (
+        count: number,
+        type: string,
+      ) => { toAtomic(): { element(index: number): object } }
+    )(2, "uint").toAtomic();
+    (tsl.Fn as (f: () => void) => () => unknown)(() => {
+      const target = buffer.element(0);
+      (tsl.atomicStore as (...args: unknown[]) => unknown)(target, 0);
+      (tsl.atomicAdd as (...args: unknown[]) => unknown)(target, 1);
+    })();
+    expect(calls).toEqual([
+      "scope:open",
+      "storage:element",
+      "atomicStore",
+      "atomicAdd",
+      "scope:close",
+    ]);
   });
 
   it("uses the existing struct schema and preserves positional member order", () => {

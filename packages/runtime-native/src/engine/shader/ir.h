@@ -113,6 +113,9 @@ public:
     /** A catalogued builtin function (dot, normalize, mix, …); anything else is TN_TSL_UNSUPPORTED. */
     ExprId call(std::string_view function, const std::vector<ExprId>& args, Where where = Where::current());
 
+    ExprId authoredCall(std::string_view name, std::string_view source, Type result,
+                        const std::vector<Type>& inputs, const std::vector<ExprId>& args, Where where = Where::current());
+
     VarId var(Type type, ExprId initial, Where where = Where::current());
     ExprId load(VarId var, Where where = Where::current());
     void assign(VarId var, ExprId value, Where where = Where::current());
@@ -223,6 +226,7 @@ private:
     std::vector<std::string> names_;
     std::unordered_map<std::string, uint64_t> nameIndex_;
     std::vector<Var> vars_;
+    std::unordered_map<std::string, std::string> authoredFunctions_;
     std::vector<Storage> storage_;
     std::vector<std::string> textures_;
     enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube };

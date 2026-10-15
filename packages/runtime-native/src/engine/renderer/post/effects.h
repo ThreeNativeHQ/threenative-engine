@@ -8,6 +8,7 @@
 
 namespace tn::engine {
 struct CameraState;
+struct LightState;
 /** Executes the serialized r185 effect passes using the existing native pass scheduler/cache. */
 class PostEffects {
   public:
@@ -29,7 +30,7 @@ class PostEffects {
     bool reads(const std::string& name) const;
     /** The fullscreen passes it drew, which three's renderer.info counts as one draw and one triangle each. */
     uint32_t render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
-                const CameraState& camera, uint64_t frame, float time = 0, float exposure = 1);
+                const CameraState& camera, uint64_t frame, float time = 0, float exposure = 1, const LightState* lights = nullptr);
     WGPUTextureView view(const std::string& name) const;
     WGPUSampler sampler(const std::string& name) const;
 
@@ -49,6 +50,8 @@ class PostEffects {
         // uniform block), and the pass binds every binding its package declares.
         WGPUBindGroupLayout layout = nullptr;
         WGPUPipelineLayout pipelineLayout = nullptr;
+        uint64_t rttRevision = 0, rttRequested = 0, rttDisposal = 0;
+        uint16_t rttMin = 1006, rttMag = 1006;
         bool rendered = false;
         std::map<std::string, std::vector<float>> captured;  // the live nodes' and effect's values, over `source.uniforms`
         // The bind group of the last frame and what it binds: reused while every entry is the same,

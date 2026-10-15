@@ -31,11 +31,15 @@ public:
         height = std::max<uint32_t>(h, 1);
         texture->width = width;
         texture->height = height;
+        if (depthTexture && (depthTexture->width != width || depthTexture->height != height)) {
+            depthTexture->width = width; depthTexture->height = height; depthTexture->needsUpdate();
+        }
     }
     /** three's dispose: the GPU state goes; the target can render again and rebuilds it. */
     void dispose() { gpu.reset(); }
 
     uint32_t width = 1, height = 1;
+    std::shared_ptr<Texture> depthTexture;
     std::shared_ptr<Texture> texture = std::make_shared<Texture>();
     /** The renderer's state for this target (its own renderer and render database); empty until drawn. */
     std::shared_ptr<void> gpu;

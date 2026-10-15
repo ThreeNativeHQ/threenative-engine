@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <stdexcept>
 #include <functional>
 #include <array>
 #include <atomic>
@@ -208,6 +209,7 @@ struct CameraState {
 
 /** One direct light, world space and linear colour with its intensity folded in. */
 struct DirectLight {
+    uint64_t id = 0;
     enum class Kind : uint8_t { Directional, Point, Spot };
     Kind kind = Kind::Directional;
     std::array<double, 3> color{0, 0, 0};
@@ -242,6 +244,13 @@ struct DirectLight {
 
 /** Light values in world space and linear colour, intensity folded in (three's physically correct units). */
 struct LightState {
+    const Matrix& shadowMatrix(uint64_t id) const {
+        for (const auto& light : direct) if (light.id == id) {
+            if (!light.shadow) throw std::runtime_error("TN_NATIVE_LIGHT_SHADOW_MISSING: " + std::to_string(id));
+            return light.shadow->matrix;
+        }
+        throw std::runtime_error("TN_NATIVE_LIGHT_NOT_RENDERED: " + std::to_string(id));
+    }
     std::vector<DirectLight> direct; // three's LightsNode order: by Object3D id
     std::array<double, 3> hemisphereSky{0, 0, 0};
     std::array<double, 3> hemisphereGround{0, 0, 0};
@@ -317,6 +326,7 @@ public:
         return child;
     }
     /** The last render's linear HDR scene target (RGBA16Float), before post and the output transform. */
+    void copyDepthToTexture(const Texture& texture);
     WGPUTextureView sceneColorView() const { return sceneView_; }
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
     WGPUSampler linearClampSampler();

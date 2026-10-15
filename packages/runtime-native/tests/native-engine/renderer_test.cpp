@@ -26,6 +26,20 @@ namespace {
 #if defined(MYSTRAL_WEBGPU_DAWN)
 // Dawn's Null backend validates the complete command stream without a GPU.
 void traaValidation() {
+    tn::engine::LightState lights;
+    tn::engine::DirectLight firstLight, secondLight;
+    firstLight.id = uint64_t(41); secondLight.id = uint64_t(41) + 1;
+    firstLight.shadow.emplace(); secondLight.shadow.emplace();
+    firstLight.shadow->matrix[12] = 3; secondLight.shadow->matrix[12] = 9;
+    lights.direct = {secondLight, firstLight};
+    CHECK(lights.shadowMatrix(uint64_t(41))[12] == 3);
+    std::swap(lights.direct[0], lights.direct[1]);
+    CHECK(lights.shadowMatrix(uint64_t(41))[12] == 3);
+    bool missingLight = false;
+    try { lights.shadowMatrix(uint64_t(41) + 2); } catch (const std::runtime_error&) { missingLight = true; }
+    CHECK(missingLight);
+
+
     WGPUInstance instance = wgpuCreateInstance(nullptr);
     WGPUAdapter adapter = nullptr;
     WGPURequestAdapterOptions options{};

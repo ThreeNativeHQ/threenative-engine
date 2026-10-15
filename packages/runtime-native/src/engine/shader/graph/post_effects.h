@@ -20,6 +20,7 @@ struct PostEffect {
     bool normal = false, temporal = false;
 };
 struct PostPass {
+    std::shared_ptr<RttState> rtt;
     std::string output;
     ShaderPackage package;
     // Shader binding name -> render graph resource name. All inputs require a producer.

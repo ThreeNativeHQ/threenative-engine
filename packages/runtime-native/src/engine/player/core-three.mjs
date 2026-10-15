@@ -30,6 +30,7 @@ export const {
   Color,
   ConeGeometry,
   CylinderGeometry,
+  DepthTexture,
   DirectionalLight,
   DodecahedronGeometry,
   DoubleSide,
@@ -245,7 +246,7 @@ for (const [base, names] of [
   [Mesh, [SkinnedMesh, InstancedMesh]],
   [BufferGeometry, geometries],
   [BufferAttribute, [Float32BufferAttribute, InstancedBufferAttribute]],
-  [Texture, [DataTexture, globalThis.CanvasTexture]],
+  [Texture, [DepthTexture, DataTexture, globalThis.CanvasTexture]],
   [Path, [Shape]],
 ]) {
   for (const derived of names) Object.setPrototypeOf(derived.prototype, base.prototype);
@@ -263,6 +264,7 @@ for (const value of [
   Box3,
   Plane,
   Texture,
+  DepthTexture,
   DataTexture,
   BufferGeometry,
   BufferAttribute,

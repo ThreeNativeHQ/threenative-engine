@@ -11,9 +11,10 @@
 
 namespace tn::engine {
 namespace {
-WGPUSampler makeSampler(WGPUDevice device, bool nearest, bool repeat) {
+WGPUSampler makeSampler(WGPUDevice device, bool nearest, bool repeat, int nearestMag = -1) {
     WGPUSamplerDescriptor desc{};
-    desc.minFilter = desc.magFilter = nearest ? WGPUFilterMode_Nearest : WGPUFilterMode_Linear;
+    desc.minFilter = nearest ? WGPUFilterMode_Nearest : WGPUFilterMode_Linear;
+    desc.magFilter = (nearestMag < 0 ? nearest : nearestMag != 0) ? WGPUFilterMode_Nearest : WGPUFilterMode_Linear;
     desc.addressModeU = desc.addressModeV = repeat ? WGPUAddressMode_Repeat : WGPUAddressMode_ClampToEdge;
     desc.maxAnisotropy = 1;
     return wgpuDeviceCreateSampler(device, &desc);
@@ -154,6 +155,7 @@ void PostEffects::releaseGroups() {
 void PostEffects::clearTargets() {
     releaseGroups();
     for (auto& [name, target] : targets_) {
+        if (target.sampler) wgpuSamplerRelease(target.sampler);
         wgpuTextureViewRelease(target.view);
         wgpuTextureRelease(target.texture);
     }
@@ -176,6 +178,12 @@ void PostEffects::resize(uint32_t width, uint32_t height) {
         target.height = std::max(
             1u, uint32_t(std::floor((pass.source.height ? pass.source.height : height) * pass.source.resolutionScale +
                                     rounding)));
+        if (pass.source.rtt) {
+            target.sampler = makeSampler(device_, pass.source.rtt->minFilter == 1003, false, pass.source.rtt->magFilter == 1003);
+            pass.source.rtt->textureNeedsUpdate = true; ++pass.source.rtt->revision;
+            pass.source.rtt->actualWidth = target.width;
+            pass.source.rtt->actualHeight = target.height;
+        }
         target.format = pass.source.redFormat ? WGPUTextureFormat_R8Unorm : WGPUTextureFormat_RGBA16Float;
         target.texture = makeTexture(device_, target.width, target.height, target.format,
                                      WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding);
@@ -183,14 +191,32 @@ void PostEffects::resize(uint32_t width, uint32_t height) {
     }
 }
 bool PostEffects::syncScales() {
-    bool changed = false;
-    for (auto& pass : passes_)
+    bool changed = false, filtersChanged = false;
+    for (auto& pass : passes_) {
+        if (pass.source.rtt) {
+            const auto& r = *pass.source.rtt;
+            if (pass.source.resolutionScale != r.scale || pass.source.width != r.width || pass.source.height != r.height) {
+                pass.source.resolutionScale = r.scale; pass.source.width = r.width; pass.source.height = r.height;
+                changed = true;
+            }
+            if (pass.rttMin != r.minFilter || pass.rttMag != r.magFilter) {
+                pass.rttMin = r.minFilter; pass.rttMag = r.magFilter; filtersChanged = true;
+                if (auto target = targets_.find(pass.source.output); target != targets_.end()) {
+                    if (target->second.sampler) wgpuSamplerRelease(target->second.sampler);
+                    target->second.sampler = makeSampler(device_, r.minFilter == 1003, false, r.magFilter == 1003);
+                }
+            }
+            pass.source.autoUpdate = r.autoUpdate;
+            if (pass.rttDisposal != r.disposal) { pass.rttDisposal = r.disposal; changed = true; }
+        }
         if (pass.source.effect && pass.source.effect->resolutionScale != pass.source.resolutionScale) {
             pass.source.resolutionScale = pass.source.effect->resolutionScale;
             changed = true;
         }
+    }
+    if (filtersChanged) releaseGroups();
     if (!changed || !width_ || !height_)
-        return false;
+        return filtersChanged;
     const uint32_t width = width_, height = height_;
     width_ = height_ = 0;
     resize(width, height);
@@ -222,12 +248,18 @@ WGPUTextureView PostEffects::view(const std::string& name) const {
 }
 WGPUSampler PostEffects::sampler(const std::string& name) const {
     if (const auto it = inputSamplers_.find(name); it != inputSamplers_.end()) return it->second;
+    if (const auto it = targets_.find(name); it != targets_.end() && it->second.sampler) return it->second.sampler;
     if (const auto it = images_.find(name); it != images_.end())
         return it->second.sampler;
     return linear_;
 }
 void PostEffects::captureUniforms() {
     for (auto& pass : passes_) {
+        if (pass.source.rtt) {
+            pass.rttRequested = pass.source.rtt->textureNeedsUpdate ? pass.source.rtt->revision : pass.rttRevision;
+            pass.rttMin = pass.source.rtt->minFilter; pass.rttMag = pass.source.rtt->magFilter;
+            pass.source.rtt->textureNeedsUpdate = false;
+        }
         pass.captured.clear();
         for (const auto& node : pass.source.live)
             pass.captured[node->name] = node->values;
@@ -238,7 +270,7 @@ void PostEffects::captureUniforms() {
     captured_ = true;
 }
 uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
-                         const CameraState& camera, uint64_t frame, float time, float exposure) {
+                         const CameraState& camera, uint64_t frame, float time, float exposure, const LightState* lights) {
     if (!captured_) captureUniforms();
     captured_ = false;
     graph::RenderGraph graph;
@@ -272,9 +304,10 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
     uint32_t drawn = 0;
     for (const auto index : plan.order) {
         auto& pass = passes_.at(index);
-        if (!pass.source.autoUpdate && pass.rendered)
+        if (!pass.source.autoUpdate && (pass.source.rtt ? pass.rttRevision == pass.rttRequested : pass.rendered))
             continue;
-        const auto& target = targets_.at(pass.source.output);
+        auto& target = targets_.at(pass.source.output);
+        if (pass.source.rtt) pass.rttRevision = pass.rttRequested;
         const auto& stages = pass.source.package.variants.at(0).stages;
         const auto& fragment = stages[1];
         auto values = pass.source.uniforms;
@@ -292,6 +325,12 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
         if (pass.uniforms) {
             std::vector<uint8_t> block(fragment.uniformBlockSize);
             for (const auto& field : fragment.uniforms) {
+                constexpr std::string_view prefix = "authoredLightShadowMatrix";
+                if (field.name.starts_with(prefix)) {
+                    if (!lights) throw std::runtime_error("TN_NATIVE_LIGHT_STATE_MISSING");
+                    const auto& matrix = lights->shadowMatrix(std::stoull(field.name.substr(prefix.size())));
+                    values[field.name] = std::vector<float>(matrix.begin(), matrix.end());
+                }
                 const auto value = values.find(field.name);
                 if (value == values.end())
                     throw std::runtime_error("TN_POST_UNIFORM_MISSING: " + field.name);

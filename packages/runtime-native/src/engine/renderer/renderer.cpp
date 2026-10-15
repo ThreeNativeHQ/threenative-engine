@@ -131,7 +131,7 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 // (no map built per draw): three's `time` (the frame's elapsed seconds), then each named value. A name
 // bound to two different values across the material's graphs fails rather than pick one.
 void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModule& stage,
-              const shader::MaterialNodes& nodes, float time) {
+              const shader::MaterialNodes& nodes, float time, const LightState& lights) {
     using Named = std::pair<std::string_view, std::span<const float>>;
     thread_local std::vector<Named> values;
     values.clear();
@@ -146,6 +146,11 @@ void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModul
         }
     }
     for (const auto& field : stage.uniforms) {
+        constexpr std::string_view shadowPrefix = "authoredLightShadowMatrix";
+        if (field.name.starts_with(shadowPrefix)) {
+            put(block, base, &field, lights.shadowMatrix(std::stoull(field.name.substr(shadowPrefix.size()))));
+            continue;
+        }
         const auto found = std::ranges::find(values, std::string_view(field.name), &Named::first);
         if (found == values.end()) continue;
         if (field.type.isMatrix() || field.type.scalar != shader::Type::Scalar::F32 || found->second.size() != field.type.rows)
@@ -431,6 +436,7 @@ struct Renderer::FrameJob {
     WGPUCommandEncoder encoder = nullptr;
     WGPURenderPipeline pageClear = nullptr;
     CameraState camera;
+    LightState lights;
     WGPUTextureView presentTarget = nullptr;
     WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
     bool timed = false, normalPass = false;
@@ -1151,6 +1157,20 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
     return createBindGroup(device_, &desc);
 }
 
+void Renderer::copyDepthToTexture(const Texture& texture) {
+    if (!texture.depthTexture || texture.width != width_ || texture.height != height_)
+        throw std::runtime_error("TN_NATIVE_DEPTH_EXTENT: attachment must match its render target");
+    const auto* destination = materialTexture(texture);
+    WGPUImageCopyTexture_Compat source{}, target{};
+    source.texture = depth_; source.aspect = WGPUTextureAspect_DepthOnly;
+    target.texture = destination->texture; target.aspect = WGPUTextureAspect_DepthOnly;
+    const WGPUExtent3D extent{texture.width, texture.height, 1};
+    const auto encoder = wgpuDeviceCreateCommandEncoder(device_, nullptr);
+    wgpuCommandEncoderCopyTextureToTexture(encoder, &source, &target, &extent);
+    submit(wgpuCommandEncoderFinish(encoder, nullptr));
+    wgpuCommandEncoderRelease(encoder);
+}
+
 void Renderer::initTexture(const Texture& texture) {
     materialTexture(texture);
     flushMipmaps();
@@ -1172,6 +1192,21 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     if (record.view != nullptr && record.version == texture.version()) return &record;
     if (record.view) texturesChanged();  // its old view's address may be reused by the new one
     record.release();
+    if (texture.depthTexture) {
+        WGPUTextureDescriptor desc{};
+        desc.dimension = WGPUTextureDimension_2D;
+        desc.size = {texture.width, texture.height, 1};
+        desc.format = WGPUTextureFormat_Depth32Float;
+        desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst;
+        desc.sampleCount = desc.mipLevelCount = 1;
+        record.texture = wgpuDeviceCreateTexture(device_, &desc);
+        record.view = wgpuTextureCreateView(record.texture, nullptr);
+        WGPUSamplerDescriptor sampler{};
+        sampler.compare = WGPUCompareFunction_LessEqual; sampler.maxAnisotropy = 1;
+        record.sampler = samplerFor(sampler);
+        record.version = texture.version();
+        return &record;
+    }
     // Match WebGPUTextureUtils: FloatType stays RGBA32Float, HalfFloatType RGBA16Float; sRGB byte
     // textures decode before filtering in the GPU, not after filtering in the material/PMREM shader.
     if (texture.isFloat() && !wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
@@ -2492,8 +2527,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (field.name == "spriteNoAttenuation") put(frameUniforms_, v, &field,
                 std::array<double, 1>{!item.spriteSizeAttenuation && camera.projectionMatrix[11] == -1 ? 1.0 : 0.0});
         }
-        putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_);
-        putNodes(frameUniforms_, f, program.fragment, item.nodes, frameTime_);
+        putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, lights);
+        putNodes(frameUniforms_, f, program.fragment, item.nodes, frameTime_, lights);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
     }
 
@@ -2572,7 +2607,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
             put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
-            putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_);
+            putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, lights);
             pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
         }
         }
@@ -2959,6 +2994,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
     if (post_)
         for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
+    for (const auto& field : outputFragment_.uniforms) {
+        constexpr std::string_view prefix = "authoredLightShadowMatrix";
+        if (field.name.starts_with(prefix)) {
+            const auto& matrix = lights.shadowMatrix(std::stoull(field.name.substr(prefix.size())));
+            postUniforms_[field.name] = std::vector<float>(matrix.begin(), matrix.end());
+        }
+    }
     postUniforms_["cameraNear"] = {static_cast<float>(camera.near)};
     postUniforms_["cameraFar"] = {static_cast<float>(camera.far)};
     job.encoder = encoder;
@@ -2967,7 +3009,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.sceneTimes = sceneTimes;
     job.timed = timed;
     job.normalPass = normalPass;
-    job.camera = camera;
+    job.camera = camera; job.lights = lights;
     job.pageClear = pageClear;
     job.presentTarget = presentTarget;
     job.presentFormat = presentFormat;
@@ -2989,6 +3031,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     WGPURenderPassDepthStencilAttachment& depth = job.depth;
     const bool timed = job.timed, normalPass = job.normalPass;
     const CameraState& camera = job.camera;
+    const LightState& lights = job.lights;
     WGPURenderPipeline pageClear = job.pageClear;
     const WGPUTextureView presentTarget = job.presentTarget;
     const WGPUTextureFormat presentFormat = job.presentFormat;
@@ -3218,7 +3261,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
     if (postEffects_) {
         // three's Info counts each fullscreen effect pass as one draw of one triangle, like the output pass below.
-        const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_, frameTime_, static_cast<float>(output_.toneMappingExposure));
+        const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_, frameTime_, static_cast<float>(output_.toneMappingExposure), &lights);
         lastFrame_.draws += effectPasses;
         lastFrame_.triangles += effectPasses;
     }

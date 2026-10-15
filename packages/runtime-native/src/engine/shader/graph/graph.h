@@ -29,7 +29,7 @@ struct PostEffect;
 using Node = std::shared_ptr<const NodeData>;
 
 enum class Kind : uint8_t {
-    Constant, Uniform, Attribute, Builtin, Varying, PositionLocal,
+    AtomicAdd, AtomicStore, WgslFunction, WgslCall, Constant, Uniform, Attribute, Builtin, Varying, PositionLocal,
     Unary, Binary, Math, Swizzle, Join, Convert, Select, Texture,
     StorageElement, VarRead, LoopIndex,
     Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
@@ -39,7 +39,18 @@ enum class Kind : uint8_t {
 enum class UnOp : uint8_t { Negate };
 enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal, ShiftRight, BitXor };
 
+struct RttState {
+    double scale = 1;
+    uint32_t width = 0, height = 0, actualWidth = 1, actualHeight = 1;
+    uint16_t minFilter = 1006, magFilter = 1006;
+    bool autoUpdate = true, textureNeedsUpdate = true;
+    uint64_t revision = 1, disposal = 0;
+};
+
 struct NodeData {
+    std::shared_ptr<RttState> rtt;
+    std::shared_ptr<bool> atomic;
+
     Kind kind = Kind::Constant;
     std::shared_ptr<const PostEffect> post;
     std::shared_ptr<const void> object; // Pmrem: the source texture the renderer prefilters; Reflector: its engine::Reflector
@@ -187,6 +198,7 @@ struct Storage {
     /** TSL storage(attribute, ...): the engine BufferAttribute the renderer binds under `name`; null
      *  for a buffer the renderer owns (instancedArray). */
     std::shared_ptr<const void> object;
+    std::shared_ptr<bool> atomic = std::make_shared<bool>(false);
 
     Node element(Node index) const;
 };
