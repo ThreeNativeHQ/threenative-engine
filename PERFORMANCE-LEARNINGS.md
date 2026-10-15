@@ -1,9 +1,10 @@
 # Performance learnings
 
 This file is the central record of performance levers tried in this repository, and of the method lessons they
-taught. Read it before you choose a lever. Append one entry for each closed lever (keep, reject or inconclusive)
-before you start the next one. Do not delete entries: a later result that contradicts an entry is a new entry that
-names the old one. The `performance-optimization-loop` skill follows this file. Older per-PRD records are in each
+taught. Read it before you choose a lever. Add one entry for each closed lever (keep, reject or inconclusive)
+before you start the next one, and an insight from a failure only when it is valuable. Update an existing entry
+instead of adding a near-duplicate, and merge or trim entries when the file grows redundant. Keep the conclusion of
+every rejected lever so that nobody retries it without a new reason. The `performance-optimization-loop` skill follows this file. Older per-PRD records are in each
 PRD's "Tried and rejected" or "Decisions" section, for example
 [PRD-610](docs/PRDs/performance/PRD-610-native-engine-wins-on-real-games.md).
 
