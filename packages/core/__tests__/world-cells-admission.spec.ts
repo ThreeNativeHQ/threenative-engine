@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  Box3,
   BoxGeometry,
   Frustum,
   Group,
@@ -11,6 +12,7 @@ import {
   MeshBasicMaterial,
   type Object3D,
   PerspectiveCamera,
+  WebGPUCoordinateSystem,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
@@ -329,6 +331,76 @@ describe("WorldCells admission budget", () => {
         .map((time, index) => time - ([...new Set(times)][index] as number));
     expect(gaps(uncovered).every((gap) => gap >= 1000)).toBe(true);
     expect(gaps(covered).some((gap) => gap < 1000)).toBe(true);
+  });
+
+  it("reuses exact view membership while readiness, projection and mutable reach stay live", async () => {
+    stubFixtureFetch();
+    const at = cellCenter(1, 1);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 500);
+    camera.position.set(at.x, 20, at.z + 200);
+    camera.lookAt(at.x, 0, at.z);
+    const reach = new Float32Array(
+      readFileSync(path.join(fixture, "placements.bin")).byteLength / 32,
+    ).fill(Number.POSITIVE_INFINITY);
+    const world = await WorldCells.load({
+      url: "/world/world.json",
+      surface,
+      follow: camera,
+      terrain: false,
+      ring: 4,
+      budgets,
+      gpuScene: false,
+      placementReach: reach,
+      admissionBudgetMs: 1,
+      loadModel: async () => model(),
+    });
+    const bounds = vi.spyOn(Box3.prototype, "applyMatrix4");
+    try {
+      const initial = world.readinessAt(camera);
+      expect(initial.requiredCells).toBeGreaterThan(2);
+      expect(initial.ready).toBe(false);
+      const scans = bounds.mock.calls.length;
+      expect(scans).toBeGreaterThan(0);
+      expect(world.readinessAt(camera)).toEqual(initial);
+      expect(bounds.mock.calls.length).toBe(scans);
+      world.update();
+      await flush();
+      world.update();
+      expect(world.readinessAt(camera).ready).toBe(false);
+      for (let i = 0; i < 4000 && !world.readinessAt(camera).ready; i++) {
+        world.update();
+        await flush();
+      }
+      expect(world.readinessAt(camera)).toMatchObject({
+        ready: true,
+        requiredCells: initial.requiredCells,
+      });
+      reach.fill(1);
+      expect(world.readinessAt(camera).requiredCells).toBe(2);
+      reach.fill(Number.POSITIVE_INFINITY);
+      expect(world.readinessAt(camera).requiredCells).toBe(initial.requiredCells);
+      camera.far = 1;
+      camera.updateProjectionMatrix();
+      expect(world.readinessAt(camera).requiredCells).toBe(0);
+      camera.far = 500;
+      camera.updateProjectionMatrix();
+      expect(world.readinessAt(camera).requiredCells).toBe(initial.requiredCells);
+      const beforeCoordinateChange = bounds.mock.calls.length;
+      camera.coordinateSystem = WebGPUCoordinateSystem;
+      world.readinessAt(camera);
+      expect(bounds.mock.calls.length).toBeGreaterThan(beforeCoordinateChange);
+      camera.lookAt(at.x, 20, at.z + 400);
+      expect(world.readinessAt(camera).requiredCells).toBe(0);
+      camera.position.x += 1;
+      const changed = bounds.mock.calls.length;
+      world.readinessAt(camera);
+      expect(bounds.mock.calls.length).toBeGreaterThan(changed);
+      world.dispose();
+      expect(world.readinessAt(camera)).toMatchObject({ ready: false, cancelled: true });
+    } finally {
+      bounds.mockRestore();
+      world.dispose();
+    }
   });
 
   it("requires visible distant placements within their draw reach, while preserving circle queries", async () => {

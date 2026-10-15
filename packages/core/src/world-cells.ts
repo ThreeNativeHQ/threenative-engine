@@ -4211,6 +4211,9 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #lodDistanceBias = uniform(1);
   readonly #lodMaterials = new Map<string, Material>();
   readonly #placementReach: Float32Array | undefined;
+  readonly #readinessVisible = new Map<IWorldCell, boolean>();
+  #readinessView: number[] = [];
+  #readinessReach: Float32Array | undefined;
   readonly #reachRanges: Map<
     IWorldCell,
     Map<string, { min: number; max: number; minY: number; maxY: number }>
@@ -5986,6 +5989,29 @@ export class WorldCells extends Group implements IComputeDriven {
       radius < 0
     )
       throw new Error("WorldCells readiness requires finite coordinates and a nonnegative radius.");
+    if (camera !== undefined) {
+      const view = [
+        ...camera.projectionMatrix.elements,
+        ...camera.matrixWorldInverse.elements,
+        point.x,
+        (point as Vector3).y,
+        point.z,
+        camera.coordinateSystem,
+        Number(this.#gpuScene.on),
+      ];
+      // Package placements/bounds are immutable; reach is compared too so edits cannot go stale.
+      if (
+        !view.every((value, index) => value === this.#readinessView[index]) ||
+        this.#placementReach?.some((value, index) => value !== this.#readinessReach?.[index])
+      ) {
+        this.#readinessVisible.clear();
+        this.#readinessView = view;
+        if (this.#placementReach !== undefined) {
+          this.#readinessReach ??= new Float32Array(this.#placementReach.length);
+          this.#readinessReach.set(this.#placementReach);
+        }
+      }
+    }
     const lowX = Math.floor((point.x - radius - this.#minX) / this.#cellSize);
     const highX = Math.floor((point.x + radius - this.#minX) / this.#cellSize);
     const lowZ = Math.floor((point.z - radius - this.#minZ) / this.#cellSize);
@@ -6047,6 +6073,9 @@ export class WorldCells extends Group implements IComputeDriven {
 
   /** Use the same authored placement bounds and distance test as admission, even before residency. */
   #cellInView(cell: IWorldCell, eye: Vector3): boolean {
+    const cached = this.#readinessVisible.get(cell);
+    if (cached !== undefined) return cached;
+    this.#readinessVisible.set(cell, false);
     if (this.#terrain !== undefined || (cell.chunks?.length ?? 0) > 0) {
       const box = this.#recordBounds;
       box.min.set(
@@ -6059,7 +6088,10 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#extentBounds.max.y,
         this.#minZ + (cell.z + 1) * this.#cellSize,
       );
-      if (_cullFrustum.intersectsBox(box)) return true;
+      if (_cullFrustum.intersectsBox(box)) {
+        this.#readinessVisible.set(cell, true);
+        return true;
+      }
     }
     for (const run of cell.runs) {
       const asset = this.#manifest.assets[this.#canonical(run.asset)];
@@ -6084,7 +6116,10 @@ export class WorldCells extends Group implements IComputeDriven {
           ? Math.hypot(centre.x - eye.x, centre.z - eye.z)
           : distance;
         if (inner !== undefined && drawDistance > inner) continue;
-        if (_cullFrustum.intersectsBox(box)) return true;
+        if (_cullFrustum.intersectsBox(box)) {
+          this.#readinessVisible.set(cell, true);
+          return true;
+        }
       }
     }
     return false;
