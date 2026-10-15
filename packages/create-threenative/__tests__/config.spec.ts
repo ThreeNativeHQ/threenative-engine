@@ -1314,13 +1314,32 @@ it("rejects a lightmap atlas size that is not a multiple of four on both sides o
   ).rejects.toThrow("TN_ASSETS_CONFIG_INVALID");
 });
 
-it("gives every freshly scaffolded template the native engine", async () => {
+// Templates whose imports the native engine does not bind yet (PRD-573 slice 8). Each pins
+// `engine: "legacy"` with a comment, and leaves this list when the pin goes.
+const LEGACY_PINNED_TEMPLATES = [
+  "action-rpg",
+  "rain",
+  "runner",
+  "sailing",
+  "shooter",
+  "snow",
+  "starter",
+];
+
+it("gives every freshly scaffolded template the native engine unless it names its legacy pin", async () => {
   const root = await makeTempDir("threenative-scaffold-engine-");
   roots.push(root);
-  for (const template of discoverTemplateNames(
-    path.resolve("packages/create-threenative/templates"),
-  )) {
+  const templates = discoverTemplateNames(path.resolve("packages/create-threenative/templates"));
+  expect(templates.filter((name) => LEGACY_PINNED_TEMPLATES.includes(name))).toEqual(
+    LEGACY_PINNED_TEMPLATES,
+  );
+  for (const template of templates) {
     const { target } = await createProject({ install: false, target: template, template }, root);
-    expect(await loadConfig(target)).toMatchObject({ engine: "native" });
+    const pinned = LEGACY_PINNED_TEMPLATES.includes(template);
+    expect(await loadConfig(target), template).toMatchObject({
+      engine: pinned ? "legacy" : "native",
+    });
+    const source = await readFile(path.join(target, "threenative.config.ts"), "utf8");
+    expect(source.includes("PRD-573 slice 8"), `${template} names its pin`).toBe(pinned);
   }
 });
