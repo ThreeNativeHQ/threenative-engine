@@ -788,11 +788,11 @@ export class ResolutionScaler {
     // more rungs than the floor allows, and it must land on the floor rather than past it.
     const next = this.#index + direction;
     this.#index = direction > 0 ? Math.min(next, this.#limitIndex) : Math.max(0, next);
-    this.#continuousScale = RESOLUTION_SCALER.rungs[this.#index] ?? 1;
     this.#cooldown = RESOLUTION_SCALER.cooldownWindows;
     // A refund is a measurement correction, not workload oscillation: counting it would let
     // probe/refund cycles pin the scaler at a rung pixels were just proven not to earn.
     if (countGuard) this.#noteForOscillationGuard(boundary, direction);
+    this.#continuousScale = RESOLUTION_SCALER.rungs[this.#index] ?? 1;
     return this.scale;
   }
 

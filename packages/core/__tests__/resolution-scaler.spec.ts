@@ -227,6 +227,26 @@ describe("ResolutionScaler", () => {
     expect(scaler.observe(budget(UNDER_TARGET))).toBeLessThan(1);
   });
 
+  it("emits the lower pinned rung when timer-less oscillation ends on an upward step", () => {
+    const scaler = new ResolutionScaler({ targetFps: 60, start: 0.85 });
+    feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows);
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      feed(scaler, AT_TARGET, RESOLUTION_SCALER.upWindows);
+      expect(scaler.scale).toBe(1);
+      scaler.observe(budget(AT_TARGET)); // resize cooldown
+      expect(scaler.observe(budget(58))).toBe(0.85);
+      scaler.observe(budget(AT_TARGET)); // resize cooldown
+    }
+    feed(scaler, AT_TARGET, RESOLUTION_SCALER.upWindows - 1);
+    expect(scaler.observe(budget(AT_TARGET))).toBe(0.85);
+    expect(scaler.scale).toBe(0.85);
+    expect(scaler.scaleSource).toBe("auto-pinned");
+    feed(scaler, AT_TARGET, RESOLUTION_SCALER.oscillationWindows - 1);
+    expect(scaler.scale).toBe(0.85);
+    expect(scaler.observe(budget(AT_TARGET))).toBe(0.85);
+    expect(scaler.scaleSource).toBe("auto");
+  });
+
   it("scales its triggers to the configured target rather than assuming 60", () => {
     const scaler = new ResolutionScaler({ targetFps: 30 });
     feed(scaler, 30, RESOLUTION_SCALER.warmupWindows, 33.3);
