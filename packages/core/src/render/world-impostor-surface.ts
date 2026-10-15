@@ -12,7 +12,10 @@ import {
   Vector3,
 } from "three";
 import {
+  Break,
   Fn,
+  If,
+  Loop,
   abs,
   attribute,
   cameraPosition,
@@ -57,18 +60,16 @@ import {
 } from "three/webgpu";
 import { IMPOSTOR_VIEW_GRID, type WorldImpostorAtlas } from "./world-impostor.js";
 
-/**
- * Stored depth is baked but never read back into the lighting of this surface. Parallax is off; the
- * constant exists so a caller reports the same answer the shader makes and no future code claims
- * depth correction this slice did not do.
- */
-export const IMPOSTOR_SURFACE_PARALLAX = false;
+/** The surface reconstructs alpha-covered ray/depth crossings in the three neighboring views. */
+export const IMPOSTOR_SURFACE_PARALLAX = true;
 
 /** Mip compensation for the impostor cutout, the scattered-foliage constant: 0.25 drops needles. */
 export const IMPOSTOR_MIP_ALPHA_SCALE = 0.75;
 
 /** The alpha cutoff a source part gets when it authored none; the same 0.5 the scatter path uses. */
 const DEFAULT_ALPHA_TEST = 0.5;
+/** The positive alpha number the shadow pass copies; see the material setup in `WorldImpostorSurface`. */
+const IMPOSTOR_SHADOW_ALPHA_FLOOR = 1e-4;
 
 /**
  * The per-instance view-distance attribute a far aggregate writes: one float per placement, the
@@ -372,9 +373,12 @@ export class WorldImpostorSurface {
     material.depthWrite = true;
     material.depthTest = true;
     material.side = DoubleSide;
-    // A number, not only a node: readers that only understand a number (the shadow alpha caster)
-    // must see a positive cutoff even though the discard uses the node below.
-    material.alphaTest = cutoff;
+    // A positive number, never the cutoff: three's shadow pass copies this number as its own cutoff
+    // and ignores `alphaTestNode`, and a shadow-map texel is metres wide, so the blended coverage it
+    // reads is far below the authored 0.5 everywhere and every fragment would be discarded. The
+    // discard that matters runs through `maskShadowNode` below, with the same mip-aware threshold the
+    // main pass uses; this floor only drops empty space.
+    material.alphaTest = IMPOSTOR_SHADOW_ALPHA_FLOOR;
     material.userData = { ...material.userData, tnWholeAssetImpostor: true };
     material.needsUpdate = true;
 
@@ -427,7 +431,9 @@ export class WorldImpostorSurface {
           )
         : rel;
       relVarying.assign(gated);
-      dirVarying.assign(dAsset);
+      dirVarying.assign(
+        select(orthographicNode(), dAsset, asMat3(view).inverse().mul(centerView.negate())),
+      );
       return instance.mul(vec4(centerUniform.add(gated), 1)).xyz;
     })();
 
@@ -442,6 +448,7 @@ export class WorldImpostorSurface {
     );
     material.colorNode = vec4(fragment.albedo, fragment.coverage);
     material.alphaTestNode = fragment.threshold;
+    material.maskShadowNode = fragment.coverage.greaterThan(fragment.threshold);
     material.normalNode = Fn((_inputs: unknown, builder: { readonly object: Object3D }) =>
       transformNormal(fragment.normalAsset, instanceViewMatrixNode(builder.object)),
     )();
@@ -550,17 +557,119 @@ function buildFragmentNodes(
     const basis = frameBasisNode(direction);
     // Row 0 of a three render target is the top of the frame the bake drew, so `up` runs toward v=0;
     // see `impostorFrameUv`.
-    const uv = vec2(dot(relVarying, basis.right), dot(relVarying, basis.up).negate())
-      .div(radiusUniform)
-      .mul(0.5)
-      .add(0.5);
+    const ray = normalize(select(orthographicNode(), dirVarying, dirVarying.sub(relVarying)));
     const layer = (cellY[index] as Node<"float">)
       .mul(grid)
       .add(cellX[index] as Node<"float">)
       .toInt();
-    uvs.push(uv);
-    colors.push(colorMap.depth(layer).sample(uv).toVar() as Node<"vec4">);
-    normals.push(normalMap.depth(layer).sample(uv).toVar() as Node<"vec4">);
+    // A crossing must remain covered throughout refinement; alpha holes and depth jumps
+    // cannot create an interior surface. One march step per baked texel, eight refinements.
+    const hit = Fn(() => {
+      const found = float(0).toVar();
+      const hitUv = vec2(2).toVar();
+      const previousGap = float(0).toVar();
+      const previousAlpha = float(0).toVar();
+      const previousT = radiusUniform.toVar();
+      Loop({ start: 0, end: atlas.pixels + 1, type: "int" }, ({ i }) => {
+        const t = float(1).sub(float(i).div(atlas.pixels).mul(2)).mul(radiusUniform);
+        const point = relVarying.add(ray.mul(t));
+        const sampleUv = vec2(dot(point, basis.right), dot(point, basis.up).negate())
+          .div(radiusUniform)
+          .mul(0.5)
+          .add(0.5);
+        const c = colorMap.depth(layer).sample(sampleUv).level(float(0)).toVar();
+        const n = normalMap.depth(layer).sample(sampleUv).level(float(0)).toVar();
+        const depth = float(1)
+          .sub(
+            float(1)
+              .sub(n.a)
+              .div(max(c.a, float(0.001)))
+              .mul(2),
+          )
+          .mul(radiusUniform);
+        const gap = dot(point, direction).sub(depth).toVar();
+        If(
+          found
+            .equal(0)
+            .and(previousAlpha.greaterThan(cutoff))
+            .and(c.a.greaterThan(cutoff))
+            .and(previousGap.greaterThan(0))
+            .and(gap.lessThanEqual(0)),
+          () => {
+            const front = previousT.toVar();
+            const back = t.toVar();
+            const valid = float(1).toVar();
+            Loop({ start: 0, end: 8, type: "int" }, () => {
+              const mid = front.add(back).mul(0.5).toVar();
+              const p = relVarying.add(ray.mul(mid));
+              const u = vec2(dot(p, basis.right), dot(p, basis.up).negate())
+                .div(radiusUniform)
+                .mul(0.5)
+                .add(0.5);
+              const mc = colorMap.depth(layer).sample(u).level(float(0)).toVar();
+              const mn = normalMap.depth(layer).sample(u).level(float(0)).toVar();
+              const md = float(1)
+                .sub(
+                  float(1)
+                    .sub(mn.a)
+                    .div(max(mc.a, float(0.001)))
+                    .mul(2),
+                )
+                .mul(radiusUniform);
+              const mg = dot(p, direction).sub(md);
+              If(mc.a.lessThanEqual(cutoff), () => {
+                valid.assign(0);
+              });
+              If(mg.greaterThan(0), () => {
+                front.assign(mid);
+              }).Else(() => {
+                back.assign(mid);
+              });
+            });
+            const p = relVarying.add(ray.mul(front.add(back).mul(0.5)));
+            const u = vec2(dot(p, basis.right), dot(p, basis.up).negate())
+              .div(radiusUniform)
+              .mul(0.5)
+              .add(0.5);
+            const hc = colorMap.depth(layer).sample(u).level(float(0)).toVar();
+            const hn = normalMap.depth(layer).sample(u).level(float(0)).toVar();
+            const hd = float(1)
+              .sub(
+                float(1)
+                  .sub(hn.a)
+                  .div(max(hc.a, float(0.001)))
+                  .mul(2),
+              )
+              .mul(radiusUniform);
+            If(
+              valid
+                .equal(1)
+                .and(hc.a.greaterThan(cutoff))
+                .and(
+                  abs(dot(p, direction).sub(hd)).lessThanEqual(
+                    radiusUniform.mul(2 / 255).div(max(hc.a, float(0.001))),
+                  ),
+                ),
+              () => {
+                hitUv.assign(u);
+                found.assign(1);
+              },
+            );
+          },
+        );
+        previousGap.assign(gap);
+        previousAlpha.assign(c.a);
+        previousT.assign(t);
+        // The first valid crossing owns the result; later samples cannot change it.
+        If(found.equal(1), () => {
+          Break();
+        });
+      });
+      return vec3(hitUv, found);
+    })();
+    uvs.push(hit.xy);
+    colors.push(colorMap.depth(layer).sample(hit.xy).mul(hit.z).toVar() as Node<"vec4">);
+    normals.push(normalMap.depth(layer).sample(hit.xy).mul(hit.z).toVar() as Node<"vec4">);
   }
 
   const [w0, w1, w2] = weights as [Node<"float">, Node<"float">, Node<"float">];
