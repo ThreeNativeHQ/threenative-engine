@@ -13,6 +13,8 @@
 
 namespace tn::adapters::v8adapter {
 
+std::vector<std::pair<std::string, uint64_t>> sampledCrossingStacks();
+
 class Tsl;
 class MathBridge;
 

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <deque>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -22,6 +23,37 @@
 #include "engine/scene/geometry.h"
 
 namespace tn::adapters::v8adapter {
+
+namespace {
+struct CrossingStacks {
+    const char* name = std::getenv("TN_CROSSING_STACKS");
+    uint64_t calls = 0;
+    std::unordered_map<std::string, uint64_t> counts;
+};
+CrossingStacks crossingStacks;
+
+void sampleCrossing(v8::Isolate* isolate, const std::string& name) {
+    if (!crossingStacks.name || name != crossingStacks.name || ++crossingStacks.calls % 997 != 0) return;
+    const auto trace = v8::StackTrace::CurrentStackTrace(isolate, 6, v8::StackTrace::kDetailed);
+    std::string stack;
+    for (int i = 0; i < trace->GetFrameCount(); ++i) {
+        const auto frame = trace->GetFrame(isolate, i);
+        v8::String::Utf8Value script(isolate, frame->GetScriptName());
+        v8::String::Utf8Value function(isolate, frame->GetFunctionName());
+        if (i) stack += " <- ";
+        stack += std::string(*script ? *script : "?") + ":" + std::to_string(frame->GetLineNumber()) + ":" +
+                 (*function ? *function : "?");
+    }
+    ++crossingStacks.counts[stack];
+}
+}
+
+std::vector<std::pair<std::string, uint64_t>> sampledCrossingStacks() {
+    std::vector<std::pair<std::string, uint64_t>> result(crossingStacks.counts.begin(), crossingStacks.counts.end());
+    std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    if (result.size() > 10) result.resize(10);
+    return result;
+}
 
 // Only these native clone return paths create fresh scene nodes; never admit arbitrary ABI handles.
 static void trackFreshClone(Adapter& adapter, const std::string& method, const tn_value_t& result) {
@@ -867,6 +899,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    isolate->ThrowException(v8::Exception::TypeError(str(isolate, "not an engine object")));
                                    return;
                                }
+                               sampleCrossing(isolate, d->name);
                                tn_value_t fast[kFastArguments];
                                if (!d->intersections && fastArguments(*d->adapter, info, fast)) {
                                    tn_value_t result{};
@@ -1107,6 +1140,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                         if (!owner && !d->adapter->unwrap(self, h)) return;
                         tn_value_t result{};
                         tn_diagnostic_t diagnostic{nullptr, 0};
+                        sampleCrossing(isolate, d->name);
                         if (tn::abi::getValue(h, d->getter, d->name, &result, &diagnostic) != TN_OK) {
                             throwStatus(isolate, diagnostic);
                             return;
@@ -1125,6 +1159,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
                                    tn_handle_t h{};
                                    if (!d->adapter->unwrap(info.This(), h)) return;
+                                   sampleCrossing(info.GetIsolate(), d->name);
                                    tn_diagnostic_t diagnostic{nullptr, 0};
                                    if (info.Length() == 1 && info[0]->IsNumber()) {
                                        tn_value_t number{};

@@ -1495,5 +1495,13 @@ int main(int argc, char** argv) {
             {"names", json::Value::makeObject(std::move(names))}})).c_str());
         std::fflush(stdout);
     }
+    if (const char* name = std::getenv("TN_CROSSING_STACKS")) {
+        std::vector<std::pair<std::string, json::Value>> stacks;
+        for (const auto& [stack, count] : tn::adapters::v8adapter::sampledCrossingStacks())
+            stacks.emplace_back(stack, json::Value::makeNumber(double(count)));
+        std::printf("TN_CROSSING_STACKS:%s\n", json::stringify(json::Value::makeObject({
+            {"name", json::Value::makeString(name)}, {"stacks", json::Value::makeObject(std::move(stacks))}})).c_str());
+        std::fflush(stdout);
+    }
     return finish(status);
 }
