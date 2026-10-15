@@ -65,6 +65,43 @@ function expectDisplayed(batch: SkinnedBatch, f: ReturnType<typeof playback>, sl
 }
 
 describe("current-time batch lookup", () => {
+  it.each(["first", "forced", "scheduled"])(
+    "preserves a public bone edit after the %s evaluation",
+    (evaluation) => {
+      const f = playback(8);
+      const batch = new SkinnedBatch({
+        first: f.mesh,
+        capacity: 1,
+        velocity: true,
+        lookupLimits: limits,
+      });
+      try {
+        if (evaluation !== "first") {
+          f.player.update(1 / 60);
+          draw(batch, f);
+        }
+        if (evaluation === "scheduled") {
+          for (let tick = 0; tick < 8; tick += 1) {
+            f.player.update(1 / 60);
+            if (f.player.updateRateReport.evaluated) break;
+            draw(batch, f);
+          }
+          expect(f.player.updateRateReport.evaluated).toBe(true);
+        } else f.player.update(1 / 60, true);
+        const previous = batch.palette.slice();
+        f.joint.position.x = 0.9;
+        draw(batch, f);
+        expectDisplayed(batch, f);
+        expect(f.player.updateRateReport.rate).toBe(1);
+        if (evaluation !== "first")
+          expect([...(batch.history as Float32Array)]).toEqual([...previous]);
+      } finally {
+        batch.dispose();
+        f.player.dispose();
+      }
+    },
+  );
+
   it("draws independent phases, loop seams and variable/zero dt without evaluating skipped players", () => {
     const a = playback(8);
     const b = playback(8, a.clip);

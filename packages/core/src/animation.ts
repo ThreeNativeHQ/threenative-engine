@@ -13,6 +13,7 @@ import {
   Vector3,
   type VectorKeyframeTrack,
 } from "three";
+import { captureEvaluatedPose } from "./animation-pose-table.js";
 import { clipTrackBindings } from "./clip-audit.js";
 import {
   type IAnimationPoseSample,
@@ -366,6 +367,7 @@ export class AnimationPlayer {
     source: undefined,
     evaluated: true,
     evaluation: 0,
+    pose: new WeakMap(),
     prepareDraw: () => this.#prepareDraw(),
     readPose: () => this.#readPose(),
     setPoseLookup: (eligible) => {
@@ -1016,6 +1018,12 @@ export class AnimationPlayer {
   update(dt: number, force = false): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
+    if (
+      this.#effectiveUpdateRate(true) > 1 &&
+      this.#rateState.pose !== undefined &&
+      !this.#rateState.pose.has(this.root)
+    )
+      captureEvaluatedPose(this.root, this.#rateState.pose);
     if (dt > 0 && this.#firstStep === 0) this.#firstStep = dt;
     if (this.mixer.timeScale !== 1) this.#flushPending();
     const elapsed = dt * this.mixer.timeScale;
@@ -1238,6 +1246,8 @@ export class AnimationPlayer {
     if (this.#current !== undefined && !wasFinished && this.mixer.time !== before)
       this.#advancedFrames += 1;
     this.#advanceBlend(dt);
+    if (this.#effectiveUpdateRate(true) > 1 && this.#rateState.pose !== undefined)
+      captureEvaluatedPose(this.root, this.#rateState.pose);
     this.#rateState.evaluation += 1;
     this.#rateState.evaluated = true;
   }

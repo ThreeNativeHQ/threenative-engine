@@ -39,6 +39,16 @@ function localTransform(node: Object3D, euler: boolean, out: Float64Array, offse
   node.scale.toArray(out, offset + 7);
 }
 
+/** Record the evaluated pose before game code can edit it, including before the first draw. */
+export function captureEvaluatedPose(root: Object3D, pose: WeakMap<Object3D, Float64Array>): void {
+  root.traverse((node) => {
+    const transform = pose.get(node) ?? new Float64Array(20);
+    localTransform(node, false, transform, 0);
+    localTransform(node, true, transform, 10);
+    pose.set(node, transform);
+  });
+}
+
 /** Internal bake inputs. Live references validate caller edits; canonical rest data permits phases to differ. */
 export class PoseBasis {
   readonly #rest: Float64Array;
@@ -95,7 +105,7 @@ export class PoseBasis {
   }
 
   /** Animated components may change on evaluation, but public edits between evaluations decline lookup. */
-  observed(evaluation: number): boolean {
+  observed(evaluation: number, pose?: WeakMap<Object3D, Float64Array>): boolean {
     for (let index = 1; index < this.nodes.length; index += 1)
       localTransform(
         this.nodes[index] as Object3D,
@@ -103,6 +113,15 @@ export class PoseBasis {
         this.#scratch,
         index * 10,
       );
+    if (this.#evaluation !== evaluation && pose !== undefined) {
+      for (let index = 1; index < this.nodes.length; index += 1) {
+        const transform = pose.get(this.nodes[index] as Object3D);
+        if (transform === undefined) return false;
+        const offset = this.euler[index] ? 10 : 0;
+        this.#observed.set(transform.subarray(offset, offset + 10), index * 10);
+      }
+      this.#evaluation = evaluation;
+    }
     if (this.#evaluation === evaluation) {
       for (let at = 10; at < this.#scratch.length; at += 1)
         if (this.#scratch[at] !== this.#observed[at]) return false;

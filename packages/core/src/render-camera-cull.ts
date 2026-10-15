@@ -100,6 +100,7 @@ export interface IAnimationRateState {
   source: RenderCameraCull | undefined;
   evaluated: boolean;
   evaluation: number;
+  pose?: WeakMap<Object3D, Float64Array>;
   prepareDraw?: () => void;
   readPose?: () => IAnimationPoseSample | undefined;
   setPoseLookup?: (eligible: boolean) => void;

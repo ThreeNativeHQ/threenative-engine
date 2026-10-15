@@ -45,6 +45,7 @@ const ANIMATION_RATE_STATE_KEY = "threenative.animationRateState";
 interface IAnimationRateStateLike {
   readonly evaluated: boolean;
   readonly evaluation: number;
+  readonly pose?: WeakMap<Object3D, Float64Array>;
   readonly prepareDraw?: () => void;
   readonly readPose?: () => IAnimationPoseSample | undefined;
   readonly setPoseLookup?: (eligible: boolean) => void;
@@ -513,6 +514,8 @@ export class SkinnedBatch {
     rig: SkinnedMesh,
     sample: IAnimationPoseSample,
     evaluation: number,
+    basis: PoseBasis | undefined,
+    pose?: WeakMap<Object3D, Float64Array>,
   ): boolean {
     const limits = this.#lookupLimits;
     const velocity = this.#previous !== undefined;
@@ -530,10 +533,7 @@ export class SkinnedBatch {
       this.#current.byteLength > Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize)
     )
       return false;
-    const existing = this.#lookup?.bases.get(rig);
-    if (existing !== undefined && !existing.current()) return false;
-    const basis = existing ?? preparePoseBasis(sample.root, rig, sample.clip);
-    if (basis === undefined || !basis.observed(evaluation)) return false;
+    if (basis === undefined || !basis.current() || !basis.observed(evaluation, pose)) return false;
     let lookup = this.#lookup;
     if (lookup === undefined) {
       const table = acquirePoseTable(
@@ -634,18 +634,21 @@ export class SkinnedBatch {
       const state = animationRateStateOf(rig);
       if (typeof state?.prepareDraw === "function") state.prepareDraw();
       if (state?.readPose !== undefined) {
-        const basis = this.#lookup?.bases.get(rig);
+        let basis = this.#lookup?.bases.get(rig);
         const evaluation = state.evaluation;
         const sample = state.readPose();
-        if (sample !== undefined && this.#writeLookup(slot, rig, sample, state.evaluation)) {
-          state.setPoseLookup?.(true);
-          return;
+        if (sample !== undefined) {
+          basis ??= preparePoseBasis(sample.root, rig, sample.clip);
+          if (this.#writeLookup(slot, rig, sample, state.evaluation, basis, state.pose)) {
+            state.setPoseLookup?.(true);
+            return;
+          }
         }
         if (this.#lookup !== undefined) {
           this.#lookup.bases.delete(rig);
           this.#lookup.coordinates[slot * 4] = -1;
         }
-        basis?.observed(evaluation);
+        basis?.observed(evaluation, state.pose);
         state.setPoseLookup?.(false);
         basis?.restoreEdits(evaluation);
         basis?.root.updateMatrixWorld(true);
