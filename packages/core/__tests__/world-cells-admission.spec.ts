@@ -455,6 +455,7 @@ describe("WorldCells admission budget", () => {
     },
     {
       name: "full-capacity ordinary one-cell shift",
+      sameCellAlternation: false,
       capacity: 25,
       prefetchSeconds: 0,
       slack: false,
@@ -469,6 +470,7 @@ describe("WorldCells admission budget", () => {
     },
     {
       name: "finite ordinary shift and delayed models",
+      sameCellAlternation: false,
       capacity: 25,
       prefetchSeconds: 0,
       slack: false,
@@ -483,6 +485,7 @@ describe("WorldCells admission budget", () => {
     },
     {
       name: "full actual ring refuses a speculative-only edge",
+      sameCellAlternation: false,
       capacity: 25,
       prefetchSeconds: 1.5,
       slack: false,
@@ -497,6 +500,7 @@ describe("WorldCells admission budget", () => {
     },
     {
       name: "ordinary shift retains hysteresis when there is room",
+      sameCellAlternation: false,
       capacity: 30,
       prefetchSeconds: 0,
       slack: true,
@@ -511,6 +515,7 @@ describe("WorldCells admission budget", () => {
     },
     {
       name: "one-cell move",
+      sameCellAlternation: false,
       capacity: 25,
       prefetchSeconds: 1.5,
       slack: false,
@@ -525,6 +530,7 @@ describe("WorldCells admission budget", () => {
     },
     {
       name: "finite admission and delayed model",
+      sameCellAlternation: false,
       capacity: 25,
       prefetchSeconds: 1.5,
       slack: false,
@@ -539,6 +545,7 @@ describe("WorldCells admission budget", () => {
     },
     {
       name: "two-cell jump below velocity reset distance",
+      sameCellAlternation: false,
       capacity: 25,
       prefetchSeconds: 1.5,
       slack: false,
@@ -663,7 +670,7 @@ describe("WorldCells admission budget", () => {
         follow.position.z = endZ;
         world.update();
         const actualWanted = (key: string) => {
-          const [x, z] = key.split(":").map(Number);
+          const [x = Number.NaN, z = Number.NaN] = key.split(":").map(Number);
           return Math.max(Math.abs(x - hereX), Math.abs(z - hereZ)) <= 2;
         };
         expect(world.stats().residentKeys.includes(lost)).toBe(slack || actualWanted(lost));
