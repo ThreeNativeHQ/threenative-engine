@@ -1306,6 +1306,8 @@ describe("WorldCells with the GPU-driven main pass", () => {
       prefetchSeconds: 0,
       ring: 1,
       surface,
+      // The synthetic clock refuses terrain-block merges; this fixture measures prop admission.
+      terrain: false,
       url: "/world/world.json",
     });
     await flushed(world);
@@ -2680,6 +2682,8 @@ describe("WorldCells caster admission while the GPU scene is still being seeded"
       ring: 1,
       shadows: { cast: true },
       surface,
+      // The synthetic clock refuses terrain-block merges; this fixture measures prop admission.
+      terrain: false,
       url: "/world/world.json",
     });
     const renderer = gpuRendererStub();
