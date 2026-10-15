@@ -190,7 +190,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
 // Recomputed 2026-10-15 for the native engine default (PRD-573): every template AGENTS.md/CLAUDE.md pair gains
-// an Engine section. Measured from the committed branch head, with no sibling edits in the tree.
+// an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
@@ -255,19 +255,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
   // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
-  "action-rpg": "3e1ec97cd76bafbf1f3801ee9491798df0f60f89eec8e88bbf8d971a621a5e37",
+  "action-rpg": "3f7aaaf822de66b511360d6975276f49be0928f7ae1f883a258ff2112ee44443",
   minimal: "35b572cc28d22787368316db2ff6c9d1b850a16fd58da094bf792c1779e5ad19",
   platformer: "5d270466ed7cec9d6234fe0c0098efd4b3f715c47472fe8c8cfdaccf6318f76c",
   puzzle: "74ad5ca8dfc6d48b38336b1bb64ff3704c0a85d6d95c2371e2401c1fea1d2522",
   racing: "094bfb4d56c8d47c718c89414d3a21794c0b037e94c74a9bb7ed2d72e00ebe6f",
-  rain: "ad3c2785da41df7e69c88b7f57c30da6509eb36cab79e3cbb781028bfcdf69c4",
+  rain: "3677e822ca3bed8b8acbfc1edb0ce8572f9aec830d92e380c8fc0d98e00dc7c8",
   rts: "3454b6276908ff5d85b29de439349e2c625baea1114f065b044c269f0b6bb7b8",
-  runner: "0b8acdfc19a95c7b5d9db6345b749684fab0cb8269aaf26d5cadd48f21287010",
+  runner: "172e65a6b91db2a16b45e2c4b94a01359441fca75594719ae0416ba003ac34cf",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "ab4f8d93df104a41a0b02050dc54058e42b3e9dcd7fcb21d1843f5885c822146",
-  shooter: "40408a57c013f89ecec48c4dfe89db7a90da7bb60837a215ba989eb62934d182",
-  snow: "626ccdaf1d9944db1658424786f3260561b01ceb07e350b21604593fa9344d57",
-  starter: "51cc506589e7749915d13a6ddc6f759bc598af02a0c4b94537d7eafe45e5a326",
+  sailing: "f68fec579f40ac59f0dd680abb429b335ebfb186108a5a7b01e43588b92f1ac5",
+  shooter: "e90b274c3deb1678247877489bca3a864e24f44acc778b25262c164478c7d3fe",
+  snow: "cde9db6467ba246bd06c0108d950fb5e97c1a3334ffd9dcc899fcc27b4065f94",
+  starter: "7ffc3e4b64582b442ffa761e30b4b135761624d2d5c09d6517a05cfaa541ac8d",
   "tower-defense": "325675a3971ed84dc63d0a9df8666a1040ce0334bf359067f83aed899a837ff2",
 };
 
