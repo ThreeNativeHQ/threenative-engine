@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9937 | 7648 | 76.96% |
+| `src/webgpu/` | 9937 | 7657 | 77.06% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24928** | **19558** | **78.46%** |
+| **TOTAL** | **24928** | **19567** | **78.49%** |
 
-Source digest: `sha256:4d6f62acfab6e106740bc8487c2e36a0a50a3ba429177f4d07fb88e357c28927`
+Source digest: `sha256:eacc74227f42a037d99c5766f62a876ce48bb01d6859ecad229503ca36bb6f7f`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -48,7 +48,7 @@ change requires this opt-in command to refresh the record.
 | `src/storage/` | 86.54% |
 | `src/utils/` | 0.00% |
 | `src/vfs/` | 76.59% |
-| `src/webgpu/` | 71.96% |
+| `src/webgpu/` | 72.06% |
 | `src/webtransport/` | 72.50% |
 | `src/workers/` | 80.69% |
 
