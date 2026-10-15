@@ -1318,12 +1318,16 @@ it("rejects a lightmap atlas size that is not a multiple of four on both sides o
 // `engine: "legacy"` with a comment, and leaves this list when the pin goes.
 const LEGACY_PINNED_TEMPLATES = [
   "action-rpg",
+  "platformer",
+  "racing",
   "rain",
+  "rts",
   "runner",
   "sailing",
   "shooter",
   "snow",
   "starter",
+  "tower-defense",
 ];
 
 it("gives every freshly scaffolded template the native engine unless it names its legacy pin", async () => {

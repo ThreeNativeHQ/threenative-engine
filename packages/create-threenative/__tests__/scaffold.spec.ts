@@ -257,18 +257,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
   "action-rpg": "3f7aaaf822de66b511360d6975276f49be0928f7ae1f883a258ff2112ee44443",
   minimal: "35b572cc28d22787368316db2ff6c9d1b850a16fd58da094bf792c1779e5ad19",
-  platformer: "5d270466ed7cec9d6234fe0c0098efd4b3f715c47472fe8c8cfdaccf6318f76c",
+  platformer: "6da024be41ca9b507e6e83d0028bf903b00cc3e8a549274dd77326f5a16c5e54",
   puzzle: "74ad5ca8dfc6d48b38336b1bb64ff3704c0a85d6d95c2371e2401c1fea1d2522",
-  racing: "094bfb4d56c8d47c718c89414d3a21794c0b037e94c74a9bb7ed2d72e00ebe6f",
+  racing: "b67163bc97d98ce0a3d55d2b6bf4f98250b2feb633ab4bb9e91054a1a2acecb4",
   rain: "3677e822ca3bed8b8acbfc1edb0ce8572f9aec830d92e380c8fc0d98e00dc7c8",
-  rts: "3454b6276908ff5d85b29de439349e2c625baea1114f065b044c269f0b6bb7b8",
+  rts: "0563ddccf9170f8a1ec0038817852b8cb7c4af43c7fd187e9e60c892f0206012",
   runner: "172e65a6b91db2a16b45e2c4b94a01359441fca75594719ae0416ba003ac34cf",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
   sailing: "f68fec579f40ac59f0dd680abb429b335ebfb186108a5a7b01e43588b92f1ac5",
   shooter: "e90b274c3deb1678247877489bca3a864e24f44acc778b25262c164478c7d3fe",
   snow: "cde9db6467ba246bd06c0108d950fb5e97c1a3334ffd9dcc899fcc27b4065f94",
   starter: "7ffc3e4b64582b442ffa761e30b4b135761624d2d5c09d6517a05cfaa541ac8d",
-  "tower-defense": "325675a3971ed84dc63d0a9df8666a1040ce0334bf359067f83aed899a837ff2",
+  "tower-defense": "ab5c66ce8cdf6b40fcccf9cfe82b7a1c5fdd65e231da129193251868c2681e7f",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

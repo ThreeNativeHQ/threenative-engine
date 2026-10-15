@@ -69,6 +69,29 @@ globalThis.__tnDispatchInput = (event) => {
   for (const callback of [...(listeners.get(event.type) ?? [])]) callback(dom);
 };
 
+// The player has no fetch, so a run it hosts makes no request. The runner's desktop network check needs the
+// `runtime.network` capability and a `network` observation from the bridge core installs: report the honest
+// zero, as playtest/src/three/device.ts does for the legacy host's retained fetch failures.
+{
+  let installed;
+  Object.defineProperty(globalThis, "__THREENATIVE_PLAYTEST_BRIDGE__", {
+    configurable: true,
+    get: () => installed,
+    set(bridge) {
+      if (typeof bridge?.describe === "function" && typeof bridge.sample === "function") {
+        const describe = bridge.describe.bind(bridge);
+        bridge.describe = async () => {
+          const description = await describe();
+          return { ...description, capabilities: [...description.capabilities, "runtime.network"] };
+        };
+        const sample = bridge.sample.bind(bridge);
+        bridge.sample = async (request) => ({ ...await sample(request), network: { entries: [], requests: 0 } });
+      }
+      installed = bridge;
+    },
+  });
+}
+
 globalThis.tn.onUpdate((dt) => {
   time += dt * 1000;
   // Every held key by code (KeyW, ArrowUp), as keydown/keyup events with the DOM key beside the code.

@@ -27,7 +27,7 @@ When an `@threenative/*` API is broken, missing, or does not do what you need, r
 - `.agents/skills/threenative-ui/SKILL.md` / `.claude/skills/threenative-ui/SKILL.md` — native-safe UI. `.agents/skills/threenative-context/SKILL.md` / `.claude/skills/threenative-context/SKILL.md` — portable ctx APIs.
 - Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. A game-side `patches/` fix is temporary: once it is settled, it moves into the engine in one PR. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above.
 ## Engine
-This game runs on the owned C++ engine by default: the Wasm engine on web and the engine player on desktop. Set `engine: "legacy"` in `threenative.config.ts` to use upstream Three.js on web and the legacy host on desktop. Android and iOS use the legacy host.
+The owned C++ engine is the default for a new game: the Wasm engine on web and the engine player on desktop. This template pins `engine: "legacy"` in `threenative.config.ts` because the native engine does not bind MeshStandardMaterial.flatShading yet. The pin keeps upstream Three.js on web and the legacy host on desktop. Android and iOS use the legacy host.
 
 ## Commands and map
 
