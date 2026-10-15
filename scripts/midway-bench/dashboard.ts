@@ -488,6 +488,15 @@ export interface IMidwayRun {
   clock?: "fixed-step" | "wall-clock";
   engineCommit?: string;
   cpuWindows?: ICpuWindow[];
+  /** Exploratory application callback/present intervals; never a qualified CPU or scanout metric. */
+  completionWindow?: {
+    label: string;
+    clock: "wall-clock";
+    source: "present-return" | "render-callback-return";
+    durationMs: number;
+    intervalCount: number;
+    completionIntervalP50Ms: number;
+  };
   nativeCompletion?: "unavailable" | "reconciled" | "invalid";
   ui?: { n: number; p50: number; p95: number };
   matrix?: { n: number; last: number; max: number };
@@ -516,6 +525,32 @@ export function runOf(
   const parity = parityText === undefined ? undefined : parityOf(parityText);
   const cullPct = cullOf(cullText);
   const report = terminalReport(log);
+  const completion = report?.acquisition?.completionWindow;
+  const completionWindow: IMidwayRun["completionWindow"] =
+    report?.clock === "wall-clock" &&
+    completion?.metric === "application-completion-interval" &&
+    completion.clock === "wall-clock" &&
+    typeof completion.label === "string" &&
+    completion.label.length > 0 &&
+    completion.source === (arm === "desktop" ? "present-return" : "render-callback-return") &&
+    ((completion.source === "present-return" && completion.timebase === "steady-clock-ms") ||
+      (completion.source === "render-callback-return" &&
+        completion.timebase === "performance-now-ms")) &&
+    finite(completion.completionIntervalP50Ms) &&
+    completion.completionIntervalP50Ms > 0 &&
+    finite(completion.durationMs) &&
+    completion.durationMs >= 5000 &&
+    Number.isSafeInteger(completion.intervalCount) &&
+    completion.intervalCount >= 100
+      ? {
+          label: completion.label,
+          clock: "wall-clock",
+          source: completion.source,
+          durationMs: completion.durationMs,
+          intervalCount: completion.intervalCount,
+          completionIntervalP50Ms: completion.completionIntervalP50Ms,
+        }
+      : undefined;
   const clock =
     report && (report.clock === "fixed-step" || report.clock === "wall-clock")
       ? (report.clock as IMidwayRun["clock"])
@@ -539,7 +574,7 @@ export function runOf(
     group: tag.replace(/\d+$/, "") || tag,
     arm,
     mtimeMs,
-    status: desktop || budget.budget || cpuWindows ? "ok" : "no samples",
+    status: desktop || budget.budget || cpuWindows || completionWindow ? "ok" : "no samples",
     skipped: player.skipped + budget.skipped + ui.skipped,
     ...(failure ? { failure } : {}),
     ...(desktop ? { desktop } : {}),
@@ -547,6 +582,12 @@ export function runOf(
     ...(clock ? { clock } : {}),
     ...(engineCommit ? { engineCommit } : {}),
     ...(cpuWindows ? { cpuWindows, nativeCompletion: nativeWindowCompletion(log) } : {}),
+    ...(completionWindow ? { completionWindow } : {}),
+    ...(completion === undefined
+      ? {}
+      : {
+          timingExclusion: "Exploratory application-completion window; excluded from qualification",
+        }),
     ...("ui" in ui ? { ui: ui.ui } : {}),
     ...(matrix ? { matrix } : {}),
     ...(parity ? { parity } : {}),

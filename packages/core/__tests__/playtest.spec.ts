@@ -237,15 +237,11 @@ describe("playtest plugin", () => {
       // The frame budget is on by default, so each sample also carries its phase split.
       expect(series.every(({ phases }) => phases !== undefined)).toBe(true);
       expect(
-        series.map(
-          ({
-            passes: _passes,
-            phases: _phases,
-            sequence: _sequence,
-            completedAtMs: _completedAtMs,
-            ...sample
-          }) => sample,
-        ),
+        series.map((sample) => ({
+          drawCalls: sample.drawCalls,
+          frameMs: sample.frameMs,
+          triangles: sample.triangles,
+        })),
       ).toEqual([{ drawCalls: 7, frameMs: 16, triangles: 42 }]);
     } finally {
       game.stop();

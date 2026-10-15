@@ -2635,3 +2635,103 @@ describe("Midway hero", () => {
     expect(els.ring?.innerHTML).toContain("AC-20");
   });
 });
+
+describe("exploratory application-completion windows", () => {
+  const window = {
+    label: "ac19-takeoff-completion",
+    metric: "application-completion-interval",
+    clock: "wall-clock",
+    source: "render-callback-return",
+    timebase: "performance-now-ms",
+    epoch: 1,
+    startTick: 1847,
+    startMs: 0,
+    endMs: 5000,
+    durationMs: 5000,
+    intervalCount: 100,
+    completionIntervalP50Ms: 50,
+    samples: Array.from({ length: 101 }, (_, i) => ({ sequence: i + 1, completedAtMs: i * 50 })),
+    provenance: { requestedDisplay: ":0", qualified: false },
+  };
+  const observed = (value: unknown = window, pass = true) =>
+    run(
+      "ac19-takeoff-legacy",
+      JSON.stringify({
+        ...cpuReport(120),
+        clock: "wall-clock",
+        pass,
+        acquisition: { completionWindow: value },
+      }),
+    );
+  it("retains completed raw cadence as excluded exploratory data without CPU qualification", () => {
+    const row = observed();
+    expect(row.completionWindow).toMatchObject({
+      label: window.label,
+      completionIntervalP50Ms: 50,
+      intervalCount: 100,
+      durationMs: 5000,
+      source: "render-callback-return",
+      clock: "wall-clock",
+    });
+    expect(row.status).toBe("ok");
+    expect(row.timingExclusion).toMatch(/exploratory/iu);
+    expect(row.cpuWindows).toBeUndefined();
+    const native = runOf(
+      "ac19-takeoff-desktop",
+      "ac19-takeoff",
+      "desktop",
+      1,
+      JSON.stringify({
+        ...cpuReport(120, "native"),
+        clock: "wall-clock",
+        acquisition: {
+          completionWindow: {
+            ...window,
+            source: "present-return",
+            timebase: "steady-clock-ms",
+          },
+        },
+      }),
+    );
+    expect(native.completionWindow?.source).toBe("present-return");
+    expect(matchedOf([row]).every((pose) => !pose.qualified && pose.ratio === undefined)).toBe(
+      true,
+    );
+  });
+  it("hides missing, failed and invalid cadence while excluding every attempted completion run", () => {
+    for (const change of [
+      { completionIntervalP50Ms: 0 },
+      { completionIntervalP50Ms: null },
+      { completionIntervalP50Ms: "50" },
+      { intervalCount: 99 },
+      { durationMs: 4999 },
+      { source: "gpu-present" },
+      { clock: "fixed-step" },
+      { metric: "fps" },
+      { timebase: "Date.now" },
+    ]) {
+      const row = observed({ ...window, ...change });
+      expect(row.completionWindow).toBeUndefined();
+      expect(row.timingExclusion).toMatch(/exploratory/iu);
+    }
+    expect(observed(window, false).completionWindow).toBeUndefined();
+    expect(run("ordinary-legacy", JSON.stringify(cpuReport(120))).completionWindow).toBeUndefined();
+  });
+  it("shows single-pose completion p50 beside exact CPU rows without inventing missing poses", async () => {
+    const html = await readFile(new URL("../midway-bench/dashboard.html", import.meta.url), "utf8");
+    const script = (html.split("<script>")[1] as string)
+      .split("</script>")[0]
+      ?.replace("tick(); setInterval(tick, 5000);", "");
+    const output = runInNewContext(`${script}\nrecentMeasurements(data)`, {
+      data: [observed(), { dir: "invalid-cadence", mtimeMs: 1 }],
+      document: { getElementById: () => ({}) },
+    });
+    expect(output).toContain("ac19-takeoff-completion");
+    expect(output).toContain("50.00");
+    expect(output).toContain("100 intervals");
+    expect(output).toContain("render-callback-return");
+    expect(output).toContain("application completion");
+    expect(output).toContain("unqualified");
+    expect(output).not.toContain("invalid-cadence");
+  });
+});

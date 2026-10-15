@@ -318,19 +318,22 @@ function ab(p, legacy) {
 
 function recentMeasurements(runs = []) {
   const poses = ["released-stick-climb", "canopy-and-instruments", "gun-view"];
-  const recent = runs.filter((r) => Number.isFinite(r.mtimeMs) && poses.every((label) => {
+  const recent = runs.filter((r) => Number.isFinite(r.mtimeMs) && (r.completionWindow || poses.every((label) => {
     const w = r.cpuWindows?.find((w) => w.label === label);
     return w && w.frames === 1000 && w.updates === 1000 && w.renders === 1000 && w.endTick - w.startTick === 1000 && Number.isFinite(w.mainThread?.cpuMsPerFrame);
-  })).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 5);
-  if (!recent.length) return '<p class="mute">No completed exact-window measurements yet.</p>';
-  return `<p class="sm">Latest acquisition completed ${esc(new Date(recent[0].mtimeMs).toLocaleString())} (run-log time). Raw observations below are unqualified; headline selection is unchanged.</p><div class="scroll"><table><tr><th>Acquisition completed</th><th>Arm / run</th><th>Takeoff · ms / M instructions</th><th>Cockpit · ms / M instructions</th><th>Rear gunner · ms / M instructions</th><th>Status</th></tr>${recent.map((r) => {
-    const sampled = r.profiled || r.cpuWindows.some((w) => "profile" in w);
+  }))).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 5);
+  if (!recent.length) return '<p class="mute">No completed measurements yet.</p>';
+  return `<p class="sm">Latest acquisition completed ${esc(new Date(recent[0].mtimeMs).toLocaleString())} (run-log time). Raw observations below are unqualified; headline selection is unchanged.</p><div class="scroll"><table><tr><th>Acquisition completed</th><th>Arm / run</th><th>Takeoff · ms / M instructions</th><th>Cockpit · ms / M instructions</th><th>Rear gunner · ms / M instructions</th><th>Completion interval p50 · ms</th><th>Status</th></tr>${recent.map((r) => {
+    const sampled = r.profiled || r.cpuWindows?.some((w) => "profile" in w);
     const excluded = r.timingExclusion || r.rejection || r.failure;
     const cells = poses.map((label) => {
-      const w = r.cpuWindows.find((w) => w.label === label);
+      const w = r.cpuWindows?.find((w) => w.label === label);
+      if (!w) return '<td class="mute">—</td>';
       return `<td>${sampled ? "instrumented diagnostic" : `${n(w.mainThread.cpuMsPerFrame)} / ${n(w.mainThread.instructionsPerFrame / 1e6, 1)}`}</td>`;
     }).join("");
-    return `<tr><td>${esc(new Date(r.mtimeMs).toLocaleString())}</td><td>${esc(ARM[r.arm] ?? r.arm)}<br>${esc(r.dir)}</td>${cells}<td title="${esc(excluded || "")}">${sampled ? "sampled · excluded" : excluded ? "excluded" : "exploratory"} · unqualified</td></tr>`;
+    const c = r.completionWindow;
+    const cadence = c ? `${n(c.completionIntervalP50Ms)}<br>${esc(c.label)}<br><span class="sm">${c.intervalCount} intervals · ${n(c.durationMs / 1000, 1)} s · ${esc(c.clock)}<br>${esc(c.source)} · application completion</span>` : '—';
+    return `<tr><td>${esc(new Date(r.mtimeMs).toLocaleString())}</td><td>${esc(ARM[r.arm] ?? r.arm)}<br>${esc(r.dir)}</td>${cells}<td>${cadence}</td><td title="${esc(excluded || "")}">${sampled ? "sampled · excluded" : excluded ? "excluded" : "exploratory"} · unqualified</td></tr>`;
   }).join("")}</table></div>`;
 }
 
