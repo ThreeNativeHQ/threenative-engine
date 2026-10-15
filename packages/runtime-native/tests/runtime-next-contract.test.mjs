@@ -293,7 +293,8 @@ test('deprecated native GLTF and Draco paths fail closed before compilation', ()
   const runtime = read('src/runtime.cpp');
   assert.doesNotMatch(runtime, /setupGLTF|setupDraco|MYSTRAL_HAS_DRACO|__loadGLTF/u);
   const downloader = read('scripts/download-deps.mjs');
-  assert.doesNotMatch(downloader, /\bcgltf\b|\bdraco\b/u, 'deprecated native decoder dependencies must not be provisioned');
+  // cgltf is provisioned for the engine's own glTF loader (PRD-515), parsing only; the legacy host never links it.
+  assert.doesNotMatch(downloader, /\bdraco\b/u, 'deprecated native decoder dependencies must not be provisioned');
 });
 
 test('runtime JavaScript is byte-stable, embedded, and loaded by the bootstrap', () => {
