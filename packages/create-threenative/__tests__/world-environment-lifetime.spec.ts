@@ -1,5 +1,6 @@
 import { PerspectiveCamera, Scene, Texture } from "three";
 import BloomNode from "three/addons/tsl/display/BloomNode.js";
+import FXAANode from "three/addons/tsl/display/FXAANode.js";
 import { rtt, texture, vec4 } from "three/tsl";
 import type { Node, NodeBuilder } from "three/webgpu";
 import { expect, it, vi } from "vitest";
@@ -65,6 +66,99 @@ it("releases the bloom effect and its materialized input when its chain is repla
   applied.dispose?.();
   for (const release of releases) expect(release).toHaveBeenCalledTimes(1);
 });
+
+it.each(["smaa", "fxaa"] as const)(
+  "releases retired %s targets on repeated stage rebuilds with and without subrect support",
+  (screenSpaceAA) => {
+    vi.stubGlobal(
+      "Image",
+      class {
+        src = "";
+        onload = () => {};
+      },
+    );
+    try {
+      for (const subrect of [true, false]) {
+        const controller = new ResolutionSubrect();
+        const renderer: OutputRenderer = {
+          kind: "webgpu",
+          raw: {},
+          ...(subrect ? { createResolutionSubrect: () => controller } : {}),
+          createRenderChain(options) {
+            const stage = options.stages?.find((entry) => entry.name === "antialias");
+            if (!stage) throw new Error("Missing antialias");
+            controller.activate(0.72);
+            for (let generation = 1; generation <= 3; generation++) {
+              const graph = stage.build(options.input, { tier: "high" }) as Node;
+              const targets: import("three").RenderTarget[] = [];
+              const releases: ReturnType<typeof vi.fn>[] = [];
+              const seen = new Set<Node>();
+              graph.traverse((node) => {
+                if (!(node instanceof FXAANode) && !Reflect.has(node, "_renderTargetEdges")) return;
+                if (seen.has(node)) return;
+                seen.add(node);
+                releases.push(vi.spyOn(node, "dispose"));
+                const scratch = Reflect.get(node, "textureNode") as {
+                  renderTarget: import("three").RenderTarget;
+                  _quadMesh: { material: { dispose(): void } };
+                };
+                targets.push(scratch.renderTarget);
+                releases.push(vi.spyOn(scratch._quadMesh.material, "dispose"));
+                if (Reflect.has(node, "_renderTargetEdges")) {
+                  const owned = node as unknown as {
+                    _renderTargetEdges: import("three").RenderTarget;
+                    _renderTargetWeights: import("three").RenderTarget;
+                    _renderTargetBlend: import("three").RenderTarget;
+                  };
+                  targets.push(
+                    owned._renderTargetEdges,
+                    owned._renderTargetWeights,
+                    owned._renderTargetBlend,
+                  );
+                }
+              });
+              expect(targets).toHaveLength(screenSpaceAA === "smaa" ? 4 : 1);
+              controller.setSize(128 * generation, 64 * generation);
+              for (const target of targets) {
+                if (subrect) expect(controller.textureView(target.texture)).toBeDefined();
+                releases.push(vi.spyOn(target, "dispose"));
+              }
+              stage.dispose?.();
+              stage.dispose?.();
+              for (const release of releases) expect(release).toHaveBeenCalledTimes(1);
+              const retiredSizes = targets.map((target) => [
+                target.width,
+                target.height,
+                target.viewport.toArray(),
+              ]);
+              for (const target of targets)
+                expect(controller.textureView(target.texture)).toBeUndefined();
+              controller.setScale(0.61);
+              controller.setSize(128 * (generation + 1), 64 * (generation + 1));
+              expect(
+                targets.map((target) => [target.width, target.height, target.viewport.toArray()]),
+              ).toEqual(retiredSizes);
+              for (const release of releases) expect(release).toHaveBeenCalledTimes(1);
+            }
+            return {
+              applied: { stages: ["antialias"], dropped: [] },
+              dispose: () => stage.dispose?.(),
+            };
+          },
+        };
+        const applied = new WorldEnvironment({ bloomEnabled: true, screenSpaceAA }).apply(
+          renderer,
+          new Scene(),
+          new PerspectiveCamera(),
+        );
+        applied.dispose?.();
+        controller.dispose();
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("keeps default exposure direct and installs the authored opt-in on its existing world pass", () => {
   const output = vi.fn();

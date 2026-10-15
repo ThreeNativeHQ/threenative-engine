@@ -1008,6 +1008,10 @@ export class WorldEnvironment {
         name: "antialias",
         after: "gradualBackground",
         supportsResolutionSubrect: true,
+        dispose: () => {
+          releaseAa();
+          releaseAa = () => {};
+        },
         build: (input) => {
           const colour = input as ChainNode;
           // SMAA and FXAA find edges by local contrast and expect display-range colour, but this is
