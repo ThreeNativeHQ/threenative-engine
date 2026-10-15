@@ -77,6 +77,12 @@ describe("starter paired JS frame proof", () => {
         r[0].report.budgets[1].surface.resolutionScale = 0.5;
       },
       (r: ReturnType<typeof runs>) => {
+        Reflect.deleteProperty(r[0].report.budgets[1].surface, "compiling");
+      },
+      (r: ReturnType<typeof runs>) => {
+        r[0].report.budgets[1].surface.compiling = true;
+      },
+      (r: ReturnType<typeof runs>) => {
         r[0].log = r[0].log.replace('"applied":true', '"applied":false');
       },
     ]) {

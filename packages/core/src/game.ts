@@ -1576,7 +1576,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               return {
                 ...renderer.surface(),
                 ...(scaler === undefined ? {} : { atFloor: scaler.atFloor }),
-                ...(compilingInWindow ? { compiling: true } : {}),
+                compiling: compilingInWindow,
               };
             },
           });
