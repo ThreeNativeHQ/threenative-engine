@@ -17,11 +17,13 @@ import { fileURLToPath } from "node:url";
 
 // Native Ubuntu noble arm64 packages; producer installs these exact versions before invoking us.
 export const LINUX_ARM64_V8_BUILD = Object.freeze({
-  recipe: 1,
+  recipe: 2,
   version: "13.1.201.22",
   source: "9c09e7876ff830e1f9a731aa930040d1028ff5a1",
   depotTools: "08f3e8c0eb66d6de3a048a757d0ff708dbc8ea34",
   gn: "95b0f8fe31a992a33c040bbe3867901335c12762",
+  gnPackage: "gn/gn/linux-arm64",
+  gnSha256: "31739b62d88843b32726c4ace0c93b36b65efbcba89bb033891d454766d9e689",
   toolchain: Object.freeze({
     base: "/usr/lib/llvm-18",
     version: "18.1.3",
@@ -81,7 +83,6 @@ const LICENSES = {
   "V8-FDLIBM": "LICENSE.fdlibm",
   "V8-STRONGTALK": "LICENSE.strongtalk",
   "BUILD-LICENSE": "build/LICENSE",
-  "GN-LICENSE": "../gn/LICENSE",
 };
 
 export function linuxArm64V8GnArgs() {
@@ -193,6 +194,10 @@ function validateToolchain(receipt) {
     Object.keys(receipt.binaries ?? {}).length !== BINARIES.length
   )
     throw new Error("V8 toolchain receipt is incomplete");
+  if (receipt.gn?.package !== LINUX_ARM64_V8_BUILD.gnPackage ||
+    receipt.gn?.sha256 !== LINUX_ARM64_V8_BUILD.gnSha256 ||
+    typeof receipt.gn?.version !== "string" || !receipt.gn.version.includes(LINUX_ARM64_V8_BUILD.gn.slice(0, 8)))
+    throw new Error("V8 GN receipt must match the pinned native CIPD package, SHA-256 and revision");
   for (const name of Object.keys(pin.packages)) {
     if (receipt.packages[name] !== `${name}\t${pin.packageVersion}\tarm64\tinstall ok installed`)
       throw new Error("V8 toolchain package identity mismatch");
@@ -276,7 +281,7 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
     throw new Error("THREENATIVE_V8_BUILD_JOBS must be an integer between 1 and 32");
   const source = join(work, "v8");
   const depot = join(work, "depot_tools");
-  const gn = join(work, "gn");
+  const gn = join(source, "buildtools/linux64/gn");
   const stage = join(work, "payload");
   const statePath = join(work, ".recipe.json");
   const state = JSON.stringify({
@@ -300,7 +305,7 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
       force ||
       !existsSync(statePath) ||
       readFileSync(statePath, "utf8") !== state ||
-      !existsSync(join(gn, "out/gn"))
+      !existsSync(gn)
     ) {
       rmSync(work, { recursive: true, force: true });
       mkdirSync(work, { recursive: true });
@@ -310,10 +315,10 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
         LINUX_ARM64_V8_BUILD.depotTools,
         run,
       );
-      // Skip binary GN, reclient and x64 LLVM at sync time, not merely their hooks.
+      // Keep DEPS-pinned native GN; skip unused reclient and x64 LLVM without running hooks.
       writeFileSync(
         join(work, ".gclient"),
-        `solutions = [{"name": "v8", "url": "https://chromium.googlesource.com/v8/v8.git", "managed": False, "custom_vars": {"checkout_linux": False}, "custom_deps": {"v8/buildtools/linux64": None, "v8/buildtools/reclient": None, "v8/third_party/llvm-build/Release+Asserts": None}}]\n`,
+        `solutions = [{"name": "v8", "url": "https://chromium.googlesource.com/v8/v8.git", "managed": False, "custom_vars": {"checkout_linux": False}, "custom_deps": {"buildtools/reclient": None, "third_party/llvm-build/Release+Asserts": None}}]\n`,
       );
       run(join(depot, "gclient"), [
         "sync",
@@ -325,30 +330,11 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
       const deps = readFileSync(join(source, "DEPS"), "utf8");
       if (!deps.includes(`'gn_version': 'git_revision:${LINUX_ARM64_V8_BUILD.gn}'`))
         throw new Error("Pinned V8 DEPS GN revision mismatch");
-      checkoutV8Source(gn, "https://gn.googlesource.com/gn.git", LINUX_ARM64_V8_BUILD.gn, run);
-      // GN's version generator describes HEAD relative to this tag; a depth-one checkout cannot.
-      run(
-        "git",
-        [
-          "fetch",
-          "--unshallow",
-          "https://gn.googlesource.com/gn.git",
-          LINUX_ARM64_V8_BUILD.gn,
-          "refs/tags/initial-commit:refs/tags/initial-commit",
-        ],
-        gn,
-      );
-      run("python3", ["build/gen.py"], gn);
-      run("/usr/bin/ninja", [`-j${jobs}`, "-C", "out"], gn);
-      // GN normally lives here in the V8 source tree; install our native bootstrap instead.
-      mkdirSync(join(source, "buildtools/linux64"), { recursive: true });
-      copyFileSync(join(gn, "out/gn"), join(source, "buildtools/linux64/gn"));
       writeFileSync(statePath, state);
     }
     for (const [directory, revision] of [
       [source, LINUX_ARM64_V8_BUILD.source],
       [depot, LINUX_ARM64_V8_BUILD.depotTools],
-      [gn, LINUX_ARM64_V8_BUILD.gn],
     ]) {
       const actual = execFileSync("git", ["rev-parse", "HEAD"], {
         cwd: directory,
@@ -356,7 +342,15 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
       }).trim();
       if (actual !== revision) throw new Error(`V8 cached source revision mismatch: ${directory}`);
     }
-    run(join(gn, "out/gn"), ["gen", "out/linux-arm64", `--args=${linuxArm64V8GnArgs()}`], source);
+    const gnBytes = readFileSync(gn);
+    if (!gnBytes.subarray(0, 7).equals(Buffer.from([127, 69, 76, 70, 2, 1, 1])) ||
+      gnBytes.length < 20 || gnBytes.readUInt16LE(18) !== 183 || sha256(gn) !== LINUX_ARM64_V8_BUILD.gnSha256)
+      throw new Error("Pinned GN must match the DEPS linux-arm64 CIPD binary SHA-256 and ELF architecture");
+    const gnVersion = execFileSync(gn, ["--version"], { env: baseEnv, encoding: "utf8" }).trim();
+    if (!gnVersion.includes(LINUX_ARM64_V8_BUILD.gn.slice(0, 8)))
+      throw new Error(`Pinned GN version mismatch: ${gnVersion}`);
+    toolchain.gn = { package: LINUX_ARM64_V8_BUILD.gnPackage, sha256: sha256(gn), version: gnVersion };
+    run(gn, ["gen", "out/linux-arm64", `--args=${linuxArm64V8GnArgs()}`], source);
     run("/usr/bin/ninja", [`-j${jobs}`, "-C", "out/linux-arm64", "v8_monolith"], source);
     rmSync(stage, { recursive: true, force: true });
     mkdirSync(join(stage, "licenses"), { recursive: true });

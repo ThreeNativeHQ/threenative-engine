@@ -43,15 +43,22 @@ function archive(machine = 183, name = "object.o/", type = 1) {
 }
 const version = LINUX_ARM64_V8_BUILD.toolchain.version;
 function toolchain() {
-  return inspectLinuxArm64V8Toolchain({
-    run: (program: string, args: string[]) =>
-      program === "dpkg-query"
-        ? `${args.at(-1)}\t1:18.1.3-1ubuntu1\tarm64\tinstall ok installed`
-        : program === "dpkg"
-          ? ""
-          : `LLVM version ${version}`,
-    hash: () => "a".repeat(64),
-  });
+  return {
+    ...inspectLinuxArm64V8Toolchain({
+      run: (program: string, args: string[]) =>
+        program === "dpkg-query"
+          ? `${args.at(-1)}\t1:18.1.3-1ubuntu1\tarm64\tinstall ok installed`
+          : program === "dpkg"
+            ? ""
+            : `LLVM version ${version}`,
+      hash: () => "a".repeat(64),
+    }),
+    gn: {
+      package: LINUX_ARM64_V8_BUILD.gnPackage,
+      sha256: LINUX_ARM64_V8_BUILD.gnSha256,
+      version: "2200 (95b0f8fe31a9)",
+    },
+  };
 }
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "linux-arm64-v8-"));
@@ -65,14 +72,7 @@ function fixture() {
       .map((part) => `#define V8_${part}\n`)
       .join(""),
   );
-  for (const name of [
-    "V8-LICENSE",
-    "V8-LICENSE.v8",
-    "V8-FDLIBM",
-    "V8-STRONGTALK",
-    "BUILD-LICENSE",
-    "GN-LICENSE",
-  ])
+  for (const name of ["V8-LICENSE", "V8-LICENSE.v8", "V8-FDLIBM", "V8-STRONGTALK", "BUILD-LICENSE"])
     writeFileSync(join(root, "licenses", name), "license fixture");
   writeFileSync(join(root, "libv8_monolith.a"), archive());
   const receipt = createLinuxArm64V8Receipt(root, toolchain());
@@ -102,10 +102,19 @@ describe("Linux arm64 V8 receipt", () => {
     const root = fixture();
     rmSync(join(root, "build-receipt.json"));
     expect(() => runLinuxArm64V8Command(["--verify"], { root })).toThrow("receipt is missing");
-    rmSync(join(root, "licenses/GN-LICENSE"));
+    rmSync(join(root, "licenses/BUILD-LICENSE"));
     expect(() => createLinuxArm64V8Receipt(root, toolchain())).toThrow(
-      "missing licenses/GN-LICENSE",
+      "missing licenses/BUILD-LICENSE",
     );
+  });
+  it("rejects GN receipt substitutions in package, binary hash and revision", () => {
+    for (const field of ["package", "sha256", "version"] as const) {
+      const root = fixture();
+      editReceipt(root, (receipt) => {
+        receipt.toolchain.gn[field] = "wrong";
+      });
+      expect(() => verifyLinuxArm64V8Installation(root)).toThrow("GN receipt");
+    }
   });
   it.each(["tamper", "extra", "empty", "symlink"])("rejects %s payloads", (kind) => {
     const root = fixture();
