@@ -112,6 +112,25 @@ interface IConnectOptions {
   readonly scope?: IScope;
 }
 
+// Prepared state frames stay internal; ordinary posts always validate and serialise themselves.
+const stateFrames = new WeakMap<IUiMessage, string>();
+
+/** @internal Serialise the complete envelope to preserve JSON's `toJSON` key semantics. */
+export function serializeUiState(state: unknown): string {
+  return assertSendable({ type: GAME_STATE_MESSAGE, state });
+}
+
+/** @internal Reuse the publisher's frame without extending the public bridge interface. */
+export function postUiState(bridge: IUiBridge, state: unknown, frame: string): void {
+  const message = { type: GAME_STATE_MESSAGE, state };
+  stateFrames.set(message, frame);
+  try {
+    bridge.post(message);
+  } finally {
+    stateFrames.delete(message);
+  }
+}
+
 function assertSendable(message: IUiMessage): string {
   if (typeof message !== "object" || message === null || Array.isArray(message)) {
     throw new Error("TN_UI_BRIDGE_MESSAGE_INVALID: a bridge message must be a JSON object.");
@@ -121,7 +140,7 @@ function assertSendable(message: IUiMessage): string {
   }
   let frame: string;
   try {
-    frame = JSON.stringify(message);
+    frame = stateFrames.get(message) ?? JSON.stringify(message);
   } catch (error) {
     throw new Error(
       `TN_UI_BRIDGE_MESSAGE_INVALID: '${message.type}' is not JSON-serialisable: ${
