@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import type { IStandalonePlaytestReport } from "../packages/playtest/src/runner/shared.js";
 
 export const BASELINE_SHA = "88b988cd70d5db7266eb0281e5f74bd0e030b3e7";
-const ORDER = ["before", "after", "after", "before", "before", "after"];
+const ORDER = ["before", "after", "after", "before", "before", "after"] as const;
 const late = ["publishedBatchesInView", "shadowInvalidated", "impostorPendingPeak"].map(
   (key) => `component.props.reveal.${key}`,
 );
@@ -17,7 +17,7 @@ type StartupReport = Pick<
   "pass" | "capture" | "diagnostics" | "observations" | "assertionResults"
 >;
 interface IStartupRun {
-  arm: string;
+  arm: "before" | "after";
   status: number | null;
   report: StartupReport;
 }
@@ -28,7 +28,7 @@ export function verifyStartupRuns(runs: readonly IStartupRun[]) {
     ORDER,
     "require three alternating pairs",
   );
-  const times: Record<string, number[]> = { before: [], after: [] };
+  const times: { before: number[]; after: number[] } = { before: [], after: [] };
   let adapter: unknown;
   for (const { arm, status, report } of runs) {
     assert(status === 0 || (arm === "before" && status === 1), "subprocess failure");
@@ -106,7 +106,11 @@ export function verifyStartupRuns(runs: readonly IStartupRun[]) {
     );
     assert.equal(status, report.pass ? 0 : 1, "subprocess/report disagreement");
   }
-  const median = (values: number[]) => values.sort((a, b) => a - b)[1];
+  const median = (values: number[]) => {
+    const value = values.sort((a, b) => a - b)[1];
+    assert(value !== undefined, "median requires three observations");
+    return value;
+  };
   const before = median(times.before);
   const after = median(times.after);
   const ratio = after / before;

@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import {
@@ -7,7 +8,7 @@ import {
   verifyStartupRuns,
 } from "../verify-strata-startup.js";
 
-function run(time = 100, arm = "after") {
+function run(time = 100, arm: "before" | "after" = "after") {
   const values = {
     "resource.GameState.timeToReadyMs": time,
     "component.props.reveal.complete": true,
@@ -49,8 +50,14 @@ function pairs(before = 100, after = 120) {
     run(before, "before"),
     run(before, "before"),
     run(after),
-  ];
+  ] as const;
 }
+function assertion(r: ReturnType<typeof run>, index: number) {
+  const value = r.report.assertionResults[index];
+  assert(value, `fixture assertion ${index} missing`);
+  return value;
+}
+
 it("accepts three alternating pairs within the owner bound", () => {
   expect(verifyStartupRuns(pairs()).ratio).toBe(1.2);
 });
@@ -69,19 +76,19 @@ it("fails closed on missing observations, short samples, diagnostics and subproc
       Object.assign(r.report.capture, { adapter: {} });
     },
     (r: ReturnType<typeof run>) => {
-      r.report.assertionResults[1].details.after = false;
+      assertion(r, 1).details.after = false;
     },
     (r: ReturnType<typeof run>) => {
-      Object.assign(r.report.assertionResults[2].details, { after: "2" });
+      Object.assign(assertion(r, 2).details, { after: "2" });
     },
     (r: ReturnType<typeof run>) => {
       r.report.assertionResults = [];
     },
     (r: ReturnType<typeof run>) => {
-      r.report.assertionResults[2].details.after = 1;
+      assertion(r, 2).details.after = 1;
     },
     (r: ReturnType<typeof run>) => {
-      r.report.assertionResults[3].details.after = 2999;
+      assertion(r, 3).details.after = 2999;
     },
     (r: ReturnType<typeof run>) => {
       r.status = 2;
@@ -90,7 +97,7 @@ it("fails closed on missing observations, short samples, diagnostics and subproc
       r.report.capture.adapter.vendor = "other";
     },
     (r: ReturnType<typeof run>) => {
-      r.report.assertionResults[7].pass = false;
+      assertion(r, 7).pass = false;
     },
   ]) {
     const runs = pairs();
@@ -104,22 +111,26 @@ it("permits only historical BEFORE late counter failures", () => {
   const runs = pairs();
   runs[0].status = 1;
   runs[0].report.pass = false;
-  runs[0].report.assertionResults[4].pass = false;
-  runs[0].report.assertionResults[4].details.after = 5;
+  assertion(runs[0], 4).pass = false;
+  assertion(runs[0], 4).details.after = 5;
   expect(verifyStartupRuns(runs).ratio).toBe(1.2);
-  runs[1].report.assertionResults[4].pass = false;
+  assertion(runs[1], 4).pass = false;
   expect(() => verifyStartupRuns(runs)).toThrow();
 });
 it("pins reviewed old source and requires the real command inside benchmark", () => {
   expect(BASELINE_SHA).toBe("88b988cd70d5db7266eb0281e5f74bd0e030b3e7");
   const ci = readFileSync(".github/workflows/ci.yml", "utf8");
-  const benchmark = ci.split("  benchmark:\n")[1].split("\n  # visuals")[0];
+  const section = ci.split("  benchmark:\n")[1];
+  assert(section, "benchmark job missing");
+  const benchmark = section.split("\n  # visuals")[0];
+  assert(benchmark, "benchmark body missing");
   expect(benchmark).not.toContain("continue-on-error:");
   expect(benchmark).toContain("ref: 88b988cd70d5db7266eb0281e5f74bd0e030b3e7");
   expect(benchmark).toContain("path: .worktrees/strata-startup-baseline");
-  const gate = benchmark
-    .split("      - name: Enforce Strata startup median")[1]
-    .split("\n      - ")[0];
+  const gateSection = benchmark.split("      - name: Enforce Strata startup median")[1];
+  assert(gateSection, "startup gate missing");
+  const gate = gateSection.split("\n      - ")[0];
+  assert(gate, "startup gate body missing");
   expect(gate).toContain("EXPECTED_SOURCE_SHA: ${{ needs.scope.outputs.candidate_sha }}");
   expect(gate).toContain("timeout 9m pnpm tsx scripts/verify-strata-startup.ts");
   expect(gate).not.toMatch(/continue-on-error:|if:|\|\|\s*(true|:)|set \+e/);
@@ -135,7 +146,7 @@ it("parses real runner log framing and rejects absent or malformed reports", () 
 
 it("requires all six runs in alternating pair order", () => {
   expect(() => verifyStartupRuns(pairs().slice(1))).toThrow();
-  const runs = pairs();
+  const runs = [...pairs()];
   runs.reverse();
   expect(() => verifyStartupRuns(runs)).toThrow();
 });
