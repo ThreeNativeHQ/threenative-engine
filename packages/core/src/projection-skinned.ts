@@ -385,53 +385,57 @@ export class SkinnedBatch {
   write(slot: number, rig: SkinnedMesh): void {
     beginSpan(SPANS.skinnedWrite);
     try {
-      const state = animationRateStateOf(rig);
-      const writtenWorld = this.#writtenWorldMatrices.get(rig);
-      if (
-        state !== undefined &&
-        !state.evaluated &&
-        this.#writtenEvaluations.get(rig) === state.evaluation &&
-        writtenWorld?.equals(rig.matrixWorld)
-      )
-        return;
-      const skeleton = rig.skeleton;
-      if (this.#updated.get(skeleton) !== this.#frame) {
-        skeleton.update();
-        this.#updated.set(skeleton, this.#frame);
-      }
-      const bones = skeleton.boneMatrices as Float32Array;
-      const bind = rig.bindMatrix.elements;
-      const bindIsIdentity = isIdentity(bind);
-      const detached = rig.bindMode !== "attached";
-      const prefix = this.#bindScratch;
-      if (detached)
-        multiply(rig.matrixWorld.elements, 0, rig.bindMatrixInverse.elements, 0, prefix, 0);
-      const out = this.#current;
-      const offset = slot * this.bones * 16;
-      // The common case is one contiguous copy: `skeleton.update` has already written this rig's
-      // bone matrices in palette order, and an identity bind matrix leaves them unchanged.
-      if (bindIsIdentity) out.set(bones, offset);
-      else {
-        for (let bone = 0; bone < this.bones; bone += 1) {
-          multiply(bones, bone * 16, bind, 0, out, offset + bone * 16);
-        }
-      }
-      if (detached) {
-        for (let bone = 0; bone < this.bones; bone += 1) {
-          const at = offset + bone * 16;
-          // In place is safe: `multiply` reads each right-hand column before writing it.
-          multiply(prefix, 0, out, at, out, at);
-        }
-      }
-      this.#dirty = true;
-      if (state !== undefined) {
-        this.#writtenEvaluations.set(rig, state.evaluation);
-        const nextWorld = writtenWorld ?? new Matrix4();
-        nextWorld.copy(rig.matrixWorld);
-        this.#writtenWorldMatrices.set(rig, nextWorld);
-      }
+      this.#writeStock(slot, rig);
     } finally {
       endSpan(SPANS.skinnedWrite);
+    }
+  }
+
+  #writeStock(slot: number, rig: SkinnedMesh): void {
+    const state = animationRateStateOf(rig);
+    const writtenWorld = this.#writtenWorldMatrices.get(rig);
+    if (
+      state !== undefined &&
+      !state.evaluated &&
+      this.#writtenEvaluations.get(rig) === state.evaluation &&
+      writtenWorld?.equals(rig.matrixWorld)
+    )
+      return;
+    const skeleton = rig.skeleton;
+    if (this.#updated.get(skeleton) !== this.#frame) {
+      skeleton.update();
+      this.#updated.set(skeleton, this.#frame);
+    }
+    const bones = skeleton.boneMatrices as Float32Array;
+    const bind = rig.bindMatrix.elements;
+    const bindIsIdentity = isIdentity(bind);
+    const detached = rig.bindMode !== "attached";
+    const prefix = this.#bindScratch;
+    if (detached)
+      multiply(rig.matrixWorld.elements, 0, rig.bindMatrixInverse.elements, 0, prefix, 0);
+    const out = this.#current;
+    const offset = slot * this.bones * 16;
+    // The common case is one contiguous copy: `skeleton.update` has already written this rig's
+    // bone matrices in palette order, and an identity bind matrix leaves them unchanged.
+    if (bindIsIdentity) out.set(bones, offset);
+    else {
+      for (let bone = 0; bone < this.bones; bone += 1) {
+        multiply(bones, bone * 16, bind, 0, out, offset + bone * 16);
+      }
+    }
+    if (detached) {
+      for (let bone = 0; bone < this.bones; bone += 1) {
+        const at = offset + bone * 16;
+        // In place is safe: `multiply` reads each right-hand column before writing it.
+        multiply(prefix, 0, out, at, out, at);
+      }
+    }
+    this.#dirty = true;
+    if (state !== undefined) {
+      this.#writtenEvaluations.set(rig, state.evaluation);
+      const nextWorld = writtenWorld ?? new Matrix4();
+      nextWorld.copy(rig.matrixWorld);
+      this.#writtenWorldMatrices.set(rig, nextWorld);
     }
   }
 
