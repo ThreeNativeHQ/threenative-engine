@@ -156,7 +156,6 @@ The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Ph
 ## Blocked on
 
 - João plays Midway on the native desktop player on the real display (`:0`) and confirms it feels at least as smooth as three.js in the browser — unblocked by João.
-- João names the `AnimationMixer.updateRate` property (PRD-573 v2.3) before AC-17 ships URO — unblocked by João.
 
 ## Integration Ledger
 
@@ -207,7 +206,8 @@ The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Ph
   - The flight model (`core/src/flight.ts`, about 0.16 ms) stays JS. It is numeric code that V8 compiles well, and a C++ copy doubles the implementation for 0.1 ms or less.
   - Moves land in the existing C++ objects (mixer, audio backend, scene). A new language adds a call boundary, and the boundary is the cost being cut.
   - Measurement ladder: tier 0 is a ctest counter. Tier 1 is one lockstep window, instructions per frame. Tier 2 is three alternating pairs per pose, parity PASS, and the visual judge for any lever that can change pixels. Keep a lever only when every B beats every A. Make no single-run millisecond verdict on a loaded host.
-- 2026-10-14 (owner: "my goal is native 2-3x faster than web threejs. WASM ThreeNative 1.5 faster than ThreeJS (regular)"; "we need to optimize both native and wasm web in parallel"): every matched pair also runs the web Wasm arm (C, graded on the same A and ref), and the dashboard shows both arms. [PRD-612](PRD-612-web-wasm-engine-beats-threejs-on-midway.md) owns the web Wasm 1.5x target. Pair 1 at `e3271a19c` (both arms parity PASS) reads native 1.24x / 1.05x / 1.31x and web Wasm 1.02x / 0.95x / 1.26x; it is one pair of three, so AC-15 stays open.
+- 2026-10-14 (owner: "my goal is native 2-3x faster than web threejs. WASM ThreeNative 1.5 faster than ThreeJS (regular)"; "we need to optimize both native and wasm web in parallel"): every matched pair also runs the web Wasm arm (C, graded on the same A and ref), and the dashboard shows both arms. [PRD-612](../native-engine/PRD-612-web-wasm-engine-beats-threejs-on-midway.md) owns the web Wasm 1.5x target. Pair 1 at `e3271a19c` (both arms parity PASS) reads native 1.24x / 1.05x / 1.31x and web Wasm 1.02x / 0.95x / 1.26x; it is one pair of three, so AC-15 stays open.
+- 2026-10-14 (owner: "we need conventions, keep godot naming style"): URO ships as a convention, on by default, with its override on the same object in Godot vocabulary, camelCase: `AnimationMixer.updateRate` (Godot style `update_rate`). This removes the naming blocker for AC-17.
 
 ## Execution Phases
 
@@ -251,7 +251,7 @@ The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Ph
 **Verification:** the AC-16 to AC-19 proofs. Any lever that can change pixels (render thread, URO) gets the visual judge.
 
 - [ ] AC-20 [local]: the player main thread reaches IPC 1.0 or more on the lockstep window at all three poses, with its instructions per frame no higher than the matched baseline. proof: three alternating pairs per pose with parity PASS, `perf stat` instructions and cycles per window, and a `perf record` DSO split (V8 JIT, V8 runtime, engine C++, driver) before and after
-- [ ] AC-16 [local]: cull, project and encode run on a render thread, and the player main thread's CPU per frame falls by at least 1.0 ms on the lockstep window. proof: a ctest on render-thread ordering (frame N encodes only frame N's snapshot; a mutation goes red), a fixed-step capture pair whose A-against-B difference is no larger than A against A, three alternating pairs per pose, visual judge NEUTRAL or better
+- [ ] AC-16 [local]: delivered by [PRD-613](../native-engine/PRD-613-native-render-thread.md) (owner, 2026-10-14: separate PRD). Cull, project and encode run on a render thread, and the player main thread's CPU per frame falls by at least 1.0 ms on the lockstep window. proof: a ctest on render-thread ordering (frame N encodes only frame N's snapshot; a mutation goes red), a fixed-step capture pair whose A-against-B difference is no larger than A against A, three alternating pairs per pose, visual judge NEUTRAL or better
 - [ ] AC-17 [local]: animation costs the player main thread at most 0.4 ms per frame on the lockstep window (about 1.05 ms today), and an animated value the game reads is current for its frame. proof: a ctest on read-before-join (red when a game-read track evaluates in a job), the mixer meter on three alternating pairs, visual judge NEUTRAL or better at all three poses
 - [ ] AC-18 [local]: the HUD bridge, positional audio and the player shim cost the player main thread at most 0.2 ms per frame on the lockstep window (about 0.45 ms today). proof: V8 profile owner rows before and after on the same window, an instruction A/B per moved piece, and a spec or conformance case per native fast path
 - [ ] AC-5 [local]: the HUD snapshot round trip is under 16.7 ms p95 in flight. proof: `TN_UI_SNAPSHOT lastRoundTripMs` from `flight.sh desktop` — Evidence so far: p95 168 ms at filing, 26 ms on package T. The WPE backend and a state snapshot were rejected (see Context). Open lead from the 2026-10-13 trace: reading the offscreen window's own surface cost 0.6 ms, against 30 to 49 ms for a full-page snapshot.
