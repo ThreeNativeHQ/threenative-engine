@@ -99,9 +99,9 @@ test.each(["native", "legacy"])("CPU window failure releases only the %s engine 
       calls.push({ method, argument });
       if (method === "_holdAutomaticRender") held = argument === true;
       const result = method === "describe"
-        ? { capabilities: ["runtime.fixedStep", "runtime.diagnostics"], limits: { maxEntitiesPerSample: 100, maxEventsPerDrain: 1000, maxPayloadBytes: 1000000, operationTimeoutMs: 5000 }, name: "fixture", protocolVersion: 1, ...(engine === "native" ? { profile: { engine: "native" } } : {}) }
+        ? { capabilities: ["runtime.fixedStep", "runtime.diagnostics", "runtime.network"], limits: { maxEntitiesPerSample: 100, maxEventsPerDrain: 1000, maxPayloadBytes: 1000000, operationTimeoutMs: 5000 }, name: "fixture", protocolVersion: 1, ...(engine === "native" ? { profile: { engine: "native" } } : {}) }
         : method === "ready" ? { ready: true }
-        : method === "sample" ? { clock: { mode: "fixed-step", tick: 0 }, diagnostics: [], entities: [], resources: {} }
+        : method === "sample" ? { clock: { mode: "fixed-step", tick: 0 }, diagnostics: [], entities: [], network: { entries: [], requests: 0 }, resources: {} }
         : null;
       return result as T;
     },

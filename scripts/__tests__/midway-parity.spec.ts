@@ -5,6 +5,7 @@ import path from "node:path";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { MEAN_FLOOR, TILE_FLOOR, compareRuns } from "../midway-bench/parity.js";
 
 // The cockpit and takeoff frames of real Midway runs at 320x180: legacy (three.js) twice, the native
@@ -51,7 +52,7 @@ describe("Midway frame parity", () => {
       return PNG.sync.write(image);
     };
     const make = (name: string, bytes: Buffer) => {
-      const dir = path.join(mkdtempSync(path.join(tmpdir(), "midway-parity-")), name);
+      const dir = path.join(makeTempDirSync("midway-parity-"), name);
       return { dir, write: () => writeFileSync(path.join(dir, "frame.png"), bytes) };
     };
     const stripes = (x: number, y: number) => (((x >> 2) + (y >> 2)) % 2 === 0 ? 40 : 220);

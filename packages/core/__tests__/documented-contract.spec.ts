@@ -53,7 +53,11 @@ describe("documented runtime contracts", () => {
     await game.start();
     try {
       const resources = (await bridge().sample({})).resources;
-      expect(Object.keys(resources ?? {}).sort()).toEqual([...DOCUMENTED_RESOURCE_IDS].sort());
+      // `__threenative*` ids are the host's own counters (frame counts), not part of the documented contract.
+      const documented = Object.keys(resources ?? {}).filter(
+        (id) => !id.startsWith("__threenative"),
+      );
+      expect(documented.sort()).toEqual([...DOCUMENTED_RESOURCE_IDS].sort());
       expect(resources?.state).toEqual(resources?.GameState);
     } finally {
       game.stop();

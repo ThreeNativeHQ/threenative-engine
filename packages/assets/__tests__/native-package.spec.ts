@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
@@ -463,6 +463,9 @@ describe("assets.nativePackage", () => {
     await writeFile(path.join(root, "assets", "data.bin"), Buffer.from([1, 2, 3]));
     await mkdir(path.join(root, "public"), { recursive: true });
     await writeFile(path.join(root, "public", "icon.png"), rgbaPng({ height: 2, width: 2 }));
+    // A hand-authored file is older than the bake; a file written in the same millisecond counts as touched by it.
+    const authored = new Date(Date.now() - 60_000);
+    await utimes(path.join(root, "public", "icon.png"), authored, authored);
 
     await compileAssets({
       config: { models: "none", nativePackage: true, textures: "none" },

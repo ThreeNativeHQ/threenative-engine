@@ -130,9 +130,10 @@ import type { Browser, Page } from "playwright";
 import type { IPlaytestBridgeClient } from "../src/runner/bridgeClient.js";
 import { browserCpuProcess, measureCpuWindow } from "../src/runner/linuxCpuWindow.js";
 import { runStep } from "../src/runner/steps.js";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "tn-cpu-fixture-"));
+  const root = await makeTempDir("tn-cpu-fixture-");
   const procRoot = join(root, "proc");
   const sysRoot = join(root, "sys");
   for (const pid of [101, 102])

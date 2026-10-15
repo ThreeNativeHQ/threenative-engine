@@ -148,6 +148,42 @@ const allowedProductionCreators = new Map<string, string>([
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],
   [
+    "packages/runtime-native/tests/native-engine/player-canvas-decal.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-canvas2d.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-compile-reentry.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-frame-per-present.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-real-input.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-thread-placement.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-ui-overlay.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-window-title.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/playtest/src/runner/linuxCpuWindow.ts",
+    "The CPU window collector removes its fixture directory in a finally block, and a killed run leaves only its own tagged directory.",
+  ],
+  [
     "packages/runtime-native/tests/native-engine/player-crossing-budget.mjs",
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],

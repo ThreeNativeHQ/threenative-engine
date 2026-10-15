@@ -7,6 +7,7 @@ import type { Page } from "playwright";
 
 import { assertCpuProfileTargetSupported, startBrowserCpuProfile } from "../src/runner/cpuProfile.js";
 import { parseStandalonePlaytestArgs } from "../src/runner/config.js";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 test("--cpu-prof resolves its output path against the project root", () => {
   const config = parseStandalonePlaytestArgs([
@@ -32,7 +33,7 @@ test("--cpu-prof is offered on the browser and desktop targets only", () => {
 });
 
 test("the browser profile carries ordered CLOCK_MONOTONIC bounds on Linux only", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "tn-cpu-profile-"));
+  const dir = await makeTempDir("tn-cpu-profile-");
   const page = {
     context: () => ({
       newCDPSession: async () => ({

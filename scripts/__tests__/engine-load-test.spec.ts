@@ -4187,7 +4187,7 @@ describe("the same-run pair guard", () => {
   it("persists PNG and native RGBA transports beside JSON without retaining transport pixels", async () => {
     const { saveFrames } = await import("../engine-load-test/visual.js");
     const { PNG } = await import("pngjs");
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bench-frames-"));
+    const directory = makeTempDirSync("bench-frames-");
     try {
       const raw = fs.readFileSync(framePath);
       const decoded = PNG.sync.read(raw);
@@ -4224,7 +4224,7 @@ describe("the same-run pair guard", () => {
   it("rejects report frames larger than 160x90 and preserves fixture verdicts after downscaling", async () => {
     const { saveFrames, visualParity } = await import("../engine-load-test/visual.js");
     const { PNG } = await import("pngjs");
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bench-small-frames-"));
+    const directory = makeTempDirSync("bench-small-frames-");
     try {
       const oversized = new PNG({ width: 161, height: 90 });
       const run = arm("tn-desktop", {

@@ -749,10 +749,12 @@ async function runStandalonePlaytestInternal(
           if (setupSnapshot.clock.mode !== "fixed-step") throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: pose setup requires fixed-step clock");
           completionWindow = await measureCompletionWindow(completionLabel,
             (mode) => activePage.evaluate((value) => {
+              // quality-allow: the page-side bridge is read through a structural type, as the bridge client does in the page.
               const bridge = (globalThis as unknown as { __THREENATIVE_PLAYTEST_BRIDGE__: { _setClockMode(mode: string): unknown } }).__THREENATIVE_PLAYTEST_BRIDGE__;
               return bridge._setClockMode(value);
             }, mode),
             () => activePage.evaluate(async () => {
+              // quality-allow: the page-side bridge is read through a structural type, as the bridge client does in the page.
               const bridge = (globalThis as unknown as { __THREENATIVE_PLAYTEST_BRIDGE__: {
                 _clockEpoch: number; sample(request: unknown): Promise<{ clock: unknown; runtimeDiagnosticsSeries: unknown }>;
               } }).__THREENATIVE_PLAYTEST_BRIDGE__;

@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   type IProfileOwnerOptions,
   profileClockCalibration,
@@ -20,7 +21,7 @@ import {
   profileOwners,
 } from "../midway-bench/profile-owners.js";
 
-const root = mkdtempSync(join(tmpdir(), "tn-profile-owners-"));
+const root = makeTempDirSync("tn-profile-owners-");
 const repo = join(root, "repo");
 const game = join(root, "game");
 mkdirSync(repo);
@@ -330,7 +331,7 @@ describe("profile flight integration", () => {
     expect(() => profileClockCalibration(raw)).toThrow(/clockBounds|calibration/);
   });
   it.each([false, true])("writes map-hashed diagnostic-only ownership on desktop=%s", (desktop) => {
-    const dir = mkdtempSync(join(root, "flight-"));
+    const dir = makeTempDirSync("tn-profile-flight-");
     const source = join(dir, "game");
     const artifact = join(source, "dist");
     mkdirSync(source);
@@ -404,10 +405,20 @@ describe("profile flight integration", () => {
       runtime: desktop ? "native" : "web",
       acquisition: { requestUrls: [url], cpuWindows: windows },
       observations: {
+        // The host brackets each window in its own ticks (TN_PLAYER_RENDER_HOLD), and the reconciler
+        // matches 1000 consecutive frames inside every bracket.
         console: desktop
-          ? Array.from({ length: 3000 }, (_, i) => ({
-              text: `TN_PLAYER_FRAME:${JSON.stringify({ tick: i + 1, updates: 1 })}`,
-            }))
+          ? [0, 1, 2].flatMap((window) => [
+              {
+                text: `TN_PLAYER_RENDER_HOLD:${JSON.stringify({ held: true, tick: window * 1000 })}`,
+              },
+              ...Array.from({ length: 1000 }, (_, i) => ({
+                text: `TN_PLAYER_FRAME:${JSON.stringify({ tick: window * 1000 + i + 1, updates: 1 })}`,
+              })),
+              {
+                text: `TN_PLAYER_RENDER_HOLD:${JSON.stringify({ held: false, tick: (window + 1) * 1000 })}`,
+              },
+            ])
           : [],
       },
     };

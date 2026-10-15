@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { cyclesOf, runCycleCli } from "../midway-bench/cycle.js";
 import { midwayOf } from "../midway-bench/kpis.js";
 
@@ -69,7 +70,7 @@ describe("cyclesOf", () => {
 });
 
 describe("cycle CLI", () => {
-  const dir = () => mkdtemp(path.join(os.tmpdir(), "cycles-"));
+  const dir = () => makeTempDir("cycles-");
   const at = (min: number) => new Date(T0 + min * 60000);
   it("appends start and end lines and records the engine commit", async () => {
     const d = await dir();

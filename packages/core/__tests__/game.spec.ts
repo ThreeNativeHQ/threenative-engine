@@ -1225,9 +1225,20 @@ describe("IGame", () => {
       expect(renderHooks).toBe(3);
       const series = diagnostics?.() ?? [];
       // The frame budget ships on by default, so every sample carries its phase split; the
-      // render-metric fields below are what this test is about.
+      // render-metric fields below are what this test is about. `sequence` and `completedAtMs` are the
+      // presentation completion every sample now carries (PRD-610 AC-19).
       expect(series.every((sample) => sample.phases !== undefined)).toBe(true);
-      expect(series.map(({ passes: _passes, phases: _phases, ...sample }) => sample)).toEqual([
+      expect(
+        series.map(
+          ({
+            completedAtMs: _completedAtMs,
+            passes: _passes,
+            phases: _phases,
+            sequence: _sequence,
+            ...sample
+          }) => sample,
+        ),
+      ).toEqual([
         { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 3, frameMs: 16, triangles: 30 },

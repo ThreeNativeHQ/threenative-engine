@@ -1,11 +1,12 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   CPU_POSES,
   type IMidwayRun,
@@ -434,7 +435,7 @@ describe("groups and loading", () => {
   });
 
   it("retains timing-excluded runs without using them in HUD scores", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "midway-runs-"));
+    const root = await makeTempDir("midway-runs-");
     dirs.push(root);
     for (const [name, pkg, ms] of [
       ["solo-desktop", "pkg-solo", 68],
@@ -637,7 +638,7 @@ describe("groups and loading", () => {
   });
 
   it("loads <tag>-<arm> dirs oldest first and ignores everything else", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "midway-runs-"));
+    const root = await makeTempDir("midway-runs-");
     dirs.push(root);
     for (const name of ["a1-desktop", "empty-desktop", "notes", "prof-desktop"])
       await mkdir(path.join(root, name));
@@ -1473,7 +1474,7 @@ describe("measurement defect regressions", () => {
   ])(
     "runs production acquisition case %j through the actual flight script",
     async (browserClock) => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "midway-flight-"));
+      const root = await makeTempDir("midway-flight-");
       try {
         const player = path.join(root, "desktop");
         await mkdir(player);
@@ -1716,7 +1717,7 @@ describe("measurement defect regressions", () => {
     "scripts/__tests__/source.spec.ts",
     "packages/runtime-native/src/engine/source.cpp",
   ])("scopes both provenance guards to production inputs: %s", async (file) => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "midway-source-scope-"));
+    const root = await makeTempDir("midway-source-scope-");
     try {
       await mkdir(path.dirname(path.join(root, file)), { recursive: true });
       await writeFile(path.join(root, "package.json"), '{"name":"threenative"}');
@@ -1785,7 +1786,7 @@ describe("measurement defect regressions", () => {
   it.each(["dirty", "build-failure"])(
     "refuses a source/build provenance gap: %s",
     async (state) => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "midway-dirty-source-"));
+      const root = await makeTempDir("midway-dirty-source-");
       try {
         await mkdir(path.join(root, "scripts/midway-bench"), { recursive: true });
         await mkdir(path.join(root, "packages"));
@@ -1844,7 +1845,7 @@ describe("measurement defect regressions", () => {
   );
 
   it("packs patched Three with strict exports using incremental native builds", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "midway-pack-"));
+    const root = await makeTempDir("midway-pack-");
     try {
       const native = path.join(root, "packages/runtime-native");
       const three = path.join(root, "packages/core/node_modules/three");
@@ -1982,7 +1983,7 @@ if (args.includes('tn-native-engine-player-v8')) fs.writeFileSync(path.join(args
   it.each(["missing", "stale", "valid"])(
     "requires genuine cached package provenance for --no-pack: %s",
     async (state) => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "midway-install-"));
+      const root = await makeTempDir("midway-install-");
       try {
         const packs = path.join(root, "packs");
         const bin = path.join(root, "bin");
@@ -2051,7 +2052,7 @@ if (args.includes('tn-native-engine-player-v8')) fs.writeFileSync(path.join(args
   it.each(["valid", "stale-player", "wrong-commit", "unbuilt"])(
     "checks desktop build provenance: %s",
     async (state) => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "midway-package-"));
+      const root = await makeTempDir("midway-package-");
       try {
         const script = path.resolve("packages/runtime-native/scripts/package-engine-desktop.mjs");
         const { packageEngineDesktop } = await import(script);
