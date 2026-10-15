@@ -2,6 +2,42 @@ import { describe, expect, it, vi } from "vitest";
 import { StartupReadiness } from "../src/startup-readiness.js";
 
 describe("StartupReadiness", () => {
+  it.each(["world", "hold"])(
+    "rejects when required %s settlement never arrives",
+    async (missing) => {
+      vi.useFakeTimers();
+      try {
+        let resident = true;
+        const readiness = new StartupReadiness({
+          stableFrames: 1,
+          stableWindowMs: 100,
+          settled: () => missing !== "world",
+        });
+        readiness.hold("view", () => resident);
+        const failed = vi.fn();
+        void readiness.whenReady().catch(failed);
+        readiness.start();
+        readiness.observe(1);
+        resident = missing !== "hold";
+        readiness.observe(1);
+        await vi.advanceTimersByTimeAsync(99);
+        expect(failed).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(failed).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.stringContaining("TN_STARTUP_SETTLEMENT_TIMEOUT"),
+          }),
+        );
+        resident = true;
+        readiness.observe(1);
+        readiness.observe(1);
+        expect(readiness.ready).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("requires two quiet rendered polls after warm-up and resets for late work", async () => {
     let shadowSettled = false;
     let resident = true;

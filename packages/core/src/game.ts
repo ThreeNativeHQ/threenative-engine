@@ -21,7 +21,7 @@ import {
   rendererBackendIdentity,
 } from "./geometry-capture.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
-import { watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
+import { reportLaunchFailure, watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
 import {
   FixedStepLoop,
   type IAfterPhysicsPhase,
@@ -1128,9 +1128,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     let worldRendered = false;
     let loadingFramePresented = false;
     let markProjectionSettled: () => void = () => undefined;
-    const projectionReady = new Promise<void>((resolve) => {
+    let rejectProjection: (error: unknown) => void = () => undefined;
+    const projectionReady = new Promise<void>((resolve, reject) => {
       markProjectionSettled = resolve;
+      rejectProjection = reject;
     });
+    // Readiness is optional to await; retain its rejection for callers without an unhandled one.
+    void projectionReady.catch(() => undefined);
     const startupShadows = new Set<VirtualShadowNode>();
     const startupReadiness = new StartupReadiness({
       settled: () => worldRendered && [...startupShadows].every((node) => node.settled),
@@ -1199,27 +1203,34 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       timeline.compileSettledMs ??= now();
       timeline.frameworkReadyMs ??= now();
     });
-    void startupReadiness.whenReady().then(() => {
-      stopStallWatch();
-      // A renderer without first-use compilation settles without running the compile closure
-      // below, so the settle stamp is guaranteed here at the latest.
-      timeline.compileSettledMs ??= now();
-      timeline.frameworkReadyMs ??= now();
-      timeline.readyMs ??= now();
-      projectionSettled = true;
-      for (const node of startupShadows) node.startupCovered = false;
-      startupShadows.clear();
-      markProjectionSettled();
-      // A host capturing a frame has no other way to know the world is on screen. Counting frames
-      // cannot express it: on a software rasteriser the gate resolves on its bounded window rather
-      // than on five in-budget frames, so a fast 300-frame run finishes before the world is shown
-      // and captures the loading state. The native screenshot path waits on this flag.
-      (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
-      // Again at ready: a world that streams its foliage in under `startup.hold` has none at entry.
-      const unlit = unlitFoliageWarning(threeScene);
-      if (unlit !== undefined)
-        console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
-    });
+    void startupReadiness.whenReady().then(
+      () => {
+        stopStallWatch();
+        // A renderer without first-use compilation settles without running the compile closure
+        // below, so the settle stamp is guaranteed here at the latest.
+        timeline.compileSettledMs ??= now();
+        timeline.frameworkReadyMs ??= now();
+        timeline.readyMs ??= now();
+        projectionSettled = true;
+        for (const node of startupShadows) node.startupCovered = false;
+        startupShadows.clear();
+        markProjectionSettled();
+        // A host capturing a frame has no other way to know the world is on screen. Counting frames
+        // cannot express it: on a software rasteriser the gate resolves on its bounded window rather
+        // than on five in-budget frames, so a fast 300-frame run finishes before the world is shown
+        // and captures the loading state. The native screenshot path waits on this flag.
+        (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
+        // Again at ready: a world that streams its foliage in under `startup.hold` has none at entry.
+        const unlit = unlitFoliageWarning(threeScene);
+        if (unlit !== undefined)
+          console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
+      },
+      (error: unknown) => {
+        stopStallWatch();
+        rejectProjection(error);
+        reportLaunchFailure({ kind: "stalled", message: String(error) });
+      },
+    );
     const warmUp = async (marker: string, budgetMs: number, stamp: boolean): Promise<void> => {
       if (this.#aborted || this.#renderer === undefined) return;
       let report: IWarmUpReport | undefined;

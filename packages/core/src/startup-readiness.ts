@@ -1,7 +1,10 @@
 export type StartupCompile = () => Promise<void> | void;
 
 export interface IStartupReadinessOptions {
-  /** Final render-owned work (such as shadow maps), checked after warm-up for two quiet frames. */
+  /**
+   * Final render-owned work (such as shadow maps), checked after warm-up for two quiet frames.
+   * Missing settlement rejects whenReady() after stableWindowMs; readiness stays false.
+   */
   readonly settled?: () => boolean;
   /** Maximum wall-clock time spent waiting for first-use compilation. */
   readonly compileBudgetMs?: number;
@@ -96,6 +99,7 @@ export class StartupReadiness {
   #stableFrameCount = 0;
   #started = false;
   #ready = false;
+  #failed = false;
   readonly #settled: (() => boolean) | undefined;
   #quietFrames = 0;
   #finishing = false;
@@ -107,6 +111,7 @@ export class StartupReadiness {
   #compileTimer: ReturnType<typeof setTimeout> | undefined;
   #windowTimer: ReturnType<typeof setTimeout> | undefined;
   #resolveReady: () => void = () => undefined;
+  #rejectReady: (error: Error) => void = () => undefined;
   #resolveFrameworkReady: () => void = () => undefined;
   readonly #readyPromise: Promise<void>;
   readonly #frameworkReadyPromise: Promise<void>;
@@ -134,8 +139,9 @@ export class StartupReadiness {
     );
     this.#afterHolds = options.afterHolds;
     this.#settled = options.settled;
-    this.#readyPromise = new Promise<void>((resolve) => {
+    this.#readyPromise = new Promise<void>((resolve, reject) => {
       this.#resolveReady = resolve;
+      this.#rejectReady = reject;
     });
     this.#frameworkReadyPromise = new Promise<void>((resolve) => {
       this.#resolveFrameworkReady = resolve;
@@ -314,6 +320,7 @@ export class StartupReadiness {
 
   /** Feed actual callback wall time, not requestAnimationFrame timestamp spacing. */
   observe(frameMs: number): void {
+    if (this.#failed) return;
     if (!this.#ready) this.#pollHolds();
     if (!this.#started || this.#ready) return;
     if (this.#afterHoldsDone && this.#settled !== undefined) {
@@ -324,6 +331,8 @@ export class StartupReadiness {
         );
       this.#quietFrames = quiet ? this.#quietFrames + 1 : 0;
       if (this.#quietFrames >= 2) {
+        if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
+        this.#windowTimer = undefined;
         this.#ready = true;
         this.#resolveReady();
       }
@@ -375,6 +384,18 @@ export class StartupReadiness {
     const finish = (): void => {
       this.#afterHoldsDone = true;
       if (this.#settled === undefined) this.#resolveReady();
+      else {
+        // Required world/shadow work must fail closed within the existing frame-window budget.
+        this.#windowTimer = setTimeout(() => {
+          this.#windowTimer = undefined;
+          this.#failed = true;
+          this.#rejectReady(
+            new Error(
+              `TN_STARTUP_SETTLEMENT_TIMEOUT: required world/shadow settlement did not complete within ${this.#stableWindowMs}ms.`,
+            ),
+          );
+        }, this.#stableWindowMs);
+      }
     };
     const afterHolds = this.#afterHolds;
     if (afterHolds === undefined || this.#holds.size === 0) {
