@@ -315,6 +315,25 @@ export function terminalReport(log: string) {
   }
 }
 
+/** The first error of a failed terminal report, for display only: a failed run never gains a measurement from it. */
+export function failureOf(log: string): string | undefined {
+  const start = [...log.matchAll(/^\{/gm)].at(-1)?.index;
+  if (start === undefined || objectEnd(log, start) !== log.trimEnd().length) return undefined;
+  try {
+    const report = JSON.parse(log.slice(start));
+    if (report.pass !== false) return undefined;
+    const first = (Array.isArray(report.diagnostics) ? report.diagnostics : []).find(
+      (d: { severity?: unknown; message?: unknown } | null) =>
+        d?.severity === "error" && typeof d.message === "string",
+    );
+    return typeof first?.message === "string"
+      ? first.message.replace(/\s+/g, " ").trim().slice(0, 240)
+      : "failed without an error diagnostic";
+  } catch {
+    return undefined;
+  }
+}
+
 /** Reconcile native completed renders against labelled ticks; never guess missing boundaries. */
 export function nativeWindowCompletion(log: string): "unavailable" | "reconciled" | "invalid" {
   const report = terminalReport(log);
@@ -436,6 +455,8 @@ export interface IMidwayRun {
   pkg?: string;
   /** `no samples` when the log held none; `ok` otherwise. */
   status: "ok" | "no samples";
+  /** The run's own terminal error when it failed; display only, never a measurement. */
+  failure?: string;
   desktop?: IDesktopFrames;
   budget?: IBudget;
   /** Runner clock acquisition for this run: `wall-clock` or `fixed-step`, from the run report. */
@@ -483,6 +504,7 @@ export function runOf(
     report?.runtime === (arm === "desktop" ? "native" : "web") ? matchedCpuWindows(log) : undefined;
   const pkg = /\/((?:pkg|player)-[\w.-]+)\/tn-native-engine-player-v8/.exec(log)?.[1];
   const desktop = "frames" in player ? player.frames : undefined;
+  const failure = failureOf(log);
   const run: IMidwayRun = {
     dir,
     evidenceSha256: createHash("sha256")
@@ -494,6 +516,7 @@ export function runOf(
     mtimeMs,
     status: desktop || budget.budget || cpuWindows ? "ok" : "no samples",
     skipped: player.skipped + budget.skipped + ui.skipped,
+    ...(failure ? { failure } : {}),
     ...(desktop ? { desktop } : {}),
     ...(budget.budget ? { budget: budget.budget } : {}),
     ...(clock ? { clock } : {}),

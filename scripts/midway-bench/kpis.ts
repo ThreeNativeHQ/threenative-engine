@@ -81,6 +81,9 @@ export function matchedOf(runs: readonly IMidwayRun[], arm: Arm = "desktop") {
   const alternating =
     pairedSequence.length === pairs.length * 2 &&
     new Set(pairedSequence.map((r) => r.dir)).size === pairedSequence.length;
+  const independent = [...runs]
+    .filter((r) => !r.profiled && !r.timingExclusion && !r.rejection && !r.skipped)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
   return POSES.map((pose) => {
     const readings = pairs
       .map(([a, b]) => {
@@ -104,6 +107,40 @@ export function matchedOf(runs: readonly IMidwayRun[], arm: Arm = "desktop") {
       .filter((r) => r !== undefined);
     const parity = pairs.length > 0 && pairs.every(([, r]) => !parityNote([r]));
     const qualified = readings.length >= 3 && alternating && parity;
+    const observed = (r: IMidwayRun) =>
+      r.engineCommit && r.clock === "fixed-step" && !r.failure
+        ? r.cpuWindows?.find((w) => w.label === CPU_POSES[pose])
+        : undefined;
+    const reading = (r: IMidwayRun | undefined) => {
+      const w = r && observed(r);
+      return r && w
+        ? {
+            run: r.dir,
+            commit: r.engineCommit,
+            cpuMs: w.mainThread.cpuMs / 1000,
+            instructions: w.mainThread.instructions / 1000,
+            treeCpuMs: w.processTree.cpuMs / 1000,
+          }
+        : undefined;
+    };
+    const provisionalLegacy = !readings.length
+      ? independent.find((r) => r.arm === "legacy" && observed(r))
+      : undefined;
+    const provisionalNative = provisionalLegacy
+      ? independent.find((r) => r.arm === arm && (r.failure || observed(r)))
+      : undefined;
+    const unpaired = provisionalLegacy
+      ? {
+          legacy: reading(provisionalLegacy),
+          native: reading(provisionalNative),
+          nativeState: provisionalNative?.failure
+            ? "failed"
+            : provisionalNative
+              ? "measured"
+              : "missing",
+          note: `PROVISIONAL: independent readings; legacy ${provisionalLegacy.dir} (${provisionalLegacy.engineCommit}); ${provisionalNative ? `${arm} ${provisionalNative.dir}${provisionalNative.failure ? `: ${provisionalNative.failure}` : " measured"} (${provisionalNative.engineCommit ?? "unknown commit"})` : `${arm} missing`}; no paired ratio.`,
+        }
+      : undefined;
     return {
       pose,
       arm,
@@ -118,8 +155,9 @@ export function matchedOf(runs: readonly IMidwayRun[], arm: Arm = "desktop") {
       nativeInstructions: median(readings.map((r) => r.nativeInstructions)),
       legacyTreeCpuMs: median(readings.map((r) => r.legacyTreeCpuMs)),
       nativeTreeCpuMs: median(readings.map((r) => r.nativeTreeCpuMs)),
+      unpaired,
       detail: !readings.length
-        ? "pending/unavailable: need matched fixed-step OS windows and matching engine commits"
+        ? `pending/unavailable: need matched fixed-step OS windows and matching engine commits${unpaired ? `. ${unpaired.note}` : ""}`
         : `${readings.length} paired windows; ${parity ? "parity PASS" : "native parity missing/FAIL"}; ${qualified ? "three-pair collection gate met; root execution review still required" : "pending qualification: need three alternating pairs per pose"}. Native host completion ${pairs.every(([, r]) => r.nativeCompletion === "reconciled") ? "reconciled" : "unavailable"}; attribution/profiles pending.`,
     };
   });
@@ -263,6 +301,7 @@ export function kpisOf(
   };
   const ratioKpi = (id: string, title: string, arm: Arm) => {
     const poses = matchedOf(currentRuns, arm);
+    const provisional = matchedOf(runs, arm);
     const complete = poses.every((p) => p.qualified && p.ratio !== undefined);
     const current = poses.every((p) => p.ratio !== undefined)
       ? Math.min(...poses.map((p) => p.ratio as number))
@@ -280,7 +319,7 @@ export function kpisOf(
           ? ("pending" as const)
           : ("fail" as const),
       ...(current === undefined ? {} : { current }),
-      detail: `AC15 measures matched CPU; AC19 free-run/display/visual proof pending. ${poses.map((p) => `${p.pose}: ${p.ratio === undefined ? "unavailable" : `${p.ratio.toFixed(3)}x`} · ${p.detail}`).join("; ")}`,
+      detail: `AC15 measures matched CPU; AC19 free-run/display/visual proof pending. ${poses.map((p, i) => `${p.pose}: ${p.ratio === undefined ? "unavailable" : `${p.ratio.toFixed(3)}x`} · ${!p.pairs && provisional[i]?.unpaired ? provisional[i].detail : p.detail}`).join("; ")}`,
     };
   };
   return [

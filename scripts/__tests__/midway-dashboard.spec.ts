@@ -102,7 +102,7 @@ const cpuReport = (cpuMs: number, runtime = "web") => ({
     })),
   },
 });
-const cpuRecords = (windows: ReturnType<typeof cpuReport>["acquisition"]["cpuWindows"]) =>
+const cpuRecords = (windows: readonly { startTick: number }[]) =>
   windows.flatMap((w) =>
     Array.from(
       { length: 1000 },
@@ -2231,6 +2231,133 @@ describe("AC15 matched OS CPU", () => {
     expect(state.matchedCpu.every((p) => p.ratio === undefined)).toBe(true);
     expect(state.kpis.find((k) => k.id === "AC-19")?.current).toBeUndefined();
     expect(state.gap.desktop).toBeUndefined();
+  });
+  describe("unpaired provisional readings", () => {
+    const commit = "c".repeat(40);
+    const failure =
+      "TN_PLAYTEST_CPU_WINDOW_FAILED: expected 1000 updates/renders, observed 1000/1002";
+    const failedNative = () =>
+      `arm=desktop buildMode=desktop-bundle engineCommit=${commit}\n${JSON.stringify(
+        {
+          diagnostics: [{ code: "TN_PLAYTEST_RUNNER_FAILED", message: failure, severity: "error" }],
+          pass: false,
+        },
+        null,
+        2,
+      )}\n`;
+    const page = async (state: unknown, call: string) => {
+      const html = await readFile(
+        new URL("../midway-bench/dashboard.html", import.meta.url),
+        "utf8",
+      );
+      const script = (html.split("<script>")[1] as string)
+        .split("</script>")[0]
+        ?.replace("tick(); setInterval(tick, 5000);", "");
+      const els: Record<string, { innerHTML: string }> = {};
+      const out = runInNewContext(`${script}\n${call}`, {
+        data: JSON.parse(JSON.stringify(state)),
+        document: {
+          getElementById: (id: string) => {
+            els[id] ??= { innerHTML: "" };
+            return els[id];
+          },
+        },
+      });
+      return { els, out };
+    };
+    it("shows the independent legacy window as provisional and keeps the failed native run unqualified", () => {
+      const legacy = run("prov-a1-legacy", cpuLog(120, "legacy", commit));
+      const failed = run("prov-b1-desktop", failedNative());
+      expect(failed).toMatchObject({ status: "no samples", failure });
+      const rows = matchedOf([legacy, failed]);
+      expect(rows.map((p) => [p.pose, p.pairs, p.qualified, p.ratio])).toEqual([
+        ["takeoff", 0, false, undefined],
+        ["cockpit", 0, false, undefined],
+        ["reargun", 0, false, undefined],
+      ]);
+      expect(rows.map((p) => p.unpaired?.legacy)).toEqual(
+        [0.12, 0.24, 0.36].map((cpuMs, i) => ({
+          run: "prov-a1-legacy",
+          commit,
+          cpuMs,
+          instructions: 100 * (i + 1),
+          treeCpuMs: cpuMs * 2,
+        })),
+      );
+      expect(rows.every((p) => p.unpaired?.native === undefined)).toBe(true);
+      expect(rows.every((p) => p.unpaired?.nativeState === "failed")).toBe(true);
+      expect(rows[0]?.unpaired?.note).toContain(`prov-b1-desktop: ${failure}`);
+      const state = midwayOf([legacy, failed]);
+      const ac19 = state.kpis.find((k) => k.id === "AC-19");
+      expect(ac19?.verdict).toBe("pending");
+      expect(ac19?.current).toBeUndefined();
+      expect(ac19?.detail).toMatch(/PROVISIONAL.*prov-a1-legacy.*observed 1000\/1002/s);
+      expect(state.gap.desktop).toBeUndefined();
+      expect(state.gap.legacyMs).toBeUndefined();
+    });
+    it("leaves profiled, excluded, rejected and wall-clock legacy runs out", () => {
+      const failed = run("prov-b1-desktop", failedNative());
+      const profiled = run("perf-prov-legacy", cpuLog(120, "legacy", commit));
+      expect(profiled.profiled).toBe(true);
+      const excluded = run("prov-x1-legacy", cpuLog(120, "legacy", commit));
+      excluded.timingExclusion = "shared host";
+      const rejected = run("prov-y1-legacy", cpuLog(120, "legacy", commit));
+      rejected.rejection = "failed keep rule";
+      const wall = run("prov-w1-legacy", budget(15.1) + report("wall-clock"));
+      for (const legacy of [profiled, excluded, rejected, wall])
+        expect(matchedOf([legacy, failed]).map((p) => p.unpaired)).toEqual([
+          undefined,
+          undefined,
+          undefined,
+        ]);
+    });
+    it("never pairs readings from different engine commits", () => {
+      const legacy = run("prov-a2-legacy", cpuLog(120, "legacy", commit));
+      const native = run(
+        "prov-b2-desktop",
+        cpuLog(80, "desktop", "d".repeat(40)),
+        parityText(true),
+      );
+      const rows = matchedOf([legacy, native]);
+      expect(rows.every((p) => p.pairs === 0 && !p.qualified && p.ratio === undefined)).toBe(true);
+      expect(rows[1]?.unpaired).toMatchObject({
+        legacy: { run: "prov-a2-legacy", commit, cpuMs: 0.24 },
+        native: { run: "prov-b2-desktop", commit: "d".repeat(40), cpuMs: 0.16 },
+        nativeState: "measured",
+      });
+    });
+    it("shows the latest native failure instead of a stale independent reading", () => {
+      const legacy = run("prov-a2-legacy", cpuLog(120, "legacy", commit));
+      const native = run("prov-b2-desktop", cpuLog(80, "desktop", "d".repeat(40)));
+      const failed = run("prov-b3-desktop", failedNative());
+      legacy.mtimeMs = 1;
+      native.mtimeMs = 2;
+      failed.mtimeMs = 3;
+      const rows = matchedOf([failed, legacy, native]);
+      expect(rows.every((p) => p.unpaired?.nativeState === "failed")).toBe(true);
+      expect(rows.every((p) => p.unpaired?.native === undefined)).toBe(true);
+      expect(rows[0]?.unpaired?.note).toContain(`prov-b3-desktop: ${failure}`);
+    });
+    it("renders provisional legacy values, the native failure and a pending ratio", async () => {
+      const state = midwayOf([
+        run("prov-a1-legacy", cpuLog(120, "legacy", commit)),
+        run("prov-b1-desktop", failedNative()),
+      ]);
+      const { els } = await page(state, "renderGap(data);");
+      expect(els.gap?.innerHTML).toMatch(/^<div class="scroll"><table>.*<\/table><\/div><p /);
+      expect(els.gap?.innerHTML).toContain("PROVISIONAL");
+      expect(els.gap?.innerHTML).toContain("prov-a1-legacy");
+      expect(els.gap?.innerHTML).toContain(failure);
+      expect(els.gap?.innerHTML).toMatch(/0\.12 \/ failed/);
+      expect(els.gap?.innerHTML).not.toMatch(/0\.12[^<]*no samples/);
+      expect(els.gap?.innerHTML).not.toMatch(/\d(?:\.\d+)?x</);
+      const { out: card } = await page(state, 'kpi(data.kpis.find((k) => k.id === "AC-19"))');
+      expect(card).toContain("PROVISIONAL");
+      expect(card).toContain('class="kpi pending"');
+      const { els: overview } = await page(state, "side(data);");
+      expect(overview.side?.innerHTML).toContain("provisional");
+      expect(overview.side?.innerHTML).toContain("failed");
+    });
   });
   it("keeps the wide matched CPU table in its own scroll container and shrinkable grid tracks", async () => {
     const html = await readFile(new URL("../midway-bench/dashboard.html", import.meta.url), "utf8");
