@@ -282,33 +282,21 @@ export function defineBrowserClasses(
 ): IBrowserEngine {
   // Every call into the engine counts, one increment each: the bench's crossing budget reads it per frame.
   let crossings = 0;
-  const { construct, get, set, invoke, engineReferences } = source;
+  const counted =
+    <A extends unknown[], R>(call: (...args: A) => R) =>
+    (...args: A): R => {
+      crossings++;
+      return call(...args);
+    };
   const runtime: IBrowserRuntime = {
     ...source,
-    construct(className, args) {
-      crossings++;
-      return construct(className, args);
-    },
-    get(self, path) {
-      crossings++;
-      return get(self, path);
-    },
-    set(self, path, value) {
-      crossings++;
-      return set(self, path, value);
-    },
-    invoke(self, method, args) {
-      crossings++;
-      return invoke(self, method, args);
-    },
-    ...(engineReferences === undefined
+    construct: counted(source.construct),
+    get: counted(source.get),
+    set: counted(source.set),
+    invoke: counted(source.invoke),
+    ...(source.engineReferences === undefined
       ? {}
-      : {
-          engineReferences(refs: readonly IEngineRef[]) {
-            crossings++;
-            return engineReferences(refs);
-          },
-        }),
+      : { engineReferences: counted(source.engineReferences) }),
   };
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object }>();
@@ -747,6 +735,7 @@ export function defineBrowserClasses(
         continue;
       // A value class's lane is written in place: its engine setter is a plain store.
       const lane = valueClass !== undefined ? binding.fields?.[property] : undefined;
+      const keepsLabels = property === "visible" && binding.methods.includes("__walk");
       Object.defineProperty(accessors, property, {
         configurable: true,
         get:
@@ -774,7 +763,7 @@ export function defineBrowserClasses(
           : setters.has(property)
             ? {
                 set(this: object, value: unknown) {
-                  labels.delete(this);
+                  if (!keepsLabels) labels.delete(this);
                   runtime.set(refOf(this), property, toEngine(value));
                 },
               }
@@ -1404,39 +1393,35 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     if (dataView.buffer !== abi.HEAPU8.buffer) dataView = new DataView(abi.HEAPU8.buffer);
     return dataView;
   };
-  // Scopes rewind scratch; chunks stay put because callbacks can re-enter with outer pointers live.
+  // Each call frees what it allocated, and only that: a callback can run a nested call.
+  // A call's scratch (its handle, arguments, result and diagnostic) comes from one arena that each
+  // scope rewinds, a stack as nested calls (a callback inside an invoke) need; a scope that outgrows
+  // it falls back to malloc and frees on exit. Every engine call crosses here, many per frame.
   const arenaSize = 64 * 1024;
-  const chunks = [{ base: abi._malloc(arenaSize) >>> 0, size: arenaSize }];
-  let chunkIndex = 0;
-  let arenaTop = 0;
+  const arenaBase = abi._malloc(arenaSize) >>> 0;
+  let arenaTop = arenaBase;
+  const allocations: number[] = [];
   const alloc = (size: number): number => {
-    const aligned = Math.ceil(size / 8) * 8;
-    let chunk = chunks[chunkIndex] as (typeof chunks)[number];
-    if (arenaTop + aligned > chunk.size) {
-      arenaTop = 0;
-      do {
-        chunkIndex++;
-        const capacity = Math.max(chunk.size * 2, aligned);
-        // `>>> 0`: exports return signed i32 pointers, but the module addresses up to 4 GB.
-        chunk = chunks[chunkIndex] ?? {
-          base: abi._malloc(capacity) >>> 0,
-          size: capacity,
-        };
-        chunks[chunkIndex] = chunk;
-      } while (aligned > chunk.size);
+    const aligned = (size + 7) & ~7;
+    let pointer: number;
+    if (arenaTop + aligned <= arenaBase + arenaSize) {
+      pointer = arenaTop;
+      arenaTop += aligned;
+    } else {
+      // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
+      pointer = abi._malloc(size) >>> 0;
+      allocations.push(pointer);
     }
-    const pointer = chunk.base + arenaTop;
-    arenaTop += aligned;
     abi.HEAPU8.fill(0, pointer, pointer + size);
     return pointer;
   };
   const scoped = <T>(work: () => T): T => {
-    const mark = chunkIndex;
+    const mark = allocations.length;
     const top = arenaTop;
     try {
       return work();
     } finally {
-      chunkIndex = mark;
+      for (const pointer of allocations.splice(mark)) abi._free(pointer);
       arenaTop = top;
     }
   };

@@ -47,6 +47,7 @@ Nothing.
 
 ## Decisions
 
+- 2026-10-15 (isolated visible/material-cache trial): removed rejected arena/fixed-arity changes from this lane before testing. Node `visible` setters preserve cached material labels, using the existing `__walk` class marker; other setters retain invalidation. Baseline regression is one failed / one passed case; fixed two pass, complete browser suite 45/45, package typecheck and Biome pass. Browser ESM and the frozen candidate game build pass; full CLI declaration generation fails because built assets/core declarations are absent. Candidate `~/.cache/tmp-tn/midway-native-visible` keeps all source/assets/content identical to baseline and changes only the installed browser runtime. No timed A/B or qualification yet; AC-3 remains open.
 - 2026-10-14 (owner): the web Wasm arm runs in every matched pair, beside the native arm, and both show on the dashboard. Native and web Wasm optimization run in parallel.
 - 2026-10-14 (lead): the target is 1.5x (owner), not the 2x that PRD-610's old AC-7 carried.
 
