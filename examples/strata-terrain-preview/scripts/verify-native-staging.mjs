@@ -37,13 +37,13 @@ try {
   );
   symlinkSync(join(example, "node_modules"), join(game, "node_modules"), "dir");
   copyFileSync(join(example, "vite.config.ts"), join(game, "vite.config.ts"));
-  // Exercise migration of the exact manifest published by the old staging command.
+  // Legacy byte counts belong to a previous asset revision.
   writeFileSync(
     join(game, "assets.manifest.json"),
     JSON.stringify({
       version: 1,
       entries: {
-        "starter.bin": { output: "assets/starter.bin", bytes: 7 },
+        "starter.bin": { output: "assets/starter.bin", bytes: 13 },
       },
     }),
   );
@@ -51,6 +51,14 @@ try {
   assert.equal(existsSync(join(game, "assets.manifest.json")), false);
   execFileSync(process.execPath, [join(game, "scripts/stage-native-assets.mjs")]);
   assert.equal(existsSync(join(game, "assets.manifest.json")), false);
+  const authored = JSON.stringify({
+    version: 1,
+    entries: { "starter.bin": { output: "custom/starter.bin", bytes: 13 } },
+  });
+  writeFileSync(join(game, "assets.manifest.json"), authored);
+  execFileSync(process.execPath, [join(game, "scripts/stage-native-assets.mjs")]);
+  assert.equal(readFileSync(join(game, "assets.manifest.json"), "utf8"), authored);
+  rmSync(join(game, "assets.manifest.json"));
   server = await createServer({
     configFile: join(game, "vite.config.ts"),
     root: game,

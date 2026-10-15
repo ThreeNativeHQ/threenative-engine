@@ -79,6 +79,24 @@ if (existsSync(legacy)) {
       .filter(([key]) => existsSync(join(roots[0].dir, key)))
       .map(([key, entry]) => [key, { ...entry, output: `assets/${key}` }]),
   );
-  if (JSON.stringify(old) === JSON.stringify({ version: 1, entries: starter })) unlinkSync(legacy);
+  // Generated identity survives asset revisions; byte counts do not.
+  if (
+    old?.version === 1 &&
+    Object.keys(old).length === 2 &&
+    old.entries &&
+    !Array.isArray(old.entries) &&
+    Object.keys(old.entries).length === Object.keys(starter).length &&
+    Object.entries(starter).every(([key, entry]) => {
+      const previous = old.entries[key];
+      return (
+        previous &&
+        Object.keys(previous).length === 2 &&
+        previous.output === entry.output &&
+        Number.isSafeInteger(previous.bytes) &&
+        previous.bytes >= 0
+      );
+    })
+  )
+    unlinkSync(legacy);
 }
 console.log(`stage-native-assets: ${linked} file(s) linked into ${relative(here, out)}/`);
