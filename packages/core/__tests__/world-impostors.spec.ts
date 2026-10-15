@@ -516,6 +516,49 @@ afterEach(() => {
 });
 
 describe("WorldCells automatic impostors", () => {
+  it("keeps authored parts and draws a terminal impostor beyond the game far boundary", async () => {
+    const pkg = pineOnly();
+    const definition = pkg.assets.pine as IWorldAsset;
+    const data = { ...pkg, assets: { pine: { ...definition, impostorDistance: 150 } } };
+    const placements = new Float32Array([-32, 0, -32, 0, 0, 0, 1, 1]);
+    const one = {
+      ...data,
+      cells: [{ x: 1, z: 1, runs: [{ asset: "pine", offset: 0, count: 1 }] }],
+    };
+    stubPlacementFetch(one, placements);
+    const follow = { position: { x: -32, z: -32 } };
+    const loader = treeLoader();
+    const world = await loadPine(loader, {
+      follow,
+      terrain: false,
+      ring: 10,
+      gpuScene: false,
+      preserveAuthoredParts: true,
+      impostors: true,
+      lodHysteresis: 0.2,
+      adaptiveLod: false,
+    });
+    try {
+      await flushed(world);
+      runBake(world, rendererStub());
+      await flushed(world);
+      expect(world.stats().impostor.assets).toBe(1);
+      expect(world.stats().impostor.pending).toBe(0);
+      expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
+      expect(partsOf(world, "pine", 0, 1).length).toBeGreaterThan(0);
+      follow.position.z = -232;
+      for (let i = 0; i < 100; i++) {
+        world.update();
+        await flush();
+      }
+      expect(world.stats().impostor.drawn).toBeGreaterThan(0);
+      expect(partsOf(world, "pine", 2, 0)[0]?.geometry.index?.count).toBe(6);
+      expect(partsOf(world, "pine", 2, 1)).toHaveLength(0);
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("bakes an alpha-cutout asset over the render cadence and appends a two-triangle terminal level", async () => {
     stubManifestFetch(pineOnly());
     const loader = treeLoader();

@@ -465,3 +465,67 @@ function vertexAlphaDocument(alpha: number): Document {
     );
   return document;
 }
+
+it("writes a standalone far crown with whole cards and all authored attributes", async () => {
+  const { thinFoliageCards } = await import("../src/lod/generate.js");
+  const document = await readWithLod(await readFile(FIXTURE));
+  await convertFoliageCutout(document);
+  const before = document
+    .getRoot()
+    .listMeshes()
+    .flatMap((mesh) => mesh.listPrimitives())
+    .map((primitive) => ({
+      primitive,
+      count: primitive.getIndices()?.getCount(),
+      semantics: primitive.listSemantics(),
+      attributes: new Map(
+        primitive
+          .listSemantics()
+          .map((semantic) => [
+            semantic,
+            Array.from(primitive.getAttribute(semantic)?.getArray() ?? []),
+          ]),
+      ),
+    }));
+  const result = thinFoliageCards(document, 0.14);
+  expect(result).toBeGreaterThan(0);
+  for (const { primitive, count, semantics, attributes } of before) {
+    expect(primitive.listSemantics()).toEqual(semantics);
+    for (const semantic of semantics) {
+      const original = attributes.get(semantic) ?? [];
+      const accessor = primitive.getAttribute(semantic) as Accessor;
+      const current = Array.from(accessor.getArray() ?? []);
+      expect(current.slice(0, original.length)).toEqual(original);
+      if (semantic === "POSITION") continue;
+      const size = accessor.getElementSize();
+      for (let at = original.length; at < current.length; at += size) {
+        const copied = current.slice(at, at + size);
+        let matched = false;
+        for (let source = 0; source < original.length; source += size)
+          if (copied.every((value, i) => value === original[source + i])) {
+            matched = true;
+            break;
+          }
+        expect(matched).toBe(true);
+      }
+    }
+
+    if (primitive.getMaterial()?.getAlphaMode() !== "MASK")
+      expect(primitive.getIndices()?.getCount()).toBe(count);
+    else {
+      expect((primitive.getIndices() as Accessor).getCount() % 6).toBe(0);
+      expect((primitive.getIndices() as Accessor).getCount()).toBeLessThan(count as number);
+      const positionCount = (primitive.getAttribute("POSITION") as Accessor).getCount();
+      for (const semantic of semantics)
+        expect((primitive.getAttribute(semantic) as Accessor).getCount()).toBe(positionCount);
+    }
+  }
+});
+
+it.each([0, 1, -0.1, Number.NaN, Number.POSITIVE_INFINITY])(
+  "rejects invalid standalone card keep ratio %s",
+  async (ratio) => {
+    const { thinFoliageCards } = await import("../src/lod/generate.js");
+    expect(() => thinFoliageCards(new Document(), ratio)).toThrow(/keepRatio/);
+  },
+);

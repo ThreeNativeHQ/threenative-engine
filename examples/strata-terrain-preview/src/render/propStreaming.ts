@@ -234,6 +234,7 @@ export async function createStreamedProps(options: IStreamOptions) {
           }
           definitions[record.key] = {
             glb: `${record.key}/0.glb`,
+            ...(record.key.startsWith("spruce:") ? { impostorDistance: LOD_BANDS.far } : {}),
             bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() },
             lods: levels.slice(1).map((level, i) => ({
               glb: `${record.key}/${level}.glb`,
@@ -317,6 +318,7 @@ export async function createStreamedProps(options: IStreamOptions) {
         onPublication: options.onPublication,
         adaptiveLod: false,
         preserveAuthoredParts: true,
+        impostors: true,
         lodHysteresis: LOD_BANDS.hysteresis,
         transparentScatter: "blend",
         admissionBudgetMs: 2 / Math.max(1, buckets.size),
@@ -366,6 +368,10 @@ export async function createStreamedProps(options: IStreamOptions) {
           loadsInFlight: sum.loadsInFlight + s.loadsInFlight,
           loadsQueued: sum.loadsQueued + s.loadsQueued,
           pendingPrewarm: sum.pendingPrewarm + s.pendingPrewarm,
+          impostor: {
+            pending: sum.impostor.pending + s.impostor.pending,
+            drawn: sum.impostor.drawn + s.impostor.drawn,
+          },
           admissionMs: sum.admissionMs + s.admission.spentMs,
           admissionBacklog: sum.admissionBacklog + s.admission.backlog,
           admissionDeferred: sum.admissionDeferred + s.admission.deferred,
@@ -380,6 +386,7 @@ export async function createStreamedProps(options: IStreamOptions) {
         loadsInFlight: 0,
         loadsQueued: 0,
         pendingPrewarm: 0,
+        impostor: { pending: 0, drawn: 0 },
         admissionMs: 0,
         admissionBacklog: 0,
         admissionDeferred: 0,
@@ -399,7 +406,13 @@ export async function createStreamedProps(options: IStreamOptions) {
         required,
         loaded,
         failures: regions.reduce((n, r) => n + r.failures, 0),
-        ready: warmed.size === worlds.length && regions.every((r) => r.ready),
+        ready:
+          warmed.size === worlds.length &&
+          regions.every((r) => r.ready) &&
+          worlds.every((world) => {
+            const state = world.stats();
+            return state.impostor.pending === 0 && state.pendingPrewarm === 0;
+          }),
       };
     },
     get ready() {
@@ -410,6 +423,7 @@ export async function createStreamedProps(options: IStreamOptions) {
         s.loadsQueued === 0 &&
         s.admissionBacklog === 0 &&
         s.pendingPrewarm === 0 &&
+        s.impostor.pending === 0 &&
         s.failures === 0
       );
     },

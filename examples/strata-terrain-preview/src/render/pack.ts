@@ -94,7 +94,7 @@ for (let i = 0; i < 5; i++) {
     path: `spruce/${i}`,
     metres: [12, 14, 13, 10, 11][i] ?? 12,
   });
-  // Reduced full-tree geometry preserves the adult silhouette and its trunk at distance.
+  // Whole-card thinning keeps the authored trunk and caps surviving card area growth at 4x.
   species.push({
     asset: "spruce",
     variant: i,
@@ -301,6 +301,10 @@ function cutoutSurface(
       ? float(0.5)
       : float(world === "forest" ? source.alphaTest : 0.42).div(float(1).add(mip.mul(0.25)));
   material.opacityNode = sampled.a;
+  material.maskShadowNode = sampled.a.greaterThan(material.alphaTestNode as Node<"float">);
+  // The shared mask owns the mip-aware cutoff; the scalar only classifies the shadow caster.
+  material.userData.tnImpostorAlphaTest = source.alphaTest;
+  material.alphaTest = 1e-4;
   if (canopy) {
     lightNeedles(material, material.aoNode as Node<"float">);
     if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.18);

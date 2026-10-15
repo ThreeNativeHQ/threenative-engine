@@ -16,6 +16,7 @@ import {
   Sphere,
   Vector3,
 } from "three";
+import { uniform } from "three/tsl";
 import { BundleGroup } from "three/webgpu";
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
@@ -48,6 +49,7 @@ import {
 import {
   IMPOSTOR_FAR_CULL_ATTRIBUTE,
   WorldImpostorSurface,
+  worldLodMaterial,
 } from "./render/world-impostor-surface.js";
 import {
   type IImpostorPart,
@@ -431,10 +433,10 @@ export interface IWorldCellsLoadOptions {
    * Filtered by the existing admission/refilter budget, never by a separate culler.
    */
   readonly placementReach?: Float32Array;
-  /** Inward return margin for authored CPU LODs, in [0, 1). Requires gpuScene:false and impostors:false; omission keeps source levels.
-   * Omitted, selection uses the existing direct gates. State survives cell eviction/revisit. */
+  /** Complementary view/shadow dither band as a fraction of each distance gap, in [0, 1). Requires gpuScene:false.
+   * Impostors require preserveAuthoredParts:true here; omission keeps direct level selection. */
   readonly lodHysteresis?: number;
-  /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Requires impostors:false; omission keeps source levels.
+  /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Terminal impostors are supported with gpuScene:false; omission keeps source levels.
    * Default content sharing and missing-alpha-part coverage remain enabled when omitted. */
   readonly preserveAuthoredParts?: boolean;
   /** Already decoded immutable world-v1 data; URL still supplies the base for model paths. */
@@ -711,8 +713,7 @@ export interface IWorldCellsLoadOptions {
    * Bake a whole-asset octahedral impostor for every alpha-cutout foliage asset and append it as the
    * asset's terminal, two-triangle LOD. Default false: omission keeps the authored/generated source
    * levels, and `?tnImpostors=1` or `TN_IMPOSTORS=1` opts a launch in. It is opt-in until the judged
-   * Machinefall capture passes (PRD-473 AC-3); `preserveAuthoredParts` and `lodHysteresis` still
-   * require it to be off.
+   * Machinefall capture passes (PRD-473 AC-3); authored parts with dither are supported on the explicit CPU path.
    *
    * Set true to bake them, or leave it off to keep the source levels for a visual comparison.
    *
@@ -886,6 +887,8 @@ export interface IWorldCellsStats {
     readonly atlasBytes: number;
     readonly budgetBytes: number;
     readonly terminalTriangles: number;
+    /** Live main-pass terminal instances (before fragment masks), including far aggregates. */
+    readonly drawn: number;
     /**
      * The whole-map far aggregates: one `InstancedMesh` per atlas cache key, the ORIGINAL placements
      * they hold (`instances`), how many of those the near ring has taken back (`nearOwned`), the
@@ -3565,6 +3568,7 @@ async function assetSignature(
       parts.push(`${await url(lod.glb)}@${String(lod.distance)}`);
     parts.push(
       definition.maxDistance === undefined ? "" : String(definition.maxDistance),
+      definition.impostorDistance === undefined ? "" : String(definition.impostorDistance),
       definition.bounds.min.join(","),
       definition.bounds.max.join(","),
     );
@@ -4203,7 +4207,9 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #terrain: TerrainTiles | undefined;
   readonly #hasColliders: boolean;
   readonly #lodHysteresis: number;
-  readonly #placementLevels: Uint32Array | undefined;
+  readonly #lodEye = uniform(new Vector3());
+  readonly #lodDistanceBias = uniform(1);
+  readonly #lodMaterials = new Map<string, Material>();
   readonly #placementReach: Float32Array | undefined;
   readonly #reachRanges: Map<
     IWorldCell,
@@ -4645,10 +4651,6 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#minZ = init.manifest.extent.minZ;
     this.#placements = init.placements;
     this.#lodHysteresis = init.lodHysteresis ?? 0;
-    this.#placementLevels =
-      this.#lodHysteresis > 0
-        ? new Uint32Array(init.placements.byteLength / PLACEMENT_RECORD_BYTES)
-        : undefined;
     this.#placementReach = init.placementReach;
     this.#reachRanges = init.reachRanges;
     this.#rebuildsPerUpdate = positiveInteger(init.rebuildsPerUpdate ?? 16, "rebuildsPerUpdate");
@@ -4774,19 +4776,17 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   static async load(options: IWorldCellsLoadOptions): Promise<WorldCells> {
-    if (options.preserveAuthoredParts && options.impostors)
-      throw new Error("WorldCells preserveAuthoredParts requires impostors:false.");
+    if (options.preserveAuthoredParts && options.impostors && options.gpuScene !== false)
+      throw new Error("WorldCells preserveAuthoredParts with impostors requires gpuScene:false.");
     if (
       options.lodHysteresis !== undefined &&
       (!Number.isFinite(options.lodHysteresis) ||
         options.lodHysteresis < 0 ||
         options.lodHysteresis >= 1 ||
         options.gpuScene !== false ||
-        options.impostors === true)
+        (options.impostors === true && !options.preserveAuthoredParts))
     )
-      throw new Error(
-        "WorldCells lodHysteresis must be in [0, 1) with gpuScene:false and impostors:false.",
-      );
+      throw new Error("WorldCells lodHysteresis must be in [0, 1) with gpuScene:false.");
     const assets = options.assets ?? createAssetLoader();
     const baseUrl = options.url.slice(0, options.url.lastIndexOf("/") + 1);
     // Logical paths, which is what the loader keys its manifest by: the authored name with no
@@ -4997,7 +4997,9 @@ export class WorldCells extends Group implements IComputeDriven {
       for (const group of recorded) if (group.parent !== null) this.#bumpBundle(group);
     }
     // The adaptive LOD bias, before the dispatch below reads the gates it scales.
+    this.#lodEye.value.set(this.#follow.position.x, this.#followY(), this.#follow.position.z);
     this.#adaptLodBias(renderer);
+    this.#lodDistanceBias.value = biasedLodDistance(1);
     // The first frame that hands over a renderer is the only one that can answer whether this
     // backend can run the GPU scene, and it prints its answer once: `enable` reports, then returns
     // early for the rest of the world's life.
@@ -5497,7 +5499,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (this.#released || this.#shared.has(entry.key) || this.#retired.has(entry.key)) return;
     const shared = new SharedBatch(
       entry.geometry,
-      entry.material,
+      this.#lodSurface(entry.asset, entry.level, entry.part, entry.material),
       this.#runMax.get(entry.asset) ?? 1,
       this.#budgets.residentCells + 1,
       entry.key,
@@ -5638,7 +5640,7 @@ export class WorldCells extends Group implements IComputeDriven {
           const name =
             role === "main"
               ? key
-              : role === "wide" && asset.impostor !== undefined
+              : role === "wide" && asset.impostor !== undefined && !this.#preserveAuthoredParts
                 ? wideKey
                 : `${key}@${role === "cluster" ? this.#followCluster() : WIDE_CLUSTER}`;
           // A retained key is already paid for; see `#mintPrewarm`.
@@ -6273,16 +6275,28 @@ export class WorldCells extends Group implements IComputeDriven {
       resolvedGlb: "",
       spilled: [],
     };
-    if (this.#lodHysteresis > 0 && definition.lods !== undefined) {
-      asset.gates = [
-        ...asset.gates,
-        ...asset.distances.slice(1).map((gate) => gate * (1 - this.#lodHysteresis)),
-      ];
-      asset.threshold = Math.min(...asset.gates);
-    }
+    this.#ditherGates(asset);
     this.#assets.set(id, asset);
     for (const gate of asset.gates) this.#noteGate(gate);
     return asset;
+  }
+
+  /** Refilter at admission-band edges too, so discarded source levels retire after the fade. */
+  #ditherGates(asset: IAssetState): void {
+    if (this.#lodHysteresis <= 0) return;
+    const gates = [...asset.gates];
+    for (let level = 0; level < asset.distances.length; level++) {
+      const near = asset.distances[level] ?? 0;
+      const far = asset.distances[level + 1] ?? Number.POSITIVE_INFINITY;
+      const slack =
+        Math.max(near, Number.isFinite(far) ? far : near) * this.#lodHysteresis +
+        (asset.distances[1] ?? 6) / 8;
+      if (near > slack) gates.push(near - slack);
+      if (Number.isFinite(far)) gates.push(far + slack);
+    }
+    asset.gates = gates;
+    asset.threshold = Math.min(...gates);
+    for (const gate of gates) this.#noteGate(gate);
   }
 
   #acquire(run: IWorldRun, cell: IResidentCell): void {
@@ -6923,24 +6937,13 @@ export class WorldCells extends Group implements IComputeDriven {
       // whole-asset impostor's terminal gate scaled by this placement's own scale. The bias is the
       // same adaptive multiplier the dispatch carries, so a biased walk crosses a switch here too.
       let level = levelAtGates(
-        { distances: asset.distances, impostor: asset.impostor !== undefined },
+        {
+          distances: asset.distances,
+          impostor: asset.impostor !== undefined && asset.definition.impostorDistance === undefined,
+        },
         biasedLodDistance(distance),
         scale,
       );
-      if (this.#placementLevels !== undefined && asset.definition.lods !== undefined) {
-        const record = job.run.offset + index;
-        let previous = this.#placementLevels[record] as number;
-        // Outward gates remain authored; returning inward retains the previous level until the margin.
-        if (level > previous) previous = level;
-        while (
-          previous > level &&
-          biasedLodDistance(distance) <
-            (asset.distances[previous] as number) * (1 - this.#lodHysteresis)
-        )
-          previous--;
-        level = previous;
-        this.#placementLevels[record] = level;
-      }
       // The record's own world bounds: the placement widened by the asset's authored bounds at the
       // scale it is drawn at. Read here because this loop already holds the placement and the scale,
       // and it is the one number the shadow levels' invalidation is tested against — the cell box is
@@ -6950,69 +6953,85 @@ export class WorldCells extends Group implements IComputeDriven {
       // at the placement root: the parts' own offsets are baked into the atlas, so composing a source
       // part's offset again would apply it twice. One root record per placement, beside the per-part
       // batches and read only by the wide half; see `ICellBatch.wideRoot`.
-      if (wantRoots) {
-        job.roots ??= [];
-        const roots = job.roots;
-        let root = roots[level];
-        if (root === undefined) {
-          const anchor = asset.levels[level]?.[0];
-          if (anchor !== undefined) {
-            root = new InstancedBatch({ geometry: anchor.geometry, material: anchor.material });
-            roots[level] = root;
-          }
+      const selected = [level];
+      if (this.#lodHysteresis > 0) {
+        const d = biasedLodDistance(distance);
+        for (let adjacent = 0; adjacent < asset.levels.length; adjacent++) {
+          if (adjacent === level) continue;
+          const near = asset.distances[adjacent] ?? 0;
+          const far = asset.distances[adjacent + 1] ?? Number.POSITIVE_INFINITY;
+          // Admission headroom covers the existing refilter cadence; masks use the live eye.
+          const slack =
+            Math.max(near, Number.isFinite(far) ? far : near) * this.#lodHysteresis +
+            (asset.distances[1] ?? 6) / 8;
+          if (d >= near - slack && d <= far + slack) selected.push(adjacent);
         }
-        root?.add(this.#matrix);
       }
-      // The GPU scene's source record for this placement: the placement's own transform, the level it
-      // reached, and a sphere the dispatch tests against the camera's planes. The part offset is the
-      // key's own, so one record serves every part of the level — see `#placeSources`.
-      if (this.#gpuScene.on) {
-        const list = job.sources ?? [];
-        job.sources = list;
-        // The sphere is the asset's authored bounds *as placed*, centred where the bounds' centre
-        // lands under the placement's own transform: a sphere at the placement instead is not a
-        // bound of the placement, and every prop whose model does not straddle the origin lost the
-        // half of itself that reaches away from it — a post, a stump, a fern, all of them culled at
-        // the edge of the view with their bases outside it. The CPU path's own gate is the cell's box
-        // over the same widened bounds, and it is conservative in exactly the way this is now. The
-        // centre is the matrix applied to the authored centre, so the placement's quaternion rotates
-        // it: composing the offsets by hand dropped the rotation and put a turned off-centre prop's
-        // sphere where the unturned one would be. The radius is rotation-invariant and takes the
-        // scale alone, which is uniform.
-        const centre = this.#sourceCentre
-          .set(
-            ((bounds.min[0] as number) + (bounds.max[0] as number)) * 0.5,
-            ((bounds.min[1] as number) + (bounds.max[1] as number)) * 0.5,
-            ((bounds.min[2] as number) + (bounds.max[2] as number)) * 0.5,
-          )
-          .applyMatrix4(this.#matrix);
-        list.push({
-          level,
-          matrix: this.#matrix.clone(),
-          // `boundsRadius` is already the asset's authored bounds radius (half the diagonal), so the
-          // placement's sphere radius is that times its own uniform scale — halving it again put the
-          // sphere inside the prop and culled the half of it that reaches away from the placement.
-          radius: boundsRadius * Math.abs(scale),
-          // The magnitude, finite-sanitised: the dispatch's impostor gate takes `|scale|` exactly as
-          // `levelAtGates` does, so a mirrored placement reaches the atlas the same way.
-          scale: Number.isFinite(scale) ? Math.abs(scale) : 1,
-          x: centre.x,
-          y: centre.y,
-          z: centre.z,
-        });
-      }
-      // Authored bounds include model-part offsets; apply the whole placement transform so
-      // rotated, mirrored and off-centre casters cannot fall outside visibility/shadow regions.
-      this.#boundsAt(bounds, this.#matrix);
-      const parts = asset.levels[level] as readonly IAssetPart[];
-      const levelBatches = job.batches?.[level] as InstancedBatch[];
-      const levelBoxes = job.boxes?.[level] as Box3[] | undefined;
-      for (const [part, entry] of parts.entries()) {
-        this.#instance.multiplyMatrices(this.#matrix, entry.local);
-        (levelBatches[part] as InstancedBatch).add(this.#instance);
-        const box = levelBoxes?.[part];
-        if (box === undefined) continue;
-        box.union(this.#recordBounds);
+      for (level of selected) {
+        if (wantRoots) {
+          job.roots ??= [];
+          const roots = job.roots;
+          let root = roots[level];
+          if (root === undefined) {
+            const anchor = asset.levels[level]?.[0];
+            if (anchor !== undefined) {
+              root = new InstancedBatch({ geometry: anchor.geometry, material: anchor.material });
+              roots[level] = root;
+            }
+          }
+          root?.add(this.#matrix);
+        }
+        // The GPU scene's source record for this placement: the placement's own transform, the level it
+        // reached, and a sphere the dispatch tests against the camera's planes. The part offset is the
+        // key's own, so one record serves every part of the level — see `#placeSources`.
+        if (this.#gpuScene.on) {
+          const list = job.sources ?? [];
+          job.sources = list;
+          // The sphere is the asset's authored bounds *as placed*, centred where the bounds' centre
+          // lands under the placement's own transform: a sphere at the placement instead is not a
+          // bound of the placement, and every prop whose model does not straddle the origin lost the
+          // half of itself that reaches away from it — a post, a stump, a fern, all of them culled at
+          // the edge of the view with their bases outside it. The CPU path's own gate is the cell's box
+          // over the same widened bounds, and it is conservative in exactly the way this is now. The
+          // centre is the matrix applied to the authored centre, so the placement's quaternion rotates
+          // it: composing the offsets by hand dropped the rotation and put a turned off-centre prop's
+          // sphere where the unturned one would be. The radius is rotation-invariant and takes the
+          // scale alone, which is uniform.
+          const centre = this.#sourceCentre
+            .set(
+              ((bounds.min[0] as number) + (bounds.max[0] as number)) * 0.5,
+              ((bounds.min[1] as number) + (bounds.max[1] as number)) * 0.5,
+              ((bounds.min[2] as number) + (bounds.max[2] as number)) * 0.5,
+            )
+            .applyMatrix4(this.#matrix);
+          list.push({
+            level,
+            matrix: this.#matrix.clone(),
+            // `boundsRadius` is already the asset's authored bounds radius (half the diagonal), so the
+            // placement's sphere radius is that times its own uniform scale — halving it again put the
+            // sphere inside the prop and culled the half of it that reaches away from the placement.
+            radius: boundsRadius * Math.abs(scale),
+            // The magnitude, finite-sanitised: the dispatch's impostor gate takes `|scale|` exactly as
+            // `levelAtGates` does, so a mirrored placement reaches the atlas the same way.
+            scale: Number.isFinite(scale) ? Math.abs(scale) : 1,
+            x: centre.x,
+            y: centre.y,
+            z: centre.z,
+          });
+        }
+        // Authored bounds include model-part offsets; apply the whole placement transform so
+        // rotated, mirrored and off-centre casters cannot fall outside visibility/shadow regions.
+        this.#boundsAt(bounds, this.#matrix);
+        const parts = asset.levels[level] as readonly IAssetPart[];
+        const levelBatches = job.batches?.[level] as InstancedBatch[];
+        const levelBoxes = job.boxes?.[level] as Box3[] | undefined;
+        for (const [part, entry] of parts.entries()) {
+          this.#instance.multiplyMatrices(this.#matrix, entry.local);
+          (levelBatches[part] as InstancedBatch).add(this.#instance);
+          const box = levelBoxes?.[part];
+          if (box === undefined) continue;
+          box.union(this.#recordBounds);
+        }
       }
     }
   }
@@ -7023,9 +7042,6 @@ export class WorldCells extends Group implements IComputeDriven {
    * renderer pays for again on the frame it first draws the result. The mesh joins the cell in
    * {@link #swap}, with the rest of the job, so it is never half a replacement.
    *
-   * ponytail: a hard switch, no crossfade — a placement crosses a level boundary by being rebuilt
-   * into the other level's batch, so the swap pops. A blend needs a per-instance mix the
-   * InstancedBatch has no slot for; add one when a game's swap is visible enough to pay for it.
    */
   /**
    * Fold one batch's own filter point into the cell's bracket, which only ever widens. See
@@ -7121,7 +7137,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // A whole-asset impostor is one shape for every part and level, so its far shadow is ONE mesh per
     // asset holding one root record per placement, not one mesh per level whose records a source part
     // offset would then double. Every other asset keeps the per-key mesh its per-part shapes need.
-    const impostor = this.#assets.get(assetId)?.impostor !== undefined;
+    const impostor =
+      !this.#preserveAuthoredParts && this.#assets.get(assetId)?.impostor !== undefined;
     const key = impostor
       ? `${assetId}:*@${WIDE_CLUSTER}`
       : `${this.#keyOf(entry, level)}@${WIDE_CLUSTER}`;
@@ -7345,7 +7362,7 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #wideOwed(assetId: string, part: number): boolean {
     if (part === 0) return true;
-    return this.#assets.get(assetId)?.impostor === undefined;
+    return this.#preserveAuthoredParts || this.#assets.get(assetId)?.impostor === undefined;
   }
 
   /** The `@x,z` half of a caster cluster key, for a resident cell. */
@@ -7360,6 +7377,28 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #cullCellOf(cell: IResidentCell): string {
     return clusterOf(cell.x, cell.z, this.#cellsPerCullCell);
+  }
+
+  #lodSurface(assetId: string, level: number, partIndex: number, source: Material): Material {
+    const asset = this.#assets.get(assetId);
+    const part = asset?.levels[level]?.[partIndex];
+    if (this.#lodHysteresis <= 0 || !asset || !part || asset.distances.length < 2) return source;
+    const key = `${assetId}:${level}:${partIndex}:${asset.distances.length}`;
+    let material = this.#lodMaterials.get(key);
+    if (!material) {
+      material = worldLodMaterial(
+        source,
+        part.local,
+        asset.distances,
+        level,
+        this.#lodHysteresis,
+        this.#lodEye,
+        this.#lodDistanceBias,
+        this.#placementReach !== undefined,
+      );
+      this.#lodMaterials.set(key, material);
+    }
+    return material;
   }
 
   /**
@@ -7386,8 +7425,13 @@ export class WorldCells extends Group implements IComputeDriven {
     level = entry.level,
   ): SharedBatch | undefined {
     const existing = this.#shared.get(key);
-    if (existing !== undefined) return existing;
-    const shape = this.#shapeFor(entry, role, level);
+    if (existing !== undefined && this.#lodHysteresis === 0) return existing;
+    const shape = { ...this.#shapeFor(entry, role, level) };
+    shape.material = this.#lodSurface(assetId, level, entry.part, shape.material);
+    if (existing !== undefined) {
+      existing.mesh.material = shape.material;
+      return existing;
+    }
     const smallCaster = this.#smallCaster(assetId);
     // The batch released when this asset's last cell left the ring is the one to draw into again,
     // so the mesh keeps the uuid and the node three built for it. It costs no fresh allowance,
@@ -8473,7 +8517,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * asset with no alpha-cutout LOD0 part never bakes, so it never needs the extra records.
    */
   #rootsNeeded(asset: IAssetState): boolean {
-    if (this.#impostors === false) return false;
+    if (this.#impostors === false || this.#preserveAuthoredParts) return false;
     const parts = asset.levels[0];
     return parts !== undefined && this.#impostorSource(parts) !== undefined;
   }
@@ -8492,7 +8536,12 @@ export class WorldCells extends Group implements IComputeDriven {
       if (!isAlphaFoliage(material)) continue;
       return {
         source: material,
-        alphaTest: material.alphaTest > 0 ? material.alphaTest : DEFAULT_CUTOUT_ALPHA,
+        alphaTest:
+          typeof material.userData.tnImpostorAlphaTest === "number"
+            ? material.userData.tnImpostorAlphaTest
+            : material.alphaTest > 0
+              ? material.alphaTest
+              : DEFAULT_CUTOUT_ALPHA,
       };
     }
     return undefined;
@@ -8537,7 +8586,12 @@ export class WorldCells extends Group implements IComputeDriven {
    * never baked: a solid impostor is not the thing it replaces.
    */
   #maybeQueueImpostor(asset: IAssetState): void {
-    if (this.#impostors === false || asset.impostor !== undefined) return;
+    if (
+      this.#impostors === false ||
+      asset.impostor !== undefined ||
+      (this.#preserveAuthoredParts && asset.definition.impostorDistance === undefined)
+    )
+      return;
     const parts = asset.levels[0];
     if (parts === undefined) return;
     const source = this.#impostorSource(parts);
@@ -8740,7 +8794,9 @@ export class WorldCells extends Group implements IComputeDriven {
     // the atlas 8-12x as far instead of switching at the unit-scale distance. There is no fixed
     // margin: `levelAtGates` floors the terminal one representable Float32 step past the last source
     // gate, so the source level keeps a window while the ordering survives the f32 store.
-    const switchAt = (2 * record.radius * this.#autoLodPixelsPerUnit) / IMPOSTOR_FRAME_PIXELS;
+    const switchAt =
+      asset.definition.impostorDistance ??
+      (2 * record.radius * this.#autoLodPixelsPerUnit) / IMPOSTOR_FRAME_PIXELS;
     if (!Number.isFinite(switchAt) || switchAt <= 0) {
       surface.dispose();
       return;
@@ -8757,11 +8813,21 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#noteGate(switchAt);
     asset.threshold = asset.gates.length === 0 ? undefined : Math.min(...asset.gates);
     asset.impostor = { part, record, surface };
+    this.#ditherGates(asset);
+    for (const shared of this.#shared.values()) {
+      if (!shared.mesh.name.startsWith(`${asset.id}:`)) continue;
+      const fields = shared.mesh.name.slice(asset.id.length + 1).split(":");
+      const level = Number(fields[0]);
+      const partIndex = Number(fields[1]?.split("@")[0]);
+      const sourcePart = asset.levels[level]?.[partIndex];
+      if (sourcePart)
+        shared.mesh.material = this.#lodSurface(asset.id, level, partIndex, sourcePart.material);
+    }
     record.users += 1;
     // The whole-map far aggregate for this atlas key, before the rebuild loop below: its segments
     // exist when the swaps land, and any run already near-ready is handed over immediately. A budget
     // refusal keeps only the far cohort's metadata and surface in `#farRetry`; see `#buildFar`.
-    this.#buildFar(asset, record);
+    if (!this.#preserveAuthoredParts) this.#buildFar(asset, record);
     this.#reportImpostor(asset, "ready");
     // A far-only asset has no near batches or casters to hand over; once its aggregate is up its
     // temporary source has done its job and goes, while the atlas the aggregate borrows stays. A
@@ -8774,7 +8840,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // The far casters of the levels that were already built: part 0's key is re-pointed at the one
     // whole-asset shape, and the per-part keys the terminal level has no counterpart for are dropped,
     // so the far shadow draws one quad per placement rather than a duplicate per bark/needle part.
-    this.#retargetWideCasters(asset);
+    if (!this.#preserveAuthoredParts) this.#retargetWideCasters(asset);
     if (this.#gpuScene.on) {
       // Sources already carry each placement's root transform. Publish the new terminal key and
       // gates together; the dispatch selects it without rebuilding resident runs on the CPU.
@@ -9364,7 +9430,7 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const id of ids) {
       const asset = this.#assets.get(id);
       if (asset === undefined || asset.impostor === undefined) continue;
-      this.#retargetWideCasters(asset);
+      if (!this.#preserveAuthoredParts) this.#retargetWideCasters(asset);
     }
   }
 
@@ -9384,6 +9450,16 @@ export class WorldCells extends Group implements IComputeDriven {
       far: this.#farStats(),
       pending: this.#impostorQueue.length + (this.#impostorBaking === undefined ? 0 : 1),
       terminalTriangles,
+      drawn: [...this.#shared.values()].reduce(
+        (sum, shared) =>
+          sum +
+          (shared.role === "main" &&
+          shared.mesh.visible &&
+          (shared.mesh.material as Material).userData.tnWholeAssetImpostor
+            ? shared.live
+            : 0),
+        this.#farStats().live,
+      ),
     };
   }
 
@@ -10474,6 +10550,11 @@ export class WorldCells extends Group implements IComputeDriven {
     asset.refcount -= 1;
     if (asset.refcount > 0) return;
     this.#assets.delete(id);
+    for (const [key, material] of this.#lodMaterials)
+      if (key.startsWith(`${id}:`)) {
+        material.dispose();
+        this.#lodMaterials.delete(key);
+      }
     asset.disposed = true;
     // Before anything is released: a pending bake stages this asset's borrowed geometry, and a view
     // drawn after the teardown reads a disposed buffer. Then the terminal level's own surface, whose

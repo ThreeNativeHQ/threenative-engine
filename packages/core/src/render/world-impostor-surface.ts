@@ -29,6 +29,7 @@ import {
   element,
   float,
   floor,
+  fract,
   instanceIndex,
   instancedBufferAttribute,
   instancedDynamicBufferAttribute,
@@ -40,11 +41,14 @@ import {
   modelWorldMatrix,
   normalize,
   positionGeometry,
+  screenCoordinate,
   select,
+  sin,
   storage,
   texture,
   transformNormal,
   uniform,
+  varying,
   varyingProperty,
   vec2,
   vec3,
@@ -719,4 +723,49 @@ export function impostorFrameUv(
     u: (relative.dot(basis.right) / radius) * 0.5 + 0.5,
     v: 0.5 - (relative.dot(basis.up) / radius) * 0.5,
   };
+}
+
+/** Complementary LOD masks over the caller's distance bands, shared by colour and shadow passes. */
+export function worldLodMaterial(
+  source: Material,
+  local: import("three").Matrix4,
+  distances: readonly number[],
+  level: number,
+  width: number,
+  eye: Node<"vec3">,
+  distanceBias: Node<"float">,
+  spatial: boolean,
+): NodeMaterial {
+  const material = cloneLitMaterial(source);
+  const inverse = uniform(local.clone().invert());
+  const root = Fn(
+    (_inputs: unknown, builder: { readonly object: Object3D }) =>
+      userInstanceMatrix(builder.object)
+        .mul(inverse)
+        .mul(vec4(0, 0, 0, 1)).xyz,
+  )();
+  // Quantise recovered roots so part-local float rounding cannot change the instance hash.
+  const origin = varying(floor(root.mul(16).add(0.5)).div(16));
+  const distance = (spatial ? length(origin.sub(eye)) : length(origin.xz.sub(eye.xz))).mul(
+    distanceBias,
+  );
+  const random = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))).mul(43758.5453));
+  const noise = fract(sin(dot(floor(screenCoordinate.xy), vec2(12.9898, 78.233))).mul(43758.5453));
+  let mask = float(1).greaterThan(0);
+  for (let gate = 1; gate < distances.length; gate++) {
+    const at = distances[gate] as number;
+    const span = Math.min(
+      at * width,
+      (at - (distances[gate - 1] as number)) * width,
+      ((distances[gate + 1] ?? Number.POSITIVE_INFINITY) - at) * width,
+    );
+    const mix = distance.sub(at).div(span).add(0.5).add(random.sub(0.5).mul(0.5)).clamp(0, 1);
+    if (gate === level) mask = mask.and(noise.lessThan(mix));
+    if (gate === level + 1) mask = mask.and(noise.greaterThanEqual(mix));
+  }
+  material.maskNode = material.maskNode ? (material.maskNode as Node<"bool">).and(mask) : mask;
+  material.maskShadowNode = material.maskShadowNode
+    ? (material.maskShadowNode as Node<"bool">).and(mask)
+    : mask;
+  return material;
 }
