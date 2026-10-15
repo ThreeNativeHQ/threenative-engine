@@ -1,3 +1,4 @@
+import { completionWindowEnvironment } from "./steps.js";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -40,6 +41,7 @@ export async function runDesktopPlaytest(
   config: IStandalonePlaytestConfig,
   dependencies: IDesktopPlaytestDependencies = {},
 ): Promise<IStandalonePlaytestReport> {
+  if (process.env.TN_PLAYTEST_COMPLETION_WINDOW_LABEL !== undefined) completionWindowEnvironment("desktop", config.headless);
   const executable = config.desktop?.executable;
   if (executable === undefined) {
     throw new Error("Desktop playtest requires --executable <native-game-executable>.");

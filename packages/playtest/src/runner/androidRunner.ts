@@ -1,3 +1,4 @@
+import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, type ICompletionWindow } from "./steps.js";
 import { cpuWindowLabels, measureCpuWindow, type ICpuWindow } from "./linuxCpuWindow.js";
 import type { IPlaytestToneObservation } from "../tone.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -165,6 +166,9 @@ async function runDevicePlaytestInternal(
   );
   const cpuLabels = cpuWindowLabels(scenario, target.name, config.liveClock === true);
   const cpuWindows: ICpuWindow[] = [];
+  const completionLabel = completionWindowLabel(scenario, target.name, config.liveClock === true);
+  let completionWindow: ICompletionWindow | undefined;
+  const completionDisplay = completionLabel === undefined ? undefined : completionWindowEnvironment("desktop", config.headless);
   let failureEvidenceCaptured = false;
   await throwIfAborted(target);
   await mkdir(config.artifactDirectory, { recursive: true });
@@ -295,6 +299,7 @@ async function runDevicePlaytestInternal(
     } as const;
     const tone: IPlaytestToneObservation[] = [];
     const before = await bridge.sample(sampleRequest);
+    if (completionLabel !== undefined && before.clock.mode !== "fixed-step") throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: prefix requires fixed-step clock");
     if (scenario.artifacts?.screenshots === "before-after" && config.captureArtifactScreenshots !== false) {
       await captureDeviceScreenshot(target, join(config.artifactDirectory, "before.png"), tone, "before.png");
     }
@@ -449,7 +454,19 @@ async function runDevicePlaytestInternal(
           playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step),
           (step.holdFrames ?? 0) + (step.waitFrames ?? 0),
         );
-        if (step.label !== undefined && cpuLabels.includes(step.label)) {
+        if (step.label === completionLabel && completionLabel !== undefined) {
+          const setupSnapshot = await bridge.sample({ ...sampleRequest, include: [...new Set([...(sampleRequest.include ?? []), "scene", "resources"])], resources: [...new Set([...(sampleRequest.resources ?? []), "state", "hud"])] });
+          if (setupSnapshot.clock.mode !== "fixed-step") throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: pose setup requires fixed-step clock");
+          completionWindow = await measureCompletionWindow(completionLabel,
+            (mode) => transport.call("_setClockMode", mode), () => transport.call("_presentationCompletions"), async () => {
+              for (const key of heldKeys) await transport.call("input.keyUp", { key });
+              heldKeys.clear();
+              if (pointerButtons) await transport.call("input.pointer", { buttons: 0, type: "up", x: pointerX, y: pointerY });
+              if (pointerCount) await transport.call("input.pointers", { pointers: [] });
+              pointerButtons = 0; pointerCount = 0;
+            });
+          completionWindow.setupSnapshot = setupSnapshot;
+        } else if (step.label !== undefined && cpuLabels.includes(step.label)) {
           const measuredBridge = bridge;
           if (frames > 1000) await measuredBridge.advance(frames - 1000);
           const profile: unknown = "profile" in measuredBridge.description ? measuredBridge.description.profile : undefined;
@@ -597,10 +614,13 @@ async function runDevicePlaytestInternal(
       network: [],
       runtimeTrace: undefined,
     });
+    if (completionWindow !== undefined) completionWindow.provenance = { requestedDisplay: completionDisplay!, qualified: false, nativeVsync: process.env.TN_PLAYER_VSYNC };
     if (cpuWindows.length !== cpuLabels.length) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: missing requested CPU window");
     return {
       ...report,
-      ...(cpuLabels.length === 0 ? {} : { acquisition: { requestUrls: [], cpuWindows } }),
+      ...(completionWindow === undefined ? {} : { clock: "wall-clock" as const }),
+      ...((cpuLabels.length === 0 && completionWindow === undefined) ? {} : { acquisition: { requestUrls: [],
+        ...(cpuLabels.length === 0 ? {} : { cpuWindows }), ...(completionWindow === undefined ? {} : { completionWindow }) } }),
       runtime: "native",
       target: target.name,
       url: target.name === "desktop" ? config.desktop?.executable ?? target.processName : endpoint,

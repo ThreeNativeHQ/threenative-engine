@@ -49,7 +49,7 @@ export interface IRunStepSamples {
 
 export interface IStandalonePlaytestReport extends IPlaytestReport {
   artifactDirectory: string;
-  acquisition?: { requestUrls: readonly string[]; cpuWindows?: readonly ICpuWindow[] };
+  acquisition?: { requestUrls: readonly string[]; cpuWindows?: readonly ICpuWindow[]; completionWindow?: import("./steps.js").ICompletionWindow };
   /**
    * The clock this run measured on, as the protocol names it: `fixed-step` for the default
    * tick-counted scenario, `wall-clock` when `--live-clock` put the host's own frame pump in

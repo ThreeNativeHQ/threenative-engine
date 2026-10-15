@@ -217,6 +217,7 @@ export async function runStep(
   subject?: string,
   liveClock = false,
   cpuWindow?: (advance: () => Promise<void>) => Promise<void>,
+  completionWindow?: () => Promise<void>,
 ): Promise<IRunStepSamples> {
   if (step.waitForResource !== undefined) {
     if (bridge === undefined || movementSampleRequest === undefined) {
@@ -321,7 +322,9 @@ export async function runStep(
       "Advertise runtime.fixedStep from the bridge so ticks are deterministic, or author the step in waitFrames/holdFrames, which are display frames and say so.",
     ));
   }
-  if (cpuWindow !== undefined) {
+  if (completionWindow !== undefined) {
+    await completionWindow();
+  } else if (cpuWindow !== undefined) {
     if (step.kind !== "wait" || step.waitTicks !== 1000 || ticks < 1000 || !fixedStep || bridge === undefined || liveClock) {
       throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: measurement requires a fixed-step 1000-tick WAIT");
     }
@@ -694,4 +697,123 @@ export async function waitFrames(page: Page, frames: number): Promise<void> {
     };
     schedule(next);
   }), frames);
+}
+
+/** Private opt-in, like CPU windows: one pose per fresh runner/process, deterministic prefix. */
+export function completionWindowLabel(scenario: Pick<IPlaytestScenario, "steps">, target: string, live: boolean,
+  raw = process.env.TN_PLAYTEST_COMPLETION_WINDOW_LABEL): string | undefined {
+  if (raw === undefined) return undefined;
+  const step = scenario.steps.at(-1);
+  if (!raw || !["browser", "desktop"].includes(target) || live || process.env.TN_PLAYTEST_CPU_WINDOW_LABELS !== undefined
+    || scenario.steps.filter((entry) => entry.label === raw).length !== 1 || step?.label !== raw || step.kind !== "wait"
+    || step.waitForResource !== undefined || step.lifecycle !== undefined || step.press !== undefined
+    || step.pointerPosition !== undefined || step.pointers !== undefined || step.wheel !== undefined || step.media !== undefined)
+    throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: requires a unique final plain WAIT, deterministic browser/desktop prefix, and no CPU windows");
+  return raw;
+}
+
+/** Admission settings only; physical display identity remains an external acceptance gate. */
+export function completionWindowEnvironment(target: "browser" | "desktop", headless: boolean): string {
+  if ((target === "browser" && headless) || (target === "desktop" && process.env.TN_PLAYER_VSYNC !== "0")
+    || (process.platform === "linux" && (process.env.TN_PLAYTEST_HOST_DISPLAY !== "1" || !process.env.DISPLAY?.trim())))
+    throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: requires headed browser/VSYNC=0 native and explicit session display");
+  return process.env.DISPLAY ?? "platform-default";
+}
+
+export interface ICompletionWindow {
+  label: string;
+  setupSnapshot?: IPlaytestObservationSnapshot;
+  provenance?: { requestedDisplay: string; qualified: false; browserArgs?: readonly string[]; nativeVsync?: string };
+  metric: "application-completion-interval";
+  clock: "wall-clock";
+  source: string;
+  timebase: string;
+  epoch: number;
+  startTick: number;
+  startMs: number;
+  endMs: number;
+  durationMs: number;
+  intervalCount: number;
+  dropped: { min: number; max: number };
+  completionIntervalP50Ms: number;
+  samples: { sequence: number; completedAtMs: number }[];
+}
+
+/** Poll raw producer timestamps; never drive ticks, clamp intervals, or substitute physics delta. */
+export async function measureCompletionWindow(label: string,
+  mode: (value: "fixed-step" | "wall-clock") => Promise<unknown>,
+  poll: () => Promise<unknown>, release: () => Promise<void>): Promise<ICompletionWindow> {
+  const fail = (reason: string): never => { throw new Error(`TN_PLAYTEST_COMPLETION_WINDOW_FAILED: ${reason}`); };
+  const bounded = async <T>(operation: () => Promise<T>, timeoutMs = 5000): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try { return await Promise.race([operation(), new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: operation timeout")), timeoutMs);
+    })]); } finally { clearTimeout(timer); }
+  };
+  const samples: ICompletionWindow["samples"] = [];
+  let previous: { sequence: number; completedAtMs: number } | undefined;
+  let failure: unknown;
+  let failed = false;
+  let result: ICompletionWindow | undefined;
+  let firstMs: number | undefined;
+  let epoch: number | undefined;
+  let source: string | undefined;
+  let timebase: string | undefined;
+  let minimumDropped: number | undefined;
+  let maximumDropped = 0;
+  try {
+    const negotiated = await bounded(() => mode("wall-clock")) as { mode?: string; tick?: number };
+    if (negotiated?.mode !== "wall-clock" || !Number.isSafeInteger(negotiated.tick)) fail("clock negotiation unavailable");
+    const deadline = Date.now() + 10000;
+    measurement: while (Date.now() <= deadline) {
+      const value = await bounded(poll, Math.max(1, deadline - Date.now())) as { clock?: { mode?: string }; epoch?: number; valid?: boolean; dropped?: number;
+        source?: string; timebase?: string; samples?: ICompletionWindow["samples"] };
+      if (!value || value.clock?.mode !== "wall-clock" || value.valid !== true || !Number.isSafeInteger(value.dropped) || value.dropped! < 0
+        || !Number.isSafeInteger(value.epoch) || value.epoch! < 0 || !Array.isArray(value.samples)
+        || !["present-return", "render-callback-return"].includes(value.source ?? "")
+        || value.timebase !== (value.source === "present-return" ? "steady-clock-ms" : "performance-now-ms"))
+        fail("missing, invalid or truncated completion observation");
+      if ((previous === undefined && value.dropped !== 0) || value.dropped! < maximumDropped) fail("missing initial completions or decreasing eviction count");
+      minimumDropped ??= value.dropped;
+      maximumDropped = value.dropped!;
+      if (epoch !== undefined && (value.epoch !== epoch || value.source !== source || value.timebase !== timebase)) fail("observation epoch/source changed");
+      epoch = value.epoch; source = value.source; timebase = value.timebase;
+      let inSnapshot: number | undefined;
+      let snapshotTime: number | undefined;
+      for (const sample of value.samples!) {
+        if (!sample || !Number.isSafeInteger(sample.sequence) || sample.sequence <= 0 || !Number.isFinite(sample.completedAtMs) || sample.completedAtMs < 0
+          || (inSnapshot !== undefined && (sample.sequence !== inSnapshot + 1 || sample.completedAtMs <= snapshotTime!))) fail("invalid completion sequence/timestamp");
+        inSnapshot = sample.sequence; snapshotTime = sample.completedAtMs;
+        if (previous && sample.sequence <= previous.sequence) {
+          if (sample.sequence === previous.sequence && sample.completedAtMs !== previous.completedAtMs) fail("completion changed after publication");
+          continue;
+        }
+        if (previous && (sample.sequence !== previous.sequence + 1 || sample.completedAtMs <= previous.completedAtMs)) fail("completion gap or nonpositive interval");
+        previous = sample;
+        firstMs ??= sample.completedAtMs;
+        if (sample.completedAtMs < firstMs + 2000) continue;
+        samples.push({ sequence: sample.sequence, completedAtMs: sample.completedAtMs });
+        if (sample.completedAtMs - samples[0]!.completedAtMs >= 5000) {
+          if (samples.length < 101) fail("fewer than 100 complete intervals");
+          const intervals = samples.slice(1).map((entry, index) => entry.completedAtMs - samples[index]!.completedAtMs).sort((a, b) => a - b);
+          result = { label, metric: "application-completion-interval", clock: "wall-clock", source: source!, timebase: timebase!, epoch: epoch!,
+            startTick: negotiated.tick!, startMs: samples[0]!.completedAtMs, endMs: sample.completedAtMs,
+            durationMs: sample.completedAtMs - samples[0]!.completedAtMs, intervalCount: intervals.length, dropped: { min: minimumDropped!, max: maximumDropped },
+            completionIntervalP50Ms: (intervals[Math.floor((intervals.length - 1) / 2)]! + intervals[Math.floor(intervals.length / 2)]!) / 2, samples };
+          break measurement;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (result === undefined) fail("missing five-second duration coverage");
+  } catch (error) { failed = true; failure = error; }
+  const errors: unknown[] = [];
+    try {
+      const restored = await bounded(() => mode("fixed-step")) as { mode?: string };
+      if (restored?.mode !== "fixed-step") fail("clock restoration unavailable");
+    } catch (error) { errors.push(error); }
+    try { await bounded(release); } catch (error) { errors.push(error); }
+  if (errors.length) throw new AggregateError(failed ? [failure, ...errors] : errors, "TN_PLAYTEST_COMPLETION_WINDOW_FAILED: cleanup failed");
+  if (failed) throw failure;
+  return result!;
 }

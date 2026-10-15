@@ -654,6 +654,7 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout can be rai
 });
 
 interface IDesktopScenarioOptions {
+  completion?: { valid: boolean; calls: { method: string; argument: unknown }[] };
   console?: { text: string; type: string }[];
   mailboxFile?: boolean;
   onDriver?: (driver: FakeDesktopDriver) => void;
@@ -687,9 +688,9 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
     steps: [{
       holdFrames: 3,
       press: "KeyW",
-      release: true,
+      release: options.completion === undefined,
       ...(options.screenshotError === undefined ? {} : { screenshot: "frame" }),
-    }],
+    }, ...(options.completion === undefined ? [] : [{ kind: "wait", label: "completion-pose", waitTicks: 1000, release: false }])],
     subject: "player",
     target: "desktop",
     viewport: { height: 360, width: 640 },
@@ -717,6 +718,18 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
       pointer: () => undefined,
     },
   };
+  const transport = new DeviceBridgeTransport(endpoint);
+  if (options.completion !== undefined) {
+    const original = transport.call.bind(transport);
+    transport.call = async <T>(method: string, argument?: unknown): Promise<T> => {
+      options.completion!.calls.push({ method, argument });
+      if (method === "_setClockMode") return { mode: argument, tick: 3, epoch: 1 } as T;
+      if (method === "_presentationCompletions") return { clock: { mode: "wall-clock" }, epoch: 1, valid: options.completion!.valid,
+        dropped: 0, source: "present-return", timebase: "steady-clock-ms",
+        samples: Array.from({ length: 351 }, (_, i) => ({ sequence: i + 1, completedAtMs: i * 20 })) } as T;
+      return original<T>(method, argument);
+    };
+  }
   try {
     if (options.signalBeforeStart) queueMicrotask(() => process.emit("SIGINT"));
     const report = await runDesktopPlaytest({
@@ -732,7 +745,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
       url: "http://127.0.0.1:5173",
     }, {
       driver,
-      transport: new DeviceBridgeTransport(endpoint),
+      transport,
       ...(mailboxRoot === undefined ? {} : { mailboxRoot }),
     });
     return { driver, report };
@@ -991,3 +1004,29 @@ function minimalConfig(target: "android" | "browser" | "desktop" | "ios"): IStan
     url: "http://127.0.0.1:5173",
   };
 }
+
+test("desktop completion opt-in follows deterministic prefix, restores controls and reports separate cadence", async () => {
+  const saved = { ...process.env };
+  process.env.TN_PLAYTEST_COMPLETION_WINDOW_LABEL = "completion-pose";
+  process.env.TN_PLAYER_VSYNC = "0";
+  process.env.TN_PLAYTEST_HOST_DISPLAY = "1";
+  process.env.DISPLAY = ":synthetic-driver";
+  const calls: { method: string; argument: unknown }[] = [];
+  try {
+    const { report, driver } = await runDesktopScenario(2, { completion: { valid: true, calls } });
+    expect(report.pass).toBe(true);
+    expect(report.clock).toBe("wall-clock");
+    expect(report.acquisition?.cpuWindows).toBeUndefined();
+    expect(report.acquisition?.completionWindow).toMatchObject({ intervalCount: 250, durationMs: 5000, completionIntervalP50Ms: 20,
+      provenance: { qualified: false, nativeVsync: "0", requestedDisplay: ":synthetic-driver" },
+      setupSnapshot: { clock: { mode: "fixed-step", tick: 3 } } });
+    expect(calls.filter(call => call.method === "advance").map(call => call.argument)).toEqual([3]);
+    expect(calls.filter(call => call.method === "_setClockMode").map(call => call.argument)).toEqual(["wall-clock", "fixed-step"]);
+    expect(calls).toContainEqual({ method: "input.keyUp", argument: { key: "KeyW" } });
+    expect(await driver.isAlive()).toBe(false);
+  } finally {
+    for (const key of ["TN_PLAYTEST_COMPLETION_WINDOW_LABEL", "TN_PLAYER_VSYNC", "TN_PLAYTEST_HOST_DISPLAY", "DISPLAY"]) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+  }
+});
