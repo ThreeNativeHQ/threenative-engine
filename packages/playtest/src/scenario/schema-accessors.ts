@@ -4,7 +4,7 @@ import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./err
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS, PLAYTEST_PER_ADAPTER_KEYS } from "./schema-base.js";
 import { GENERATED_ASSERTION_FIELD_VALIDATORS } from "./generated-assertion-validators.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
-  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
+  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -527,6 +527,32 @@ export function validateStartupAssertion(
   }
   if (Object.keys(result).length === 0) {
     throw invalidScenario(scenarioPath, `'${objectPath}' must set at least one of ${STARTUP_CEILINGS.join(", ")}; an empty startup assertion observes nothing.`);
+  }
+  return result;
+}
+
+const PIPELINE_CENSUS_CEILINGS = [
+  "maxNodeBuildsAfterWarmUpSettled",
+  "maxRenderPipelineCreationsAfterWarmUpSettled",
+] as const;
+
+export function validatePipelineCensusAssertion(
+  value: unknown,
+  scenarioPath: string,
+  objectPath: string,
+): IPlaytestPipelineCensusAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, [...PIPELINE_CENSUS_CEILINGS], scenarioPath, objectPath);
+  const result: { -readonly [K in keyof IPlaytestPipelineCensusAssertion]: number } = {};
+  for (const key of PIPELINE_CENSUS_CEILINGS) {
+    const ceiling = optionalNonNegativeInteger(record, key, scenarioPath, objectPath);
+    if (ceiling !== undefined) result[key] = ceiling;
+  }
+  if (Object.keys(result).length === 0) {
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}' must set at least one of ${PIPELINE_CENSUS_CEILINGS.join(", ")}; an empty pipeline census assertion observes nothing.`,
+    );
   }
   return result;
 }

@@ -17,6 +17,7 @@ import { emitCausedBy } from "./evaluators/caused-by.js";
 import { emitSceneNodes } from "./evaluators/scene-nodes.js";
 import { emitScene } from "./evaluators/scene.js";
 import { emitStartup } from "./evaluators/startup.js";
+import { emitPipelineCensus } from "./evaluators/pipeline-census.js";
 
 export { overlayNodeObservationKey } from "./evaluators/helpers.js";
 
@@ -36,6 +37,7 @@ export function evaluateRichPlaytestAssertions(input: {
   emitPerfSignalsWorld(ctx);
   emitWorldGameplay(ctx);
   emitRenderChain(ctx);
+  emitPipelineCensus(ctx);
   emitScene(ctx);
   emitSceneNodes(ctx);
   // A geometry request carries no bounds of its own, so its one result says the capture actually

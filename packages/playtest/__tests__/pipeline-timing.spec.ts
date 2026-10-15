@@ -445,6 +445,54 @@ describe("pipeline timing capture", () => {
     expect(summary.warmup.beforeFirstPresent).toBe(1);
   });
 
+  it("reports node builds and render creations after the warm-up boundary", () => {
+    const events = [
+      browserEvent({ nodeBuilds: 3, beforeWarmUpSettled: true }),
+      browserEvent({
+        beforeFirstPresent: false,
+        beforeWarmUpSettled: false,
+        pipelineIdentity: "backend-pipeline-2",
+        sequence: 2,
+        settledMs: 5,
+        nodeBuilds: 1,
+      }),
+      browserEvent({
+        beforeFirstPresent: false,
+        beforeWarmUpSettled: false,
+        pipelineIdentity: "backend-pipeline-3",
+        sequence: 3,
+        settledMs: 6,
+      }),
+    ];
+    const capture = parsePipelineCapture(browserCapture(events, {
+      counts: {
+        lookups: 3,
+        creations: 3,
+        failures: 0,
+        pending: 0,
+        uniquePrograms: 1,
+        uniquePipelines: 3,
+        recordedEvents: 3,
+        droppedEvents: 0,
+        nodeBuilds: 4,
+      },
+      firstPresent: { boundaryMs: 4, eventsSettled: 1 },
+      warmUpSettled: {
+        boundaryMs: 4,
+        eventsSettled: 1,
+        nodeBuilds: 3,
+        renderPipelineCreations: 1,
+      },
+    }));
+    const summary = summarizePipelineCapture(capture);
+
+    expect(summary.warmup).toMatchObject({
+      afterWarmUpSettled: 2,
+      nodeBuildsAfterWarmUpSettled: 1,
+      renderPipelineCreationsAfterWarmUpSettled: 2,
+    });
+  });
+
   it("requires a version before treating an events object as a browser capture", () => {
     expect(() => parsePipelineCapture({ events: [browserEvent()] })).toThrow(/missing its version/u);
   });

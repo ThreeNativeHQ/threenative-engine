@@ -1,0 +1,28 @@
+{
+  "name": "abyss-framework-warm-up-reuse",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 0,
+  "subject": "player",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "label": "frame-1", "screenshot": "frame-1", "waitTicks": 1 },
+    { "label": "frame-2", "screenshot": "frame-2", "waitTicks": 1 },
+    { "label": "frame-3", "screenshot": "frame-3", "waitTicks": 1 },
+    { "label": "frame-4", "screenshot": "frame-4", "waitTicks": 1 },
+    { "label": "frame-5", "screenshot": "frame-5", "waitTicks": 1 }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "pipelineCensus": {
+      "maxNodeBuildsAfterWarmUpSettled": 0,
+      "maxRenderPipelineCreationsAfterWarmUpSettled": 0
+    }
+  }
+}

@@ -563,6 +563,71 @@ describe("pipeline census", () => {
     ).toBe(true);
   });
 
+  it("counts distinct node-builder states on each side of the warm-up boundary", () => {
+    let now = 0;
+    const { backend, pipelines } = webgpuStub();
+    const raw = {
+      backend,
+      renderObject: (...args: unknown[]) => {
+        const object = args[0] as Record<string, unknown>;
+        const getNodeBuilderState = object.getNodeBuilderState;
+        if (typeof getNodeBuilderState === "function") getNodeBuilderState();
+        pipelines.getForRender(object, args[1]);
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu", now: () => now });
+    census.installRenderer(raw);
+
+    const firstState = {};
+    const first = {
+      ...renderObject(
+        {
+          vertexProgram: { code: source("first vertex") },
+          fragmentProgram: { code: source("first fragment") },
+        },
+        { id: 1 },
+        { id: 2 },
+      ),
+      getNodeBuilderState: () => firstState,
+    };
+    raw.renderObject(first, null);
+    census.warmUpSettled();
+    now += 1;
+
+    const secondState = {};
+    const second = {
+      ...renderObject(
+        {
+          vertexProgram: { code: source("second vertex") },
+          fragmentProgram: { code: source("second fragment") },
+        },
+        { id: 3 },
+        { id: 4 },
+      ),
+      getNodeBuilderState: () => secondState,
+    };
+    raw.renderObject(second, null);
+    raw.renderObject({ ...second, getNodeBuilderState: () => secondState }, null);
+
+    const report = census.snapshot();
+    expect(report.counts.nodeBuilds).toBe(2);
+    expect(report.warmUpSettled).toMatchObject({
+      eventsSettled: 1,
+      nodeBuilds: 1,
+      renderPipelineCreations: 1,
+    });
+    expect(
+      report.events.map(({ nodeBuilds, beforeWarmUpSettled }) => ({
+        nodeBuilds,
+        beforeWarmUpSettled,
+      })),
+    ).toEqual([
+      { nodeBuilds: 1, beforeWarmUpSettled: true },
+      { nodeBuilds: 1, beforeWarmUpSettled: false },
+      { nodeBuilds: 0, beforeWarmUpSettled: false },
+    ]);
+  });
+
   it("rejects completeness when creation observation is missing or bounded out", () => {
     const census = createPipelineCensus({ kind: "webgpu", limit: 1 });
     const backend = {
