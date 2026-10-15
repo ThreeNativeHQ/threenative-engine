@@ -22,10 +22,10 @@ Use the upstream three.js API only (`instancedArray`, `storage`, `Fn().compute(c
 #### Phase 1: storage and dispatch
 **Status:** NOT STARTED
 **Files:** `src/engine/shader/graph/*`, `src/engine/renderer/*`, `src/engine/abi/bindings_*.cpp`, `src/adapters/v8/tsl.cpp`, `src/engine/player/core-tsl.mjs`, `packages/three-native/src/*` (Wasm facade).
-**Verification:** AC-1, AC-2.
+- [ ] Storage constructs and a compute kernel writes it before the frame's render reads it (AC-1, AC-2). proof: native-engine ctest + vitest.
 #### Phase 2: readback and atomics
 **Status:** NOT STARTED
-**Verification:** AC-3.
+- [ ] `getArrayBufferAsync` returns the written bytes and atomics give exact counts (AC-3). proof: GPU ctest.
 #### Phase 3: templates
 **Status:** NOT STARTED
-**Verification:** AC-4.
+- [ ] Starter and snow pass their playtests on native desktop and web, judged NEUTRAL or better (AC-4). proof: template playtests + judge.
