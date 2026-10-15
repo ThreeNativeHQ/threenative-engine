@@ -79,7 +79,14 @@ function fixture() {
       .map((part) => `#define V8_${part}\n`)
       .join(""),
   );
-  for (const name of ["V8-LICENSE", "V8-LICENSE.v8", "V8-FDLIBM", "V8-STRONGTALK", "BUILD-LICENSE"])
+  for (const name of [
+    "V8-LICENSE",
+    "V8-LICENSE.v8",
+    "V8-FDLIBM",
+    "V8-STRONGTALK",
+    "BUILD-LICENSE",
+    "COMPILER-RT-COPYRIGHT",
+  ])
     writeFileSync(join(root, "licenses", name), "license fixture");
   writeFileSync(join(root, "libv8_monolith.a"), archive());
   const receipt = createLinuxArm64V8Receipt(root, toolchain());
@@ -281,7 +288,7 @@ describe("recipe and toolchain", () => {
         rt.objects = 1;
       },
       (rt: Record<string, unknown>) => {
-        delete rt.archive;
+        Reflect.deleteProperty(rt, "archive");
       },
     ]) {
       const root = fixture();
@@ -296,7 +303,9 @@ describe("recipe and toolchain", () => {
       if (args.length) {
         const elf = archive().subarray(68);
         elf.writeUInt16LE(3, 16);
-        writeFileSync(args.at(-1)!, elf);
+        const output = args.at(-1);
+        if (output === undefined) throw new Error("missing preflight output argument");
+        writeFileSync(output, elf);
       }
     });
     prepareLinuxArm64V8Sdk(root, run);
@@ -311,7 +320,9 @@ describe("recipe and toolchain", () => {
     expect(run.mock.calls[1]).toEqual([join(sdk, "preflight"), []]);
     expect(() =>
       prepareLinuxArm64V8Sdk(root, (_program: string, args: string[]) => {
-        writeFileSync(args.at(-1)!, archive(62).subarray(68));
+        const output = args.at(-1);
+        if (output === undefined) throw new Error("missing preflight output argument");
+        writeFileSync(output, archive(62).subarray(68));
       }),
     ).toThrow("aarch64 ELF executable");
     expect(() =>

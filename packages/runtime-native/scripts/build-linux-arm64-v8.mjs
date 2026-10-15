@@ -99,6 +99,8 @@ const LICENSES = {
   "V8-FDLIBM": "LICENSE.fdlibm",
   "V8-STRONGTALK": "LICENSE.strongtalk",
   "BUILD-LICENSE": "build/LICENSE",
+  // Build dependency notice; inclusion does not assert that compiler-rt objects are embedded.
+  "COMPILER-RT-COPYRIGHT": "/usr/share/doc/libclang-rt-18-dev/copyright",
 };
 
 export function linuxArm64V8GnArgs() {
@@ -430,7 +432,7 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
       join(stage, "libv8_monolith.a"),
     );
     for (const [name, path] of Object.entries(LICENSES))
-      copyFileSync(join(source, path), join(stage, "licenses", name));
+      copyFileSync(resolve(source, path), join(stage, "licenses", name));
     const receipt = createLinuxArm64V8Receipt(stage, toolchain);
     writeFileSync(join(stage, RECEIPT), `${JSON.stringify(receipt, null, 2)}\n`);
     verifyLinuxArm64V8Installation(stage);

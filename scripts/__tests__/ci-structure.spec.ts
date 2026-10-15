@@ -1222,7 +1222,7 @@ describe("CI pipeline structure", () => {
     );
     expect(install).toContain("sudo apt-get update");
     expect(install).toContain(
-      "sudo apt-get install -y clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 ninja-build build-essential python3 git pkg-config",
+      "sudo apt-get install -y clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 libclang-rt-18-dev=1:18.1.3-1 ninja-build build-essential python3 git pkg-config libglib2.0-dev",
     );
     expect(source.indexOf("Install the pinned Linux arm64 V8 compiler")).toBeLessThan(
       source.indexOf("Build the Linux arm64 V8 payload"),
