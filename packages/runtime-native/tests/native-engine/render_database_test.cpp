@@ -265,6 +265,10 @@ void multiMaterialGroups() {
     items = database.prepare(scene, camera, lights);
     CHECK(items.size() == 6);
     for (const DrawItem& item : items) CHECK(item.instanceCount == 4);
+    // A batched group draws its own slice only: the crowd's triangles are the boxes' triangles, no more.
+    uint64_t triangles = 0;
+    for (const DrawItem& item : items) triangles += uint64_t{item.instanceCount} * (item.indices->count() / 3);
+    CHECK(triangles == 4 * 12);
 }
 
 void uniformBatchPreparation() {

@@ -832,14 +832,29 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     BINARY(sub)
     BINARY(mul) BINARY(div) BINARY(lessThan) BINARY(greaterThan) BINARY(equal) BINARY(min) BINARY(max) BINARY(pow)
         BINARY(step) BINARY(dot) BINARY(distance) BINARY(cross) BINARY(mod)
+        BINARY(lessThanEqual) BINARY(greaterThanEqual)
 #undef BINARY
+    // `and` / `or` / `not` are C++ operator names, so the graph calls them logical*.
+    if (name == "and" || name == "or") {
+        arity(method ? 1 : 2);
+        return name == "and" ? g::logicalAnd(lhs(), rhs()) : g::logicalOr(lhs(), rhs());
+    }
+    if (name == "not") {
+        arity(method ? 0 : 1);
+        return g::logicalNot(lhs());
+    }
+    // r185's toFloat, toInt and toUint (ConvertNode): the receiver converted, as float(x), int(x) and uint(x).
+    if (method && (name == "toFloat" || name == "toInt" || name == "toUint")) {
+        arity(0);
+        return tslCall(name == "toFloat" ? "float" : name == "toInt" ? "int" : "uint", nullptr, {*receiver}, serial);
+    }
 #define UNARY(symbol)                                                                                                  \
     if (name == #symbol) {                                                                                             \
         arity(method ? 0 : 1);                                                                                         \
         return g::symbol(lhs());                                                                                       \
     }
             UNARY(negate) UNARY(abs) UNARY(sin) UNARY(cos) UNARY(floor) UNARY(fract) UNARY(sqrt) UNARY(exp) UNARY(exp2)
-                UNARY(log2) UNARY(normalize) UNARY(length) UNARY(dFdx) UNARY(dFdy) UNARY(sign) UNARY(fwidth)
+                UNARY(log2) UNARY(normalize) UNARY(length) UNARY(dFdx) UNARY(dFdy) UNARY(sign) UNARY(fwidth) UNARY(all) UNARY(any)
 #undef UNARY
     // r185's cbrt (MathNode.js): sign(a) * pow(abs(a), 1 / 3).
     if (name == "cbrt") {
@@ -1060,7 +1075,7 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         if (args.size() > 1) throw std::runtime_error("expected at most 1 argument");
         Body closed = std::move(open().back());
         open_.pop_back();
-        for (auto it = ifs_.begin(); it != ifs_.end();) it = it->second.first == closed.id ? ifs_.erase(it) : std::next(it);
+        for (auto it = ifs_.begin(); it != ifs_.end();) it = it->second.body == closed.id ? ifs_.erase(it) : std::next(it);
         if (closed.statements.empty() && !args.empty()) {
             out = input(args[0]);
             return true;
@@ -1126,45 +1141,89 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         node->kind = g::Kind::If;
         node->args = {input(args[0])};
         node->body = body(1, "If");
-        ifs_[node.get()] = {current.id, current.statements.size()};
+        ifs_[node.get()] = {current.id, current.statements.size(), node, 0};
         current.statements.push_back(node);
         out = node;
         return true;
     }
-    if (name == "Else") {
-        arity(1);
+    if (name == "Else" || name == "ElseIf") {
+        const bool chained = name == "ElseIf";
+        arity(chained ? 2 : 1);
         auto& current = open().back();
         const auto branch = self();
         const auto at = ifs_.find(branch.get());
-        if (branch->kind != g::Kind::If || at == ifs_.end() || at->second.first != current.id ||
-            at->second.second >= current.statements.size() || current.statements[at->second.second] != branch ||
+        if (branch->kind != g::Kind::If || at == ifs_.end() || at->second.body != current.id ||
+            at->second.index >= current.statements.size() || current.statements[at->second.index] != at->second.root ||
             !branch->otherwise.empty())
-            throw std::runtime_error("Else requires an If in this stack");
-        auto node = std::make_shared<g::NodeData>(*branch);
-        node->otherwise = body(0, "Else");
-        current.statements[at->second.second] = node;
+            throw std::runtime_error(name + " requires an If in this stack");
+        // A chain is copied along its else-branches, so a node already handed out is never changed.
+        const std::function<g::Node(const g::Node&, size_t, std::vector<g::Node>)> withTip =
+            [&](const g::Node& node, size_t depth, std::vector<g::Node> tail) {
+                auto copy = std::make_shared<g::NodeData>(*node);
+                copy->otherwise = depth == 0 ? std::move(tail) : std::vector<g::Node>{withTip(node->otherwise[0], depth - 1, std::move(tail))};
+                return g::Node(copy);
+            };
+        g::Node inner;
+        if (chained) {
+            auto made = std::make_shared<g::NodeData>();
+            made->kind = g::Kind::If;
+            made->args = {input(args[0])};
+            made->body = body(1, "ElseIf");
+            inner = made;
+        }
+        const IfSlot slot = at->second;
+        const g::Node root = withTip(slot.root, slot.depth, chained ? std::vector<g::Node>{inner} : body(0, "Else"));
+        current.statements[slot.index] = root;
         ifs_.erase(at);
-        out = node;
+        if (chained) ifs_[inner.get()] = {current.id, slot.index, root, slot.depth + 1};
+        out = chained ? inner : root;
         return true;
     }
     if (name == "Loop:index") {
-        arity(0);
-        g::Block block;
-        block.Loop(0, {});
-        out = block.node()->body[0]->args[1];
+        if (args.size() > 1) throw std::runtime_error("expected at most 1 argument");
+        // three's Loop({ type }): the index is an int (default) or a uint; the engine counts in i32 and converts.
+        const std::string kind = args.empty() ? "int" : args[0].kind == TslArg::Kind::String ? args[0].text : "";
+        if (kind != "int" && kind != "uint") throw std::runtime_error("Loop type must be int or uint");
+        auto index = std::make_shared<g::NodeData>();
+        index->kind = g::Kind::LoopIndex;
+        index->type = kind == "uint" ? Type::u32() : Type::i32();
+        out = index;
         return true;
     }
     if (name == "Loop") {
-        arity(3);
+        if (args.size() != 3 && args.size() != 4) throw std::runtime_error("expected 3 or 4 arguments");
         auto& statements = open().back().statements;
-        const double n = args[0].kind == TslArg::Kind::Number ? args[0].number : -1;
-        if (n < 0 || n > std::numeric_limits<int32_t>::max() || n != std::floor(n))
+        // `end` is a whole number or an integer node; `start` a whole number below it. The engine loops from 0 to
+        // end - start and adds start to the index.
+        const double start = args.size() == 4 && args[3].kind == TslArg::Kind::Number ? args[3].number : 0;
+        if (args.size() == 4 && args[3].kind != TslArg::Kind::Number) throw std::runtime_error("Loop start must be a whole number");
+        if (start < 0 || start > std::numeric_limits<int32_t>::max() || start != std::floor(start))
+            throw std::runtime_error("expected a nonnegative i32 start");
+        g::Node count;
+        if (args[0].kind == TslArg::Kind::Number) {
+            const double n = args[0].number - start;
+            if (n < 0 || args[0].number > std::numeric_limits<int32_t>::max() || args[0].number != std::floor(args[0].number))
+                throw std::runtime_error("expected a nonnegative i32 count");
+            count = g::int_(static_cast<int32_t>(n));
+        } else if (args[0].kind == TslArg::Kind::Node && args[0].node) {
+            count = args[0].node;
+            if (count->type != Type::i32()) {
+                auto convert = std::make_shared<g::NodeData>();
+                convert->kind = g::Kind::Convert;
+                convert->type = Type::i32();
+                convert->args = {count};
+                count = convert;
+            }
+            if (start != 0) count = g::sub(count, g::int_(static_cast<int32_t>(start)));
+        } else {
             throw std::runtime_error("expected a nonnegative i32 count");
+        }
         if (args[1].kind != TslArg::Kind::Node || !args[1].node || args[1].node->kind != g::Kind::LoopIndex)
             throw std::runtime_error("Loop needs the index Loop:index made");
         auto node = std::make_shared<g::NodeData>();
         node->kind = g::Kind::Loop;
-        node->args = {g::int_(static_cast<int32_t>(n)), args[1].node};
+        node->args = {count, args[1].node};
+        if (start != 0) node->args.push_back(g::int_(static_cast<int32_t>(start)));
         node->body = body(2, "Loop");
         statements.push_back(node);
         out = node;

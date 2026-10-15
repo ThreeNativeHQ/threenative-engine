@@ -3,22 +3,12 @@
 // renderer.getArrayBufferAsync returns the written bytes exactly, atomics count exactly (a thread past
 // the dispatch count writes nothing), and a render material reads what a kernel wrote in the same frame.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { rmSync } from "node:fs";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { bundleNativeEngine } from "../../scripts/bundle-native-engine.mjs";
+import { runComputeGame } from "./compute-harness.mjs";
 
-const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const executable = process.argv[2];
 assert(executable, "Usage: player-compute.mjs <tn-native-engine-player-v8>");
-const work = await mkdtemp(resolve(native, "build/player-compute-"));
-process.once("exit", () => rmSync(work, { recursive: true, force: true }));
 
-const entry = resolve(work, "game.ts");
-const outfile = resolve(work, "game.js");
-await writeFile(entry, `
+const { verdict, output } = await runComputeGame(executable, `
 import { DoubleSide, Mesh, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, UnsignedByteType } from "three";
 import { Fn, If, atomicAdd, atomicLoad, atomicStore, float, instanceIndex, instancedArray, uint, uniform, vec3, vec4, vertexIndex } from "three/tsl";
 import { MeshBasicNodeMaterial, QuadMesh, WebGPURenderer } from "three/webgpu";
@@ -161,28 +151,5 @@ async function run() {
   renderer.deleteAttribute(filled.value);
 }
 `);
-await bundleNativeEngine({ entry, outfile, boot: false });
-const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy" };
-delete env.TN_PLAYTEST_MAILBOX_ROOT;
-const child = spawn(resolve(executable), [outfile], { env });
-let output = "";
-const verdict = await new Promise((done) => {
-  const timer = setTimeout(() => done("timeout"), 90_000);
-  const read = (chunk) => {
-    output += chunk;
-    const match = output.match(/COMPUTE_(OK|BAD[^\n]*|ERROR[^\n]*)/u);
-    if (match) {
-      clearTimeout(timer);
-      done(match[0]);
-    }
-  };
-  child.stdout.on("data", read);
-  child.stderr.on("data", read);
-  child.once("exit", () => {
-    clearTimeout(timer);
-    done(output.match(/COMPUTE_(OK|BAD[^\n]*|ERROR[^\n]*)/u)?.[0] ?? "exited");
-  });
-});
-child.kill();
 assert.equal(verdict, "COMPUTE_OK", `${verdict}\n${output.slice(-2000)}`);
 console.log("PASS TSL compute on the V8 player: storage, dispatch order, exact readback, exact atomics, render read");

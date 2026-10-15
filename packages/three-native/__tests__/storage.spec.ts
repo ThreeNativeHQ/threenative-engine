@@ -186,6 +186,92 @@ describe("storage buffers on the Wasm facade", () => {
   });
 });
 
+describe("TSL operators SoftBody3D needs, on the Wasm facade", () => {
+  type Node = Record<string, (...args: unknown[]) => Node>;
+  it("calls the engine for comparisons, bool logic, all, any and conversions", () => {
+    const calls: ICall[] = [];
+    const tsl = tslOver(calls);
+    const v = (tsl.vec3 as (...a: number[]) => Node)(1, 2, 3);
+    const w = (tsl.vec3 as (...a: number[]) => Node)(1, 5, 2);
+    const lanes = v.lessThanEqual?.(w) as Node;
+    lanes.greaterThanEqual?.(w);
+    lanes.and?.(lanes);
+    lanes.or?.(lanes);
+    lanes.not?.();
+    lanes.all?.();
+    lanes.any?.();
+    v.toUint?.();
+    v.toInt?.();
+    v.toFloat?.();
+    (tsl.and as (a: unknown, b: unknown) => unknown)(lanes, lanes);
+    (tsl.all as (a: unknown) => unknown)(lanes);
+    const names = calls.map((call) => call.name);
+    for (const name of [
+      "lessThanEqual",
+      "greaterThanEqual",
+      "and",
+      "or",
+      "not",
+      "all",
+      "any",
+      "toUint",
+      "toInt",
+      "toFloat",
+    ])
+      expect(names, name).toContain(name);
+    // The module-level forms carry no receiver; the method forms carry theirs.
+    expect(
+      calls.filter((call) => call.name === "and").map((call) => call.receiver === null),
+    ).toEqual([false, true]);
+  });
+
+  it("chains ElseIf between If and Else, one engine call each", () => {
+    const calls: ICall[] = [];
+    const tsl = tslOver(calls);
+    const ran: string[] = [];
+    (tsl.Fn as (f: () => void) => () => void)(() => {
+      const zero = (tsl.float as (n: number) => Node)(0);
+      const test = zero.lessThan?.(zero) as Node;
+      const chain = (tsl.If as (c: unknown, f: () => void) => Node)(test, () => ran.push("if"));
+      chain.ElseIf?.(test, () => ran.push("elseif1"));
+      chain.ElseIf?.(test, () => ran.push("elseif2"));
+      chain.Else?.(() => ran.push("else"));
+    })();
+    expect(ran).toEqual(["if", "elseif1", "elseif2", "else"]);
+    const names = calls.map((call) => call.name).filter((n) => /^(If|ElseIf|Else)$/u.test(n));
+    expect(names).toEqual(["If", "ElseIf", "ElseIf", "Else"]);
+    const elseIf = calls.find((call) => call.name === "ElseIf");
+    expect(elseIf?.args.map((arg) => arg.kind)).toEqual(["node", "node"]);
+  });
+
+  it("takes three's object-form Loop: type, start, end and the index name", () => {
+    const calls: ICall[] = [];
+    const tsl = tslOver(calls);
+    let seen: unknown;
+    (tsl.Fn as (f: () => void) => () => void)(() => {
+      (tsl.Loop as (p: unknown, f: (o: Record<string, unknown>) => void) => void)(
+        { type: "uint", start: 2, end: 6, name: "k" },
+        ({ k }) => {
+          seen = k;
+        },
+      );
+    })();
+    expect(seen).toBeDefined();
+    expect(calls.find((call) => call.name === "Loop:index")?.args).toEqual([
+      { kind: "string", text: "uint" },
+    ]);
+    const loop = calls.find((call) => call.name === "Loop");
+    expect(loop?.args.map((arg) => arg.kind)).toEqual(["number", "node", "node", "number"]);
+    expect(loop?.args[0]).toEqual({ kind: "number", number: 6 });
+    expect(loop?.args[3]).toEqual({ kind: "number", number: 2 });
+    expect(() =>
+      (tsl.Fn as (f: () => void) => () => void)(() => {
+        (tsl.Loop as (p: unknown, f: () => void) => void)({ end: 3, update: "+= 2" }, () => {});
+      })(),
+    ).toThrow(/update is not supported/u);
+  });
+});
+
 describe("getArrayBufferAsync result forms", () => {
   const bytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer;
   const read = async () => bytes.slice(0);

@@ -67,6 +67,13 @@ const FUNCTIONS = [
   "lessThan",
   "greaterThan",
   "equal",
+  "lessThanEqual",
+  "greaterThanEqual",
+  "and",
+  "or",
+  "not",
+  "all",
+  "any",
   "abs",
   "sin",
   "cos",
@@ -174,6 +181,16 @@ const METHODS = [
   "lessThan",
   "greaterThan",
   "equal",
+  "lessThanEqual",
+  "greaterThanEqual",
+  "and",
+  "or",
+  "not",
+  "all",
+  "any",
+  "toFloat",
+  "toInt",
+  "toUint",
   "abs",
   "sin",
   "cos",
@@ -373,6 +390,12 @@ export function defineTsl(
     const body = capture("Else", callback);
     return wrap(consume(body, runtime.call("Else", this[TSL_NODE], [node(body)])));
   };
+  prototype.ElseIf = function (this: ITslNode, condition: unknown, callback: unknown) {
+    statement("ElseIf");
+    const test = argument("ElseIf", 0, condition);
+    const body = capture("ElseIf", callback);
+    return wrap(consume(body, runtime.call("ElseIf", this[TSL_NODE], [test, node(body)])));
+  };
   prototype.__effect = function (this: ITslNode, name: string, value?: number) {
     return runtime.effectParameter(this[TSL_NODE], name, value);
   };
@@ -435,14 +458,34 @@ export function defineTsl(
     const body = capture("If", callback);
     return wrap(consume(body, runtime.call("If", null, [test, node(body)])));
   };
+  // Loop(count, ({ i }) => ...) or three's Loop({ type, start, end, name }, ({ i }) => ...).
   exports.Loop = (count: unknown, callback: unknown) => {
     statement("Loop");
-    const index = wrap(runtime.call("Loop:index", null, []));
-    const body = capture("Loop", callback, { i: index });
+    let end = count;
+    let type = "int";
+    let name = "i";
+    const extra: TslArgValue[] = [];
+    if (typeof count === "object" && count !== null && !isTslNode(count)) {
+      const params = count as Record<string, unknown>;
+      for (const key of ["condition", "update"])
+        if (params[key] !== undefined)
+          throw new TypeError(`TN_TSL Loop: ${key} is not supported; give the loop an end`);
+      end = params.end;
+      if (params.type !== undefined) type = String(params.type);
+      if (params.name !== undefined) name = String(params.name);
+      if (params.start !== undefined) extra.push({ kind: "number", number: Number(params.start) });
+    }
+    const index = wrap(runtime.call("Loop:index", null, [{ kind: "string", text: type }]));
+    const body = capture("Loop", callback, { [name]: index });
     return wrap(
       consume(
         body,
-        runtime.call("Loop", null, [argument("Loop", 0, count), node(index[TSL_NODE]), node(body)]),
+        runtime.call("Loop", null, [
+          argument("Loop", 0, end),
+          node(index[TSL_NODE]),
+          node(body),
+          ...extra,
+        ]),
       ),
     );
   };
