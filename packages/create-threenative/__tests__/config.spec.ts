@@ -16,6 +16,7 @@ import {
   MODEL_VIRTUAL_KEYS,
   loadConfig,
 } from "../src/config.js";
+import { createProject, discoverTemplateNames } from "../src/index.js";
 
 const execFileAsync = promisify(execFile);
 const roots: string[] = [];
@@ -55,11 +56,11 @@ it("should carry asset exclusions from the real config loader into the compiler"
   expect(manifest.entries["library.glb"]).toBeUndefined();
 });
 it.each([undefined, "legacy", "native"])(
-  "resolves engine %j with legacy as the default",
+  "resolves engine %j with native as the default",
   async (engine) => {
     const root = await project();
     await config(root, `export default ${JSON.stringify({ engine })};`);
-    expect((await loadConfig(root)).engine).toBe(engine ?? "legacy");
+    expect((await loadConfig(root)).engine).toBe(engine ?? "native");
   },
 );
 
@@ -295,7 +296,7 @@ describe("threenative.config.ts", () => {
     );
 
     await expect(loadConfig(root)).resolves.toEqual({
-      engine: "legacy",
+      engine: "native",
       app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
       display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
       window: {
@@ -1311,4 +1312,13 @@ it("rejects a lightmap atlas size that is not a multiple of four on both sides o
       config: { models: { lightmap: { atlasSize: 130, padding: 2 } } } as never,
     }),
   ).rejects.toThrow("TN_ASSETS_CONFIG_INVALID");
+});
+
+it("gives every freshly scaffolded template the native engine", async () => {
+  const root = await makeTempDir("threenative-scaffold-engine-");
+  roots.push(root);
+  for (const template of discoverTemplateNames(path.resolve("packages/create-threenative/templates"))) {
+    const { target } = await createProject({ install: false, target: template, template }, root);
+    expect(await loadConfig(target)).toMatchObject({ engine: "native" });
+  }
 });

@@ -5,6 +5,11 @@ calls below the same day. On 2026-10-12 the owner accepted the charter amendment
 one C++ engine (renderer plus internal shader IR) behind the Three.js API, **opt-in per game**, and
 the legacy host stays the default until the engine proves itself.
 
+**Amended 2026-10-15 (owner):** the engine is now the default for web and desktop. A game that sets
+nothing runs on it, and `engine: "legacy"` in `threenative.config.ts` is the named override. Android
+and iOS still run the legacy host. The legacy engine stays until one clean release has passed (item
+10). The earlier "switch at 2x" rule is superseded. PRD-610 ships PARTIAL: its open boxes stay open.
+
 **What it changes today:** the rule text of [`CHARTER.md`](CHARTER.md) §2, §7 and §11.1 and of root
 `AGENTS.md` rule 5 admits the engine. [`NATIVE-RUNTIME.md`](NATIVE-RUNTIME.md) and
 [`packages/runtime-native/AGENTS.md`](../../packages/runtime-native/AGENTS.md) keep describing the
@@ -95,7 +100,9 @@ best"), 2026-10-04:
    frame time.
 10. **The legacy JS-owned engine stays the default until the native engine proves itself.**
     Promotion to default (PRD-533, N20) needs the owner's call on measured evidence. The legacy
-    engine is deleted (PRD-535, N21) only one release after that promotion.
+    engine is deleted (PRD-535, N21) only one release after that promotion. **Amended 2026-10-15:**
+    the owner promoted the engine to the default for web and desktop on this date, ahead of the 2x
+    bar, and `engine: "legacy"` is the override.
 
 Fixed by the proposal: C++20 for the engine, Dawn and wgpu-native retained, no upstream Three.js
 bundle inside the native engine.

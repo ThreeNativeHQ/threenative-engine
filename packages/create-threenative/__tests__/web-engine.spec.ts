@@ -120,7 +120,7 @@ describe("createWebEnginePlugin", () => {
     }
   });
 
-  it("keeps unset and explicit legacy output byte-identical to today's build", async () => {
+  it("keeps explicit legacy output byte-identical to today's build", async () => {
     const root = await project(false);
     await mkdir(path.join(root, "src"));
     await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
@@ -138,8 +138,6 @@ describe("createWebEnginePlugin", () => {
     };
     await bundle(root, false, "baseline");
     const baseline = await snapshot();
-    await bundle(root, false, true);
-    expect(await snapshot()).toEqual(baseline);
     await writeFile(
       path.join(root, "threenative.config.ts"),
       'export default { engine: "legacy" };\n',

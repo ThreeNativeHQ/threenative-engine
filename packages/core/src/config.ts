@@ -316,7 +316,11 @@ export type ThreeNativeFramePhase = "hostGap" | "overlay" | "render" | "residual
 export type ThreeNativeRenderPassKind = "main" | "shadow" | "reflection" | "nested";
 
 export interface IThreeNativeConfig {
-  /** Web engine backend; defaults to upstream Three.js (`"legacy"`). */
+  /**
+   * The engine that draws the game on web and desktop. Defaults to the owned C++ engine (`"native"`):
+   * the Wasm engine on web, the V8 engine player on desktop. `"legacy"` is the named override: it keeps
+   * upstream Three.js on web and the legacy host on desktop. Android and iOS still run the legacy host.
+   */
   readonly engine?: "legacy" | "native";
   readonly app?: {
     readonly id?: string;

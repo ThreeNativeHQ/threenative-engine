@@ -35,7 +35,7 @@ export async function packageEngineDesktop(
   if (!player || !existsSync(player)) {
     throw new Error(
       `TN_ENGINE_PLAYER_MISSING: engine "native" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}. ` +
-        "Build it (cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON) and set THREENATIVE_ENGINE_PLAYER.",
+        "Build it (cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON) and set THREENATIVE_ENGINE_PLAYER, or set engine: \"legacy\" in threenative.config.ts to package with the legacy host.",
     );
   }
   rmSync(output, { force: true, recursive: true });

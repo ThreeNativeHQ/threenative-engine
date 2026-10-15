@@ -1587,7 +1587,7 @@ async function buildEngineDesktop(
 ): Promise<void> {
   if (config.ui.renderer === "native-css") {
     throw new Error(
-      'TN_ENGINE_NATIVE_UI_UNSUPPORTED: engine "native" on desktop draws a "web" UI through the engine player\'s overlay; set ui.renderer to "web" or "native".',
+      'TN_ENGINE_NATIVE_UI_UNSUPPORTED: engine "native" on desktop draws a "web" UI through the engine player\'s overlay; set ui.renderer to "web" or "native", or set engine: "legacy" to keep the native-css host.',
     );
   }
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
@@ -1595,7 +1595,7 @@ async function buildEngineDesktop(
   const bundler = path.join(runtimeRoot, "scripts", "bundle-native-engine.mjs");
   if (!existsSync(packager) || !existsSync(bundler)) {
     throw new Error(
-      `TN_ENGINE_BUNDLER_MISSING: engine "native" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout.`,
+      `TN_ENGINE_BUNDLER_MISSING: engine "native" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout, or set engine: "legacy" in threenative.config.ts to package with the legacy host.`,
     );
   }
   const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;

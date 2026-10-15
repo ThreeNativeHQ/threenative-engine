@@ -526,7 +526,7 @@ process.exit(1);
     );
     await writeFile(
       path.join(root, "threenative.config.ts"),
-      'export default { assets: { concurrency: 1, output: "cooked" } };\n',
+      'export default { engine: "legacy", assets: { concurrency: 1, output: "cooked" } };\n',
     );
     await writeFile(
       path.join(root, "index.html"),

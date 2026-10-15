@@ -927,7 +927,7 @@ async function validateBootSplash(
 }
 
 function validateEngine(raw: unknown): "legacy" | "native" {
-  if (raw === undefined) return "legacy";
+  if (raw === undefined) return "native";
   if (raw === "legacy" || raw === "native") return raw;
   return fail("TN_CONFIG_ENGINE_INVALID", 'engine must be "legacy" or "native".');
 }

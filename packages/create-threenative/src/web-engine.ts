@@ -63,12 +63,12 @@ function wasmModule(root: string, explicit: string | undefined): string {
     );
   } catch {
     throw new Error(
-      `TN_WASM_ENGINE_MISSING: engine "native" needs @threenative/runtime-native installed in ${root}.`,
+      `TN_WASM_ENGINE_MISSING: engine "native" needs @threenative/runtime-native installed in ${root}. Set engine: "legacy" in threenative.config.ts to keep upstream three.`,
     );
   }
   if (!existsSync(entry))
     throw new Error(
-      `TN_WASM_ENGINE_MISSING: engine "native" needs the Wasm engine at ${entry}; build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native.`,
+      `TN_WASM_ENGINE_MISSING: engine "native" needs the Wasm engine at ${entry}; build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native, or set engine: "legacy" in threenative.config.ts to keep upstream three.`,
     );
   return entry;
 }
