@@ -10098,8 +10098,13 @@ export class WorldCells extends Group implements IComputeDriven {
       yieldFrame: yieldToHost,
     }).then(
       (report) => {
-        renderer.warmUpScopeSettled?.(scopeLabel);
-        return !report.unsupported && !report.timedOut && report.abandoned === 0;
+        const settled =
+          !report.unsupported &&
+          report.observed.status === "complete" &&
+          !report.timedOut &&
+          report.abandoned === 0;
+        if (settled) renderer.warmUpScopeSettled?.(scopeLabel);
+        return settled;
       },
       () => false,
     );
