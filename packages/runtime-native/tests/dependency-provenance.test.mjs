@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test } from 'vitest';
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -65,6 +66,35 @@ test('Linux arm64 fetches libuv source where no prebuilt exists, and CMake build
   );
 });
 
+test('Linux arm64 payloads name arm64 assets and leave the x64 pins alone', () => {
+  // The arm64 desktop set fetches skia/webp/swc/quiche, so the lock is what an arm64 download
+  // resolves and hashes. A payload id that says aarch64 while its URL names x64 bytes is the
+  // failure this catches: the download succeeds and links a foreign architecture. Which platform
+  // selects which payload is proven by the arm64 download run and its ELF check, not by reading
+  // the resolver's source text.
+  const lock = readLock();
+  const urlOf = (component, id) =>
+    lock.components.find((c) => c.name === component)?.payloads.find((p) => p.id === id)?.url;
+
+  for (const [component, id, asset] of [
+    ['quiche', 'quiche-linux-aarch64', 'quiche-linux-arm64.zip'],
+    ['webp', 'webp-linux-aarch64', 'libwebp-1.5.0-linux-aarch64.tar.gz'],
+    ['skia', 'skia-linux-aarch64', 'skia-build-linux-arm64-gpu-release.zip'],
+    ['swc', 'swc-linux-aarch64', 'swc-linux-arm64.zip'],
+  ]) {
+    const url = urlOf(component, id);
+    assert.ok(url, `lock component '${component}' must carry payload '${id}'`);
+    assert.ok(url.endsWith(asset), `payload '${id}' must point at ${asset}, got ${url}`);
+    assert.ok(!/x64|x86_64/u.test(url), `payload '${id}' must not link a foreign architecture`);
+  }
+
+  // x64 keeps the assets it always had: arm64 is an added payload, not a re-pin of the old one.
+  assert.ok(urlOf('quiche', 'quiche-linux-x64')?.endsWith('quiche-linux-x64.zip'));
+  assert.ok(urlOf('swc', 'swc-linux-x64')?.endsWith('swc-linux-x64.zip'));
+  assert.ok(urlOf('skia', 'skia-linux')?.endsWith('skia-build-linux-x64-gpu-release.zip'));
+  assert.ok(urlOf('webp', 'webp-linux')?.endsWith('libwebp-1.5.0-linux-x86-64.tar.gz'));
+});
+
 test('should reject a tampered archive before extraction when downloaded bytes differ', () => {
   // PRD-059 Phase 1 archive-before-extract gate, run against the real transaction
   // helper path: bytes that do not match the lock digest never reach an extractor.
@@ -118,9 +148,70 @@ test('should report the locked matrix without network access', () => {
   // PRD-059 Phase 1 user verification: deps:verify lists every selectable
   // payload and performs no download, extraction, or toolchain invocation.
   const output = execFileSync(process.execPath, [DOWNLOADER, '--check-lock'], { encoding: 'utf8' });
-  assert.match(output, /payloads: 63/);
+  assert.match(output, /payloads: 67/);
   assert.match(output, /wgpu:/);
   assert.match(output, /gradle-wrapper:/);
+});
+
+test('a same-lock receipt naming another payload must not count as a cache hit', async () => {
+  // A receipt states which locked payload bytes are installed, not only which lock they came from.
+  // An x64 checkout that selects the arm64 payload shares the lock hash, so a lock-hash-only check
+  // reports a hit and the arm64 build keeps linking foreign-architecture quiche/swc/webp. The
+  // selected payload id belongs to the hit; a receipt without it is the stale-cache path.
+  const root = mkdtempSync(join(tmpdir(), 'tn-dep-cache-'));
+  const realFetch = globalThis.fetch;
+  try {
+    // The real downloader in an isolated package root: destDir is derived from the module's own
+    // location, so copying the scripts keeps this checkout's third_party/ tree untouched.
+    cpSync(join(PACKAGE_ROOT, 'scripts'), join(root, 'scripts'), { recursive: true });
+    cpSync(LOCK_PATH, join(root, 'native-deps.lock.json'));
+    cpSync(join(PACKAGE_ROOT, 'package.json'), join(root, 'package.json'));
+    const downloader = await import(pathToFileURL(join(root, 'scripts', 'download-deps.mjs')).href);
+    const component = readLock().components.find((c) => c.name === 'webp');
+    const lockContext = {
+      lockHash: 'fixture-lock-hash',
+      payloads: new Map(component.payloads.map((p) => [p.id, { ...p, component: 'webp', version: component.version }])),
+    };
+    const destDir = join(root, 'third_party', 'webp');
+    const fetched = [];
+    globalThis.fetch = async (url) => { fetched.push(url); return { ok: false, status: 599 }; };
+
+    // The resolver's own choice, learned from the real download path with no cache present, so the
+    // fixture never guesses which architecture this machine selects.
+    assert.equal(await downloader.downloadDep('webp', { lockContext }), false);
+    const selectedUrl = fetched.at(-1);
+    const selected = component.payloads.find((p) => p.url === selectedUrl);
+    assert.ok(selected, `no locked webp payload covers the selected url ${selectedUrl}`);
+    const foreign = component.payloads.find((p) => p.url !== selectedUrl);
+    assert.ok(foreign, 'webp must lock a second architecture for a wrong-payload receipt to exist');
+
+    const seed = (payloadIds) => {
+      rmSync(destDir, { recursive: true, force: true });
+      mkdirSync(join(destDir, '.threenative-receipts'), { recursive: true });
+      writeFileSync(join(destDir, 'libwebp.a'), 'installed');
+      writeFileSync(join(destDir, '.threenative-receipts', 'receipt.json'), JSON.stringify({
+        schemaVersion: 1, dependency: 'webp', lockHash: lockContext.lockHash,
+        payloads: payloadIds, files: ['libwebp.a'],
+      }));
+    };
+
+    seed([foreign.id]);
+    fetched.length = 0;
+    assert.equal(await downloader.downloadDep('webp', { lockContext }), false,
+      'a receipt naming another payload under the same lock must miss');
+    assert.deepEqual(fetched, [selectedUrl], 'the stale tree must be replaced by the selected payload');
+    assert.equal(existsSync(join(destDir, 'libwebp.a')), false, 'replacement must not keep the foreign tree');
+
+    seed([selected.id]);
+    fetched.length = 0;
+    assert.equal(await downloader.downloadDep('webp', { lockContext }), true,
+      'a receipt naming the selected payload must hit');
+    assert.deepEqual(fetched, [], 'a cache hit must not download');
+    assert.equal(existsSync(join(destDir, 'libwebp.a')), true, 'a cache hit must keep the installed tree');
+  } finally {
+    globalThis.fetch = realFetch;
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('should print usage and exit without touching caches for --help', () => {

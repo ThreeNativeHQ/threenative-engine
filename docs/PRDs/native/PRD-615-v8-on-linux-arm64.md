@@ -4,7 +4,7 @@
 **Priority:** P1 — linux-arm64 is a supported target, and its open AC-1/AC-2 boxes replace QuickJS with the V8 engine that every other desktop host runs.
 **Complexity:** 6 (MEDIUM) — about 6 implementation files, a new V8 build recipe, a CI build-and-cache boundary; risk override: none.
 **Owner:** João
-**Depends on:** None
+**Depends on:** PRD-614 arm64 dependency pins ([PR #507](https://github.com/ThreeNativeHQ/threenative-engine/pull/507)); the four prerequisite dependency/build files are inherited from its published commit `a8b355190`.
 
 ## Context
 
@@ -69,6 +69,7 @@ The hosted arm64 runner has no GPU, so the speed comparison measures JS frame ti
 
 #### Phase 1: arm64 V8 payload
 **Status:** PARTIAL — source producer and opt-in cache/publication jobs implemented; focused source, CI structure, native chain, qualification and efficiency specs passed 285 tests after producer commit `6226a0821`. YAML and all six producer/publication shell blocks passed syntax checks. Native compilation and both cache runs remain pending.
+The published PRD-614 prerequisite files are inherited byte-for-byte: `CMakeLists.txt`, `native-deps.lock.json`, `scripts/download-deps.mjs` and `tests/dependency-provenance.test.mjs`. The package's dependency-provenance spec passed 10 tests; version-pin, build-matrix and native-profile contracts passed 19 tests.
 **Files:** `packages/runtime-native/scripts/build-linux-arm64-v8.mjs` (new, reuses `build-android-v8.mjs` helpers), `.github/workflows/native-platforms.yml`
 **Implementation:** Pin the recipe (version, source commit, GN args, recipe number). Add the build-and-upload job on a recipe-hash miss.
 The source job requires `gh workflow run native-platforms.yml --ref feat/prd615-linux-arm64-v8 -f build_linux_arm64_v8=true`. On a feature branch it uploads only the verified tarball and SHA-256 artifact; publication is restricted to main/develop. The parent manually publishes those exact reviewed artifact bytes to `ci-v8-linux-arm64` before the second cache-hit dispatch. Existing recipe-named assets are immutable: identical bytes are reused and a mismatch fails.

@@ -84,6 +84,11 @@ const WGPU_DEPS = new Set(['wgpu', 'wgpu-ios', 'wgpu-android']);
 let wgpuVersionOverride = null;
 
 // Dependency versions and URLs
+// Linux arm64 pins. x64 stays on the tags above; these are the first library-builder
+// releases that publish a linux arm64 archive for the dependency named in the comment.
+const LINUX_ARM64_QUICHE = 'quiche-0.24.6-4';
+const LINUX_ARM64_SWC = 'swc-41';
+
 const DEPS = {
   wgpu: {
     version: DEFAULT_WGPU_VERSION,
@@ -214,11 +219,16 @@ const DEPS = {
     // https://github.com/mystralengine/library-builder/releases
     version: 'quiche-0.24.6-3',
     getUrl: () => {
-      const baseUrl = 'https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3';
+      // Linux arm64 first reached a published prebuilt at -4; x64 stays on -3.
+      const tag = platformName === 'linux' && ARCH === 'arm64' ? LINUX_ARM64_QUICHE : DEPS.quiche.version;
+      const baseUrl = `https://github.com/mystralengine/library-builder/releases/download/${tag}`;
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/quiche-mac-${arch}.zip`;
       }if (platformName === 'linux') {
+        if (ARCH === 'arm64') {
+          return `${baseUrl}/quiche-linux-arm64.zip`;
+        }
         if (ARCH !== 'x64') {
           console.warn(`quiche prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -293,7 +303,8 @@ const DEPS = {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86-64';
         return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-mac-${arch}.tar.gz`;
       }if (platformName === 'linux') {
-        return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-linux-x86-64.tar.gz`;
+        const arch = ARCH === 'arm64' ? 'aarch64' : 'x86-64';
+        return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-linux-${arch}.tar.gz`;
       }if (platformName === 'windows') {
         return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-windows-x64.zip`;
       }
@@ -333,12 +344,17 @@ const DEPS = {
     //
     version: 'chrome/m145',
     getUrl: () => {
-      const baseUrl = 'https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145';
+      // olilarkin/skia-builder publishes Linux x64 only; library-builder mirrors the same
+      // chrome/m145 build for linux arm64, which is the arm64 archive this project pins.
+      const baseUrl = ARCH === 'arm64' && platformName === 'linux'
+        ? 'https://github.com/mystralengine/library-builder/releases/download/chrome%2Fm145'
+        : 'https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145';
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/skia-build-mac-${arch}-gpu-release.zip`;
       }if (platformName === 'linux') {
-        return `${baseUrl}/skia-build-linux-x64-gpu-release.zip`;
+        const arch = ARCH === 'arm64' ? 'arm64' : 'x64';
+        return `${baseUrl}/skia-build-linux-${arch}-gpu-release.zip`;
       }if (platformName === 'windows') {
         return `${baseUrl}/skia-build-win-x64-gpu-release.zip`;
       }
@@ -350,11 +366,16 @@ const DEPS = {
   swc: {
     version: 'swc-11',
     getUrl: () => {
-      const baseUrl = 'https://github.com/mystralengine/library-builder/releases/download/swc-11';
+      // swc-41 is the first library-builder tag with swc-linux-arm64.zip; x64 stays on swc-11.
+      const tag = platformName === 'linux' && ARCH === 'arm64' ? LINUX_ARM64_SWC : DEPS.swc.version;
+      const baseUrl = `https://github.com/mystralengine/library-builder/releases/download/${tag}`;
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/swc-mac-${arch}.zip`;
       }if (platformName === 'linux') {
+        if (ARCH === 'arm64') {
+          return `${baseUrl}/swc-linux-arm64.zip`;
+        }
         if (ARCH !== 'x64') {
           console.warn(`SWC prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -1302,7 +1323,9 @@ export async function downloadDep(name, options = {}) {
     console.warn(`Skipping ${name} - no prebuilt available for this platform`);
     return false;
   }
-  if (!lockPayloadForUrl(lock.payloads, url)) {
+  // Same-lock receipts can name another architecture; require the selected payload too.
+  const selectedPayload = lockPayloadForUrl(lock.payloads, url);
+  if (!selectedPayload) {
     console.error(
       `TN_NATIVE_DEP_LOCK_MISSING: no lock payload covers ${url} (requested as '${name}'). Refusing an unreviewed download.`,
     );
@@ -1315,8 +1338,8 @@ export async function downloadDep(name, options = {}) {
     if (!process.argv.includes('--force')) {
       if (!WGPU_DEPS.has(name)) {
         const receipt = readReceipt(destDir, lock.lockHash);
-        if (!receipt) {
-          console.warn(`${name} has no receipt for the current lock; replacing the stale dependency cache`);
+        if (!receipt || !Array.isArray(receipt.payloads) || !receipt.payloads.includes(selectedPayload.id)) {
+          console.warn(`${name} has no receipt for ${selectedPayload.id} under the current lock; replacing the stale dependency cache`);
         } else {
           console.log('Skipping (use --force to re-download)');
           return true;
@@ -1545,18 +1568,17 @@ async function main() {
   if (requestedBackend === 'dawn') assertDawnAndroidArchive();
   if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
-  // Linux arm64 has no prebuilt for the x64 desktop stack: kuoruan/libv8 ships Linux x64 only,
-  // Dawn's `ubuntu-latest` release asset is x64, and skia/swc/quiche/webp publish no arm64 Linux
-  // archive. A source V8 build is not allowed in CI. The arm64 desktop host is therefore built with
-  // the QuickJS engine over wgpu-native, whose `wgpu-linux-aarch64` prebuilt is already in the
-  // dependency lock; the CMake build disables the optional features whose libraries are absent
-  // (Canvas2D/Skia, WebTransport/quiche, TS/SWC) instead of linking a foreign architecture. libuv
-  // has no arm64 prebuilt either, so arm64 also fetches the architecture-independent `libuv-source`
-  // and CMake builds it from that pinned source (see CMakeLists.txt). See scripts/native-build.mjs
-  // for the matching configure overrides.
+  // Linux arm64 keeps the QuickJS engine over wgpu-native, whose `wgpu-linux-aarch64` prebuilt
+  // is already in the dependency lock: kuoruan/libv8 ships Linux x64 only and Dawn's
+  // `ubuntu-latest` release asset is x64, and a source V8 build is not allowed in CI. Everything
+  // else the x64 desktop set links now has an arm64 archive, so the arm64 host builds the same
+  // feature set instead of dropping Canvas2D, WebP textures, TypeScript and WebTransport.
+  // libuv is the exception: library-builder ships libuv-linux-x64 only, so arm64 fetches the
+  // architecture-independent `libuv-source` and CMake builds it from that pinned source. See
+  // scripts/native-build.mjs for the matching configure overrides.
   const linuxArm64 = platformName === 'linux' && ARCH === 'arm64';
   const desktopDeps = linuxArm64
-    ? ['wgpu', 'sdl3', 'quickjs', 'stb', 'libuv-source']
+    ? ['wgpu', 'sdl3', 'quickjs', 'stb', 'webp', 'skia', 'swc', 'quiche', 'libuv-source']
     : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
